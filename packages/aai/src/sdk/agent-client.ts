@@ -6,10 +6,8 @@
  * A deployed agent IS an API, and it answers on two surfaces rather than one:
  * `GET /client-config` says what the agent is (its name, its greeting, whether
  * its front door is a voice session or a page, and the live session's WebSocket
- * URL), and `/workflows/*` is everything durable. Those are documented together
- * — the studio's API pane and the public page at `/studio/api/<slug>` render one
- * page out of both — so a reader following that page had to build two clients,
- * one of which was a `fetch` and a hand-written URL join.
+ * URL), and `/workflows/*` is everything durable. A caller reading both had to
+ * build two clients, one of which was a `fetch` and a hand-written URL join.
  *
  * ```ts
  * import { createAgentClient } from "@alexkroman1/aai/workflow-api";

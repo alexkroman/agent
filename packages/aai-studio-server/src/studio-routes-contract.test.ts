@@ -63,7 +63,7 @@ describe("response bodies", () => {
     const workspaces = createMemoryWorkspaceStore();
     vi.spyOn(workspaces, "put").mockRejectedValue(new WorkspaceConflictError("s", "p"));
     const { fetch: conflicted } = await createFakedCombined({ workspaces });
-    const res = await authFetch(conflicted, "/studio/projects", { body: { kind: "agent" } });
+    const res = await authFetch(conflicted, "/studio/projects", { body: {} });
     expect(res.status).toBe(409);
     expect(await errorOf(res)).toBe("Project already exists");
   });
@@ -324,7 +324,7 @@ describe("workspace failure handling", () => {
     vi.spyOn(workspaces, "put").mockRejectedValue(new Error("store offline"));
     const { fetch } = await createFakedCombined({ workspaces });
 
-    const res = await authFetch(fetch, "/studio/projects", { body: { kind: "agent" } });
+    const res = await authFetch(fetch, "/studio/projects", { body: {} });
     expect(res.status).not.toBe(409);
     expect(res.status).toBeGreaterThanOrEqual(500);
   });

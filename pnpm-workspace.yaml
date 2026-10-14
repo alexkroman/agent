@@ -94,6 +94,12 @@ overrides:
   # every package that does not declare one (the root included), bypassing the
   # catalog's 30.0.x hold. Delete with that hold.
   jsdom: "catalog:"
+  # Same shape, for vitest's optional `@types/node` peer: left alone it resolves
+  # to the newest @types/node in every package that does not declare one, which
+  # installs a SECOND vitest copy. A root run (`pnpm vitest run …`) then drives
+  # those packages' specs with an `expect` from the other copy, and
+  # `rejects.toThrow` sees an empty message on every Error.
+  "@types/node": "catalog:"
   unrun: 0.2.39
 
 patchedDependencies:

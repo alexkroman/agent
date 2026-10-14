@@ -54,7 +54,6 @@ const PARAMS = {
 
 async function seedProject(deps: StudioDeployDeps, project: string, deployedSlug?: string) {
   await createWorkspace(deps.workspaces, SCOPE, project, {
-    kind: "agent",
     files: { "agent.ts": "export default {}" },
     ...omitUndefined({ deployedSlug }),
   });

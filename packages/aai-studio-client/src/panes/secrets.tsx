@@ -10,13 +10,11 @@
 // key, a provider added weeks later — which is a poor fit for a page whose
 // other half deletes the project.
 //
-// So the pane splits the two things people actually do. **One key at a time**
-// is the primary path: a NAME field and a VALUE field, so the value is typed
-// into a password input instead of appearing in plaintext next to its own key,
-// and a name that is not a legal environment variable is refused here rather
-// than by the server. **Pasting a `.env`** stays available for the bulk case
-// (a fresh project, several providers) and keeps the dotenv parse that makes
-// multi-line quoted values — PEM keys, service-account JSON — work at all.
+// So a key is added one at a time: a NAME field and a VALUE field, so the
+// value is typed into a password input instead of appearing in plaintext next
+// to its own key, and a name that is not a legal environment variable is
+// refused here rather than by the server. Bulk `.env` loading is a CLI action
+// (`aai secret`, or `.env` + `aai publish`).
 //
 // Everything else the old card was careful about is carried over: platform-
 // managed names are neither listed nor settable, a key the deployed agents do
@@ -26,7 +24,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { api, parseSecrets } from "../api.ts";
+import { api } from "../api.ts";
 import { errorText } from "../api-error.ts";
 import { isEnterSubmit } from "../components/send-button.tsx";
 import { Card } from "../components/settings-card.tsx";
@@ -49,9 +47,7 @@ const PLATFORM_MANAGED_SECRETS: readonly string[] = ["ASSEMBLYAI_API_KEY"];
 /**
  * What a POSIX environment variable name may look like, which is what these
  * become inside the guest. Checked HERE because the failure is otherwise a
- * round trip to learn that `my key` was never going to work — and because a
- * name with an `=` in it is a typo in the one-field-per-value form, where the
- * .env path would have read it as part of the value.
+ * round trip to learn that `my key` was never going to work.
  */
 const VALID_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
@@ -61,10 +57,9 @@ function normalizeName(raw: string): string {
 }
 
 /**
- * Split parsed entries into the ones this pane may save and the managed names
- * it must refuse. A managed key typed into either form would save and then not
- * appear in the list below, which reads as a failed write — so it is refused by
- * name and said so.
+ * Split entries into the ones this pane may save and the managed names it must
+ * refuse. A managed key would save and then not appear in the list below,
+ * which reads as a failed write — so it is refused by name and said so.
  */
 function splitManaged(parsed: Record<string, string>): {
   updates: Record<string, string>;
@@ -77,19 +72,13 @@ function splitManaged(parsed: Record<string, string>): {
   return { updates, managed };
 }
 
-/** The sentence a refusal renders as, so both forms word it identically. */
+/** The sentence a managed-name refusal renders as. */
 function managedRefusal(managed: string[]): string {
   return `${managed.join(", ")} ${managed.length > 1 ? "are" : "is"} managed for you and can't be set here.`;
 }
 
 /**
- * The PUT both forms go through. Two instances rather than one shared
- * mutation: `isPending` and `error` are read next to the button that fired
- * them, so a single mutation would put "Saving…" on the .env button while a
- * one-key add was in flight, and a failed paste would print its error under
- * the add form too.
- *
- * `onSaved` runs only on success, which is what keeps a failed save's input
+ * The secrets PUT. `onSaved` runs only on success, which is what keeps a failed save's input
  * on screen — the draft is what the user would otherwise have to retype.
  */
 function useSaveSecrets(bearer: string, project: string, onSaved: () => void) {
@@ -121,12 +110,7 @@ export function SecretsPane({ bearer, project }: SecretsPaneProps) {
   const queryClient = useQueryClient();
   const [name, setName] = useState("");
   const [value, setValue] = useState("");
-  const [bulk, setBulk] = useState("");
-  // A refusal per FORM, for the same reason there are two mutations: each is
-  // rendered under the control that produced it, and a paste naming a managed
-  // key must not print its reason under the Add card.
   const [addRefusal, setAddRefusal] = useState<string | null>(null);
-  const [pasteRefusal, setPasteRefusal] = useState<string | null>(null);
 
   const secrets = useQuery({
     queryKey: queryKeys.secrets(project),
@@ -137,7 +121,6 @@ export function SecretsPane({ bearer, project }: SecretsPaneProps) {
     setName("");
     setValue("");
   });
-  const paste = useSaveSecrets(bearer, project, () => setBulk(""));
 
   const remove = useMutation({
     mutationFn: (secret: string) => api.deleteSecret(bearer, project, secret),
@@ -162,13 +145,6 @@ export function SecretsPane({ bearer, project }: SecretsPaneProps) {
     }
     setAddRefusal(null);
     add.mutate(updates);
-  };
-
-  const submitBulk = () => {
-    const { updates, managed } = splitManaged(parseSecrets(bulk));
-    setPasteRefusal(managed.length > 0 ? managedRefusal(managed) : null);
-    if (Object.keys(updates).length === 0 || paste.isPending) return;
-    paste.mutate(updates);
   };
 
   const onDelete = (secret: string) => {
@@ -304,38 +280,6 @@ export function SecretsPane({ bearer, project }: SecretsPaneProps) {
           )
         )}
         {listError && <p className="m-0 text-xs text-err">{listError}</p>}
-      </Card>
-
-      <Card
-        title="Paste a .env"
-        blurb={
-          <>
-            For several keys at once. One <code className="font-mono">KEY=value</code> per line,
-            real <code className="font-mono">.env</code> syntax — quoted multi-line values (PEM
-            keys, service-account JSON) included.
-          </>
-        }
-      >
-        <textarea
-          className="field h-28 resize-y py-2 font-mono text-xs"
-          value={bulk}
-          onChange={(e) => {
-            setBulk(e.target.value);
-            setPasteRefusal(null);
-          }}
-          placeholder="OPENAI_API_KEY=..."
-          spellCheck={false}
-        />
-        <button
-          type="button"
-          className="btn self-start"
-          onClick={submitBulk}
-          disabled={paste.isPending}
-        >
-          {paste.isPending ? "Saving…" : "Save secrets"}
-        </button>
-        {pasteRefusal && <p className="m-0 text-xs text-err">{pasteRefusal}</p>}
-        {errorText(paste.error) && <p className="m-0 text-xs text-err">{errorText(paste.error)}</p>}
       </Card>
     </PaneShell>
   );

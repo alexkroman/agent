@@ -34,7 +34,7 @@ beforeEach(async () => {
   store = createTestStore();
   workspaces = createMemoryWorkspaceStore();
   secrets = createMemorySecretStore();
-  await createWorkspace(workspaces, SCOPE, PROJECT, { kind: "agent", files: {} });
+  await createWorkspace(workspaces, SCOPE, PROJECT, { files: {} });
 });
 
 /**

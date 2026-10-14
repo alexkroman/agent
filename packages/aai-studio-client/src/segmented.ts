@@ -1,17 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The studio's segmented control, as the two rules its three instances share.
-//
-// A class pair rather than a `<Segmented>` component, because the three call
-// sites disagree about the ELEMENT and cannot be one widget: the pane switcher
-// (top-bar.tsx) is buttons, the log target picker (panes/logs-view.tsx) is buttons
-// that can be disabled, and the home hero's "what to build" (components/home.tsx) is a
-// `fieldset` of real radios so arrow keys move between them. What they share is
-// the look — and that had been copy-pasted three times, with the active/inactive
-// pair spelled out identically in each, so a change to the studio's one repeated
-// control was three edits and logs-view had already drifted onto its own size.
-//
-// Sizing is deliberately NOT here: `.seg` (styles.css) is the standard one, and
-// logs-view passes its own because that picker sits inside a pane header.
+// The studio's segmented control (the pane switcher in top-bar.tsx), as the
+// group and item class rules. Sizing is `.seg` in styles.css.
 
 import clsx from "clsx";
 

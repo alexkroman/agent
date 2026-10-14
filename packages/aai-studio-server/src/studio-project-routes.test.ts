@@ -33,37 +33,17 @@ describe("project CRUD", () => {
   test("create starts an EMPTY project", async () => {
     // No starter agent: the coding agent's first turn goes into the user's
     // agent rather than into dismantling a dice roller.
-    const res = await authFetch(fetch, "/studio/projects", { body: { kind: "agent" } });
+    const res = await authFetch(fetch, "/studio/projects", { body: {} });
     expect(res.status).toBe(201);
     const body = (await res.json()) as { files: Record<string, string> };
     expect(Object.keys(body.files)).toEqual([]);
   });
 
-  test("create stamps the project's kind", async () => {
-    // The kind selects the coding agent's system prompt at every later session
-    // install, so it is stored on the workspace rather than held per request.
-    const created = await authFetch(fetch, "/studio/projects", { body: { kind: "workflow" } });
-    expect(created.status).toBe(201);
-    const { name, kind } = (await created.json()) as { name: string; kind?: string };
-    expect(kind).toBe("workflow");
-    const read = await authFetch(fetch, `/studio/projects/${name}`, { method: "GET" });
-    expect((await read.json()) as { kind?: string }).toMatchObject({ kind: "workflow" });
-  });
-
-  test("a first push, which has no switcher to ask, creates a voice agent", async () => {
-    await createProject(fetch, "voice");
-    const plain = await authFetch(fetch, "/studio/projects/voice", { method: "GET" });
-    expect((await plain.json()) as { kind?: string }).toMatchObject({ kind: "agent" });
-  });
-
   test.each([
-    ["a kind that is not one of the two", { kind: "phone" }],
-    ["no kind at all", {}],
+    ["a kind that is not one of the retired two", { kind: "phone" }],
     // The caller does not name the project: the server generates it.
-    ["a name", { name: "mine", kind: "agent" }],
+    ["a name", { name: "mine" }],
   ])("create rejects %s", async (_label, body) => {
-    // An unknown kind would otherwise be stamped and select no prompt — a
-    // request that looks accepted and does the opposite of what it asked for.
     const res = await authFetch(fetch, "/studio/projects", { body });
     expect(res.status).toBe(400);
   });
@@ -72,7 +52,7 @@ describe("project CRUD", () => {
     // The chat-first flow: the client sends the first message, the SERVER
     // names the project — same generator as slugless CLI deploys.
     const res = await authFetch(fetch, "/studio/projects", {
-      body: { prompt: "Build me a contact form agent for my site", kind: "agent" },
+      body: { prompt: "Build me a contact form agent for my site" },
     });
     expect(res.status).toBe(201);
     const { name } = (await res.json()) as { name: string };
@@ -86,7 +66,7 @@ describe("project CRUD", () => {
   test("create with the same prompt twice yields two distinct projects", async () => {
     const make = async () => {
       const res = await authFetch(fetch, "/studio/projects", {
-        body: { prompt: "pizza ordering", kind: "agent" },
+        body: { prompt: "pizza ordering" },
       });
       expect(res.status).toBe(201);
       return ((await res.json()) as { name: string }).name;
@@ -95,7 +75,7 @@ describe("project CRUD", () => {
   });
 
   test("create with no prompt still generates a name", async () => {
-    const res = await authFetch(fetch, "/studio/projects", { body: { kind: "agent" } });
+    const res = await authFetch(fetch, "/studio/projects", { body: {} });
     expect(res.status).toBe(201);
     const { name } = (await res.json()) as { name: string };
     expect(name).toMatch(/-[a-z0-9]{6}$/);

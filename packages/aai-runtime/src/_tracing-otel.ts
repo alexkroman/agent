@@ -364,7 +364,7 @@ export function startTracingOtel(
     } catch {
       // A collector that is down may not fail a guest's shutdown — and the
       // guest's stdout is a TENANT-VISIBLE ring buffer (`GET /manage/logs`), so
-      // a line here would put our telemetry's problems in somebody's Logs pane.
+      // a line here would put our telemetry's problems in somebody's logs.
     }
   };
   return {

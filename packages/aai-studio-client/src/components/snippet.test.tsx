@@ -1,36 +1,18 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
-// The code-block atom the API docs are built of: the text is copied verbatim,
-// and a CopyLine shares its caller's flash rather than owning one.
+// A CopyLine copies its text verbatim and shares its caller's flash rather
+// than owning one.
 
 import { useCopy } from "@alexkroman1/aai-ui";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
-import { CopyLine, Snippet } from "./snippet.tsx";
+import { CopyLine } from "./snippet.tsx";
 
 function stubClipboard() {
   const writeText = vi.fn(async (_text: string) => undefined);
   vi.stubGlobal("navigator", { clipboard: { writeText } });
   return writeText;
 }
-
-const CODE = 'const run = await agent.start("summarize", {\n  url: "<url>",\n});';
-
-describe("Snippet", () => {
-  test("renders the code in a <pre>, whitespace intact", () => {
-    const { container } = render(<Snippet code={CODE} label="Start a run" />);
-    const pre = container.querySelector("pre");
-    expect(pre?.textContent).toBe(CODE);
-  });
-
-  test("copies the code verbatim and flashes", async () => {
-    const writeText = stubClipboard();
-    render(<Snippet code={CODE} label="Start a run" />);
-    fireEvent.click(screen.getByLabelText("Copy: Start a run"));
-    expect(writeText).toHaveBeenCalledWith(CODE);
-    expect(await screen.findByText("Copied")).toBeInTheDocument();
-  });
-});
 
 function TwoLines() {
   const copier = useCopy();

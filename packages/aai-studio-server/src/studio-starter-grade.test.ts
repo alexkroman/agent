@@ -34,7 +34,6 @@ function grade(over: Partial<StarterRun> = {}): Map<string, boolean> {
   const rec = createRecorder();
   gradeStarter(rec, {
     label: "not a declared starter",
-    kind: "voice",
     turn: turnOf(),
     files: { "agent.ts": "export default agent({})" },
     ...over,
@@ -92,23 +91,6 @@ describe("gradeStarter", () => {
     expect(grade({ turn: runaway }).get("under the step cap (80)")).toBe(false);
   });
 
-  test("a workflow project is graded on SHAPE, and neither on mode nor on a client", () => {
-    // It has no session, so pipeline mode and a live-state client are questions
-    // about a thing that does not exist in a workflow project.
-    const checks = grade({
-      kind: "workflow",
-      files: {
-        "agent.ts": "export default workflowApp({ name: 'W' })",
-        "workflows/main.ts": "export default async function run() {}",
-        "client.tsx": "export default mountPage(() => null)",
-      },
-    });
-    expect(checks.has("workflow-app shape")).toBe(true);
-    expect(checks.get("workflow-app shape")).toBe(true);
-    expect(checks.has("pipeline mode")).toBe(false);
-    expect(checks.has("client UI")).toBe(false);
-  });
-
   test("a declared starter additionally answers for the prompt's capabilities", () => {
     const checks = grade({
       label: "A pizza counter that keeps a real cart",
@@ -127,7 +109,6 @@ describe("gradeStarter", () => {
     const rec = createRecorder();
     gradeStarter(rec, {
       label: "x",
-      kind: "voice",
       turn: turnOf({ lastTestAgentOutput: 'Agent "S" (s2s mode), tools: a.' }),
       files: { "agent.ts": "" },
     });

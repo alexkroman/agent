@@ -288,12 +288,9 @@ export async function readTurn(body: ReadableStream<Uint8Array>): Promise<Studio
 /** One studio project, from creation to a synced workspace. */
 export type StudioClient = {
   /**
-   * `POST /studio/projects`, answering the name the server generated. `kind`
-   * mirrors the studio hero's switcher: the project is created the way a user
-   * picking THIS starter would create it, so its turns run under the same
-   * coding-agent system prompt.
+   * `POST /studio/projects`, answering the name the server generated.
    */
-  createProject(kind: string): Promise<string>;
+  createProject(): Promise<string>;
   /** `POST …/session`, then stream one chat turn. */
   runTurn(project: string, prompt: string): Promise<StudioTurn>;
   /** The project's files once the guest's end-of-turn sync has landed. */
@@ -365,10 +362,10 @@ export function createStudioClient(origin: string, key: string): StudioClient {
   };
 
   return {
-    async createProject(kind) {
+    async createProject() {
       const created = (await api("/projects", {
         method: "POST",
-        body: JSON.stringify({ kind }),
+        body: JSON.stringify({}),
       })) as { name?: unknown };
       if (typeof created.name !== "string") throw new Error("studio create returned no name");
       return created.name;

@@ -2,14 +2,14 @@
 
 /**
  * Materialize what the studio SENDS a coding-agent session, where its EVAL can
- * read it: the system prompt per project kind, and the starter catalog.
+ * read it: the system prompt, and the starter catalog.
  *
  * ## The measurement this makes possible
  *
  * `packages/aai-guest/src/studio-agent.eval.test.ts` drives the real coding
  * agent — the real tools, the real executor, a real workspace — on a system
  * prompt that is NOT the shipped one. It runs `STUDIO_EVAL_PROMPT`, a four-line
- * harness constant, because the shipped prompt is `studioSystemPrompt(kind)` in
+ * harness constant, because the shipped prompt is `studioSystemPrompt()` in
  * `aai-studio-server` and `guest-package-boundary` denies the guest that import.
  *
  * That limit is documented honestly in `CODING-AGENT-TESTS-CLAUDE.md` ("no
@@ -28,7 +28,7 @@
  * Two reasons, and the second is the hard one.
  *
  * **The prompt is already data, not code.** The guest never imports it in
- * production either: `studio-session-ensure.ts` puts `studioSystemPrompt(kind)`
+ * production either: `studio-session-ensure.ts` puts `studioSystemPrompt()`
  * in the session-init payload and `studio/session.ts` appends
  * `toolchainPromptSection()` to whatever arrives over the wire. The guest is the
  * thing that RUNS that string. Handing the same string to the eval is the
@@ -80,12 +80,13 @@ const CHECK = parseCheckFlag(import.meta.url);
  * an edit that removed the banner leaves a copy that looks authored, and the
  * next person to change the prompt has two plausible files to choose from.
  */
-const banner = (kind) =>
+const banner = () =>
   [
     "<!--",
     "  GENERATED FILE — do not edit.",
     "",
-    `  Source: packages/aai-studio-server/src/prompts/ (studioSystemPrompt(${JSON.stringify(kind)}))`,
+    "  Source: studioSystemPrompt() in",
+    "  packages/aai-studio-server/src/prompts/",
     "  Regenerate: node scripts/sync-studio-prompt.mjs",
     "",
     "  This is the system prompt the studio really sends a coding-agent session,",
@@ -115,8 +116,11 @@ const banner = (kind) =>
  */
 const STARTERS_FILE = "starters.json";
 
+/** The prompt copy's file name — `_eval-prompt.ts` reads the same one. */
+const PROMPT_FILE = "system-prompt.md";
+
 /**
- * Compose every kind's prompt, in one child process.
+ * Compose the prompt, in one child process.
  *
  * The scaffold guide is read from disk by `loadScaffoldGuide()` — the same call
  * the studio makes — rather than passed in, so a run here fails the same way a
@@ -125,14 +129,11 @@ const STARTERS_FILE = "starters.json";
  */
 function composePrompts() {
   const program = [
-    'import { PROJECT_KINDS } from "../packages/aai-studio-server/src/studio-project-kind.ts";',
     'import { composeStudioPrompt, loadScaffoldGuide } from "../packages/aai-studio-server/src/prompts/studio-prompt.ts";',
     'import { STARTERS } from "../packages/aai-studio-client/src/starters.ts";',
     "const guide = loadScaffoldGuide();",
     'if (guide === null) throw new Error("scaffold CLAUDE.md not found — the fallback guide is not the shipped prompt");',
-    "const prompts = {};",
-    "for (const kind of PROJECT_KINDS) prompts[kind] = composeStudioPrompt(guide, kind);",
-    "process.stdout.write(JSON.stringify({ prompts, starters: STARTERS }));",
+    "process.stdout.write(JSON.stringify({ prompt: composeStudioPrompt(guide), starters: STARTERS }));",
   ].join("\n");
   const { status, stdout, stderr } = spawnSync(
     process.execPath,
@@ -147,15 +148,15 @@ function composePrompts() {
   return JSON.parse(stdout);
 }
 
-const { prompts, starters } = composePrompts();
-const files = Object.entries(prompts).map(([kind, prompt]) => ({
-  kind,
-  path: join(DESTINATION_DIR, `${kind}.md`),
-  rel: `packages/aai-guest-studio/studio-prompts/${kind}.md`,
-  expected: `${banner(kind)}${prompt}`,
-}));
+const { prompt, starters } = composePrompts();
+const files = [
+  {
+    path: join(DESTINATION_DIR, PROMPT_FILE),
+    rel: `packages/aai-guest-studio/studio-prompts/${PROMPT_FILE}`,
+    expected: `${banner()}${prompt}`,
+  },
+];
 files.push({
-  kind: "starters",
   path: join(DESTINATION_DIR, STARTERS_FILE),
   rel: `packages/aai-guest-studio/studio-prompts/${STARTERS_FILE}`,
   expected: `${JSON.stringify(
@@ -163,7 +164,7 @@ files.push({
       _generated:
         "GENERATED FILE — do not edit. Source: packages/aai-studio-client/src/starters.ts " +
         "(STARTERS). Regenerate: node scripts/sync-studio-prompt.mjs",
-      ...starters,
+      starters,
     },
     null,
     2,

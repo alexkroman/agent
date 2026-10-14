@@ -35,7 +35,6 @@ function line(seq: number, text: string, stream: Line["stream"] = "stdout"): Lin
 async function makeWorkspace(meta: { previewSlug?: string; deployedSlug?: string } = {}) {
   const workspaces = createMemoryWorkspaceStore();
   await createWorkspace(workspaces, SCOPE, PROJECT, {
-    kind: "agent",
     files: { "agent.ts": "// v1" },
   });
   if (Object.keys(meta).length > 0) {

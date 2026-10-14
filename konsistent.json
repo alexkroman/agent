@@ -2093,26 +2093,17 @@
     },
     {
       "name": "studio-client-pane-modules",
-      "description": "The studio front-end's panes are one module each, and this is the list \u2014 the eight modules `project-view.tsx` renders. It exists because the prose inventory in `packages/aai-studio-client/CLAUDE.md` went stale in both directions at once: it named a `database.tsx` that had been deleted with the Database pane, omitted `panes/logs-view.tsx` entirely, and then said \"the six page-shaped ones\" under a list of seven. `top-bar.tsx`'s `StudioTab` union is the real roster (`preview`, `docs`, `workflows`, `code`, `logs`, `secrets`, `settings`) and `top-bar.test.tsx` pins the rendered label sequence \u2014 but nothing tied either to the modules that render them, so a deleted pane left a documented file that was not there and an added one left a file no document mentioned. konsistent cannot read the union, so this asserts the module set from the filesystem side: existence only, which is what catches the deletion. `panes/chat.tsx` is here as the pane outside the switcher.\n\nThe FRAME is deliberately not in this list and not in this directory: `app.tsx` (the root), `main.tsx` (the Vite entry), `project-view.tsx` (which renders the eight), `top-bar.tsx` (the switcher), `pane-shell.tsx` (the shell they share) and `public-api.tsx` (a top-level ROUTE `main.tsx` renders, never a tab) are what a pane is mounted BY. Holding them to a pane's roster is what made the old thirteen-entry list read as a category when it was two \u2014 and it is why moving five of the seven switcher panes was the wrong shape: `studio-client-pane-export` names five because those five are the ones whose FILENAME is their tab id, not because the other two are something else (`panes/code-view.tsx` \u2192 tab `code`, `panes/logs-view.tsx` \u2192 tab `logs`).",
+      "description": "The studio front-end's panes are one module each, and this is the list \u2014 the five modules `project-view.tsx` renders. It exists because a prose inventory in `packages/aai-studio-client/CLAUDE.md` once went stale in both directions at once (a deleted pane still documented, a new one not). `top-bar.tsx`'s `StudioTab` union is the real roster (`preview`, `code`, `secrets`, `settings`) and `top-bar.test.tsx` pins the rendered label sequence, but nothing ties either to the modules that render them. konsistent cannot read the union, so this asserts the module set from the filesystem side: existence only, which is what catches a deletion. `panes/chat.tsx` is here as the pane outside the switcher.\n\nThe FRAME is deliberately not in this list and not in this directory: `app.tsx` (the root), `main.tsx` (the Vite entry), `project-view.tsx` (which renders the panes), `top-bar.tsx` (the switcher) and `pane-shell.tsx` (the shell they share) are what a pane is mounted BY. `studio-client-pane-export` names three panes because those three are the ones whose FILENAME is their tab id (`panes/code-view.tsx` \u2192 tab `code` is not).",
       "paths": "packages/aai-studio-client/src/panes",
       "must": {
         "haveType": "directory",
-        "haveFiles": [
-          "chat.tsx",
-          "preview.tsx",
-          "docs.tsx",
-          "workflows.tsx",
-          "code-view.tsx",
-          "logs-view.tsx",
-          "secrets.tsx",
-          "settings.tsx"
-        ]
+        "haveFiles": ["chat.tsx", "preview.tsx", "code-view.tsx", "secrets.tsx", "settings.tsx"]
       }
     },
     {
       "name": "studio-client-pane-export",
-      "description": "A studio pane module whose filename IS its tab id exports `<Tab>Pane` \u2014 `panes/secrets.tsx` exports `SecretsPane`. `project-view.tsx` renders the panes from a chain of `selectedTab === \"\u2026\"` comparisons against `top-bar.tsx`'s `StudioTab` union, so the tab id is the one string that links the union, the switcher's label table, the selection state and the module \u2014 and the export name is what makes that chain greppable from either end. The two panes with a layout of their own are named for what they are rather than for their tab (`panes/code-view.tsx` \u2192 `CodeView` for tab `code`, `panes/logs-view.tsx` \u2192 `LogsView` for tab `logs`), and `panes/chat.tsx` exports `ChatPanel` because it is not in the switcher at all; those three are outside the pattern by design, so the rule is scoped to the five whose filename and tab id already agree.",
-      "paths": "packages/aai-studio-client/src/panes/{pane:matches(^(preview|docs|workflows|secrets|settings)$)}.tsx",
+      "description": "A studio pane module whose filename IS its tab id exports `<Tab>Pane` \u2014 `panes/secrets.tsx` exports `SecretsPane`. `project-view.tsx` renders the panes from a chain of `selectedTab === \"\u2026\"` comparisons against `top-bar.tsx`'s `StudioTab` union, so the tab id is the one string that links the union, the switcher's label table, the selection state and the module \u2014 and the export name is what makes that chain greppable from either end. `panes/code-view.tsx` has a layout of its own and is named for what it is (`CodeView` for tab `code`), and `panes/chat.tsx` exports `ChatPanel` because it is not in the switcher at all; both are outside the pattern by design, so the rule is scoped to the three whose filename and tab id agree.",
+      "paths": "packages/aai-studio-client/src/panes/{pane:matches(^(preview|secrets|settings)$)}.tsx",
       "must": {
         "exportFunctions": ["${pane.toPascalCase()}Pane"]
       }

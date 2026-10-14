@@ -2,7 +2,7 @@
 /**
  * `aai logs` — what the deployed agent has printed.
  *
- * The terminal half of the same read the studio's Logs pane makes
+ * The terminal half of the same read the studio's coding agent makes
  * (`GET /:slug/logs`, aai-server/agent-logs.ts): a bounded ring the GUEST holds,
  * paged by cursor. Two things follow from that and are what this command has to
  * be honest about, because neither is visible in a wall of lines:

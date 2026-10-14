@@ -21,12 +21,9 @@ import { bufferFor, useFileDrafts } from "./file-drafts.ts";
 import { hasGithubResult } from "./github-result.ts";
 import { type StreamHandlers, useEventStream } from "./hooks/use-event-stream.ts";
 import { ChatPanel } from "./panes/chat.tsx";
-import { DocsPane } from "./panes/docs.tsx";
-import { LogsView } from "./panes/logs-view.tsx";
 import { PreviewPane } from "./panes/preview.tsx";
 import { SecretsPane } from "./panes/secrets.tsx";
 import { SettingsPane } from "./panes/settings.tsx";
-import { WorkflowsPane } from "./panes/workflows.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { lazyRetry } from "./stale-build.ts";
 import { PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
@@ -324,17 +321,6 @@ export function ProjectView(props: ProjectViewProps) {
             onPreviewMissing={wakePreview}
           />
         )}
-        {selectedTab === "docs" && (
-          <DocsPane
-            bearer={bearer}
-            project={project}
-            deployedSlug={deployedSlug}
-            previewSlug={workspace.data?.previewSlug}
-          />
-        )}
-        {selectedTab === "workflows" && (
-          <WorkflowsPane deployedSlug={deployedSlug} previewSlug={workspace.data?.previewSlug} />
-        )}
         {selectedTab === "code" && (
           <Suspense
             fallback={<div className="flex flex-1 items-center justify-center text-subtle" />}
@@ -352,19 +338,13 @@ export function ProjectView(props: ProjectViewProps) {
             />
           </Suspense>
         )}
-        {selectedTab === "logs" && (
-          <LogsView
-            bearer={bearer}
-            previewSlug={workspace.data?.previewSlug}
-            deployedSlug={deployedSlug}
-          />
-        )}
         {selectedTab === "secrets" && <SecretsPane bearer={bearer} project={project} />}
         {selectedTab === "settings" && (
           <SettingsPane
             bearer={bearer}
             data={workspace.data}
             project={project}
+            deployedSlug={deployedSlug}
             onDeleteProject={() => deleteProject.mutate()}
             deleting={deleteProject.isPending}
           />

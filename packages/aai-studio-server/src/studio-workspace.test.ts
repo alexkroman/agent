@@ -43,7 +43,6 @@ describe("syncWorkspaceSource (aai push)", () => {
   test("preserves deploy/preview metadata across a files replacement", async () => {
     const store = createMemoryWorkspaceStore();
     await createWorkspace(store, "s", "p", {
-      kind: "agent",
       files,
       deployedSlug: "p",
       deployedHash: filesHash(files),
@@ -127,7 +126,6 @@ describe("workspace CRUD", () => {
   test("create/get round-trips files and deployedSlug", async () => {
     const store = createMemoryWorkspaceStore();
     await createWorkspace(store, "scope1", "proj", {
-      kind: "agent",
       files: { "agent.ts": "code" },
       deployedSlug: "my-slug",
     });
@@ -140,15 +138,15 @@ describe("workspace CRUD", () => {
   test("create stamps the files hash so reads never recompute it", async () => {
     const store = createMemoryWorkspaceStore();
     const files = { "agent.ts": "code" };
-    await createWorkspace(store, "s", "p", { kind: "agent", files });
+    await createWorkspace(store, "s", "p", { files });
     const ws = await getWorkspace(store, "s", "p");
     expect(ws?.hash).toBe(filesHash(files));
   });
 
   test("creating an existing project conflicts", async () => {
     const store = createMemoryWorkspaceStore();
-    await createWorkspace(store, "s", "p", { kind: "agent", files: { "agent.ts": "winner" } });
-    await expect(createWorkspace(store, "s", "p", { kind: "agent", files: {} })).rejects.toThrow(
+    await createWorkspace(store, "s", "p", { files: { "agent.ts": "winner" } });
+    await expect(createWorkspace(store, "s", "p", { files: {} })).rejects.toThrow(
       WorkspaceConflictError,
     );
     // The loser did not reset the winner's files.
@@ -162,16 +160,16 @@ describe("workspace CRUD", () => {
 
   test("delete removes the project", async () => {
     const store = createMemoryWorkspaceStore();
-    await createWorkspace(store, "s", "p", { kind: "agent", files: {} });
+    await createWorkspace(store, "s", "p", { files: {} });
     await deleteWorkspace(store, "s", "p");
     expect(await getWorkspace(store, "s", "p")).toBeNull();
   });
 
   test("listProjects returns only the scope's projects, sorted", async () => {
     const store = createMemoryWorkspaceStore();
-    await createWorkspace(store, "s1", "beta", { kind: "agent", files: {} });
-    await createWorkspace(store, "s1", "alpha", { kind: "agent", files: {} });
-    await createWorkspace(store, "s2", "other", { kind: "agent", files: {} });
+    await createWorkspace(store, "s1", "beta", { files: {} });
+    await createWorkspace(store, "s1", "alpha", { files: {} });
+    await createWorkspace(store, "s2", "other", { files: {} });
     expect(await listProjects(store, "s1")).toEqual(["alpha", "beta"]);
     expect(await listProjects(store, "s2")).toEqual(["other"]);
     expect(await listProjects(store, "s3")).toEqual([]);
@@ -185,11 +183,17 @@ describe("workspace CRUD", () => {
     await store.put("s", "null-files", { files: null, updatedAt: 1 }, null);
     await store.put("s", "array-files", { files: [], updatedAt: 1 }, null);
     await store.put("s", "array-doc", [{ files: {} }], null);
-    // No kind would select no system prompt.
+    // A legacy `kind` (the retired Voice agent / Workflow switch) is ignored,
+    // whatever its value — documents written before it was retired still read.
     await store.put("s", "no-kind", { files: {}, hash: "h", updatedAt: 1 }, null);
-    await store.put("s", "odd-kind", { kind: "phone", files: {}, hash: "h", updatedAt: 1 }, null);
-    expect(await getWorkspace(store, "s", "no-kind")).toBeNull();
-    expect(await getWorkspace(store, "s", "odd-kind")).toBeNull();
+    await store.put(
+      "s",
+      "old-kind",
+      { kind: "workflow", files: {}, hash: "h", updatedAt: 1 },
+      null,
+    );
+    expect(await getWorkspace(store, "s", "no-kind")).not.toBeNull();
+    expect(await getWorkspace(store, "s", "old-kind")).not.toBeNull();
     expect(await getWorkspace(store, "s", "scalar")).toBeNull();
     expect(await getWorkspace(store, "s", "null-files")).toBeNull();
     expect(await getWorkspace(store, "s", "array-files")).toBeNull();
@@ -199,11 +203,11 @@ describe("workspace CRUD", () => {
   test("rejects path traversal in file names", async () => {
     const store = createMemoryWorkspaceStore();
     await expect(
-      createWorkspace(store, "s", "p", { kind: "agent", files: { "../evil.ts": "x" } }),
+      createWorkspace(store, "s", "p", { files: { "../evil.ts": "x" } }),
     ).rejects.toThrow(/Invalid file path/);
-    await expect(
-      createWorkspace(store, "s", "p2", { kind: "agent", files: { "/abs.ts": "x" } }),
-    ).rejects.toThrow(/Invalid file path/);
+    await expect(createWorkspace(store, "s", "p2", { files: { "/abs.ts": "x" } })).rejects.toThrow(
+      /Invalid file path/,
+    );
   });
 
   /**
@@ -215,7 +219,7 @@ describe("workspace CRUD", () => {
    */
   test("normalizes file paths, so one file is never two keys", async () => {
     const store = createMemoryWorkspaceStore();
-    await createWorkspace(store, "s", "p", { kind: "agent", files: { "./agent.ts": "code" } });
+    await createWorkspace(store, "s", "p", { files: { "./agent.ts": "code" } });
     expect((await getWorkspace(store, "s", "p"))?.files).toEqual({ "agent.ts": "code" });
 
     // Both spellings in ONE write: they always denoted one file, and the later
@@ -232,7 +236,7 @@ describe("workspace CRUD", () => {
     // for a stored `agent.ts` is byte-identical: no version bump, no preview
     // churn — on every push, not just the first.
     const store = createMemoryWorkspaceStore();
-    await createWorkspace(store, "s", "p", { kind: "agent", files: { "agent.ts": "code" } });
+    await createWorkspace(store, "s", "p", { files: { "agent.ts": "code" } });
     const result = await syncWorkspaceSource(store, "s", "p", { "./agent.ts": "code" });
     expect(result.changed).toBe(false);
   });
@@ -241,7 +245,7 @@ describe("workspace CRUD", () => {
 describe("mutateWorkspace", () => {
   test("applies the mutation and stamps a fresh hash", async () => {
     const store = createMemoryWorkspaceStore();
-    await createWorkspace(store, "s", "p", { kind: "agent", files: { "agent.ts": "a" } });
+    await createWorkspace(store, "s", "p", { files: { "agent.ts": "a" } });
     const ws = await mutateWorkspace(store, "s", "p", (current) => ({
       ...current,
       files: { ...current.files, "b.ts": "b" },
@@ -260,7 +264,6 @@ describe("mutateWorkspace", () => {
   test("mutate returning null declines the write", async () => {
     const store = createMemoryWorkspaceStore();
     const created = await createWorkspace(store, "s", "p", {
-      kind: "agent",
       files: { "agent.ts": "a" },
     });
     const ws = await mutateWorkspace(store, "s", "p", () => null);
@@ -270,7 +273,7 @@ describe("mutateWorkspace", () => {
 
   test("a mid-mutation delete does not resurrect the project", async () => {
     const store = createMemoryWorkspaceStore();
-    await createWorkspace(store, "s", "p", { kind: "agent", files: { "agent.ts": "a" } });
+    await createWorkspace(store, "s", "p", { files: { "agent.ts": "a" } });
     const result = await mutateWorkspace(store, "s", "p", async (current) => {
       await deleteWorkspace(store, "s", "p");
       return current;
@@ -297,7 +300,7 @@ describe("mutateWorkspace", () => {
     // another machine, so the versioned put conflicts and the mutation is
     // re-derived against a fresh read — both edits survive.
     const store = createMemoryWorkspaceStore();
-    await createWorkspace(store, "s", "p", { kind: "agent", files: { "agent.ts": "a" } });
+    await createWorkspace(store, "s", "p", { files: { "agent.ts": "a" } });
     let raced = false;
     const ws = await mutateWorkspace(store, "s", "p", async (current) => {
       if (!raced) {
@@ -311,7 +314,7 @@ describe("mutateWorkspace", () => {
 
   test("a second consecutive conflict surfaces the error", async () => {
     const store = createMemoryWorkspaceStore();
-    await createWorkspace(store, "s", "p", { kind: "agent", files: {} });
+    await createWorkspace(store, "s", "p", { files: {} });
     let n = 0;
     await expect(
       mutateWorkspace(store, "s", "p", async (current) => {
@@ -323,7 +326,7 @@ describe("mutateWorkspace", () => {
 
   test("serializes concurrent local mutations on the same project", async () => {
     const store = createMemoryWorkspaceStore();
-    await createWorkspace(store, "s", "p", { kind: "agent", files: {} });
+    await createWorkspace(store, "s", "p", { files: {} });
     const order: string[] = [];
     const gate = Promise.withResolvers<void>();
     const first = mutateWorkspace(store, "s", "p", async (current) => {
@@ -345,8 +348,8 @@ describe("mutateWorkspace", () => {
 
   test("different projects do not block each other", async () => {
     const store = createMemoryWorkspaceStore();
-    await createWorkspace(store, "s", "p", { kind: "agent", files: {} });
-    await createWorkspace(store, "s", "p2", { kind: "agent", files: {} });
+    await createWorkspace(store, "s", "p", { files: {} });
+    await createWorkspace(store, "s", "p2", { files: {} });
     const gate = Promise.withResolvers<void>();
     const held = mutateWorkspace(store, "s", "p", async (current) => {
       await gate.promise;
@@ -393,7 +396,6 @@ describe("hasUnpublishedChanges", () => {
   // wrong tree, which is the one thing these assertions read.
   const at = (over: Partial<StudioWorkspace> = {}): StudioWorkspace => {
     const base: StudioWorkspace = {
-      kind: "agent",
       files: { "agent.ts": "a" },
       hash: "",
       updatedAt: 1,
@@ -477,7 +479,7 @@ describe("stampWorkspaceMeta", () => {
 
   async function seeded(): Promise<WorkspaceStore> {
     const store = createMemoryWorkspaceStore();
-    await createWorkspace(store, "scope", "proj", { kind: "agent", files });
+    await createWorkspace(store, "scope", "proj", { files });
     return store;
   }
 

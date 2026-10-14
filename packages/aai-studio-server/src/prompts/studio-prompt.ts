@@ -13,18 +13,11 @@
  * here. The preamble overrides the parts that don't
  * apply here (the CLI dev loop, npm installs) and describes the studio's
  * own tools.
- *
- * There is ONE prompt per {@link ProjectKind}: the preamble swaps its
- * mode-dependent fragments (`studio-preamble-mode.ts`) and the reference below
- * it is the same file either way — it documents both `agent()` and
- * `workflowApp()`, and a project that changes shape mid-conversation must not
- * lose half of it.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { createLogger } from "aai-server/logger";
-import type { ProjectKind } from "../studio-project-kind.ts";
 import { scaffoldDir } from "../studio-scaffold.ts";
 import { studioPreamble } from "./studio-preamble.ts";
 
@@ -94,8 +87,8 @@ export function scaffoldGuidePath(): string {
   return path.join(scaffoldDir(), "CLAUDE.md");
 }
 
-/** One composed prompt per project kind, built on first use. */
-const cachedPrompts = new Map<ProjectKind, string>();
+/** The composed prompt, built on first use. */
+let cachedPrompt: string | undefined;
 
 /** The guide's topic directory, beside the core `CLAUDE.md`. */
 const TOPIC_DIR = "agent-guide";
@@ -136,30 +129,27 @@ export function loadScaffoldGuide(guidePath: string = scaffoldGuidePath()): stri
   return core + topics.join("");
 }
 
-/** Pure composition: studio preamble for `kind` + guide (or the fallback). */
-export function composeStudioPrompt(guide: string | null, kind: ProjectKind): string {
-  return studioPreamble(kind) + (guide ?? FALLBACK_GUIDE);
+/** Pure composition: studio preamble + guide (or the fallback). */
+export function composeStudioPrompt(guide: string | null): string {
+  return studioPreamble() + (guide ?? FALLBACK_GUIDE);
 }
 
 /**
- * Compose the studio system prompt for a project of this kind: studio
- * preamble + the CLI's scaffold CLAUDE.md (or the compact fallback). Cached
- * per kind — the guide is static for the process lifetime, and a studio
- * replica serves both kinds.
+ * Compose the studio system prompt: studio preamble + the CLI's scaffold
+ * CLAUDE.md (or the compact fallback). Cached — the guide is static for the
+ * process lifetime.
  */
-export function studioSystemPrompt(kind: ProjectKind): string {
-  const cached = cachedPrompts.get(kind);
-  if (cached !== undefined) return cached;
+export function studioSystemPrompt(): string {
+  if (cachedPrompt !== undefined) return cachedPrompt;
   const guide = loadScaffoldGuide();
   if (!guide) {
     log.warn("scaffold CLAUDE.md not found; using built-in authoring guide");
   }
-  const prompt = composeStudioPrompt(guide, kind);
-  cachedPrompts.set(kind, prompt);
-  return prompt;
+  cachedPrompt = composeStudioPrompt(guide);
+  return cachedPrompt;
 }
 
 /** Test-only: clear the composed-prompt cache. */
 export function _resetStudioPromptCache(): void {
-  cachedPrompts.clear();
+  cachedPrompt = undefined;
 }

@@ -1,9 +1,7 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
-// The API pane's "Phone number" card: the per-carrier webhook URLs and the
-// signing-secret hint beside each one. It lived in Settings until the API pane
-// existed — a webhook URL is how a carrier CALLS this agent, which is that
-// pane's subject.
+// The Settings pane's "Phone number" card: the per-carrier webhook URLs and
+// the signing-secret hint beside each one.
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";

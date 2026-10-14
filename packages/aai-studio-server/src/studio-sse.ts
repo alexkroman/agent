@@ -9,7 +9,6 @@ import { createCoalescingRunner, createOwnedMap } from "@alexkroman1/aai/interna
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { registerLiveStream } from "aai-server/platform";
 import type { SSEStreamingApi } from "hono/streaming";
-import type { ProjectKind } from "./studio-project-kind.ts";
 import {
   hasGithubChanges,
   hasPreviewChanges,
@@ -42,7 +41,6 @@ export type ProjectPayload = {
    * touching a file, and a pusher only cares whether the FILES moved.
    */
   sourceHash: string;
-  kind: ProjectKind;
   deployedSlug?: string | undefined;
   /** Edits that have not been published (production staleness). */
   unpublished: boolean;
@@ -71,7 +69,6 @@ export function projectPayload(workspace: StudioWorkspace): ProjectPayload {
   return {
     files: workspace.files,
     sourceHash: workspace.hash,
-    kind: workspace.kind,
     unpublished: hasUnpublishedChanges(workspace),
     previewStale: hasPreviewChanges(workspace),
     githubStale: hasGithubChanges(workspace),

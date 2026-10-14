@@ -143,8 +143,8 @@ toolchain is missing. Anything else written for the CLI belongs in that subpath.
 
 **A prompt-directory URL keeps its trailing slash**
 (`new URL("../studio-prompts/", import.meta.url)` in `_eval-prompt.ts`): without
-it `new URL("agent.md", …)` replaces the last segment. Path-rewriting sweeps
-drop it.
+it `new URL("system-prompt.md", …)` replaces the last segment. Path-rewriting
+sweeps drop it.
 
 Testing:
 [`packages/aai-guest-studio/CODING-AGENT-TESTS-CLAUDE.md`](CODING-AGENT-TESTS-CLAUDE.md)

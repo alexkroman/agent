@@ -8,14 +8,8 @@
  */
 
 import { describe, expect, test } from "vitest";
-import {
-  type FakeGuest,
-  fakeGuest,
-  makeBroker,
-  PROJECT,
-  SCOPE,
-} from "./_studio-session-test-utils.ts";
-import { createWorkspace, mutateWorkspace } from "./studio-workspace.ts";
+import { fakeGuest, makeBroker, PROJECT, SCOPE } from "./_studio-session-test-utils.ts";
+import { mutateWorkspace } from "./studio-workspace.ts";
 
 describe("session install ladder", () => {
   test("boots a sandbox, installs the session, and returns the public chat URL", async () => {
@@ -42,33 +36,16 @@ describe("session install ladder", () => {
     await broker.dispose();
   });
 
-  // The switcher's whole payoff: the workspace's `kind` is what selects the
-  // system prompt, and the selection happens at INSTALL time — so it survives
-  // every reload, re-broker and cross-replica adopt, which a per-request flag
-  // would not. Asserted from the guest's own init params, because that object
-  // is the only thing the coding agent ever sees.
-  test("installs the system prompt the project's kind selects", async () => {
-    const agentGuest = fakeGuest();
-    const workflowGuest = fakeGuest("wss://tunnel2.example:443");
-    const { broker, workspaces } = await makeBroker([agentGuest, workflowGuest]);
-    await createWorkspace(workspaces, SCOPE, "flow-proj", {
-      files: { "agent.ts": "// v1" },
-      kind: "workflow",
-    });
-
+  // Asserted from the guest's own init params, because that object is the
+  // only thing the coding agent ever sees.
+  test("installs the voice-agent system prompt", async () => {
+    const guest = fakeGuest();
+    const { broker } = await makeBroker([guest]);
     await broker.ensureSession(SCOPE, PROJECT, "caller-key");
-    await broker.ensureSession(SCOPE, "flow-proj", "caller-key");
-
-    const systemFor = (guest: FakeGuest): string | undefined => {
-      const init = guest.requests.find((r) => r.method === "studio/session-init");
-      return (init?.params as { system: string } | undefined)?.system;
-    };
-    // Each prompt states its own mode's default and not the other's — the
-    // failure this guards is a workflow project's agent writing a voice agent.
-    expect(systemFor(agentGuest)).toContain("Default to a VOICE agent");
-    expect(systemFor(agentGuest)).not.toContain("Default to a STATIC workflow app");
-    expect(systemFor(workflowGuest)).toContain("Default to a STATIC workflow app");
-    expect(systemFor(workflowGuest)).not.toContain("Default to a VOICE agent");
+    const init = guest.requests.find((r) => r.method === "studio/session-init");
+    const system = (init?.params as { system: string } | undefined)?.system;
+    expect(system).toContain("Default to a VOICE agent");
+    expect(system).not.toContain("Default to a STATIC workflow app");
     await broker.dispose();
   });
 

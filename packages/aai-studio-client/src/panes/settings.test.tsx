@@ -1,19 +1,17 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
 // The Settings pane: a full page (not a dropdown) holding the project's own
-// configuration — GitHub sync and Delete project.
+// configuration — GitHub sync, the carrier webhook URLs and Delete project.
 // A change here writes nothing into the conversation — the transcript is the
-// user's. Every section works with no published slug, and they run in a fixed
-// order (Sync to GitHub when the platform has a GitHub App, Danger zone).
-// Secrets used to sit between them and are their own pane now
-// (panes/secrets.test.tsx); the Database switch is gone with the per-app
-// databases it turned on; and the "Work locally" card of `aai pull` commands
-// is gone because GitHub sync is the one way out of the studio the product
+// user's. The sections run in a fixed order (Sync to GitHub when the platform
+// has a GitHub App, Phone number, Danger zone). Secrets are their own pane
+// (panes/secrets.test.tsx), and there is no "Work locally" card of `aai pull`
+// commands because GitHub sync is the one way out of the studio the product
 // points at.
 
 import { fireEvent, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
-import { renderWithClient, stubFetch } from "../_test-utils.ts";
+import { jsonResponse, renderWithClient, stubFetch } from "../_test-utils.ts";
 import { SettingsPane } from "./settings.tsx";
 
 /**
@@ -29,12 +27,16 @@ function cardTitles(): (string | null)[] {
   return [...document.querySelectorAll(".eyebrow")].map((el) => el.textContent);
 }
 
-function renderPanel(onDeleteProject = vi.fn()) {
+/** The phone card's secrets read — the one request this pane makes itself. */
+const SECRETS = { "/studio/projects/demo/secret": () => jsonResponse({ vars: [], pending: [] }) };
+
+function renderPanel(onDeleteProject = vi.fn(), deployedSlug?: string) {
   renderWithClient(
     <SettingsPane
       project="demo"
       bearer="test-bearer"
       data={undefined}
+      deployedSlug={deployedSlug}
       onDeleteProject={onDeleteProject}
       deleting={false}
     />,
@@ -43,36 +45,41 @@ function renderPanel(onDeleteProject = vi.fn()) {
 
 describe("SettingsPane", () => {
   test("the sections run in the order a project needs them", () => {
-    // Getting the code out first, destruction last: GitHub sync, then Delete
-    // project at the bottom. With no GitHub App configured (the stub answers
-    // every read with `{}`) the GitHub card renders nothing, so Danger zone is
-    // the whole pane — which is exactly what a self-hosted deploy sees.
-    //
-    // FIVE subjects left this pane and the list is what says so. The carrier
-    // webhook URLs and the workflow runs are both about a deployed agent — how
-    // something calls it, and what it is still doing — which is the API and
-    // Workflows panes' subject. Secrets left for a different reason: a
-    // textarea of KEY=value lines was the whole UI for the configuration
-    // people come back to most. The Database switch left because there are no
-    // per-app databases to switch on: durable runs, the run journal and session
-    // state are all the platform's. And the "Work locally" card — install /
-    // `aai login` / `aai pull` / `aai dev` with copy buttons — left because it
-    // was a second answer to the question the GitHub card answers, and the
-    // product points at GitHub sync. Everything remaining works from the moment
-    // a project exists, which is what makes "nothing here gates on a deploy"
-    // literally true rather than nearly.
-    stubFetch({});
+    // Getting the code out first, destruction last. With no GitHub App
+    // configured (the stub answers every read with `{}`) the GitHub card
+    // renders nothing — which is exactly what a self-hosted deploy sees.
+    stubFetch(SECRETS);
     renderPanel();
-    expect(cardTitles()).toEqual(["Danger zone"]);
+    expect(cardTitles()).toEqual(["Phone number", "Danger zone"]);
   });
 
-  test("no secrets here — the pane neither reads nor writes the secret route", () => {
-    // The whole subject moved to its own pane, so a request to that route from
-    // this one would mean a copy came back.
-    const fetchMock = stubFetch({});
+  test("secrets are only READ here — the phone card's signing-secret hints", async () => {
+    // Editing secrets is the Secrets pane's; a write from this one would mean
+    // a copy came back.
+    const fetchMock = stubFetch(SECRETS);
     renderPanel();
     expect(screen.queryByText("Save secrets")).toBeNull();
-    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/secret"))).toBe(false);
+    await vi.waitFor(() =>
+      expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith("/secret"))).toBe(true),
+    );
+    const writes = fetchMock.mock.calls.filter(
+      ([url, init]) => String(url).endsWith("/secret") && (init?.method ?? "GET") !== "GET",
+    );
+    expect(writes).toEqual([]);
+  });
+
+  test("the phone card waits for a Publish, then shows each carrier's URL", () => {
+    stubFetch(SECRETS);
+    renderPanel(vi.fn());
+    expect(screen.getByText("Publish this project to get its webhook URL.")).toBeInTheDocument();
+  });
+
+  test("a published project gets the Twilio and Telnyx webhook URLs", () => {
+    stubFetch(SECRETS);
+    renderPanel(vi.fn(), "demo-x7k2mq");
+    const origin = window.location.origin;
+    expect(screen.getByText(`${origin}/demo-x7k2mq/phone?carrier=twilio`)).toBeInTheDocument();
+    expect(screen.getByText(`${origin}/demo-x7k2mq/phone?carrier=telnyx`)).toBeInTheDocument();
   });
 
   test("no aai pull anywhere — GitHub sync is the way out of the studio", () => {
@@ -80,14 +87,14 @@ describe("SettingsPane", () => {
     // kind of thing that comes back in a "helpful" follow-up. Assert on the
     // command rather than the card title: the title is a position in
     // `cardTitles()` above, while the command is what a reader would paste.
-    stubFetch({});
+    stubFetch(SECRETS);
     renderPanel();
     expect(screen.queryByText(/aai pull/)).toBeNull();
     expect(screen.queryByText("Work locally")).toBeNull();
   });
 
   test("Delete project asks for confirmation before firing", () => {
-    stubFetch({});
+    stubFetch(SECRETS);
     const onDeleteProject = vi.fn();
     vi.stubGlobal(
       "confirm",
@@ -105,7 +112,7 @@ describe("SettingsPane", () => {
   });
 
   test("Delete project is available even on published projects", async () => {
-    stubFetch({});
+    stubFetch(SECRETS);
     renderPanel();
     expect(await screen.findByText("Delete project")).toBeInTheDocument();
   });

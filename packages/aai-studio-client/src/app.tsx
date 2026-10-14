@@ -8,7 +8,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type ProjectKind, type StudioStatus } from "./api.ts";
+import { api, type StudioStatus } from "./api.ts";
 import { errorText } from "./api-error.ts";
 import { authRejection, useAuthRecovery } from "./auth-recovery.ts";
 import { AccountMenu } from "./components/account-menu.tsx";
@@ -86,12 +86,7 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
     // The SERVER names the project — a base derived from the prompt plus a
     // random suffix, v0-style, via the same generator slugless CLI deploys
     // use (aai-server/slug-generate.ts). The client never mints names.
-    //
-    // `kind` is the hero's switcher position and is only settable HERE: the
-    // server stamps it on the workspace at create time, where it selects the
-    // coding agent's system prompt for every later session install.
-    mutationFn: ({ prompt, kind }: { prompt: string; kind: ProjectKind }) =>
-      api.createProject(bearer, { prompt, kind }),
+    mutationFn: (prompt: string) => api.createProject(bearer, { prompt }),
     onSuccess: (created) => {
       selectProject(created.name);
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
@@ -103,15 +98,14 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
   });
 
   // Hero start: typing the first message creates a project (named from the
-  // prompt server-side, of the kind the hero's switcher selected) and forwards
-  // it as the first chat turn.
-  const startWithPrompt = (prompt: string, kind: ProjectKind) => {
+  // prompt server-side) and forwards it as the first chat turn.
+  const startWithPrompt = (prompt: string) => {
     // The hero disables while pending; this guard covers the same-tick
     // race (Enter twice before the re-render) so one prompt never creates
     // two projects.
     if (createProject.isPending) return;
     setPendingPrompt(prompt);
-    createProject.mutate({ prompt, kind });
+    createProject.mutate(prompt);
   };
 
   const toggleAccount = () => setAccountOpen((v) => !v);

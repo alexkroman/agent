@@ -7,7 +7,6 @@ import { generatedSlug, SafePathSchema, VALID_SLUG_RE } from "aai-server/config"
 import { z } from "zod";
 import { GITHUB_NAME_RE } from "./studio-github-sync.ts";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_MESSAGE_BYTES } from "./studio-limits.ts";
-import { PROJECT_KINDS } from "./studio-project-kind.ts";
 
 // Re-exported from studio-limits.ts (the dependency-free limits home).
 export {
@@ -102,13 +101,6 @@ const PROMPT_FILLER_WORDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * What the project builds, as the create body carries it — the new-project
- * screen's Agent/Workflow switcher. Required: the workspace is always stamped
- * with the kind somebody chose.
- */
-export const ProjectKindSchema = z.enum(PROJECT_KINDS);
-
-/**
  * Create a project. The server GENERATES the name — from `prompt` when one is
  * given (the guided chat-first flow), else from random words. Name generation
  * deliberately lives server-side so the studio and the CLI deploy path
@@ -119,8 +111,11 @@ export const CreateProjectSchema = z
   .object({
     /** First chat message — seeds the generated name. */
     prompt: z.string().max(MAX_NAME_PROMPT).optional(),
-    /** Voice agent or workflow app — decides the coding agent's system prompt. */
-    kind: ProjectKindSchema,
+    /**
+     * Retired (the Voice agent / Workflow switch is gone). Accepted and ignored
+     * so a tab loaded before the deploy can still create a project.
+     */
+    kind: z.enum(["agent", "workflow"]).optional(),
   })
   // Strict, so a caller still naming the project is refused rather than handed
   // a generated name it did not ask for.

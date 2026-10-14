@@ -19,7 +19,6 @@ import {
   checkCapabilities,
   checkMode,
   checkUi,
-  checkWorkflowShape,
   EXPECTATIONS,
   type Expectation,
   parseLoadedConfig,
@@ -27,7 +26,7 @@ import {
 import { templateNamed } from "./studio-template-contract.ts";
 
 /** Every starter, flattened across the hero's two switcher positions. */
-const starters = Object.values(STARTERS).flat();
+const starters = STARTERS;
 
 /**
  * A prompt naming a template makes the TEMPLATE the ask — its files carry the
@@ -142,7 +141,7 @@ describe("starter expectations", () => {
 /**
  * The half of the grader only the EVAL tier used to reach.
  *
- * `parseLoadedConfig`, `checkMode`, `checkWorkflowShape` and `checkUi` are
+ * `parseLoadedConfig`, `checkMode` and `checkUi` are
  * called from `studio-starter.eval.test.ts` and nowhere else, so for as long as this
  * corpus lived under `scripts/` — outside any package's coverage report — they
  * were exercised only by a run that needs a live key and a live studio. They are
@@ -195,45 +194,6 @@ describe("reading a built agent", () => {
       ["a provider-less pipeline agent", { name: "X", mode: "pipeline", tools: ["a"] }],
     ] as const)("%s passes with no note", (_label, config) => {
       expect(checkMode(config)).toEqual({ ok: true });
-    });
-  });
-
-  describe("checkWorkflowShape", () => {
-    const complete = {
-      "agent.ts": "export default workflowApp({ name: 'W' })",
-      "workflows/main.ts": "export default async function run() {}",
-      "client.tsx": "export default mountPage(() => null)",
-    };
-
-    test("all four pieces present is the passing shape", () => {
-      expect(checkWorkflowShape(complete)).toEqual({ ok: true });
-    });
-
-    // `test.each` rather than a loop: the reporter names the case that failed,
-    // which is what the loop's `expect(result.ok, `expected a failure matching
-    // ${pattern}`)` label existed to hand-roll.
-    test.each([
-      ["no workflowApp() declaration", { ...complete, "agent.ts": "export default agent({})" }],
-      [
-        "no workflows/ body",
-        { "agent.ts": complete["agent.ts"], "client.tsx": complete["client.tsx"] },
-      ],
-      [
-        "no client.tsx (the front door)",
-        { "agent.ts": complete["agent.ts"], "workflows/main.ts": "x" },
-      ],
-      [
-        "client.tsx does not mount with mountPage()",
-        { ...complete, "client.tsx": "export default mountClient(() => null)" },
-      ],
-    ])("names the missing piece: %s", (problem, files) => {
-      const result = checkWorkflowShape(files);
-      expect(result.ok).toBe(false);
-      expect(result.note).toContain(problem);
-    });
-
-    test("an empty workspace fails rather than throwing", () => {
-      expect(checkWorkflowShape(undefined).ok).toBe(false);
     });
   });
 

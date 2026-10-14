@@ -14,9 +14,7 @@ describe("isStudioPath", () => {
     ["/studio", true],
     ["/studio/", true],
     ["/studio/chat/my-project", true],
-    // The public API page. Signed-out readers land here, and it is a studio
-    // path like any other — the dispatcher does not know or care that this one
-    // needs no session.
+    // Any path under the reserved prefix is the studio's, routed or not.
     ["/studio/api/my-agent", true],
     ["/studio-assets/app.js", true],
     // The agent surface. `/health` in particular must stay local: it is what

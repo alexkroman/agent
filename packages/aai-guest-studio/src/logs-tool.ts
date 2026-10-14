@@ -6,9 +6,8 @@
  * a bundle loaded in this sandbox. None of them can see the one thing that only
  * happens with a real caller on the line — a tool that throws mid-call, a
  * provider key the deployed agent does not have, the `console.error` on the
- * branch nobody exercised. Until this tool the evidence existed (the studio's
- * Logs pane shows it) and the agent's only route to it was asking the user to
- * read it out.
+ * branch nobody exercised. This tool is the studio's only reader of that
+ * evidence (outside the studio, `aai logs` prints the same ring).
  *
  * ## It is a host RPC, not a fetch
  *
@@ -81,7 +80,7 @@ function parseResult(value: unknown): LogsResult | null {
   };
 }
 
-/** `HH:MM:SS.mmm` — the same shape the Logs pane and `aai logs` print. */
+/** `HH:MM:SS.mmm` — the same shape `aai logs` prints. */
 function formatTime(at: number): string {
   const d = new Date(at);
   const pad = (n: number, width = 2) => String(n).padStart(width, "0");

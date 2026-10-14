@@ -22,7 +22,6 @@
  */
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { SLUG_PATTERN_SOURCE } from "aai-server/config";
 import type { ApiKeyVerifier, StudioAuth } from "aai-server/http";
 import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "aai-server/http";
 import type { PlatformEvents } from "aai-server/platform";
@@ -132,19 +131,6 @@ export function createStudioApp(opts: StudioAppOpts): {
   // mount so the page wins over the `/studio` router (which has no route
   // here, but does hang auth middleware under `/studio/*`).
   app.get("/studio/chat/:project", handleStudioPage);
-  // The PUBLIC API page for one deployed agent (`/studio/api/<slug>`) — the
-  // same shell again, and the client renders it without ever asking who is
-  // reading. Deliberately registered here, above the `/studio` router, so it
-  // never passes under the auth middleware that router hangs on its own
-  // subtrees: the whole point of the page is that a link to it works for
-  // somebody with no studio account. It carries no ownership check for the
-  // same reason it needs no auth — everything the page then shows is read by
-  // the BROWSER from the agent's own already-public routes (`client-config`,
-  // `GET /workflows`), so this response is the app shell and nothing else.
-  // The slug pattern is the platform's own, so a path that could never name an
-  // agent falls through to the 404 rather than serving a shell that will
-  // document nothing.
-  app.get(`/studio/api/:slug{${SLUG_PATTERN_SOURCE}}`, handleStudioPage);
   app.get("/favicon.ico", handleStudioFavicon);
   app.get("/robots.txt", handleStudioRobots);
   app.get("/studio-assets/:path{.+}", studioClientAssetHandler(opts.isDraining));

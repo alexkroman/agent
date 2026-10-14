@@ -3,7 +3,6 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { UIMessage } from "ai";
-import { parse } from "dotenv";
 import { ApiError } from "./api-error.ts";
 import { type StreamDownReason, watchEventStream } from "./api-events.ts";
 import {
@@ -27,7 +26,6 @@ import {
   isProjectData,
   isProjectNames,
   type ProjectData,
-  type ProjectKind,
   type StudioStatus,
 } from "./api-types.ts";
 
@@ -53,7 +51,6 @@ export type {
   GithubStatus,
   GithubSyncResult,
   ProjectData,
-  ProjectKind,
   StudioStatus,
 } from "./api-types.ts";
 
@@ -262,13 +259,11 @@ export const api = {
    * derived from the creating chat prompt plus a random suffix, v0-style
    * (`contact-form-x7k2mq`) — so names are minted in exactly one place,
    * shared with the CLI's slugless deploy path.
-   *
-   * `kind` is the hero's switcher position, which the server requires.
    */
-  createProject: (key: string, opts: { prompt?: string; kind: ProjectKind }) =>
-    request<{ name: string; files: Record<string, string>; kind: ProjectKind }>(key, "/projects", {
+  createProject: (key: string, opts: { prompt?: string }) =>
+    request<{ name: string; files: Record<string, string> }>(key, "/projects", {
       method: "POST",
-      body: JSON.stringify(omitUndefined({ prompt: opts.prompt, kind: opts.kind })),
+      body: JSON.stringify(omitUndefined({ prompt: opts.prompt })),
     }),
 
   /** Delete a project (its workspace and chat). Deployed agents stay live. */
@@ -459,15 +454,3 @@ export const api = {
       method: "DELETE",
     }),
 };
-
-/**
- * Parse "KEY=value" lines from the secrets textarea.
- *
- * People paste straight from a .env file, so this must speak real .env
- * syntax — including multi-line quoted values (PEM keys, service-account
- * JSON) and `\n` escapes in double-quoted values — hence dotenv's `parse`
- * rather than a hand-rolled line splitter.
- */
-export function parseSecrets(text: string): Record<string, string> {
-  return parse(text);
-}

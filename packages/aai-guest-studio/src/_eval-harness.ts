@@ -52,7 +52,7 @@ import { setHostSend } from "aai-guest-core/rpc";
 import { type FakeHostChannel, installFakeHostChannel } from "aai-guest-core/test-utils";
 import type { StudioSession } from "aai-guest-core/types";
 import { afterEach, beforeEach, describe, test } from "vitest";
-import { type StudioPromptKind, shippedStudioPrompt } from "./_eval-prompt.ts";
+import { shippedStudioPrompt } from "./_eval-prompt.ts";
 import { createStudioAgent, STUDIO_TOOL_TIMEOUT_MS } from "./agent.ts";
 import { typecheckWorkspaceDir } from "./build.ts";
 import { studioBundleAccess } from "./bundle-access.ts";
@@ -92,7 +92,7 @@ const DEFAULT_STUDIO_EVAL_STEPS = 14;
 /**
  * The base system prompt a case runs on — NOT the shipped one.
  *
- * The studio's is `studioSystemPrompt(kind)` in
+ * The studio's is `studioSystemPrompt()` in
  * `packages/aai-studio-server/src/prompts/`, and `guest-package-boundary`
  * denies this package that import — correctly, since the guest must not link
  * against the host. So this is deliberately thin, and thin in one specific
@@ -187,13 +187,13 @@ export type StudioEvalCaseOptions = {
    * {@link STUDIO_EVAL_PROMPT} thin precisely so those cases cannot be
    * pre-answered by it. It is wrong for a case whose subject is an OUTCOME:
    * what the agent builds from a product prompt is largely a measurement of the
-   * studio's own prompt, so those pass a kind here and run the shipped text.
+   * studio's own prompt, so those pass `true` here and run the shipped text.
    *
    * Per case rather than per file, because the suite legitimately holds both
    * kinds of claim and a global switch would silently change what the refusal
    * cases mean.
    */
-  readonly studioPrompt?: StudioPromptKind;
+  readonly studioPrompt?: boolean;
 };
 
 /** How a case is declared. Named `test` at the call site — see `EvalTest`. */
@@ -371,10 +371,7 @@ async function runStudioCase(run: StudioCaseRun): Promise<void> {
       // rather than falling back — a case that asked for the studio's prompt
       // and quietly got the harness's is the one failure worth more than the
       // case itself.
-      system:
-        options?.studioPrompt === undefined
-          ? STUDIO_EVAL_PROMPT
-          : shippedStudioPrompt(options.studioPrompt),
+      system: options?.studioPrompt === true ? shippedStudioPrompt() : STUDIO_EVAL_PROMPT,
       model: studioEvalModel(),
       maxSteps: options?.maxSteps ?? DEFAULT_STUDIO_EVAL_STEPS,
       maxOutputTokens: 32_000,

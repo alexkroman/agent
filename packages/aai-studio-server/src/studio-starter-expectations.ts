@@ -349,43 +349,6 @@ export function checkMode(config: LoadedConfig | undefined): CheckResult {
   return { ok: false, note: `mode=${config.mode}, expected pipeline (studio default)` };
 }
 
-/**
- * A WORKFLOW project's shape, which is what {@link checkMode} cannot ask about.
- *
- * The hero's Workflow position creates the project under a system prompt whose
- * default is a STATIC workflow app, so "pipeline mode with all three stages on
- * AssemblyAI" is the wrong question here — there is no session and no pipeline.
- * The right one is whether the four pieces that make a workflow app exist, and
- * each is a thing the coding agent reaches for the OTHER shape by omitting: a
- * `workflowApp()` declaration rather than an `agent()`, a body under
- * `workflows/` (the only directory the build transforms, so a body in agent.ts
- * is undurable and silent about it), and a page — which is not optional here,
- * because it is the product's whole front door — mounted with `mountPage()`
- * rather than `mountClient()`, since a static page opened as a session dials a
- * `/websocket`
- * the server declines.
- *
- * Checked against the FILES rather than the loaded config for the same reason
- * the capability check reads agent.ts: these are structural facts the agent
- * cannot edit a test to satisfy.
- */
-export function checkWorkflowShape(files: Record<string, string> | undefined): CheckResult {
-  const source = files?.["agent.ts"] ?? "";
-  const client = files?.["client.tsx"];
-  const problems: string[] = [];
-  if (!/\bworkflowApp\s*\(/.test(source)) problems.push("no workflowApp() declaration");
-  if (!Object.keys(files ?? {}).some((p) => p.startsWith("workflows/"))) {
-    problems.push("no workflows/ body");
-  }
-  if (client === undefined) problems.push("no client.tsx (the front door)");
-  else if (!/\bmountPage\s*\(/.test(client)) {
-    problems.push("client.tsx does not mount with mountPage()");
-  }
-  return problems.length === 0
-    ? { ok: true }
-    : { ok: false, note: `workflow-shape: ${problems.join("; ")}` };
-}
-
 /** Did the run produce a custom client, when the starter wanted one? */
 export function checkUi(
   expectation: Expectation | undefined,

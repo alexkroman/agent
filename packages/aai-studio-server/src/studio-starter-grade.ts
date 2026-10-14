@@ -6,8 +6,8 @@
  * that file is an `*.eval.test.ts` — excluded by this package's
  * `vitest.config.ts` and selected only by `test:eval`,
  * so nothing in the unit run and nothing in any coverage report reached it.
- * Every function this one CALLS (`checkMode`, `checkUi`, `checkWorkflowShape`,
- * `parseLoadedConfig`, `checkCapabilities`) was unit-tested next door while the
+ * Every function this one CALLS (`checkMode`, `checkUi`, `parseLoadedConfig`,
+ * `checkCapabilities`) was unit-tested next door while the
  * thing that decides which of them run, and under what label, was exercised
  * only by a run needing a live key and a live studio.
  *
@@ -33,7 +33,6 @@ import {
   checkCapabilities,
   checkMode,
   checkUi,
-  checkWorkflowShape,
   EXPECTATIONS,
   type Expectation,
   parseLoadedConfig,
@@ -46,8 +45,6 @@ const BY_LABEL: ReadonlyMap<string, Expectation> = new Map(EXPECTATIONS.map((e) 
 export type StarterRun = {
   /** The starter's label — the key an expectation is looked up by. */
   readonly label: string;
-  /** The project KIND that selected the coding-agent prompt. */
-  readonly kind: string;
   readonly turn: StudioTurn;
   /** The synced workspace, or undefined when the sync never landed. */
   readonly files: Record<string, string> | undefined;
@@ -60,13 +57,12 @@ export type StarterRun = {
  * problems a case hit — never verified, verified-and-broken, out of steps —
  * rather than reporting one "shippable" bit.
  */
-export function gradeStarter(t: EvalRecorder, { label, kind, turn, files }: StarterRun): void {
+export function gradeStarter(t: EvalRecorder, { label, turn, files }: StarterRun): void {
   const last = turn.testAgentRuns.at(-1);
   const built = last !== undefined && !last.buildFailed && !last.testsFailed;
   const source = files?.["agent.ts"] ?? "";
   const config = parseLoadedConfig(turn.lastTestAgentOutput);
   const expectation = BY_LABEL.get(label);
-  const workflow = kind === "workflow";
   const stepCap = evalStepCapHint();
 
   t.check(turn.testAgentRuns.length > 0, "verified (ran test_agent)", "never ran test_agent");
@@ -96,18 +92,13 @@ export function gradeStarter(t: EvalRecorder, { label, kind, turn, files }: Star
     t.check(!caps.tooFewTools, "declares enough tools", `only ${caps.toolCount}`);
   }
 
-  // A workflow project is graded on the workflow-app SHAPE instead of pipeline
-  // mode and a live-state client: it has no session, so those are questions
-  // about a thing that does not exist here.
-  const mode = workflow ? checkWorkflowShape(files) : checkMode(config);
-  t.check(mode.ok, workflow ? "workflow-app shape" : "pipeline mode", mode.note ?? "");
-  if (!workflow) {
-    // `checkUi` is the whole UI claim, and a bare "did it write a client.tsx"
-    // check is deliberately NOT added beside it: `run.mjs` recorded `builtClient`
-    // as INFORMATION and kept it out of its `shippable` verdict, because most
-    // starters never ask for one — asserting it failed the math-tutor template
-    // for shipping exactly what it is supposed to ship.
-    const ui = checkUi(expectation, files);
-    t.check(ui.ok, "client UI", ui.note ?? "");
-  }
+  const mode = checkMode(config);
+  t.check(mode.ok, "pipeline mode", mode.note ?? "");
+  // `checkUi` is the whole UI claim, and a bare "did it write a client.tsx"
+  // check is deliberately NOT added beside it: `run.mjs` recorded `builtClient`
+  // as INFORMATION and kept it out of its `shippable` verdict, because most
+  // starters never ask for one — asserting it failed the math-tutor template
+  // for shipping exactly what it is supposed to ship.
+  const ui = checkUi(expectation, files);
+  t.check(ui.ok, "client UI", ui.note ?? "");
 }

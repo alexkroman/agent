@@ -21,18 +21,8 @@
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { UIMessage } from "ai";
 
-/**
- * What a project builds — the home hero's Agent/Workflow switcher, chosen once
- * at create time and stamped on the workspace server-side, where it selects the
- * coding agent's system prompt. The client sends it and reads it back; nothing
- * here can change it after the fact.
- */
-export type ProjectKind = "agent" | "workflow";
-
 export type ProjectData = {
   files: Record<string, string>;
-  /** Voice agent or workflow app. Always present — the server resolves it. */
-  kind?: ProjectKind;
   /** Production slug — updated only by Publish. */
   deployedSlug?: string;
   /** Workspace has edits the production agent does not have yet. */
@@ -175,8 +165,6 @@ const PROJECT_BOOLEANS = [
  */
 export function isProjectData(value: unknown): value is ProjectData {
   if (!(isRecord(value) && isStringRecord(value.files))) return false;
-  const { kind } = value;
-  if (!(kind === undefined || kind === "agent" || kind === "workflow")) return false;
   return (
     PROJECT_STRINGS.every((field) => isOptional(value[field], "string")) &&
     PROJECT_BOOLEANS.every((field) => isOptional(value[field], "boolean"))

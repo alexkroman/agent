@@ -69,28 +69,13 @@ describe("studio page + routing", () => {
     expect(await res.text()).toBe(await (await fetch("/")).text());
   });
 
-  test("GET /studio/api/<slug> serves the shell, with NO bearer", async () => {
-    // The public API page. It is the same shell — the client reads the slug
-    // from the path and documents that agent from the agent's own public
-    // routes — and the request carries no Authorization header at all, which
-    // is the whole feature: a link to it has to work for a reader with no
-    // studio account. Exercised through the full orchestrator because the
-    // routing ORDER is the risk: `/studio/*` hangs auth middleware on its own
-    // subtrees, and `/:slug` sits beside it.
+  test("the retired public API page is not served", async () => {
+    // `/studio/api/<slug>` used to serve the shell with no bearer. The page is
+    // gone, so the path is no longer a sessionless way into the app.
     const { fetch } = await createFakedCombined();
     const res = await fetch("/studio/api/contact-form-x7k2mq");
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toContain("text/html");
-    expect(await res.text()).toBe(await (await fetch("/")).text());
-  });
-
-  test("but a path that could never name an agent is not a page", async () => {
-    // The negative beside the positive: the route carries the platform's own
-    // slug pattern, so `/studio/api/<junk>` falls through rather than serving
-    // a shell that would document nothing. Without this the assertion above
-    // passes for a route matching anything at all.
-    const { fetch } = await createFakedCombined();
-    expect((await fetch("/studio/api/Not A Slug")).status).toBe(404);
+    expect(res.status).not.toBe(200);
+    expect(res.headers.get("Content-Type") ?? "").not.toContain("text/html");
   });
 
   test("GET /studio and /studio/ redirect to the page", async () => {

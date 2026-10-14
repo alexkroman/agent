@@ -1,26 +1,15 @@
 // Copyright 2026 the AAI authors. MIT license.
 // "Phone number" — the carrier webhook URLs for this project's published
 // agent, one per carrier, each with a copy button and its signing secret.
-//
-// It renders on the API pane (`panes/docs.tsx`) rather than in Settings, where it
-// used to sit: a webhook URL is how a CARRIER calls this agent, which is that
-// pane's subject, and it was the one card in Settings documenting a request
-// instead of configuring the project. The signing-secret hints therefore point
-// ACROSS to the Secrets pane rather than "below" — a direction that was only
-// ever true of the old placement, and the sort of copy that silently stops
-// being true when a section moves. They name a PANE rather than a path inside
-// one for the same reason: Secrets left Settings for a pane of its own, and
-// "Settings → Secrets" was copy describing furniture that had been moved.
+// Renders on the Settings pane (panes/settings.tsx).
 //
 // The whole integration on the user's side is pasting one of these into a
-// phone number's voice webhook, so the URL is the entire feature as far as
-// this pane is concerned. It is not derivable by hand: it needs the platform
-// origin, the project's PUBLISHED slug (not its name), and the `?carrier=`
-// value, and getting any of the three wrong produces a number that answers
-// and then hangs up.
+// phone number's voice webhook. It is not derivable by hand: it needs the
+// platform origin, the project's PUBLISHED slug (not its name), and the
+// `?carrier=` value, and getting any of the three wrong produces a number that
+// answers and then hangs up.
 
 import { useCopy } from "@alexkroman1/aai-ui";
-import { agentBase } from "../docs-content.ts";
 import { platformOrigin } from "../platform-origin.ts";
 import { Card } from "./settings-card.tsx";
 import { CopyLine } from "./snippet.tsx";
@@ -64,7 +53,7 @@ const CARRIERS: readonly Carrier[] = [
  * people's phone-number settings are not.
  */
 export function phoneWebhookUrl(origin: string, slug: string, carrier: string): string {
-  return `${agentBase(origin, slug)}/phone?carrier=${carrier}`;
+  return `${origin}/${slug}/phone?carrier=${carrier}`;
 }
 
 /** Whether a carrier's signing secret is set, and whether it has landed. */

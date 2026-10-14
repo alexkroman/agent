@@ -44,7 +44,6 @@ describe("isProjectData", () => {
   });
 
   test("a declared field of the wrong type is refused, not coerced", () => {
-    expect(isProjectData({ files: {}, kind: "voice" })).toBe(false);
     expect(isProjectData({ files: {}, previewSlug: 7 })).toBe(false);
     expect(isProjectData({ files: {}, previewStale: "yes" })).toBe(false);
     expect(isProjectData({ files: {}, githubCommit: null })).toBe(false);

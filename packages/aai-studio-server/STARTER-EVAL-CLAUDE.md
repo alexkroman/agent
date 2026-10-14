@@ -144,7 +144,7 @@ which every boundary in this direction denies.
   `studio-starter.eval.test.ts` measures the DEPLOYED path — the broker, the
   per-sandbox token, the guest chat route, the end-of-turn workspace sync.
 - **The system prompt is per CASE there**: by default a harness prompt, and the
-  shipped `studioSystemPrompt(kind)` text only for a case that opts in (via the
+  shipped `studioSystemPrompt()` text only for a case that opts in (via the
   committed copies under `aai-guest-studio/studio-prompts/`). A prompt change is
   still measured end to end only through a live studio, here. See "The coding
   agent has an eval of its own" in
@@ -168,16 +168,15 @@ AAI_EVAL_CONTRACTS=1 AAI_EVAL_ONLY=retail pnpm --filter aai-studio-server test:e
 ```
 
 **The contract is the TEMPLATE'S OWN `agent.eval.test.ts`, and three facts make
-that work.** Twelve of the eighteen starter prompts say "use the `<name>`
-template", which makes the template the ask rather than an illustration —
-`checkCapabilities` already special-cases them for it. Twenty-five of the
-twenty-six templates ship an eval. And those files were written to drive a
-DEPLOYED agent rather than their own directory: they import `virtual:aai/agent`,
-which `aaiAgentPlugin` resolves against the IMPORTER's directory, so dropping
-one into a materialized workspace drives that workspace's agent. They also
-assert MECHANISMS — a refusal sentence, a tool result, the projection sent to
-the browser — never the words the model chose, which is what lets a
-different-but-valid implementation pass.
+that work.** Every starter prompt says "use the `<name>` template", which makes
+the template the ask rather than an illustration — `checkCapabilities` already
+special-cases them for it. Twenty-five of the twenty-six templates ship an eval.
+And those files were written to drive a DEPLOYED agent rather than their own
+directory: they import `virtual:aai/agent`, which `aaiAgentPlugin` resolves
+against the IMPORTER's directory, so dropping one into a materialized workspace
+drives that workspace's agent. They also assert MECHANISMS — a refusal sentence,
+a tool result, the projection sent to the browser — never the words the model
+chose, which is what lets a different-but-valid implementation pass.
 
 **The canonical copy always wins.** `use_template` copies template files
 verbatim, eval file included, so a workspace can arrive holding a contract the

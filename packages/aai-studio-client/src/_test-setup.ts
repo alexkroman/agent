@@ -43,7 +43,7 @@ configure({ asyncUtilTimeout: 10_000 });
 afterEach(cleanup);
 
 // jsdom has no `ResizeObserver`, and `aai-ui`'s `<AutoScroll>` — mounted by the
-// chat transcript and the Logs pane — constructs one. Layout never changes
+// chat transcript — constructs one. Layout never changes
 // here, so every method is a no-op; what matters is that the constructor
 // exists. Guarded, as `aai-ui`'s `_jsdom-setup.ts` is: this file also runs for
 // the node-environment suites, and a jsdom that grows one keeps its own.

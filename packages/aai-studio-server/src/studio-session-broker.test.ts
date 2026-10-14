@@ -144,7 +144,6 @@ describe("studio session broker", () => {
     const second = fakeGuest("wss://tunnel2.example:443");
     const { broker, workspaces, spawn } = await makeBroker([first, second]);
     await createWorkspace(workspaces, SCOPE, "other", {
-      kind: "agent",
       files: { "agent.ts": "// o" },
     });
 
@@ -233,7 +232,6 @@ describe("cross-replica studio sessions", () => {
     const workspaces = createMemoryWorkspaceStore();
     const chats = createMemoryChatStore();
     await createWorkspace(workspaces, SCOPE, PROJECT, {
-      kind: "agent",
       files: { "agent.ts": "// v1" },
     });
     return {

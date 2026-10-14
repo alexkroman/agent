@@ -1,8 +1,8 @@
 ---
 summary: >-
-  The studio's panes: the switcher order and the UI tab's id, Settings, Secrets,
-  the Phone card, Workflows, Logs, the Code pane's drafts, the UI preview's
-  probe and wake, and the chat panel's pre-sandbox states
+  The studio's panes: the switcher order and the UI tab's id, Settings (with
+  the Phone card), Secrets, the Code pane's drafts, the UI preview's probe and
+  wake, and the chat panel's pre-sandbox states
 read_when: >-
   adding, reordering or changing a pane in `aai-studio-client/src/panes/`, or a
   card one of them renders.
@@ -11,18 +11,16 @@ read_when: >-
 # `src/panes/` — the studio's panes
 
 Package-wide rules (layout, CSP, auth, request deadlines, the chat transport and
-queue) are in `../../CLAUDE.md`; the API pane and the public docs page are in
-`../../API-DOCS-CLAUDE.md`.
+queue) are in `../../CLAUDE.md`.
 
 ## The switcher
 
-- **Order: UI, API, Workflows, then Code, Logs, Secrets, Settings** — the
-  running agent first, then the workspace (`TABS` / `StudioTab` in `top-bar.tsx`
-  is the one union; `project-view.tsx`'s `selectedTab` the only selection). UI
-  leads and API sits beside it: one question, asked of a person and of a caller.
-  Secrets precedes Settings because Settings ends in Delete project. The order
-  is a product decision nothing else holds, so one test in `top-bar.test.tsx`
-  pins the rendered sequence.
+- **Order: UI, Code, Secrets, Settings** — the running agent first, then the
+  workspace (`TABS` / `StudioTab` in `top-bar.tsx` is the one union;
+  `project-view.tsx`'s `selectedTab` the only selection). Secrets precedes
+  Settings because Settings ends in Delete project. The order is a product
+  decision nothing else holds, so one test in `top-bar.test.tsx` pins the
+  rendered sequence.
 - **No pane is gated.** If a gate ever returns: ONE exported predicate shared by
   the switcher and `project-view.tsx` (they must not disagree — a tab bar with
   no `aria-current` beside a blank pane), the fallback derived during render
@@ -33,20 +31,20 @@ queue) are in `../../CLAUDE.md`; the API pane and the public docs page are in
   `previewStale`); only the label moves, and `top-bar.test.tsx` pins label
   against id.
 - **A relabel must update the coding agent's preamble too**
-  (`aai-studio-server/src/prompts/studio-preamble.ts`, `studio-preamble-mode.ts`
-  say "UI pane"). It lives in another package and no test reads it.
+  (`aai-studio-server/src/prompts/studio-preamble.ts` says "UI pane"). It lives
+  in another package and no test reads it.
 - **Anything that POINTS at a pane names the pane, never a direction or a path
   inside another pane** ("the Secrets pane", not "Secrets below" or "Settings →
   Secrets") — sections move.
 
 ## Settings (`settings.tsx`)
 
-A full-width pane like every other. **Nothing on it gates on a build or a
-deploy**: Delete project must work before anything is published, so
-`SettingsPane` takes no slug and makes no request of its own —
-`settings.test.tsx` asserts it never touches `/secret`.
+A full-width pane like every other. **Only the Phone card gates on a publish**:
+Delete project must work before anything is published. The pane's one request of
+its own is the Phone card's secrets READ (the Secrets pane's query key);
+`settings.test.tsx` asserts it never WRITES `/secret`.
 
-- **Sections in a FIXED order: Sync to GitHub, Danger zone.**
+- **Sections in a FIXED order: Sync to GitHub, Phone number, Danger zone.**
   `settings.test.tsx` asserts the card-title sequence; read titles through
   `.eyebrow`, since a blurb repeating a title word matches `getByText` too.
 - **The studio shows NO `aai pull` commands.** GitHub sync
@@ -70,12 +68,10 @@ nothing into the conversation. A database is configured here like any other
 secret (`DATABASE_URL` at the author's own provider): the platform provisions no
 tenant database.
 
-- **Two forms, one endpoint.** A NAME/VALUE pair is the primary path (value in
-  `type="password"`, name checked against `VALID_NAME` locally); the `.env`
-  textarea is the bulk path and keeps the dotenv parse that makes quoted
-  multi-line values (PEM keys, service-account JSON) work. Two `useMutation`s
-  over one PUT, so `isPending`/`error` sit beside the button that fired them;
-  each form clears only on its OWN success.
+- **One form: a NAME/VALUE pair** (value in `type="password"`, name checked
+  against `VALID_NAME` locally), which clears only on success. There is no
+  `.env` paste box; bulk loading is a CLI action (`aai secret`, or `.env` +
+  `aai publish`).
 - **Deleting asks first** — the value cannot be read back.
 - **UNGATED — no publish first.** An agent needs its key to run, and the preview
   (auto-deployed on first edit) needs it before production. The server holds the
@@ -86,11 +82,11 @@ tenant database.
 - **`ASSEMBLYAI_API_KEY` is platform-managed: the pane neither lists, deletes,
   nor sets it** (`PLATFORM_MANAGED_SECRETS`). It is seeded at publish from the
   caller's account key and deleting it takes the agent off the air. Setting it
-  is refused by name in BOTH forms (a save that vanished from the list reads as
-  a failed write). Overriding it stays a CLI action (`aai secret`, or `.env` +
+  is refused by name (a save that vanished from the list reads as a failed
+  write). Overriding it stays a CLI action (`aai secret`, or `.env` +
   `aai publish`).
 
-## The Phone card (`components/phone-card.tsx`, on the API pane)
+## The Phone card (`components/phone-card.tsx`, on the Settings pane)
 
 Hands out one carrier webhook URL per carrier, each with a copy button, at the
 platform's `/:slug/phone` route ("Telephony" in
@@ -110,43 +106,6 @@ PUBLISHED slug and `?carrier=`.
   origin ("Origin and CORS" in `packages/aai-studio-server/CLAUDE.md`).
 - Clipboard flashes are keyed by the copied TEXT with one live timer
   (`useCopy`), so one row's "Copied" does not light every button.
-
-## Workflows (`workflows.tsx` → `components/workflows-card.tsx`)
-
-Reads the AGENT's own brokered API (`/:slug/workflows`), never a studio route —
-the platform already brokers it and `connect-src 'self'` permits it. A run is
-the one thing that outlives every other surface the studio shows.
-
-- **Through the SDK's client** (`createWorkflowApiClient`,
-  `@alexkroman1/aai/workflow-api`), passing `timeoutMs`. The agent's own
-  `{ error }` sentence is what tells "the sandbox is booting" from "this slug is
-  gone"; quote it.
-- **Reading can BOOT the agent's sandbox** (brokering does) — accepted. Refresh
-  is manual: a poll would hold a container open for a pane nobody watches.
-- **It falls back to the PREVIEW slug and says so**; the query key is the SLUG,
-  since preview and production keep separate runs.
-- Only a LIVE run offers Stop; resuming a terminal one belongs to the Workflow
-  DevKit.
-
-## Logs (`logs-view.tsx` → `GET /:slug/logs`)
-
-The platform route already owns the ownership check, so no studio proxy. It
-polls by CURSOR and appends — the guest holds a bounded RING with a cursor.
-
-- **`running` is read from the response, never from `lines.length`**: an empty
-  page means either "up and silent" or "nothing running", which want opposite
-  actions.
-- **A gap is a ROW**: `dropped` counts lines the ring evicted before this pane
-  read them.
-- **It follows the bottom through `<AutoScroll>`** (`instant`/`instant`, since a
-  spring never settles on a tail that appends every second). jsdom computes no
-  layout, so the one test asserts the lines are mounted INSIDE that scroller (a
-  plain `overflow-auto` div renders identically and follows nothing).
-- **The footer says the log is not durable**: the ring goes with the sandbox
-  ("Why the buffer lives in the guest" in
-  `packages/aai-guest/src/harness/CLAUDE.md`).
-- Preview is the default target; Production is a deliberate switch, each
-  disabled until that environment has an agent.
 
 ## Code (`code-view.tsx`) — unsaved work lives ABOVE the editor
 

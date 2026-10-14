@@ -653,8 +653,8 @@ not its wording.
 
 ### An agent's own output — `GET /:slug/logs`
 
-`agent-logs.ts`, read by the studio Logs pane and `aai logs`; the ring lives in
-the guest. Alone among `/:slug/*` it **never boots a sandbox** (hence `running`
-beside the lines, and `dropped` reported). `aai_platform.session_events` is a
-platform table under deny-all RLS on the admin connection only; `discard` drops
-slots only, events going to the sweep.
+`agent-logs.ts`, read by the coding agent's `read_logs` and `aai logs`; the ring
+lives in the guest. Alone among `/:slug/*` it **never boots a sandbox** (hence
+`running` beside the lines, and `dropped` reported).
+`aai_platform.session_events` is a platform table under deny-all RLS on the
+admin connection only; `discard` drops slots only, events going to the sweep.

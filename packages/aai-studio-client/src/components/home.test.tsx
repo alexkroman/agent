@@ -1,16 +1,14 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
-// The pre-project hero: a kind switcher over one big prompt box that creates a
-// project from the first message. These pin the three states — ready, creating
-// (inert), and status still loading — the submit paths, and the switcher, whose
-// position is not decoration: it decides which system prompt the project's
-// coding agent runs under, so it has to reach `onStart` with every submit.
+// The pre-project hero: one big prompt box that creates a project from the
+// first message. These pin the three states — ready, creating (inert), and
+// status still loading — and the submit paths.
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { userEvent } from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
-import { AGENT_STARTERS, WORKFLOW_STARTERS } from "../starters.ts";
+import { STARTERS } from "../starters.ts";
 import { HomeHero, HomeSidebar } from "./home.tsx";
 
 const noop = (): void => undefined;
@@ -42,13 +40,11 @@ describe("HomeHero states", () => {
 
   test("while the project is being created, everything disables", () => {
     // A second Enter or starter click here would create a second, orphan
-    // project — the whole hero must go inert until the mutation settles, the
-    // switcher included (its position is baked into the pending create).
+    // project — the whole hero must go inert until the mutation settles.
     const html = renderToStaticMarkup(<HomeHero {...heroProps} creating={true} status={status} />);
     expect(html).toContain("Creating your project…");
     expect(html).toMatch(/<textarea[^>]*\sdisabled=/);
     expect(html).toMatch(/<button[^>]*class="starter"[^>]*\sdisabled=/);
-    expect(html).toMatch(/<input[^>]*type="radio"[^>]*\sdisabled=/);
   });
 
   test("unknown status reads as 'checking', and nothing is submittable yet", () => {
@@ -60,16 +56,13 @@ describe("HomeHero states", () => {
     expect(html).toContain("chat status…");
     expect(html).not.toContain("Or try one of these");
     expect(html).toMatch(/<textarea[^>]*\sdisabled=/);
-    // The switcher stays live: there is nothing to submit yet, but choosing
-    // what you are about to build costs the server nothing.
-    expect(html).not.toMatch(/<input[^>]*type="radio"[^>]*\sdisabled=/);
   });
 
   test("shows a sample of the starters, not the whole catalog", () => {
     const html = renderToStaticMarkup(<HomeHero {...heroProps} status={status} />);
     const chips = html.match(/class="starter"/g) ?? [];
     expect(chips.length).toBe(5);
-    expect(chips.length).toBeLessThan(AGENT_STARTERS.length);
+    expect(chips.length).toBeLessThan(STARTERS.length);
   });
 
   test("renders no model picker or chip — the server default always runs", () => {
@@ -88,7 +81,7 @@ describe("HomeHero submit", () => {
     await user.type(box, "  build a pizza bot  {Shift>}{Enter}{/Shift}");
     expect(onStart).not.toHaveBeenCalled();
     await user.keyboard("{Enter}");
-    expect(onStart).toHaveBeenCalledWith("build a pizza bot", "agent");
+    expect(onStart).toHaveBeenCalledWith("build a pizza bot");
   });
 
   test("the send button submits, but never an empty prompt", async () => {
@@ -100,7 +93,7 @@ describe("HomeHero submit", () => {
     expect(onStart).not.toHaveBeenCalled();
     await user.type(screen.getByRole("textbox"), "an FAQ bot");
     fireEvent.click(send);
-    expect(onStart).toHaveBeenCalledWith("an FAQ bot", "agent");
+    expect(onStart).toHaveBeenCalledWith("an FAQ bot");
   });
 
   test("a starter chip forwards its full prompt, not its label", () => {
@@ -108,73 +101,8 @@ describe("HomeHero submit", () => {
     render(<HomeHero creating={false} status={status} onStart={onStart} />);
     fireEvent.click(starterChip());
     expect(onStart).toHaveBeenCalledTimes(1);
-    const [prompt, kind] = onStart.mock.calls[0] ?? [];
-    expect(AGENT_STARTERS.map((s) => s.prompt)).toContain(prompt);
-    expect(kind).toBe("agent");
-  });
-});
-
-describe("HomeHero kind switcher", () => {
-  /** The switcher's radios, by label. */
-  const radio = (name: string) => screen.getByRole("radio", { name: name });
-
-  /** Flip the switcher to Workflow. */
-  const chooseWorkflow = () => fireEvent.click(radio("Workflow"));
-
-  test("starts on Voice agent — the default and the common case", () => {
-    render(<HomeHero {...heroProps} status={status} />);
-    expect(radio("Voice agent")).toBeChecked();
-    expect(radio("Workflow")).not.toBeChecked();
-  });
-
-  test("Workflow swaps the heading, the blurb, and the placeholder", () => {
-    render(<HomeHero {...heroProps} status={status} />);
-    chooseWorkflow();
-    expect(screen.getByRole("heading")).toHaveTextContent("workflow");
-    // The distinguishing promise of the mode: a form and a page, not a call.
-    expect(document.body).toHaveTextContent("a form that submits it");
-    expect(screen.getByRole("textbox")).toHaveAttribute(
-      "placeholder",
-      expect.stringContaining("uploaded recording"),
-    );
-  });
-
-  test("Workflow swaps the starter chips for the workflow catalog", () => {
-    render(<HomeHero {...heroProps} status={status} />);
-    chooseWorkflow();
-    const labels = [...document.querySelectorAll("button.starter")].map((el) => el.textContent);
-    expect(labels.length).toBeGreaterThan(0);
-    const workflowLabels = WORKFLOW_STARTERS.map((s) => s.label);
-    for (const label of labels) expect(workflowLabels).toContain(label);
-  });
-
-  test("the chosen kind rides along with every submit path", async () => {
-    const user = userEvent.setup();
-    // The whole point of the switcher: the server stamps this on the workspace
-    // and it selects the coding agent's system prompt. A hero that changed its
-    // copy and sent "agent" anyway would look right and build the wrong thing.
-    const onStart = vi.fn();
-    render(<HomeHero creating={false} status={status} onStart={onStart} />);
-    chooseWorkflow();
-    await user.type(screen.getByRole("textbox"), "transcribe uploads{Enter}");
-    expect(onStart).toHaveBeenLastCalledWith("transcribe uploads", "workflow");
-
-    fireEvent.click(starterChip());
-    const [prompt, kind] = onStart.mock.calls[1] ?? [];
-    expect(WORKFLOW_STARTERS.map((s) => s.prompt)).toContain(prompt);
-    expect(kind).toBe("workflow");
-  });
-
-  test("flipping back and forth keeps each side's sampled chips stable", () => {
-    // Re-sampling on every flip would read as the chips being unrelated to the
-    // position you just chose.
-    render(<HomeHero {...heroProps} status={status} />);
-    const chipLabels = () =>
-      [...document.querySelectorAll("button.starter")].map((c) => c.textContent);
-    const first = chipLabels();
-    chooseWorkflow();
-    fireEvent.click(screen.getByRole("radio", { name: "Voice agent" }));
-    expect(chipLabels()).toEqual(first);
+    const [prompt] = onStart.mock.calls[0] ?? [];
+    expect(STARTERS.map((s) => s.prompt)).toContain(prompt);
   });
 });
 

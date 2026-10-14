@@ -136,24 +136,21 @@ describe("ProjectNameSchema", () => {
 });
 
 describe("CreateProjectSchema", () => {
-  test("requires a kind, with or without a prompt", () => {
+  test("needs nothing, and still accepts the retired kind from an old tab", () => {
+    expect(CreateProjectSchema.safeParse({ prompt: "hi there" }).success).toBe(true);
+    expect(CreateProjectSchema.safeParse({}).success).toBe(true);
     expect(CreateProjectSchema.safeParse({ prompt: "hi there", kind: "agent" }).success).toBe(true);
     expect(CreateProjectSchema.safeParse({ kind: "workflow" }).success).toBe(true);
-    expect(CreateProjectSchema.safeParse({ prompt: "hi there" }).success).toBe(false);
-    expect(CreateProjectSchema.safeParse({}).success).toBe(false);
+    expect(CreateProjectSchema.safeParse({ kind: "phone" }).success).toBe(false);
   });
 
   test("refuses a caller-chosen name: the server generates it", () => {
-    expect(CreateProjectSchema.safeParse({ name: "my-agent", kind: "agent" }).success).toBe(false);
+    expect(CreateProjectSchema.safeParse({ name: "my-agent" }).success).toBe(false);
   });
 
   test("rejects a prompt longer than the excerpt cap", () => {
-    expect(CreateProjectSchema.safeParse({ prompt: "x".repeat(2001), kind: "agent" }).success).toBe(
-      false,
-    );
-    expect(CreateProjectSchema.safeParse({ prompt: "x".repeat(2000), kind: "agent" }).success).toBe(
-      true,
-    );
+    expect(CreateProjectSchema.safeParse({ prompt: "x".repeat(2001) }).success).toBe(false);
+    expect(CreateProjectSchema.safeParse({ prompt: "x".repeat(2000) }).success).toBe(true);
   });
 });
 
