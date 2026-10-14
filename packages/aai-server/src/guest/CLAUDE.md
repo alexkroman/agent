@@ -22,11 +22,13 @@ platform half; `guard-invariants` rule 12 and konsistent's
 ## `forward.ts` — the one platform→guest forward
 
 `forwardToGuest` and its header policy serve every route that proxies into a
-tenant sandbox (`/client-config`, `/:slug/workflows/*`, the durable-run
-webhook). Do not re-derive a forward in a handler.
+tenant sandbox (`/client-config`, `/:slug/workflows/*`, `/:slug/api/*`, the
+durable-run webhook). Do not re-derive a forward in a handler.
 
-- **A header crossing this hop reaches TENANT CODE**: `Cookie`, `Authorization`
-  and `X-Forwarded-*` never do.
+- **A header crossing this hop reaches TENANT CODE**: `Cookie` and
+  `X-Forwarded-*` never do; `Authorization` crosses only on the API hops
+  (`GUEST_API_REQUEST_HEADERS`), as the caller's credential for the tenant's own
+  gate.
 - **Every direction is an allow-list except the webhook's REQUEST** — a sender's
   signature headers cannot be enumerated; the webhook RESPONSE is still
   allow-listed. The doc argues the asymmetry.

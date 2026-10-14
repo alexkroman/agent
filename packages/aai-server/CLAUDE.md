@@ -566,6 +566,14 @@ broker step and must not.
   until the Realtime event arrives), so the failure path re-reads the row. See
   `src/guest/CLAUDE.md`.
 
+### An agent's own routes are brokered too — `/:slug/api/*`
+
+`agent-routes-handler.ts`: `agent({ routes })` reached from a page at `/:slug/`.
+Same broker taxonomy and per-IP limit-before-broker as `/workflows/*`, but it
+**never injects `GUEST_PROXY_TOKEN_HEADER`** — a route gets its request headers
+whole, so the manage bearer would reach tenant code. Request headers are the API
+allow-list, so a third party's signature header does not cross.
+
 ### No host mode on deployed agents
 
 Host mode (`?host=1`) is an `aai dev` feature only. Every platform session runs

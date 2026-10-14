@@ -44,6 +44,7 @@ import { z } from "zod";
 import { createSemaphore } from "./_semaphore.ts";
 import { createCachedDirReader } from "./_static-files.ts";
 import { createAgentLogsHandler } from "./agent-logs.ts";
+import { registerAgentApiRoutes } from "./agent-routes-handler.ts";
 import { startAgentSweeps } from "./agent-sweeps.ts";
 import { registerAgentWorkflowRoutes } from "./agent-workflow-routes.ts";
 import type { ApiKeyVerifier } from "./api-key-verify.ts";
@@ -142,6 +143,8 @@ export type OrchestratorOpts = {
   workflowRateLimiter?: RateLimiter;
   /** Per-IP limiter for `POST /:slug/workflows/runs` — starting runs. */
   workflowStartRateLimiter?: RateLimiter;
+  /** Per-IP limiter for the whole `/:slug/api/*` surface — an agent's `routes`. */
+  agentRoutesRateLimiter?: RateLimiter;
   /**
    * How many deploy bodies may be buffered and parsed at once, and how long a
    * caller waits for a slot. Defaults to the `DEPLOY_BODY_*` constants (both
@@ -439,6 +442,12 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     ...omitUndefined({ adminDb: opts.adminDb }),
     ...omitUndefined({ workflowRateLimiter: opts.workflowRateLimiter }),
     ...omitUndefined({ workflowStartRateLimiter: opts.workflowStartRateLimiter }),
+  });
+  // An agent's own `routes`, brokered like the workflow API (agent-routes-handler.ts).
+  registerAgentApiRoutes(agents, {
+    broker: brokerOpts,
+    ...omitUndefined({ guestFetch: opts.guestFetch }),
+    ...omitUndefined({ rateLimiter: opts.agentRoutesRateLimiter }),
   });
   agents.get("/favicon.ico", handleAgentFavicon);
   agents.get("/assets/:path{.+}", handleClientAsset);

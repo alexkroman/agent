@@ -201,6 +201,8 @@ const METHOD_SOURCES: Record<string, { source: string; methods: readonly string[
     source: "WORKFLOW_CALLBACK_ROUTES.webhook.methods",
     methods: WORKFLOW_CALLBACK_ROUTES.webhook.methods,
   },
+  // `agent({ routes })` keys are `<METHOD> /path` over this vocabulary.
+  api: { source: "SERVER_ROUTES.api.methods", methods: SERVER_ROUTES.api.methods },
 };
 
 describe("proxied methods match what the guest answers", () => {
