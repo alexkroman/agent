@@ -45,7 +45,7 @@ import {
   GUEST_API_RESPONSE_HEADERS,
   pickHeaders,
 } from "./guest/forward.ts";
-import { GUEST_ROUTES, guestHttpUrl } from "./guest/routes.ts";
+import { GUEST_ROUTES, type GuestRoute, guestHttpUrl } from "./guest/routes.ts";
 import { guestTokenFor } from "./guest/token.ts";
 import { registerLiveStream } from "./live-streams.ts";
 import {
@@ -67,8 +67,11 @@ import {
   WORKFLOW_PROXY_TRANSFER_TIMEOUT_MS,
 } from "./workflow-proxy-constants.ts";
 
-/** The 503 the forward answers with — the broker's own sentence, not a second one. */
-function unavailable(cause?: unknown): HTTPException {
+/**
+ * The 503 the forward answers with — the broker's own sentence, not a second one.
+ * Shared with `agent-routes-handler.ts`, the other brokered API surface.
+ */
+export function unavailable(cause?: unknown): HTTPException {
   return new HTTPException(503, { message: AGENT_UNAVAILABLE_MESSAGE, cause });
 }
 
@@ -99,7 +102,7 @@ function unavailable(cause?: unknown): HTTPException {
  * the upload bytes), which is what keeps "there is nothing of yours here" one
  * sentence on this surface rather than three.
  */
-function gone(slug: string): HTTPException {
+export function gone(slug: string): HTTPException {
   return new HTTPException(404, { message: notFoundMessage(slug) });
 }
 
@@ -112,9 +115,13 @@ function gone(slug: string): HTTPException {
  * so the next request rebuilds). A run is durable and the page re-reads, so
  * "retryable" is something the caller can actually act on here.
  */
-async function brokerGuestOrigin(slug: string, broker: ResolveSandboxOpts): Promise<string> {
+export async function brokerGuestOrigin(
+  slug: string,
+  broker: ResolveSandboxOpts,
+  route: GuestRoute = GUEST_ROUTES.workflows,
+): Promise<string> {
   const brokered = await brokerSessionUrlOrThrow(slug, broker);
-  return new URL(guestHttpUrl(brokered.guestOrigin, GUEST_ROUTES.workflows)).origin;
+  return new URL(guestHttpUrl(brokered.guestOrigin, route)).origin;
 }
 
 /**
@@ -123,12 +130,18 @@ async function brokerGuestOrigin(slug: string, broker: ResolveSandboxOpts): Prom
  * The sub-path is taken from the REQUEST rather than from Hono's route param, so
  * one expression covers `/workflows`, `/workflows/runs`, `/workflows/runs/:id`
  * and `/workflows/runs/:id/events` — and cannot disagree with the pattern the
- * route happens to be registered under.
+ * route happens to be registered under. `route` is the guest prefix, shared with
+ * `agent-routes-handler.ts`'s `/api`.
  */
-function guestTarget(requestUrl: string, slug: string, guestOrigin: string): URL {
+export function guestTarget(
+  requestUrl: string,
+  slug: string,
+  guestOrigin: string,
+  route: GuestRoute = GUEST_ROUTES.workflows,
+): URL {
   const incoming = new URL(requestUrl);
-  const suffix = incoming.pathname.slice(`/${slug}${GUEST_ROUTES.workflows}`.length);
-  return new URL(`${GUEST_ROUTES.workflows}${suffix}${incoming.search}`, guestOrigin);
+  const suffix = incoming.pathname.slice(`/${slug}${route}`.length);
+  return new URL(`${route}${suffix}${incoming.search}`, guestOrigin);
 }
 
 /**

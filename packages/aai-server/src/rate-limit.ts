@@ -22,7 +22,7 @@
  *   point for an ABUSE limit: at `MAX_CONTAINERS` (3, in modal_deploy.py), a
  *   per-replica cap is a cap of three times the number written down — and
  *   choosing it is a COMPOSITION decision, so see `createPgAgentRateLimiters`
- *   below for how the agent surface's three are handed over as one thing, and
+ *   below for how the agent surface's limiters are handed over as one thing, and
  *   what it cost when they were handed over one at a time. One atomic upsert per
  *   check; a database error propagates (fail-closed) rather than silently
  *   unmetering the route. Expired rows are swept by pg_cron (pg-cron.ts).
@@ -90,6 +90,22 @@ export const WORKFLOW_IP_RATE_LIMIT = {
  */
 export const WORKFLOW_START_IP_RATE_LIMIT = {
   limit: 60,
+  windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
+} as const;
+
+/**
+ * The whole `/:slug/api/*` surface — an agent's own `routes` — per client IP.
+ *
+ * Sized like {@link WORKFLOW_IP_RATE_LIMIT}, and for the same reader: a page
+ * POLLING a route (`outbound-call-agent` reads a live call every 1.5 s, 200 in
+ * this window from one tab). There is no start-style second limit because the
+ * platform cannot tell which tenant route is the expensive one; a route that
+ * dials a phone carries its own credential check (the template's
+ * `CALLS_API_KEY`), and this bound is only the platform's abuse floor in front
+ * of the sandbox boot that brokering costs.
+ */
+export const AGENT_ROUTES_IP_RATE_LIMIT = {
+  limit: 600,
   windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
 } as const;
 
@@ -193,7 +209,7 @@ export function createPgRateLimiter(
  * `createOrchestrator` takes, so a composition root spreads it and is done.
  *
  * **It is one function because the alternative was measured and failed.** The
- * three windows above are the orchestrator's whole rate-limit policy, and the
+ * windows above are the orchestrator's whole rate-limit policy, and the
  * composition root (`aai-studio-server/index.ts`) passed exactly ONE of them:
  * `deployRateLimiter`, wired by the audit that added it. The two workflow
  * limiters landed later with their own `?:` options, their own middleware and
@@ -219,6 +235,7 @@ export function createPgAgentRateLimiters(sql: SqlExec): {
   deployRateLimiter: RateLimiter;
   workflowRateLimiter: RateLimiter;
   workflowStartRateLimiter: RateLimiter;
+  agentRoutesRateLimiter: RateLimiter;
 } {
   return {
     deployRateLimiter: createPgRateLimiter(sql, { name: "deploy-ip", ...DEPLOY_IP_RATE_LIMIT }),
@@ -229,6 +246,10 @@ export function createPgAgentRateLimiters(sql: SqlExec): {
     workflowStartRateLimiter: createPgRateLimiter(sql, {
       name: "workflow-start-ip",
       ...WORKFLOW_START_IP_RATE_LIMIT,
+    }),
+    agentRoutesRateLimiter: createPgRateLimiter(sql, {
+      name: "agent-routes-ip",
+      ...AGENT_ROUTES_IP_RATE_LIMIT,
     }),
   };
 }

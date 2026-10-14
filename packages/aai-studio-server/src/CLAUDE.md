@@ -406,8 +406,8 @@ window the platform runs is declared in `studio-rate-limit.ts`.
   **Fail-closed**: a database error propagates. pg_cron sweeps expired rows.
   `name` namespaces each limiter (the `studio_` table name is a misnomer).
 - **Studio windows come from `createPgStudioRateLimiters`, the agent surface's
-  three from `createPgAgentRateLimiters(sql)`**, each spread whole by the entry.
-  A window the composition root forgets falls through to the in-memory arm and
+  from `createPgAgentRateLimiters(sql)`**, each spread whole by the entry. A
+  window the composition root forgets falls through to the in-memory arm and
   silently enforces `MAX_CONTAINERS`× its limit (route specs inject limiters, so
   nothing goes red). Held by `studio-rate-limit.test.ts`, `rate-limit.test.ts`
   (reads `orchestrator.ts` for an unanswered `RateLimiter` option) and

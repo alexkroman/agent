@@ -228,24 +228,17 @@ export const GUEST_ROUTE_EXPOSURE = {
   phone: { via: "direct-dial" },
   // Dialled by the device itself, like `session`: it is handed the sandbox URL.
   inbox: { via: "direct-dial" },
-  // DIRECT-DIAL, which on the platform means SELF-HOSTED ONLY FOR NOW, and the
-  // choice is stated because `proxied` is what a page would want.
+  // PROXIED, because a page served at `/:slug/` calls it with a relative
+  // `fetch("api/…")`, which lands on the platform, and a script calling
+  // `$AGENT_URL/api/…` has no sandbox URL either. It was direct-dial, and every
+  // deployed agent declaring `routes` 404'd while `aai dev` worked
+  // (`outbound-call-agent`'s whole UI).
   //
-  // The guest serves `/api` on its sandbox URL, and a caller holding that origin
-  // (a custom client reading `sessionUrl` off `/client-config`) can reach it while
-  // the sandbox lives. But the platform registers no `/:slug/api`, so a page
-  // served at `/:slug/` — whose relative `fetch("api/…")` lands on the platform —
-  // gets a 404, and so does any call to a guest that has self-exited on idle.
-  //
-  // Not proxied yet because the feature it exists for is not deployable yet: the
-  // routes' first reader is the per-client memory (`aai_client_sessions`), which
-  // the platform backend does not keep (`aai-runtime/session-state/clients.ts`),
-  // so a proxied route would boot a sandbox to answer "no sessions". And a
-  // proxy would put an UNAUTHENTICATED, tenant-authored, body-carrying surface on
-  // the platform's own origin, which wants a rate limit and a body cap of its own
-  // (`workflow-handler.ts` is the model). Promoting it is one registration plus
-  // the five methods here, once both of those are true.
-  api: { via: "direct-dial" },
+  // The surface is UNAUTHENTICATED and tenant-authored, so the platform route
+  // carries its own per-IP limit before it brokers (`agent-routes-handler.ts`).
+  // The body cap is the guest's (`MAX_ROUTE_BODY_BYTES`): the forward streams, so
+  // a cap here would bound nothing this process holds.
+  api: { via: "proxied", methods: ["GET", "POST", "PUT", "PATCH", "DELETE"] },
   // Both studio surfaces are dialled by the BROWSER, straight at the sandbox
   // tunnel, holding the chat token the session install minted — which is why
   // `studio-static.ts` has to put the sandbox origin in the page's

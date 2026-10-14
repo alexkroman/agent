@@ -82,10 +82,12 @@
  *
  * ## Where it is served
  *
- * Self-hosted — `aai dev` (its Vite proxy included), `aai start`,
- * `createServerForRuntime`. A deployed guest serves `/api` on its sandbox URL too,
- * but the PLATFORM routes nothing to it: a page served at `/:slug/` has no
- * `/:slug/api`, so treat the routes as self-hosted only for now.
+ * Everywhere the agent runs: `aai dev` (its Vite proxy included), `aai start`,
+ * `createServerForRuntime`, and the managed platform, which forwards
+ * `/:slug/api/*` to the agent's sandbox — so a page served at `/:slug/` calls
+ * `fetch("api/…")` unchanged. On the platform only `Authorization`,
+ * `Content-Type`, `Accept` and `Range` reach a route (no cookies, and no
+ * third-party signature headers), and each client IP is rate-limited.
  *
  * Split out of `types.ts` at the source-length cap, like the other field
  * groups `AgentDef` extends. Re-exported from the root.
