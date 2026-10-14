@@ -98,17 +98,17 @@ export const CALL_WINDOW_MS = (CALL_TIME_LIMIT_S + 120) * 1000;
 export type Dialled = { callId: string } | { refused: string };
 
 /** The env keys the dial needs, read one at a time so a missing one is named. */
-function dialEnv(): { from: string; agentUrl: string; secret: string } {
+function dialEnv(): { from: string; secret: string } {
   return {
     from: requireStepEnv("TWILIO_FROM_NUMBER"),
-    agentUrl: requireStepEnv("CALLER_AGENT_URL"),
     secret: requireStepEnv("CALLS_API_KEY"),
   };
 }
 
 /**
  * Ask Twilio to ring `phone_number` and stream the answered call to this
- * agent. A refusal nobody can retry past — a missing env key, a bad number —
+ * agent — `stepPlaceCall` points it at the agent's own public URL. A refusal
+ * nobody can retry past — a missing env key, a bad number, no public URL —
  * comes back as `{ refused }`; anything retryable is thrown.
  */
 export async function dial(input: CallInput): Promise<Dialled> {
@@ -119,7 +119,6 @@ export async function dial(input: CallInput): Promise<Dialled> {
       carrier: "twilio",
       to: input.phone_number,
       from: env.from,
-      agentUrl: env.agentUrl,
       parameters,
       timeLimitS: CALL_TIME_LIMIT_S,
     });

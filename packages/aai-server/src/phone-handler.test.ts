@@ -58,8 +58,30 @@ describe("POST /:slug/phone", () => {
 
     expect(status).toBe(200);
     expect(contentType).toContain("text/xml");
-    expect(xml).toContain('<Stream url="wss://tunnel.test:443/phone?carrier=twilio" />');
+    expect(xml).toContain('<Stream url="wss://tunnel.test:443/phone?carrier=twilio">');
     expect(xml).toContain("<Connect>");
+  });
+
+  test("hands an outbound call's param.* to the stream as <Parameter>s", async () => {
+    // How `stepPlaceCall`'s brief reaches `sessionContext` on the platform: the
+    // dial's webhook query carries it, and only this document can pass it on.
+    const harness = await residentHarness();
+    const { xml } = await callWebhook(
+      harness.fetch,
+      `/my-agent/phone?carrier=twilio&param.call=c_1&param.sig=${encodeURIComponent('a"&<b')}`,
+    );
+    expect(xml).toContain('<Parameter name="call" value="c_1"/>');
+    expect(xml).toContain('<Parameter name="sig" value="a&#34;&#38;&#60;b"/>');
+    expect(xml).not.toContain("carrier=twilio&");
+  });
+
+  test("refuses parameters past Twilio's limits with a 400, not TwiML it would reject", async () => {
+    const harness = await residentHarness();
+    const { status } = await callWebhook(
+      harness.fetch,
+      `/my-agent/phone?param.p=${"x".repeat(600)}`,
+    );
+    expect(status).toBe(400);
   });
 
   test("passes the requested carrier through to the stream URL", async () => {
@@ -157,6 +179,14 @@ describe("POST /:slug/phone", () => {
       const { xml } = await callWhileBooting(harness.fetch, "/my-agent/phone");
       expect(xml).toContain("&amp;");
       expect(xml).not.toMatch(/&(?!amp;|lt;|gt;|quot;|apos;)/);
+    });
+
+    test("carries the call's parameters across the redirect", async () => {
+      // Otherwise a call that lands on a cold agent loses its brief, and the
+      // session refuses the call it was placed for.
+      const harness = await bootingHarness();
+      const { xml } = await callWhileBooting(harness.fetch, "/my-agent/phone?param.call=c_1");
+      expect(xml).toContain("param.call=c_1");
     });
 
     test("counts up across attempts", async () => {

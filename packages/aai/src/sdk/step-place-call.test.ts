@@ -3,7 +3,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { toStepError } from "./_step-verdict.ts";
 
-import { callTwiml } from "./_twilio-calls.ts";
+import { phoneWebhookUrl } from "./phone-webhook.ts";
 import { publishStepEnv } from "./step-env.ts";
 import { FatalError, RetryableError } from "./step-error-classes.ts";
 import {
@@ -13,6 +13,7 @@ import {
   isCallOver,
   PlaceCallError,
   type PlacedCallStatus,
+  publishStepPublicUrl,
   stepCallStatus,
   stepPlaceCall,
 } from "./step-place-call.ts";
@@ -30,7 +31,10 @@ const dial = {
   credentials,
 };
 
-afterEach(() => publishStepEnv(undefined));
+afterEach(() => {
+  publishStepEnv(undefined);
+  publishStepPublicUrl(undefined);
+});
 
 async function refusedWith(status: number, body: object): Promise<PlaceCallError> {
   installStubStepFetch(() => ({ status, body }));
@@ -41,7 +45,7 @@ async function refusedWith(status: number, body: object): Promise<PlaceCallError
 }
 
 describe("stepPlaceCall", () => {
-  test("posts the form to the account's Calls.json, streaming the answered call to /phone", async () => {
+  test("posts the form to the account's Calls.json, pointing the answered call at /phone", async () => {
     const twilio = installStubStepFetch(() => ({
       status: 201,
       body: { sid: "CA123", status: "queued" },
@@ -58,9 +62,40 @@ describe("stepPlaceCall", () => {
     expect(form.get("From")).toBe("+15555550100");
     expect(form.get("TimeLimit")).toBe(String(DEFAULT_CALL_TIME_LIMIT_S));
     expect(form.get("Timeout")).toBe(String(DEFAULT_CALL_RING_TIMEOUT_S));
-    expect(form.get("Twiml")).toBe(
-      callTwiml("wss://caller.example.test/phone?carrier=twilio", { call: "call_1" }),
+    // A webhook, never inline TwiML: only a webhook works on the managed
+    // platform (phone-webhook.ts).
+    expect(form.get("Twiml")).toBeNull();
+    expect(form.get("Method")).toBe("POST");
+    expect(form.get("Url")).toBe(
+      "https://caller.example.test/phone?carrier=twilio&param.call=call_1",
     );
+  });
+
+  test("defaults agentUrl to the published public URL, and refuses with none", async () => {
+    const twilio = installStubStepFetch(() => ({ status: 201, body: { sid: "CA1" } }));
+    const { agentUrl: _, ...noUrl } = dial;
+    const none = await stepPlaceCall(noUrl).catch((e: unknown) => e);
+    expect(none).toMatchObject({ retryable: false });
+    expect(String(none)).toMatch(/aai dev --tunnel/);
+    publishStepPublicUrl("https://platform.test/my-agent");
+    await stepPlaceCall(noUrl);
+    expect(new URLSearchParams(String(twilio.calls[0]?.body)).get("Url")).toBe(
+      phoneWebhookUrl("https://platform.test/my-agent", "twilio", {}),
+    );
+  });
+
+  test("refuses a loopback agentUrl, which Twilio can never reach", async () => {
+    const twilio = installStubStepFetch(() => ({ status: 201, body: { sid: "CA1" } }));
+    for (const agentUrl of [
+      "http://localhost:3000",
+      "http://127.0.0.1:8080",
+      "http://[::1]:3000",
+    ]) {
+      const err = await stepPlaceCall({ ...dial, agentUrl }).catch((e: unknown) => e);
+      expect(err, agentUrl).toMatchObject({ retryable: false });
+      expect(String(err)).toMatch(/loopback/);
+    }
+    expect(twilio.calls).toEqual([]);
   });
 
   test("reads the credentials from the step env when none are passed", async () => {

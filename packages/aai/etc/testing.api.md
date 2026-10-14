@@ -1121,6 +1121,7 @@ export type StubPlaceCallOptions = {
     dial?: "accept" | StubPlaceCallRefusal | ((call: StubPlacedCall) => "accept" | StubPlaceCallRefusal);
     status?: PlacedCallStatus | "initiated" | ((call: StubPlacedCall) => PlacedCallStatus | "initiated");
     otherwise?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>;
+    publicUrl?: string;
 };
 
 // @public
@@ -1135,7 +1136,7 @@ export type StubPlacedCall = {
     callId: string | undefined;
     to: string;
     from: string;
-    streamUrl: string | undefined;
+    webhookUrl: string | undefined;
     parameters: Record<string, string>;
     timeLimitS: number;
     ringTimeoutS: number;

@@ -45,6 +45,11 @@ export const GUEST_ROUTES = {
    */
   phone: SERVER_ROUTES.phone.path,
   /**
+   * The call-answering WEBHOOK on the same path, which a self-hosted server
+   * answers with TwiML pointing at its own `WS /phone`.
+   */
+  phoneWebhook: SERVER_ROUTES.phoneWebhook.path,
+  /**
    * PUBLIC device inbox: the idle socket a device holds so `stepNotifyClient`
    * can reach it after its voice session closed. Same posture as `session`.
    */
@@ -226,6 +231,12 @@ export const GUEST_ROUTE_EXPOSURE = {
   // answers with. That platform route is not a proxy of this one — it is the
   // webhook that hands out this URL — so this route is a direct dial.
   phone: { via: "direct-dial" },
+  // NOT proxied: the platform answers `/:slug/phone` ITSELF (phone-handler.ts),
+  // with TwiML naming the sandbox's `WS /phone` above, because only the platform
+  // can broker a booting sandbox inside a carrier's webhook timeout. The guest's
+  // own webhook is reachable on its tunnel like any route, and nothing hands
+  // that URL out.
+  phoneWebhook: { via: "direct-dial" },
   // Dialled by the device itself, like `session`: it is handed the sandbox URL.
   inbox: { via: "direct-dial" },
   // PROXIED, because a page served at `/:slug/` calls it with a relative

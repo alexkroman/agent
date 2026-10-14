@@ -198,6 +198,22 @@ export {
 // the jitter, rather than the doubling, is the half worth sharing.
 export { type JitteredBackoffOptions, jitteredBackoff } from "./sdk/jittered-backoff.ts";
 export { createOwnedMap, type OwnedMap } from "./sdk/owned-map.ts";
+// The carrier vocabulary an agent's `telephony` declaration is written in.
+// The TYPES are authoring API and live on the root barrel beside `AgentDef`;
+// this is the list as a VALUE, which `aai-runtime` needs to resolve a
+// declaration into the routes it serves and to pin `CARRIER_CODECS` to the
+// same names. A value on the root barrel would be an authoring export nothing
+// in an `agent.ts` has a use for.
+// The call-answering webhook's wire format: the SDK's dialler writes it, and
+// both servers that answer it (`aai-runtime`'s `/phone`, `aai-server`'s
+// `/:slug/phone`) read it back — one module so the three cannot drift.
+export {
+  CALL_PARAMETER_PREFIX,
+  callParametersFromQuery,
+  connectStreamTwiml,
+  escapeXml,
+  phoneWebhookUrl,
+} from "./sdk/phone-webhook.ts";
 // The two halves of one physical delay — how long between the server handing a
 // frame to the socket and the caller hearing it. Exported for the same reason as
 // the pacing above: the bench that measures that delay lives in `aai-ui`, and a
@@ -232,12 +248,6 @@ export {
 // zod's graph into every importer of this subpath — the startup cost the
 // `/utils` module doc has always guarded, now guarded here too.
 export { formatSchemaIssues } from "./sdk/standard-schema.ts";
-// The carrier vocabulary an agent's `telephony` declaration is written in.
-// The TYPES are authoring API and live on the root barrel beside `AgentDef`;
-// this is the list as a VALUE, which `aai-runtime` needs to resolve a
-// declaration into the routes it serves and to pin `CARRIER_CODECS` to the
-// same names. A value on the root barrel would be an authoring export nothing
-// in an `agent.ts` has a use for.
 export { TELEPHONY_CARRIERS } from "./sdk/telephony-config.ts";
 /**
  * The SERVER's half of the workflow HTTP API.

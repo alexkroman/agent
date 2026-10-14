@@ -376,7 +376,6 @@ describe("the run is DURABLE", () => {
     vi.stubEnv("TWILIO_ACCOUNT_SID", "AC123");
     vi.stubEnv("TWILIO_AUTH_TOKEN", "token");
     vi.stubEnv("TWILIO_FROM_NUMBER", "+14155550100");
-    vi.stubEnv("CALLER_AGENT_URL", "https://caller.example.com");
     vi.stubEnv("CALLS_API_KEY", SECRET);
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
   });
@@ -387,6 +386,7 @@ describe("the run is DURABLE", () => {
     const webhook = vi.fn((_body: unknown) => ({ status: 204, body: "" }));
     const twilio = stubPlaceCall({
       status: (placed) => (placed.polls === 1 ? "ringing" : "in-progress"),
+      publicUrl: "https://caller.example.com",
       ...options,
       otherwise: (req) =>
         model.route(req) ??
@@ -411,7 +411,7 @@ describe("the run is DURABLE", () => {
     expect(world.twilio.calls).toHaveLength(1);
     const placed = world.twilio.calls[0];
     expect(placed?.to).toBe(INPUT.phone_number);
-    expect(placed?.streamUrl).toBe("wss://caller.example.com/phone?carrier=twilio");
+    expect(placed?.webhookUrl).toBe("https://caller.example.com/phone?carrier=twilio");
     // The answering session can verify the brief it was handed.
     expect(await readCall(placed?.parameters ?? {}, SECRET)).toEqual({
       id: INPUT.id,

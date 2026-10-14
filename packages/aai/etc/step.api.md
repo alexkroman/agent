@@ -334,7 +334,7 @@ export type PlaceCallOptions = {
     carrier: "twilio";
     to: string;
     from: string;
-    agentUrl: string;
+    agentUrl?: string;
     parameters?: Readonly<Record<string, string>>;
     timeLimitS?: number;
     ringTimeoutS?: number;

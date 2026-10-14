@@ -105,6 +105,7 @@ export const BOUNDARY_KEYS = {
     stepInfoReader: "@alexkroman1/aai.stepInfoReader",
     stepMcp: "@alexkroman1/aai.stepMcp",
     stepNotifyClient: "@alexkroman1/aai.stepNotifyClient",
+    stepPublicUrl: "@alexkroman1/aai.stepPublicUrl",
     stepReporter: "@alexkroman1/aai.stepReporter",
     stepWebhookUrl: "@alexkroman1/aai.stepWebhookUrl",
     uploadReader: "@alexkroman1/aai.uploadReader",

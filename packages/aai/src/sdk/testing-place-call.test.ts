@@ -30,7 +30,7 @@ describe("stubPlaceCall", () => {
         callId,
         to: "+15555550177",
         from: "+15555550100",
-        streamUrl: "wss://caller.example.test/phone?carrier=twilio",
+        webhookUrl: "https://caller.example.test/phone?carrier=twilio",
         parameters: { call: `c"1<&>` },
         timeLimitS: 120,
         ringTimeoutS: 30,

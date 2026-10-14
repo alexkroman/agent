@@ -27,8 +27,18 @@
  * The markup is TwiML, and Telnyx's TeXML accepts the same verbs — `Connect`,
  * `Stream`, `Pause`, `Redirect`, `Say`, `Hangup` — so one document shape
  * serves both carriers.
+ *
+ * **An OUTBOUND call comes through here too.** `stepPlaceCall` dials with
+ * `Url=<agent>/phone?carrier=twilio&param.<name>=<value>…`
+ * (`aai/sdk/phone-webhook.ts`), and every `param.*` on the query becomes a
+ * `<Parameter>` on the `<Stream>` — how the answering session receives
+ * `call.parameters`. They are carried across the cold-start `<Redirect>` too,
+ * and they are inside what the carrier signs. They grant nothing: anyone can
+ * open the sandbox's `WS /phone` with parameters of their choosing, which is
+ * why an app verifies them in `sessionContext`.
  */
 
+import { callParametersFromQuery, connectStreamTwiml } from "@alexkroman1/aai/internal";
 import { HTTPException } from "hono/http-exception";
 import type { AppContext } from "./context.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest/routes.ts";
@@ -97,9 +107,9 @@ function twiml(body: string): Response {
   });
 }
 
-/** Hand the carrier the sandbox's media-stream endpoint. */
-function connectDocument(streamUrl: string): Response {
-  return twiml(`<Connect><Stream url="${escapeXml(streamUrl)}" /></Connect>`);
+/** Hand the carrier the sandbox's media-stream endpoint, with the call's parameters. */
+function connectDocument(streamUrl: string, parameters: Record<string, string>): Response {
+  return twiml(connectStreamTwiml(streamUrl, parameters));
 }
 
 /** Wait a beat and come back — the sandbox is still booting. */
@@ -113,6 +123,38 @@ function retryDocument(webhookUrl: string): Response {
 /** Say why, then hang up. */
 function hangUpDocument(message: string): Response {
   return twiml(`<Say>${escapeXml(message)}</Say><Hangup />`);
+}
+
+/**
+ * The call's `param.*`, or a 400 — the dialler checks the same limits, so a
+ * refusal here is a hand-built URL.
+ */
+function queryParameters(query: URLSearchParams): Record<string, string> {
+  try {
+    return callParametersFromQuery(query);
+  } catch (err: unknown) {
+    throw new HTTPException(400, {
+      message: err instanceof Error ? err.message : String(err),
+      cause: err,
+    });
+  }
+}
+
+/**
+ * Where a still-booting call comes back to: the incoming query whole — the
+ * call's `param.*` included — with the carrier pinned and the attempt counted.
+ */
+function retryUrl(
+  webhook: string,
+  query: URLSearchParams,
+  carrier: string,
+  attempt: number,
+): string {
+  const next = new URL(webhook);
+  for (const [key, value] of query) next.searchParams.append(key, value);
+  next.searchParams.set("carrier", carrier);
+  next.searchParams.set("attempt", String(Math.max(0, attempt) + 1));
+  return next.toString();
 }
 
 /** Options the phone route needs beyond the broker's own. */
@@ -159,6 +201,8 @@ export function createPhoneHandler(
       throw new HTTPException(403, { message: "Invalid webhook signature" });
     }
 
+    const query = new URL(c.req.url).searchParams;
+    const parameters = queryParameters(query);
     const attempt = Number(c.req.query("attempt") ?? "0");
     const brokered = await brokerSessionUrl(slug, {
       ...broker,
@@ -168,6 +212,7 @@ export function createPhoneHandler(
     if (brokered.ok) {
       return connectDocument(
         `${guestWsUrl(brokered.guestOrigin, GUEST_ROUTES.phone)}?carrier=${requested}`,
+        parameters,
       );
     }
     // An unknown slug will never become known by waiting.
@@ -176,9 +221,6 @@ export function createPhoneHandler(
       log.debug("Giving up on a booting sandbox for a phone call", { slug, attempt });
       return hangUpDocument(UNAVAILABLE_MESSAGE);
     }
-    const next = new URL(`${origin}${webhookPath}`);
-    next.searchParams.set("carrier", requested);
-    next.searchParams.set("attempt", String(Math.max(0, attempt) + 1));
-    return retryDocument(next.toString());
+    return retryDocument(retryUrl(`${origin}${webhookPath}`, query, requested, attempt));
   };
 }

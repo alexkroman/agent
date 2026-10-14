@@ -1232,6 +1232,9 @@ export function publishStepInfoReader(reader: StepInfoReader | undefined): void;
 export function publishStepMcp(connector: StepMcpFn | undefined): void;
 
 // @internal
+export function publishStepPublicUrl(url: string | undefined): void;
+
+// @internal
 export function publishStepReporter(reporter: StepReporter | undefined): void;
 
 // @internal
