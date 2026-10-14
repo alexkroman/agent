@@ -161,7 +161,40 @@ type CodeViewProps = {
   onSelectFile: (path: string) => void;
   onEdit: (path: string, value: string) => void;
   onSave: (path: string, content: string) => Promise<void>;
+  /**
+   * Opens the GitHub sync card, or `undefined` when this platform has no
+   * GitHub App — the card renders nothing there, so the banner must not send
+   * anyone to it.
+   */
+  onSyncToGithub?: (() => void) | undefined;
 };
+
+/**
+ * "This code is yours", above the editor.
+ *
+ * A user who could see the files but not where they lived asked "if I build it
+ * here, can I still get access to it?" and left for a local editor to find
+ * out. The answer belongs where the code is. It points at GitHub sync and
+ * names no CLI command: GitHub sync is the one way out of the studio the
+ * product advertises ("Settings" in `panes/CLAUDE.md`).
+ */
+export function OwnershipBanner({ onSyncToGithub }: { onSyncToGithub?: (() => void) | undefined }) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-4 py-2 text-xs text-subtle">
+      <span className="min-w-0 flex-1">
+        This is your agent's code: a standard TypeScript project, and it is yours to keep.
+        {onSyncToGithub
+          ? " Sync it to your own GitHub repository to keep working in your editor or Claude Code."
+          : ""}
+      </span>
+      {onSyncToGithub && (
+        <button type="button" className="btn px-2 py-1 text-xs" onClick={onSyncToGithub}>
+          Sync to GitHub
+        </button>
+      )}
+    </div>
+  );
+}
 
 export function CodeView({
   files,
@@ -170,20 +203,24 @@ export function CodeView({
   onSelectFile,
   onEdit,
   onSave,
+  onSyncToGithub,
 }: CodeViewProps) {
   const paths = Object.keys(files).sort();
   // min-w-0 matters: without it the nav's intrinsic width propagates up
   // the flex tree and stretches the whole page sideways.
   return (
-    <div className="flex min-h-0 min-w-0 flex-1">
-      <FileNav paths={paths} currentFile={currentFile} onSelectFile={onSelectFile} />
-      <FileBuffer
-        key={currentFile ?? ""}
-        path={currentFile}
-        buffer={buffer}
-        onEdit={onEdit}
-        onSave={onSave}
-      />
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <OwnershipBanner onSyncToGithub={onSyncToGithub} />
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <FileNav paths={paths} currentFile={currentFile} onSelectFile={onSelectFile} />
+        <FileBuffer
+          key={currentFile ?? ""}
+          path={currentFile}
+          buffer={buffer}
+          onEdit={onEdit}
+          onSave={onSave}
+        />
+      </div>
     </div>
   );
 }
