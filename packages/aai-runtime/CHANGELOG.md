@@ -1,5 +1,12 @@
 # @alexkroman1/aai-runtime
 
+## 0.14.3
+
+### Patch Changes
+
+- Updated dependencies [d648b81]
+  - @alexkroman1/aai@0.14.3
+
 ## 0.14.2
 
 ### Patch Changes
