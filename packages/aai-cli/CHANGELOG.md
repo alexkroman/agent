@@ -1,5 +1,21 @@
 # @alexkroman1/aai-cli
 
+## 0.14.3
+
+### Patch Changes
+
+- f02133e: Add the outbound-call-agent template: an HTTP API (POST /api/v1/calls) and
+  console page that place phone calls with stepPlaceCall, carry out a task on
+  each, and return the transcript, summary and outcome.
+- f02133e: `aai dev --tunnel` now works for agents with a `client.tsx`: the tunnel's
+  hostname is added to Vite's `server.allowedHosts`, so requests through it (the
+  page, the API, and webhooks such as Twilio's) are no longer refused with
+  "Blocked request. This host is not allowed."
+- Updated dependencies [d648b81]
+  - @alexkroman1/aai@0.14.3
+  - @alexkroman1/aai-runtime@0.14.3
+  - @alexkroman1/aai-ui@0.14.3
+
 ## 0.14.2
 
 ### Patch Changes
