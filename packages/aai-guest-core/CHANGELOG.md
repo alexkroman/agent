@@ -1,5 +1,13 @@
 # aai-guest-core
 
+## 0.6.13
+
+### Patch Changes
+
+- Updated dependencies [d266c27]
+  - @alexkroman1/aai@0.14.4
+  - @alexkroman1/aai-runtime@0.14.4
+
 ## 0.6.12
 
 ### Patch Changes

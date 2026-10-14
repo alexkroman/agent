@@ -1,5 +1,16 @@
 # aai-studio-server
 
+## 0.11.25
+
+### Patch Changes
+
+- Updated dependencies [d266c27]
+  - aai-server@0.1.5
+  - @alexkroman1/aai@0.14.4
+  - @alexkroman1/aai-runtime@0.14.4
+  - aai-studio-client@0.7.10
+  - @alexkroman1/aai-ui@0.14.4
+
 ## 0.11.24
 
 ### Patch Changes
