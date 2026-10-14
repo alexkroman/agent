@@ -19,6 +19,7 @@ import { TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { createSeededRandom } from "./random.ts";
 import type { SessionCall } from "./session-call.ts";
+import { claimDtmfSender } from "./session-dtmf.ts";
 import { claimSessionEnder } from "./session-end.ts";
 import { createDetachedSlotStore } from "./session-state.ts";
 import { type StubDelegate, type StubDelegateScript, stubDelegate } from "./testing-delegate.ts";
@@ -116,6 +117,38 @@ export function endSessionCalls(
   ctx: Pick<ToolContext, "sessionId">,
 ): readonly { afterReply: boolean }[] {
   return endSessionRecords.get(ctx.sessionId) ?? [];
+}
+
+/** What {@link createToolContext} recorded per session id for `sendDtmf`, as {@link endSessionRecords}. */
+const dtmfRecords = new Map<string, string[]>();
+
+/**
+ * Every `sendDtmf(ctx, keys)` a tool made on a {@link createToolContext}
+ * context's session, in call order, each as the keys it pressed after the
+ * separators were dropped (`"1, 2"` reads `"12"`). Empty when it pressed none.
+ *
+ * ```ts
+ * import { tool } from "@alexkroman1/aai";
+ * import { sendDtmf, sentDtmfCalls } from "@alexkroman1/aai/experimental";
+ * import { createToolContext } from "@alexkroman1/aai/testing";
+ * import { expect, test } from "vitest";
+ * import { z } from "zod";
+ *
+ * const pressKeys = tool({
+ *   description: "Press phone keys.",
+ *   inputSchema: z.object({ keys: z.string() }),
+ *   execute: ({ keys }, ctx) => ({ pressed: sendDtmf(ctx, keys) }),
+ * });
+ *
+ * test("press_keys answers the menu", async () => {
+ *   const ctx = createToolContext();
+ *   await pressKeys.execute({ keys: "1" }, ctx);
+ *   expect(sentDtmfCalls(ctx)).toEqual(["1"]);
+ * });
+ * ```
+ */
+export function sentDtmfCalls(ctx: Pick<ToolContext, "sessionId">): readonly string[] {
+  return dtmfRecords.get(ctx.sessionId) ?? [];
 }
 
 /**
@@ -461,7 +494,7 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
   // The runtime's own recorder, so each field is normalized as a socket's is.
   const identity = { clientId, phone: clientPhone, location: clientLocation, call };
   recordSessionIdentity(ctx.sessionId, identity);
-  // Registered for EVERY context, so `endSession(ctx)` answers `true` here the
+  // Registered for EVERY context, so `endSession(ctx)` (and `sendDtmf`) answers `true` here the
   // way it does on a live session and the spec reads what was asked with
   // `endSessionCalls(ctx)`. Never released: the context outlives nothing, and a
   // later context with the same `sessionId` claims the id over it — and starts
@@ -472,6 +505,12 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
     const record = endSessionRecords.get(sessionId) ?? [];
     record.push(options);
     endSessionRecords.set(sessionId, record);
+  });
+  dtmfRecords.delete(sessionId);
+  claimDtmfSender(sessionId, (keys) => {
+    const record = dtmfRecords.get(sessionId) ?? [];
+    record.push(keys);
+    dtmfRecords.set(sessionId, record);
   });
   return ctx;
 }

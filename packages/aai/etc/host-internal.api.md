@@ -527,6 +527,9 @@ export type ChannelOutboxEntry = {
 };
 
 // @internal
+export function claimDtmfSender(sessionId: string, sender: DtmfSender): () => boolean;
+
+// @internal
 export function claimSessionEnder(sessionId: string, ender: SessionEnder): () => boolean;
 
 // @internal
@@ -740,6 +743,9 @@ export const DETACHED_SESSION_SPEECH: SessionSpeech;
 export type DnsLookup = (hostname: string) => Promise<{
     address: string;
 }>;
+
+// @public
+export type DtmfSender = (keys: string) => void;
 
 // @public
 export const ELEVENLABS_API_KEY_ENV: string;

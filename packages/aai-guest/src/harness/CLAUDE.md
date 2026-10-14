@@ -155,4 +155,6 @@ if one seems needed, the bridge is the wrong shape.
   lists what every codec owes (decode never throws; non-`inbound` media
   dropped).
 - Known gaps, deliberate: no `mark` frames (pipeline uses its open-loop
-  estimate); DTMF ignored.
+  estimate); inbound DTMF ignored. OUTBOUND keys (`sendDtmf`, on
+  `/experimental`) are in-band tones the session plays as agent audio
+  (`aai-runtime/src/session/dtmf.ts`), so the bridge carries them unchanged.

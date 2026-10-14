@@ -309,6 +309,7 @@ export { setSessionCall } from "./sdk/session-call.ts";
 // The runtime's half of `sessionClientId` (authoring API on `/tools`): recorded
 // where the session id is decided, read back by a tool from `ctx.sessionId`.
 export { setSessionClient } from "./sdk/session-client.ts";
+export { claimDtmfSender, type DtmfSender } from "./sdk/session-dtmf.ts";
 export { claimSessionEnder, type SessionEnder } from "./sdk/session-end.ts";
 // The runtime's half of `sessionClientLocation`: the socket's `?location=` and
 // `sessionContext`'s `location` are recorded here, cleaned by one rule.

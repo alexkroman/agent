@@ -8,7 +8,7 @@
  *   id, against a stubbed `ctx.workflows`.
  * - **The brief** — that a call's parameters round-trip, and that a session
  *   whose parameters were not signed by this app is refused before it starts.
- * - **The session** — the live transcript, `end_call`, and the hand-over of
+ * - **The session** — the live transcript, `press_keys`, `end_call`, and the hand-over of
  *   the transcript to the run as the session ends.
  * - **The run, durably** — `callFlow` on the real replay engine
  *   (`runWorkflow`) against a stubbed Twilio and model: it suspends while the
@@ -18,6 +18,7 @@
 
 import agentDef from "virtual:aai/agent";
 import type { RouteContext, RouteRequest } from "@alexkroman1/aai";
+import { sentDtmfCalls } from "@alexkroman1/aai/experimental";
 import {
   createRunSnapshot,
   createToolContext,
@@ -300,6 +301,22 @@ describe("the session", () => {
     expect(result).toMatchObject({ ended: expect.any(Boolean) });
     expect(endSessionCalls(ctx)).toHaveLength(1);
     expect(liveCall("call_vm")?.voicemail).toBe(true);
+  });
+
+  test("press_keys plays the keys into the call and writes them into its transcript", async () => {
+    openCall("s_1", "call_menu", 0);
+    const ctx = createToolContext({ sessionId: "s_1" });
+    const result = await run("press_keys", { keys: "2#" }, ctx);
+
+    expect(result).toMatchObject({ pressed: "2#" });
+    expect(sentDtmfCalls(ctx)).toEqual(["2#"]);
+    expect(liveCall("call_menu")?.transcript).toEqual([{ role: "agent", text: "[pressed 2#]" }]);
+  });
+
+  test("press_keys refuses a key no phone has, so the model can retry", async () => {
+    const ctx = createToolContext({ sessionId: "s_1" });
+    await expect(run("press_keys", { keys: "one" }, ctx)).rejects.toThrow(/not a phone key/);
+    expect(sentDtmfCalls(ctx)).toEqual([]);
   });
 
   test("hands the transcript to the call's run as the session ends", async () => {

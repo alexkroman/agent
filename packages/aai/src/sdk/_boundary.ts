@@ -94,6 +94,7 @@ export const BOUNDARY_KEYS = {
     runtimeInstances: "@alexkroman1/aai-runtime.instances",
     sessionCalls: "@alexkroman1/aai.sessionCalls",
     sessionClients: "@alexkroman1/aai.sessionClients",
+    sessionDtmfSenders: "@alexkroman1/aai.sessionDtmfSenders",
     sessionEnders: "@alexkroman1/aai.sessionEnders",
     sessionLocations: "@alexkroman1/aai.sessionLocations",
     sessionPhones: "@alexkroman1/aai.sessionPhones",

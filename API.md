@@ -1151,6 +1151,9 @@ interface DelegateToolCall {
 }
 
 // @public
+export const DTMF_KEYS: string;
+
+// @public
 export function ensureComposioWebhook(ctx: EnvContext, url: string, options?: EnsureComposioWebhookOptions): Promise<{
     id: string;
     secret: string;
@@ -1268,6 +1271,9 @@ export interface LocalSttOptions extends ProviderCredentialOptions {
     minTurnSilenceMs?: number;
     url?: string;
 }
+
+// @public
+export const MAX_DTMF_KEYS = 64;
 
 // @public
 type McpResolvable<T> = T | ((context: McpResolveContext) => T | Promise<T>);
@@ -1401,6 +1407,12 @@ type SayOptions = {
     interruptible?: boolean | undefined;
     record?: boolean | undefined;
 };
+
+// @public
+export function sendDtmf(ctx: Pick<ToolContext, "sessionId">, keys: string): boolean;
+
+// @public
+export function sentDtmfCalls(ctx: Pick<ToolContext, "sessionId">): readonly string[];
 
 // @public @sealed
 interface SessionSpeech {
@@ -2466,6 +2478,9 @@ export type ChannelOutboxEntry = {
 };
 
 // @internal
+export function claimDtmfSender(sessionId: string, sender: DtmfSender): () => boolean;
+
+// @internal
 export function claimSessionEnder(sessionId: string, ender: SessionEnder): () => boolean;
 
 // @internal
@@ -2679,6 +2694,9 @@ export const DETACHED_SESSION_SPEECH: SessionSpeech;
 export type DnsLookup = (hostname: string) => Promise<{
     address: string;
 }>;
+
+// @public
+export type DtmfSender = (keys: string) => void;
 
 // @public
 export const ELEVENLABS_API_KEY_ENV: string;
@@ -6097,6 +6115,7 @@ export const BOUNDARY_KEYS: {
         readonly runtimeInstances: "@alexkroman1/aai-runtime.instances";
         readonly sessionCalls: "@alexkroman1/aai.sessionCalls";
         readonly sessionClients: "@alexkroman1/aai.sessionClients";
+        readonly sessionDtmfSenders: "@alexkroman1/aai.sessionDtmfSenders";
         readonly sessionEnders: "@alexkroman1/aai.sessionEnders";
         readonly sessionLocations: "@alexkroman1/aai.sessionLocations";
         readonly sessionPhones: "@alexkroman1/aai.sessionPhones";

@@ -79,6 +79,20 @@ describeEval(
     );
 
     test(
+      "answers a phone menu by pressing the key toward the callee, saying nothing",
+      async ({ session }) => {
+        const turn = await session.say(
+          "Thanks for calling. To leave a message for Maria, press 1. For all other calls, press 0.",
+        );
+        expect(toolArgsIn(turn.toolCalls, "press_keys")[0]).toMatchObject({ keys: "1" });
+        expect(turn.endedSession).toBe(false);
+      },
+      {
+        stubReply: [{ tool: "press_keys", args: { keys: "1" } }, ""],
+      },
+    );
+
+    test(
       "leaves the voicemail the task asks for, then hangs up",
       async ({ session }) => {
         const turn = await session.say(
