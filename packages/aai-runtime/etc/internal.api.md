@@ -604,6 +604,12 @@ export const SERVER_ROUTES: {
         readonly path: "/phone";
         readonly match: "prefix";
     };
+    readonly phoneWebhook: {
+        readonly transport: "http";
+        readonly path: "/phone";
+        readonly match: "exact";
+        readonly methods: readonly ["GET", "POST"];
+    };
     readonly inbox: {
         readonly transport: "ws";
         readonly path: "/inbox";

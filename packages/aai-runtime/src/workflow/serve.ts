@@ -47,6 +47,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   PUBLIC_URL_UNCONFIGURED_MESSAGE,
+  publishStepPublicUrl,
   publishStepWebhookUrl,
 } from "@alexkroman1/aai/host-internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
@@ -124,11 +125,17 @@ export function workflowWebhookUrl(publicUrl: string, token: string): string {
  * end. Publishing again REPLACES, which is what a redeploy or a repeat bundle
  * load means.
  *
+ * It publishes the bare origin too, as `stepPlaceCall`'s default `agentUrl`
+ * (`publishStepPublicUrl`) — under this name rather than a new one because the
+ * guest harness calls it on the bundle's own runtime copy, and a harness baked
+ * into the image must keep finding the name it was built against.
+ *
  * @internal
  */
 export function publishWorkflowWebhookUrl(publicUrl: string | undefined): void {
   const base = publicUrl?.trim();
   publishStepWebhookUrl(base ? (token) => workflowWebhookUrl(base, token) : undefined);
+  publishStepPublicUrl(base);
 }
 
 /**

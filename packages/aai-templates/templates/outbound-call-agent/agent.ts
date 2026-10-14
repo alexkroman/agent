@@ -28,10 +28,10 @@
  * | `CALLS_API_KEY` | The `Authorization` the API requires, and the key the call brief is signed with |
  * | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` | The Twilio account that dials |
  * | `TWILIO_FROM_NUMBER` | A number on that account, in E.164 — the caller id |
- * | `CALLER_AGENT_URL` | This agent's PUBLIC base URL; Twilio streams the answered call to `<it>/phone` |
  *
- * Under `aai dev`, run `aai dev --tunnel` and set `CALLER_AGENT_URL` to the
- * tunnel URL it prints — Twilio cannot reach `localhost`.
+ * Twilio is pointed back at THIS agent's public URL, which the host knows: the
+ * deployed agent's own URL, or under `aai dev` the tunnel `aai dev --tunnel`
+ * opens — Twilio cannot reach `localhost`.
  *
  * ## The session is a stranger until it proves otherwise
  *
@@ -82,13 +82,7 @@ export default agent({
   greeting: "",
   // The run waits on these; the API starts them. A session never does.
   workflows: { call },
-  requiredEnv: [
-    "CALLS_API_KEY",
-    "TWILIO_ACCOUNT_SID",
-    "TWILIO_AUTH_TOKEN",
-    "TWILIO_FROM_NUMBER",
-    "CALLER_AGENT_URL",
-  ],
+  requiredEnv: ["CALLS_API_KEY", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"],
   // Phone audio: give a callee a beat longer to finish a thought.
   turnTaking: { minSilenceMs: 1200 },
 

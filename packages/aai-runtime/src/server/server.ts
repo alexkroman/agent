@@ -17,7 +17,11 @@ import { WebSocketServer } from "ws";
 import { adoptRequestTrace } from "../_request-trace.ts";
 import { consoleLogger } from "../logger.ts";
 import { asSessionWebSocket } from "../session/index.ts";
-import { enabledCarriers, handleTelephonyUpgrade } from "../telephony/telephony-server.ts";
+import {
+  enabledCarriers,
+  handleTelephonyUpgrade,
+  handleTelephonyWebhook,
+} from "../telephony/telephony-server.ts";
 import { answerHandlerFailure, sendJson } from "../workflow/api/http.ts";
 import { createWorkflowApi, WORKFLOW_API_TOKEN_ENV } from "../workflow/api.ts";
 import { serveFetch } from "../workflow/http-adapter.ts";
@@ -243,6 +247,10 @@ export function createServerForRuntimeWithSeams(
 
     // `/api/*` BEFORE static serving too, so no asset can shadow a declared route.
     if (agentRoutesApi(req, res, url, method)) return;
+    if (routeMatches(SERVER_ROUTES.phoneWebhook, url, method)) {
+      handleTelephonyWebhook({ req, res, logger, carriers: enabledCarriers(options.telephony) });
+      return;
+    }
     if (clientDir && (await serveStatic(clientDir, req, res, logger))) return;
 
     if (routeMatches(SERVER_ROUTES.root, url, method)) {

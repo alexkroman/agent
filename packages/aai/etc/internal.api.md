@@ -73,6 +73,7 @@ export const BOUNDARY_KEYS: {
         readonly stepInfoReader: "@alexkroman1/aai.stepInfoReader";
         readonly stepMcp: "@alexkroman1/aai.stepMcp";
         readonly stepNotifyClient: "@alexkroman1/aai.stepNotifyClient";
+        readonly stepPublicUrl: "@alexkroman1/aai.stepPublicUrl";
         readonly stepReporter: "@alexkroman1/aai.stepReporter";
         readonly stepWebhookUrl: "@alexkroman1/aai.stepWebhookUrl";
         readonly uploadReader: "@alexkroman1/aai.uploadReader";
@@ -84,6 +85,12 @@ export const BUILTIN_TOOL_ENV: Readonly<Partial<Record<BuiltinTool, string>>>;
 
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
+
+// @public
+export const CALL_PARAMETER_PREFIX = "param.";
+
+// @public
+export function callParametersFromQuery(query: URLSearchParams): Record<string, string>;
 
 // @internal
 export function capToolResult(result: string): string;
@@ -155,6 +162,9 @@ export type ClientToolCall = (signal: AbortSignal) => Promise<unknown>;
 export interface CoalescingRunner<T> {
     trigger(): Promise<T>;
 }
+
+// @public
+export function connectStreamTwiml(streamUrl: string, parameters: Readonly<Record<string, string>>): string;
 
 // @internal
 export function createBackoffLoop(attempt: () => void, options: BackoffLoopOptions): BackoffLoop;
@@ -271,6 +281,9 @@ export interface Epoch {
     current(): number;
     isCurrent(epoch: number): boolean;
 }
+
+// @public
+export function escapeXml(value: string): string;
 
 // @public
 type FindByKeyOptions = {
@@ -485,6 +498,9 @@ export function parseWsUpgradeParams(rawUrl: string, log?: {
     clientId?: string;
     clientPhone?: string;
 };
+
+// @public
+export function phoneWebhookUrl(agentUrl: string, carrier: string, parameters: Readonly<Record<string, string>>): string;
 
 // @internal
 export const PIPELINE_PLAYBACK_GRACE_MS = 750;

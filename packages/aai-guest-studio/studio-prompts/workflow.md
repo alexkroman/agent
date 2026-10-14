@@ -2810,8 +2810,11 @@ been spoken (`{ afterReply: false }` cuts it); a spec reads
 
 ### Placing a call
 
-`stepPlaceCall` (`/step`) dials through Twilio from a step; the answered call
-streams to `<agentUrl>/phone?carrier=twilio` (an agent with `telephony`):
+`stepPlaceCall` (`/step`) dials through Twilio from a step; once answered,
+Twilio fetches `<agentUrl>/phone?carrier=twilio` and streams to that agent
+(which needs `telephony`). `agentUrl` defaults to THIS agent's public URL —
+deployed, or the tunnel of `aai dev --tunnel` — so pass it only to have another
+agent answer:
 
 ```ts
 import { requireStepEnv, stepPlaceCall } from "@alexkroman1/aai/step";
@@ -2821,7 +2824,6 @@ export async function dial(to: string, callRef: string): Promise<string> {
     carrier: "twilio",
     to,
     from: requireStepEnv("TWILIO_FROM_NUMBER"),
-    agentUrl: requireStepEnv("CALLER_AGENT_URL"), // its public base URL
     parameters: { call: callRef }, // → `call.parameters`
   });
   return callId;
@@ -2832,9 +2834,10 @@ Credentials: env `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`, or `credentials`.
 Poll `stepCallStatus({ carrier, callId })` between `ctx.sleep`s until
 `completed`/`busy`/`no-answer`/`failed`/`canceled`. Failures are
 `PlaceCallError` (`retryable` only on 429/5xx/no answer; advice for common
-Twilio codes; never the token). A lost answer can ring twice: keep the dial
-step's `maxAttempts` small. `timeLimitS` (default 600) caps the call. Specs:
-`stubPlaceCall()` (`/testing`). Twilio only.
+Twilio codes; never the token; a loopback `agentUrl` is refused). A lost answer
+can ring twice: keep the dial step's `maxAttempts` small. `timeLimitS`
+(default 600) caps the call. Specs: `stubPlaceCall({ publicUrl })` (`/testing`).
+Twilio only.
 
 ### Saying something from outside a turn — `ctx.speech`
 

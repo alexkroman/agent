@@ -141,6 +141,15 @@ export const SERVER_ROUTES = {
   },
   session: { transport: "ws", path: SESSION_PATH, match: "prefix" },
   phone: { transport: "ws", path: TELEPHONY_PATH, match: "prefix" },
+  // The call-answering WEBHOOK on the same path: TwiML pointing the carrier at
+  // the `WS /phone` above (`telephony-server.ts`). GET too, because a phone
+  // number's webhook method is the operator's to choose.
+  phoneWebhook: {
+    transport: "http",
+    path: TELEPHONY_PATH,
+    match: "exact",
+    methods: ["GET", "POST"],
+  },
   // A device's idle socket for `stepNotifyClient`, named by `?client=`.
   inbox: { transport: "ws", path: CLIENT_INBOX_PATH, match: "exact" },
   // `agent({ routes })`, the app's own JSON endpoints. The methods are the five

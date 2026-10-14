@@ -363,6 +363,9 @@ export {
   type ClientNotifier,
   publishClientNotifier,
 } from "./sdk/step-notify-client.ts";
+// `stepPlaceCall`'s default `agentUrl`, published by whatever knows where the
+// agent is reachable from the internet.
+export { publishStepPublicUrl } from "./sdk/step-place-call.ts";
 export { publishStepReporter, type StepReporter } from "./sdk/step-report.ts";
 export {
   type ClientInboxDefaults,

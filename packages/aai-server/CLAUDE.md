@@ -486,6 +486,11 @@ this exists instead of `/:slug/websocket`. The guest half is
   one naming a carrier whose secret is absent.
 - **The signed URL is the PUBLIC one**, composed from `resolvePublicOrigin`,
   never `c.req.url`.
+- **Outbound calls land here too**: `stepPlaceCall` dials with
+  `Url=<agent>/phone?…&param.<name>=…` (`aai/sdk/phone-webhook.ts`), and every
+  `param.*` becomes a `<Parameter>` on the `<Stream>` and survives the
+  cold-start `<Redirect>`. Inline TwiML cannot work on the platform: it must
+  name a WebSocket at dial time, and the platform upgrades no `/:slug/phone`.
 
 ### Durable workflows — `/:slug/.well-known/workflow/v1/webhook/:token`
 

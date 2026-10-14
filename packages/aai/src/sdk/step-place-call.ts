@@ -13,11 +13,14 @@
  *
  * ## The loop, end to end
  *
- * 1. A step calls {@link stepPlaceCall} with the number, the caller id, the
- *    public base URL of the agent that should ANSWER (this one, or a separate
- *    calling agent), and the `parameters` that say which of the app's calls it
- *    is. Twilio is asked to dial with TwiML that, once the call is answered,
- *    connects its audio to `<agentUrl>/phone?carrier=twilio` and passes each
+ * 1. A step calls {@link stepPlaceCall} with the number, the caller id, and
+ *    the `parameters` that say which of the app's calls it is. Twilio is asked
+ *    to dial and, once the call is answered, to fetch the webhook
+ *    `<agentUrl>/phone?carrier=twilio` — this agent's public URL unless the
+ *    step names another — with each parameter on its query
+ *    (`phone-webhook.ts`). Whichever server answers that webhook (the
+ *    platform's `/:slug/phone`, or a self-hosted server's own `/phone`) replies
+ *    with TwiML that streams the audio to the agent's `WS /phone`, each
  *    parameter as a `<Parameter>`.
  * 2. The answering agent's `sessionContext` reads them as `call.parameters` —
  *    and should `refuse` a session whose parameters it did not issue, because
@@ -62,6 +65,7 @@
  * @module
  */
 
+import { globalSlot } from "./_boundary.ts";
 import {
   basicCredential,
   callStatusRequest,
@@ -117,11 +121,16 @@ export type PlaceCallOptions = {
   from: string;
   /**
    * The PUBLIC base URL of the agent that answers — `https://…` or `wss://…`,
-   * with any path prefix it is served under. The call's audio is streamed to
-   * `<agentUrl>/phone?carrier=twilio`, so that agent must declare
-   * `telephony` for Twilio.
+   * with any path prefix it is served under. Twilio fetches the webhook
+   * `<agentUrl>/phone?carrier=twilio` once the call is answered, and that
+   * agent must declare `telephony` for Twilio.
+   *
+   * Defaults to THIS agent's public URL, which the host publishes: the
+   * deployed agent's own URL on the managed platform, the tunnel under
+   * `aai dev --tunnel`, `PUBLIC_URL` for a self-hosted server. Pass it only to
+   * have a DIFFERENT agent answer.
    */
-  agentUrl: string;
+  agentUrl?: string;
   /**
    * Custom parameters for the answering session, each a TwiML `<Parameter>`,
    * read there as `call.parameters`. At most 32, each name plus value under
@@ -238,12 +247,74 @@ export class PlaceCallError extends Error {
   }
 }
 
+/** Where the host publishes this agent's public URL — {@link publishStepPublicUrl}. */
+const STEP_PUBLIC_URL_SLOT = globalSlot<string>("stepPublicUrl");
+
+/**
+ * Publish this agent's public base URL, the default `agentUrl` of
+ * {@link stepPlaceCall}. `undefined` (or blank) unpublishes.
+ *
+ * Called by whatever knows where the agent is reachable from the internet:
+ * the guest harness (the platform's `AAI_PUBLIC_BASE_URL`) and
+ * `createAgentServer` (its `publicUrl`, which `aai dev` fills).
+ *
+ * @internal — a host concern, exported from `@alexkroman1/aai/host-internal`.
+ */
+export function publishStepPublicUrl(url: string | undefined): void {
+  STEP_PUBLIC_URL_SLOT.set(url?.trim() || undefined);
+}
+
+/** What {@link publishStepPublicUrl} last published — for a stub to put back. @internal */
+export function publishedStepPublicUrl(): string | undefined {
+  return STEP_PUBLIC_URL_SLOT.get();
+}
+
+/** Hosts a carrier on the internet can never reach. */
+function isLoopback(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname === "[::1]" ||
+    /^127\./.test(hostname)
+  );
+}
+
+/**
+ * The base URL Twilio is pointed at: the caller's, or the published one.
+ * Throws (plain `Error`) when there is none, or it is loopback — Twilio would
+ * dial and then fail to fetch the webhook, which a person hears as a call that
+ * rings and goes silent.
+ */
+function answeringAgentUrl(explicit: string | undefined): string {
+  const url = explicit ?? STEP_PUBLIC_URL_SLOT.get();
+  if (url === undefined) {
+    throw new Error(
+      "no agentUrl, and this host published no public URL — deploy the agent, run " +
+        "`aai dev --tunnel`, set `PUBLIC_URL`, or pass `agentUrl`",
+    );
+  }
+  let hostname: string | undefined;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    // Malformed: `phoneWebhookUrl` refuses it with the sentence that says so.
+  }
+  if (hostname !== undefined && isLoopback(hostname)) {
+    throw new Error(
+      `agentUrl ${url} is loopback, which Twilio cannot reach — run \`aai dev --tunnel\` ` +
+        "or set `PUBLIC_URL` to a public URL for this server",
+    );
+  }
+  return url;
+}
+
 /** Longest one request to the carrier may take. */
 const CARRIER_REQUEST_TIMEOUT_MS = 30_000;
 
 /**
  * Dial `to` from `from` and, once answered, stream the call to the agent at
- * `agentUrl`. Resolves the carrier's call id as soon as the carrier ACCEPTS the
+ * `agentUrl` — this agent, unless another is named. Resolves the carrier's call
+ * id as soon as the carrier ACCEPTS the
  * request — the phone may not have rung yet; {@link stepCallStatus} follows it.
  *
  * @example Dial, then follow the call until it is over
@@ -259,7 +330,6 @@ const CARRIER_REQUEST_TIMEOUT_MS = 30_000;
  *         carrier: "twilio",
  *         to: input.to,
  *         from: requireStepEnv("TWILIO_FROM_NUMBER"),
- *         agentUrl: requireStepEnv("CALLER_AGENT_URL"),
  *         parameters: { call: input.callRef },
  *       }),
  *     { maxAttempts: 2 },
@@ -282,7 +352,7 @@ export async function stepPlaceCall(options: PlaceCallOptions): Promise<PlacedCa
       return dialRequest(credentials, {
         to: options.to,
         from: options.from,
-        agentUrl: options.agentUrl,
+        agentUrl: answeringAgentUrl(options.agentUrl),
         parameters: options.parameters ?? {},
         timeLimitS: options.timeLimitS ?? DEFAULT_CALL_TIME_LIMIT_S,
         ringTimeoutS: options.ringTimeoutS ?? DEFAULT_CALL_RING_TIMEOUT_S,

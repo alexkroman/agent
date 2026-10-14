@@ -10,9 +10,11 @@
  * folded into one function to prevent.
  */
 
+import type http from "node:http";
 import type { TelephonyAccess } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
-import { enabledCarriers } from "./telephony-server.ts";
+import { silentLogger } from "../logger.ts";
+import { enabledCarriers, handleTelephonyWebhook } from "./telephony-server.ts";
 
 describe("enabledCarriers", () => {
   test("an absent declaration serves nothing", () => {
@@ -49,5 +51,60 @@ describe("enabledCarriers", () => {
     // were validated by whichever SDK wrote them.
     const stored: TelephonyAccess = JSON.parse('["twilio", "vonage"]');
     expect(enabledCarriers(stored)).toEqual(["twilio"]);
+  });
+});
+
+/** Answer one webhook request; the response is captured, nothing is bound. */
+function webhook(
+  url: string,
+  headers: http.IncomingHttpHeaders = { host: "agent.example.test" },
+  carriers: readonly string[] = ["twilio"],
+): { status: number; body: string } {
+  const out = { status: 0, body: "" };
+  const res = {
+    writeHead(status: number) {
+      out.status = status;
+    },
+    end(body: string) {
+      out.body = body;
+    },
+  };
+  handleTelephonyWebhook({
+    req: { url, headers },
+    res,
+    logger: silentLogger,
+    carriers,
+  });
+  return out;
+}
+
+describe("handleTelephonyWebhook", () => {
+  test("answers TwiML streaming to this server's own WS /phone, with each param.*", () => {
+    // What `stepPlaceCall` dials through on a self-hosted server or `aai dev`.
+    const { status, body } = webhook("/phone?carrier=twilio&param.call=c_1", {
+      host: "abc.trycloudflare.com",
+      "x-forwarded-proto": "https",
+    });
+    expect(status).toBe(200);
+    expect(body).toContain(
+      '<Stream url="wss://abc.trycloudflare.com/phone?carrier=twilio">' +
+        '<Parameter name="call" value="c_1"/></Stream>',
+    );
+  });
+
+  test("streams over plain ws when the request was not https", () => {
+    expect(webhook("/phone?carrier=twilio").body).toContain(
+      'url="ws://agent.example.test/phone?carrier=twilio"',
+    );
+  });
+
+  test("refuses with a status when the agent declares no carriers, or not this one", () => {
+    expect(webhook("/phone?carrier=twilio", undefined, []).status).toBe(404);
+    expect(webhook("/phone?carrier=telnyx").status).toBe(404);
+    expect(webhook("/phone?carrier=pigeon").status).toBe(400);
+  });
+
+  test("refuses parameters past Twilio's limits", () => {
+    expect(webhook(`/phone?carrier=twilio&param.p=${"x".repeat(600)}`).status).toBe(400);
   });
 });

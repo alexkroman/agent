@@ -1,17 +1,18 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * Twilio's Calls API as data: the requests `stepPlaceCall` / `stepCallStatus`
- * send, the TwiML that connects an answered call to an agent, the status
- * vocabulary, and the refusal codes a person can act on.
+ * send, the status vocabulary, and the refusal codes a person can act on. The
+ * webhook a dial points the call at is `phone-webhook.ts`'s.
  *
  * Pure, and its own module for two readers: `step-place-call.ts` sends these,
  * and `testing-place-call.ts` (`stubPlaceCall`) reads them back — the stub parses
- * the TwiML this module wrote, so a spec asserts the parameters the answering
- * session will really see rather than a second rendering of them.
+ * the webhook URL this module wrote, so a spec asserts the parameters the
+ * answering session will really see rather than a second rendering of them.
  *
  * @module
  */
 
+import { phoneWebhookUrl } from "./phone-webhook.ts";
 import type { PlaceCallCredentials, PlacedCallStatus } from "./step-place-call.ts";
 
 /** The credentials a request is signed with — `PlaceCallCredentials`, named here for the reader. */
@@ -20,10 +21,6 @@ export type TwilioCredentials = PlaceCallCredentials;
 /** Where Twilio's REST API lives. */
 export const TWILIO_API = "https://api.twilio.com/2010-04-01";
 
-/** At most this many `<Parameter>`s — what the answering bridge keeps (`session-call.ts`). */
-export const MAX_CALL_PARAMETERS = 32;
-/** Twilio's limit on one `<Parameter>`'s name plus value. */
-export const MAX_CALL_PARAMETER_CHARS = 500;
 /** Twilio's ceiling on `TimeLimit` (four hours). */
 const MAX_TIME_LIMIT_S = 14_400;
 /** Twilio's ceiling on `Timeout`. */
@@ -46,73 +43,6 @@ export type DialSpec = {
   timeLimitS: number;
   ringTimeoutS: number;
 };
-
-/**
- * XML-escape a value going into TwiML — all five specials, as numeric
- * references, so a quote in a parameter cannot close the attribute it is in.
- */
-export function escapeXml(value: string): string {
-  return value.replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
-}
-
-/** {@link escapeXml} undone, plus the named entities an XML reader would also accept. */
-function unescapeXml(value: string): string {
-  const named: Record<string, string> = { lt: "<", gt: ">", amp: "&", quot: '"', apos: "'" };
-  return value.replace(/&(#\d+|[a-z]+);/g, (whole, ref: string) =>
-    ref.startsWith("#") ? String.fromCharCode(Number(ref.slice(1))) : (named[ref] ?? whole),
-  );
-}
-
-/**
- * The stream URL for an agent's public base: `http(s)` becomes `ws(s)`, a
- * trailing slash is dropped, and `/phone?carrier=twilio` is appended.
- *
- * Throws on anything but an absolute `http(s)`/`ws(s)` URL with no query or
- * fragment — Twilio would dial the number and then fail to connect the audio,
- * which a person hears as a call that rings and goes silent.
- */
-export function phoneStreamUrl(agentUrl: string): string {
-  let url: URL;
-  try {
-    url = new URL(agentUrl);
-  } catch (err: unknown) {
-    throw new Error(`agentUrl is not a URL: ${JSON.stringify(agentUrl)}`, { cause: err });
-  }
-  if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol)) {
-    throw new Error(`agentUrl must be https:// or wss://, not ${url.protocol}`);
-  }
-  if (url.search !== "" || url.hash !== "") {
-    throw new Error("agentUrl must be a base URL, with no query or fragment");
-  }
-  const base = `${url.protocol.replace(/^http/, "ws")}//${url.host}${url.pathname}`;
-  return `${base.replace(/\/+$/, "")}/phone?carrier=twilio`;
-}
-
-/** The TwiML that connects the answered call's audio to `streamUrl`, one `<Parameter>` each. */
-export function callTwiml(streamUrl: string, parameters: Readonly<Record<string, string>>): string {
-  const params = Object.entries(parameters)
-    .map(([name, value]) => `<Parameter name="${escapeXml(name)}" value="${escapeXml(value)}"/>`)
-    .join("");
-  return `<Response><Connect><Stream url="${escapeXml(streamUrl)}">${params}</Stream></Connect></Response>`;
-}
-
-/**
- * The stream URL and parameters back out of TwiML {@link callTwiml} wrote.
- * Only for that TwiML — it is a reader of this module's own output, not of XML.
- */
-export function parseCallTwiml(twiml: string): {
-  streamUrl: string | undefined;
-  parameters: Record<string, string>;
-} {
-  const url = /<Stream url="([^"]*)"/.exec(twiml)?.[1];
-  const parameters: Record<string, string> = {};
-  for (const [, name = "", value = ""] of twiml.matchAll(
-    /<Parameter name="([^"]*)" value="([^"]*)"\/>/g,
-  )) {
-    parameters[unescapeXml(name)] = unescapeXml(value);
-  }
-  return { streamUrl: url === undefined ? undefined : unescapeXml(url), parameters };
-}
 
 /** The Basic credential Twilio's API authenticates with: `sid:token`, base64. */
 export function basicCredential(credentials: TwilioCredentials): string {
@@ -139,26 +69,14 @@ export function dialRequest(credentials: TwilioCredentials, spec: DialSpec): Twi
   if (spec.to.trim() === "") throw new Error("`to` is empty: pass the number to call, E.164");
   if (spec.from.trim() === "")
     throw new Error("`from` is empty: pass a number on the Twilio account");
-  const entries = Object.entries(spec.parameters);
-  if (entries.length > MAX_CALL_PARAMETERS) {
-    throw new Error(`at most ${MAX_CALL_PARAMETERS} call parameters, got ${entries.length}`);
-  }
-  for (const [name, value] of entries) {
-    if (
-      typeof value !== "string" ||
-      name === "" ||
-      name.length + value.length >= MAX_CALL_PARAMETER_CHARS
-    ) {
-      throw new Error(
-        `call parameter ${JSON.stringify(name.slice(0, 40))} must be a non-empty name and a ` +
-          `string value, together under ${MAX_CALL_PARAMETER_CHARS} characters`,
-      );
-    }
-  }
   const form = new URLSearchParams({
     To: spec.to.trim(),
     From: spec.from.trim(),
-    Twiml: callTwiml(phoneStreamUrl(spec.agentUrl), spec.parameters),
+    // A WEBHOOK, never inline `Twiml`: only a webhook works on the managed
+    // platform, and it lifts Twilio's 4,000-character cap on inline TwiML off
+    // the parameters. See `phone-webhook.ts`.
+    Url: phoneWebhookUrl(spec.agentUrl, "twilio", spec.parameters),
+    Method: "POST",
     TimeLimit: wholeSeconds("timeLimitS", spec.timeLimitS, MAX_TIME_LIMIT_S),
     Timeout: wholeSeconds("ringTimeoutS", spec.ringTimeoutS, MAX_RING_TIMEOUT_S),
   });

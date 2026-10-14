@@ -39,9 +39,12 @@ describe("viteDevConfig", () => {
     const target = "http://127.0.0.1:3001";
     const rows = Object.entries(SERVER_ROUTES).filter(([name]) => name !== "root");
     expect(rows.length).toBeGreaterThanOrEqual(8);
+    // A path a `ws` row owns stays `ws: true` whatever else shares it: `/phone`
+    // is both the media stream and its webhook, and `ws: true` proxies HTTP too.
+    const wsPaths = new Set(rows.filter(([, r]) => r.transport === "ws").map(([, r]) => r.path));
     for (const [name, route] of rows) {
       const entry = proxy[route.path];
-      if (route.transport === "ws") {
+      if (route.transport === "ws" || wsPaths.has(route.path)) {
         expect(entry, name).toEqual({ target, ws: true });
       } else if (route.match === "prefix") {
         expect(entry, name).toMatchObject({ target });
@@ -52,7 +55,7 @@ describe("viteDevConfig", () => {
     }
     // Root would prefix-match every request Vite is meant to serve itself.
     expect(proxy[SERVER_ROUTES.root.path]).toBeUndefined();
-    expect(Object.keys(proxy)).toHaveLength(rows.length);
+    expect(Object.keys(proxy)).toHaveLength(new Set(rows.map(([, r]) => r.path)).size);
   });
 
   test("proxies /client-config to the backend", () => {

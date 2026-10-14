@@ -1334,7 +1334,8 @@ function stepPlaceCall(options: PlaceCallOptions): Promise<PlacedCall>;
 ```
 
 Dial `to` from `from` and, once answered, stream the call to the agent at
-`agentUrl`. Resolves the carrier's call id as soon as the carrier ACCEPTS the
+`agentUrl` — this agent, unless another is named. Resolves the carrier's call
+id as soon as the carrier ACCEPTS the
 request — the phone may not have rung yet; [stepCallStatus](#stepcallstatus) follows it.
 
 #### Parameters
@@ -1363,7 +1364,6 @@ export async function callFlow(input: { to: string; callRef: string }, ctx: Work
         carrier: "twilio",
         to: input.to,
         from: requireStepEnv("TWILIO_FROM_NUMBER"),
-        agentUrl: requireStepEnv("CALLER_AGENT_URL"),
         parameters: { call: input.callRef },
       }),
     { maxAttempts: 2 },
@@ -3346,7 +3346,7 @@ The auth token. A credential: it never appears in an error.
 
 ```ts
 type PlaceCallOptions = {
-  agentUrl: string;
+  agentUrl?: string;
   carrier: "twilio";
   credentials?: PlaceCallCredentials;
   from: string;
@@ -3362,16 +3362,21 @@ What [stepPlaceCall](#stepplacecall) takes.
 
 #### Properties
 
-##### agentUrl
+##### agentUrl?
 
 ```ts
-agentUrl: string;
+optional agentUrl?: string;
 ```
 
 The PUBLIC base URL of the agent that answers — `https://…` or `wss://…`,
-with any path prefix it is served under. The call's audio is streamed to
-`<agentUrl>/phone?carrier=twilio`, so that agent must declare
-`telephony` for Twilio.
+with any path prefix it is served under. Twilio fetches the webhook
+`<agentUrl>/phone?carrier=twilio` once the call is answered, and that
+agent must declare `telephony` for Twilio.
+
+Defaults to THIS agent's public URL, which the host publishes: the
+deployed agent's own URL on the managed platform, the tunnel under
+`aai dev --tunnel`, `PUBLIC_URL` for a self-hosted server. Pass it only to
+have a DIFFERENT agent answer.
 
 ##### carrier
 

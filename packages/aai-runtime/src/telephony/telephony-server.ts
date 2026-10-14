@@ -23,12 +23,24 @@
  * and belongs where the webhook lands — on the platform, see
  * `aai-server/phone-handler.ts`. A carrier does not sign the WebSocket
  * upgrade, so there is nothing for this end to verify.
+ *
+ * `GET|POST /phone` — the call-answering WEBHOOK — is here too
+ * ({@link handleTelephonyWebhook}): it answers TwiML pointing the carrier at
+ * this server's own `WS /phone`, which is what `stepPlaceCall` dials through
+ * (`aai/sdk/phone-webhook.ts`) and what a phone number may point at. The
+ * platform answers its own `/:slug/phone` and never forwards here.
  */
 
 import type http from "node:http";
 import type { Duplex } from "node:stream";
 import type { SessionCall } from "@alexkroman1/aai";
-import { requestPath, requestQuery, TELEPHONY_CARRIERS } from "@alexkroman1/aai/internal";
+import {
+  callParametersFromQuery,
+  connectStreamTwiml,
+  requestPath,
+  requestQuery,
+  TELEPHONY_CARRIERS,
+} from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import type { WebSocketServer } from "ws";
@@ -248,4 +260,82 @@ export function handleTelephonyUpgrade(options: {
     });
   });
   return true;
+}
+
+/** The first `X-Forwarded-Proto` entry — what the CARRIER dialled, behind a tunnel or proxy. */
+function forwardedProto(req: Pick<http.IncomingMessage, "headers">): string | undefined {
+  const raw = req.headers["x-forwarded-proto"];
+  const first = (Array.isArray(raw) ? raw[0] : raw)?.split(",")[0]?.trim().toLowerCase();
+  return first === "" ? undefined : first;
+}
+
+function sendTwiml(
+  res: {
+    writeHead(status: number, headers: Record<string, string>): unknown;
+    end(body: string): unknown;
+  },
+  status: number,
+  body: string,
+): void {
+  res.writeHead(status, { "Content-Type": "text/xml; charset=utf-8" });
+  res.end(`<?xml version="1.0" encoding="UTF-8"?>\n<Response>${body}</Response>`);
+}
+
+/**
+ * Answer the call-answering webhook with TwiML that streams the call to this
+ * server's own `WS /phone`, each `param.<name>` on the query as a
+ * `<Parameter>` (`aai/sdk/phone-webhook.ts`).
+ *
+ * The stream URL is composed from THIS request's `Host` and
+ * `X-Forwarded-Proto`, and used only in this reply: the carrier fetched the
+ * webhook from the origin it should stream to, so that origin is the answer
+ * (a tunnel or proxy keeps both headers). A refusal is an HTTP status, so it
+ * shows in the carrier's debugger, with the same carrier rules as the upgrade.
+ *
+ * @internal
+ */
+export function handleTelephonyWebhook(options: {
+  req: Pick<http.IncomingMessage, "url" | "headers">;
+  res: {
+    writeHead(status: number, headers: Record<string, string>): unknown;
+    end(body: string): unknown;
+  };
+  logger: Logger;
+  carriers: readonly CarrierName[];
+}): void {
+  const { req, res, logger } = options;
+  const refuseWith = (status: number, reason: string): void => {
+    logger.warn(`telephony: refusing /phone webhook — ${reason}`);
+    res.writeHead(status, { "Content-Type": "text/plain; charset=utf-8" });
+    res.end(reason);
+  };
+  if (options.carriers.length === 0) {
+    refuseWith(404, "this agent declares no telephony carriers");
+    return;
+  }
+  const query = requestQuery(req.url);
+  const carrier = carrierByName(query.get(CARRIER_PARAM));
+  if (carrier === null) {
+    refuseWith(400, `unknown carrier "${query.get(CARRIER_PARAM)}"`);
+    return;
+  }
+  if (!options.carriers.some((name) => name === carrier.name)) {
+    refuseWith(404, `carrier "${carrier.name}" is not in this agent's \`telephony\` declaration`);
+    return;
+  }
+  let parameters: Record<string, string>;
+  try {
+    parameters = callParametersFromQuery(query);
+  } catch (err: unknown) {
+    refuseWith(400, err instanceof Error ? err.message : String(err));
+    return;
+  }
+  const host = req.headers.host;
+  if (!host) {
+    refuseWith(400, "no Host header to stream the call back to");
+    return;
+  }
+  const scheme = forwardedProto(req) === "https" ? "wss" : "ws";
+  const streamUrl = `${scheme}://${host}${TELEPHONY_PATH}?${CARRIER_PARAM}=${carrier.name}`;
+  sendTwiml(res, 200, connectStreamTwiml(streamUrl, parameters));
 }

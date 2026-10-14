@@ -50,7 +50,11 @@
 import type http from "node:http";
 import type { AgentDef } from "@alexkroman1/aai";
 import type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
-import { publishClientInboxDefaults, publishStepEnv } from "@alexkroman1/aai/host-internal";
+import {
+  publishClientInboxDefaults,
+  publishStepEnv,
+  publishStepPublicUrl,
+} from "@alexkroman1/aai/host-internal";
 import type { Db } from "@alexkroman1/aai/internal";
 import { frontDoorOf } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
@@ -442,6 +446,8 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
     // Beside the env and for its reason: `stepSayOnClient`'s default rate is the
     // agent's declaration, read by a step in the bundle's copy of the SDK.
     publishClientInboxDefaults(agent.clientInbox ?? {});
+    // `stepPlaceCall`'s default `agentUrl` — `aai dev`'s tunnel when it has one.
+    publishStepPublicUrl(publicUrl);
   }
 
   // Published at CONSTRUCTION, not from `listen()`. It used to sit just before

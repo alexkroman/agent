@@ -114,7 +114,10 @@ function fileServedByVite(base: string, rawUrl: string | undefined): string | un
  *   the {@link fileServedByVite} `bypass`, because a prefix key also claims a
  *   same-named source directory (`workflows/` is where the SDK tells authors to
  *   put bodies, and `api/` is as plausible);
- * - an EXACT HTTP route → a bare target string;
+ * - an EXACT HTTP route → a bare target string, unless a `ws` row already owns
+ *   the path: `/phone` is both the carrier's media stream and its webhook, and
+ *   a `ws: true` entry proxies plain HTTP too, so overwriting it would drop the
+ *   upgrade;
  * - `root` is skipped: a `/` key would prefix-match every request, and the
  *   page there is Vite's to serve.
  */
@@ -128,7 +131,7 @@ function devProxyTable(
     if (route.transport === "ws") table[route.path] = { target, ws: true };
     else if (route.match === "prefix") {
       table[route.path] = { target, bypass: (req) => fileServedByVite(viteRoot, req.url) };
-    } else table[route.path] = target;
+    } else table[route.path] ??= target;
   }
   return table;
 }

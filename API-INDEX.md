@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 183 names
 - [Testing and evals](#testing-and-evals) — 245 names
 - [Hosting and tooling](#hosting-and-tooling) — 234 names
-- [Framework internals](#framework-internals) — 440 names
+- [Framework internals](#framework-internals) — 446 names
 
 ## Agent authoring
 
@@ -541,7 +541,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `stepInfo` | function | `@alexkroman1/aai/step` | `aai:step` | Which step this code is running inside, or `undefined` when it is not in one. |
 | `stepMcp` | function | `@alexkroman1/aai/experimental` |  | Connect MCP servers for one client from inside a step, and get their tools as `ToolDef`s. |
 | `stepNotifyClient`, `StepNotifyClientOptions` | function | `@alexkroman1/aai/step` |  | Push `notice` to the client connected to this agent's `WS /inbox` as `clientId`, and resolve once it acks. |
-| `stepPlaceCall` | function | `@alexkroman1/aai/step` | `aai:step` | Dial `to` from `from` and, once answered, stream the call to the agent at `agentUrl`. |
+| `stepPlaceCall` | function | `@alexkroman1/aai/step` | `aai:step` | Dial `to` from `from` and, once answered, stream the call to the agent at `agentUrl` — this agent, unless another is named. |
 | `stepPollUntil`, `StepPollUntilOptions` | function | `@alexkroman1/aai/step` | `aai:step` | Check `check()` every `everyMs` until `done(value)` holds or `maxMs` has passed, inside a step, and resolve the last value. |
 | `stepReadUpload` | function | `@alexkroman1/aai/step` | `aai:uploads` | Read a window of an uploaded file. |
 | `stepReport` | function | `@alexkroman1/aai/step` | `aai:step` | Write one progress line for the run this step belongs to. |
@@ -1234,6 +1234,7 @@ trace or a type error can be traced back to something.
 | `BUILTIN_TOOL_ENV` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `BackoffLoop`, `BackoffLoopOptions` | interface · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `BuiltinToolOptions` | type | `@alexkroman1/aai/host-internal` |  | Options for creating built-in tool definitions. |
+| `CALL_PARAMETER_PREFIX` | const | `@alexkroman1/aai/internal` |  | The query-key prefix a call parameter travels under on the webhook URL. |
 | `CAPTURE_STOP_ACK_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `CARRIER_PARAM` | const | `@alexkroman1/aai-runtime/internal` |  | Query parameter naming the carrier — see `carrierByName`. |
 | `CARTESIA_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the Cartesia API key. |
@@ -1508,12 +1509,14 @@ trace or a type error can be traced back to something.
 | `bindClientToolCall` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `buildAgentUrl` | function · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `buildSystemPrompt` | function | `@alexkroman1/aai/host-internal` |  | Build the system prompt sent to the LLM from the agent configuration. |
+| `callParametersFromQuery` | function | `@alexkroman1/aai/internal` |  | The call parameters a webhook URL's query carries — every `param.<name>`, prefix stripped. |
 | `capToolResult` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `claimDtmfSender` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `claimSessionEnder` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `clampWorkflowWait` | function | `@alexkroman1/aai/internal` |  | Clamp a requested wait to what the API will actually hold a socket open for. |
 | `clientEventDropMessage` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `clientToolBrand` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `connectStreamTwiml` | function | `@alexkroman1/aai/internal` |  | The `<Connect><Stream>` element that connects an answered call's audio to `streamUrl`, one `<Parameter>` per entry. |
 | `consoleLogger` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `constantTimeEquals` | function | `@alexkroman1/aai/host-internal` |  | True when `a` and `b` are equal, without a data-dependent early exit — the one constant-time string comparison every host-side gate shares. |
 | `createBackoffLoop` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
@@ -1541,6 +1544,7 @@ trace or a type error can be traced back to something.
 | `derivedRequiredEnv` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `describeProvider` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `eligibleToolMessages` | function | `@alexkroman1/aai/host-internal` |  | The eligible subset, in declaration order. |
+| `escapeXml` | function | `@alexkroman1/aai/internal` |  | XML-escape a value going into TwiML — all five specials, as numeric references, so a quote in a parameter cannot close the attribute it is in. |
 | `executeToolCall` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `fallbackMembers` | function | `@alexkroman1/aai/host-internal` |  | A fallback descriptor's members, in order — each a `{ kind, options }`. |
 | `firstWriteWins` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
@@ -1580,6 +1584,7 @@ trace or a type error can be traced back to something.
 | `parseWsUpgradeParams` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `partKey` | function | `@alexkroman1/aai-runtime/internal` |  | Where one upload's objects live, under a prefix the deployment owns. |
 | `partsOf` | function | `@alexkroman1/aai-runtime/internal` |  | A stored boundary list, whatever the driver handed back. |
+| `phoneWebhookUrl` | function | `@alexkroman1/aai/internal` |  | The webhook URL for an agent's public base: `ws(s)` becomes `http(s)`, a trailing slash is dropped, and `/phone?carrier=<carrier>` plus one `param.<name>` per … |
 | `pinnedFetch` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `planDelayedLadder` | function | `@alexkroman1/aai/host-internal` |  | The ladder this call gets: one line per DISTINCT `afterMs`, ascending. |
 | `platformSessionSecret` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
@@ -1595,6 +1600,7 @@ trace or a type error can be traced back to something.
 | `publishStepFetch` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `publishStepInfoReader` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `publishStepMcp` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `publishStepPublicUrl` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `publishStepReporter` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `publishStepWebhookUrl` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `publishUploadReader` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |

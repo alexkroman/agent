@@ -5496,7 +5496,7 @@ What [stubPlaceCall](#stubplacecall-1) returns: the call log, and how to put the
 restore(): void;
 ```
 
-Unpublish the `stepFetch`. Call it in an `afterEach`.
+Unpublish the `stepFetch` and the public URL. Call it in an `afterEach`.
 
 ###### Returns
 
@@ -5524,6 +5524,7 @@ type StubPlaceCallOptions = {
   otherwise?: (request: StubStepRequest) => 
      | StubStepAnswer
     | Promise<StubStepAnswer>;
+  publicUrl?: string;
   status?:   | PlacedCallStatus
      | "initiated"
      | ((call: StubPlacedCall) => PlacedCallStatus | "initiated");
@@ -5568,6 +5569,16 @@ a request nobody set up is a finding (see `stubFetchRoutes`).
 
   \| [`StubStepAnswer`](#stubstepanswer)
   \| `Promise`\<[`StubStepAnswer`](#stubstepanswer)\>
+
+##### publicUrl?
+
+```ts
+optional publicUrl?: string;
+```
+
+This agent's public URL while the stub is installed — what a deployment
+publishes and `stepPlaceCall` dials back to when no `agentUrl` is passed.
+Default `"https://agent.example.test"`; `restore()` puts back the previous one.
 
 ##### status?
 
@@ -5626,9 +5637,9 @@ type StubPlacedCall = {
   parameters: Record<string, string>;
   polls: number;
   ringTimeoutS: number;
-  streamUrl: string | undefined;
   timeLimitS: number;
   to: string;
+  webhookUrl: string | undefined;
 };
 ```
 
@@ -5672,14 +5683,6 @@ How many times [StubPlaceCallOptions.status](#status-3) has been asked about thi
 ringTimeoutS: number;
 ```
 
-##### streamUrl
-
-```ts
-streamUrl: string | undefined;
-```
-
-Where the answered call's audio would be streamed: `wss://…/phone?carrier=twilio`.
-
 ##### timeLimitS
 
 ```ts
@@ -5691,6 +5694,16 @@ timeLimitS: number;
 ```ts
 to: string;
 ```
+
+##### webhookUrl
+
+```ts
+webhookUrl: string | undefined;
+```
+
+The webhook Twilio fetches once the call is answered, WITHOUT the
+parameters (they are [StubPlacedCall.parameters](#parameters)):
+`https://…/phone?carrier=twilio`.
 
 ***
 
