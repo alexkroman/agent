@@ -241,6 +241,48 @@ describe("POST /:slug/phone", () => {
       expect(xml).toContain("<Stream");
     });
 
+    test("verifies an outbound call whose query the proxy UNQUOTED on the way in", async () => {
+      // The production failure: `stepPlaceCall` builds the webhook query with
+      // `URLSearchParams` and Twilio signs exactly that, but Modal's proxy
+      // (aiohttp/yarl) rewrites `%27`, `%2C`, `%3A`, `%28`, `%29`, `%21`, `%2F`
+      // to the raw characters before the request reaches us. This is the
+      // rewrite yarl was measured to apply to that query.
+      const harness = await signedHarness();
+      const signedQuery = new URLSearchParams({
+        carrier: "twilio",
+        "param.p0": "Call Maria, it's about Thursday: 10am (rebook)!",
+        "param.sig": "ab/cd=",
+      }).toString();
+      const asReceived =
+        "carrier=twilio&param.p0=Call+Maria,+it's+about+Thursday:+10am+(rebook)!&param.sig=ab/cd%3D";
+      const { status, xml } = await callWebhook(harness.fetch, `/my-agent/phone?${asReceived}`, {
+        body: BODY,
+        headers: {
+          "x-twilio-signature": signatureFor(
+            `http://localhost/my-agent/phone?${signedQuery}`,
+            BODY,
+          ),
+        },
+      });
+      expect(status).toBe(200);
+      expect(xml).toContain(`value="Call Maria, it&#39;s about Thursday: 10am (rebook)!"`);
+    });
+
+    test("the re-encoded form is still checked over every byte", async () => {
+      const harness = await signedHarness();
+      const signedQuery = new URLSearchParams({ "param.call": "c_1" }).toString();
+      const { status } = await callWebhook(harness.fetch, "/my-agent/phone?param.call=c_2", {
+        body: BODY,
+        headers: {
+          "x-twilio-signature": signatureFor(
+            `http://localhost/my-agent/phone?${signedQuery}`,
+            BODY,
+          ),
+        },
+      });
+      expect(status).toBe(403);
+    });
+
     test("refuses an unsigned webhook once the token is stored", async () => {
       const harness = await signedHarness();
       const { status } = await callWebhook(harness.fetch, "/my-agent/phone", { body: BODY });
