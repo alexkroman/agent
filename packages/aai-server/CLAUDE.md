@@ -485,7 +485,9 @@ this exists instead of `/:slug/websocket`. The guest half is
   Once ANY carrier secret is set, an unverifiable request is refused, including
   one naming a carrier whose secret is absent.
 - **The signed URL is the PUBLIC one**, composed from `resolvePublicOrigin`,
-  never `c.req.url`.
+  never `c.req.url`. **Modal's proxy unquotes the query** (aiohttp/yarl:
+  `%27`→`'`, `%2C`→`,`, …), so a failed check retries over the query re-encoded
+  as `URLSearchParams` writes it — what `stepPlaceCall` signed (`verifyCall`).
 - **Outbound calls land here too**: `stepPlaceCall` dials with
   `Url=<agent>/phone?…&param.<name>=…` (`aai/sdk/phone-webhook.ts`), and every
   `param.*` becomes a `<Parameter>` on the `<Stream>` and survives the

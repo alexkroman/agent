@@ -126,6 +126,37 @@ function hangUpDocument(message: string): Response {
 }
 
 /**
+ * Verify the carrier's signature over the URL it requested — as received, or
+ * with the query re-encoded the way `phoneWebhookUrl` encodes it.
+ *
+ * **The second form is not a loosening.** Modal's web proxy (aiohttp, which
+ * normalizes URLs with yarl) UNQUOTES a query on the way in: the
+ * `…it%27s+about+Thursday%3A…` Twilio signed arrives as
+ * `…it's+about+Thursday:…`, so an HMAC over the received URL could never
+ * match an outbound call carrying a brief. The dialler built that query with
+ * `URLSearchParams`, so decoding what arrived and re-encoding it the same way
+ * reproduces the signed bytes exactly; the HMAC is still checked over every
+ * byte. A hand-configured URL (an inbound number's webhook) keeps verifying
+ * as received.
+ */
+function verifyCall(opts: {
+  carrier: string;
+  env: Record<string, string> | null;
+  base: string;
+  search: string;
+  rawBody: string;
+  headers: Headers;
+}): ReturnType<typeof verifyPhoneWebhook> {
+  const { base, search, ...rest } = opts;
+  const verdict = verifyPhoneWebhook({ ...rest, url: `${base}${search}` });
+  if (verdict.ok || search === "") return verdict;
+  const canonical = `?${new URLSearchParams(search).toString()}`;
+  if (canonical === search) return verdict;
+  const second = verifyPhoneWebhook({ ...rest, url: `${base}${canonical}` });
+  return second.ok ? second : verdict;
+}
+
+/**
  * The call's `param.*`, or a 400 — the dialler checks the same limits, so a
  * refusal here is a hand-built URL.
  */
@@ -187,12 +218,13 @@ export function createPhoneHandler(
     const rawBody = c.req.method === "POST" ? await c.req.text() : "";
     const origin = resolvePublicOrigin(c.req.raw);
     const webhookPath = `/${slug}${PHONE_ROUTE}`;
-    const verdict = verifyPhoneWebhook({
+    const verdict = verifyCall({
       carrier: requested,
       env: await opts.store.getEnv(slug),
       // The URL the carrier signed — the full request URL as it saw it,
       // which behind Modal's TLS termination is never `c.req.url`.
-      url: `${origin}${c.req.path}${new URL(c.req.url).search}`,
+      base: `${origin}${c.req.path}`,
+      search: new URL(c.req.url).search,
       rawBody,
       headers: c.req.raw.headers,
     });
