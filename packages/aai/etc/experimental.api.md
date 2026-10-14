@@ -328,6 +328,9 @@ interface DelegateToolCall {
 }
 
 // @public
+export const DTMF_KEYS: string;
+
+// @public
 export function ensureComposioWebhook(ctx: EnvContext, url: string, options?: EnsureComposioWebhookOptions): Promise<{
     id: string;
     secret: string;
@@ -445,6 +448,9 @@ export interface LocalSttOptions extends ProviderCredentialOptions {
     minTurnSilenceMs?: number;
     url?: string;
 }
+
+// @public
+export const MAX_DTMF_KEYS = 64;
 
 // @public
 type McpResolvable<T> = T | ((context: McpResolveContext) => T | Promise<T>);
@@ -578,6 +584,12 @@ type SayOptions = {
     interruptible?: boolean | undefined;
     record?: boolean | undefined;
 };
+
+// @public
+export function sendDtmf(ctx: Pick<ToolContext, "sessionId">, keys: string): boolean;
+
+// @public
+export function sentDtmfCalls(ctx: Pick<ToolContext, "sessionId">): readonly string[];
 
 // @public @sealed
 interface SessionSpeech {

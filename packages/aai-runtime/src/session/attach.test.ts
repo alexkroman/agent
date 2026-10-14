@@ -9,6 +9,7 @@
 
 import type { SessionEvent } from "@alexkroman1/aai";
 
+import { sendDtmf } from "@alexkroman1/aai/experimental";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_logger-test-utils.ts";
@@ -16,6 +17,7 @@ import { makeClientSink, makeMockCore } from "../_session-test-utils.ts";
 import { type AttachSessionOptions, attachSession } from "./attach.ts";
 import type { ServerSession } from "./core-types.ts";
 import { createSessionDirectory } from "./directory.ts";
+import { dtmfFrames } from "./dtmf.ts";
 
 const readyConfig = { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 };
 
@@ -111,6 +113,20 @@ describe("attachSession", () => {
     expect(core.stop).toHaveBeenCalledTimes(1);
     expect(sessions.session(attached.id)).toBeUndefined();
     expect(onSessionEnd).toHaveBeenCalledWith(attached.id, client);
+  });
+
+  test("sendDtmf plays tones on the sink at the TTS rate until the session ends", async () => {
+    const core = makeMockCore();
+    const { attached, client } = attach(core);
+    await Promise.resolve();
+
+    expect(sendDtmf({ sessionId: attached.id }, "1")).toBe(true);
+    const audio = (client.playAudioChunk as ReturnType<typeof vi.fn>).mock.calls.map(([c]) => c);
+    expect(audio).toEqual(dtmfFrames("1", readyConfig.ttsSampleRate));
+
+    attached.detach();
+    await attached.ended;
+    expect(sendDtmf({ sessionId: attached.id }, "1")).toBe(false);
   });
 
   test("a failed start tells the client, closes it, and still ends the session", async () => {

@@ -31,6 +31,7 @@ import { omitUndefined } from "./sdk/omit-undefined.ts";
 import { llm } from "./sdk/providers/llm/llm.ts";
 import type { LlmProvider } from "./sdk/providers.ts";
 
+export { sentDtmfCalls } from "./sdk/_testing-context.ts";
 export { composio } from "./sdk/composio.ts";
 export {
   COMPOSIO_API_KEY_ENV,
@@ -77,6 +78,7 @@ export type {
   DeepResearchSource,
 } from "./sdk/deep-research-types.ts";
 export { type LocalSttOptions, localStt } from "./sdk/providers/stt/local.ts";
+export { DTMF_KEYS, MAX_DTMF_KEYS, sendDtmf } from "./sdk/session-dtmf.ts";
 export {
   type StepMcp,
   type StepMcpOptions,

@@ -62,6 +62,7 @@ export const BOUNDARY_KEYS: {
         readonly runtimeInstances: "@alexkroman1/aai-runtime.instances";
         readonly sessionCalls: "@alexkroman1/aai.sessionCalls";
         readonly sessionClients: "@alexkroman1/aai.sessionClients";
+        readonly sessionDtmfSenders: "@alexkroman1/aai.sessionDtmfSenders";
         readonly sessionEnders: "@alexkroman1/aai.sessionEnders";
         readonly sessionLocations: "@alexkroman1/aai.sessionLocations";
         readonly sessionPhones: "@alexkroman1/aai.sessionPhones";

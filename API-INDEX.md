@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 592 names
+- [Agent authoring](#agent-authoring) — 596 names
 - [Browser client](#browser-client) — 183 names
 - [Testing and evals](#testing-and-evals) — 245 names
 - [Hosting and tooling](#hosting-and-tooling) — 234 names
-- [Framework internals](#framework-internals) — 438 names
+- [Framework internals](#framework-internals) — 440 names
 
 ## Agent authoring
 
@@ -120,6 +120,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `DEFAULT_STEP_MAX_ATTEMPTS` | const | `@alexkroman1/aai` | `aai:workflow` | Attempts a step gets when `StepOptions.maxAttempts` says nothing. |
 | `DEFAULT_SYSTEM_PROMPT` | const | `@alexkroman1/aai` | `aai:defaults` | Default system prompt used when `systemPrompt` is not provided. |
 | `DELEGATE_TOOL_NAME` | const | `@alexkroman1/aai` | `aai:persona` | The name the model hands a TASK off by. |
+| `DTMF_KEYS` | const | `@alexkroman1/aai/experimental` |  | The keys `sendDtmf` accepts: the twelve on a phone pad, the four `A`–`D` column keys, and `w`, a half-second pause between keys (Twilio's `sendDigits` … |
 | `DeepReadonly` | type | `@alexkroman1/aai` | `aai:state` | `Readonly<T>`, all the way down. |
 | `DeepResearchBrief` | interface | `@alexkroman1/aai/experimental` |  | The request as a researcher is held to it. |
 | `DeepResearchBudget` | interface | `@alexkroman1/aai/experimental` |  | What a pass may cost. |
@@ -184,6 +185,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `LlmProvider` | type | `@alexkroman1/aai/llm` (also `@alexkroman1/aai`) | `aai:llm` | Descriptor for an LLM provider. |
 | `LlmProviderName` | type | `@alexkroman1/aai/llm` | `aai:llm` | An LLM provider name. |
 | `LlmSpec` | type | `@alexkroman1/aai/llm` (also `@alexkroman1/aai`) | `aai:llm` | What an `llm` FIELD takes — `agent({ llm })`, `speaker({ llm })`, `ctx.generate({ llm })`: a descriptor from `llm`, or a model-id string. |
+| `MAX_DTMF_KEYS` | const | `@alexkroman1/aai/experimental` |  | Most keys one `sendDtmf` call presses, pauses included. |
 | `MCP_SERVER_KEY_RE` | const | `@alexkroman1/aai` | `aai:agent` | The grammar for a server KEY — the name an author gives one server, and the first segment of every tool name it contributes. |
 | `MCP_TOOL_NAME_MAX` | const | `@alexkroman1/aai` | `aai:agent` | Longest tool name a provider accepts — OpenAI's `^[a-zA-Z0-9_-]{1,64}$`, the strictest this SDK routes to, and therefore the one that decides. |
 | `MCP_TOOL_PREFIX` | const | `@alexkroman1/aai` | `aai:agent` | The prefix every MCP-derived tool name carries. |
@@ -507,7 +509,9 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `runFfmpeg` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | Run ffmpeg with `args`, exactly as given. |
 | `safeJsonParse` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | Parse JSON, returning `undefined` on malformed input. |
 | `sayFailureOnClient`, `SayFailureOnClientOptions` | function | `@alexkroman1/aai/step` |  | A `workflow({ onFailure })` handler that says a failed run's reason on the device its input names: delivery id `${runId}:failed`, `data.failed: true`, the … |
+| `sendDtmf` | function | `@alexkroman1/aai/experimental` |  | Press phone keys — DTMF tones played into this session's audio, for navigating a phone menu ("press 1 for billing") or entering an extension. |
 | `sendToChannel` | function | `@alexkroman1/aai/channels` | `aai:channels` | Post one message, and classify the failure honestly. |
+| `sentDtmfCalls` | function | `@alexkroman1/aai/experimental` |  | Every `sendDtmf(ctx, keys)` a tool made on a `createToolContext` context's session, in call order, each as the keys it pressed after the separators were … |
 | `sessionCall` | function | `@alexkroman1/aai` | `aai:agent` | The phone call this session is — the carrier, its call id and the stream's custom parameters — or `undefined` for a session that did not arrive on `WS /phone` … |
 | `sessionClientId` | function | `@alexkroman1/aai` | `aai:inbox` | The client id this session's device connected with (`?client=` on `WS /websocket`), or `undefined` for a client that sent none — a browser tab, a phone call. |
 | `sessionClientLocation` | function | `@alexkroman1/aai` | `aai:agent` | Where this session's client is — the location `sessionContext` answered for it, else the one its socket reported (`?location=` on `WS /websocket`, the … |
@@ -1294,6 +1298,7 @@ trace or a type error can be traced back to something.
 | `DelayedRung` | type | `@alexkroman1/aai/host-internal` |  | One rung of a delay ladder: what to say, and how long into the call. |
 | `DerivedEnvQuery` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `DnsLookup` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DtmfSender` | type | `@alexkroman1/aai/host-internal` |  | What the runtime registers for a session — see `claimDtmfSender`. |
 | `EGRESS_KEEP_ALIVE_MS` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `ELEVENLABS_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the ElevenLabs API key. |
 | `ELEVENLABS_DEFAULT_MODEL` | const | `@alexkroman1/aai/host-internal` |  | Streaming model used when the descriptor names none. |
@@ -1504,6 +1509,7 @@ trace or a type error can be traced back to something.
 | `buildAgentUrl` | function · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `buildSystemPrompt` | function | `@alexkroman1/aai/host-internal` |  | Build the system prompt sent to the LLM from the agent configuration. |
 | `capToolResult` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `claimDtmfSender` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `claimSessionEnder` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `clampWorkflowWait` | function | `@alexkroman1/aai/internal` |  | Clamp a requested wait to what the API will actually hold a socket open for. |
 | `clientEventDropMessage` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |

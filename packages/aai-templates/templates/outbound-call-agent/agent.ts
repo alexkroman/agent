@@ -10,6 +10,7 @@
  *                          │                 WS /phone ─► this agent, in a session:
  *                          │                   sessionContext — verify, read the brief
  *                          │                   events         — record each line live
+ *                          │                   press_keys     — answer a phone menu
  *                          │                   end_call       — hang up (voicemail?)
  *                          ◄──── signal ──────  onSessionEnd  — hand over the transcript
  *                          ▼

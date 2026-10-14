@@ -25,6 +25,7 @@
  */
 
 import {
+  claimDtmfSender,
   claimSessionEnder,
   DEFAULT_SESSION_START_TIMEOUT_MS,
   MAX_MESSAGE_BUFFER_SIZE,
@@ -44,6 +45,7 @@ import { consoleLogger } from "../logger.ts";
 import { closeRefused, endOnRequest, SessionRefusedError } from "./attach-end.ts";
 import type { ServerSession } from "./core-types.ts";
 import type { SessionDirectory } from "./directory.ts";
+import { dtmfSender } from "./dtmf.ts";
 import { stampSessionEvent } from "./event-stream.ts";
 import { createWsSessionLifecycle } from "./ws-lifecycle.ts";
 
@@ -208,6 +210,8 @@ export function attachSession(client: ClientSink, options: AttachSessionOptions)
   let refusal: string | undefined;
   /** Release for this connection's claim on the session's `endSession` ender. */
   let releaseEnder: (() => boolean) | null = null;
+  /** Release for this connection's claim on the session's `sendDtmf` sender. */
+  let releaseDtmf: (() => boolean) | null = null;
 
   let resolveEnded: () => void = () => undefined;
   const ended = new Promise<void>((resolve) => {
@@ -269,6 +273,7 @@ export function attachSession(client: ClientSink, options: AttachSessionOptions)
         releaseSessionEntry?.();
         // By claim for the same reason: a resumed connection's ender is live.
         releaseEnder?.();
+        releaseDtmf?.();
         options.onSessionEnd?.(sessionId, client);
       })
       .catch(() => {
@@ -397,6 +402,7 @@ export function attachSession(client: ClientSink, options: AttachSessionOptions)
     const superseded = sessions.session(sessionId);
     releaseSessionEntry = sessions.claim(sessionId, session);
     releaseEnder = claimSessionEnder(sessionId, endOnRequest({ client, options, log, ctx, sid }));
+    releaseDtmf = claimDtmfSender(sessionId, dtmfSender(client, options.readyConfig.ttsSampleRate));
     sinkBySession.set(session, client);
     options.onSinkCreated?.(sessionId, client);
     if (superseded && superseded !== session) {
