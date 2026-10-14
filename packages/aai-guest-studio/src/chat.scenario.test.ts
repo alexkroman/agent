@@ -343,13 +343,17 @@ describe("guest studio chat surface", () => {
       // Drained first, for the reason the checkpoint test above spells out: an
       // unread SSE body leaves the whole turn inside `vi.waitFor`'s 1s default.
       await (await post(url, chatBody("remember this prompt"))).text();
-      await vi.waitFor(() => {
-        const persists = host.calls.filter((c) => c.method === "studio/persist-chat");
-        // Start-of-turn snapshot plus the settled one.
-        expect(persists.length).toBeGreaterThanOrEqual(2);
-      });
-      const first = host.calls.find((c) => c.method === "studio/persist-chat");
-      expect(JSON.stringify(first?.params)).toContain("remember this prompt");
+      // Scoped by CONTENT, for the reason the checkpoint test spells out: a
+      // previous test's late settle can land in this `host.calls` first.
+      const mine = () =>
+        host.calls
+          .filter((c) => c.method === "studio/persist-chat")
+          .map((c) => JSON.stringify(c.params))
+          .filter((params) => params.includes("remember this prompt"));
+      // Start-of-turn snapshot plus the settled one.
+      await vi.waitFor(() => expect(mine().length).toBeGreaterThanOrEqual(2));
+      // The first one went out before the turn ran: it holds no reply yet.
+      expect(mine()[0]).not.toContain("Hi.");
     } finally {
       await close();
     }
