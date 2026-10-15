@@ -9,7 +9,7 @@
 import type { UIMessage } from "ai";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-import { EmptyStateBody, Transcript } from "./chat-transcript.tsx";
+import { EmptyStateBody, Transcript, toSections } from "./chat-transcript.tsx";
 
 const USER: UIMessage = {
   id: "u1",
@@ -85,5 +85,39 @@ describe("EmptyStateBody", () => {
     );
     expect(html).toContain("Welcome to AssemblyAI Build");
     expect(html).not.toContain("Checking the server");
+  });
+});
+
+describe("toSections", () => {
+  const tool = (id: string) => ({
+    type: "tool-read_file",
+    toolCallId: id,
+    state: "output-available",
+    input: {},
+    output: "",
+  });
+
+  test("folds each run of consecutive tool calls into one group, between the prose", () => {
+    const message = {
+      id: "a1",
+      role: "assistant",
+      parts: [
+        { type: "text", text: "Looking." },
+        tool("t1"),
+        tool("t2"),
+        { type: "text", text: "Writing." },
+        tool("t3"),
+      ],
+    } as UIMessage;
+    const sections = toSections(message);
+    expect(sections.map((s) => s.kind)).toEqual(["text", "tools", "text", "tools"]);
+    const sizes = sections.map((s) => (s.kind === "tools" ? s.parts.length : null));
+    expect(sizes).toEqual([null, 2, null, 1]);
+  });
+
+  test("a group is keyed by its FIRST call, so it holds its identity as calls stream in", () => {
+    const one = { id: "a1", role: "assistant", parts: [tool("t1")] } as UIMessage;
+    const two = { id: "a1", role: "assistant", parts: [tool("t1"), tool("t2")] } as UIMessage;
+    expect(toSections(one)[0]?.key).toBe(toSections(two)[0]?.key);
   });
 });

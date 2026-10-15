@@ -24,16 +24,13 @@ export function CopyLine({
   copier: UseCopyResult;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <code className="min-w-0 flex-1 rounded-md border border-line bg-cream px-3 py-2 font-mono text-xs break-all">
+    // `items-start` + a 36px floor on the code box: the button is the same
+    // height as a one-line box, and stays on the first line when one wraps.
+    <div className="flex items-start gap-2">
+      <code className="flex min-h-9 min-w-0 flex-1 items-center rounded-md border border-line bg-cream px-3 py-1.5 font-mono text-xs break-all">
         {text}
       </code>
-      <button
-        type="button"
-        className="btn px-2 py-1 text-xs"
-        onClick={() => copier.copy(text)}
-        aria-label={label}
-      >
+      <button type="button" className="btn" onClick={() => copier.copy(text)} aria-label={label}>
         {copier.label(text)}
       </button>
     </div>

@@ -9,6 +9,7 @@ import { useState } from "react";
 import type { StudioStatus } from "../api.ts";
 import { STARTERS, sampleStarters } from "../starters.ts";
 import { ChatStatusNote } from "./chat-status-note.tsx";
+import { PlusIcon, WaveIcon } from "./icons.tsx";
 import { isEnterSubmit, SendButton } from "./send-button.tsx";
 
 /** How many starter examples the hero shows — a taste, not the catalog. */
@@ -31,8 +32,11 @@ type HomeSidebarProps = {
  */
 const FILTER_THRESHOLD = 12;
 
+/** The hero's prompt box, so the sidebar's New agent button can put the cursor in it. */
+export const HERO_PROMPT_ID = "hero-prompt";
+
 /** Home-page sidebar: previous projects (each one a chat). New projects are
- * created by the hero prompt box, so there is no button for it. */
+ * created by the hero prompt box; the New agent button only focuses it. */
 export function HomeSidebar({ projects, onSelectProject }: HomeSidebarProps) {
   const [query, setQuery] = useState("");
   const needle = query.trim().toLowerCase();
@@ -40,8 +44,16 @@ export function HomeSidebar({ projects, onSelectProject }: HomeSidebarProps) {
   const filterable = (projects?.length ?? 0) >= FILTER_THRESHOLD;
 
   return (
-    <aside className="flex w-[240px] flex-none flex-col gap-4 border-r border-line bg-panel px-4 py-5">
-      <span className="eyebrow ml-2">
+    <aside className="flex w-[260px] flex-none flex-col gap-2 border-r border-line bg-panel px-4 py-4">
+      <button
+        type="button"
+        className="btn justify-start gap-2 px-2"
+        onClick={() => document.getElementById(HERO_PROMPT_ID)?.focus()}
+      >
+        <PlusIcon size={15} />
+        New agent
+      </button>
+      <span className="eyebrow mt-4 mb-1 ml-2">
         Projects
         {/* The COUNT, because the list scrolls: without it there is no way to
             tell twelve projects from ninety without reaching the bottom. */}
@@ -57,30 +69,34 @@ export function HomeSidebar({ projects, onSelectProject }: HomeSidebarProps) {
           onChange={(e) => setQuery(e.target.value)}
         />
       )}
-      <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
+      <div className="-mx-2 flex min-h-0 flex-1 flex-col gap-px overflow-y-auto">
         {projects === undefined && (
-          <p className="m-0 px-2 text-xs leading-4 text-subtle italic">Loading projects…</p>
+          <p className="m-0 px-4 text-xs leading-4 text-subtle italic">Loading projects…</p>
         )}
         {projects?.length === 0 && (
-          <p className="m-0 px-2 text-xs leading-4 text-subtle">
+          <p className="m-0 px-4 text-xs leading-4 text-subtle">
             No projects yet. Describe your first agent to create one.
           </p>
         )}
         {/* A filter that matches nothing must SAY so: an empty list under a box
             with text in it otherwise reads as the projects having gone away. */}
         {shown?.length === 0 && projects !== undefined && projects.length > 0 && (
-          <p className="m-0 px-2 text-xs leading-4 text-subtle">No project matches “{query}”.</p>
+          <p className="m-0 px-4 text-xs leading-4 text-subtle">No project matches “{query}”.</p>
         )}
         {shown?.map((name) => (
           <button
             type="button"
             key={name}
             // `break-all` rather than `truncate`: these names are long and
-            // share prefixes, so cutting them at 240px hid the part that tells
-            // them apart. Wrapping costs a second line and keeps the suffix.
-            className="cursor-pointer break-all rounded-md border-none bg-transparent px-2 py-2 text-left text-[13px] text-muted hover:bg-cream hover:text-fg"
+            // share prefixes, so cutting them at the sidebar's width hid the
+            // part that tells them apart. Wrapping costs a second line and
+            // keeps the suffix.
+            className="flex cursor-pointer items-start gap-2.5 rounded-md border-none bg-transparent px-4 py-1.5 text-left text-[13px] break-all text-muted hover:bg-cream hover:text-fg"
             onClick={() => onSelectProject(name)}
           >
+            <span className="mt-0.5 text-subtle">
+              <WaveIcon size={14} />
+            </span>
             {name}
           </button>
         ))}
@@ -119,17 +135,24 @@ export function HomeHero({ status, creating, onStart }: HomeHeroProps) {
     onStart(text);
   };
   return (
-    <main className="flex min-h-0 flex-1 flex-col items-center justify-center gap-9 overflow-y-auto bg-cream px-6 py-10">
-      <div className="flex flex-col items-center gap-3">
+    <main className="relative flex min-h-0 flex-1 flex-col items-center justify-center gap-8 overflow-y-auto bg-cream px-6 py-10">
+      {/* A soft indigo glow behind the prompt — the one decorative element on
+          the page, so the eye lands on the box. */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_60%_45%_at_50%_42%,rgb(183_166_255/0.28),transparent_70%)]"
+      />
+      <div className="relative flex flex-col items-center gap-3">
         <span className="eyebrow self-center">AssemblyAI Build</span>
-        <h1 className="m-0 text-center font-serif text-[38px] leading-[1.12] font-normal text-balance">
+        <h1 className="m-0 text-center font-serif text-[44px] leading-[1.1] font-normal tracking-[-0.5px] text-balance">
           {COPY.heading}
         </h1>
-        <p className="m-0 max-w-xl text-center text-[13px] leading-5 text-muted">{COPY.blurb}</p>
+        <p className="m-0 max-w-xl text-center text-[14px] leading-5 text-muted">{COPY.blurb}</p>
       </div>
-      <div className="flex w-full max-w-2xl flex-col gap-2 rounded-lg border border-line bg-panel p-3 shadow-md focus-within:border-line-strong">
+      <div className="composer-card relative w-full max-w-2xl p-2 shadow-md">
         <textarea
-          className="min-h-[72px] w-full resize-none border-none bg-transparent px-1.5 py-1 text-[14px] leading-[21px] text-fg placeholder:text-subtle focus:outline-none"
+          id={HERO_PROMPT_ID}
+          className="min-h-[84px] w-full resize-none border-none bg-transparent px-3 py-2 text-[15px] leading-[22px] text-fg placeholder:text-subtle focus:outline-none"
           rows={3}
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -143,12 +166,16 @@ export function HomeHero({ status, creating, onStart }: HomeHeroProps) {
           disabled={disabled}
           placeholder={creating ? "Creating your project…" : COPY.placeholder}
         />
-        <div className="flex items-center justify-end">
+        <div className="flex items-center justify-between gap-2 pb-1 pl-3 pr-1">
+          <span className="text-xs text-subtle">
+            <kbd className="font-sans">Enter</kbd> to build ·{" "}
+            <kbd className="font-sans">Shift+Enter</kbd> for a new line
+          </span>
           <SendButton className="h-9 w-9" onClick={submit} disabled={disabled} />
         </div>
       </div>
       {ready && (
-        <div className="flex flex-col items-center gap-3">
+        <div className="relative flex flex-col items-center gap-3">
           <span className="text-xs text-subtle">Or try one of these</span>
           <div className="flex w-full max-w-3xl flex-wrap justify-center gap-2">
             {starters.map((starter) => (
@@ -165,7 +192,9 @@ export function HomeHero({ status, creating, onStart }: HomeHeroProps) {
           </div>
         </div>
       )}
-      <ChatStatusNote status={status} />
+      <div className="relative">
+        <ChatStatusNote status={status} />
+      </div>
     </main>
   );
 }

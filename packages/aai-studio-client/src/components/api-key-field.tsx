@@ -82,7 +82,7 @@ export function ApiKeyField({
       {error && <p className="m-0 text-[13px] text-err">{error}</p>}
       <button
         type="button"
-        className="btn btn-primary h-10 self-start px-5"
+        className="btn btn-primary self-start"
         onClick={submit}
         disabled={save.isPending || draft.trim() === ""}
       >

@@ -68,14 +68,17 @@ export function Composer({
   };
   const showStop = busy && onStop != null;
   return (
-    <div className="flex flex-none flex-col gap-2 border-t border-line px-5 pt-4 pb-5">
+    <div className="flex flex-none flex-col gap-2 px-2 pt-2">
       {queued.length > 0 && (
         <ul aria-label="Queued messages" className="m-0 flex list-none flex-col gap-1 p-0">
           {queued.map((item, index) => (
             <li
               key={item.id}
-              className="flex items-center gap-2 rounded-md border border-dashed border-line-strong bg-cream px-2.5 py-1.5 text-[12px] text-muted"
+              className="flex items-center gap-2 rounded-lg border border-dashed border-line-strong bg-cream px-2.5 py-1.5 text-[12px] text-muted"
             >
+              <span className="flex-none text-[10px] font-medium tracking-[1px] text-subtle uppercase">
+                Queued
+              </span>
               <span className="min-w-0 flex-1 truncate">{item.text}</span>
               <button
                 type="button"
@@ -89,14 +92,14 @@ export function Composer({
           ))}
         </ul>
       )}
-      <div className="flex items-end gap-2">
+      <div className={clsx("composer-card", disabled && "opacity-70")}>
         {/* A textarea, not an input: Shift+Enter for a newline is table stakes
             for prompting, and a Stop that hands several queued messages back
             (see drainText) needs a field that can hold them — a single-line
             input silently strips the newlines between them. */}
         <textarea
-          className="field field-sizing-content max-h-40 min-h-10 min-w-0 flex-1 resize-none border-line-strong py-2.5"
-          rows={1}
+          className="field-sizing-content max-h-48 min-h-[52px] w-full resize-none border-none bg-transparent px-3.5 pt-3 pb-1 text-[13px] leading-5 text-fg placeholder:text-subtle focus:outline-none"
+          rows={2}
           value={value}
           onChange={(e) => onValueChange(e.target.value)}
           onKeyDown={(e) => {
@@ -108,15 +111,20 @@ export function Composer({
           disabled={disabled}
           placeholder={placeholder}
         />
-        <button
-          type="button"
-          aria-label={showStop ? "Stop" : "Send"}
-          className={clsx("h-10 w-10", SEND_BUTTON_CLASS)}
-          onClick={showStop ? onStop : submit}
-          disabled={!showStop && (disabled || sendDisabled)}
-        >
-          {showStop ? <StopIcon /> : <SendIcon />}
-        </button>
+        <div className="flex items-center justify-between gap-2 pr-2 pb-2 pl-3.5">
+          <span className="truncate text-[11px] text-subtle">
+            {busy ? "Enter queues it for after this turn" : "Shift+Enter for a new line"}
+          </span>
+          <button
+            type="button"
+            aria-label={showStop ? "Stop" : "Send"}
+            className={clsx("h-8 w-8", SEND_BUTTON_CLASS, showStop && "bg-fg hover:bg-ink")}
+            onClick={showStop ? onStop : submit}
+            disabled={!showStop && (disabled || sendDisabled)}
+          >
+            {showStop ? <StopIcon /> : <SendIcon />}
+          </button>
+        </div>
       </div>
     </div>
   );

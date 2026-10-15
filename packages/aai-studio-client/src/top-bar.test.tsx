@@ -1,28 +1,27 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
-// Top bar wiring: brand → home, the project name label, and the Publish
-// menu states.
+// Top bar wiring: brand → home, the project name label, the Publish menu
+// states — and the pane tabs, which render in the canvas toolbar.
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import { agentUrl } from "./platform-origin.ts";
-import { PublishMenu, TopBar } from "./top-bar.tsx";
+import { PaneTabs, PublishMenu, TopBar } from "./top-bar.tsx";
 
 const noop = (): void => undefined;
 
-/** Every pane label, in the order the segmented control renders them. */
+/** Every pane label, in the order the pane tabs render them. */
 const PANE_LABELS = ["UI", "Code", "Secrets", "Settings"];
 
 const barProps = {
   project: "demo" as string | null,
-  tab: "preview" as const,
   hasBuild: true,
   onGoHome: noop,
-  onSelectTab: noop,
-  onLogOut: noop,
   onTogglePublish: noop,
   onToggleAccount: noop,
 };
+
+const tabsProps = { tab: "preview" as const, onSelectTab: noop };
 
 describe("TopBar", () => {
   test("the brand is a button back to the hero home", () => {
@@ -38,79 +37,20 @@ describe("TopBar", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 
-  test("no project → no name label and no pane switcher", () => {
+  test("no project → no name label, no Publish, and no pane tabs", () => {
+    // The home screen has nothing to ship, so a disabled Publish there was a
+    // control that could never be pressed.
     render(<TopBar {...barProps} project={null} />);
     expect(screen.queryByText("demo")).toBeNull();
-    expect(screen.queryByRole("button", { name: "UI" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Code" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
-  });
-
-  // The UI tab's LABEL and its id deliberately differ: `preview` is the
-  // platform's word for the auto-deployed agent this pane frames, and "UI" is
-  // what the pane offers a person.
-  test.each([
-    ["Code", "code"],
-    ["Settings", "settings"],
-    ["UI", "preview"],
-    ["Secrets", "secrets"],
-  ])("the switcher moves to the %s pane", (label, id) => {
-    const onSelectTab = vi.fn();
-    render(<TopBar {...barProps} onSelectTab={onSelectTab} />);
-    fireEvent.click(screen.getByRole("button", { name: label }));
-    expect(onSelectTab).toHaveBeenCalledWith(id);
-  });
-
-  // The switcher's order is a product decision with nothing else holding it:
-  // the panes are peers, so a reshuffle of TABS is invisible to every other
-  // assertion here.
-  test("the switcher runs UI, Code, Secrets, Settings", () => {
-    render(<TopBar {...barProps} />);
-    const rendered = screen
-      .getAllByRole("button")
-      .map((el) => el.textContent ?? "")
-      .filter((label) => PANE_LABELS.includes(label));
-    expect(rendered).toEqual(PANE_LABELS);
-  });
-
-  /**
-   * Every pane, unconditionally — asserted because it used to be conditional.
-   *
-   * `databaseEnabled` hid **Database** and **Workflows**: a project with no
-   * database had nothing to browse, and Workflows rode along because without one a
-   * guest ran the LOCAL workflow world, whose queue is in memory and whose data
-   * directory is per-process, so the pane would have listed runs that die with the
-   * sandbox. There is no Database pane now, and a durable run no longer needs the
-   * project to have a database — the world is the platform's — so the gate is gone
-   * and this pins the absence.
-   */
-  test("offers every pane with no opt-in, and no removed tab", () => {
-    render(<TopBar {...barProps} />);
-    for (const removed of ["Database", "API", "Workflows", "Logs"]) {
-      expect(screen.queryByRole("button", { name: removed })).toBeNull();
-    }
+    expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
     for (const label of PANE_LABELS) {
-      expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: label })).toBeNull();
     }
   });
 
-  test("the open pane is the current one", () => {
-    render(<TopBar {...barProps} tab="settings" />);
-    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    expect(screen.getByRole("button", { name: "UI" })).not.toHaveAttribute("aria-current");
-  });
-
-  test("Publish locks until there is a build; the project panes stay reachable", () => {
-    // Settings must never gate on a build or a deploy — the pane holds the
-    // Delete project button, which has to work before anything is published —
-    // and neither must Secrets: a provider key is what the FIRST build needs.
+  test("Publish locks until there is a build", () => {
     render(<TopBar {...barProps} hasBuild={false} />);
     expect(screen.getByRole("button", { name: "Publish" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Secrets" })).toBeEnabled();
   });
 
   test("Publish locks while a chat turn streams, even with a build", () => {
@@ -159,13 +99,14 @@ describe("TopBar", () => {
     const link = screen.getByRole("link");
     expect(link).toHaveAttribute("href", agentUrl("my-agent"));
     expect(link).toHaveAttribute("target", "_blank");
+    // It reads "Live"; the address rides in the title.
+    expect(link).toHaveTextContent("Live");
+    expect(link).toHaveAttribute("title", expect.stringContaining(agentUrl("my-agent")));
   });
 
-  test("Log out is wired to the sign-out handler", () => {
-    const onLogOut = vi.fn();
-    render(<TopBar {...barProps} onLogOut={onLogOut} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
-    expect(onLogOut).toHaveBeenCalled();
+  test("Log out is not in the bar — it lives in the account panel", () => {
+    render(<TopBar {...barProps} />);
+    expect(screen.queryByRole("button", { name: "Log out" })).toBeNull();
   });
 
   // Account-scoped, so unlike the pane switcher it is present with no project
@@ -184,6 +125,62 @@ describe("TopBar", () => {
     const toggle = screen.getByRole("button", { name: "Account" });
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     expect(toggle).toHaveAttribute("aria-controls", "account-menu");
+  });
+});
+
+describe("PaneTabs", () => {
+  // The UI tab's LABEL and its id deliberately differ: `preview` is the
+  // platform's word for the auto-deployed agent this pane frames, and "UI" is
+  // what the pane offers a person.
+  test.each([
+    ["Code", "code"],
+    ["Settings", "settings"],
+    ["UI", "preview"],
+    ["Secrets", "secrets"],
+  ])("the tabs move to the %s pane", (label, id) => {
+    const onSelectTab = vi.fn();
+    render(<PaneTabs {...tabsProps} onSelectTab={onSelectTab} />);
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    expect(onSelectTab).toHaveBeenCalledWith(id);
+  });
+
+  // The order is a product decision with nothing else holding it: the panes
+  // are peers, so a reshuffle of TABS is invisible to every other assertion.
+  test("the tabs run UI, Code, Secrets, Settings", () => {
+    render(<PaneTabs {...tabsProps} />);
+    const rendered = screen.getAllByRole("button").map((el) => el.textContent ?? "");
+    expect(rendered).toEqual(PANE_LABELS);
+  });
+
+  /**
+   * Every pane, unconditionally — asserted because it used to be conditional.
+   *
+   * `databaseEnabled` hid **Database** and **Workflows**: a project with no
+   * database had nothing to browse, and Workflows rode along because without one a
+   * guest ran the LOCAL workflow world, whose queue is in memory and whose data
+   * directory is per-process, so the pane would have listed runs that die with the
+   * sandbox. There is no Database pane now, and a durable run no longer needs the
+   * project to have a database — the world is the platform's — so the gate is gone
+   * and this pins the absence. No tab gates on a build either: Settings holds
+   * Delete project, and Secrets holds the key a FIRST build may need.
+   */
+  test("offers every pane with no opt-in, and no removed tab", () => {
+    render(<PaneTabs {...tabsProps} />);
+    for (const removed of ["Database", "API", "Workflows", "Logs"]) {
+      expect(screen.queryByRole("button", { name: removed })).toBeNull();
+    }
+    for (const label of PANE_LABELS) {
+      expect(screen.getByRole("button", { name: label })).toBeEnabled();
+    }
+  });
+
+  test("the open pane is the current one", () => {
+    render(<PaneTabs {...tabsProps} tab="settings" />);
+    expect(screen.getByRole("button", { name: "Settings" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("button", { name: "UI" })).not.toHaveAttribute("aria-current");
   });
 });
 

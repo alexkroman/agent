@@ -11,7 +11,31 @@ import type { UIMessage } from "ai";
 import { memo, type ReactNode } from "react";
 import type { StudioStatus } from "../api.ts";
 import { ChatStatusNote } from "./chat-status-note.tsx";
-import { ToolRow, toBlocks } from "./tool-row.tsx";
+import { ToolGroup } from "./tool-group.tsx";
+import { toBlocks } from "./tool-row.tsx";
+
+type ToolPart = Record<string, unknown> & { type: string };
+
+/** A message's blocks with each run of consecutive tool calls folded into one group. */
+type Section =
+  | { key: string; kind: "text"; text: string }
+  | { key: string; kind: "tools"; parts: ToolPart[] };
+
+/**
+ * Fold a message's blocks into prose and step groups. Keyed by the group's
+ * FIRST call, which never changes as later calls stream into the run.
+ * Exported for tests.
+ */
+export function toSections(message: UIMessage): Section[] {
+  const sections: Section[] = [];
+  for (const block of toBlocks(message)) {
+    const last = sections.at(-1);
+    if (block.kind === "text") sections.push(block);
+    else if (last?.kind === "tools") last.parts.push(block.part);
+    else sections.push({ key: block.key, kind: "tools", parts: [block.part] });
+  }
+  return sections;
+}
 
 // Memoized: while a turn streams, useChat updates dozens of times a second
 // but only the streaming message's identity changes — settled messages must
@@ -32,7 +56,7 @@ const MessageView = memo(function MessageView({
       .trim();
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-lg border border-line bg-cream px-3.5 py-2 text-[13px] leading-5 break-words whitespace-pre-wrap">
+        <div className="max-w-[85%] rounded-2xl rounded-br-md border border-line bg-panel px-3.5 py-2 text-[13px] leading-5 break-words whitespace-pre-wrap">
           {text}
         </div>
       </div>
@@ -40,11 +64,11 @@ const MessageView = memo(function MessageView({
   }
   return (
     <div className="text-[13px] leading-[19px] break-words">
-      {toBlocks(message).map((block) =>
-        block.kind === "text" ? (
-          <Markdown key={block.key} text={block.text} variant="compact" />
+      {toSections(message).map((section) =>
+        section.kind === "text" ? (
+          <Markdown key={section.key} text={section.text} variant="compact" />
         ) : (
-          <ToolRow key={block.key} part={block.part} active={busy} labels={labels} />
+          <ToolGroup key={section.key} parts={section.parts} active={busy} labels={labels} />
         ),
       )}
     </div>
@@ -55,7 +79,7 @@ const MessageView = memo(function MessageView({
 export function EmptyStateBody({ status }: { status: StudioStatus | undefined }) {
   return (
     <>
-      <div className="rounded-lg border border-line bg-cream px-[18px] py-4">
+      <div className="rounded-xl border border-line bg-panel px-4 py-3.5">
         <p className="m-0 text-[13px] leading-5">
           Welcome to AssemblyAI Build. Tell me what your voice agent should do and I'll build the
           first version.
@@ -96,8 +120,11 @@ export function Transcript({ messages, busy = false, labels, lead, footer }: Tra
   return (
     <AutoScroll
       className="min-h-0 flex-1"
-      contentClassName="flex flex-col gap-4 px-6 py-5"
-      scrollClassName="overflow-y-auto"
+      contentClassName="flex flex-col gap-3 px-2 pt-2 pb-4"
+      // `scrollbar-gutter` is forced back to `auto`: use-stick-to-bottom sets
+      // `stable both-edges` inline, which reserves a classic scrollbar's width
+      // on BOTH sides and left the transcript 15px inside the composer below it.
+      scrollClassName="overflow-y-auto [scrollbar-width:thin] [scrollbar-gutter:auto]!"
       initial="instant"
       resize="smooth"
     >

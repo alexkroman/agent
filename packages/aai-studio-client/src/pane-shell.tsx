@@ -23,7 +23,7 @@ export function PaneShell({
   children: ReactNode;
 }) {
   return (
-    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-cream">
+    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-panel">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 px-8 py-8">
         <header className="flex flex-col gap-1">
           <h1 className="m-0 font-serif text-[26px] leading-8 text-fg">{title}</h1>

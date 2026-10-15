@@ -1,21 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The studio's segmented control (the pane switcher in top-bar.tsx), as the
+// The studio's segmented control (the pane tabs in the canvas toolbar), as the
 // group and item class rules. Sizing is `.seg` in styles.css.
 
-import clsx from "clsx";
-
-/** The group box. Every instance is a flex row that clips its children's corners. */
-export const SEG_GROUP = "flex overflow-hidden rounded-sm border border-line";
-
 /**
- * One item's state and its seam.
- *
- * `index` draws the divider on every item but the first, which is what puts a
- * single line BETWEEN neighbours rather than a border around each.
+ * The group: a recessed track the items sit IN, so the selected one reads as
+ * raised out of it rather than boxed off by dividers.
  */
-export function segItemClass(active: boolean, index: number): string {
-  return clsx(
-    index > 0 && "border-l border-line",
-    active ? "bg-fg text-cream" : "bg-panel text-muted hover:text-fg",
-  );
+export const SEG_GROUP = "flex items-center gap-0.5 rounded-lg bg-cream p-0.5";
+
+/** One item's state: the selected tab is a raised chip, the rest are text on the track. */
+export function segItemClass(active: boolean): string {
+  return active
+    ? "bg-panel text-fg shadow-sm ring-1 ring-line"
+    : "bg-transparent text-muted hover:bg-panel/60 hover:text-fg";
 }

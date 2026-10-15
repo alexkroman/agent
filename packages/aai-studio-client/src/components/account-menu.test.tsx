@@ -10,11 +10,11 @@ import { describe, expect, test, vi } from "vitest";
 import { fetchCallsWith, jsonResponse, renderWithClient, stubFetch } from "../_test-utils.ts";
 import { AccountMenu } from "./account-menu.tsx";
 
-function renderMenu(open: boolean, onClose = vi.fn()) {
+function renderMenu(open: boolean, onClose = vi.fn(), onLogOut = vi.fn()) {
   const result = renderWithClient(
-    <AccountMenu open={open} bearer="session-token" onClose={onClose} />,
+    <AccountMenu open={open} bearer="session-token" onClose={onClose} onLogOut={onLogOut} />,
   );
-  return { ...result, onClose };
+  return { ...result, onClose, onLogOut };
 }
 
 const ACCOUNT = () => jsonResponse({ email: "a@b.c", hasKey: true });
@@ -25,6 +25,15 @@ describe("AccountMenu", () => {
     const { container } = renderMenu(false);
     expect(container).toBeEmptyDOMElement();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  // Log out moved here from the top bar: it is an account action, and the top
+  // bar keeps only what is about the open project plus one account button.
+  test("Log out is wired to the sign-out handler", () => {
+    stubFetch({ "/studio/account": ACCOUNT });
+    const { onLogOut } = renderMenu(true);
+    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+    expect(onLogOut).toHaveBeenCalled();
   });
 
   test("shows who is signed in", async () => {

@@ -18,7 +18,7 @@ export function isEnterSubmit(e: KeyboardEvent): boolean {
 
 /** The indigo icon-button shell (size comes from the caller: h-9/h-10). */
 export const SEND_BUTTON_CLASS =
-  "flex flex-none cursor-pointer items-center justify-center rounded-sm border-none bg-indigo text-white hover:bg-indigo-hover disabled:cursor-not-allowed disabled:bg-disabled disabled:text-line-strong";
+  "flex flex-none cursor-pointer items-center justify-center rounded-full border-none bg-indigo text-white hover:bg-indigo-hover disabled:cursor-not-allowed disabled:bg-disabled disabled:text-line-strong";
 
 export function SendIcon() {
   return (

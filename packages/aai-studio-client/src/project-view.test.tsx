@@ -16,7 +16,7 @@ import { ProjectView } from "./project-view.tsx";
 
 /** The `demo` project open, with the chat status already in hand. */
 function renderProject() {
-  const onLogOut = vi.fn();
+  const onGoHome = vi.fn();
   renderWithClient(
     <ProjectView
       bearer="sk-test"
@@ -25,13 +25,12 @@ function renderProject() {
       refreshAuth={() => Promise.resolve()}
       initialPrompt={null}
       onInitialPromptSent={vi.fn()}
-      onGoHome={vi.fn()}
-      onLogOut={onLogOut}
+      onGoHome={onGoHome}
       accountOpen={false}
       onToggleAccount={vi.fn()}
     />,
   );
-  return { onLogOut };
+  return { onGoHome };
 }
 
 describe("ProjectView workspace", () => {
@@ -47,9 +46,10 @@ describe("ProjectView workspace", () => {
         jsonResponse({ url: "http://studio.test/sandbox/studio/chat" }),
       "/sandbox/studio/tools": () => jsonResponse({ tools: [] }),
     });
-    const { onLogOut } = renderProject();
+    const { onGoHome } = renderProject();
     expect(await screen.findByText(/storage exploded/)).toBeInTheDocument();
-    expect(onLogOut).not.toHaveBeenCalled();
+    // The banner is the whole reaction: the project stays open.
+    expect(onGoHome).not.toHaveBeenCalled();
   });
 });
 

@@ -27,9 +27,11 @@ type AccountMenuProps = {
   open: boolean;
   bearer: string;
   onClose: () => void;
+  /** Sign out of the studio — the panel's last row, under the key. */
+  onLogOut: () => void;
 };
 
-export function AccountMenu({ open, bearer, onClose }: AccountMenuProps) {
+export function AccountMenu({ open, bearer, onClose, onLogOut }: AccountMenuProps) {
   const queryClient = useQueryClient();
 
   // Shares main.tsx's cache entry (same key), so the email is already there
@@ -88,6 +90,11 @@ export function AccountMenu({ open, bearer, onClose }: AccountMenuProps) {
           </p>
         }
       />
+      <div className="-mx-5 -mb-5 mt-1 flex justify-end border-t border-line px-5 py-3">
+        <button type="button" className="btn" onClick={onLogOut}>
+          Log out
+        </button>
+      </div>
     </DropdownPanel>
   );
 }
