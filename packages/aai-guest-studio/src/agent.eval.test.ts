@@ -28,11 +28,12 @@
 // Report a result against the case's own prompt, never against the file's.
 //
 // ```sh
-// pnpm test:eval --filter aai-guest                       # live, spends tokens
-// AAI_EVAL_STUB=1 pnpm --filter aai-guest test:eval        # wiring only
-// pnpm --filter aai-guest test:eval -- -t "type-clean"     # one case
+// pnpm test:eval --filter aai-guest-studio                    # live, spends tokens
+// AAI_EVAL_STUB=1 pnpm --filter aai-guest-studio test:eval     # wiring only
+// pnpm --filter aai-guest-studio test:eval -- -t "type-clean"  # one case
 // ```
 
+import { readdir } from "node:fs/promises";
 import path from "node:path";
 import {
   describeTurn,
@@ -361,6 +362,51 @@ describeStudioEval((test) => {
         `changed the file before looking at it — calls: [${toolNames(calls).join(", ")}]`,
       ).toBe(true);
       expect(await ctx.read("agent.ts")).toContain("Nightingale");
+      await expectWorkspaceCompiles(ctx);
+    },
+    { files: { "agent.ts": GREETER_AGENT }, live: true },
+  );
+
+  test(
+    "changes its own earlier work on a follow-up, rather than starting over",
+    async ({ chat, dir, ...ctx }) => {
+      const balancePath = path.join("tools", "check_balance.ts");
+      const first = await chat.send(
+        "Add a tool to this agent called check_balance. It takes an accountId string and " +
+          "answers with that account's balance as a sentence — a fixed amount is fine, this " +
+          "is a demo. Put it in the tools directory the SDK expects.",
+      );
+      // Turn 1 is the single-turn case's ask, graded there. Here it is only
+      // the STATE turn 2 starts from, so a miss throws naming TURN 1 — read as
+      // a turn-2 failure it would point at the wrong behaviour.
+      if (!(await ctx.exists(balancePath))) {
+        throw new Error(`turn 1 left no ${balancePath} to follow up on: ${describeTurn(first)}`);
+      }
+      const toolsAfterFirst = (await readdir(path.join(dir, "tools"))).sort();
+
+      const second = await chat.send(
+        "Now make check_balance take a currency code as well, and say the balance in that currency.",
+      );
+
+      // "it" is the tool turn 1 built — resolvable only from the conversation,
+      // which is the whole subject. The turn changed THAT file…
+      const rewrote = second.toolCalls.filter(
+        (call) => WRITE_TOOLS.has(call.name) && call.args.path === balancePath,
+      );
+      expect(
+        rewrote.length,
+        `never changed ${balancePath}: ${describeTurn(second)}`,
+      ).toBeGreaterThan(0);
+      // …and did not route around it with a second copy (`check_balance_v2.ts`,
+      // `checkBalance.ts`): a file in tools/ IS a tool, so a copy ships two.
+      expect((await readdir(path.join(dir, "tools"))).sort(), describeTurn(second)).toEqual(
+        toolsAfterFirst,
+      );
+      // Turn 1's contract survives turn 2's: the new input is ADDED, not swapped in.
+      const balance = (await ctx.read(balancePath)) ?? "";
+      expect(balance, `${balancePath} lost its accountId input`).toContain("accountId");
+      expect(balance, `${balancePath} takes no currency`).toMatch(/currency/i);
+      everyRedWriteWasRepaired(second.toolCalls);
       await expectWorkspaceCompiles(ctx);
     },
     { files: { "agent.ts": GREETER_AGENT }, live: true },
