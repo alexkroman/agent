@@ -24,7 +24,6 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { createLogger } from "aai-server/logger";
 import { GUEST_ROUTES, guestHttpUrl } from "aai-server/sandbox";
-import pTimeout from "p-timeout";
 import type { StudioSessionRecord } from "./studio-session-registry.ts";
 
 const log = createLogger("studio.session.adopt");
@@ -71,17 +70,18 @@ export async function adoptPeerSession(
   const fetchFn = deps.fetchFn ?? globalThis.fetch;
   const url = guestHttpUrl(record.guestOrigin, GUEST_ROUTES.studioSessionInit);
   try {
-    const res = await pTimeout(
-      fetchFn(url, {
-        method: "POST",
-        headers: {
-          authorization: `Bearer ${record.sandboxToken}`,
-          "content-type": "application/json",
-        },
-        body: JSON.stringify({ ...params, chatToken: record.chatToken }),
-      }),
-      { milliseconds: deps.timeoutMs ?? ADOPT_TIMEOUT_MS, message: "session-init timed out" },
-    );
+    // A signal rather than a race: an abandoned install must not keep
+    // materializing a workspace in the peer's guest after this replica has
+    // already moved on to spawning its own.
+    const res = await fetchFn(url, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${record.sandboxToken}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ ...params, chatToken: record.chatToken }),
+      signal: AbortSignal.timeout(deps.timeoutMs ?? ADOPT_TIMEOUT_MS),
+    });
     if (!res.ok) {
       log.warn("peer install refused; respawning sandbox", {
         project: params.project,
