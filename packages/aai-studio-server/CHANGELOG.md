@@ -1,5 +1,20 @@
 # aai-studio-server
 
+## 0.11.29
+
+### Patch Changes
+
+- 887fc58: Studio project header is one row split at the chat column: pane tabs and preview
+  chrome move into the top bar, the canvas toolbar row is gone, and Live status
+  shows as a dot on Publish
+- 3ba3a1e: Studio home sidebar: quieter project search with multi-term matching, match
+  highlighting, and keyboard shortcuts (/, Enter, Esc, arrows)
+- aai-server@0.2.3
+  - @alexkroman1/aai@0.15.2
+  - @alexkroman1/aai-runtime@0.15.2
+  - @alexkroman1/aai-ui@0.15.2
+  - aai-studio-client@0.7.13
+
 ## 0.11.28
 
 ### Patch Changes

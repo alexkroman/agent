@@ -1,5 +1,12 @@
 # aai-guest-core
 
+## 0.6.16
+
+### Patch Changes
+
+- @alexkroman1/aai@0.15.2
+  - @alexkroman1/aai-runtime@0.15.2
+
 ## 0.6.15
 
 ### Patch Changes

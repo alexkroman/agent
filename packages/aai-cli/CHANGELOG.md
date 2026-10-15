@@ -1,5 +1,15 @@
 # @alexkroman1/aai-cli
 
+## 0.15.2
+
+### Patch Changes
+
+- d02864f: Outbound Caller template: keep the API key label on one line instead of stacking
+  the `CALLS_API_KEY` code and closing parenthesis as separate column items.
+- @alexkroman1/aai@0.15.2
+  - @alexkroman1/aai-runtime@0.15.2
+  - @alexkroman1/aai-ui@0.15.2
+
 ## 0.15.1
 
 ### Patch Changes
