@@ -1,5 +1,22 @@
 # @alexkroman1/aai-runtime
 
+## 0.15.1
+
+### Patch Changes
+
+- 89737d1: Test phone trees: eval sessions now carry sendDtmf presses (they answered "call
+  ended" on every press, so a phone-menu tool told a live model the call was over)
+  and report them as `turn.dtmf`; new `walkPhoneTree(session, tree)` plays an
+  automated menu declared as data and follows the keys the agent actually pressed.
+  The outbound-call-agent template gains phone-tree evals, a same-reply hang-up
+  rule, and a `scripts/phone-tree-call.mjs` harness that has a deployed agent dial
+  a real Twilio menu.
+- 9ed592e: First-run fixes from user feedback: the stock Controls row gains an End Call
+  button (session.end()); an LLM Gateway 400 for a model the account cannot use,
+  or one without tool calling, now names the fix; the scaffold .env.example and
+  authoring guide explain when a database is needed and where to set the model.
+- @alexkroman1/aai@0.15.1
+
 ## 0.15.0
 
 ### Patch Changes

@@ -1,5 +1,19 @@
 # aai-server
 
+## 0.2.2
+
+### Patch Changes
+
+- a03cdca: Slim the studio to voice agents only: remove the Voice agent / Workflow project
+  kind (one system prompt, one starter list), the API, Workflows and Logs panes,
+  the public /studio/api/<slug> page, and the Secrets pane's .env paste box. The
+  Twilio and Telnyx webhook URLs move to the Settings pane.
+- Updated dependencies [89737d1]
+- Updated dependencies [9ed592e]
+  - @alexkroman1/aai-runtime@0.15.1
+  - aai-guest@0.6.16
+  - @alexkroman1/aai@0.15.1
+
 ## 0.2.1
 
 ### Patch Changes
