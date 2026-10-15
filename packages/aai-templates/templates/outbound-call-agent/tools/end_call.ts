@@ -15,8 +15,9 @@ import { markVoicemail } from "../live-calls.ts";
 
 export default tool({
   description:
-    "Hang up the call. Call it once the task is finished and you have said goodbye, " +
-    "or right after leaving a voicemail message.",
+    "Hang up the call, in the same reply as your goodbye — a silent hang-up sounds like a " +
+    "dropped line. Call it once the task is finished or they say goodbye, and in the same " +
+    "reply as a voicemail message. Not right after answering one of their questions.",
   inputSchema: z.object({
     reached: z
       .enum(["person", "voicemail"])

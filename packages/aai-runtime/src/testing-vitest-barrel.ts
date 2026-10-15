@@ -135,6 +135,11 @@ export {
   openEvalSession,
   openEvalTextAgent,
   openEvalWorkflows,
+  type PhoneMenu,
+  type PhoneTree,
+  type PhoneTreeLeaf,
+  type PhoneTreeStep,
+  type PhoneTreeWalk,
   type RecordingWorkflows,
   type RecordingWorkflowsOptions,
   type RunCodeExecutor,
@@ -194,4 +199,6 @@ export {
   turnCalling,
   type Unsubscribe,
   type VmRunCodeOptions,
+  type WalkPhoneTreeOptions,
+  walkPhoneTree,
 } from "./eval-vitest-barrel.ts";

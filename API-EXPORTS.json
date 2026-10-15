@@ -1339,6 +1339,11 @@
     "LogFn",
     "LogLevel",
     "Logger",
+    "PhoneMenu",
+    "PhoneTree",
+    "PhoneTreeLeaf",
+    "PhoneTreeStep",
+    "PhoneTreeWalk",
     "RunCodeExecutor",
     "STUB_LLM_API_KEY_ENV",
     "STUB_SPEECH_API_KEY_ENV",
@@ -1371,6 +1376,7 @@
     "TtsWordTiming",
     "Unsubscribe",
     "VmRunCodeOptions",
+    "WalkPhoneTreeOptions",
     "completedOutput",
     "createStubSttOpener",
     "createStubTtsOpener",
@@ -1406,7 +1412,8 @@
     "toolResultIn",
     "toolResultsIn",
     "transcriptOf",
-    "turnCalling"
+    "turnCalling",
+    "walkPhoneTree"
   ],
   "@alexkroman1/aai-runtime/eval/vitest": [
     "CallVerdict",
@@ -1454,6 +1461,11 @@
     "LogFn",
     "LogLevel",
     "Logger",
+    "PhoneMenu",
+    "PhoneTree",
+    "PhoneTreeLeaf",
+    "PhoneTreeStep",
+    "PhoneTreeWalk",
     "RecordingWorkflows",
     "RecordingWorkflowsOptions",
     "RunCodeExecutor",
@@ -1497,6 +1509,7 @@
     "TtsWordTiming",
     "Unsubscribe",
     "VmRunCodeOptions",
+    "WalkPhoneTreeOptions",
     "completedOutput",
     "createRecordingWorkflows",
     "createStubSttOpener",
@@ -1548,7 +1561,8 @@
     "toolResultIn",
     "toolResultsIn",
     "transcriptOf",
-    "turnCalling"
+    "turnCalling",
+    "walkPhoneTree"
   ],
   "@alexkroman1/aai-runtime": [
     "AgentEnv",
@@ -1959,6 +1973,11 @@
     "LogFn",
     "LogLevel",
     "Logger",
+    "PhoneMenu",
+    "PhoneTree",
+    "PhoneTreeLeaf",
+    "PhoneTreeStep",
+    "PhoneTreeWalk",
     "RecordingWorkflows",
     "RecordingWorkflowsOptions",
     "RunCodeExecutor",
@@ -2003,6 +2022,7 @@
     "TtsWordTiming",
     "Unsubscribe",
     "VmRunCodeOptions",
+    "WalkPhoneTreeOptions",
     "completedOutput",
     "createRecordingWorkflows",
     "createStubSttOpener",
@@ -2058,7 +2078,8 @@
     "toolResultIn",
     "toolResultsIn",
     "transcriptOf",
-    "turnCalling"
+    "turnCalling",
+    "walkPhoneTree"
   ],
   "@alexkroman1/aai-runtime/tracing": [
     "DEFAULT_SERVICE_NAME",

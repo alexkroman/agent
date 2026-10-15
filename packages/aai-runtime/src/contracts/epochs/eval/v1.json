@@ -3,7 +3,7 @@
   "capability": "eval",
   "epoch": 1,
   "rule": 2,
-  "sha256": "3bf70338621823c75ab45a66d220b2475e0ca99bbe14edc310a0376cfd66db59",
+  "sha256": "4b8c319a1da7350e4f95c722731a6e42ee5392409189f46d199ce5367b54995a",
   "exports": [
     "DEFAULT_RUN_TIMEOUT_MS",
     "DescribeEvalOptions",
@@ -80,5 +80,20 @@
     "transcriptOf",
     "turnCalling"
   ],
-  "rollup": "04c525895780d95481ee72b4e378472ec5511177af537358cf1529f535e60d1e"
+  "rollup": "04c525895780d95481ee72b4e378472ec5511177af537358cf1529f535e60d1e",
+  "revision": 1,
+  "revisions": [
+    {
+      "revision": 0,
+      "rule": 2,
+      "sha256": "3bf70338621823c75ab45a66d220b2475e0ca99bbe14edc310a0376cfd66db59",
+      "reason": "minted"
+    },
+    {
+      "revision": 1,
+      "rule": 2,
+      "sha256": "4b8c319a1da7350e4f95c722731a6e42ee5392409189f46d199ce5367b54995a",
+      "reason": "compatible (checked): no export added or removed; every old export still assignable"
+    }
+  ]
 }

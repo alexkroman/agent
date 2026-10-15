@@ -1764,6 +1764,59 @@ readonly [`EvalTurn`](#evalturn)[]
 
 [`EvalTurn`](#evalturn)
 
+***
+
+### walkPhoneTree()
+
+```ts
+function walkPhoneTree(
+   session: Pick<EvalSession, "say">, 
+   tree: PhoneTree, 
+   options?: WalkPhoneTreeOptions
+): Promise<PhoneTreeWalk>;
+```
+
+Put an eval session through `tree`: play each menu's prompt as the caller's
+side of the line, follow the keys the agent pressed, and stop at the leaf it
+got through to — whose prompt is said too, so the agent's reply to the
+person who picked up is the last of [PhoneTreeWalk.turns](#turns).
+
+A real menu's two non-answers are played as one: an entry with no option
+replays the menu after [WalkPhoneTreeOptions.invalidPrefix](#invalidprefix), and a turn
+that pressed nothing (the agent spoke to the menu, or waited) after
+[WalkPhoneTreeOptions.noInputPrefix](#noinputprefix). Entries are matched WHOLE, which is
+stricter than a menu reading one key at a time: `"21"` where `"2"` was the
+option is a wrong entry here, because a model that typed it would be
+talking into the next menu on a real line.
+
+Returns rather than throws when the agent never gets through, so a case can
+assert on the path it took instead of on a message.
+
+#### Parameters
+
+##### session
+
+`Pick`\<[`EvalSession`](#evalsession), `"say"`\>
+
+an [EvalSession](#evalsession), or anything whose `say()` answers
+  turns that carry `dtmf`.
+
+##### tree
+
+[`PhoneTree`](#phonetree)
+
+##### options?
+
+[`WalkPhoneTreeOptions`](#walkphonetreeoptions)
+
+#### Returns
+
+`Promise`\<[`PhoneTreeWalk`](#phonetreewalk)\>
+
+#### Throws
+
+TypeError when a menu has no options, or a turn carries no `dtmf`.
+
 ## Interfaces
 
 ### EvalSessionOptions
@@ -4114,6 +4167,7 @@ readonly toolCallId: string;
 ```ts
 type EvalTurn = {
   completed: boolean;
+  dtmf?: readonly string[];
   endedSession?: boolean;
   errors: readonly SessionEvent<"error.reported">[];
   events: readonly SessionEvent[];
@@ -4141,6 +4195,22 @@ readonly completed: boolean;
 
 The reply ended on its own terms (`reply.completed`) rather than being
 cancelled. A cancelled reply is a finding, not a failure of the harness.
+
+##### dtmf?
+
+```ts
+readonly optional dtmf?: readonly string[];
+```
+
+The keys the agent pressed during this turn — one entry per `sendDtmf`
+call, as the runtime queued them (separators dropped, `a`–`d` raised).
+
+Read off the session, not off a tool's name or arguments, so it holds for
+any tool that calls `sendDtmf`, and a tool whose press failed contributes
+nothing. `walkPhoneTree` follows a menu by it.
+
+Optional for the same reason as [endedSession](#endedsession); [openEvalSession](#openevalsession)'s
+`say()` always sets it.
 
 ##### endedSession?
 
@@ -4963,6 +5033,181 @@ type LogLevel = "info" | "warn" | "error" | "debug";
 ```
 
 Log severity levels a [Logger](#logger-3) implements.
+
+***
+
+### PhoneMenu
+
+```ts
+type PhoneMenu = {
+  name: string;
+  options: Readonly<Record<string, PhoneTree>>;
+  prompt: string;
+};
+```
+
+One automated menu: a prompt, and where each entry leads.
+
+#### Properties
+
+##### name
+
+```ts
+readonly name: string;
+```
+
+Names the menu in [PhoneTreeStep.menu](#menu).
+
+##### options
+
+```ts
+readonly options: Readonly<Record<string, PhoneTree>>;
+```
+
+Each whole ENTRY and where it leads: `"2"` for a one-key choice, `"204"`
+for an extension. A trailing `#` on what was pressed counts as the
+entry's terminator (`"204#"` matches `"204"`) unless the entry names it
+itself. Anything else is not an entry, and the menu replays.
+
+##### prompt
+
+```ts
+readonly prompt: string;
+```
+
+What the menu says each time it plays.
+
+***
+
+### PhoneTree
+
+```ts
+type PhoneTree = PhoneMenu | PhoneTreeLeaf;
+```
+
+A menu or the leaf it ends in — the tree [walkPhoneTree](#walkphonetree) plays.
+
+***
+
+### PhoneTreeLeaf
+
+```ts
+type PhoneTreeLeaf = {
+  name: string;
+  prompt: string;
+};
+```
+
+Where a phone tree ends: whoever the menu puts the call through to — a
+person picking up, a voicemail greeting, a recorded "we are closed".
+
+#### Properties
+
+##### name
+
+```ts
+readonly name: string;
+```
+
+Names the leaf in [PhoneTreeWalk.reached](#reached).
+
+##### prompt
+
+```ts
+readonly prompt: string;
+```
+
+What is said once the call is put through. The agent's reply to it is the walk's last turn.
+
+***
+
+### PhoneTreeStep
+
+```ts
+type PhoneTreeStep = {
+  menu: string;
+  next: string | undefined;
+  pressed: string;
+};
+```
+
+One menu played: what the agent pressed after hearing it, and where that led.
+
+#### Properties
+
+##### menu
+
+```ts
+readonly menu: string;
+```
+
+The [PhoneMenu.name](#name-3) that played.
+
+##### next
+
+```ts
+readonly next: string | undefined;
+```
+
+The name of the node the entry led to; `undefined` when it matched none and the menu replayed.
+
+##### pressed
+
+```ts
+readonly pressed: string;
+```
+
+Every key the agent pressed on that turn, joined, pauses dropped. `""` when it pressed nothing.
+
+***
+
+### PhoneTreeWalk
+
+```ts
+type PhoneTreeWalk = {
+  path: readonly PhoneTreeStep[];
+  reached: string | undefined;
+  stopped: "hung-up" | "max-prompts" | undefined;
+  turns: readonly EvalTurn[];
+};
+```
+
+What [walkPhoneTree](#walkphonetree) saw.
+
+#### Properties
+
+##### path
+
+```ts
+readonly path: readonly PhoneTreeStep[];
+```
+
+Every menu played, in order, with what was pressed.
+
+##### reached
+
+```ts
+readonly reached: string | undefined;
+```
+
+The [PhoneTreeLeaf.name](#name-4) the agent got through to; `undefined` when it never did.
+
+##### stopped
+
+```ts
+readonly stopped: "hung-up" | "max-prompts" | undefined;
+```
+
+Why the walk ended short of a leaf: the agent hung up, or the menus played
+[WalkPhoneTreeOptions.maxPrompts](#maxprompts) times. `undefined` when it reached one.
+
+##### turns
+
+```ts
+readonly turns: readonly EvalTurn[];
+```
+
+Every turn the walk drove, in order. The leaf's is last, so a case can read the agent's greeting to whoever picked up.
 
 ***
 
@@ -5846,6 +6091,46 @@ Wall-clock budget for one evaluation, in milliseconds. Defaults to 1000.
 
 A `while (true) {}` is a thing a model emits, and without this the case
 hangs to the suite deadline and reads as a broken harness.
+
+***
+
+### WalkPhoneTreeOptions
+
+```ts
+type WalkPhoneTreeOptions = {
+  invalidPrefix?: string;
+  maxPrompts?: number;
+  noInputPrefix?: string;
+};
+```
+
+Knobs for [walkPhoneTree](#walkphonetree).
+
+#### Properties
+
+##### invalidPrefix?
+
+```ts
+readonly optional invalidPrefix?: string;
+```
+
+Said before the menu replays after an entry it has no option for.
+
+##### maxPrompts?
+
+```ts
+readonly optional maxPrompts?: number;
+```
+
+Most menu prompts played before the walk gives up — where an agent looping on a wrong key ends. Default 10.
+
+##### noInputPrefix?
+
+```ts
+readonly optional noInputPrefix?: string;
+```
+
+Said before the menu replays after the agent pressed nothing.
 
 ## Variables
 

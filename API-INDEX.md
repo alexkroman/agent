@@ -20,7 +20,7 @@ of it — and want the import.
 
 - [Agent authoring](#agent-authoring) — 596 names
 - [Browser client](#browser-client) — 183 names
-- [Testing and evals](#testing-and-evals) — 245 names
+- [Testing and evals](#testing-and-evals) — 252 names
 - [Hosting and tooling](#hosting-and-tooling) — 234 names
 - [Framework internals](#framework-internals) — 446 names
 
@@ -792,6 +792,11 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `JournalConflictError` | class | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | A journal call the store REFUSED on the run's own merits. |
 | `JournalStore` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | The durable store, as the engine needs it. |
 | `JudgeInput` | type | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-simulate` | What a judge may be handed: a simulated call, a list of turns, a SESSION (anything with its event stream — an `EvalSession`, an `EvalTextAgent`), or a … |
+| `PhoneMenu` | type | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-phone-tree` | One automated menu: a prompt, and where each entry leads. |
+| `PhoneTree` | type | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-phone-tree` | A menu or the leaf it ends in — the tree `walkPhoneTree` plays. |
+| `PhoneTreeLeaf` | type | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-phone-tree` | Where a phone tree ends: whoever the menu puts the call through to — a person picking up, a voicemail greeting, a recorded "we are closed". |
+| `PhoneTreeStep` | type | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-phone-tree` | One menu played: what the agent pressed after hearing it, and where that led. |
+| `PhoneTreeWalk` | type | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-phone-tree` | What `walkPhoneTree` saw. |
 | `ProjectFiles` | type | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | What the BUILD lowers onto an `agent.ts` default export — the files beside it that a deployed agent runs with and a spec has to apply itself. |
 | `RecordedSleep` | type | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | One wait the body asked for — and did NOT take. |
 | `RecordedStart` | type | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | One `start` the client recorded. |
@@ -971,6 +976,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `toolRunner` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | `runTool` bound to one agent — the `run(...)` a spec actually calls. |
 | `transcriptOf` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | The session as `User:`/`Agent:` lines with each tool call beneath the turn that made it, as `[tool(args) -> result]`, then any request the network REFUSED — … |
 | `turnCalling` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | The turn `name` was called in — the FIRST one, and a throw naming what happened instead when there is none. |
+| `walkPhoneTree`, `WalkPhoneTreeOptions` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-phone-tree` | Put an eval session through `tree`: play each menu's prompt as the caller's side of the line, follow the keys the agent pressed, and stop at the leaf it got … |
 
 ## Hosting and tooling
 

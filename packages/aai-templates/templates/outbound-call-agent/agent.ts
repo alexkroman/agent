@@ -96,7 +96,11 @@ export default agent({
 
   events: {
     "userTranscript.committed": (event, ctx) => recordTurn(ctx.sessionId, "callee", event.text),
-    "agentTranscript.committed": (event, ctx) => recordTurn(ctx.sessionId, "agent", event.text),
+    // A `recovery` line is the runtime apologizing for a failed turn, not the
+    // agent's words: kept out, or the summary reports it as something said.
+    "agentTranscript.committed": (event, ctx) => {
+      if (event.recovery === undefined) recordTurn(ctx.sessionId, "agent", event.text);
+    },
   },
 
   async onSessionEnd({ sessionId, workflows }) {
