@@ -223,6 +223,93 @@ export const EXPECTATIONS: readonly Expectation[] = [
     minTools: 1,
     ui: true,
   },
+  {
+    label: "A boutique hotel front desk that books rooms and tables",
+    capabilities: [["room", "book", "reserv"], ["restaurant", "table", "dining"], ["cancel"]],
+    minTools: 5,
+    ui: true,
+  },
+  {
+    label: "A travel concierge for flights, hotels, and car rentals",
+    capabilities: [["flight", "ticket"], ["hotel"], ["car"]],
+    minTools: 3,
+    ui: true,
+  },
+  {
+    label: "A support line that checks its answers before it speaks",
+    capabilities: [
+      ["answer", "question", "search", "knowledge"],
+      ["ticket", "escalate"],
+    ],
+    minTools: 2,
+    ui: true,
+  },
+  {
+    label: "A front desk that hands you to billing or support",
+    capabilities: [
+      ["verify", "authenticate", "account"],
+      ["invoice", "refund", "billing"],
+      ["diagnostic", "technician", "support"],
+    ],
+    // The desks' tools live on the roster in `shared.ts`, not in `tools/`, but
+    // the built agent advertises them all, so the loaded config counts them.
+    minTools: 5,
+  },
+  {
+    label: "A smart speaker that sets reminders and runs research",
+    capabilities: [
+      ["remind", "timer", "alarm"],
+      ["research", "search"],
+    ],
+    minTools: 2,
+    ui: true,
+  },
+  {
+    label: "An executive assistant that triages your inbox",
+    capabilities: [
+      ["triage", "inbox", "classify"],
+      ["draft", "reply", "respond"],
+      ["calendar", "meeting", "invite"],
+    ],
+    minTools: 3,
+    ui: true,
+  },
+  {
+    label: "A hiring desk that scores applicants against a role",
+    capabilities: [["screen", "score", "rank"], ["candidate", "applicant"], ["email"]],
+    minTools: 3,
+    ui: true,
+  },
+  {
+    label: "A research planner that works a plan step by step",
+    capabilities: [["plan"], ["step", "execute", "work"], ["revise", "replan", "update"]],
+    minTools: 3,
+    ui: true,
+  },
+  {
+    label: "A briefing desk that sends researchers out in parallel",
+    capabilities: [
+      ["research", "investigate"],
+      ["verify", "fact", "check"],
+      ["briefing", "summary", "report"],
+    ],
+    minTools: 2,
+  },
+  {
+    label: "A hold-to-talk notebook for field notes",
+    capabilities: [
+      ["save", "add", "note"],
+      ["list", "read", "review"],
+    ],
+    minTools: 2,
+    ui: true,
+  },
+  {
+    label: "A word-guessing game show host",
+    capabilities: [["start", "new_game", "begin"], ["skip", "pass"], ["score"]],
+    minTools: 3,
+    ui: true,
+  },
 ];
 
 /**
