@@ -292,7 +292,7 @@ export function describeStudioEval(define: (test: StudioEvalTest) => void): void
   sayFromHarness(
     "eval: cases default to the HARNESS system prompt and say nothing about the " +
       "studio's; a case that passes `studioPrompt` runs the shipped one from " +
-      "packages/aai-guest/studio-prompts/ (kept current by `check:studio-prompt`).",
+      "packages/aai-guest-studio/studio-prompts/ (kept current by `check:studio-prompt`).",
   );
 
   describe("the studio coding agent", () => {
