@@ -29,6 +29,12 @@ describe("studioPreamble", () => {
     expect(studioPreamble()).toContain(specs.join(", "));
   });
 
+  test("tells the agent to name every secret the user must set", () => {
+    const preamble = studioPreamble();
+    expect(preamble).toContain('"Secrets to set" list');
+    expect(preamble).toContain("the EXACT name (as in");
+  });
+
   test("is pure: it composes the same text every time", () => {
     expect(studioPreamble()).toBe(studioPreamble());
   });
