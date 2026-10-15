@@ -40,42 +40,43 @@ and `git push --no-verify` skipped them entirely.
 
 <!-- gate-catalogue:start (generated: pnpm sync:gate-catalogue) -->
 
-| Gate                      | Phase       | Failure             | Mode | Runs                                              | Fix                           |
-| ------------------------- | ----------- | ------------------- | ---- | ------------------------------------------------- | ----------------------------- |
-| `check:hatches`           | ratchets    | reported at the end | both | `node scripts/check-escape-hatches.mjs`           | `pnpm hatches:update`         |
-| `check:invariants`        | ratchets    | reported at the end | both | `node scripts/guard-invariants.mjs`               | `pnpm invariants:update`      |
-| `check:file-length`       | ratchets    | reported at the end | both | `node scripts/check-file-length.mjs`              | `pnpm file-length:update`     |
-| `check:duplication`       | ratchets    | reported at the end | both | `node scripts/check-duplication.mjs`              | `pnpm duplication:update`     |
-| `check:guest-contract`    | ratchets    | reported at the end | both | `node scripts/check-guest-contract.mjs`           | —                             |
-| `check:package-layout`    | ratchets    | reported at the end | both | `node scripts/check-package-layout.mjs`           | —                             |
-| `check:test-assertions`   | ratchets    | reported at the end | both | `node scripts/check-test-assertions.mjs`          | —                             |
-| `check:property-floors`   | ratchets    | reported at the end | both | `node scripts/check-property-floors.mjs`          | `pnpm property-floors:update` |
-| `check:module-tests`      | ratchets    | reported at the end | both | `node scripts/check-module-tests.mjs`             | `pnpm module-tests:update`    |
-| `check:claude-md`         | ratchets    | reported at the end | both | `node scripts/check-claude-md.mjs`                | `pnpm claude-md:update`       |
-| `check:guide-index`       | ratchets    | reported at the end | both | `node scripts/docs-list.mjs --check`              | `pnpm sync:guide-index`       |
-| `check:gate-catalogue`    | ratchets    | reported at the end | both | `node scripts/check.mjs --catalogue check`        | `pnpm sync:gate-catalogue`    |
-| `check:guest-toolchain`   | ratchets    | reported at the end | both | `node scripts/sync-guest-toolchain.mjs --check`   | `pnpm sync:guest-toolchain`   |
-| `check:agent-guide`       | ratchets    | reported at the end | both | `node scripts/sync-agent-guide.mjs --check`       | `pnpm sync:agent-guide`       |
-| `check:provider-table`    | ratchets    | reported at the end | both | `node scripts/sync-provider-table.mjs --check`    | `pnpm sync:provider-table`    |
-| `check:studio-prompt`     | ratchets    | reported at the end | both | `node scripts/sync-studio-prompt.mjs --check`     | `pnpm sync:studio-prompt`     |
-| `check:scaffold`          | ratchets    | reported at the end | both | `node scripts/sync-scaffold-versions.mjs --check` | `pnpm sync:scaffold`          |
-| `check:defaults`          | ratchets    | reported at the end | both | `node scripts/check-defaults.mjs`                 | —                             |
-| `check:konsistent`        | ratchets    | reported at the end | both | `konsistent check`                                | —                             |
-| `check:deploy-changeset`  | ratchets    | reported at the end | both | `node scripts/check-deploy-changeset.mjs`         | —                             |
-| `check:migration-order`   | ratchets    | reported at the end | both | `node scripts/check-migration-order.mjs`          | —                             |
-| `check:optional-peers`    | ratchets    | reported at the end | both | `node scripts/check-optional-peers.mjs`           | —                             |
-| `check:untyped-imports`   | ratchets    | reported at the end | both | `node scripts/check-untyped-imports.mjs`          | —                             |
-| `check:coverage-per-file` | after-tests | reported at the end | both | `node scripts/check-coverage-per-file.mjs`        | —                             |
-| `check:publish-names`     | after-build | stops the run       | both | `node scripts/check-publish-names.mjs`            | —                             |
-| `check:publish-protocols` | after-build | stops the run       | both | `node scripts/check-publish-protocols.mjs`        | —                             |
-| `check:api-report`        | after-build | stops the run       | both | `node scripts/api-report.mjs --check`             | `pnpm api-report`             |
-| `check:api-nameable`      | after-build | stops the run       | both | `node scripts/check-api-nameable.mjs`             | `pnpm api-nameable:update`    |
-| `check:bundled-deps`      | after-build | reported at the end | both | `node scripts/check-bundled-deps.mjs`             | `pnpm bundled-deps:update`    |
-| `check:api-contracts`     | after-build | stops the run       | both | `node scripts/api-contracts.mjs`                  | —                             |
-| `check:authoring-guide`   | after-build | stops the run       | both | `node scripts/check-authoring-guide.mjs`          | —                             |
-| `check:docs-md`           | after-build | stops the run       | both | `node scripts/docs-markdown.mjs --check`          | `pnpm docs:md`                |
-| `check:template-types`    | after-build | stops the run       | both | `node scripts/check-template-types.mjs`           | —                             |
-| `check:doc-examples`      | after-build | stops the run       | both | `node scripts/check-doc-examples.mjs`             | —                             |
+| Gate                       | Phase       | Failure             | Mode | Runs                                              | Fix                           |
+| -------------------------- | ----------- | ------------------- | ---- | ------------------------------------------------- | ----------------------------- |
+| `check:hatches`            | ratchets    | reported at the end | both | `node scripts/check-escape-hatches.mjs`           | `pnpm hatches:update`         |
+| `check:invariants`         | ratchets    | reported at the end | both | `node scripts/guard-invariants.mjs`               | `pnpm invariants:update`      |
+| `check:file-length`        | ratchets    | reported at the end | both | `node scripts/check-file-length.mjs`              | `pnpm file-length:update`     |
+| `check:duplication`        | ratchets    | reported at the end | both | `node scripts/check-duplication.mjs`              | `pnpm duplication:update`     |
+| `check:guest-contract`     | ratchets    | reported at the end | both | `node scripts/check-guest-contract.mjs`           | —                             |
+| `check:package-layout`     | ratchets    | reported at the end | both | `node scripts/check-package-layout.mjs`           | —                             |
+| `check:test-assertions`    | ratchets    | reported at the end | both | `node scripts/check-test-assertions.mjs`          | —                             |
+| `check:property-floors`    | ratchets    | reported at the end | both | `node scripts/check-property-floors.mjs`          | `pnpm property-floors:update` |
+| `check:module-tests`       | ratchets    | reported at the end | both | `node scripts/check-module-tests.mjs`             | `pnpm module-tests:update`    |
+| `check:claude-md`          | ratchets    | reported at the end | both | `node scripts/check-claude-md.mjs`                | `pnpm claude-md:update`       |
+| `check:guide-index`        | ratchets    | reported at the end | both | `node scripts/docs-list.mjs --check`              | `pnpm sync:guide-index`       |
+| `check:gate-catalogue`     | ratchets    | reported at the end | both | `node scripts/check.mjs --catalogue check`        | `pnpm sync:gate-catalogue`    |
+| `check:guest-toolchain`    | ratchets    | reported at the end | both | `node scripts/sync-guest-toolchain.mjs --check`   | `pnpm sync:guest-toolchain`   |
+| `check:agent-guide`        | ratchets    | reported at the end | both | `node scripts/sync-agent-guide.mjs --check`       | `pnpm sync:agent-guide`       |
+| `check:provider-table`     | ratchets    | reported at the end | both | `node scripts/sync-provider-table.mjs --check`    | `pnpm sync:provider-table`    |
+| `check:studio-prompt`      | ratchets    | reported at the end | both | `node scripts/sync-studio-prompt.mjs --check`     | `pnpm sync:studio-prompt`     |
+| `check:scaffold`           | ratchets    | reported at the end | both | `node scripts/sync-scaffold-versions.mjs --check` | `pnpm sync:scaffold`          |
+| `check:defaults`           | ratchets    | reported at the end | both | `node scripts/check-defaults.mjs`                 | —                             |
+| `check:konsistent`         | ratchets    | reported at the end | both | `konsistent check`                                | —                             |
+| `check:deploy-changeset`   | ratchets    | reported at the end | both | `node scripts/check-deploy-changeset.mjs`         | —                             |
+| `check:migration-order`    | ratchets    | reported at the end | both | `node scripts/check-migration-order.mjs`          | —                             |
+| `check:optional-peers`     | ratchets    | reported at the end | both | `node scripts/check-optional-peers.mjs`           | —                             |
+| `check:untyped-imports`    | ratchets    | reported at the end | both | `node scripts/check-untyped-imports.mjs`          | —                             |
+| `check:migration-contract` | ratchets    | stops the run       | both | `node scripts/check-migration-contract.mjs`       | —                             |
+| `check:coverage-per-file`  | after-tests | reported at the end | both | `node scripts/check-coverage-per-file.mjs`        | —                             |
+| `check:publish-names`      | after-build | stops the run       | both | `node scripts/check-publish-names.mjs`            | —                             |
+| `check:publish-protocols`  | after-build | stops the run       | both | `node scripts/check-publish-protocols.mjs`        | —                             |
+| `check:api-report`         | after-build | stops the run       | both | `node scripts/api-report.mjs --check`             | `pnpm api-report`             |
+| `check:api-nameable`       | after-build | stops the run       | both | `node scripts/check-api-nameable.mjs`             | `pnpm api-nameable:update`    |
+| `check:bundled-deps`       | after-build | reported at the end | both | `node scripts/check-bundled-deps.mjs`             | `pnpm bundled-deps:update`    |
+| `check:api-contracts`      | after-build | stops the run       | both | `node scripts/api-contracts.mjs`                  | —                             |
+| `check:authoring-guide`    | after-build | stops the run       | both | `node scripts/check-authoring-guide.mjs`          | —                             |
+| `check:docs-md`            | after-build | stops the run       | both | `node scripts/docs-markdown.mjs --check`          | `pnpm docs:md`                |
+| `check:template-types`     | after-build | stops the run       | both | `node scripts/check-template-types.mjs`           | —                             |
+| `check:doc-examples`       | after-build | stops the run       | both | `node scripts/check-doc-examples.mjs`             | —                             |
 
 <!-- gate-catalogue:end -->
 
@@ -142,6 +143,19 @@ The gates with a section of their own further down (`check:hatches`,
   migration timestamp; the inversion exists only in the merge, and
   `supabase db push` then REFUSES a pending file older than the last remote row
   — at release time, after the npm publish. Diff-scoped; see below.
+- **`check:migration-contract`** — FATAL. `ship.yml` runs `supabase db push`
+  BEFORE the rolling deploy, so the RELEASED server serves the new schema for
+  the whole rollout (and for good after a failed deploy or
+  `modal app rollback`), and CI only applies migrations to an empty database. A
+  migration absent from the last release commit (`ship.yml`'s version-line test)
+  that drops, renames, retypes or moves something the serving release's
+  `packages/*/src` literals still name, or tightens a rule its writers do not
+  meet (`set not null`, `drop default`, new CHECK/UNIQUE/FK, a NOT NULL column
+  with no default) or drops a unique index its `on conflict` upserts need, fails
+  naming both sides. Escape: `-- aai:contract-ok <reason>` on the statement.
+  Logic and spec: `_migration-contract-rules.mjs`,
+  `migration-contract-gate.test.ts`; the rule is in `supabase/README.md`.
+  Diff-scoped; see below.
 - **`check:untyped-imports`** — `tsconfig.scripts.json` and
   `tsconfig.browser.json` set `noImplicitAny: false`, which also hides a MISSING
   DECLARATION (TS7016). This re-runs both programs with the flag forced on and
@@ -176,7 +190,7 @@ The gates with a section of their own further down (`check:hatches`,
   types), like `check:template-types`; a `no-check` fence is an escape hatch
   with its own budget (`no-check-baseline.json`).
 
-**None of them resolves a git ref, except two, and that is deliberate.** The
+**None of them resolves a git ref, except three, and that is deliberate.** The
 escape-hatch gate used to diff the work tree against its merge-base with
 `origin/main`, which had three failure modes documented as known weaknesses
 rather than fixed: a grand total let a branch trade a removed hatch for a new
@@ -188,14 +202,17 @@ exited 0, which is the shape of failure this repo keeps finding, a gate
 reporting success while checking nothing, in exactly the environments that get
 one commit of history. A file in the tree has no merge base and no such modes.
 
-**`check:deploy-changeset` and `check:migration-order` are the exceptions, and
-they do not weaken the rule.** What they check is a property of a BRANCH rather
-than of the tree, so there is no tree-scoped spelling of either. What
+**`check:deploy-changeset`, `check:migration-order` and
+`check:migration-contract` are the exceptions, and they do not weaken the
+rule.** What they check is a property of a BRANCH (or of a RELEASE) rather than
+of the tree, so there is no tree-scoped spelling of any of them. What
 generalizes from the paragraph above is not "never resolve a ref", it is **never
 report success over a comparison you could not make**: an unresolvable base
 FAILS there, naming `--base` and `git fetch`, where the escape-hatch gate
-printed a checkmark. Read that as the bar any future diff-scoped gate has to
-clear, not as a precedent for skipping.
+printed a checkmark — and `check:migration-contract` fails the same way on a
+history too shallow to hold a release (`--release <sha>` names one by hand).
+Read that as the bar any future diff-scoped gate has to clear, not as a
+precedent for skipping.
 
 ## Gates with a section of their own
 

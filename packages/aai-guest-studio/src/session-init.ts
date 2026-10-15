@@ -34,7 +34,7 @@ import { verifyBearer } from "aai-guest-core/auth";
 import type { HarnessState } from "aai-guest-core/bundle";
 import { z } from "zod";
 import { CORS_HEADERS, readBody, sendJson } from "./http.ts";
-import { initStudioSession, SessionIdentityError } from "./session.ts";
+import { initStudioSession, SessionDrainingError, SessionIdentityError } from "./session.ts";
 
 /** The route this module claims. Mirrors `GUEST_ROUTES.studioSessionInit`. */
 export const SESSION_INIT_PATH = "/studio/session-init";
@@ -119,8 +119,10 @@ async function install(
     const error = errorMessage(err);
     // A mismatched identity is the caller addressing the wrong sandbox, not a
     // guest fault — 409 so the broker drops its registry row and cold-spawns
-    // instead of retrying against a guest that will never accept it.
-    const status = err instanceof SessionIdentityError ? 409 : 500;
+    // instead of retrying against a guest that will never accept it. A
+    // draining guest is the same answer for a different reason.
+    const status =
+      err instanceof SessionIdentityError || err instanceof SessionDrainingError ? 409 : 500;
     console.error(`studio session-init failed: ${error}`);
     if (!res.headersSent) sendJson(res, status, { error });
     else res.destroy();

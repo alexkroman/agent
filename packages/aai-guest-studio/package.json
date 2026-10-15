@@ -14,6 +14,7 @@
     "./publish": "./src/publish.ts",
     "./session": "./src/session.ts",
     "./session-init": "./src/session-init.ts",
+    "./turn-drain": "./src/turn-drain.ts",
     "./workspace-fs": "./src/workspace-fs.ts"
   },
   "scripts": {

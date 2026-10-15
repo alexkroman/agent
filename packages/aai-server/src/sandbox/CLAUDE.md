@@ -28,10 +28,11 @@ servers").
 - `slots.ts` — per-slug slot cache `{ slug, state }`, `state` being
   `{ kind: "empty" }` or `{ kind: "ready", sandbox, version }` (`SlotState`'s
   doc). **Every state change goes through its transition functions**
-  (`claimSlot`, `attachSandbox`, `terminateSlot`, `retireSlot`, `deleteSlot`);
-  read a resident with `slotSandbox`. A plain `Map`; `withSlugLock` is the
-  exclusion (`SlotCache`'s doc). No idle machinery — the guest self-exits, and
-  its exit drops the whole SLOT via `onSandboxLost`, not just its sandbox.
+  (`claimSlot`, `attachSandbox`, `terminateSlot`, `retireSlot`, `handOffSlot`,
+  `deleteSlot`); read a resident with `slotSandbox`. A plain `Map`;
+  `withSlugLock` is the exclusion (`SlotCache`'s doc). No idle machinery — the
+  guest self-exits, and its exit drops the whole SLOT via `onSandboxLost`, not
+  just its sandbox.
 - `resolve.ts` — slot-based slug→sandbox resolution and `watchAgentInvalidation`
   (driven by the agents row's change stream).
 - `broker.ts` — `brokerSessionUrl`: slug → public session URL with one failure
@@ -78,9 +79,18 @@ would spawn a guest per replica. The identity is the Modal sandbox **name**
 when taken and `sandboxes.fromName` returns only a RUNNING sandbox, so a cold
 broker routes to a peer's tunnel (sessions dial the guest directly, so a peer
 URL serves as well as a local one). A name is released when the sandbox stops,
-so it cannot hand out a dead peer. (microsandbox does not share this property —
+so it cannot hand out a dead peer — which holds only because **the sandbox stops
+when its harness does** (`GUEST_SANDBOX_ENTRYPOINT`, `guestHarnessExec` in
+`modal/context.ts`); a `sleep infinity` entrypoint kept an exited guest's name
+for Modal's 15-minute idle window. (microsandbox does not share this property —
 see `MODAL-CLAUDE.md`.)
 
+- **Never leave a CURRENT-version guest draining while it holds its name.** A
+  draining guest refuses new sessions but still owns the name, so the directory
+  routes everyone to it and a fresh spawn loses the name race back to it.
+  Replica shutdown therefore HANDS guests off (`handOffSlot`,
+  `teardownSandboxes({ handOff })`) rather than retiring them; only a SUPERSEDED
+  version (a different name) is retired.
 - **The name carries the deploy VERSION** — a blue-green `handoverSlot` has two
   live sandboxes for minutes, and the peer lookup is version-exact.
 - **The peer route is gated on the agents row still existing** — a retiring

@@ -13,11 +13,11 @@ const fakeSandbox = () => ({
 describe("teardownSandboxes", () => {
   const logs = captureLogs();
 
-  // A replica going down is a redeploy from the guests' point of view: their
-  // sessions dial the tunnel directly and never touch this process, so the
-  // guests are RETIRED (drained, guest owns its own exit), never terminated —
-  // terminating them here is what used to cut live calls on every scale-in.
-  it("retires every slot's sandbox: drains with a budget, never terminates", async () => {
+  // With no fleet directory (one process, no peers) a guest left running could
+  // never be found again, so it is RETIRED (drained, guest owns its own exit),
+  // never terminated — terminating here is what used to cut live calls on
+  // every scale-in.
+  it("retires every slot's sandbox without a directory: drains, never terminates", async () => {
     const slots = createSlotCache();
     const a = fakeSandbox();
     const b = fakeSandbox();
@@ -33,6 +33,25 @@ describe("teardownSandboxes", () => {
     // Detached, so nothing else can route to or double-release them.
     expect(slotSandbox(slots.get("a"))).toBeUndefined();
     expect(slotSandbox(slots.get("b"))).toBeUndefined();
+  });
+
+  // With a fleet directory the guest is reachable by name from every other
+  // replica, and it runs current code — so shutdown leaves it RUNNING. Retiring
+  // it was an outage: the draining guest refused new sessions while still
+  // holding the sandbox name, so no replica could route around it.
+  it("hands guests off untouched when the fleet can find them", async () => {
+    const slots = createSlotCache();
+    const a = fakeSandbox();
+    attachSandbox(claimSlot(slots, "a"), a, 1);
+    const broker = { dispose: vi.fn().mockResolvedValue(undefined) };
+
+    await teardownSandboxes({ slots, broker, graceMs: 0, handOff: true });
+
+    expect(a.drain).not.toHaveBeenCalled();
+    expect(a.shutdown).not.toHaveBeenCalled();
+    expect(slotSandbox(slots.get("a"))).toBeUndefined();
+    // The studio half is unchanged: its guests are useless without this host.
+    expect(broker.dispose).toHaveBeenCalledOnce();
   });
 
   it("terminates a guest that is unreachable for the drain", async () => {

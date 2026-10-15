@@ -45,6 +45,7 @@
     "check:konsistent": "konsistent check",
     "check:local": "node scripts/check.mjs --local",
     "check:markdown": "markdownlint-cli2 '**/*.{md,mdx}' '#**/node_modules' '#.aai' '#.claude' '#.superpowers'",
+    "check:migration-contract": "node scripts/check-migration-contract.mjs",
     "check:migration-order": "node scripts/check-migration-order.mjs",
     "check:module-tests": "node scripts/check-module-tests.mjs",
     "check:optional-peers": "node scripts/check-optional-peers.mjs",

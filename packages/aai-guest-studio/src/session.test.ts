@@ -24,9 +24,11 @@ import { workspacesRoot } from "./build.ts";
 import {
   initStudioSession,
   resetSessionIdentity,
+  SessionDrainingError,
   SessionIdentityError,
   toolchainPromptSection,
 } from "./session.ts";
+import { drainTurns, resetTurnDrain } from "./turn-drain.ts";
 import { enterTurn, resetTurnGate } from "./turn-stream.ts";
 
 const params = (over: Partial<StudioSessionParams> = {}): StudioSessionParams => ({
@@ -86,6 +88,18 @@ describe("SessionIdentityError", () => {
     expect(err.name).toBe("SessionIdentityError");
     expect(err.message).toContain("scope-a/proj-a");
     expect(err.message).toContain("scope-b/proj-b");
+  });
+});
+
+describe("initStudioSession on a draining guest", () => {
+  afterEach(() => {
+    resetTurnDrain();
+    resetSessionIdentity();
+  });
+
+  test("is refused, so a peer's adopt drops the row instead of serving a dying guest", async () => {
+    await drainTurns();
+    await expect(initStudioSession(params())).rejects.toBeInstanceOf(SessionDrainingError);
   });
 });
 

@@ -27,6 +27,7 @@ import type { StudioSession } from "aai-guest-core/types";
 import { describe, expect, test, vi } from "vitest";
 import { handleStudioRequest, type StudioChatDeps } from "./chat.ts";
 import { STUDIO_TOOL_LABELS } from "./tools.ts";
+import { DRAINING_CODE, drainTurns, resetTurnDrain } from "./turn-drain.ts";
 import { enterTurn, resetTurnGate, TURN_IN_FLIGHT_CODE } from "./turn-stream.ts";
 
 const CHAT_TOKEN = "test-chat-token";
@@ -339,6 +340,19 @@ describe("handleStudioRequest dispatch", () => {
     } finally {
       release?.();
       resetTurnGate();
+    }
+  });
+
+  test("a draining guest answers a new turn 409, the client's re-broker, not 423", async () => {
+    // 423 would tell the tab another tab is busy and leave it waiting on a
+    // sandbox that is about to be terminated.
+    await drainTurns();
+    try {
+      const { status, body } = dispatch("/studio/chat", "POST");
+      expect(status).toBe(409);
+      expect(JSON.parse(body)).toMatchObject({ code: DRAINING_CODE });
+    } finally {
+      resetTurnDrain();
     }
   });
 });

@@ -26,6 +26,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { CONTAINED_ENV } from "@alexkroman1/aai-runtime/internal";
 import type { SandboxCreateParams } from "modal";
 import { describe, expect, it } from "vitest";
+import { HARNESS_REMOTE_PATH } from "../guest/exec-env.ts";
 import {
   type FakeProc,
   makeCtx,
@@ -39,7 +40,12 @@ import {
   AGENT_ENV_REMOTE_PATH,
   spawnModalAgentServer,
 } from "./agent-sandbox.ts";
-import { GUEST_PORT, type ModalSpawnContext } from "./context.ts";
+import {
+  GUEST_PORT,
+  GUEST_SANDBOX_ENTRYPOINT,
+  guestHarnessExec,
+  type ModalSpawnContext,
+} from "./context.ts";
 
 const WORKER = 'export default { name: "deployed" };';
 /** Any 64-hex value: the host forwards it, the guest is what verifies it. */
@@ -351,6 +357,11 @@ describe("spawnModalAgentServer", () => {
     // means "sessions can be served".
     expect(params[0]?.readinessProbe).toBeDefined();
     expect(params[0]?.encryptedPorts).toEqual([GUEST_PORT]);
+    // The name is only released when the sandbox STOPS, so the sandbox must
+    // stop when its harness does — an empty shell holding the name would keep
+    // routing every new session to a tunnel with nothing behind it.
+    expect(params[0]?.command).toEqual(GUEST_SANDBOX_ENTRYPOINT);
+    expect(sb.execCalls[0]?.command).toEqual(guestHarnessExec(HARNESS_REMOTE_PATH));
   });
 
   it("spawns from the deploy's pinned harness image", async () => {

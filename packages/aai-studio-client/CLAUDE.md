@@ -239,6 +239,16 @@ lease the app holds now — otherwise every message after a spin-down fails with
 - **The wait says what it is waiting on**: "Restarting the sandbox…", not
   "Working…". A retry with no replacement (the broker gave up) fails the turn
   with the error's own sentence.
+- **A stream that breaks AFTER the guest answered is a different failure**
+  (`TurnDroppedError`: the body errors, or ends with no `finish`/`error`/`abort`
+  frame) — the guest died mid-turn, e.g. a platform deploy outlasting the
+  server's bounded drain. The turn RAN, so the transport only names it;
+  `turn-recovery.ts` REGENERATES it once (drops the partial reply, re-posts the
+  conversation ending in the user's message — the guest's inbound persist
+  replaces the stored snapshot, so nothing is duplicated; never re-send the
+  text). It wraps `sendMessage` and reports `submitted` while recovering, or the
+  queue would read the momentary `error` as a failed turn. A guest's model
+  failure arrives as an in-band `error` frame and is not a drop.
 
 **The composer QUEUES follow-ups typed mid-turn** (`chat-queue.ts`): the input
 stays live, Enter parks the message in a visible, dismissable row above the

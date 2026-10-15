@@ -48,12 +48,12 @@ a security boundary**; capability is whatever the host delivers.
   serves only `/websocket` and `/phone` (the SDK's `createServerForRuntime`)
   plus token-gated `/manage/*`. See `src/harness/CLAUDE.md`.
 - **Studio mode**: `/ws` (bearer-gated host control channel — JSON-RPC
-  `workspace/deploy`, `status`, `studio/session-init`; guest→host
-  `studio/sync-workspace`, `studio/persist-chat`), `/session` (public browser
-  voice sessions), `/studio/chat` + `/studio/tools` (public, gated by the
-  broker-minted per-session chat token), and `POST /studio/session-init` (HTTP
-  twin of the RPC, gated by the per-sandbox HOST token, for replicas without the
-  control socket — "One studio sandbox per project, fleet-wide" in
+  `workspace/deploy`, `status`, `studio/session-init`, `studio/drain`;
+  guest→host `studio/sync-workspace`, `studio/persist-chat`), `/session` (public
+  browser voice sessions), `/studio/chat` + `/studio/tools` (public, gated by
+  the broker-minted per-session chat token), and `POST /studio/session-init`
+  (HTTP twin of the RPC, gated by the per-sandbox HOST token, for replicas
+  without the control socket — "One studio sandbox per project, fleet-wide" in
   `packages/aai-studio-server/src/CLAUDE.md`).
 
 The harness embeds NO copy of the runtime (see "User-shipped runtime"). tsdown

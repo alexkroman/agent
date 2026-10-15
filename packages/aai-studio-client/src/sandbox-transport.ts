@@ -25,11 +25,57 @@
  * refused it before the turn began (401/409). Nothing ran, so nothing can be
  * duplicated — which is also why the busy guest's 423 is NOT in that class
  * (see resilient-fetch.ts).
+ *
+ * A turn whose stream breaks AFTER the guest answered is the other case: the
+ * turn ran, so it is not retried here. It is NAMED here ({@link reportDrops})
+ * and recovered by the chat, which regenerates it (turn-recovery.ts).
  */
 
-import { type ChatTransport, DefaultChatTransport, type UIMessage } from "ai";
+import { type ChatTransport, DefaultChatTransport, type UIMessage, type UIMessageChunk } from "ai";
 import type { ChatSession } from "./api.ts";
-import { createResilientFetch, StaleSandboxError } from "./resilient-fetch.ts";
+import { createResilientFetch, StaleSandboxError, TurnDroppedError } from "./resilient-fetch.ts";
+
+/** The frames a guest ends every delivered turn with — one of them, always. */
+const TERMINAL_CHUNKS: ReadonlySet<UIMessageChunk["type"]> = new Set(["finish", "error", "abort"]);
+
+/**
+ * Name a turn whose stream broke AFTER the guest accepted it — see
+ * {@link TurnDroppedError}. The retry above cannot cover this: by then the
+ * request has been answered, so the failure arrives on the BODY, which the AI
+ * SDK reads after `sendMessages` has returned.
+ *
+ * Two shapes, one meaning: the body errors (the connection was reset), or it
+ * ends without a terminal frame (a proxy closed it cleanly). A user Stop is
+ * neither — it is passed through untouched, as `resilient-fetch.ts` does for
+ * the request.
+ */
+function reportDrops(
+  stream: ReadableStream<UIMessageChunk>,
+  aborted: () => boolean,
+): ReadableStream<UIMessageChunk> {
+  const reader = stream.getReader();
+  let finished = false;
+  return new ReadableStream<UIMessageChunk>({
+    async pull(controller) {
+      let next: ReadableStreamReadResult<UIMessageChunk>;
+      try {
+        next = await reader.read();
+      } catch (err) {
+        const stopped = aborted() || (err instanceof Error && err.name === "AbortError");
+        controller.error(stopped ? err : new TurnDroppedError({ cause: err }));
+        return;
+      }
+      if (next.done) {
+        if (finished || aborted()) controller.close();
+        else controller.error(new TurnDroppedError());
+        return;
+      }
+      if (TERMINAL_CHUNKS.has(next.value.type)) finished = true;
+      controller.enqueue(next.value);
+    },
+    cancel: (reason) => reader.cancel(reason),
+  });
+}
 
 export type SandboxTransportOptions = {
   /** The lease to aim at, read per REQUEST — never captured. */
@@ -101,11 +147,13 @@ export function createSandboxTransport(options: SandboxTransportOptions): ChatTr
   }
 
   return {
-    sendMessages: (opts) =>
-      onLiveSandbox(
-        (transport) => transport.sendMessages(opts),
-        () => opts.abortSignal?.aborted === true,
-      ),
+    sendMessages: async (opts) => {
+      const aborted = (): boolean => opts.abortSignal?.aborted === true;
+      return reportDrops(
+        await onLiveSandbox((transport) => transport.sendMessages(opts), aborted),
+        aborted,
+      );
+    },
     reconnectToStream: (opts) =>
       onLiveSandbox(
         (transport) => transport.reconnectToStream(opts),

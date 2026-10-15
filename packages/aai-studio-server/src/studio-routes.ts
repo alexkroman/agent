@@ -88,7 +88,11 @@ import type { StudioRateLimiters } from "./studio-rate-limit.ts";
 import { createRouteLimits } from "./studio-route-limits.ts";
 import { ProjectNameSchema, PublishProjectSchema } from "./studio-schemas.ts";
 import { registerSecretRoutes } from "./studio-secret-routes.ts";
-import { createStudioSessionBroker, type StudioSessionBroker } from "./studio-session-broker.ts";
+import {
+  createStudioSessionBroker,
+  type StudioDisposeOptions,
+  type StudioSessionBroker,
+} from "./studio-session-broker.ts";
 import type { StudioSessionRegistry } from "./studio-session-registry.ts";
 import { onSettledEdit, previewOrigin } from "./studio-settled-edit.ts";
 import { projectKey, studioScope } from "./studio-workspace.ts";
@@ -145,7 +149,7 @@ export function createStudioRoutes(options: StudioRouteOptions): {
    * Tear down the broker's per-project sandboxes. A no-op when no session
    * request ever built the lazy broker.
    */
-  dispose: () => Promise<void>;
+  dispose: (opts?: StudioDisposeOptions) => Promise<void>;
 } {
   const deploy = options.deployProject ?? deployStudioProject;
   const wakePreview = options.wakePreview ?? wakeProjectPreview;
@@ -376,8 +380,8 @@ export function createStudioRoutes(options: StudioRouteOptions): {
 
   return {
     routes: studio,
-    dispose: async () => {
-      await broker?.dispose();
+    dispose: async (opts) => {
+      await broker?.dispose(opts);
     },
   };
 }

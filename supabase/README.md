@@ -241,7 +241,43 @@ anything that VALIDATES existing rows:
 clears the orphans first, in the same file, because `add constraint` validates
 every row and CI would never have shown it (see the next paragraph but one).
 
-**Two gates hold the ordering, and neither can see production.** They are
+**`check:migration-contract` enforces the spacing, and FAILS `pnpm check`.** A
+migration is UNRELEASED when the last release commit (a moved workspace
+`package.json` version line, `ship.yml`'s own test) does not carry it; the code
+that will be serving when it applies is the last release that bumped
+`aai-server` or `aai-studio-server`. Every statement in an unreleased migration
+is classified by which old code it can break, and searched for in the string and
+template literals of that serving tree's `packages/*/src` (tests and
+`_*-harness.ts` excluded):
+
+- **old READERS** — `drop` (table, view, function, type, schema, extension),
+  `rename` (table, column, schema, type, function, enum value),
+  `alter column … type`, `set schema`, `revoke` from `postgres`/`service_role`:
+  fails when the old code names the object.
+- **old WRITERS** — `set not null` and `drop default` fail when the old code
+  writes the table but never names the column; a new CHECK / UNIQUE / FOREIGN
+  KEY / unique index, or an `add column … not null` with no default, fails when
+  the old code writes the table at all (a unique index or FK over columns the
+  same batch ADDS is exempt — old inserts send NULL there).
+- **old UPSERTS** — dropping a UNIQUE index or constraint fails when the old
+  code names it or runs `on conflict` against its table.
+
+Dropping a plain constraint or index, `drop not null`, adding a nullable column
+or a defaulted one, and `create or replace function` are relaxations or
+expansions and pass. When the old code provably survives a flagged statement,
+say why on it — the reason is required, and is what review reads:
+
+```sql
+-- aai:contract-ok the one old reference is the sweep body this file redefines first
+drop table if exists aai_platform.workflow_attempts;
+```
+
+What it cannot see: DDL built in a string (`execute format(…)`), a release
+shipped by `workflow_dispatch` from a non-release ref (pass `--release <sha>`),
+SQL composed from identifiers split across files, and whether a CHECK's
+predicate actually holds for old rows — the marker is for that judgement.
+
+**Two more gates hold the ordering, and neither can see production.** They are
 push-time approximations of facts about a database, and worth knowing the limits
 of:
 

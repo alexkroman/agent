@@ -27,6 +27,7 @@ import {
   type SandboxCreateParams,
 } from "modal";
 import { keyedMemoAsync, memoAsync } from "../_memo.ts";
+import { GUEST_SCRATCH_DIR } from "../guest/exec-env.ts";
 import { createGuestImageSource } from "../guest/image-source.ts";
 import { createLogger } from "../logger.ts";
 import { SandboxNameTakenError } from "../sandbox/directory.ts";
@@ -197,6 +198,50 @@ export const GUEST_READINESS_PROBE = Probe.withTcp(GUEST_PORT, {
 });
 
 /**
+ * Written by {@link guestHarnessExec}'s wrapper the moment the harness process
+ * ends, however it ends — the entrypoint's cue to end the sandbox.
+ */
+export const HARNESS_EXITED_MARKER = `${GUEST_SCRATCH_DIR}/.aai-harness-exited`;
+
+/**
+ * A guest sandbox's entrypoint: idle until the harness has exited, then exit —
+ * which ends the sandbox and RELEASES ITS NAME.
+ *
+ * It was `sleep infinity`, which outlived the harness: an exited guest left its
+ * sandbox running as an empty shell until Modal's idle timeout
+ * (`DEFAULT_SANDBOX_IDLE_TIMEOUT_MS`, 15 minutes) unless the replica that
+ * spawned it was still alive to terminate it. That replica is not alive after a
+ * deploy, and the sandbox NAME is the fleet-wide routing key
+ * (sandbox/directory.ts): `fromName` returns any RUNNING sandbox, so the shell
+ * kept handing new sessions a tunnel with nothing behind it, and a fresh spawn
+ * lost the name race straight back to it.
+ *
+ * A marker file rather than watching the process: the harness is a separate
+ * exec, not a child of this shell, and PID 1 ignores the signals a sibling
+ * could send it. Polled each second — the latency is the release delay, and a
+ * busy guest never reaches it.
+ */
+export const GUEST_SANDBOX_ENTRYPOINT: string[] = [
+  "sh",
+  "-c",
+  `until [ -e ${HARNESS_EXITED_MARKER} ]; do sleep 1; done`,
+];
+
+/**
+ * The harness exec, wrapped so its exit — clean, crash, or OOM kill — writes
+ * {@link HARNESS_EXITED_MARKER} and the sandbox ends with it. The harness's own
+ * exit status is preserved, because the host's liveness reads it.
+ */
+export function guestHarnessExec(harnessPath: string): string[] {
+  return [
+    "sh",
+    "-c",
+    `node "$0"; status=$?; : > ${HARNESS_EXITED_MARKER}; exit $status`,
+    harnessPath,
+  ];
+}
+
+/**
  * The `SandboxCreateParams` every guest spawn shares — the tunnelled port, the
  * readiness probe, the env-derived limits and resources, and the observability
  * tags.
@@ -218,9 +263,9 @@ export function guestSandboxCreateParams(opts: {
 }): SandboxCreateParams {
   const { limits, resourceParams } = guestSandboxResources(process.env);
   return {
-    // Explicit idle entrypoint: the exec'd harness is what holds the sandbox
-    // active, so its exit is what starts the idle timer.
-    command: ["sleep", "infinity"],
+    // The sandbox lives exactly as long as its harness — see
+    // GUEST_SANDBOX_ENTRYPOINT.
+    command: GUEST_SANDBOX_ENTRYPOINT,
     // The host (or a client) reaches the guest through this tunnel; the
     // harness's bearer-token check is what keeps the public tunnel URL from
     // being an open door.

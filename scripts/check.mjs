@@ -143,6 +143,11 @@ const GATES = [
   { script: "check:migration-order", phase: "ratchets", fatal: false },
   { script: "check:optional-peers", phase: "ratchets", fatal: false },
   { script: "check:untyped-imports", phase: "ratchets", fatal: false },
+  // FATAL, unlike its neighbours: a contraction landing a release early breaks
+  // production at release time, after the npm publish — it is not debt. LAST in
+  // the phase, because a fatal row stops the run where it is printed, and every
+  // ratchet above it should still get to report.
+  { script: "check:migration-contract", phase: "ratchets", fatal: true },
 
   // --- after the test run ------------------------------------------------
   // Reads what test:coverage wrote; a turbo cache hit restores `coverage/**`.

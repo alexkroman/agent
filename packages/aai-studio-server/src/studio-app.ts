@@ -33,6 +33,7 @@ import type { StudioHonoEnv } from "./studio-context.ts";
 import type { PreviewQueue } from "./studio-preview-queue.ts";
 import type { StudioRateLimiters } from "./studio-rate-limit.ts";
 import { createStudioRoutes, type StudioRouteOptions } from "./studio-routes.ts";
+import type { StudioDisposeOptions } from "./studio-session-broker.ts";
 import type { StudioSessionRegistry } from "./studio-session-registry.ts";
 import {
   handleStudioFavicon,
@@ -115,7 +116,7 @@ export type StudioAppOpts = {
 export function createStudioApp(opts: StudioAppOpts): {
   app: Hono<StudioHonoEnv>;
   /** Release the studio's per-project coding-agent sandboxes on shutdown. */
-  dispose: () => Promise<void>;
+  dispose: (opts?: StudioDisposeOptions) => Promise<void>;
 } {
   const app = new Hono<StudioHonoEnv>();
   // No allowed-origins override: both surfaces are same-origin by

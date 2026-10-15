@@ -24,7 +24,9 @@
     // `guard-invariants-scanner-rules.test.ts` re-derives the corpus for rule
     // 7 across EVERY workflow, whose scanner returns only `found` and so cannot
     // tell an upheld rule from an empty scan; `ci-gate-job.test.ts` reads
-    // the required gate job; and `defaults-gate.test.ts` re-reads the three
+    // the required gate job; `migration-contract-gate.test.ts` classifies the
+    // real `supabase/migrations/*.sql` (so a migration edit must invalidate
+    // it); and `defaults-gate.test.ts` re-reads the three
     // sources `check:defaults` compares — the SDK's constants and their
     // `@defaultValue` tags, the docs site's tuning table, and the scaffold guide.
     //
@@ -63,6 +65,7 @@
         "$TURBO_ROOT$/konsistent.json",
         "$TURBO_ROOT$/lefthook.yml",
         "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/supabase/migrations/*.sql",
         "$TURBO_ROOT$/.github/workflows/*.yml",
         "$TURBO_ROOT$/packages/aai/src/sdk/**",
         "$TURBO_ROOT$/docs/src/content/docs/more/voices-and-models.md",
@@ -92,6 +95,7 @@
         "$TURBO_ROOT$/konsistent.json",
         "$TURBO_ROOT$/lefthook.yml",
         "$TURBO_ROOT$/scripts/**",
+        "$TURBO_ROOT$/supabase/migrations/*.sql",
         "$TURBO_ROOT$/.github/workflows/*.yml",
         "$TURBO_ROOT$/packages/aai/src/sdk/**",
         "$TURBO_ROOT$/docs/src/content/docs/more/voices-and-models.md",

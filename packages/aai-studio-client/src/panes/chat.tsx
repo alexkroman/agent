@@ -23,6 +23,7 @@ import { SpinnerIcon } from "../components/icons.tsx";
 import { useMessageQueue } from "../hooks/use-message-queue.ts";
 import { CHAT_COLUMN } from "../pane-shell.tsx";
 import { createSandboxTransport } from "../sandbox-transport.ts";
+import { createTurnRecovery } from "../turn-recovery.ts";
 
 type ChatPanelProps = {
   /**
@@ -225,11 +226,35 @@ function ProjectChat({
     }),
   );
 
-  const { messages, sendMessage, status, error, stop } = useChat({
+  /** A turn the sandbox dropped mid-stream is being sent again. */
+  const [recovering, setRecovering] = useState(false);
+  // Created before `useChat` (it supplies `onError`) and reading the chat
+  // through a ref for the same reason as the transport above.
+  const chatRef = useRef<Pick<ReturnType<typeof useChat>, "sendMessage" | "regenerate">>(null);
+  const [recovery] = useState(() =>
+    createTurnRecovery({
+      sendMessage: async (message) => {
+        await chatRef.current?.sendMessage(message);
+      },
+      regenerate: async () => {
+        await chatRef.current?.regenerate();
+      },
+      onRecovering: setRecovering,
+    }),
+  );
+
+  const chat = useChat({
     transport,
     messages: initialMessages,
     onFinish: onWorkspaceChanged,
+    onError: recovery.onError,
   });
+  chatRef.current = chat;
+  const { messages, error, stop } = chat;
+  // Through a recovery the chat reports `error` for a moment before the
+  // regeneration starts; to the queue, the panel and Publish the turn is
+  // still running (see turn-recovery.ts).
+  const status = recovering ? "submitted" : chat.status;
 
   const busy = status === "submitted" || status === "streaming";
   // Chat itself is unconditional — it runs on the caller's own key — so this
@@ -242,7 +267,7 @@ function ProjectChat({
     status,
     busy,
     chatReady,
-    sendMessage,
+    sendMessage: recovery.send,
     setInput: onInputChange,
   });
 
@@ -270,9 +295,9 @@ function ProjectChat({
   useEffect(() => {
     if (sentInitial.current || !initialPrompt || !chatReady) return;
     sentInitial.current = true;
-    void sendMessage({ text: initialPrompt });
+    void recovery.send({ text: initialPrompt });
     onInitialPromptSent();
-  }, [initialPrompt, chatReady, sendMessage, onInitialPromptSent]);
+  }, [initialPrompt, chatReady, recovery, onInitialPromptSent]);
 
   return (
     <>
@@ -285,12 +310,14 @@ function ProjectChat({
         }
         footer={
           <>
-            {error && <div className="text-[13px] text-err">{error.message}</div>}
+            {/* A dropped turn's error is not the outcome while it is being
+                sent again — the regeneration's own result is. */}
+            {error && !recovering && <div className="text-[13px] text-err">{error.message}</div>}
             {/* A re-broker mid-turn is a container boot, so saying "Working…"
                 through it would report the agent as busy while nothing is
                 running — the same unexplained wait SandboxNote exists to
                 avoid on the way in. */}
-            {restarting ? (
+            {restarting || recovering ? (
               <StatusLine>Restarting the sandbox…</StatusLine>
             ) : (
               busy && <StatusLine>Working…</StatusLine>

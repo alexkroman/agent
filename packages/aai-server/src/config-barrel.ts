@@ -29,8 +29,10 @@
 
 export {
   DEFAULT_PORT,
+  envMs,
   MAX_LIVE_STREAMS_PER_SCOPE,
   resolveHarnessPath,
+  SHUTDOWN_TEARDOWN_TIMEOUT_MS,
 } from "./constants.ts";
 export type { GuestConnection } from "./rpc-schemas.ts";
 export {

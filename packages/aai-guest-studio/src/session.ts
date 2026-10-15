@@ -14,6 +14,7 @@ import path from "node:path";
 import type { StudioSession, StudioSessionParams } from "aai-guest-core/types";
 import { toolchainModules, workspaceDependencyOptions, workspacesRoot } from "./build.ts";
 import { ensureProjectShape } from "./project-shape.ts";
+import { isDraining } from "./turn-drain.ts";
 import { enterTurn } from "./turn-stream.ts";
 import { ensureWorkspaceDependencies, SESSION_INSTALL_BUDGET_MS } from "./workspace-deps.ts";
 import { materializeWorkspace } from "./workspace-fs.ts";
@@ -98,6 +99,19 @@ export class SessionIdentityError extends Error {
   }
 }
 
+/**
+ * A session-init to a guest that is draining (turn-drain.ts). Refused rather
+ * than accepted, because accepting is what keeps the sandbox in service: a
+ * peer's adopt would hand the browser a chat URL its owner is about to
+ * terminate. Refused, the adopter drops the registry row and spawns.
+ */
+export class SessionDrainingError extends Error {
+  constructor() {
+    super("This sandbox is shutting down; refusing session-init");
+    this.name = "SessionDrainingError";
+  }
+}
+
 /** Test seam: forget the pinned identity (one harness per test process). */
 export function resetSessionIdentity(): void {
   installedFor = null;
@@ -135,6 +149,7 @@ export function resetSessionIdentity(): void {
  * is half-materialized.
  */
 export async function initStudioSession(params: StudioSessionParams): Promise<StudioSession> {
+  if (isDraining()) throw new SessionDrainingError();
   const identity = { scope: params.scope, project: params.project };
   const pinned = installedFor ?? installingFor;
   if (pinned && (pinned.scope !== identity.scope || pinned.project !== identity.project)) {

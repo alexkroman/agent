@@ -45,6 +45,7 @@ import type { WarmHarness } from "../sandbox/vm.ts";
 import { type DialGuest, dialGuest, startGuestLogging, warmFromGuest } from "../warm-harness.ts";
 import {
   GUEST_PORT,
+  guestHarnessExec,
   guestOrigin,
   guestSandboxCreateParams,
   harnessCode,
@@ -116,7 +117,7 @@ export async function spawnModalWarm(
     // retries while the harness boots — so save a Modal control-plane round
     // trip by running the two together.
     const [proc, tunnels] = await Promise.all([
-      sb.exec(["node", HARNESS_REMOTE_PATH], {
+      sb.exec(guestHarnessExec(HARNESS_REMOTE_PATH), {
         mode: "binary",
         stdout: "pipe",
         stderr: "pipe",

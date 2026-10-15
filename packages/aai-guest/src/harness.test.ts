@@ -13,7 +13,8 @@
 import { hostRequest, rejectAllPendingHostRequests, setHostSend } from "aai-guest-core/rpc";
 import { type FakeHostChannel, installFakeHostChannel, makeState } from "aai-guest-core/test-utils";
 import type { JsonRpcMessage } from "aai-guest-core/types";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { isDraining, resetTurnDrain } from "aai-guest-studio/turn-drain";
+import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import { stubProcessExit } from "./_test-utils.ts";
 import { dispatchMessage, handleNotification, handleRequest } from "./harness.ts";
 
@@ -95,6 +96,15 @@ describe("control-channel dispatch", () => {
     // An unknown NOTIFICATION is dropped in silence — answering it would be
     // answering a frame that carries no id to answer.
     expect(sent).toHaveLength(before);
+  });
+
+  test("studio/drain answers once the guest is quiet, and the guest stays drained", async () => {
+    // Nothing is running, so the drain takes the free claim at once. Reset
+    // after: the drain holds the process-wide claim for good.
+    onTestFinished(resetTurnDrain);
+    await handleRequest({ jsonrpc: "2.0", id: 10, method: "studio/drain" }, makeState());
+    expect(host.lastResponse()).toMatchObject({ id: 10, result: { ok: true } });
+    expect(isDraining()).toBe(true);
   });
 
   test("shutdown notification exits the process", () => {

@@ -164,9 +164,21 @@ timeout (`SSE-CLAUDE.md`).
 - **The studio holds an always-empty slot cache** — local teardowns are no-ops
   there; the deploy's row-version bump does the work.
 - **The web service autoscales** (`MIN_CONTAINERS`/`MAX_CONTAINERS` in
-  `modal_deploy.py`). A replica going down retires its agent guests
-  (`teardownSandboxes`); live calls finish in the guests. Studio guests go down
-  with it (`dispose()`).
+  `modal_deploy.py`). A replica going down HANDS its agent guests off to the
+  fleet (`teardownSandboxes`, `handOff`): they keep serving, found by name.
+  Retiring them made every deploy refuse new sessions for up to the drain
+  budget, because a draining guest still holds its sandbox name. Studio guests
+  go down with it (`dispose()`).
+- **Studio guests are DRAINED first, bounded, from the signal**:
+  `dispose({ drainMs })` gives each sandbox up to `STUDIO_SHUTDOWN_DRAIN_MS`
+  (12s) to finish its work — the guest's own turn via the `studio/drain` RPC
+  (the host cannot see a browser→guest turn; the guest refuses new turns and
+  re-installs with 409 once draining, `aai-guest-studio/src/turn-drain.ts`) plus
+  `inFlight` — then terminates it. `index.ts` starts it at the signal, in
+  parallel with the 3s grace; the bound is what fits the 20s teardown net with
+  room for the terminates (`studio-session-idle.ts` has the arithmetic and the
+  Modal stop-grace assumption). A longer turn is recovered by the client
+  (`aai-studio-client` `turn-recovery.ts`).
 - **Shutdown stops BOOTING sandboxes before it stops serving**:
   `brokerSessionUrl` refuses a new sandbox when `isDraining` (503 → client
   re-brokers) while still serving a live resident, and `teardownSandboxes` waits

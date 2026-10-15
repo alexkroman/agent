@@ -171,6 +171,14 @@ taken by a chat turn AND by `initStudioSession`.
 - **The TURN-COMPLETE sync is the last word**: `settleTurn` drains the turn's
   checkpointer before walking, so a stale checkpoint never lands after
   `done: true` (`turn-settle-fuzz.test.ts`).
+- **A shutdown DRAIN takes the claim for good** (`turn-drain.ts`, the host's
+  `studio/drain` RPC): `enterWhenFree` is HANDED the claim at the running turn's
+  release, so no queued follow-up starts on a guest about to be terminated, then
+  it waits for every `trackTurnWork`ed promise (the turn and its settle — the
+  claim is released at response close, before the settle). Unbounded here; the
+  host holds the deadline. Draining, a new turn and a session-init both get
+  **409** (`sandbox_draining`): the browser re-brokers and a peer's adopt drops
+  the row.
 
 ## A workspace's own package.json is REIFIED, not just read
 

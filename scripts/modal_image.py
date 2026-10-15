@@ -281,8 +281,9 @@ ASSERT_INSTALL_SURVIVED = (
 )
 
 # How long a container stop waits for the node child to finish its own
-# shutdown before force-killing it. Shutdown is retire-and-exit (one drain
-# request per agent guest, no session-drain wait), so this is generous
+# shutdown before force-killing it. Shutdown hands agent guests off and exits
+# (no request to them at all, no session-drain wait; studio guests get a drain
+# bounded inside the node process's own 20s teardown net), so this is generous
 # headroom rather than a budget the shutdown consumes; Modal's SIGKILL
 # backstop still bounds the container's real grace period.
 NODE_STOP_TIMEOUT_SECS = 150
@@ -385,7 +386,7 @@ def run_node(entry: str, env: dict[str, str]) -> subprocess.Popen:
     child spawned with a bare ``subprocess.Popen`` receives nothing of its
     own. That meant the node server's SIGTERM handler —
     ``teardownSandboxes`` (packages/aai-server/teardown-sandboxes.ts), the
-    only thing that retires the replica's resident guest sandboxes — never
+    only thing that releases the replica's resident guest sandboxes — never
     ran on a scale-in or redeploy. Every guest the
     replica owned was orphaned: its harness self-exits after the 5-minute
     orphan timeout, and the sandbox then lingers as a 2-3 MiB

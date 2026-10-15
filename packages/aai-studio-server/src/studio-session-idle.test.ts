@@ -1,11 +1,17 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { createOwnedMap } from "@alexkroman1/aai/internal";
+import { SHUTDOWN_TEARDOWN_TIMEOUT_MS } from "aai-server/config";
 import type { WarmHarness } from "aai-server/sandbox";
 import { afterEach, beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import type { SessionEntry } from "./studio-session-entry.ts";
 import type { SessionFleet } from "./studio-session-fleet.ts";
-import { createSessionReaper, SWEEP_INTERVAL_MS } from "./studio-session-idle.ts";
+import {
+  createSessionReaper,
+  STUDIO_SHUTDOWN_DRAIN_MS,
+  SWEEP_INTERVAL_MS,
+  studioShutdownDrainMs,
+} from "./studio-session-idle.ts";
 
 /**
  * The sweep cadence is IMPORTED, never re-declared: `addEntry` positions
@@ -402,5 +408,27 @@ describe("createSessionReaper", () => {
       reaper = createSessionReaper({ sessions, fleet, idleMs: IDLE_MS });
     }).not.toThrow();
     reaper?.stop();
+  });
+});
+
+describe("the shutdown drain budget", () => {
+  // What the drain must leave of the shutdown net for the sandbox terminates
+  // and registry releases after it, whose Modal calls carry no timeout.
+  const TERMINATE_RESERVE_MS = 5000;
+
+  test("the default fits inside the shutdown teardown net, with room to terminate", () => {
+    expect(STUDIO_SHUTDOWN_DRAIN_MS).toBeGreaterThan(0);
+    expect(STUDIO_SHUTDOWN_DRAIN_MS + TERMINATE_RESERVE_MS).toBeLessThanOrEqual(
+      SHUTDOWN_TEARDOWN_TIMEOUT_MS,
+    );
+  });
+
+  test("the environment overrides it, 0 included, and an unusable value falls back", () => {
+    expect(studioShutdownDrainMs({})).toBe(STUDIO_SHUTDOWN_DRAIN_MS);
+    expect(studioShutdownDrainMs({ STUDIO_SHUTDOWN_DRAIN_MS: "3000" })).toBe(3000);
+    expect(studioShutdownDrainMs({ STUDIO_SHUTDOWN_DRAIN_MS: "0" })).toBe(0);
+    expect(studioShutdownDrainMs({ STUDIO_SHUTDOWN_DRAIN_MS: "soon" })).toBe(
+      STUDIO_SHUTDOWN_DRAIN_MS,
+    );
   });
 });

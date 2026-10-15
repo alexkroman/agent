@@ -48,6 +48,33 @@ describe("createTurnGate", () => {
     release?.();
     expect(gate.enter()).not.toBeNull();
   });
+
+  test("enterWhenFree claims a free gate at once", async () => {
+    const gate = createTurnGate();
+    const release = await gate.enterWhenFree();
+    expect(gate.enter()).toBeNull();
+    release();
+    expect(gate.enter()).not.toBeNull();
+  });
+
+  test("enterWhenFree is HANDED the claim at release — no turn slips in between", async () => {
+    // The shutdown drain's whole contract: the turn it waited for ends, and
+    // the queued follow-up the tab dispatches on that end finds the claim held.
+    const gate = createTurnGate();
+    const turn = gate.enter();
+    let waiter: (() => void) | undefined;
+    const waited = gate.enterWhenFree().then((release) => {
+      waiter = release;
+    });
+    turn?.();
+    expect(gate.enter()).toBeNull();
+    await waited;
+    // A stale release from the finished turn cannot free the waiter's claim.
+    turn?.();
+    expect(gate.enter()).toBeNull();
+    waiter?.();
+    expect(gate.enter()).not.toBeNull();
+  });
 });
 
 /** Minimal ServerResponse the AI SDK's writer is happy with. */

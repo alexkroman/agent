@@ -29,6 +29,7 @@ import {
 } from "../warm-harness.ts";
 import {
   GUEST_PORT,
+  guestHarnessExec,
   guestOrigin,
   guestSandboxCreateParams,
   harnessCode,
@@ -146,7 +147,7 @@ export async function spawnModalAgentServer(
 
     const token = guestTokenFor(opts.name);
     const [proc, tunnels] = await Promise.all([
-      sb.exec(["node", HARNESS_REMOTE_PATH], {
+      sb.exec(guestHarnessExec(HARNESS_REMOTE_PATH), {
         mode: "binary",
         stdout: "pipe",
         stderr: "pipe",

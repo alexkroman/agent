@@ -10,6 +10,7 @@ import {
   StaleSandboxError,
   TURN_IN_FLIGHT_MESSAGE,
   TURN_IN_FLIGHT_STATUS,
+  TurnDroppedError,
 } from "./resilient-fetch.ts";
 import { createSandboxTransport } from "./sandbox-transport.ts";
 
@@ -235,5 +236,88 @@ describe("createSandboxTransport", () => {
 
     await expect(transport.reconnectToStream({ chatId: "chat-1" })).resolves.toBeNull();
     expect(seen[0]?.url).toBe(`${LIVE.url}/chat-1/stream`);
+  });
+});
+
+// The guest went away AFTER answering: a platform deploy terminating the
+// replica's studio guests, or a crash. The request succeeded, so only the body
+// can say so.
+describe("a turn whose stream breaks mid-way", () => {
+  const encoder = new TextEncoder();
+
+  /** An SSE body that serves `frames`, then ends the way `end` says. */
+  function sse(frames: string[], end: "close" | "error"): Response {
+    const queue = frames.map((frame) => encoder.encode(`data: ${frame}\n\n`));
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        const next = queue.shift();
+        if (next) controller.enqueue(next);
+        else if (end === "close") controller.close();
+        else controller.error(new TypeError("terminated"));
+      },
+    });
+    return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+  }
+
+  /** Read the turn's chunk stream to its end, returning the chunk types. */
+  async function readTurn(stream: ReadableStream<{ type: string }>): Promise<string[]> {
+    const types: string[] = [];
+    const reader = stream.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return types;
+      types.push(value.type);
+    }
+  }
+
+  function transportServing(res: () => Response) {
+    return createSandboxTransport({
+      session: () => LIVE,
+      rebroker: () => Promise.resolve(undefined),
+      fetchImpl: () => Promise.resolve(res()),
+    });
+  }
+
+  const START = '{"type":"start"}';
+  const TEXT = '{"type":"text-start","id":"t1"}';
+
+  it("passes a finished turn through untouched", async () => {
+    const transport = transportServing(() => sse([START, TEXT, '{"type":"finish"}'], "close"));
+    expect(await readTurn(await transport.sendMessages(turn()))).toEqual([
+      "start",
+      "text-start",
+      "finish",
+    ]);
+  });
+
+  it("a guest's own error frame is its answer, not a drop", async () => {
+    const frame = '{"type":"error","errorText":"model failed"}';
+    const transport = transportServing(() => sse([START, frame], "close"));
+    expect(await readTurn(await transport.sendMessages(turn()))).toEqual(["start", "error"]);
+  });
+
+  it("a body that errors mid-turn is a TurnDroppedError, after what it delivered", async () => {
+    const transport = transportServing(() => sse([START, TEXT], "error"));
+    const reader = (await transport.sendMessages(turn())).getReader();
+    expect((await reader.read()).value?.type).toBe("start");
+    expect((await reader.read()).value?.type).toBe("text-start");
+    await expect(reader.read()).rejects.toBeInstanceOf(TurnDroppedError);
+  });
+
+  it("a body that ends without a terminal frame is a drop too", async () => {
+    // A proxy that closes the connection cleanly when the guest goes away.
+    const transport = transportServing(() => sse([START, TEXT], "close"));
+    await expect(readTurn(await transport.sendMessages(turn()))).rejects.toBeInstanceOf(
+      TurnDroppedError,
+    );
+  });
+
+  it("a user Stop is never reported as a drop", async () => {
+    const stop = new AbortController();
+    stop.abort();
+    const transport = transportServing(() => sse([START, TEXT], "close"));
+    expect(
+      await readTurn(await transport.sendMessages(turn({ abortSignal: stop.signal }))),
+    ).toEqual(["start", "text-start"]);
   });
 });

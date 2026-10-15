@@ -8,9 +8,15 @@
  * calls into rather than the part they are about.
  */
 
-import type { createOwnedMap } from "@alexkroman1/aai/internal";
+import { errorMessage } from "@alexkroman1/aai";
+import { type createOwnedMap, sleep } from "@alexkroman1/aai/internal";
+import { envMs } from "aai-server/config";
+import { createLogger } from "aai-server/logger";
+import pTimeout from "p-timeout";
 import type { SessionEntry } from "./studio-session-entry.ts";
 import type { SessionFleet } from "./studio-session-fleet.ts";
+
+const log = createLogger("studio.session");
 
 /**
  * How often the idle sweep runs; the window itself is `idleMs`.
@@ -25,6 +31,46 @@ import type { SessionFleet } from "./studio-session-fleet.ts";
  */
 export const SWEEP_INTERVAL_MS = 60_000;
 
+/**
+ * How long a replica going down waits for work inside its studio sandboxes —
+ * a chat turn (and its `test_agent` builds), a Publish, a preview deploy —
+ * before terminating them anyway. Override with `STUDIO_SHUTDOWN_DRAIN_MS`;
+ * 0 terminates at once, as before this existed.
+ *
+ * The number is what FITS, not what the work needs: a turn runs for minutes
+ * and a Publish up to `WORKSPACE_DEPLOY_TIMEOUT_MS` (330s). Everything here
+ * runs inside `onShutdown`, netted at `SHUTDOWN_TEARDOWN_TIMEOUT_MS` (20s);
+ * that net exists because Modal SIGKILLs the container when its stop grace
+ * lapses (see constants.ts and serve-lifecycle.ts). The grace itself is
+ * Modal's and is written down nowhere in this repo — `NODE_STOP_TIMEOUT_SECS`
+ * (150s, scripts/modal_image.py) is only the Python wrapper's own wait, and
+ * its comment defers to Modal's backstop — so ASSUME it is no longer than
+ * the ~23s this process already budgets to exit, and stay inside the 20s net.
+ * The wait starts at the signal (index.ts), in parallel with the agent
+ * guests' retirement; 12s leaves 8s of that net for the terminates and
+ * registry releases that follow it, whose Modal calls carry no timeout of
+ * their own. `studio-session-idle.test.ts` holds the default inside the net.
+ *
+ * What it buys is the TAIL of the work: a turn that ends within the window
+ * finishes and persists. A longer one is cut, and the client recovers it: it
+ * regenerates the turn on a fresh sandbox (aai-studio-client
+ * `turn-recovery.ts`), re-posting the conversation that ends in the user's
+ * message — which the guest persisted before the cut turn ran.
+ */
+export const STUDIO_SHUTDOWN_DRAIN_MS = 12_000;
+
+/** {@link STUDIO_SHUTDOWN_DRAIN_MS}, overridable through the environment. */
+export function studioShutdownDrainMs(env: NodeJS.ProcessEnv = process.env): number {
+  return envMs(env.STUDIO_SHUTDOWN_DRAIN_MS, STUDIO_SHUTDOWN_DRAIN_MS);
+}
+
+/**
+ * How often a shutdown drain re-reads `SessionEntry.inFlight`. A counter, not
+ * an event: the publisher's `hold` is the only writer, and a quarter second is
+ * nothing against a drain budget measured in seconds.
+ */
+export const QUIESCE_POLL_MS = 250;
+
 type SessionMap = ReturnType<typeof createOwnedMap<string, SessionEntry>>;
 
 export type SessionReaper = {
@@ -37,6 +83,13 @@ export type SessionReaper = {
    * so a replacement is never evicted and never strands a live sandbox.
    */
   disposeEntry(entry: SessionEntry): Promise<void>;
+  /**
+   * Wait, at most `budgetMs`, for `entry`'s sandbox to have no work in it —
+   * the shutdown drain (see {@link STUDIO_SHUTDOWN_DRAIN_MS}). Never throws:
+   * a budget that lapses, or a guest that cannot answer, logs and resolves,
+   * and the caller terminates either way.
+   */
+  quiesce(entry: SessionEntry, budgetMs: number): Promise<void>;
   /** Stop the sweep timer (broker disposal). */
   stop(): void;
 };
@@ -117,6 +170,44 @@ export function createSessionReaper(deps: {
     }
   }
 
+  /**
+   * Both halves of "no work in this sandbox", because neither side sees the
+   * other's: the GUEST knows about chat turns (they stream browser→guest, and
+   * the host hears of one only at its end-of-turn RPCs), and only the HOST
+   * holds `inFlight`, the Publish and preview deploys it sent. The guest's
+   * half also closes the door — a drained guest refuses new turns and
+   * re-installs (aai-guest-studio/turn-drain.ts). The host half has no door:
+   * `dispose` stops the preview deployer first, but a Publish request that
+   * still reaches this replica during the drain is not waited for once the
+   * count has read zero — the proxy stops routing here within one health
+   * check of `draining`, so that window is short.
+   */
+  async function quiesce(entry: SessionEntry, budgetMs: number): Promise<void> {
+    const stopPolling = new AbortController();
+    const hostWork = async (): Promise<void> => {
+      while (entry.inFlight > 0 && !stopPolling.signal.aborted) {
+        await sleep(QUIESCE_POLL_MS, { signal: stopPolling.signal });
+      }
+    };
+    try {
+      await pTimeout(
+        Promise.all([entry.warm.conn.sendRequest("studio/drain", {}, budgetMs), hostWork()]),
+        { milliseconds: budgetMs },
+      );
+    } catch (err) {
+      // Lapsed, or the guest could not answer (gone already, or a harness
+      // that predates the request): terminate regardless — waiting longer
+      // spends the shutdown budget the other teardowns need.
+      log.warn("studio sandbox not quiet at shutdown; terminating", {
+        project: entry.project,
+        inFlight: entry.inFlight,
+        error: errorMessage(err),
+      });
+    } finally {
+      stopPolling.abort();
+    }
+  }
+
   const sweeper = setInterval(() => {
     const now = Date.now();
     for (const entry of sessions.values()) {
@@ -127,6 +218,7 @@ export function createSessionReaper(deps: {
 
   return {
     disposeEntry,
+    quiesce,
     stop: () => clearInterval(sweeper),
   };
 }
