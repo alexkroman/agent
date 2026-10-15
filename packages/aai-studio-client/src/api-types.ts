@@ -20,29 +20,42 @@
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { UIMessage } from "ai";
+import * as z from "zod";
 
-export type ProjectData = {
-  files: Record<string, string>;
+/**
+ * A project's workspace snapshot — the `GET` answer and every pushed frame.
+ *
+ * A schema rather than a hand-written predicate so the TYPE and the CHECK are
+ * one declaration: every DECLARED field is checked, so the guard is the whole
+ * truth rather than a spot check on the one field a caller happens to read
+ * today. `z.object` strips an UNDECLARED key rather than rejecting it, which is
+ * what lets the server keep sending `sourceHash` (it does) without this client
+ * having to know about it.
+ */
+const ProjectDataSchema = z.object({
+  files: z.record(z.string(), z.string()),
   /** Production slug — updated only by Publish. */
-  deployedSlug?: string;
+  deployedSlug: z.string().optional(),
   /** Workspace has edits the production agent does not have yet. */
-  unpublished?: boolean;
+  unpublished: z.boolean().optional(),
   /** Preview slug — auto-deployed after agent turns and editor saves. */
-  previewSlug?: string;
+  previewSlug: z.string().optional(),
   /** Changes on every successful preview deploy; the iframe's reload key. */
-  previewVersion?: string;
+  previewVersion: z.string().optional(),
   /** Workspace has edits the preview has not deployed yet. */
-  previewStale?: boolean;
+  previewStale: z.boolean().optional(),
   /** CLI output of the last failed preview deploy. */
-  previewError?: string;
+  previewError: z.string().optional(),
   /** `owner/repo` this project last synced to, when GitHub is connected. */
-  githubRepo?: string;
-  githubBranch?: string;
+  githubRepo: z.string().optional(),
+  githubBranch: z.string().optional(),
   /** Commit the last sync created — the card links to it. */
-  githubCommit?: string;
+  githubCommit: z.string().optional(),
   /** Edits the last GitHub sync does not carry. False when never synced. */
-  githubStale?: boolean;
-};
+  githubStale: z.boolean().optional(),
+});
+
+export type ProjectData = z.infer<typeof ProjectDataSchema>;
 
 /**
  * `GET /studio/github` — whether this platform has a GitHub App at all, and
@@ -130,45 +143,9 @@ export type AgentLogsPage = {
   running: boolean;
 };
 
-/** `undefined`, or a value of that primitive type. Every optional field here. */
-function isOptional(value: unknown, type: "boolean" | "string"): boolean {
-  return value === undefined || typeof value === type;
-}
-
-function isStringRecord(value: unknown): value is Record<string, string> {
-  return isRecord(value) && Object.values(value).every((entry) => typeof entry === "string");
-}
-
-/** The declared optional fields of {@link ProjectData}, by the type they carry. */
-const PROJECT_STRINGS = [
-  "deployedSlug",
-  "previewSlug",
-  "previewVersion",
-  "previewError",
-  "githubRepo",
-  "githubBranch",
-  "githubCommit",
-] as const satisfies readonly (keyof ProjectData)[];
-const PROJECT_BOOLEANS = [
-  "unpublished",
-  "previewStale",
-  "githubStale",
-] as const satisfies readonly (keyof ProjectData)[];
-
-/**
- * Is this pushed frame a {@link ProjectData}?
- *
- * Every DECLARED field is checked, so the predicate is the whole truth rather
- * than a spot check on the one field a caller happens to read today. An
- * UNDECLARED one is ignored, which is what lets the server keep sending
- * `sourceHash` (it does) without this client having to know about it.
- */
+/** Is this pushed frame a {@link ProjectData}? See `ProjectDataSchema`. */
 export function isProjectData(value: unknown): value is ProjectData {
-  if (!(isRecord(value) && isStringRecord(value.files))) return false;
-  return (
-    PROJECT_STRINGS.every((field) => isOptional(value[field], "string")) &&
-    PROJECT_BOOLEANS.every((field) => isOptional(value[field], "boolean"))
-  );
+  return ProjectDataSchema.safeParse(value).success;
 }
 
 /**

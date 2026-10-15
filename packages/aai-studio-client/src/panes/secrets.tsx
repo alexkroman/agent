@@ -29,7 +29,7 @@ import { errorText } from "../api-error.ts";
 import { isEnterSubmit } from "../components/send-button.tsx";
 import { Card } from "../components/settings-card.tsx";
 import { PaneShell } from "../pane-shell.tsx";
-import { queryKeys } from "../query-keys.ts";
+import { queryKeys, sharedQueries } from "../query-keys.ts";
 
 /**
  * Secrets the PLATFORM manages, which this pane neither lists, deletes, nor
@@ -112,10 +112,7 @@ export function SecretsPane({ bearer, project }: SecretsPaneProps) {
   const [value, setValue] = useState("");
   const [addRefusal, setAddRefusal] = useState<string | null>(null);
 
-  const secrets = useQuery({
-    queryKey: queryKeys.secrets(project),
-    queryFn: () => api.listSecrets(bearer, project),
-  });
+  const secrets = useQuery(sharedQueries.secrets(bearer, project));
 
   const add = useSaveSecrets(bearer, project, () => {
     setName("");

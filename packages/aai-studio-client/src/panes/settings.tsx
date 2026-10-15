@@ -14,12 +14,11 @@
 // the transcript" in the package guide).
 
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../api.ts";
 import { GithubCard, type GithubSyncState } from "../components/github-card.tsx";
 import { PhoneCard } from "../components/phone-card.tsx";
 import { Card } from "../components/settings-card.tsx";
 import { PaneShell } from "../pane-shell.tsx";
-import { queryKeys } from "../query-keys.ts";
+import { sharedQueries } from "../query-keys.ts";
 
 type SettingsPaneProps = {
   /** The open project's name — the target of the Delete project button. */
@@ -56,10 +55,7 @@ export function SettingsPane({
 }: SettingsPaneProps) {
   // Shared cache key with the Secrets pane: the phone card reports whether
   // each carrier's signing secret is set, and a save there shows up here.
-  const secrets = useQuery({
-    queryKey: queryKeys.secrets(project),
-    queryFn: () => api.listSecrets(bearer, project),
-  });
+  const secrets = useQuery(sharedQueries.secrets(bearer, project));
   return (
     <PaneShell
       title="Settings"

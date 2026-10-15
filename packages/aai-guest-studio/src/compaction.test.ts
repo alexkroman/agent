@@ -1,23 +1,27 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import { estimateMessageTokens as estimate } from "@alexkroman1/aai-runtime/internal";
 import type { ModelMessage } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, test } from "vitest";
-import {
-  compactMessages,
-  DEFAULT_COMPACTION,
-  estimateTokens,
-  needsCompaction,
-} from "./compaction.ts";
+import { compactMessages, DEFAULT_COMPACTION, needsCompaction } from "./compaction.ts";
 
 const msg = (role: "user" | "assistant", content: string): ModelMessage =>
   ({ role, content }) as ModelMessage;
+
+/**
+ * ~4000 characters of tsc-shaped prose. Word-shaped on purpose: the runtime's
+ * estimator (`tokenx`) charges a long run of one character far less per byte
+ * than real output, so `"x".repeat(4000)` would not be the bulk it stands for.
+ */
+const bulk = (): string =>
+  "error TS2322: Type 'string' is not assignable to type 'number'. ".repeat(62);
 
 /** A conversation whose middle is bulky tool output, as a build loop is. */
 function longSession(middleCount: number): ModelMessage[] {
   return [
     msg("user", "Build me a pizza agent"),
-    ...Array.from({ length: middleCount }, (_, i) => msg("assistant", `${"x".repeat(4000)} ${i}`)),
+    ...Array.from({ length: middleCount }, (_, i) => msg("assistant", `${bulk()} ${i}`)),
     msg("assistant", "latest error"),
   ];
 }
@@ -46,7 +50,7 @@ const toolResult = (id: string): ModelMessage => ({
       type: "tool-result",
       toolCallId: id,
       toolName: "build_agent",
-      output: { type: "text", value: `${"e".repeat(4000)} ${id}` },
+      output: { type: "text", value: `${bulk()} ${id}` },
     },
   ],
 });
@@ -123,17 +127,17 @@ function unansweredToolCalls(messages: readonly ModelMessage[]): string[] {
 
 describe("needsCompaction", () => {
   test("leaves a short conversation alone", () => {
-    expect(needsCompaction([msg("user", "hi")])).toBe(false);
+    expect(needsCompaction([msg("user", "hi")], estimate)).toBe(false);
   });
 
   test("triggers once the estimate passes the budget", () => {
-    expect(needsCompaction(longSession(200))).toBe(true);
+    expect(needsCompaction(longSession(200), estimate)).toBe(true);
   });
 
   test("never compacts when there is nothing but the parts we keep", () => {
     const opts = { ...DEFAULT_COMPACTION, budgetTokens: 0 };
     const short = [msg("user", "a"), msg("assistant", "b")];
-    expect(needsCompaction(short, opts)).toBe(false);
+    expect(needsCompaction(short, estimate, opts)).toBe(false);
   });
 });
 
@@ -142,7 +146,7 @@ describe("compactMessages", () => {
 
   test("returns the input untouched when under budget", async () => {
     const input = [msg("user", "hi"), msg("assistant", "there")];
-    expect(await compactMessages(fakeModel, input)).toEqual(input);
+    expect(await compactMessages(fakeModel, input, estimate)).toEqual(input);
   });
 
   // The test that stood between these two was named "keeps the original
@@ -165,7 +169,7 @@ describe("compactMessages", () => {
       }),
     });
     const input = longSession(100);
-    const out = await compactMessages(summarizer, input);
+    const out = await compactMessages(summarizer, input, estimate);
 
     expect(out.length).toBe(DEFAULT_COMPACTION.keepLeading + 1 + DEFAULT_COMPACTION.keepRecent);
     // The original request survives verbatim at the front…
@@ -183,7 +187,7 @@ describe("compactMessages", () => {
     // The dangerous failure is silently losing the middle: better a long
     // context than an agent that forgot what it was doing.
     const input = longSession(50);
-    const out = await compactMessages(fakeModel, input);
+    const out = await compactMessages(fakeModel, input, estimate);
     expect(out.length).toBe(input.length);
     expect(out[0]).toEqual(input[0]);
   });
@@ -198,12 +202,12 @@ describe("compactMessages", () => {
       },
     });
     const input = buildLoop(80);
-    expect(needsCompaction(input)).toBe(true);
+    expect(needsCompaction(input, estimate)).toBe(true);
 
-    const out = await compactMessages(summarizer, input);
+    const out = await compactMessages(summarizer, input, estimate);
 
     expect(summarizer.doGenerateCalls).toEqual([]);
-    expect(needsCompaction(out)).toBe(false);
+    expect(needsCompaction(out, estimate)).toBe(false);
     // The request survives, and so do the recent attempts' payloads.
     expect(out[0]).toEqual(input[0]);
     expect(out.at(-1)).toEqual(input.at(-1));
@@ -214,7 +218,7 @@ describe("compactMessages", () => {
     // already tried, so tier 1 has to be cheap in bytes and not in memory. This
     // is why the assistant messages in `buildLoop` carry text alongside the
     // tool-call: pruning empties a call-only message and drops it entirely.
-    const out = await compactMessages(fakeModel, buildLoop(80));
+    const out = await compactMessages(fakeModel, buildLoop(80), estimate);
     expect(JSON.stringify(out)).toContain("Attempt c0: building the workspace");
 
     // Only the recent window keeps its dumps — that IS the error being fixed.
@@ -227,7 +231,7 @@ describe("compactMessages", () => {
 
   test("pruning never orphans a tool result or leaves a call unanswered", async () => {
     const input = buildLoop(80);
-    const out = await compactMessages(fakeModel, input);
+    const out = await compactMessages(fakeModel, input, estimate);
     expect(orphanedToolResults(out)).toEqual([]);
     expect(unansweredToolCalls(out)).toEqual([]);
   });
@@ -255,7 +259,7 @@ describe("compactMessages", () => {
     // default happens to be.
     for (const keepRecent of [4, 5, 8, 9]) {
       const input = buildLoop(40);
-      const out = await compactMessages(summarizer, input, {
+      const out = await compactMessages(summarizer, input, estimate, {
         ...DEFAULT_COMPACTION,
         budgetTokens: 100,
         keepRecent,
@@ -271,12 +275,10 @@ describe("compactMessages", () => {
   });
 });
 
-describe("estimateTokens", () => {
-  test("counts structured content, not just strings", () => {
-    const structured = {
-      role: "assistant",
-      content: [{ type: "text", text: "x".repeat(400) }],
-    } as ModelMessage;
-    expect(estimateTokens([structured])).toBeGreaterThan(80);
+describe("the injected estimator", () => {
+  test("is what decides, so the caller's estimator is the one charged", () => {
+    const input = longSession(20);
+    expect(needsCompaction(input, () => 0)).toBe(false);
+    expect(needsCompaction(input, () => DEFAULT_COMPACTION.budgetTokens)).toBe(true);
   });
 });

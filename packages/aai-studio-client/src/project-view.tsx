@@ -24,7 +24,7 @@ import { ChatPanel } from "./panes/chat.tsx";
 import { type PreviewDevice, PreviewPane, PreviewToolbar } from "./panes/preview.tsx";
 import { SecretsPane } from "./panes/secrets.tsx";
 import { SettingsPane } from "./panes/settings.tsx";
-import { queryKeys } from "./query-keys.ts";
+import { queryKeys, sharedQueries } from "./query-keys.ts";
 import { lazyRetry } from "./stale-build.ts";
 import { PaneTabs, PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
 
@@ -99,14 +99,11 @@ export function ProjectView(props: ProjectViewProps) {
   const [previewReload, setPreviewReload] = useState(0);
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("desktop");
   // The Code pane's "Sync to GitHub" link exists only where the GitHub card
-  // does. Same key and cache options as the card's own read, so opening one
-  // after the other costs one round trip; enabled only on the Code tab, since
-  // each read is an Auth round trip (`api.githubStatus`).
+  // does. The card's own read (`sharedQueries.github`), so opening one after
+  // the other costs one round trip; enabled only on the Code tab, since each
+  // read is an Auth round trip (`api.githubStatus`).
   const githubStatus = useQuery({
-    queryKey: queryKeys.github(bearer),
-    queryFn: () => api.githubStatus(bearer),
-    staleTime: Number.POSITIVE_INFINITY,
-    refetchOnWindowFocus: false,
+    ...sharedQueries.github(bearer),
     enabled: selectedTab === "code",
   });
   /** The file the user picked, or null to follow the workspace's default. */

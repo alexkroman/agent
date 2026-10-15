@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 183 names
 - [Testing and evals](#testing-and-evals) — 252 names
 - [Hosting and tooling](#hosting-and-tooling) — 234 names
-- [Framework internals](#framework-internals) — 446 names
+- [Framework internals](#framework-internals) — 448 names
 
 ## Agent authoring
 
@@ -1551,9 +1551,11 @@ trace or a type error can be traced back to something.
 | `describeProvider` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `eligibleToolMessages` | function | `@alexkroman1/aai/host-internal` |  | The eligible subset, in declaration order. |
 | `escapeXml` | function | `@alexkroman1/aai/internal` |  | XML-escape a value going into TwiML — all five specials, as numeric references, so a quote in a parameter cannot close the attribute it is in. |
+| `estimateMessageTokens` | function | `@alexkroman1/aai-runtime/internal` |  | Estimated tokens for one message, memoized on the message. |
 | `executeToolCall` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `fallbackMembers` | function | `@alexkroman1/aai/host-internal` |  | A fallback descriptor's members, in order — each a `{ kind, options }`. |
 | `firstWriteWins` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `formatLogTime` | function | `@alexkroman1/aai/host-internal` |  | A line's `LogLine.at` as `HH:MM:SS.mmm`, local time — the one shape every reader prints (the CLI's `aai logs`, the studio's `read_logs` tool and its logs … |
 | `formatSchemaIssues` | function | `@alexkroman1/aai/internal` (also `@alexkroman1/aai/host-internal`) |  | Render Standard Schema issues as one human-readable line. |
 | `freezeStorable` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `frontDoorOf` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |

@@ -26,6 +26,7 @@
  */
 
 import { errorMessage, type ToolDef, tool } from "@alexkroman1/aai";
+import { formatLogTime, type LogLine } from "@alexkroman1/aai/host-internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { hostRequest } from "aai-guest-core/rpc";
 import { z } from "zod";
@@ -41,9 +42,7 @@ import { LOGS_TOOL_MAX_LINES, STUDIO_TOOL_DESCRIPTIONS } from "./tool-descriptio
  */
 const LOGS_RPC_TIMEOUT_MS = 60_000;
 
-/** One captured line, as the host hands it over. */
-type LogLine = { seq: number; at: number; stream: "stdout" | "stderr"; text: string };
-
+/** One page of the deployed agent's log ring, as the host hands it over. */
 type LogsResult = {
   slug?: string;
   running: boolean;
@@ -80,16 +79,9 @@ function parseResult(value: unknown): LogsResult | null {
   };
 }
 
-/** `HH:MM:SS.mmm` — the same shape `aai logs` prints. */
-function formatTime(at: number): string {
-  const d = new Date(at);
-  const pad = (n: number, width = 2) => String(n).padStart(width, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
-}
-
 /** `stderr` is called out by name — it is usually the half worth reading. */
 function formatLine(line: LogLine): string {
-  return `${formatTime(line.at)}${line.stream === "stderr" ? " ERR" : "    "}  ${line.text}`;
+  return `${formatLogTime(line.at)}${line.stream === "stderr" ? " ERR" : "    "}  ${line.text}`;
 }
 
 /**

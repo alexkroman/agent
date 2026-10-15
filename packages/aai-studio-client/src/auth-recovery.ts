@@ -20,7 +20,7 @@
  * gate — so there is nothing left for a caller to decide.
  */
 
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import { ApiError } from "./api-error.ts";
 
 /** Is this the server refusing the caller's bearer, rather than anything else? */
@@ -60,14 +60,15 @@ export function useAuthRecovery(
   // attempts on one rejection) as well as ordinary re-renders.
   const handled = useRef<unknown>(null);
   const attempts = useRef(0);
-  const exhaustedRef = useRef(onExhausted);
-  exhaustedRef.current = onExhausted;
+  // An effect event, so a caller's inline `onExhausted` neither re-arms the
+  // effect nor is read stale.
+  const exhausted = useEffectEvent(() => onExhausted?.());
 
   useEffect(() => {
     if (rejection == null || handled.current === rejection) return;
     handled.current = rejection;
     if (attempts.current >= maxAttempts) {
-      exhaustedRef.current?.();
+      exhausted();
       return;
     }
     attempts.current += 1;

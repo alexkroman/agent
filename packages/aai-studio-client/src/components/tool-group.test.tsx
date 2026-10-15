@@ -6,8 +6,9 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 import { stepSummary, ToolGroup } from "./tool-group.tsx";
+import type { ToolPart } from "./tool-row.tsx";
 
-const done = (name: string, id: string, input: unknown = {}) => ({
+const done = (name: string, id: string, input: unknown = {}): ToolPart => ({
   type: `tool-${name}`,
   toolCallId: id,
   state: "output-available",
@@ -55,7 +56,7 @@ describe("ToolGroup", () => {
   });
 
   test("while the turn streams, the row names the call still running", () => {
-    const running = {
+    const running: ToolPart = {
       type: "tool-write_file",
       toolCallId: "t4",
       state: "input-available",
@@ -69,7 +70,7 @@ describe("ToolGroup", () => {
   });
 
   test("a call abandoned by Stop does not keep the row running", () => {
-    const abandoned = {
+    const abandoned: ToolPart = {
       type: "tool-write_file",
       toolCallId: "t4",
       state: "input-available",
@@ -80,7 +81,13 @@ describe("ToolGroup", () => {
   });
 
   test("failed calls are counted on the summary", () => {
-    const failed = { type: "tool-run_check", toolCallId: "t5", state: "output-error", input: {} };
+    const failed: ToolPart = {
+      type: "tool-run_check",
+      toolCallId: "t5",
+      state: "output-error",
+      input: {},
+      errorText: "check failed",
+    };
     render(<ToolGroup parts={[...PARTS, failed]} active={false} />);
     expect(screen.getByRole("button")).toHaveTextContent("1 failed");
   });

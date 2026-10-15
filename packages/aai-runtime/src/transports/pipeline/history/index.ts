@@ -7,7 +7,7 @@
  */
 
 export type { ContextBudgetPreparer } from "./context-budget.ts";
-export { createContextBudget } from "./context-budget.ts";
+export { createContextBudget, estimateMessageTokens } from "./context-budget.ts";
 export type { PersistedReply } from "./heard-history.ts";
 export { createHeardHistory } from "./heard-history.ts";
 export type { PipelineHistory } from "./history.ts";

@@ -5,8 +5,8 @@
  * model failing mid-stream, the browser closing a response mid-stream, and a
  * new turn arriving before the previous one has settled.
  *
- * What is REAL: the AI SDK (`streamText`, `toUIMessageStream`, its SSE pipe),
- * `withStreamErrorChunk`, `deliverTurn` and `createTurnGate`. What is faked:
+ * What is REAL: the AI SDK (`streamText`, `toUIMessageStream`, its SSE pipe,
+ * `createUIMessageStream`), `deliverTurn` and `createTurnGate`. What is faked:
  * the provider (a `MockLanguageModelV3` whose every part waits on the
  * scheduler, and which errors its stream on abort as a real gateway fetch
  * does) and the `ServerResponse` — an emitter that, like Node's, emits `close`

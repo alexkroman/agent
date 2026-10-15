@@ -3,6 +3,9 @@
 // sites can't drift on a typo'd inline array (a mismatch fails silently —
 // nothing refetches).
 
+import { queryOptions } from "@tanstack/react-query";
+import { api } from "./api.ts";
+
 export const queryKeys = {
   status: ["status"] as const,
   /** The signed-in account (email + whether a key is stored), per bearer. */
@@ -49,4 +52,37 @@ export const queryKeys = {
    * different versions and so can disagree about the answer.
    */
   clientConfig: (slug: string) => ["client-config", slug] as const,
+  /** Whether the platform serves `/:slug/` yet — the UI pane's readiness probe. */
+  agentPageReady: (slug: string | undefined) => ["agent-page-ready", slug] as const,
+};
+
+/**
+ * Reads issued from more than one component, as whole `queryOptions` — key,
+ * fetch and freshness together — so two sites cannot share a key while
+ * disagreeing about how stale its answer may be. A site layers its own
+ * per-site switches (`enabled`) on top.
+ */
+export const sharedQueries = {
+  /**
+   * The account's GitHub link. Read once per pane open: each read is an Auth
+   * round trip (`api.githubStatus`), so neither staleness nor a window focus
+   * refetches it — a connect or disconnect invalidates it instead.
+   */
+  github: (bearer: string) =>
+    queryOptions({
+      queryKey: queryKeys.github(bearer),
+      queryFn: () => api.githubStatus(bearer),
+      staleTime: Number.POSITIVE_INFINITY,
+      refetchOnWindowFocus: false,
+    }),
+  /**
+   * The project's secret NAMES. Shared by the Secrets pane and the Settings
+   * pane's phone card, which reports whether each carrier's signing secret is
+   * set, so a save in one shows up in the other.
+   */
+  secrets: (bearer: string, project: string) =>
+    queryOptions({
+      queryKey: queryKeys.secrets(project),
+      queryFn: () => api.listSecrets(bearer, project),
+    }),
 };

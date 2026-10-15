@@ -47,11 +47,11 @@
  * @module
  */
 
-import { spawn } from "node:child_process";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { condense } from "aai-evals/report";
+import { errorMessage } from "@alexkroman1/aai";
+import { outputWithKillNote, runCapped } from "@alexkroman1/aai/host-internal";
 
 /** The shipped templates, whose `agent.eval.test.ts` files are the contracts. */
 export const TEMPLATES_DIR = fileURLToPath(
@@ -160,12 +160,19 @@ const MAX_NOTE = 800;
 /**
  * How much of a child's output is RETAINED while it runs.
  *
- * Bounded from the HEAD, so the note is exactly the text it always was — the
- * point is only that a wedged run cannot hold hundreds of kilobytes of stack
- * traces in memory to report 800 characters of them. Headroom over
- * {@link MAX_NOTE} because the whitespace collapse shortens what it keeps.
+ * Bounded from the TAIL — vitest prints its failures and summary last — so a
+ * wedged run cannot hold hundreds of kilobytes of stack traces in memory to
+ * report 800 characters of them. Headroom over {@link MAX_NOTE} because the
+ * whitespace collapse shortens what it keeps.
  */
-const MAX_OUTPUT_BYTES = MAX_NOTE * 16;
+const MAX_OUTPUT_CHARS = MAX_NOTE * 16;
+
+/**
+ * Collapse whitespace and keep the LAST `max` characters: the end of a failing
+ * run is its summary and, after a kill, the kill note.
+ */
+const condenseTail = (text: string, max: number): string =>
+  text.replace(/\s+/g, " ").trim().slice(-max);
 
 /**
  * Read a template's contract, or say why there is none.
@@ -233,7 +240,7 @@ export async function runTemplateContract(opts: {
     const { code, output } = await opts.run(opts.scratchDir);
     return code === 0
       ? { outcome: "passed", note: "" }
-      : { outcome: "failed", note: condense(output, MAX_NOTE) };
+      : { outcome: "failed", note: condenseTail(output, MAX_NOTE) };
   } finally {
     // A case REMOVES what it wrote, for the same reason it deletes its studio
     // project: this one writes a whole node-resolvable workspace INSIDE the
@@ -248,53 +255,39 @@ export async function runTemplateContract(opts: {
  *
  * Separate from {@link spawnVitest} so the PLUMBING is testable without a
  * vitest install and a live model: capturing both streams, the `code ?? 1`
- * fallback for a signalled child, and the `error` path are what can break here,
- * and a test drives all three through `node -e`.
+ * fallback for a signalled child, and the spawn-failure path are what can break
+ * here, and a test drives all three through `node -e`.
  *
- * Bounded with `spawn`'s own `signal` rather than a timer raced against the
- * exit — `guard-invariants` rule 3 bans the latter, and the signal additionally
- * KILLS the child, where a lost race would leave one running and holding the
- * scratch directory the `finally` is about to remove.
+ * The child runs under `runCapped`, the host's one bounded spawner: the
+ * deadline kills the whole process GROUP (vitest's workers included) and
+ * escalates to SIGKILL, so a wedged run cannot outlive the scratch directory
+ * the `finally` is about to remove, and the merged output is held as a capped
+ * TAIL rather than every kilobyte a failing contract prints. A child that could
+ * not be spawned resolves as a failure with the reason, never a throw: a
+ * contract that could not run is a contract that did not pass.
  */
 export function spawnCommand(
   command: string,
   args: readonly string[],
   opts: { readonly env: Record<string, string>; readonly timeoutMs: number },
 ): ContractRunner {
-  return (dir) =>
-    new Promise((resolve) => {
-      const child = spawn(command, [...args], {
+  return async (dir) => {
+    try {
+      const result = await runCapped(command, [...args], {
         cwd: dir,
         env: { ...process.env, ...opts.env },
-        stdio: ["ignore", "pipe", "pipe"],
-        signal: AbortSignal.timeout(opts.timeoutMs),
+        timeoutMs: opts.timeoutMs,
+        cap: MAX_OUTPUT_CHARS,
+        combineStreams: true,
       });
-      // Bounded, and decoded ONCE. Only `condense(output, MAX_NOTE)`'s first 800
-      // characters are ever read, and a failing contract over a generated
-      // workspace emits hundreds of kilobytes — stack traces, per-case diffs,
-      // every `virtual:aai/agent` resolution error — all of which was retained
-      // by an `output += chunk.toString()` to report a fraction of it. That
-      // spelling also decoded per chunk, which mangles a multi-byte character
-      // split across two of them; concatenating the buffers first does not.
-      const chunks: Buffer[] = [];
-      let held = 0;
-      const collect = (chunk: Buffer): void => {
-        if (held >= MAX_OUTPUT_BYTES) return;
-        chunks.push(chunk);
-        held += chunk.length;
-      };
-      const read = (): string => Buffer.concat(chunks).toString().slice(0, MAX_OUTPUT_BYTES);
-      // Sync listeners: an `async` function handed to `.on` is reported by
-      // `pnpm lint:promises`, and there is nothing to await here anyway.
-      child.stdout.on("data", collect);
-      child.stderr.on("data", collect);
-      // `error` fires for a spawn that never started AND for the abort, and both
-      // are a contract that did not pass — reported with the reason rather than
-      // left waiting on a `close` that will not come.
-      child.on("error", (err) => resolve({ code: 1, output: `${read()}\n${err.message}` }));
-      // `null` is a child killed by a signal, which is a failure and not a pass.
-      child.on("close", (code) => resolve({ code: code ?? 1, output: read() }));
-    });
+      // A killed child is a failure even when it exited 0 in the grace window,
+      // and `null` is a child killed by a signal — neither is a pass.
+      const code = result.timedOut ? 1 : (result.exitCode ?? 1);
+      return { code, output: outputWithKillNote(result, opts.timeoutMs) };
+    } catch (err) {
+      return { code: 1, output: errorMessage(err) };
+    }
+  };
 }
 
 /** The real runner: `vitest run` in the materialized workspace. */

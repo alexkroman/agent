@@ -58,6 +58,7 @@
  * redirect chain (Supabase's `redirect_to`, GitHub's `redirect_uri`).
  */
 
+import { createStoredValue } from "@alexkroman1/aai-ui";
 import { createClient } from "@supabase/supabase-js";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { api } from "./api.ts";
@@ -74,8 +75,6 @@ import { loadFailureText } from "./components/gate-card.tsx";
 
 export type { SignInMethods } from "./auth-methods.ts";
 export type { SignInCredentials } from "./auth-state.ts";
-
-const DEV_TOKEN_STORAGE = "aai-studio-dev-token";
 
 export type StudioAuthState =
   | { phase: "loading" }
@@ -120,24 +119,10 @@ export type StudioAuthState =
 // on every restart while a Supabase one stayed in would be a difference between
 // the two modes that nothing in the product intends.
 //
-// Storage access throws in some contexts (Safari private mode, storage blocked
-// by policy) — degrade to in-memory state instead of crashing.
-function readDevToken(): string | null {
-  try {
-    return localStorage.getItem(DEV_TOKEN_STORAGE);
-  } catch {
-    return null;
-  }
-}
-
-function writeDevToken(token: string | null): void {
-  try {
-    if (token === null) localStorage.removeItem(DEV_TOKEN_STORAGE);
-    else localStorage.setItem(DEV_TOKEN_STORAGE, token);
-  } catch {
-    // Storage unavailable — the token still lives in the machine's state.
-  }
-}
+// aai-ui's `createStoredValue` guards every access: where storage throws
+// (Safari private mode, storage blocked by policy) the token lives in memory
+// for the tab instead of crashing the gate.
+const devToken = createStoredValue("aai-studio-dev-token");
 
 /** Browser counterpart of the server's `parseDevToken` (aai-server). */
 function mintDevToken(email: string): string {
@@ -153,7 +138,7 @@ function mintDevToken(email: string): string {
  */
 async function signInDev(email: string): Promise<string> {
   const minted = mintDevToken(email);
-  writeDevToken(minted);
+  devToken.set(minted);
   return minted;
 }
 
@@ -161,7 +146,8 @@ async function signInDev(email: string): Promise<string> {
 function devBackend(): AuthBackend {
   return {
     follow(report) {
-      report(readDevToken());
+      // Stored-value reads answer "" for nothing stored.
+      report(devToken.get() || null);
       // Nothing to unsubscribe: a dev token changes only through this backend.
       return () => undefined;
     },
@@ -170,10 +156,10 @@ function devBackend(): AuthBackend {
     // and unrecoverable: it is discarded rather than no-opped, since a caller
     // left holding a bearer nobody will accept has no way forward.
     refresh: async () => {
-      writeDevToken(null);
+      devToken.set(undefined);
       return null;
     },
-    signOut: () => writeDevToken(null),
+    signOut: () => devToken.set(undefined),
   };
 }
 

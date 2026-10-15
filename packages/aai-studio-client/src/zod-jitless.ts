@@ -35,11 +35,13 @@
  * body beside `installStaleBuildRecovery()`, and it silently does nothing: zod
  * reads `jitless` in the object schema's INIT, not at parse
  * (`const jit = !globalConfig.jitless` in `$ZodObject`, `v4/core/schemas.js`),
- * so the probe fires when the first `z.object(...)` is CONSTRUCTED.
- * `@alexkroman1/aai/protocol` constructs four at module scope and `api.ts`
- * imports it, so by the time any statement in `main.tsx`'s body runs, ESM has
- * already evaluated that module and the violation is already reported. Only an
- * import that is ordered above the rest is early enough.
+ * so the probe fires when the first `z.object(...)` is CONSTRUCTED. Several
+ * modules this app imports construct them at module scope — `ai` (its message
+ * part schemas), `@alexkroman1/aai/workflow-api` (`ClientConfigResponseSchema`)
+ * and this package's own `api-types.ts` (`ProjectDataSchema`) — so by the time
+ * any statement in `main.tsx`'s body runs, ESM has already evaluated them and
+ * the violation is already reported. Only an import that is ordered above the
+ * rest is early enough.
  *
  * Biome is what keeps it there: a bare side-effect import is a BARRIER its
  * import sorting will not reorder across (the same reason `import "./styles.css"`

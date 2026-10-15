@@ -42,19 +42,12 @@
  * @module
  */
 
+import type { LogLine, LogPage } from "@alexkroman1/aai/host-internal";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { isLogLine } from "aai-server/platform";
 import type { WorkspaceStore } from "aai-server/stores";
 import { type ProjectEnvironment, projectSlugFor } from "./studio-project-slugs.ts";
 import { getWorkspace } from "./studio-workspace.ts";
-
-/** One captured line, as the platform reports it. */
-export type AgentLogLine = {
-  seq: number;
-  at: number;
-  stream: "stdout" | "stderr";
-  text: string;
-};
 
 /** What one `read_logs` call gets back. */
 export type ProjectLogsResult = {
@@ -62,7 +55,7 @@ export type ProjectLogsResult = {
   slug?: string;
   /** Whether a sandbox is up. An empty page means different things either way. */
   running: boolean;
-  lines: AgentLogLine[];
+  lines: LogLine[];
   /** Lines the ring evicted before this read reached them. */
   dropped: number;
   /** Total lines held after the drain, before the tail was taken. */
@@ -101,9 +94,7 @@ export type ProjectLogsOpts = {
 };
 
 /** The wire shape of the platform's `GET /:slug/logs`, checked field by field. */
-function parsePage(
-  body: unknown,
-): { lines: AgentLogLine[]; cursor: number; dropped: number; running: boolean } | null {
+function parsePage(body: unknown): (LogPage & { running: boolean }) | null {
   if (!(isRecord(body) && Array.isArray(body.lines) && typeof body.cursor === "number")) {
     return null;
   }
@@ -167,8 +158,8 @@ async function readOnePage(
 async function drainRing(
   slug: string,
   deps: ProjectLogsDeps,
-): Promise<{ running: boolean; lines: AgentLogLine[]; dropped: number }> {
-  const lines: AgentLogLine[] = [];
+): Promise<{ running: boolean; lines: LogLine[]; dropped: number }> {
+  const lines: LogLine[] = [];
   let cursor = -1;
   let dropped = 0;
   let running = false;

@@ -5,7 +5,7 @@
 // `_test-setup.ts`, so no helper narrows an element to read a property off it.
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { type RenderResult, render } from "@testing-library/react";
+import { type RenderOptions, type RenderResult, render } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { type Mock, vi } from "vitest";
 
@@ -148,5 +148,9 @@ export function renderWithClient(ui: ReactNode): RenderResult & { client: QueryC
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Number.POSITIVE_INFINITY } },
   });
-  return { ...render(createElement(QueryClientProvider, { client }, ui)), client };
+  // As a `wrapper`, so a `rerender` keeps the provider rather than replacing it.
+  const options: Omit<RenderOptions, "queries"> = {
+    wrapper: ({ children }) => createElement(QueryClientProvider, { client }, children),
+  };
+  return { ...render(ui, options), client };
 }

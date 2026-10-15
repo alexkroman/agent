@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { captureLogs } from "aai-server/test-utils";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { answering, fakeFetch } from "./_studio-fetch-test-utils.ts";
 import { type AdoptSessionParams, adoptPeerSession } from "./studio-session-adopt.ts";
 import type { StudioSessionRecord } from "./studio-session-registry.ts";
@@ -72,8 +72,19 @@ describe("adoptPeerSession", () => {
     expect(await adoptPeerSession(RECORD, PARAMS, { fetchFn })).toBeNull();
   });
 
-  test("resolves null when the guest is too slow", async () => {
-    const fetchFn = fakeFetch(() => new Promise<Response>(() => undefined));
+  test("resolves null when the guest is too slow, and ABORTS the request", async () => {
+    // The fake behaves like fetch: it settles only when its signal fires. The
+    // abort is the point — an abandoned install must not keep running in the
+    // peer's guest while this replica spawns its own.
+    let seen: AbortSignal | undefined;
+    const fetchFn = vi.fn<typeof globalThis.fetch>(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          seen = init?.signal ?? undefined;
+          seen?.addEventListener("abort", () => reject(seen?.reason));
+        }),
+    );
     expect(await adoptPeerSession(RECORD, PARAMS, { fetchFn, timeoutMs: 10 })).toBeNull();
+    expect(seen?.aborted).toBe(true);
   });
 });

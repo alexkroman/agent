@@ -65,16 +65,20 @@
 import { generateText, type LanguageModel, type ModelMessage, pruneMessages } from "ai";
 
 /**
- * Rough token estimate. Deliberately a heuristic: the exact count depends on
- * the tokenizer, and being approximately right one step early is fine when
- * the alternative is a hard context error.
+ * Estimated tokens for ONE message. `chat.ts` passes the runtime's
+ * `estimateMessageTokens` (`@alexkroman1/aai-runtime/internal`) — the same
+ * memoized estimator the voice pipeline's context budget charges with — so the
+ * whole conversation is not re-measured on every step. Injected rather than
+ * imported because this package loads the runtime only by dynamic import, to
+ * keep a copy out of agent-mode guests (see `chat.ts`).
  */
-export function estimateTokens(messages: readonly ModelMessage[]): number {
-  let chars = 0;
-  for (const m of messages) {
-    chars += typeof m.content === "string" ? m.content.length : JSON.stringify(m.content).length;
-  }
-  return Math.ceil(chars / 4);
+export type MessageTokenEstimator = (message: ModelMessage) => number;
+
+/** Estimated tokens for a message list: the sum of its messages' estimates. */
+function totalTokens(messages: readonly ModelMessage[], estimate: MessageTokenEstimator): number {
+  let total = 0;
+  for (const m of messages) total += estimate(m);
+  return total;
 }
 
 export type CompactionOptions = {
@@ -94,22 +98,16 @@ export const DEFAULT_COMPACTION: CompactionOptions = {
   keepLeading: 1,
 };
 
-/**
- * Would this message list be compacted? Exposed for tests and logging.
- *
- * `estimate` is threaded rather than recomputed because {@link estimateTokens}
- * stringifies every non-string message content and the list it walks is the
- * WHOLE conversation — measured at roughly 240 KB of `JSON.stringify` per pass
- * in a long repair loop. The caller in `studio/chat.ts` asks this question and
- * then hands the same list to {@link compactMessages}, which asked it again:
- * three full passes per STEP, two of them over identical input.
- */
+/** Would this message list be compacted? Exposed for tests and logging. */
 export function needsCompaction(
   messages: readonly ModelMessage[],
+  estimate: MessageTokenEstimator,
   opts: CompactionOptions = DEFAULT_COMPACTION,
-  estimate: number = estimateTokens(messages),
 ): boolean {
-  return estimate > opts.budgetTokens && messages.length > opts.keepLeading + opts.keepRecent + 1;
+  return (
+    messages.length > opts.keepLeading + opts.keepRecent + 1 &&
+    totalTokens(messages, estimate) > opts.budgetTokens
+  );
 }
 
 /** Plain text of a message, for the summarizer's input. */
@@ -142,19 +140,14 @@ function turnBoundary(messages: readonly ModelMessage[], index: number, step: 1 
  * Returns the messages unchanged when compaction is unnecessary or the summary
  * call fails — losing the middle to a failed summarizer would be worse than a
  * long context.
- *
- * `estimate` is the caller's already-computed token estimate for `messages`;
- * see {@link needsCompaction}. The check AFTER tier 1 re-estimates on purpose —
- * it is a different list, and its whole job is to find out how much tier 1 took
- * off.
  */
 export async function compactMessages(
   model: LanguageModel,
   messages: readonly ModelMessage[],
+  estimate: MessageTokenEstimator,
   opts: CompactionOptions = DEFAULT_COMPACTION,
-  estimate: number = estimateTokens(messages),
 ): Promise<ModelMessage[]> {
-  if (!needsCompaction(messages, opts, estimate)) return [...messages];
+  if (!needsCompaction(messages, estimate, opts)) return [...messages];
 
   // Tier 1: drop the tool call/result payloads older than the recent window —
   // the tsc dumps and build logs this loop accumulates. Deterministic, free,
@@ -163,7 +156,7 @@ export async function compactMessages(
     messages: [...messages],
     toolCalls: `before-last-${opts.keepRecent}-messages`,
   });
-  if (!needsCompaction(pruned, opts)) return pruned;
+  if (!needsCompaction(pruned, estimate, opts)) return pruned;
 
   // Tier 2: summarize what is left of the middle. Both cuts are moved off a
   // tool result first — see `turnBoundary`.

@@ -17,6 +17,7 @@ export {
   createPipelineHistory,
   createRetainedView,
   estimateConversationTokens,
+  estimateMessageTokens,
   evictBeyondRetention,
   HISTORY_RETAIN_TOKENS,
 } from "./history/index.ts";

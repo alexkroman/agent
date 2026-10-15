@@ -19,6 +19,7 @@ import type http from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import { isPathInside } from '@alexkroman1/aai/workspace-files';
 import type { Message } from '@alexkroman1/aai';
+import type { ModelMessage } from 'ai';
 import type { OpenUpload } from '@alexkroman1/aai/host-internal';
 import { parseBearer } from '@alexkroman1/aai/host-internal';
 import { publishClientInboxDefaults } from '@alexkroman1/aai/host-internal';
@@ -218,6 +219,9 @@ export function createUploadStore(options: {
 
 // @internal
 export const EGRESS_KEEP_ALIVE_MS = 30000;
+
+// @public
+export function estimateMessageTokens(message: ModelMessage): number;
 
 // @internal
 export function executeToolCall(name: string, args: Readonly<Record<string, unknown>>, options: ExecuteToolCallOptions): Promise<string>;
