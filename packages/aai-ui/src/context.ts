@@ -15,15 +15,16 @@ import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-s
 import type { BrowserSession, SendTextOptions, SessionSnapshot } from "./session/index.ts";
 import type { AgentState, ClientTheme, SessionError } from "./types.ts";
 
-// AssemblyAI design system ("website refresh"): warm cream surface, deep
-// indigo primary, warm-ink text, taupe borders. Overridable per client via
-// `mountClient({ theme })`.
+// A neutral blank canvas: near-white ground, white cards, zinc borders and a
+// near-black primary. Deliberately NOT the studio's cream/indigo palette, so an
+// unthemed agent previewed inside the studio reads as the user's own app rather
+// than more studio chrome. Overridable per client via `mountClient({ theme })`.
 const DEFAULT_THEME: Required<ClientTheme> = {
-  bg: "#FBF8F2",
-  primary: "#3F2BC1",
-  text: "#1B1A18",
+  bg: "#FAFAFA",
+  primary: "#18181B",
+  text: "#18181B",
   surface: "#FFFFFF",
-  border: "#DCD7CC",
+  border: "#E4E4E7",
 };
 
 const SessionCtx = createContext<BrowserSession | null>(null);

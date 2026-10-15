@@ -43,11 +43,11 @@ describe("the theme as CSS custom properties", () => {
   test("publishes all five defaults on :root", () => {
     mount();
     expect(varsOnRoot()).toEqual({
-      "--aai-bg": "#FBF8F2",
+      "--aai-bg": "#FAFAFA",
       "--aai-surface": "#FFFFFF",
-      "--aai-text": "#1B1A18",
-      "--aai-border": "#DCD7CC",
-      "--aai-primary": "#3F2BC1",
+      "--aai-text": "#18181B",
+      "--aai-border": "#E4E4E7",
+      "--aai-primary": "#18181B",
     });
   });
 
@@ -57,7 +57,7 @@ describe("the theme as CSS custom properties", () => {
     expect(vars["--aai-primary"]).toBe("#ff0000");
     expect(vars["--aai-surface"]).toBe("#101010");
     // Unnamed fields still get the default, so a partial theme is not a hole.
-    expect(vars["--aai-text"]).toBe("#1B1A18");
+    expect(vars["--aai-text"]).toBe("#18181B");
   });
 
   test("republishes when a field other than the background changes", () => {
@@ -96,11 +96,11 @@ describe("styles.css agrees with the default theme", () => {
   const css = readFileSync(join(import.meta.dirname, "../styles.css"), "utf8");
 
   test.each([
-    ["bg", "#fbf8f2"],
+    ["bg", "#fafafa"],
     ["surface", "#ffffff"],
-    ["text", "#1b1a18"],
-    ["border", "#dcd7cc"],
-    ["primary", "#3f2bc1"],
+    ["text", "#18181b"],
+    ["border", "#e4e4e7"],
+    ["primary", "#18181b"],
   ])("--color-aai-%s falls back to the default theme's own value", (field, fallback) => {
     expect(css).toContain(`--color-aai-${field}: var(--aai-${field}, ${fallback});`);
   });

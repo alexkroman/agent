@@ -284,11 +284,11 @@ describe("useTheme", () => {
     // Every field, not a sample: an unset one reaches components as
     // `undefined` and renders as a missing color rather than an error.
     expect(result.current).toEqual({
-      bg: "#FBF8F2",
-      primary: "#3F2BC1",
-      text: "#1B1A18",
+      bg: "#FAFAFA",
+      primary: "#18181B",
+      text: "#18181B",
       surface: "#FFFFFF",
-      border: "#DCD7CC",
+      border: "#E4E4E7",
     });
   });
 
@@ -315,8 +315,8 @@ describe("useTheme", () => {
       wrapper: ({ children }: { children: ReactNode }) =>
         React.createElement(ThemeProvider, { value: undefined }, children),
     });
-    expect(document.body).toHaveStyle({ background: "rgb(251, 248, 242)" });
-    expect(document.documentElement).toHaveStyle({ background: "rgb(251, 248, 242)" });
+    expect(document.body).toHaveStyle({ background: "rgb(250, 250, 250)" });
+    expect(document.documentElement).toHaveStyle({ background: "rgb(250, 250, 250)" });
   });
 
   it("a custom theme repaints the page too", () => {
@@ -389,6 +389,6 @@ describe("useTheme", () => {
       React.createElement(ThemeProvider, { value: partial }, children);
     const { result } = renderHook(() => useTheme(), { wrapper });
     expect(result.current.primary).toBe("#f00");
-    expect(result.current.bg).toBe("#FBF8F2");
+    expect(result.current.bg).toBe("#FAFAFA");
   });
 });

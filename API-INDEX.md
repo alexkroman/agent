@@ -643,7 +643,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `SessionSnapshot` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | Immutable snapshot of the session state. |
 | `SessionStateDot`, `SessionStateDotProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The live session state as a coloured dot and a word, on its own narrow subscription. |
 | `SidebarLayout` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A two-column layout with a fixed-width sidebar and a flexible main area. |
-| `StartScreen` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A centered start screen: a white card on the cream page with the logo, an eyebrow label, a serif title, subtitle, and the start CTA. |
+| `StartScreen` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A centered start screen: a white card on the cream page with the logo, an eyebrow label, a title, subtitle, and the start CTA. |
 | `StoredValue`, `StoredValueOptions` | type | `@alexkroman1/aai-ui` | `aai-ui:client-storage` | One remembered string — see `createStoredValue`. |
 | `SubmitButton` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | The form's submit button, disabled and relabelled while a submit is in flight. |
 | `SubmitInputOf` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `submit()` takes for `D` — `undefined` when `D` declares no schema. |

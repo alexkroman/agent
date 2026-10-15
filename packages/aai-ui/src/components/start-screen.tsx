@@ -12,7 +12,7 @@ import { Eyebrow } from "./eyebrow.tsx";
 
 /**
  * A centered start screen: a white card on the cream page with the logo, an
- * eyebrow label, a serif title, subtitle, and the start CTA. Renders
+ * eyebrow label, a title, subtitle, and the start CTA. Renders
  * `children` (the main app) once the session has started.
  *
  * @example
@@ -44,7 +44,7 @@ export function StartScreen({
   children: ReactNode;
   /** Element rendered in place of the logo on the card. */
   icon?: ReactNode | undefined;
-  /** The card's serif title. Defaults to the agent's declared name. */
+  /** The card's title. Defaults to the agent's declared name. */
   title?: string | undefined;
   /** A line under the title. */
   subtitle?: string | undefined;
@@ -80,7 +80,7 @@ export function StartScreen({
         <Eyebrow>Voice Agent</Eyebrow>
         {title && (
           <h1
-            className="font-aai-serif font-normal text-[32px] leading-[1.15] tracking-[-0.2px] m-0 text-balance"
+            className="font-semibold text-[32px] leading-[1.15] tracking-[-0.5px] m-0 text-balance"
             style={{ color: theme.text }}
           >
             {title}
