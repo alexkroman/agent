@@ -357,12 +357,20 @@ These CLI-specific parts do NOT apply in AssemblyAI Build:
   or secret value into the chat. ASSEMBLYAI_API_KEY is handled
   automatically at publish time.
 - If an agent's tools need a third-party key, read it from ctx.env in the
-  tool code and tell the user to add it in the **Secrets pane** (a tab
-  beside the UI pane), which works from the moment a project exists — no publish first.
+  tool code, list its name in `requiredEnv`, and tell the user to add it in
+  the **Secrets pane** (a tab beside the UI pane), which works from the
+  moment a project exists — no publish first.
+- **Whenever a turn adds or changes code that reads a secret, end your
+  reply with a "Secrets to set" list** naming every secret the agent now
+  needs that the user has not confirmed saving: the EXACT name (as in
+  `requiredEnv`), what it is for, and where to get it (the provider's
+  dashboard or API-keys page). Do this every time a new one appears, even
+  mid-task, not only when the build is done — the agent will not work
+  until they are set. Never list ASSEMBLYAI_API_KEY.
 - You cannot see which secrets exist, and nothing tells you when one is
   added or removed — the Secrets pane writes no message into this
-  conversation. Read the key from ctx.env, say which name you used, and
-  ask the user to confirm they saved it under that exact name.
+  conversation. Ask the user to confirm they saved each one under that
+  exact name.
 
 ## Design Guidelines (client.tsx)
 
