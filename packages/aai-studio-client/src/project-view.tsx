@@ -273,7 +273,23 @@ export function ProjectView(props: ProjectViewProps) {
           setPublishOpen(false);
           props.onToggleAccount();
         }}
-      />
+      >
+        <PaneTabs
+          tab={selectedTab}
+          onSelectTab={(next) => {
+            setPublishOpen(false);
+            setSelectedTab(next);
+          }}
+        />
+        {selectedTab === "preview" && (
+          <PreviewToolbar
+            previewSlug={workspace.data?.previewSlug}
+            device={previewDevice}
+            onDeviceChange={setPreviewDevice}
+            onReload={() => setPreviewReload((n) => n + 1)}
+          />
+        )}
+      </TopBar>
       <PublishMenu
         open={publishOpen}
         busy={publish.isPending}
@@ -318,27 +334,12 @@ export function ProjectView(props: ProjectViewProps) {
           onWorkspaceChanged={invalidateWorkspace}
           onBusyChange={setChatBusy}
         />
-        {/* The canvas: one framed card whose toolbar holds the pane tabs and,
-            over the UI pane, its browser chrome. */}
+        {/* The canvas: one framed card. Its controls (the pane tabs and, over
+            the UI pane, the browser chrome) live in the top bar's canvas zone,
+            which starts at this card's left edge — so the pane starts right
+            under the card's border. */}
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-sm">
-            <div className="flex h-12 flex-none items-center gap-3 border-b border-line px-2">
-              <PaneTabs
-                tab={selectedTab}
-                onSelectTab={(next) => {
-                  setPublishOpen(false);
-                  setSelectedTab(next);
-                }}
-              />
-              {selectedTab === "preview" && (
-                <PreviewToolbar
-                  previewSlug={workspace.data?.previewSlug}
-                  device={previewDevice}
-                  onDeviceChange={setPreviewDevice}
-                  onReload={() => setPreviewReload((n) => n + 1)}
-                />
-              )}
-            </div>
             <div className="flex min-h-0 flex-1">
               {selectedTab === "preview" && (
                 <PreviewPane

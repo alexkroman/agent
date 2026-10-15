@@ -12,6 +12,13 @@
 
 import type { ReactNode } from "react";
 
+/**
+ * The chat column's width. The top bar's project zone takes it too
+ * (`TopBar`), so the bar splits exactly where the canvas begins — which is
+ * why it lives here, in the frame, rather than in the chat pane.
+ */
+export const CHAT_COLUMN = "w-[392px]";
+
 export function PaneShell({
   title,
   subtitle,

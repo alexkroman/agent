@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
 // Top bar wiring: brand → home, the project name label, the Publish menu
-// states — and the pane tabs, which render in the canvas toolbar.
+// states — and the pane tabs, which ride in the bar's canvas zone.
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
@@ -93,15 +93,35 @@ describe("TopBar", () => {
     expect(onTogglePublish).toHaveBeenCalledTimes(2);
   });
 
-  test("a deployed slug shows the production link", () => {
+  test("a live project shows it on Publish, not as a separate link", () => {
     render(<TopBar {...barProps} deployedSlug="my-agent" />);
-    // The production URL is a plain link that opens in a new tab.
-    const link = screen.getByRole("link");
-    expect(link).toHaveAttribute("href", agentUrl("my-agent"));
-    expect(link).toHaveAttribute("target", "_blank");
-    // It reads "Live"; the address rides in the title.
-    expect(link).toHaveTextContent("Live");
-    expect(link).toHaveAttribute("title", expect.stringContaining(agentUrl("my-agent")));
+    // The production address lives in the Publish menu; the bar carries only
+    // the state — a dot on the button and the URL in its tooltip.
+    expect(screen.queryByRole("link")).toBeNull();
+    const publish = screen.getByRole("button", { name: "Publish" });
+    expect(publish.querySelector("[data-live]")).not.toBeNull();
+    expect(publish).toHaveAttribute("title", `Live at ${agentUrl("my-agent")}`);
+  });
+
+  test("a project never published has no live dot", () => {
+    render(<TopBar {...barProps} />);
+    expect(screen.getByRole("button", { name: "Publish" }).querySelector("[data-live]")).toBeNull();
+  });
+
+  test("the wordmark is home-screen only; inside a project the logo stands alone", () => {
+    const { rerender } = render(<TopBar {...barProps} />);
+    expect(screen.queryByText("AssemblyAI Build")).toBeNull();
+    rerender(<TopBar {...barProps} project={null} />);
+    expect(screen.getByText("AssemblyAI Build")).toBeInTheDocument();
+  });
+
+  test("renders the canvas controls it is handed", () => {
+    render(
+      <TopBar {...barProps}>
+        <PaneTabs tab="code" onSelectTab={() => undefined} />
+      </TopBar>,
+    );
+    expect(screen.getByRole("navigation", { name: "Panes" })).toBeInTheDocument();
   });
 
   test("Log out is not in the bar — it lives in the account panel", () => {
