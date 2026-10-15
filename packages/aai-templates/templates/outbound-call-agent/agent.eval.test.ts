@@ -22,9 +22,15 @@
  * `system-prompt.md` declare — `./agent.ts` alone has no `end_call`.
  */
 import agentDef from "virtual:aai/agent";
-import { describeEval, toolArgsIn, toolNames } from "@alexkroman1/aai-runtime/testing/vitest";
+import {
+  describeEval,
+  toolArgsIn,
+  toolNames,
+  walkPhoneTree,
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import { signCall } from "./call-params.ts";
+import { NO_FIT_CALL, PHARMACY_CALL } from "./phone-trees.ts";
 
 const SECRET = "eval-calls-key";
 const PROMPT =
@@ -33,6 +39,29 @@ const PROMPT =
   "If you get voicemail, ask her to call 415-555-0100.";
 
 const parameters = await signCall({ id: "call_eval", prompt: PROMPT }, SECRET);
+
+const DIGIT_WORDS = [
+  "zero",
+  "one",
+  "two",
+  "three",
+  "four",
+  "five",
+  "six",
+  "seven",
+  "eight",
+  "nine",
+];
+
+/** The digits in `text`, number words included ("oh" as zero) — a number as it is spoken. */
+function spokenDigits(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\b(zero|oh|one|two|three|four|five|six|seven|eight|nine)\b/g, (word) =>
+      String(word === "oh" ? 0 : DIGIT_WORDS.indexOf(word)),
+    )
+    .replace(/\D/g, "");
+}
 
 describeEval(
   agentDef,
@@ -85,6 +114,9 @@ describeEval(
           "Thanks for calling. To leave a message for Maria, press 1. For all other calls, press 0.",
         );
         expect(toolArgsIn(turn.toolCalls, "press_keys")[0]).toMatchObject({ keys: "1" });
+        // What the line heard, and what the tool told the model back.
+        expect(turn.dtmf).toEqual(["1"]);
+        expect(turn.toolCalls[0]?.result).toContain('"pressed":"1"');
         expect(turn.endedSession).toBe(false);
       },
       {
@@ -98,7 +130,8 @@ describeEval(
         const turn = await session.say(
           "Hi, you've reached Maria. I can't come to the phone right now, please leave a message after the beep.",
         );
-        expect(turn.text).toMatch(/415.?555.?0100|four one five/i);
+        // However it is read out: "415-555-0100", "4-1-5…", "four-one-five…".
+        expect(spokenDigits(turn.text), turn.text).toContain("4155550100");
         expect(toolArgsIn(turn.toolCalls, "end_call")[0]).toMatchObject({ reached: "voicemail" });
         expect(turn.endedSession).toBe(true);
       },
@@ -113,6 +146,66 @@ describeEval(
   {
     env: { CALLS_API_KEY: SECRET },
     call: { carrier: "twilio", callId: "CA_eval", parameters },
+  },
+);
+
+// Phone trees, walked by the keys the agent actually pressed (`turn.dtmf`): a
+// wrong key replays the menu rather than advancing a script written for the
+// right one. `phone-trees.ts` holds the trees, which a real call can play too.
+describeEval(
+  agentDef,
+  (test) => {
+    test(
+      "walks three menus to the pharmacist without a word to any of them, then says why it called",
+      async ({ session }) => {
+        const walk = await walkPhoneTree(session, PHARMACY_CALL.tree);
+
+        expect(walk.reached, JSON.stringify(walk.path)).toBe(PHARMACY_CALL.goal);
+        // A menu is not listening for words.
+        const menus = walk.turns.slice(0, -1);
+        for (const turn of menus) expect(turn.text).toBe("");
+        const greeting = walk.turns.at(-1);
+        expect(greeting?.dtmf).toEqual([]);
+        expect(greeting?.text).toMatch(/jordan/i);
+        expect(greeting?.text).toMatch(/prescription/i);
+      },
+      {
+        stubReply: [
+          { tool: "press_keys", args: { keys: "1" } },
+          "",
+          { tool: "press_keys", args: { keys: "3" } },
+          "",
+          { tool: "press_keys", args: { keys: "2" } },
+          "",
+          "Hi Dana, I'm an AI assistant calling for Jordan Lee to check whether a prescription is ready for pickup.",
+        ],
+      },
+    );
+
+    test(
+      "takes the catch-all option when no option fits the task, then asks to be put through",
+      async ({ session }) => {
+        const walk = await walkPhoneTree(session, NO_FIT_CALL.tree);
+
+        expect(walk.reached, JSON.stringify(walk.path)).toBe(NO_FIT_CALL.goal);
+        expect(walk.turns.at(-1)?.text).toMatch(/pharmacy|prescription/i);
+      },
+      {
+        stubReply: [
+          { tool: "press_keys", args: { keys: "0" } },
+          "",
+          "Hi, I'm an AI assistant calling about a prescription for Jordan Lee. Could you put me through to the pharmacy?",
+        ],
+      },
+    );
+  },
+  {
+    env: { CALLS_API_KEY: SECRET },
+    call: {
+      carrier: "twilio",
+      callId: "CA_tree",
+      parameters: await signCall({ id: "call_tree", prompt: PHARMACY_CALL.task }, SECRET),
+    },
   },
 );
 

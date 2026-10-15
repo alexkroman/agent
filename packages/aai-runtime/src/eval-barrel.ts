@@ -149,6 +149,18 @@ export {
   type EvalRoute,
   evalNetwork,
 } from "./eval/network.ts";
+// An automated PHONE MENU as data, walked by the keys the agent pressed — the
+// `eval-phone-tree` capability. Every agent that places calls meets one, and
+// every eval of it hand-scripted the walk off a tool's arguments.
+export {
+  type PhoneMenu,
+  type PhoneTree,
+  type PhoneTreeLeaf,
+  type PhoneTreeStep,
+  type PhoneTreeWalk,
+  type WalkPhoneTreeOptions,
+  walkPhoneTree,
+} from "./eval/phone-tree.ts";
 // The `run_code` builtin's two halves, read off a call list. Public because
 // four template evals had each declared the same schema and the same reader, and
 // each then guarded against the builtin's REFUSAL with a hand-typed regex over a

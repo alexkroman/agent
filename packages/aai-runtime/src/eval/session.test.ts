@@ -11,6 +11,7 @@
  */
 
 import { agent, tool } from "@alexkroman1/aai";
+import { sendDtmf } from "@alexkroman1/aai/experimental";
 import { withTools } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
@@ -356,6 +357,41 @@ describe("a scripted tool call", () => {
       await session.close();
       stub.release();
     }
+  });
+
+  test("a tool's sendDtmf reaches the session, and the turn reports the keys it pressed", async () => {
+    const { installStubLlm } = await import("./stub-llm.ts");
+    const pressKeys = tool({
+      description: "Press phone keys.",
+      inputSchema: z.object({ keys: z.string() }),
+      execute: ({ keys }, ctx) => ({ pressed: sendDtmf(ctx, keys) }),
+    });
+    const stub = installStubLlm([
+      { tool: "press_keys", args: { keys: "2" } },
+      "",
+      { tool: "press_keys", args: { keys: "2 0 4 #" } },
+      "",
+    ]);
+    const session = await openEvalSession({
+      agent: withTools(agent({ name: "Caller" }), { press_keys: pressKeys }),
+      llm: stub.llm,
+      providerEnv: stub.env,
+    });
+    try {
+      const menu = await session.say("For appointments, press 2.");
+      // Unclaimed, `sendDtmf` answered false here and the tool told the model
+      // the call had ended — on every press, in every eval.
+      expect(menu.toolCalls[0]?.result).toBe('{"pressed":true}');
+      expect(menu.dtmf).toEqual(["2"]);
+
+      const extension = await session.say("Enter the extension, then pound.");
+      expect(extension.dtmf).toEqual(["204#"]);
+    } finally {
+      await session.close();
+      stub.release();
+    }
+    // Released with the session, so a late press is the "call ended" answer.
+    expect(sendDtmf({ sessionId: session.id }, "1")).toBe(false);
   });
 
   test("a script ending on a tool call still ENDS the turn", async () => {

@@ -36,7 +36,12 @@ import type { CallRecord } from "./api-types.ts";
 import { CHUNK_CHARS, readCall, signCall } from "./call-params.ts";
 import { closeCall, liveCall, openCall, recordTurn } from "./live-calls.ts";
 import { call } from "./shared.ts";
-import { type CallEnded, type CallInput, MAX_RING_POLLS } from "./workflows/call.ts";
+import {
+  type CallEnded,
+  type CallInput,
+  MAX_RING_POLLS,
+  transcriptText,
+} from "./workflows/call.ts";
 import { callEndedToken } from "./workflows/tokens.ts";
 
 const SECRET = "test-calls-key";
@@ -317,6 +322,75 @@ describe("the session", () => {
     const ctx = createToolContext({ sessionId: "s_1" });
     await expect(run("press_keys", { keys: "one" }, ctx)).rejects.toThrow(/not a phone key/);
     expect(sentDtmfCalls(ctx)).toEqual([]);
+  });
+
+  test("a phone tree walked key by key lands in the transcript the summary reads", async () => {
+    openCall("s_1", "call_tree", 0);
+    const ctx = createToolContext({ sessionId: "s_1" });
+    recordTurn("s_1", "callee", "For appointments, press 2. For billing, press 3.");
+    await run("press_keys", { keys: "2" }, ctx);
+    recordTurn("s_1", "callee", "Enter your party's extension, then pound.");
+    await run("press_keys", { keys: "204#" }, ctx);
+    recordTurn("s_1", "callee", "Front desk, this is Dana.");
+
+    expect(sentDtmfCalls(ctx)).toEqual(["2", "204#"]);
+    const transcript = liveCall("call_tree")?.transcript ?? [];
+    expect(transcriptText(transcript)).toBe(
+      [
+        "Callee: For appointments, press 2. For billing, press 3.",
+        "Agent: [pressed 2]",
+        "Callee: Enter your party's extension, then pound.",
+        "Agent: [pressed 204#]",
+        "Callee: Front desk, this is Dana.",
+      ].join("\n"),
+    );
+  });
+
+  test("press_keys sends the keys a model spells with spaces, commas or pauses", async () => {
+    const ctx = createToolContext({ sessionId: "s_1" });
+    await run("press_keys", { keys: "2 0 4 #" }, ctx);
+    await run("press_keys", { keys: "0w2" }, ctx);
+    expect(sentDtmfCalls(ctx)).toEqual(["204#", "0w2"]);
+  });
+
+  test("press_keys on a call that has ended says so, and writes no press", async () => {
+    openCall("s_gone", "call_gone", 0);
+    // A context whose session has no audio to play into — what `sendDtmf` sees
+    // once the line has dropped.
+    const ctx = { ...createToolContext({ sessionId: "s_1" }), sessionId: "s_gone" };
+    const result = await run("press_keys", { keys: "1" }, ctx);
+
+    expect(result).toEqual({ pressed: null, error: "The call has ended." });
+    expect(liveCall("call_gone")?.transcript).toEqual([]);
+    closeCall("s_gone");
+  });
+
+  test("records both sides as they are committed, but not the runtime's recovery line", () => {
+    openCall("s_1", "call_lines", 0);
+    const ctx = createToolContext({ sessionId: "s_1" });
+    const meta = { id: "evt_1", at: 0 };
+    agentDef.events?.["userTranscript.committed"]?.(
+      { type: "userTranscript.committed", text: "Hello?", meta },
+      ctx,
+    );
+    agentDef.events?.["agentTranscript.committed"]?.(
+      { type: "agentTranscript.committed", text: "Hi, is this Maria?", meta },
+      ctx,
+    );
+    agentDef.events?.["agentTranscript.committed"]?.(
+      {
+        type: "agentTranscript.committed",
+        text: "Sorry, something went wrong.",
+        recovery: "turn-failed",
+        meta,
+      },
+      ctx,
+    );
+
+    expect(liveCall("call_lines")?.transcript).toEqual([
+      { role: "callee", text: "Hello?" },
+      { role: "agent", text: "Hi, is this Maria?" },
+    ]);
   });
 
   test("hands the transcript to the call's run as the session ends", async () => {

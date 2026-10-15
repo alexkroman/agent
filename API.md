@@ -14206,7 +14206,7 @@ import type { GenerateOptions } from '@alexkroman1/aai';
 import type { GenerateResult } from '@alexkroman1/aai';
 import type { InferSchemaOutput } from '@alexkroman1/aai';
 import { LlmProvider } from '@alexkroman1/aai/llm';
-import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionEvent } from '@alexkroman1/aai';
@@ -14439,6 +14439,7 @@ export type EvalTurn = {
     readonly completed: boolean;
     readonly errors: readonly SessionEvent<"error.reported">[];
     readonly endedSession?: boolean;
+    readonly dtmf?: readonly string[];
 };
 
 // @public
@@ -14584,6 +14585,37 @@ export function openEvalTextAgent(options: EvalTextAgentOptions): Promise<EvalTe
 
 // @public
 export function openEvalWorkflows(options: EvalWorkflowsOptions): EvalWorkflows;
+
+// @public
+export type PhoneMenu = {
+    readonly name: string;
+    readonly prompt: string;
+    readonly options: Readonly<Record<string, PhoneTree>>;
+};
+
+// @public
+export type PhoneTree = PhoneMenu | PhoneTreeLeaf;
+
+// @public
+export type PhoneTreeLeaf = {
+    readonly name: string;
+    readonly prompt: string;
+};
+
+// @public
+export type PhoneTreeStep = {
+    readonly menu: string;
+    readonly pressed: string;
+    readonly next: string | undefined;
+};
+
+// @public
+export type PhoneTreeWalk = {
+    readonly reached: string | undefined;
+    readonly path: readonly PhoneTreeStep[];
+    readonly turns: readonly EvalTurn[];
+    readonly stopped: "hung-up" | "max-prompts" | undefined;
+};
 
 export { RunCodeExecutor }
 
@@ -14853,6 +14885,16 @@ export type VmRunCodeOptions = {
     readonly timeoutMs?: number;
     readonly globals?: Record<string, unknown>;
 };
+
+// @public
+export function walkPhoneTree(session: Pick<EvalSession, "say">, tree: PhoneTree, options?: WalkPhoneTreeOptions): Promise<PhoneTreeWalk>;
+
+// @public
+export type WalkPhoneTreeOptions = {
+    readonly maxPrompts?: number;
+    readonly invalidPrefix?: string;
+    readonly noInputPrefix?: string;
+};
 ```
 
 ## `@alexkroman1/aai-runtime/eval/vitest`
@@ -14874,7 +14916,7 @@ import { installStubTranscribe } from '@alexkroman1/aai/testing/vitest';
 import { installStubUploads } from '@alexkroman1/aai/testing/vitest';
 import { isEvent } from '@alexkroman1/aai/testing';
 import { LlmProvider } from '@alexkroman1/aai/llm';
-import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RecordingWorkflows } from '@alexkroman1/aai/testing';
 import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
@@ -15185,6 +15227,7 @@ export type EvalTurn = {
     readonly completed: boolean;
     readonly errors: readonly SessionEvent<"error.reported">[];
     readonly endedSession?: boolean;
+    readonly dtmf?: readonly string[];
 };
 
 // @public
@@ -15358,6 +15401,37 @@ export function openEvalTextAgent(options: EvalTextAgentOptions): Promise<EvalTe
 
 // @public
 export function openEvalWorkflows(options: EvalWorkflowsOptions): EvalWorkflows;
+
+// @public
+export type PhoneMenu = {
+    readonly name: string;
+    readonly prompt: string;
+    readonly options: Readonly<Record<string, PhoneTree>>;
+};
+
+// @public
+export type PhoneTree = PhoneMenu | PhoneTreeLeaf;
+
+// @public
+export type PhoneTreeLeaf = {
+    readonly name: string;
+    readonly prompt: string;
+};
+
+// @public
+export type PhoneTreeStep = {
+    readonly menu: string;
+    readonly pressed: string;
+    readonly next: string | undefined;
+};
+
+// @public
+export type PhoneTreeWalk = {
+    readonly reached: string | undefined;
+    readonly path: readonly PhoneTreeStep[];
+    readonly turns: readonly EvalTurn[];
+    readonly stopped: "hung-up" | "max-prompts" | undefined;
+};
 
 export { RecordingWorkflows }
 
@@ -15665,6 +15739,16 @@ export type Unsubscribe = () => void;
 export type VmRunCodeOptions = {
     readonly timeoutMs?: number;
     readonly globals?: Record<string, unknown>;
+};
+
+// @public
+export function walkPhoneTree(session: Pick<EvalSession, "say">, tree: PhoneTree, options?: WalkPhoneTreeOptions): Promise<PhoneTreeWalk>;
+
+// @public
+export type WalkPhoneTreeOptions = {
+    readonly maxPrompts?: number;
+    readonly invalidPrefix?: string;
+    readonly noInputPrefix?: string;
 };
 ```
 
@@ -18206,7 +18290,7 @@ import { installStubUploads } from '@alexkroman1/aai/testing/vitest';
 import { installStubWorkflows } from '@alexkroman1/aai/testing/vitest';
 import { isEvent } from '@alexkroman1/aai/testing';
 import { LlmProvider } from '@alexkroman1/aai/llm';
-import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RecordingWorkflows } from '@alexkroman1/aai/testing';
 import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
 import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
@@ -18518,6 +18602,7 @@ export type EvalTurn = {
     readonly completed: boolean;
     readonly errors: readonly SessionEvent<"error.reported">[];
     readonly endedSession?: boolean;
+    readonly dtmf?: readonly string[];
 };
 
 // @public
@@ -18699,6 +18784,37 @@ export function openEvalTextAgent(options: EvalTextAgentOptions): Promise<EvalTe
 
 // @public
 export function openEvalWorkflows(options: EvalWorkflowsOptions): EvalWorkflows;
+
+// @public
+export type PhoneMenu = {
+    readonly name: string;
+    readonly prompt: string;
+    readonly options: Readonly<Record<string, PhoneTree>>;
+};
+
+// @public
+export type PhoneTree = PhoneMenu | PhoneTreeLeaf;
+
+// @public
+export type PhoneTreeLeaf = {
+    readonly name: string;
+    readonly prompt: string;
+};
+
+// @public
+export type PhoneTreeStep = {
+    readonly menu: string;
+    readonly pressed: string;
+    readonly next: string | undefined;
+};
+
+// @public
+export type PhoneTreeWalk = {
+    readonly reached: string | undefined;
+    readonly path: readonly PhoneTreeStep[];
+    readonly turns: readonly EvalTurn[];
+    readonly stopped: "hung-up" | "max-prompts" | undefined;
+};
 
 export { RecordingWorkflows }
 
@@ -19008,6 +19124,16 @@ export type Unsubscribe = () => void;
 export type VmRunCodeOptions = {
     readonly timeoutMs?: number;
     readonly globals?: Record<string, unknown>;
+};
+
+// @public
+export function walkPhoneTree(session: Pick<EvalSession, "say">, tree: PhoneTree, options?: WalkPhoneTreeOptions): Promise<PhoneTreeWalk>;
+
+// @public
+export type WalkPhoneTreeOptions = {
+    readonly maxPrompts?: number;
+    readonly invalidPrefix?: string;
+    readonly noInputPrefix?: string;
 };
 ```
 

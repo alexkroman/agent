@@ -21,7 +21,10 @@ import { recordTurn } from "../live-calls.ts";
 export default tool({
   description:
     "Press keys on the phone keypad to answer an automated phone menu or enter an " +
-    "extension. Call it without saying anything in the same turn.",
+    "extension. Call it without saying anything in the same turn. After a press, stay " +
+    "silent only while menus keep speaking: the moment a PERSON answers (a name, " +
+    '"how can I help you?", "how may I direct your call?"), greet them and say who you ' +
+    "are calling for and why.",
   inputSchema: z.object({
     keys: z
       .string()
@@ -33,6 +36,9 @@ export default tool({
   execute({ keys }, ctx) {
     if (!sendDtmf(ctx, keys)) return { pressed: null, error: "The call has ended." };
     recordTurn(ctx.sessionId, "agent", `[pressed ${keys}]`);
-    return { pressed: keys, next: "Wait silently for the menu to respond." };
+    return {
+      pressed: keys,
+      next: "Wait silently for the next menu. If a person or a question answers instead, speak.",
+    };
   },
 });

@@ -189,6 +189,11 @@ export {
   openEvalSession,
   openEvalTextAgent,
   openEvalWorkflows,
+  type PhoneMenu,
+  type PhoneTree,
+  type PhoneTreeLeaf,
+  type PhoneTreeStep,
+  type PhoneTreeWalk,
   type RunCodeExecutor,
   runCodeIn,
   runCodeOutput,
@@ -234,4 +239,6 @@ export {
   turnCalling,
   type Unsubscribe,
   type VmRunCodeOptions,
+  type WalkPhoneTreeOptions,
+  walkPhoneTree,
 } from "./eval-barrel.ts";

@@ -3430,7 +3430,40 @@ prompt, the session's own event stream. Before trusting a green run:
 `clientId`, `phone` and `call` are what `sessionClientId`, `sessionClientPhone`,
 `sessionCall` and `sessionContext` see; a refused call reads as
 `session.refused`. A tool's `endSession(ctx)` really hangs up
-(`turn.endedSession`, `session.ended`); that turn awaits `onSessionEnd`.
+(`turn.endedSession`, `session.ended`); that turn awaits `onSessionEnd`. A
+tool's `sendDtmf(ctx, keys)` presses really reach the session: `turn.dtmf` lists
+the keys pressed that turn, whatever the tool is called. To test an agent that
+places calls against an automated phone menu, declare the menu as data and walk
+it — `walkPhoneTree(session, tree)` plays each prompt, follows the keys the
+agent actually pressed (a wrong key replays the menu, as a real one does) and
+answers `{ reached, path, turns, stopped }`:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { describeEval, walkPhoneTree } from "@alexkroman1/aai-runtime/testing/vitest";
+import { expect } from "vitest";
+
+// In an eval this is `import agentDef from "virtual:aai/agent"`.
+const agentDef = agent({ name: "Caller", greeting: "" });
+
+describeEval(agentDef, (test) => {
+  test("presses through the menu to the pharmacist", async ({ session }) => {
+    const walk = await walkPhoneTree(session, {
+      name: "main",
+      prompt: "For billing, press 1. For the pharmacy, press 2.",
+      options: {
+        "1": { name: "billing", prompt: "Billing, this is Sam." },
+        "2": { name: "pharmacist", prompt: "Pharmacy, this is Dana. How can I help?" },
+      },
+    });
+    expect(walk.reached).toBe("pharmacist");
+    // A menu is not listening for words.
+    for (const turn of walk.turns.slice(0, -1)) expect(turn.text).toBe("");
+  });
+});
+```
+
+The `outbound-call-agent` template walks a three-level tree this way.
 `network: evalNetwork({ state, routes })` answers every tool, builtin and step
 `fetch`, refusing the rest: `ctx.network`. `workflows` takes a client or
 per-case factory: `ctx.workflowClient`. A failure prints the conversation.

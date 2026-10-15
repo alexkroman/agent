@@ -56,7 +56,7 @@
  */
 
 import type { AgentDef, SessionEvent } from "@alexkroman1/aai";
-import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
+import { claimDtmfSender, type ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { invariant, sleep } from "@alexkroman1/aai/internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
@@ -309,6 +309,14 @@ async function openWithFakes(
   // a real connection's — see `_session-end.ts`.
   const ending = watchSessionEnd(sessionId, stopSession);
   end = ending;
+  // `sendDtmf` finds a session through the sender `../session/attach.ts` claims
+  // for a real connection. This session has none, so unclaimed every press
+  // answered `false` and a phone-menu tool told the model the call had ENDED.
+  // Recorded, not played: the fakes discard agent audio anyway.
+  const pressed: string[] = [];
+  const releaseDtmf = claimDtmfSender(sessionId, (keys) => {
+    pressed.push(keys);
+  });
 
   let refused: string | undefined;
   try {
@@ -339,6 +347,7 @@ async function openWithFakes(
     // next repeat immediately afterwards. Best-effort on both, because the
     // ORIGINAL failure is the one worth reporting.
     ending.release();
+    releaseDtmf();
     await stopSession().catch(() => undefined);
     await runtime.shutdown().catch(() => undefined);
     throw err;
@@ -370,6 +379,7 @@ async function openWithFakes(
     // module having reordered its own start, not a case doing anything.
     invariant(stt !== undefined, "eval.session.stt.open", () => ({ sessionId }));
     const from = events.length;
+    const pressedFrom = pressed.length;
     // A push-to-talk agent answers only what was RELEASED: frame the utterance
     // as its client does, or the final is held and every case times out.
     const manual = options.agent.turnTaking?.detection === "manual";
@@ -392,6 +402,7 @@ async function openWithFakes(
     return {
       ...measuredTurn(what, events.slice(from), toolNames, "voice", options.agent),
       endedSession: ending.requested(),
+      dtmf: pressed.slice(pressedFrom),
     };
   };
 
@@ -427,6 +438,7 @@ async function openWithFakes(
       // The hook this stop (or an earlier hang-up) called, before the runtime
       // it may still be using goes away.
       await endHook.settled();
+      releaseDtmf();
       await runtime.shutdown();
       fake.release();
     },

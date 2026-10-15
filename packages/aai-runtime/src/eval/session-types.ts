@@ -67,6 +67,18 @@ export type EvalTurn = {
    * agent (which has no line to hang up) never does. Read it as `=== true`.
    */
   readonly endedSession?: boolean;
+  /**
+   * The keys the agent pressed during this turn — one entry per `sendDtmf`
+   * call, as the runtime queued them (separators dropped, `a`–`d` raised).
+   *
+   * Read off the session, not off a tool's name or arguments, so it holds for
+   * any tool that calls `sendDtmf`, and a tool whose press failed contributes
+   * nothing. `walkPhoneTree` follows a menu by it.
+   *
+   * Optional for the same reason as {@link endedSession}; {@link openEvalSession}'s
+   * `say()` always sets it.
+   */
+  readonly dtmf?: readonly string[];
 };
 
 /**

@@ -1,0 +1,17 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "eval-phone-tree",
+  "epoch": 1,
+  "rule": 2,
+  "sha256": "00824fa83942dc8baaca785afee7a7fb12612d1c4ab715c6b8c0fc32ec13b6fb",
+  "exports": [
+    "PhoneMenu",
+    "PhoneTree",
+    "PhoneTreeLeaf",
+    "PhoneTreeStep",
+    "PhoneTreeWalk",
+    "WalkPhoneTreeOptions",
+    "walkPhoneTree"
+  ],
+  "rollup": "aa5b29cf410b9e321e4fea41275af3b7b483d50594138c4dff43b97a9b6a74bb"
+}
