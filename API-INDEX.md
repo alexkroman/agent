@@ -606,7 +606,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `ClientHandle` | type | `@alexkroman1/aai-ui` | `aai-ui:client` | Handle returned by `mountClient` for cleanup. |
 | `ClientTheme` | type | `@alexkroman1/aai-ui` | `aai-ui:theme` | Theme color overrides for the AAI UI components. |
 | `ConsoleShell`, `ConsoleShellProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The design-system "console" chrome: a 760px column on the themed page with a header (icon + live-status eyebrow), an announced error banner, the main content … |
-| `Controls`, `ControlsProps` | const | `@alexkroman1/aai-ui` | `aai-ui:components` | Session control buttons: **Stop / Resume** and **New Conversation**. |
+| `Controls`, `ControlsProps` | const | `@alexkroman1/aai-ui` | `aai-ui:components` | Session control buttons: **Stop / Resume**, **New Conversation** and **End Call**. |
 | `ConversationItem` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | One row of the conversation: a finalized message, or a tool invocation. |
 | `ConversationLogEntry` | type | `@alexkroman1/aai-ui` | `aai-ui:conversation-log` | One entry of a `useConversationLog` transcript. |
 | `ConversationView`, `ConversationViewProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The conversation's skeleton over `useConversation`, with every row a render slot: a pinned scroll region holding the empty state, the interleaved messages and … |

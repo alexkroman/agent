@@ -100,10 +100,10 @@ function defaultButton({ action, label, onClick }: SessionControlButton): ReactN
  * The full control row of a custom chrome: **Start** before the call, then
  * **Pause / Resume**, **New Conversation** and **End** once it is up.
  *
- * {@link Controls} is the stock console's footer — Stop/Resume and New
- * Conversation, with the URL chips — and it has no Start branch and no End,
- * because the default shell shows a start SCREEN and a session there ends by
- * closing the tab. A chrome that owns its whole frame has no start screen, so
+ * {@link Controls} is the stock console's footer — Stop/Resume, New
+ * Conversation and End Call, with the URL chips — and it has no Start branch,
+ * because the default shell shows a start SCREEN, which End Call returns to. A
+ * chrome that owns its whole frame has no start screen, so
  * three of them each wrote this row: the same `!started` branch, the same
  * three buttons behind it, and the same twelve-line comment on why the middle
  * one is `end(); start()` and not `reset()`. The buttons' look is the

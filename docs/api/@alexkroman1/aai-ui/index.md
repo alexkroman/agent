@@ -1756,10 +1756,10 @@ function SessionControls(props: SessionControlsProps): ReactNode;
 The full control row of a custom chrome: **Start** before the call, then
 **Pause / Resume**, **New Conversation** and **End** once it is up.
 
-[Controls](#controls) is the stock console's footer — Stop/Resume and New
-Conversation, with the URL chips — and it has no Start branch and no End,
-because the default shell shows a start SCREEN and a session there ends by
-closing the tab. A chrome that owns its whole frame has no start screen, so
+[Controls](#controls) is the stock console's footer — Stop/Resume, New
+Conversation and End Call, with the URL chips — and it has no Start branch,
+because the default shell shows a start SCREEN, which End Call returns to. A
+chrome that owns its whole frame has no start screen, so
 three of them each wrote this row: the same `!started` branch, the same
 three buttons behind it, and the same twelve-line comment on why the middle
 one is `end(); start()` and not `reset()`. The buttons' look is the
@@ -12246,7 +12246,12 @@ Two wordings are decisions rather than transliterations of the member name:
 const Controls: MemoExoticComponent<FunctionComponent<ControlsProps>>;
 ```
 
-Session control buttons: **Stop / Resume** and **New Conversation**.
+Session control buttons: **Stop / Resume**, **New Conversation** and
+**End Call**.
+
+End Call is `end()`: it hangs up, drops the resume identity and returns the
+shell to its start screen, so the provider sockets close and the next start
+is a new session. Stop only pauses — the session is kept for a resume.
 
 Reads session state from [useSession](#usesession). Must be rendered inside a
 `SessionProvider`.

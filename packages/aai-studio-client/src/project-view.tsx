@@ -98,6 +98,17 @@ export function ProjectView(props: ProjectViewProps) {
   // toolbar that sets them and the pane that reads them are siblings.
   const [previewReload, setPreviewReload] = useState(0);
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("desktop");
+  // The Code pane's "Sync to GitHub" link exists only where the GitHub card
+  // does. Same key and cache options as the card's own read, so opening one
+  // after the other costs one round trip; enabled only on the Code tab, since
+  // each read is an Auth round trip (`api.githubStatus`).
+  const githubStatus = useQuery({
+    queryKey: queryKeys.github(bearer),
+    queryFn: () => api.githubStatus(bearer),
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
+    enabled: selectedTab === "code",
+  });
   /** The file the user picked, or null to follow the workspace's default. */
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   // A chat turn is in flight. Publish locks on this: the preview only
@@ -357,6 +368,9 @@ export function ProjectView(props: ProjectViewProps) {
                       await saveFile.mutateAsync({ path, content });
                       drafts.markSaved(path);
                     }}
+                    onSyncToGithub={
+                      githubStatus.data?.configured ? () => setSelectedTab("settings") : undefined
+                    }
                   />
                 </Suspense>
               )}

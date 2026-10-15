@@ -185,6 +185,14 @@ env var a tool or step reads; **publishing checks it**, so a missing key fails
 at `aai publish` instead of mid-call). `agent-guide/AGENT-API.md` lists every
 field.
 
+**To change the model, set `llm` in `agent.ts`** — templates usually omit it, so
+there is no line to find. The default is `gpt-5.6-luna` on the AssemblyAI LLM
+Gateway, which is **not part of AssemblyAI's free credits**: an account with no
+payment method is refused ("does not have access to this LLM Gateway model").
+Add a card in the dashboard, or bring another provider's key
+(`agent-guide/PROVIDERS.md`). A model must support tool calling if the agent has
+tools — `qwen3.5-4b-32k-fast` does not.
+
 **Four modes, one field: `mode`.** Omit it for PIPELINE — the default, and the
 mode this guide assumes. `mode: "s2s"` beside an `s2s: assemblyAIS2s()`
 descriptor selects speech-to-speech; `mode: "text"` a text-only agent;
