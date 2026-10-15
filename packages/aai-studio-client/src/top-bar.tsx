@@ -1,13 +1,22 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The studio's shared 60px top bar (brand, project name, the pane segmented
-// control, Publish, Account, Log out) and the Publish dropdown it opens.
-// Split from app.tsx, which owns all the state these render. Project
-// switching lives in the home sidebar (brand → home), not here.
+// The studio's shared top bar (brand, the open project, the production link,
+// Publish, Account), the Publish dropdown it opens, and the pane tabs the
+// canvas toolbar renders. Split from app.tsx, which owns all the state these
+// render. Project switching lives in the home sidebar (brand → home), not here.
 
 import clsx from "clsx";
+import type { ReactNode } from "react";
 import logoUrl from "./assets/assemblyai-logomark.svg";
 import { ACCOUNT_MENU_ID, ACCOUNT_TOGGLE_ATTR } from "./components/account-menu.tsx";
 import { DropdownPanel } from "./components/dropdown-panel.tsx";
+import {
+  ChevronDownIcon,
+  CodeIcon,
+  GearIcon,
+  KeyIcon,
+  PlayIcon,
+  UserIcon,
+} from "./components/icons.tsx";
 import { agentUrl } from "./platform-origin.ts";
 import { SEG_GROUP, segItemClass } from "./segmented.ts";
 
@@ -79,7 +88,7 @@ export function PublishMenu(props: PublishMenuProps) {
       <p className="m-0 text-[13px] leading-5 text-muted">
         Ships the current workspace to production with <code className="font-mono">aai deploy</code>
         . The preview updates on its own as you edit — only this touches production. Any build or
-        deploy error shows up here; third-party keys live under Secrets.
+        deploy error shows up here; third-party keys live in the Secrets pane.
       </p>
       <button
         type="button"
@@ -92,7 +101,7 @@ export function PublishMenu(props: PublishMenuProps) {
       </button>
       {publishedUrl && (
         <a
-          className="font-mono text-xs break-all text-indigo"
+          className="rounded-md border border-line bg-cream px-2.5 py-2 font-mono text-xs break-all text-indigo hover:border-indigo-300"
           href={publishedUrl}
           target="_blank"
           rel="noreferrer"
@@ -118,25 +127,19 @@ export function PublishMenu(props: PublishMenuProps) {
 }
 
 /**
- * The project panes, all peers in the segmented control, every one of them
+ * The project panes, all peers in the canvas toolbar's tabs, every one of them
  * offered from the moment a project exists.
  *
  * Settings joined them rather than staying a dropdown: it holds GitHub sync
  * and Delete project, which is more than a floating panel can lay
  * out. Nothing here gates on a build or a deploy —
- * Delete project has to work before anything has ever been published, and the
- * API pane says what the agent will answer once something is.
+ * Delete project has to work before anything has ever been published.
  *
- * The order is the deployed agent first (talk to it, call it, watch what it is
- * still doing, read what it stored), then the workspace and the project's own
- * configuration: UI LEADS, and API sits beside it because the two ask one
- * question — "what does this thing do?" — of a person and of a caller
- * respectively, so the client someone can actually use comes before the
- * contract it exercises.
- * Workflows follows them because a run is that API's output outliving the
- * request that made it. Secrets and Settings come last, in that order: a key
- * is something a working project needs, where Settings ends in Delete
- * project.
+ * The order is the running agent first, then the workspace and the project's
+ * own configuration: UI LEADS because talking to the agent is the point of the
+ * studio, Code follows as what makes it, and Secrets and Settings come last, in
+ * that order: a key is something a working project needs, where Settings ends
+ * in Delete project.
  *
  * **The UI tab's id is `preview` and its label is "UI".** The id names a
  * platform concept the whole product spells that way — the auto-deployed
@@ -149,16 +152,45 @@ export function PublishMenu(props: PublishMenuProps) {
  */
 export type StudioTab = "preview" | "code" | "secrets" | "settings";
 
-const TABS: { id: StudioTab; label: string }[] = [
-  { id: "preview", label: "UI" },
-  { id: "code", label: "Code" },
-  { id: "secrets", label: "Secrets" },
-  { id: "settings", label: "Settings" },
+const TABS: { id: StudioTab; label: string; icon: () => ReactNode }[] = [
+  { id: "preview", label: "UI", icon: () => <PlayIcon size={14} /> },
+  { id: "code", label: "Code", icon: () => <CodeIcon size={14} /> },
+  { id: "secrets", label: "Secrets", icon: () => <KeyIcon size={14} /> },
+  { id: "settings", label: "Settings", icon: () => <GearIcon size={14} /> },
 ];
+
+/**
+ * The pane switcher. It lives in the canvas toolbar (project-view.tsx), above
+ * the pane it switches, rather than in the top bar: the tabs belong to the
+ * canvas, and the top bar keeps only what is about the project as a whole.
+ */
+export function PaneTabs({
+  tab,
+  onSelectTab,
+}: {
+  tab: StudioTab;
+  onSelectTab: (tab: StudioTab) => void;
+}) {
+  return (
+    <nav aria-label="Panes" className={clsx("flex-none", SEG_GROUP)}>
+      {TABS.map((entry) => (
+        <button
+          key={entry.id}
+          type="button"
+          aria-current={tab === entry.id ? "page" : undefined}
+          className={clsx("seg", segItemClass(tab === entry.id))}
+          onClick={() => onSelectTab(entry.id)}
+        >
+          {entry.icon()}
+          {entry.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
 
 type TopBarProps = {
   project: string | null;
-  tab: StudioTab;
   deployedSlug?: string | undefined;
   hasBuild: boolean;
   /** A chat turn is streaming — Publish locks until it settles (see PublishMenuProps). */
@@ -174,122 +206,104 @@ type TopBarProps = {
   accountOpen?: boolean;
   /** Brand click: back to the hero home (deselects the project). */
   onGoHome: () => void;
-  onSelectTab: (tab: StudioTab) => void;
-  onLogOut: () => void;
   onTogglePublish: () => void;
   onToggleAccount: () => void;
 };
 
-/** Shared 60px top bar (all 1x options): brand, project name, segmented, actions. */
+/** The shared top bar: brand / project on the left, Live, Publish and Account on the right. */
 export function TopBar(props: TopBarProps) {
-  // Once per render: the href, the title and the link text are the same URL,
-  // and `agentUrl` builds a `new URL` each time it is asked.
+  // Once per render: the href and the title are the same URL, and `agentUrl`
+  // builds a `new URL` each time it is asked.
   const productionUrl = props.deployedSlug ? agentUrl(props.deployedSlug) : null;
   let publishTitle: string | undefined;
   if (!props.hasBuild) publishTitle = "Publish unlocks after your first build";
   else if (props.chatBusy) publishTitle = PUBLISH_WAIT_FOR_TURN;
   else if (props.publishOpen) publishTitle = "Hide the publish menu";
   return (
-    <header className="flex h-[60px] flex-none items-center gap-3.5 border-b border-line bg-panel px-5">
+    <header className="flex h-[52px] flex-none items-center gap-2 border-b border-line bg-panel px-4">
       <button
         type="button"
-        className="flex flex-none cursor-pointer items-center gap-2.5 border-none bg-transparent p-0"
+        className="-ml-1.5 flex flex-none cursor-pointer items-center gap-2 rounded-md border-none bg-transparent px-1.5 py-1 hover:bg-cream"
         onClick={props.onGoHome}
         title="Home"
       >
         <img src={logoUrl} alt="AssemblyAI" className="h-5 w-5" />
         {/* The wordmark is the first thing to go when the bar runs out of
-            room — the logo still identifies the app. `lg`, not `md`: the bar
-            needs ~830px for everything else, so hiding it only below 768
-            left the 768–830 band still overflowing. */}
-        <span className="hidden font-serif text-[16px] whitespace-nowrap text-fg lg:inline">
+            room — the logo still identifies the app. */}
+        <span className="hidden font-serif text-[16px] whitespace-nowrap text-fg md:inline">
           AssemblyAI Build
         </span>
       </button>
       {props.project && (
         <>
-          <div className="h-[22px] w-px flex-none bg-line" aria-hidden />
-          <div className="flex h-[34px] min-w-0 items-center gap-2 pl-1">
-            <span className="h-[7px] w-[7px] flex-none rounded-full bg-indigo" aria-hidden />
-            <span className="truncate text-[13px] text-muted" title={props.project}>
-              {props.project}
-            </span>
-          </div>
+          <span className="flex-none text-[18px] font-light text-line-strong" aria-hidden>
+            /
+          </span>
+          <span className="min-w-0 truncate text-[13px] font-medium text-fg" title={props.project}>
+            {props.project}
+          </span>
         </>
       )}
       <div className="flex-1" />
-      {/* The pane switcher is project-scoped — the hero home has no panes. */}
-      {props.project && (
-        <div className={clsx("flex-none", SEG_GROUP)}>
-          {TABS.map((entry, i) => (
-            <button
-              key={entry.id}
-              type="button"
-              aria-current={props.tab === entry.id ? "page" : undefined}
-              className={clsx("seg", segItemClass(props.tab === entry.id, i))}
-              onClick={() => props.onSelectTab(entry.id)}
-            >
-              {entry.label}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="flex-1" />
       {/* The PRODUCTION URL (Publish's slug, never the preview's) — a plain
-          link that opens the deployed agent in a new tab. */}
+          link that opens the deployed agent in a new tab. The pill says
+          "Live" and the title carries the URL: the address itself is in the
+          Publish menu, where there is room to read it. */}
       {productionUrl && (
         <a
-          // `min-w-0`: a flex item defaults to min-width:auto, so `truncate`
-          // alone could not shrink it and the action buttons overflowed the
-          // viewport instead (measured: 829px of bar in a 768px window).
-          className="max-w-80 min-w-0 truncate font-mono text-xs whitespace-nowrap text-muted hover:text-indigo"
+          className="flex h-8 flex-none items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium text-muted no-underline hover:bg-cream hover:text-fg"
           href={productionUrl}
           target="_blank"
           rel="noreferrer"
           title={`Production: ${productionUrl}`}
         >
-          {productionUrl} ↗
+          <span className="h-[7px] w-[7px] flex-none rounded-full bg-emerald-500" aria-hidden />
+          Live
         </a>
       )}
-      <button
-        type="button"
-        {...{ [PUBLISH_TOGGLE_ATTR]: "" }}
-        className={clsx(
-          "btn btn-primary flex items-center gap-2 px-[18px]",
-          // Pressed: darker face, inset shadow, and the caret flipped — the
-          // three together read as "this is held down, press again to close".
-          props.publishOpen &&
-            "border-indigo-hover bg-indigo-hover shadow-[inset_0_2px_4px_rgb(20_18_12/0.35)]",
-        )}
-        onClick={props.onTogglePublish}
-        disabled={!props.hasBuild || props.chatBusy}
-        title={publishTitle}
-        aria-haspopup="dialog"
-        aria-expanded={props.publishOpen ?? false}
-        aria-controls={props.publishOpen ? PUBLISH_MENU_ID : undefined}
-      >
-        Publish
-        <span aria-hidden className="text-[8px] leading-none">
-          {props.publishOpen ? "▲" : "▼"}
-        </span>
-      </button>
+      {/* Publish is project-scoped: the home screen has nothing to ship. */}
+      {props.project && (
+        <button
+          type="button"
+          {...{ [PUBLISH_TOGGLE_ATTR]: "" }}
+          className={clsx(
+            "btn btn-primary h-8 pr-2.5",
+            // Pressed: darker face, inset shadow, and the caret flipped — the
+            // three together read as "this is held down, press again to close".
+            props.publishOpen &&
+              "border-indigo-hover bg-indigo-hover shadow-[inset_0_2px_4px_rgb(20_18_12/0.35)]",
+          )}
+          onClick={props.onTogglePublish}
+          disabled={!props.hasBuild || props.chatBusy}
+          title={publishTitle}
+          aria-haspopup="dialog"
+          aria-expanded={props.publishOpen ?? false}
+          aria-controls={props.publishOpen ? PUBLISH_MENU_ID : undefined}
+        >
+          Publish
+          <span aria-hidden className={clsx("flex", props.publishOpen && "rotate-180")}>
+            <ChevronDownIcon />
+          </span>
+        </button>
+      )}
       {/* Account-scoped, so it sits outside the project panes and is here on
           the home screen too — where the API key would otherwise be
-          unreachable. */}
+          unreachable. Log out lives in the panel it opens. */}
       <button
         type="button"
         {...{ [ACCOUNT_TOGGLE_ATTR]: "" }}
-        className={clsx("btn", props.accountOpen && "border-fg text-fg")}
+        aria-label="Account"
+        className={clsx(
+          "flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-full border border-line bg-cream p-0 text-muted hover:border-line-strong hover:text-fg",
+          props.accountOpen && "border-fg text-fg",
+        )}
         onClick={props.onToggleAccount}
-        title="Your AssemblyAI account key"
+        title="Account"
         aria-haspopup="dialog"
         aria-expanded={props.accountOpen ?? false}
         aria-controls={props.accountOpen ? ACCOUNT_MENU_ID : undefined}
       >
-        Account
-      </button>
-      <button type="button" className="btn" onClick={props.onLogOut}>
-        Log out
+        <UserIcon size={15} />
       </button>
     </header>
   );

@@ -21,12 +21,12 @@ import { bufferFor, useFileDrafts } from "./file-drafts.ts";
 import { hasGithubResult } from "./github-result.ts";
 import { type StreamHandlers, useEventStream } from "./hooks/use-event-stream.ts";
 import { ChatPanel } from "./panes/chat.tsx";
-import { PreviewPane } from "./panes/preview.tsx";
+import { type PreviewDevice, PreviewPane, PreviewToolbar } from "./panes/preview.tsx";
 import { SecretsPane } from "./panes/secrets.tsx";
 import { SettingsPane } from "./panes/settings.tsx";
 import { queryKeys } from "./query-keys.ts";
 import { lazyRetry } from "./stale-build.ts";
-import { PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
+import { PaneTabs, PublishMenu, type StudioTab, TopBar } from "./top-bar.tsx";
 
 // CodeMirror is the bulk of the bundle and only the Code tab needs it — the
 // default (UI) path shouldn't pay for it.
@@ -79,7 +79,6 @@ type ProjectViewProps = {
   onInitialPromptSent: () => void;
   /** Back to the home hero (the brand button, and after a delete). */
   onGoHome: () => void;
-  onLogOut: () => void;
   accountOpen: boolean;
   onToggleAccount: () => void;
 };
@@ -94,6 +93,11 @@ export function ProjectView(props: ProjectViewProps) {
     hasGithubResult() ? "settings" : "preview",
   );
   const [publishOpen, setPublishOpen] = useState(false);
+  // The UI pane's browser chrome: a reload counter (part of the frame's key)
+  // and the desktop/phone width. Held here, beside the tab, because the
+  // toolbar that sets them and the pane that reads them are siblings.
+  const [previewReload, setPreviewReload] = useState(0);
+  const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("desktop");
   /** The file the user picked, or null to follow the workspace's default. */
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   // A chat turn is in flight. Publish locks on this: the preview only
@@ -247,18 +251,12 @@ export function ProjectView(props: ProjectViewProps) {
     <>
       <TopBar
         project={project}
-        tab={selectedTab}
         deployedSlug={deployedSlug}
         hasBuild={hasBuild}
         chatBusy={chatBusy}
         publishOpen={publishOpen}
         accountOpen={props.accountOpen}
         onGoHome={props.onGoHome}
-        onSelectTab={(next) => {
-          setPublishOpen(false);
-          setSelectedTab(next);
-        }}
-        onLogOut={props.onLogOut}
         onTogglePublish={() => setPublishOpen((v) => !v)}
         onToggleAccount={() => {
           setPublishOpen(false);
@@ -284,7 +282,7 @@ export function ProjectView(props: ProjectViewProps) {
           Failed to load project: {workspaceError}
         </div>
       )}
-      <main className="flex min-h-0 flex-1">
+      <main className="flex min-h-0 flex-1 gap-2 bg-cream p-2">
         <ChatPanel
           // undefined = still loading (the panel must not flash "new chat");
           // a failed fetch degrades to an empty history rather than wedging
@@ -309,46 +307,73 @@ export function ProjectView(props: ProjectViewProps) {
           onWorkspaceChanged={invalidateWorkspace}
           onBusyChange={setChatBusy}
         />
-        {selectedTab === "preview" && (
-          <PreviewPane
-            previewSlug={workspace.data?.previewSlug}
-            previewVersion={workspace.data?.previewVersion}
-            previewStale={workspace.data?.previewStale}
-            // "No preview yet" counts as stale, so the pane needs this to
-            // tell a first build in flight from an untouched project.
-            hasAgent={hasBuild}
-            previewError={workspace.data?.previewError}
-            onPreviewMissing={wakePreview}
-          />
-        )}
-        {selectedTab === "code" && (
-          <Suspense
-            fallback={<div className="flex flex-1 items-center justify-center text-subtle" />}
-          >
-            <CodeView
-              files={files}
-              currentFile={currentFile}
-              buffer={bufferFor(drafts.buffers, currentFile, files)}
-              onSelectFile={setSelectedFile}
-              onEdit={drafts.edit}
-              onSave={async (path, content) => {
-                await saveFile.mutateAsync({ path, content });
-                drafts.markSaved(path);
-              }}
-            />
-          </Suspense>
-        )}
-        {selectedTab === "secrets" && <SecretsPane bearer={bearer} project={project} />}
-        {selectedTab === "settings" && (
-          <SettingsPane
-            bearer={bearer}
-            data={workspace.data}
-            project={project}
-            deployedSlug={deployedSlug}
-            onDeleteProject={() => deleteProject.mutate()}
-            deleting={deleteProject.isPending}
-          />
-        )}
+        {/* The canvas: one framed card whose toolbar holds the pane tabs and,
+            over the UI pane, its browser chrome. */}
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-line bg-panel shadow-sm">
+            <div className="flex h-12 flex-none items-center gap-3 border-b border-line px-2">
+              <PaneTabs
+                tab={selectedTab}
+                onSelectTab={(next) => {
+                  setPublishOpen(false);
+                  setSelectedTab(next);
+                }}
+              />
+              {selectedTab === "preview" && (
+                <PreviewToolbar
+                  previewSlug={workspace.data?.previewSlug}
+                  device={previewDevice}
+                  onDeviceChange={setPreviewDevice}
+                  onReload={() => setPreviewReload((n) => n + 1)}
+                />
+              )}
+            </div>
+            <div className="flex min-h-0 flex-1">
+              {selectedTab === "preview" && (
+                <PreviewPane
+                  previewSlug={workspace.data?.previewSlug}
+                  previewVersion={workspace.data?.previewVersion}
+                  previewStale={workspace.data?.previewStale}
+                  // "No preview yet" counts as stale, so the pane needs this to
+                  // tell a first build in flight from an untouched project.
+                  hasAgent={hasBuild}
+                  previewError={workspace.data?.previewError}
+                  onPreviewMissing={wakePreview}
+                  reloadKey={previewReload}
+                  device={previewDevice}
+                />
+              )}
+              {selectedTab === "code" && (
+                <Suspense
+                  fallback={<div className="flex flex-1 items-center justify-center text-subtle" />}
+                >
+                  <CodeView
+                    files={files}
+                    currentFile={currentFile}
+                    buffer={bufferFor(drafts.buffers, currentFile, files)}
+                    onSelectFile={setSelectedFile}
+                    onEdit={drafts.edit}
+                    onSave={async (path, content) => {
+                      await saveFile.mutateAsync({ path, content });
+                      drafts.markSaved(path);
+                    }}
+                  />
+                </Suspense>
+              )}
+              {selectedTab === "secrets" && <SecretsPane bearer={bearer} project={project} />}
+              {selectedTab === "settings" && (
+                <SettingsPane
+                  bearer={bearer}
+                  data={workspace.data}
+                  project={project}
+                  deployedSlug={deployedSlug}
+                  onDeleteProject={() => deleteProject.mutate()}
+                  deleting={deleteProject.isPending}
+                />
+              )}
+            </div>
+          </div>
+        </section>
       </main>
     </>
   );

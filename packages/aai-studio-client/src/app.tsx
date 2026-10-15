@@ -118,12 +118,9 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
               panes and nothing to publish. */}
           <TopBar
             project={null}
-            tab="preview"
             hasBuild={false}
             accountOpen={accountOpen}
             onGoHome={() => selectProject(null)}
-            onSelectTab={() => undefined}
-            onLogOut={onSignOut}
             onTogglePublish={() => undefined}
             onToggleAccount={toggleAccount}
           />
@@ -149,13 +146,17 @@ export function App({ bearer, onSignOut, refreshAuth }: AppProps) {
           initialPrompt={pendingPrompt}
           onInitialPromptSent={() => setPendingPrompt(null)}
           onGoHome={() => selectProject(null)}
-          onLogOut={onSignOut}
           accountOpen={accountOpen}
           onToggleAccount={toggleAccount}
         />
       )}
       {/* Account-scoped, so it renders over either half. */}
-      <AccountMenu open={accountOpen} bearer={bearer} onClose={() => setAccountOpen(false)} />
+      <AccountMenu
+        open={accountOpen}
+        bearer={bearer}
+        onClose={() => setAccountOpen(false)}
+        onLogOut={onSignOut}
+      />
     </div>
   );
 }

@@ -316,8 +316,8 @@ These CLI-specific parts do NOT apply in AssemblyAI Build:
   or secret value into the chat. ASSEMBLYAI_API_KEY is handled
   automatically at publish time.
 - If an agent's tools need a third-party key, read it from ctx.env in the
-  tool code and tell the user to add it in the **Secrets pane** (top bar),
-  which works from the moment a project exists — no publish first.
+  tool code and tell the user to add it in the **Secrets pane** (a tab
+  beside the UI pane), which works from the moment a project exists — no publish first.
 - You cannot see which secrets exist, and nothing tells you when one is
   added or removed — the Secrets pane writes no message into this
   conversation. Read the key from ctx.env, say which name you used, and
@@ -422,8 +422,8 @@ right control:
   publish reaches this conversation. If they report a failed deploy, ask
   them to paste what the menu said, then fix it and ask them to publish
   again.
-- The **Secrets pane** (top bar) manages the project's env keys, on both
-  the published and preview agents. It needs no publish first — a key
+- The **Secrets pane** (a tab beside the UI pane) manages the project's env
+  keys, on both the published and preview agents. It needs no publish first — a key
   saved now reaches each agent as that agent next deploys.
 - Users have no terminal here. Anything still CLI-only means they install
   the aai CLI on their own machine.

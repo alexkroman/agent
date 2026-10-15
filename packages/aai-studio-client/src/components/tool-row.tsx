@@ -7,6 +7,7 @@
 import { isRecord } from "@alexkroman1/aai/utils";
 import { ToolCallRow } from "@alexkroman1/aai-ui";
 import type { UIMessage } from "ai";
+import { CheckIcon } from "./icons.tsx";
 
 /** Caps on the expanded row's raw JSON — a peek, not a document viewer. */
 const ARGS_PREVIEW_CHARS = 300;
@@ -104,6 +105,15 @@ export function prettyToolName(name: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/** The name a person reads for a tool part: the sandbox's label, else a prettified raw name. */
+export function toolTitle(
+  part: { type: string; toolName?: unknown },
+  labels?: Record<string, string> | undefined,
+): string {
+  const rawName = toolPartName(part as { type: string; toolName?: string });
+  return labels?.[rawName] ?? prettyToolName(rawName);
+}
+
 function isToolPart(part: { type: string }): boolean {
   return part.type.startsWith("tool-") || part.type === "dynamic-tool";
 }
@@ -125,8 +135,7 @@ export function ToolRow({
   /** Tool name → friendly label (from the sandbox's GET /studio/tools). */
   labels?: Record<string, string> | undefined;
 }) {
-  const rawName = toolPartName(part as { type: string; toolName?: string });
-  const name = labels?.[rawName] ?? prettyToolName(rawName);
+  const name = toolTitle(part, labels);
   const done = part.state === "output-available";
   const output = part.output;
   // An empty record is not an argument — `{}` in the expansion said exactly
@@ -141,6 +150,18 @@ export function ToolRow({
       title={name}
       detail={summarizeArgs(part.input)}
       pending={!done && active}
+      // The step's state in place of aai-ui's "TOOL" chip: inside a step
+      // group every row is a tool, so the chip only repeated the group's
+      // own heading.
+      icon={
+        done ? (
+          <span className="flex text-emerald-600">
+            <CheckIcon size={13} />
+          </span>
+        ) : (
+          <span className="mt-1.5 ml-1.5 block h-1.5 w-1.5 rounded-full bg-line-strong" />
+        )
+      }
       variant="compact"
       className="my-1"
     >

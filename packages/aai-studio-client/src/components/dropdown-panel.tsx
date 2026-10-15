@@ -40,7 +40,7 @@ export function DropdownPanel({
       id={id}
       role="dialog"
       aria-label={label}
-      className="absolute top-14 right-5 z-10 flex w-96 flex-col gap-3 rounded-lg border border-line bg-panel p-5 shadow-md"
+      className="absolute top-[58px] right-4 z-20 flex w-96 flex-col gap-3 rounded-xl border border-line bg-panel p-5 shadow-lg"
     >
       {children}
     </div>

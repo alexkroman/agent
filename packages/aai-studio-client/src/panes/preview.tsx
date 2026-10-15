@@ -10,8 +10,94 @@
 // still deploying shows the pane's own screen instead of the platform's raw
 // 404 body.
 
+import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api.ts";
+import { DesktopIcon, ExternalIcon, PhoneIcon, ReloadIcon } from "../components/icons.tsx";
+import { agentUrl } from "../platform-origin.ts";
+import { SEG_GROUP, segItemClass } from "../segmented.ts";
+
+/** The width the frame takes in the phone view — a common handset's CSS width. */
+const PHONE_FRAME_WIDTH = 390;
+
+/** How the UI pane frames the preview: the full canvas, or a handset-wide column. */
+export type PreviewDevice = "desktop" | "phone";
+
+/**
+ * The browser chrome the canvas toolbar shows over the UI pane: the preview's
+ * address, a reload, the desktop/phone toggle, and open-in-a-tab.
+ *
+ * The address is the PREVIEW agent's, never production's — production is the
+ * top bar's Live link. With no preview yet there is nothing to reload or open,
+ * so those controls disable rather than vanish, keeping the bar's shape.
+ */
+export function PreviewToolbar({
+  previewSlug,
+  device,
+  onDeviceChange,
+  onReload,
+}: {
+  previewSlug: string | undefined;
+  device: PreviewDevice;
+  onDeviceChange: (device: PreviewDevice) => void;
+  onReload: () => void;
+}) {
+  const url = previewSlug ? agentUrl(previewSlug) : null;
+  return (
+    <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
+      <div className="flex h-8 max-w-md min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-line bg-cream px-1">
+        <button
+          type="button"
+          className="icon-btn h-6 w-6"
+          aria-label="Reload preview"
+          title="Reload preview"
+          onClick={onReload}
+          disabled={url === null}
+        >
+          <ReloadIcon size={13} />
+        </button>
+        <span
+          className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted"
+          title={url ?? undefined}
+        >
+          {url ?? "No preview yet"}
+        </span>
+        {url && (
+          <a
+            className="icon-btn h-6 w-6"
+            href={url}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Open preview in a new tab"
+            title="Open preview in a new tab"
+          >
+            <ExternalIcon size={13} />
+          </a>
+        )}
+      </div>
+      <div className={SEG_GROUP} role="group" aria-label="Preview size">
+        {(
+          [
+            ["desktop", "Desktop view", <DesktopIcon key="d" size={14} />],
+            ["phone", "Phone view", <PhoneIcon key="p" size={14} />],
+          ] as const
+        ).map(([id, label, icon]) => (
+          <button
+            key={id}
+            type="button"
+            aria-label={label}
+            title={label}
+            aria-pressed={device === id}
+            className={clsx("seg w-7 justify-center px-0", segItemClass(device === id))}
+            onClick={() => onDeviceChange(id)}
+          >
+            {icon}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /**
  * How often a slug the platform doesn't serve yet is re-probed. Polling
@@ -153,6 +239,10 @@ type PreviewPaneProps = {
    * (no project open), and the pane just keeps probing.
    */
   onPreviewMissing?: () => Promise<unknown>;
+  /** Bumped by the toolbar's reload — part of the frame's key, so a bump remounts it. */
+  reloadKey?: number | undefined;
+  /** Full canvas, or a handset-wide column (see {@link PreviewToolbar}). */
+  device?: PreviewDevice | undefined;
 };
 
 /**
@@ -197,7 +287,7 @@ function PaneBanner({
 /** The pane's own screen, for when there is nothing to frame (yet). */
 function PaneScreen(props: { title: string; body: string }) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-cream p-10">
+    <div className="flex flex-1 flex-col items-center justify-center gap-3 bg-panel p-10">
       <span className="eyebrow self-center">Preview</span>
       <h2 className="m-0 text-center font-serif text-[28px] leading-[1.15] font-normal text-balance">
         {props.title}
@@ -234,13 +324,26 @@ export function PreviewPane(props: PreviewPaneProps) {
             Only the user's own preview agent is ever framed here —
             see the key-storage threat notes in main.tsx. Keyed by the preview
             version so a fresh preview deploy reloads the frame exactly once. */}
-        <iframe
-          key={`${slug}-${props.previewVersion ?? ""}`}
-          src={`/${slug}/`}
-          title="Preview agent"
-          allow="microphone"
-          className="min-h-0 w-full flex-1 border-0 bg-white"
-        />
+        <div
+          className={clsx(
+            "flex min-h-0 flex-1",
+            props.device === "phone" && "justify-center bg-cream px-4 py-5",
+          )}
+        >
+          <iframe
+            key={`${slug}-${props.previewVersion ?? ""}-${props.reloadKey ?? 0}`}
+            src={`/${slug}/`}
+            title="Preview agent"
+            allow="microphone"
+            style={props.device === "phone" ? { width: PHONE_FRAME_WIDTH } : undefined}
+            className={clsx(
+              "min-h-0 flex-1 border-0 bg-white",
+              props.device === "phone"
+                ? "max-w-full flex-none rounded-[22px] border border-line shadow-lg"
+                : "w-full",
+            )}
+          />
+        </div>
       </div>
     );
   }
@@ -258,7 +361,7 @@ export function PreviewPane(props: PreviewPaneProps) {
       <div className="flex min-h-0 flex-1 flex-col">
         <PaneBanner previewError={props.previewError} framed={false} />
         {ready === null && !building ? (
-          <div className="min-h-0 flex-1 bg-cream" />
+          <div className="min-h-0 flex-1 bg-panel" />
         ) : (
           <PaneScreen
             title="Starting your preview"

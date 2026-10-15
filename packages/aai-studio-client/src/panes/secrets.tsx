@@ -188,7 +188,7 @@ export function SecretsPane({ bearer, project }: SecretsPaneProps) {
           <label className="flex min-w-0 flex-1 flex-col gap-1.5">
             <span className="text-[11px] tracking-[0.6px] text-muted uppercase">Name</span>
             <input
-              className="field h-10 font-mono text-xs"
+              className="field h-9 font-mono text-xs"
               value={name}
               onChange={(e) => {
                 setName(e.target.value);
@@ -205,7 +205,7 @@ export function SecretsPane({ bearer, project }: SecretsPaneProps) {
           <label className="flex min-w-0 flex-1 flex-col gap-1.5">
             <span className="text-[11px] tracking-[0.6px] text-muted uppercase">Value</span>
             <input
-              className="field h-10 font-mono text-xs"
+              className="field h-9 font-mono text-xs"
               type="password"
               value={value}
               onChange={(e) => {
@@ -260,7 +260,7 @@ export function SecretsPane({ bearer, project }: SecretsPaneProps) {
                 </span>
                 <button
                   type="button"
-                  className="btn px-2 py-1 text-xs"
+                  className="btn btn-sm"
                   onClick={() => onDelete(secret)}
                   disabled={remove.isPending}
                 >

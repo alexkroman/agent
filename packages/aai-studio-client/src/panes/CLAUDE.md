@@ -15,6 +15,12 @@ queue) are in `../../CLAUDE.md`.
 
 ## The switcher
 
+- **The switcher is `PaneTabs`, rendered in the CANVAS toolbar, not the top
+  bar.** It sits above the pane it switches (as in Bolt/Lovable); the top bar
+  keeps only what is about the project as a whole (Live, Publish, Account).
+  Over the UI pane the same toolbar carries `PreviewToolbar` (address, Reload,
+  desktop/phone, open in a tab), whose reload counter and device live in
+  `project-view.tsx` because the toolbar and the pane are siblings.
 - **Order: UI, Code, Secrets, Settings** — the running agent first, then the
   workspace (`TABS` / `StudioTab` in `top-bar.tsx` is the one union;
   `project-view.tsx`'s `selectedTab` the only selection). Secrets precedes
@@ -24,15 +30,15 @@ queue) are in `../../CLAUDE.md`.
 - **No pane is gated.** If a gate ever returns: ONE exported predicate shared by
   the switcher and `project-view.tsx` (they must not disagree — a tab bar with
   no `aria-current` beside a blank pane), the fallback derived during render
-  rather than corrected by an effect, and the switcher's borders indexing the
-  VISIBLE list.
+  rather than corrected by an effect.
 - **The UI tab's id is `preview` and its label is "UI".** The id is the
   platform's word (the PREVIEW agent, `previewSlug`, `previewVersion`,
   `previewStale`); only the label moves, and `top-bar.test.tsx` pins label
   against id.
-- **A relabel must update the coding agent's preamble too**
-  (`aai-studio-server/src/prompts/studio-preamble.ts` says "UI pane"). It lives
-  in another package and no test reads it.
+- **A relabel or a move must update the coding agent's preamble too**
+  (`aai-studio-server/src/prompts/studio-preamble.ts` says "UI pane" and puts
+  Secrets "beside the UI pane"), then `pnpm sync:studio-prompt`. It lives in
+  another package and no test reads the wording.
 - **Anything that POINTS at a pane names the pane, never a direction or a path
   inside another pane** ("the Secrets pane", not "Secrets below" or "Settings →
   Secrets") — sections move.

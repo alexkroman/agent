@@ -15,6 +15,7 @@ import {
   PROBE_SLOW_AFTER,
   PROBE_SLOW_RETRY_MS,
   PreviewPane,
+  PreviewToolbar,
 } from "./preview.tsx";
 
 afterEach(() => {
@@ -82,7 +83,8 @@ describe("PreviewPane", () => {
     const first = frame(container);
     expect(first).toHaveAttribute("src", "/p-preview/");
     // A new preview deploy (new version) remounts the frame — that is the
-    // only reload path; nothing else may kill an in-progress voice session.
+    // only AUTOMATIC reload path; nothing else may kill an in-progress voice
+    // session. (The toolbar's Reload is the user asking for exactly that.)
     rerender(<PreviewPane previewSlug="p-preview" previewVersion="h2" />);
     expect(frame(container)).not.toBe(first);
   });
@@ -170,6 +172,61 @@ describe("PreviewPane", () => {
     await waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
     expect(screen.queryByText(/updates automatically as you edit/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
+  });
+});
+
+describe("PreviewPane: the toolbar's controls", () => {
+  test("a reload bump remounts the frame", async () => {
+    stubHealth(["p-preview"]);
+    const { container, rerender } = render(
+      <PreviewPane previewSlug="p-preview" previewVersion="h1" reloadKey={0} />,
+    );
+    await waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
+    const first = frame(container);
+    rerender(<PreviewPane previewSlug="p-preview" previewVersion="h1" reloadKey={0} />);
+    expect(frame(container)).toBe(first);
+    rerender(<PreviewPane previewSlug="p-preview" previewVersion="h1" reloadKey={1} />);
+    expect(frame(container)).not.toBe(first);
+  });
+
+  test("the phone view frames the agent at a handset's width", async () => {
+    stubHealth(["p-preview"]);
+    const { container } = render(<PreviewPane previewSlug="p-preview" device="phone" />);
+    await waitFor(() => expect(container.querySelector("iframe")).not.toBeNull());
+    expect(frame(container).style.width).toBe("390px");
+  });
+});
+
+describe("PreviewToolbar", () => {
+  const toolbarProps = { device: "desktop" as const, onDeviceChange: vi.fn(), onReload: vi.fn() };
+
+  test("shows the PREVIEW address, with reload and open-in-a-tab", () => {
+    const onReload = vi.fn();
+    render(<PreviewToolbar {...toolbarProps} previewSlug="p-preview" onReload={onReload} />);
+    expect(screen.getByText(/\/p-preview\/$/)).toBeInTheDocument();
+    screen.getByRole("button", { name: "Reload preview" }).click();
+    expect(onReload).toHaveBeenCalledTimes(1);
+    const open = screen.getByRole("link", { name: "Open preview in a new tab" });
+    expect(open.getAttribute("href")).toMatch(/\/p-preview\/$/);
+    expect(open).toHaveAttribute("target", "_blank");
+  });
+
+  test("with no preview there is nothing to reload or open", () => {
+    render(<PreviewToolbar {...toolbarProps} previewSlug={undefined} />);
+    expect(screen.getByText("No preview yet")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reload preview" })).toBeDisabled();
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+
+  test("the size toggle reports the pick and marks the current one", () => {
+    const onDeviceChange = vi.fn();
+    render(<PreviewToolbar {...toolbarProps} previewSlug="p" onDeviceChange={onDeviceChange} />);
+    expect(screen.getByRole("button", { name: "Desktop view" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    screen.getByRole("button", { name: "Phone view" }).click();
+    expect(onDeviceChange).toHaveBeenCalledWith("phone");
   });
 });
 

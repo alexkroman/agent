@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
 // Structure check: the studio's tool row should read as the same component as
-// the deployed agent UI's (aai-ui ToolCallBlock) — outlined TOOL chip, mono
-// name, truncated args preview, rotating chevron.
+// the deployed agent UI's (aai-ui ToolCallBlock) — a status mark in place of
+// the TOOL chip, mono name, truncated args preview, rotating chevron.
 
 import { fireEvent, render as renderDom, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -13,14 +13,17 @@ const render = (part: Record<string, unknown> & { type: string }): string =>
   renderToStaticMarkup(<ToolRow part={part} />);
 
 describe("ToolRow", () => {
-  test("shows a TOOL chip, a friendly tool name, and an args preview", () => {
+  test("shows a status mark (no TOOL chip), a friendly tool name, and an args preview", () => {
     const html = render({
       type: "tool-read_file",
       state: "output-available",
       input: { path: "agent.ts" },
       output: "ok",
     });
-    expect(html).toContain("Tool");
+    // Inside a step group every row is a tool, so the chip is replaced by
+    // the call's own state.
+    expect(html).not.toContain(">Tool<");
+    expect(html).toContain("text-emerald-600");
     // No raw snake_case in the row — the prettified fallback renders.
     expect(html).toContain("Read file");
     expect(html).not.toContain("read_file<");

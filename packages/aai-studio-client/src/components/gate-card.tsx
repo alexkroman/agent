@@ -95,7 +95,7 @@ export function GateProblem({ message, detail, retrying, onRetry }: GateProblemP
         // retrying state was invisible to anyone not hovering it.
         <button
           type="button"
-          className="btn btn-primary h-10 self-start px-5"
+          className="btn btn-primary self-start"
           disabled={retrying === true}
           onClick={() => onRetry()}
         >

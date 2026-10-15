@@ -1,8 +1,9 @@
 /* Copyright 2025 the AAI authors. MIT license. */
-/* Studio client — AssemblyAI website-refresh design system (design 1b).
-   Token contract: design_system/colors_and_type.css from the design handoff.
-   Warm neutrals only (never cool slate), indigo primary, serif display,
-   ALL-CAPS quasi-mono labels, small radii (no pill buttons). */
+/* Studio client — AssemblyAI website-refresh palette (design 1b) in a
+   builder-workspace layout: a chat column beside a framed canvas.
+   Warm neutrals only (never cool slate), indigo primary, serif display.
+   Controls are sentence case; ALL-CAPS is kept for the small `.eyebrow`
+   section labels only. */
 
 @import "tailwindcss";
 
@@ -11,7 +12,7 @@
    sits outside this package's root, where Tailwind's automatic source
    detection never looks. Scanning the .tsx source is safe even though the
    build bundles aai-ui's dist: compilation does not rewrite class strings. */
-@source "../../aai-ui/components";
+@source "../../aai-ui/src/components";
 
 @font-face {
   font-family: "Monument Grotesk";
@@ -101,9 +102,11 @@
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
+  --radius-xl: 12px;
 
   --shadow-sm: 0 1px 3px 0 rgb(20 18 12 / 0.06);
   --shadow-md: 0 4px 12px -2px rgb(20 18 12 / 0.08);
+  --shadow-lg: 0 12px 32px -8px rgb(20 18 12 / 0.14);
 }
 
 @layer base {
@@ -129,29 +132,41 @@
 }
 
 @layer components {
-  /* Tertiary button (CHANGE KEY, project switcher) — ALL-CAPS label */
+  /* Secondary button — sentence case, quiet border. */
   .btn {
-    @apply h-[34px] cursor-pointer rounded-sm border border-line bg-panel px-3.5 text-[10px] font-medium tracking-[1.4px] whitespace-nowrap text-fg uppercase hover:border-line-strong disabled:cursor-not-allowed;
+    @apply inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-md border border-line bg-panel px-3.5 text-[13px] font-medium whitespace-nowrap text-fg hover:border-line-strong hover:bg-cream disabled:cursor-not-allowed disabled:opacity-60;
   }
   /* Primary indigo button; disabled = warm-100 face per handoff */
   .btn-primary {
-    @apply border-indigo bg-indigo text-white hover:border-indigo-hover hover:bg-indigo-hover disabled:border-disabled disabled:bg-disabled disabled:text-line-strong;
+    @apply border-indigo bg-indigo text-white hover:border-indigo-hover hover:bg-indigo-hover disabled:border-disabled disabled:bg-disabled disabled:text-line-strong disabled:opacity-100;
+  }
+  /* Small button — inline row actions (Copy, Delete). */
+  .btn-sm {
+    @apply h-7 gap-1 px-2.5 text-xs;
+  }
+  /* Borderless icon button (toolbar reload, open-in-new-tab, close). */
+  .icon-btn {
+    @apply inline-flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-md border-none bg-transparent p-0 text-muted hover:bg-cream hover:text-fg disabled:cursor-not-allowed disabled:opacity-50;
   }
   /* Input */
   .field {
-    @apply rounded-md border border-line bg-panel px-3.5 text-[13px] text-fg placeholder:text-subtle focus:outline-none;
+    @apply rounded-md border border-line bg-panel px-3.5 text-[13px] text-fg placeholder:text-subtle focus:border-line-strong focus:outline-none;
   }
-  /* Eyebrow pill — tiny outlined rectangle, ALL CAPS */
+  /* Section label — tiny ALL CAPS, the one place the brand's caps survive. */
   .eyebrow {
-    @apply inline-block self-start rounded-sm border border-line-strong px-2 py-1 text-[9px] leading-none font-medium tracking-[1.2px] text-fg uppercase;
+    @apply inline-block self-start text-[10px] leading-none font-medium tracking-[1.2px] text-subtle uppercase;
   }
-  /* Segmented control label */
+  /* Tab in the canvas toolbar (the pane switcher). */
   .seg {
-    @apply h-8 cursor-pointer border-none px-4 text-[10px] font-medium tracking-[1.2px] whitespace-nowrap uppercase;
+    @apply inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md border-none px-2.5 text-[13px] font-medium whitespace-nowrap;
   }
-  /* Starter prompt button (1b) */
+  /* Starter prompt chip */
   .starter {
-    @apply cursor-pointer rounded-md border border-line bg-panel px-3.5 py-2.5 text-left text-[13px] text-fg hover:border-indigo-300 hover:text-indigo;
+    @apply cursor-pointer rounded-full border border-line bg-panel px-3.5 py-1.5 text-left text-[13px] text-muted hover:border-indigo-300 hover:text-indigo disabled:cursor-not-allowed disabled:opacity-60;
+  }
+  /* A composer: the textarea and its controls in one rounded card. */
+  .composer-card {
+    @apply flex flex-col rounded-xl border border-line bg-panel shadow-sm focus-within:border-line-strong focus-within:shadow-md;
   }
 }
 

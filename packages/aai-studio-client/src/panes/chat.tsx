@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Chat panel (design 1b): eyebrow header, welcome bubble + starter prompts
+// Chat panel: the conversation column beside the canvas — welcome bubble
 // when the project's conversation is empty, composer pinned at the bottom.
 // Mounted only once a project exists — the pre-project state is the HomeHero
 // (components/home.tsx), whose first prompt auto-creates a project.
@@ -18,6 +18,7 @@ import type { ChatSession, StudioStatus } from "../api.ts";
 import { errorText } from "../api-error.ts";
 import { EmptyStateBody, Transcript } from "../components/chat-transcript.tsx";
 import { Composer } from "../components/composer.tsx";
+import { SpinnerIcon } from "../components/icons.tsx";
 import { useMessageQueue } from "../hooks/use-message-queue.ts";
 import { createSandboxTransport } from "../sandbox-transport.ts";
 
@@ -72,6 +73,18 @@ type ChatPanelProps = {
   onBusyChange?: ((busy: boolean) => void) | undefined;
 };
 
+/** A wait in progress, said at the foot of the transcript with a spinner beside it. */
+function StatusLine({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 text-[13px] text-subtle">
+      <span className="text-indigo">
+        <SpinnerIcon />
+      </span>
+      <span className="tool-shimmer">{children}</span>
+    </div>
+  );
+}
+
 /**
  * What the brokered sandbox is doing, rendered at the foot of the restored
  * transcript — the thing the composer is waiting on, said where the next
@@ -85,7 +98,7 @@ type ChatPanelProps = {
  */
 function SandboxNote({ error, onRetry }: { error: unknown; onRetry: () => Promise<unknown> }) {
   if (error == null) {
-    return <p className="m-0 text-[13px] text-subtle italic">Starting sandbox…</p>;
+    return <StatusLine>Starting sandbox…</StatusLine>;
   }
   const reason = errorText(error);
   return (
@@ -276,9 +289,9 @@ function ProjectChat({
                 running — the same unexplained wait SandboxNote exists to
                 avoid on the way in. */}
             {restarting ? (
-              <div className="text-[13px] text-subtle italic">Restarting the sandbox…</div>
+              <StatusLine>Restarting the sandbox…</StatusLine>
             ) : (
-              busy && <div className="text-[13px] text-subtle italic">Working…</div>
+              busy && <StatusLine>Working…</StatusLine>
             )}
           </>
         }
@@ -322,11 +335,11 @@ export function ChatPanel(props: ChatPanelProps) {
     // broker is still worth reporting here — it is the only thing that has an
     // answer, and it comes with the button that retries it.
     body = (
-      <div className="flex flex-1 flex-col items-start justify-center gap-3 px-6 py-5">
+      <div className="flex flex-1 flex-col items-start justify-center gap-3 px-2 py-4">
         {props.sessionError != null ? (
           <SandboxNote error={props.sessionError} onRetry={props.onSessionStale} />
         ) : (
-          <p className="m-0 text-[13px] text-subtle italic">Loading conversation…</p>
+          <StatusLine>Loading conversation…</StatusLine>
         )}
       </div>
     );
@@ -360,12 +373,5 @@ export function ChatPanel(props: ChatPanelProps) {
       />
     );
   }
-  return (
-    <div className="flex w-[360px] flex-none flex-col border-r border-line bg-panel">
-      <div className="flex items-center justify-between gap-2 px-6 pt-5">
-        <span className="eyebrow">Agent</span>
-      </div>
-      {body}
-    </div>
-  );
+  return <div className="flex w-[392px] flex-none flex-col">{body}</div>;
 }

@@ -26,7 +26,9 @@ Three directories: `panes/` (the five modules `project-view.tsx` renders),
   `project-view.tsx` renders.
 - **The FRAME stays at `src/` root**: it is what a pane is mounted BY. `app.tsx`
   (the root), `main.tsx` (the Vite entry), `project-view.tsx` (renders the
-  panes), `top-bar.tsx` (the switcher) and `pane-shell.tsx` (the shared shell).
+  panes inside the canvas card), `top-bar.tsx` (the bar, Publish, and the
+  `PaneTabs` switcher the canvas toolbar renders) and `pane-shell.tsx` (the
+  shared shell).
   `auth.tsx`, `starters.ts` (an export subpath) and `_test-utils.ts` stay there
   too.
 - **`studio-client-pane-export` names THREE panes and that is not the roster.**
@@ -67,6 +69,32 @@ page with build instructions (unit tests do not need it).
   `starters.ts`'s one `STARTERS` list; `POST /studio/projects` carries only the
   prompt. There is no project kind: the server still ACCEPTS a legacy `kind`
   from a tab loaded before the switch was retired, and ignores it.
+
+## The visual system
+
+Warm neutrals, indigo primary, serif display (the AssemblyAI palette in
+`styles.css`'s `@theme`) in a builder layout: a chat column beside one framed
+canvas card on a cream page. Controls are sentence case; ALL CAPS survives only
+in `.eyebrow` section labels.
+
+- **Spacing is a system, not per-screen numbers.** Framed surfaces (the canvas
+  card, the composer, bubbles, step groups) sit on an 8px gutter (`main`'s
+  `p-2 gap-2`); text and the header logo share a 16px edge. Control heights:
+  32px in the top bar and canvas toolbar (`h-8`), 36px for `.btn`/`.field` in
+  page content (the default), 28px for inline row actions (`.btn-sm`). A
+  `CopyLine`'s code box has a 36px floor so its button matches.
+- **The transcript forces `scrollbar-gutter: auto`** (`chat-transcript.tsx`):
+  use-stick-to-bottom sets `stable both-edges` inline, which reserves a
+  classic scrollbar on both sides and left the transcript 15px inside the
+  composer.
+- **Consecutive tool calls fold into one step row** (`components/tool-group.tsx`,
+  `toSections` in `chat-transcript.tsx`): a count and the distinct tool names
+  when settled, the running call with a spinner while a turn streams, the
+  per-call `ToolRow`s on expand. A group is keyed by its FIRST call so it
+  keeps its identity as calls stream in; inside it `ToolRow` passes a status
+  mark as `ToolCallRow`'s `icon`, replacing the "TOOL" chip.
+- **Log out lives in the Account panel**, and Publish is absent (not disabled)
+  with no project open.
 
 ## Every cross-origin the page dials must be in its `connect-src`
 
@@ -237,6 +265,12 @@ assistant message a second time — one object at two indices, in the array the
 end-of-turn sync PERSISTS.
 
 ## Reach for `aai-ui` when it carries a RULE, not a look
+
+**`styles.css` must `@source` aai-ui's `src/components`**: the studio renders
+`Markdown` and `ToolCallRow` from aai-ui's dist, and Tailwind only generates a
+class it saw in a scanned file. The path once pointed at a directory the
+package layout had moved, so every aai-ui-only class (`list-disc`, `pl-5`, the
+row spacing) silently vanished and markdown lists lost their bullets.
 
 `@alexkroman1/aai-ui`'s components are driven by a theme OBJECT (`useTheme`,
 `--aai-*` properties) because they ship into end-user agent apps; the studio is

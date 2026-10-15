@@ -97,7 +97,7 @@ export function SignInGate({
       {methods.github && (
         <button
           type="button"
-          className="btn btn-primary h-10 self-start px-5"
+          className="btn btn-primary self-start"
           disabled={signIn.isPending}
           onClick={() => {
             if (!signIn.isPending) signIn.mutate({ kind: "github" });
@@ -118,7 +118,7 @@ export function SignInGate({
 
       {(methods.password || mode === "dev") && (
         <input
-          className="field h-10"
+          className="field h-9"
           type="email"
           autoComplete="email"
           // An accessible NAME, not just a placeholder: a placeholder is not one,
@@ -140,7 +140,7 @@ export function SignInGate({
 
       {methods.password && (
         <input
-          className="field h-10"
+          className="field h-9"
           type="password"
           autoComplete="current-password"
           aria-label="Password"
@@ -164,7 +164,7 @@ export function SignInGate({
       {mode === "dev" && (
         <button
           type="button"
-          className="btn btn-primary h-10 self-start px-5"
+          className="btn btn-primary self-start"
           disabled={signIn.isPending}
           onClick={submitDev}
         >
@@ -176,7 +176,7 @@ export function SignInGate({
         <div className="flex items-center gap-2.5">
           <button
             type="button"
-            className="btn btn-primary h-10 px-5"
+            className="btn btn-primary"
             disabled={signIn.isPending}
             onClick={() => submitEmail("password")}
           >
@@ -188,7 +188,7 @@ export function SignInGate({
               an empty project list. */}
           <button
             type="button"
-            className="btn h-10 px-5"
+            className="btn"
             disabled={signIn.isPending}
             onClick={() => submitEmail("signup")}
           >
@@ -267,11 +267,7 @@ export function CliLinkGate({
         <GateBlurb>
           You can return to the terminal — the CLI now uses this account's API key.
         </GateBlurb>
-        <button
-          type="button"
-          className="btn btn-primary h-10 self-start px-5"
-          onClick={() => onDone()}
-        >
+        <button type="button" className="btn btn-primary self-start" onClick={() => onDone()}>
           Open AssemblyAI Build
         </button>
       </GateCard>
@@ -297,18 +293,13 @@ export function CliLinkGate({
       <div className="flex gap-2.5">
         <button
           type="button"
-          className="btn btn-primary h-10 px-5"
+          className="btn btn-primary"
           disabled={approve.isPending}
           onClick={() => approve.mutate()}
         >
           {approve.isPending ? "Linking…" : "Link CLI"}
         </button>
-        <button
-          type="button"
-          className="btn h-10 px-5"
-          disabled={approve.isPending}
-          onClick={() => onDone()}
-        >
+        <button type="button" className="btn" disabled={approve.isPending} onClick={() => onDone()}>
           Not now
         </button>
       </div>
