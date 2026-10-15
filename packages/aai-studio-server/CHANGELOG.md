@@ -1,5 +1,31 @@
 # aai-studio-server
 
+## 0.11.28
+
+### Patch Changes
+
+- a03cdca: Slim the studio to voice agents only: remove the Voice agent / Workflow project
+  kind (one system prompt, one starter list), the API, Workflows and Logs panes,
+  the public /studio/api/<slug> page, and the Secrets pane's .env paste box. The
+  Twilio and Telnyx webhook URLs move to the Settings pane.
+- 9ed592e: Studio Code pane says the project's code is the user's to keep, and links to
+  GitHub sync where the platform has it.
+- af984c9: Redesign the studio UI: a builder layout with the chat column beside one framed
+  canvas whose toolbar holds the pane tabs and a browser bar for the UI pane
+  (reload, desktop/phone, open in a tab); consecutive tool calls fold into one
+  step row; a card composer; sentence-case controls on one spacing and
+  control-height system; Log out moves into the Account panel. Also restores
+  markdown list bullets in the chat (a stale Tailwind @source path dropped every
+  aai-ui class).
+- Updated dependencies [89737d1]
+- Updated dependencies [a03cdca]
+- Updated dependencies [9ed592e]
+  - @alexkroman1/aai-runtime@0.15.1
+  - aai-server@0.2.2
+  - @alexkroman1/aai-ui@0.15.1
+  - aai-studio-client@0.7.12
+  - @alexkroman1/aai@0.15.1
+
 ## 0.11.27
 
 ### Patch Changes

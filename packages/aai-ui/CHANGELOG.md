@@ -1,5 +1,15 @@
 # @alexkroman1/aai-ui
 
+## 0.15.1
+
+### Patch Changes
+
+- 9ed592e: First-run fixes from user feedback: the stock Controls row gains an End Call
+  button (session.end()); an LLM Gateway 400 for a model the account cannot use,
+  or one without tool calling, now names the fix; the scaffold .env.example and
+  authoring guide explain when a database is needed and where to set the model.
+- @alexkroman1/aai@0.15.1
+
 ## 0.15.0
 
 ### Patch Changes
