@@ -88,7 +88,14 @@ export type WorkspaceStore = {
   ): Promise<number>;
   /** Remove the row. Idempotent. */
   delete(scope: string, project: string): Promise<void>;
-  /** Project names in a scope, sorted. */
+  /**
+   * Project names in a scope, most recently written first (ties by name).
+   *
+   * Recency, not the alphabet, because this is the home sidebar's chat list
+   * and every coding agent's chat list leads with the one you were just in.
+   * "Written" is any `put` or `patch` — a turn's workspace sync, an editor
+   * save, a preview or Publish stamp — so the project worked on last is first.
+   */
   list(scope: string): Promise<string[]>;
 };
 
@@ -180,9 +187,10 @@ export function createPgWorkspaceStore(sql: SqlExec): WorkspaceStore {
     },
 
     async list(scope) {
-      const rows = await sql(`select project from ${TABLE} where scope = $1 order by project`, [
-        scope,
-      ]);
+      const rows = await sql(
+        `select project from ${TABLE} where scope = $1 order by updated_at desc, project`,
+        [scope],
+      );
       return rows.map((row) => String(row.project));
     },
   };
@@ -203,6 +211,11 @@ export function createMemoryWorkspaceStore(): WorkspaceStore {
   // every key beginning `${scope}/` — so scope `a` listed scope `a/b`'s
   // projects as its own.
   const key = projectKey;
+  // Write order standing in for `updated_at`: a counter rather than a clock,
+  // so two writes inside one millisecond still order the way they happened.
+  const written = new Map<string, number>();
+  let writes = 0;
+  const touch = (k: string) => written.set(k, ++writes);
 
   return {
     get(scope, project) {
@@ -216,6 +229,7 @@ export function createMemoryWorkspaceStore(): WorkspaceStore {
       if (expectedVersion === null) {
         if (existing) return Promise.reject(new WorkspaceConflictError(scope, project));
         rows.set(k, { doc: structuredClone(doc), version: 1 });
+        touch(k);
         return Promise.resolve(1);
       }
       if (!existing || existing.version !== expectedVersion) {
@@ -223,6 +237,7 @@ export function createMemoryWorkspaceStore(): WorkspaceStore {
       }
       const version = existing.version + 1;
       rows.set(k, { doc: structuredClone(doc), version });
+      touch(k);
       return Promise.resolve(version);
     },
 
@@ -242,11 +257,14 @@ export function createMemoryWorkspaceStore(): WorkspaceStore {
         version: existing.version + 1,
       };
       rows.set(k, record);
+      touch(k);
       return Promise.resolve(structuredClone(record));
     },
 
     delete(scope, project) {
-      rows.delete(key(scope, project));
+      const k = key(scope, project);
+      rows.delete(k);
+      written.delete(k);
       return Promise.resolve();
     },
 
@@ -254,12 +272,13 @@ export function createMemoryWorkspaceStore(): WorkspaceStore {
       // Split the composite and compare the scope EXACTLY, rather than testing
       // a prefix: a prefix scan is what let one scope see another's projects,
       // and it stays wrong-shaped even under a separator that cannot collide.
-      const projects: string[] = [];
+      const projects: { project: string; at: number }[] = [];
       for (const k of rows.keys()) {
         const [rowScope, project] = splitProjectKey(k);
-        if (rowScope === scope) projects.push(project);
+        if (rowScope === scope) projects.push({ project, at: written.get(k) ?? 0 });
       }
-      return Promise.resolve(projects.sort((a, b) => a.localeCompare(b)));
+      projects.sort((a, b) => b.at - a.at || a.project.localeCompare(b.project));
+      return Promise.resolve(projects.map((row) => row.project));
     },
   };
 }

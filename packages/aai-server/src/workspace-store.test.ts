@@ -39,6 +39,7 @@ function createFakeSql(opts: { failEnsures?: number } = {}) {
     const row = rows.get(k);
     if (!row || row.version !== expected) return [];
     const version = row.version + 1;
+    rows.delete(k);
     rows.set(k, { doc: String(doc), version });
     return [{ version }];
   };
@@ -59,6 +60,7 @@ function createFakeSql(opts: { failEnsures?: number } = {}) {
     for (const name of remove as string[]) delete doc[name];
     const merged = { ...doc, ...(JSON.parse(String(set)) as Record<string, unknown>) };
     const version = row.version + 1;
+    rows.delete(k);
     rows.set(k, { doc: JSON.stringify(merged), version });
     return [{ doc: JSON.stringify(merged), version }];
   };
@@ -66,12 +68,14 @@ function createFakeSql(opts: { failEnsures?: number } = {}) {
     rows.delete(key(scope, project));
     return [];
   };
+  // Writes re-insert their key (above), so the Map's order IS write order and
+  // `order by updated_at desc` is that order reversed.
   const listRows: SqlHandler = ([scope]) => {
     const prefix = `${scope} `;
     return [...rows.keys()]
       .filter((k) => k.startsWith(prefix))
       .map((k) => ({ project: k.slice(prefix.length) }))
-      .sort((a, b) => a.project.localeCompare(b.project));
+      .reverse();
   };
   return createDispatchingSql([
     ["create schema", ddl],
@@ -171,7 +175,7 @@ describe("createPgWorkspaceStore SQL", () => {
     });
     expect(del).toEqual({ query: expect.stringContaining("delete from"), params: ["sc", "pr"] });
     expect(list).toEqual({
-      query: expect.stringContaining("order by project"),
+      query: expect.stringContaining("order by updated_at desc, project"),
       params: ["sc"],
     });
   });

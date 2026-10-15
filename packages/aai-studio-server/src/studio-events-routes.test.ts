@@ -276,7 +276,8 @@ test("GET /studio/events streams the project list, updated on create and delete"
 
   const frames = (await framesP) as string[][];
   expect(frames[0]).toEqual(["proj"]);
-  expect(frames.at(-1)).toEqual(["proj", "second"]);
+  // ...lands at the TOP: the list is most recently written first.
+  expect(frames.at(-1)).toEqual(["second", "proj"]);
 });
 
 test("another caller's projects never leak into the list stream", async () => {

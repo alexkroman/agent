@@ -165,12 +165,12 @@ describe("workspace CRUD", () => {
     expect(await getWorkspace(store, "s", "p")).toBeNull();
   });
 
-  test("listProjects returns only the scope's projects, sorted", async () => {
+  test("listProjects returns only the scope's projects, newest first", async () => {
     const store = createMemoryWorkspaceStore();
-    await createWorkspace(store, "s1", "beta", { files: {} });
     await createWorkspace(store, "s1", "alpha", { files: {} });
+    await createWorkspace(store, "s1", "beta", { files: {} });
     await createWorkspace(store, "s2", "other", { files: {} });
-    expect(await listProjects(store, "s1")).toEqual(["alpha", "beta"]);
+    expect(await listProjects(store, "s1")).toEqual(["beta", "alpha"]);
     expect(await listProjects(store, "s2")).toEqual(["other"]);
     expect(await listProjects(store, "s3")).toEqual([]);
   });
