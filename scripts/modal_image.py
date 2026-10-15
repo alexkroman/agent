@@ -282,7 +282,8 @@ ASSERT_INSTALL_SURVIVED = (
 
 # How long a container stop waits for the node child to finish its own
 # shutdown before force-killing it. Shutdown hands agent guests off and exits
-# (no request to them at all, no session-drain wait), so this is generous
+# (no request to them at all, no session-drain wait; studio guests get a drain
+# bounded inside the node process's own 20s teardown net), so this is generous
 # headroom rather than a budget the shutdown consumes; Modal's SIGKILL
 # backstop still bounds the container's real grace period.
 NODE_STOP_TIMEOUT_SECS = 150

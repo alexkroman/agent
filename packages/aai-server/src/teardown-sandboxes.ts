@@ -31,7 +31,10 @@
  *
  * STUDIO guests are the opposite case: their coding-agent sessions live on
  * the host's control channel, so a dead host makes them useless — the
- * broker's `dispose()` terminates them. It is documented for shutdown but
+ * broker's `dispose()` terminates them, after a bounded drain for the turn
+ * running in each (the composition root starts it at the signal and hands
+ * this routine the promise, so it never delays releasing the agent guests). It is
+ * documented for shutdown but
  * once had no production call site at all, so a restart orphaned one guest
  * per active studio project, burning its orphan timeout billed on Modal.
  *

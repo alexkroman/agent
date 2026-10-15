@@ -65,6 +65,31 @@ export class StaleSandboxError extends Error {
 }
 
 /**
+ * The turn's stream broke AFTER the guest accepted it: a `200` whose body
+ * errored, or ended without the `finish` or `error` frame every turn the guest
+ * delivers closes with (`withStreamErrorChunk`, aai-guest-studio
+ * turn-stream.ts). The guest went away mid-turn — terminated in a platform
+ * deploy, or crashed.
+ *
+ * Not a {@link StaleSandboxError}, and the difference is the whole point: a
+ * stale sandbox ran nothing, so the transport can send the same request again
+ * on its own. Here the turn RAN, and part of a reply is already in the
+ * transcript, so the recovery is the chat's — regenerate the turn, which
+ * drops the partial reply first (turn-recovery.ts).
+ *
+ * The message is what the panel shows when that one regeneration fails too.
+ */
+export class TurnDroppedError extends Error {
+  constructor(options?: ErrorOptions) {
+    super(
+      "Lost the connection to the project's sandbox mid-turn. Send again in a moment.",
+      options,
+    );
+    this.name = "TurnDroppedError";
+  }
+}
+
+/**
  * The guest refuses a second concurrent turn (see `createTurnGate` in
  * aai-guest/studio-turn-stream.ts): a project has ONE sandbox, and each tab
  * posts its own whole-conversation view, so interleaving two turns raced the

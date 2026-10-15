@@ -103,19 +103,34 @@ export const TURN_IN_FLIGHT_CODE = "turn_in_flight";
  */
 export type TurnGate = {
   enter(): (() => void) | null;
+  /**
+   * Wait for the claim instead of being refused it. The claim is HANDED OVER
+   * at the holder's release, never released and re-taken, so no `enter()` can
+   * slip in between — the property a shutdown drain needs (turn-drain.ts):
+   * the turn it waited for ends, and no next turn starts on a guest that is
+   * about to be terminated.
+   */
+  enterWhenFree(): Promise<() => void>;
 };
 
 export function createTurnGate(): TurnGate {
   let holder: symbol | null = null;
+  const waiting: Array<(release: () => void) => void> = [];
+  const claim = (): (() => void) => {
+    const mine = Symbol("turn");
+    holder = mine;
+    return () => {
+      if (holder !== mine) return;
+      holder = null;
+      waiting.shift()?.(claim());
+    };
+  };
   return {
-    enter() {
-      if (holder !== null) return null;
-      const mine = Symbol("turn");
-      holder = mine;
-      return () => {
-        if (holder === mine) holder = null;
-      };
-    },
+    enter: () => (holder === null ? claim() : null),
+    enterWhenFree: () =>
+      holder === null
+        ? Promise.resolve(claim())
+        : new Promise<() => void>((resolve) => waiting.push(resolve)),
   };
 }
 
@@ -138,6 +153,11 @@ let processTurnGate = createTurnGate();
  */
 export function enterTurn(): (() => void) | null {
   return processTurnGate.enter();
+}
+
+/** Wait for this guest's workspace claim — see {@link TurnGate.enterWhenFree}. */
+export function enterTurnWhenFree(): Promise<() => void> {
+  return processTurnGate.enterWhenFree();
 }
 
 /** Test-only: drop the in-flight claim, like `resetSessionIdentity`. */

@@ -45,9 +45,17 @@ function openTurn() {
       write({ type: "finish" });
       sink?.close();
     },
-    /** Break the stream mid-turn — an LLM error, or the sandbox dying. */
+    /**
+     * Fail the turn the way the guest does when the model fails: an in-band
+     * `error` frame, then a clean close (`withStreamErrorChunk`).
+     */
     fail() {
-      sink?.error(new Error("stream broke"));
+      write({ type: "error", errorText: "model failed" });
+      sink?.close();
+    },
+    /** Break the stream mid-turn — the sandbox dying under it. */
+    drop() {
+      sink?.error(new TypeError("terminated"));
     },
   };
 }
@@ -222,6 +230,52 @@ describe("queued follow-ups", () => {
     expect(screen.queryByLabelText("Queued messages")).toBeNull();
     // Not auto-sent over the failure: the error is what the user needs to see.
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  test("a turn the sandbox drops mid-stream is regenerated, and the queue waits it out", async () => {
+    // A platform deploy terminating the guest under a running turn. The
+    // partial reply is replaced, the user's message is not sent twice, and a
+    // follow-up queued behind the turn is neither handed back nor run early.
+    const { turn, sent, fetchMock } = stubChatTurns(3);
+    renderPanel();
+
+    await send("build a greeter");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    turn(0).speak("half a reply");
+    await send("then add tests");
+    expect(await screen.findByText("then add tests")).toBeInTheDocument();
+
+    turn(0).drop();
+
+    // The SAME conversation again, ending in the user's message — once.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(sent[1]).toEqual(["build a greeter"]);
+    expect(screen.getByText("then add tests")).toBeInTheDocument();
+    expect(composer()).toHaveValue("");
+
+    turn(1).speak("the whole reply");
+    turn(1).finish();
+    expect(await screen.findByText("the whole reply")).toBeInTheDocument();
+    expect(screen.queryByText("half a reply")).toBeNull();
+    expect(screen.queryByText(/Lost the connection/)).toBeNull();
+
+    // Only now does the follow-up run.
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(sent[2]).toEqual(["build a greeter", "then add tests"]);
+  });
+
+  test("a regeneration that drops too is reported, not retried again", async () => {
+    const { turn, fetchMock } = stubChatTurns(2);
+    renderPanel();
+
+    await send("build a greeter");
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    turn(0).drop();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    turn(1).drop();
+
+    expect(await screen.findByText(/Lost the connection/)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   test("a sandbox that spun down is re-brokered and the message still lands", async () => {

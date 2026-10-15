@@ -34,7 +34,7 @@
  *   bearer token (AAI_GUEST_TOKEN, delivered via the exec env; the tunnel
  *   URL is public, so an upgrade without the token is rejected). JSON-RPC
  *   both ways: host→guest `studio/session-init`, `workspace/deploy`,
- *   `status`, and the `shutdown` notification; guest→host requests exist
+ *   `studio/drain`, `status`, and the `shutdown` notification; guest→host requests exist
  *   only for studio sessions (workspace sync, chat persistence). Bundle
  *   loading and tool trials are NOT RPC anymore: the studio's test_agent
  *   drives this harness's own loader/executor in-guest. There is no
@@ -87,6 +87,7 @@ import { handleStudioRequest } from "aai-guest-studio/chat";
 import { deployWorkspaceDir } from "aai-guest-studio/publish";
 import { initStudioSession } from "aai-guest-studio/session";
 import { handleSessionInitRequest, SessionInitParamsSchema } from "aai-guest-studio/session-init";
+import { drainTurns } from "aai-guest-studio/turn-drain";
 import { materializeWorkspace } from "aai-guest-studio/workspace-fs";
 import { type WebSocket, WebSocketServer } from "ws";
 import { z } from "zod";
@@ -165,6 +166,15 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
       const params = parseParams(req, SessionInitParamsSchema);
       if (params === null) break;
       state.studio = await initStudioSession(params);
+      sendResponse(req.id, { ok: true });
+      break;
+    }
+
+    // The host is shutting down: answer once no turn is running here and none
+    // can start (studio/turn-drain.ts). Unbounded on this side — the host
+    // holds the deadline, because only it knows its shutdown budget.
+    case "studio/drain": {
+      await drainTurns();
       sendResponse(req.id, { ok: true });
       break;
     }

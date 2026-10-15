@@ -88,6 +88,12 @@ export type GuestRpcSchema = {
   requestsOut: {
     "studio/session-init": { params: StudioSessionInitParams; result: unknown };
     "workspace/deploy": { params: WorkspaceDeployParams; result: unknown };
+    /**
+     * Shutdown: resolves once no coding-agent turn is running in the guest
+     * and none can start (aai-guest-studio/turn-drain.ts). The guest never
+     * times it out; the caller's deadline is the bound.
+     */
+    "studio/drain": { params: Record<string, never>; result: unknown };
   };
   requestsIn: {
     /** End-of-turn workspace write-back into the project store. */

@@ -178,7 +178,10 @@ export const MANAGE_REQUEST_TIMEOUT_MS = 5000;
  * `MANAGE_REQUEST_TIMEOUT_MS` (5s) = 13s, run in PARALLEL across guests — but
  * the Modal control-plane calls underneath (`sandbox.terminate()`) carry no
  * timeout of their own, so the sum is a floor rather than a bound. This is
- * what makes it one.
+ * what makes it one. Beside them, from the signal, the studio drains its
+ * coding-agent guests for up to `STUDIO_SHUTDOWN_DRAIN_MS` (12s,
+ * aai-studio-server `studio-session-idle.ts`) before terminating them; lowering
+ * this net means lowering that too (its spec holds the default inside).
  *
  * 20s leaves margin over that 13s; with {@link SHUTDOWN_CLOSE_FALLBACK_MS}
  * after it the process exits within ~23s of the signal, which must stay inside

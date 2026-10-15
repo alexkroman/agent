@@ -34,6 +34,11 @@ export function fakeGuest(
    * the specs that assert what may happen to a sandbox WHILE one is running.
    */
   holdDeploy?: Promise<void>,
+  /**
+   * Hold `studio/drain` open until this resolves — a chat turn running in the
+   * guest, which only the guest can see, for the shutdown-drain specs.
+   */
+  holdDrain?: Promise<void>,
 ): FakeGuest {
   const requests: FakeGuest["requests"] = [];
   const handlers = new Map<string, (params: unknown) => unknown>();
@@ -42,6 +47,7 @@ export function fakeGuest(
     sendRequest: async (method: string, params?: unknown) => {
       if (disposed) throw new Error("Connection disposed");
       requests.push({ method, params });
+      if (method === "studio/drain" && holdDrain !== undefined) await holdDrain;
       if (method === "workspace/deploy") {
         if (holdDeploy !== undefined) await holdDeploy;
         if (disposed) throw new Error("Connection disposed");

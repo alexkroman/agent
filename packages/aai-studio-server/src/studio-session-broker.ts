@@ -157,8 +157,19 @@ export type StudioSessionBroker = {
     files: Record<string, string>,
     target: WorkspaceDeployTarget,
   ): Promise<WorkspaceDeployOutcome>;
-  /** Tear down every live sandbox (tests, shutdown). */
-  dispose(): Promise<void>;
+  /**
+   * Tear down every live sandbox (tests, shutdown). With `drainMs`, each
+   * sandbox first gets up to that long to finish the work inside it — a chat
+   * turn, a Publish — and an idle one is terminated at once rather than held
+   * behind a busy one (see `STUDIO_SHUTDOWN_DRAIN_MS`). Omitted, it
+   * terminates immediately.
+   */
+  dispose(opts?: StudioDisposeOptions): Promise<void>;
+};
+
+export type StudioDisposeOptions = {
+  /** The shutdown drain budget; 0 or absent terminates at once. */
+  drainMs?: number;
 };
 
 export function createStudioSessionBroker(
@@ -193,7 +204,11 @@ export function createStudioSessionBroker(
   const sessionLock = createKeyedLock();
 
   // Teardown + idle eviction (studio-session-idle.ts).
-  const { disposeEntry, stop: stopSweeper } = createSessionReaper({ sessions, fleet, idleMs });
+  const {
+    disposeEntry,
+    quiesce,
+    stop: stopSweeper,
+  } = createSessionReaper({ sessions, fleet, idleMs });
 
   /**
    * Wire one sandbox's guest→host RPCs (studio-session-wire.ts). Everything
@@ -304,10 +319,18 @@ export function createStudioSessionBroker(
 
     deployWorkspace: deployWorkspaceImpl,
 
-    async dispose() {
+    async dispose({ drainMs = 0 } = {}) {
       stopSweeper();
+      // Before the drain, so it starts no deploy the drain would then wait on.
       previews.dispose();
-      await Promise.allSettled([...sessions.values()].map((entry) => disposeEntry(entry)));
+      // Per entry, so an idle sandbox is terminated at once and a busy one
+      // waits only for its own work.
+      await Promise.allSettled(
+        [...sessions.values()].map(async (entry) => {
+          if (drainMs > 0) await quiesce(entry, drainMs);
+          await disposeEntry(entry);
+        }),
+      );
     },
   };
 }

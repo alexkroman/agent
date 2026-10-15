@@ -420,9 +420,11 @@ app = modal.App("aai-server-web")
     min_containers=MIN_CONTAINERS,
     max_containers=MAX_CONTAINERS,
     buffer_containers=BUFFER_CONTAINERS,
-    # Shutdown is hand-off-and-exit (no session-drain wait): the node SIGTERM
-    # handler leaves agent guests running for the fleet, disposes the studio
-    # broker, and exits — seconds, well inside this grace period. Modal
+    # Shutdown is hand-off-and-exit (no agent session-drain wait): the node
+    # SIGTERM handler leaves agent guests running for the fleet, gives the
+    # studio guests a bounded drain (STUDIO_SHUTDOWN_DRAIN_MS, 12s, inside the
+    # 20s SHUTDOWN_TEARDOWN_TIMEOUT_MS net) and disposes the studio broker, and
+    # exits — well inside this grace period. Modal
     # signals this Python runtime, not the node child — `run_node` below
     # forwards the stop signal and waits, which is the only reason the node
     # SIGTERM handler runs at all on scale-in/redeploy.

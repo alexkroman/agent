@@ -36,6 +36,7 @@ import { createOrchestrator, teardownSandboxes } from "aai-server/sandbox";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 import { createMemoryPreviewQueue, createPgPreviewQueue } from "./studio-preview-queue.ts";
 import { createPgStudioRateLimiters } from "./studio-rate-limit.ts";
+import { studioShutdownDrainMs } from "./studio-session-idle.ts";
 import { createPgStudioSessionRegistry } from "./studio-session-registry.ts";
 
 const log = createLogger("studio.boot");
@@ -103,9 +104,19 @@ async function main(): Promise<void> {
   // release: without the dispose they outlive it and burn their orphan
   // timeout (billed, on Modal) on every scale-in.
   const teardown = async (): Promise<void> => {
+    // Started HERE, at the signal, not when teardownSandboxes reaches the
+    // broker after its grace: the drain lets a studio turn or Publish already
+    // running finish (bounded — see STUDIO_SHUTDOWN_DRAIN_MS for why the bound
+    // is what it is), and every second of the grace is a second of that
+    // budget. The agent guests are not queued behind it — teardownSandboxes
+    // settles both side by side.
+    const studioDisposed = disposeStudio({ drainMs: studioShutdownDrainMs() });
+    // teardownSandboxes logs a rejection when it awaits this; until then the
+    // grace would leave it looking unhandled.
+    void studioDisposed.catch(() => undefined);
     await teardownSandboxes({
       slots: base.slots,
-      broker: { dispose: disposeStudio },
+      broker: { dispose: () => studioDisposed },
       // With a fleet directory a peer replica can find this one's agent guests
       // by name, so they are handed off running rather than retired — see
       // teardown-sandboxes.ts for the deploy outage retiring them caused.

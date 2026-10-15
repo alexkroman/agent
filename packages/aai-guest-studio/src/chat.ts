@@ -40,6 +40,7 @@ import { compactMessages, needsCompaction } from "./compaction.ts";
 import { CORS_HEADERS, readBody, sendJson } from "./http.ts";
 import { STUDIO_TOOL_LABELS } from "./tools.ts";
 import { createTurnPolicy } from "./turn-continue.ts";
+import { DRAINING_CODE, isDraining, trackTurnWork } from "./turn-drain.ts";
 import {
   createWorkspaceCheckpointer,
   MUTATING_TOOLS,
@@ -202,11 +203,12 @@ async function runTurn(
     // logged, never fatal: losing one snapshot must not kill the reply.
     onFinish: ({ messages: updated }) => {
       // Behind any in-flight checkpoint, so the TURN-COMPLETE sync lands last.
-      void settleTurn(session, updated, snapshotWorkspace, checkpointWorkspace).catch(
-        (err: unknown) => {
-          console.error(`studio chat: failed to settle turn: ${errorMessage(err)}`);
-        },
-      );
+      // Tracked, so a shutdown drain waits for it (turn-drain.ts).
+      void trackTurnWork(
+        settleTurn(session, updated, snapshotWorkspace, checkpointWorkspace),
+      ).catch((err: unknown) => {
+        console.error(`studio chat: failed to settle turn: ${errorMessage(err)}`);
+      });
     },
     toErrorText: errorMessage,
   });
@@ -256,6 +258,14 @@ export function handleStudioRequest(
     sendJson(res, 405, { error: "Method not allowed" });
     return true;
   }
+  // A draining guest holds the claim for good (turn-drain.ts), so the 423
+  // below would tell the tab another tab is busy — and a busy guest is one the
+  // client waits on. 409 is the client's "re-broker" (resilient-fetch.ts),
+  // which is the right answer for a sandbox about to be terminated.
+  if (isDraining()) {
+    sendJson(res, 409, { error: "This sandbox is shutting down", code: DRAINING_CODE });
+    return true;
+  }
   // One claim on the workspace at a time per guest: a project has one sandbox
   // and every tab posts its own whole-conversation view, so a second concurrent
   // turn interleaves workspace edits and its settle erases the first turn. The
@@ -281,7 +291,9 @@ export function handleStudioRequest(
   // strictly after this response closed here — so back-to-back queued turns
   // are never refused as concurrent (25 in a row, measured).
   res.on("close", release);
-  void runTurn(session, deps, req, res)
+  // Tracked past the claim's release: a client abort closes the response
+  // before the turn reaches its settle, and a drain must still wait for both.
+  void trackTurnWork(runTurn(session, deps, req, res))
     .catch((err: unknown) => {
       const message = errorMessage(err);
       console.error(`studio chat: turn failed: ${message}`);

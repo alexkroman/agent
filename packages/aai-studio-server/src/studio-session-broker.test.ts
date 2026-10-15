@@ -21,6 +21,7 @@ import {
 import { createMemoryPreviewQueue } from "./studio-preview-queue.ts";
 import type { adoptPeerSession } from "./studio-session-adopt.ts";
 import { createStudioSessionBroker } from "./studio-session-broker.ts";
+import { QUIESCE_POLL_MS } from "./studio-session-idle.ts";
 import { createMemoryStudioSessionRegistry } from "./studio-session-registry.ts";
 import { createWorkspace, syncWorkspaceSource } from "./studio-workspace.ts";
 
@@ -368,5 +369,96 @@ describe("cross-replica studio sessions", () => {
     await a.broker.ensureSession(SCOPE, PROJECT, "caller-key");
     await a.broker.dispose();
     expect(await shared.registry.get(SCOPE, PROJECT)).toBeNull();
+  });
+});
+
+describe("shutdown drain", () => {
+  const TARGET = { serverUrl: "https://platform.example", apiKey: "caller-key", slug: "proj" };
+  const drains = (guest: FakeGuest) => guest.requests.filter((r) => r.method === "studio/drain");
+
+  test("a dispose with no budget terminates at once and asks the guest nothing", async () => {
+    const guest = fakeGuest();
+    const { broker } = await makeBroker([guest]);
+    await broker.ensureSession(SCOPE, PROJECT, "k");
+    await broker.dispose();
+    expect(drains(guest)).toHaveLength(0);
+    expect(guest.disposed()).toBe(true);
+  });
+
+  test("waits for the turn running in the guest before terminating it", async () => {
+    // The host cannot see a chat turn (it streams browser→guest); only the
+    // guest's answer to `studio/drain` says it is over.
+    const turn = Promise.withResolvers<void>();
+    const guest = fakeGuest(undefined, undefined, turn.promise);
+    const { broker } = await makeBroker([guest]);
+    await broker.ensureSession(SCOPE, PROJECT, "k");
+
+    const done = broker.dispose({ drainMs: 10_000 });
+    await vi.waitFor(() => expect(drains(guest)).toHaveLength(1));
+    expect(guest.disposed()).toBe(false);
+
+    turn.resolve();
+    await done;
+    expect(guest.disposed()).toBe(true);
+  });
+
+  test("terminates at the budget when the turn outlasts it", async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    // A guest that never answers: the bound is the host's own, not the RPC's.
+    const guest = fakeGuest(undefined, undefined, new Promise<void>(() => undefined));
+    const { broker } = await makeBroker([guest]);
+    await broker.ensureSession(SCOPE, PROJECT, "k");
+
+    const finished = vi.fn();
+    void broker.dispose({ drainMs: 5000 }).then(finished);
+    await vi.advanceTimersByTimeAsync(4999);
+    expect(guest.disposed()).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(finished).toHaveBeenCalled();
+    expect(guest.disposed()).toBe(true);
+  });
+
+  test("waits for a Publish in flight — host work the guest's answer does not cover", async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const build = Promise.withResolvers<void>();
+    const guest = fakeGuest(undefined, build.promise);
+    const { broker } = await makeBroker([guest]);
+    await broker.ensureSession(SCOPE, PROJECT, "k");
+    const publish = broker.deployWorkspace(SCOPE, PROJECT, { "agent.ts": "x" }, TARGET);
+
+    const finished = vi.fn();
+    void broker.dispose({ drainMs: 10_000 }).then(finished);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(guest.disposed()).toBe(false);
+
+    build.resolve();
+    await publish;
+    await vi.advanceTimersByTimeAsync(QUIESCE_POLL_MS);
+    expect(finished).toHaveBeenCalled();
+    expect(guest.disposed()).toBe(true);
+  });
+
+  test("an idle sandbox is terminated at once, not held behind a busy one", async () => {
+    const turn = Promise.withResolvers<void>();
+    const busy = fakeGuest("wss://busy.example:443", undefined, turn.promise);
+    const idle = fakeGuest("wss://idle.example:443");
+    const { broker, workspaces } = await makeBroker([busy, idle]);
+    await createWorkspace(workspaces, SCOPE, "other", { files: {} });
+    await broker.ensureSession(SCOPE, PROJECT, "k");
+    await broker.ensureSession(SCOPE, "other", "k");
+
+    const done = broker.dispose({ drainMs: 10_000 });
+    await vi.waitFor(() => expect(idle.disposed()).toBe(true));
+    expect(busy.disposed()).toBe(false);
+
+    turn.resolve();
+    await done;
+    expect(busy.disposed()).toBe(true);
   });
 });

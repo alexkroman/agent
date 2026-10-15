@@ -147,7 +147,13 @@ Elsewhere:
   gateway on the caller's key, tools run on the guest filesystem.
 - Idle eviction at 5 min (`STUDIO_SESSION_IDLE_MS`); a dead sandbox heals on the
   next broker call. Studio guests go down with their replica (`dispose()`):
-  their sessions live on the host's control channel.
+  their sessions live on the host's control channel — after a bounded drain
+  ("Retirement and shutdown" in `../CLAUDE.md`).
+- **`inFlight` cannot see a chat turn** (it streams browser→guest; the host
+  hears of it only at end of turn), so "is this sandbox busy" at shutdown is
+  asked of the GUEST (`studio/drain`) as well as read from `inFlight`. A new
+  kind of in-guest work owes the same: `trackTurnWork` it in the guest, or hold
+  `inFlight` on the host.
 
 ## One studio sandbox per project, fleet-wide
 
