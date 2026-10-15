@@ -1,5 +1,21 @@
 # aai-studio-server
 
+## 0.11.32
+
+### Patch Changes
+
+- 983511d: Offer studio starter prompts for eleven more templates: hotel reception, travel
+  concierge, technical support, front desk, home assistant, executive inbox,
+  applicant screening, research planner, topic briefing, push-to-talk notes and
+  the word game.
+- Updated dependencies [b2e8001]
+- Updated dependencies [265e845]
+  - aai-server@0.2.6
+  - @alexkroman1/aai@0.15.5
+  - @alexkroman1/aai-runtime@0.15.5
+  - @alexkroman1/aai-ui@0.15.5
+  - aai-studio-client@0.7.16
+
 ## 0.11.31
 
 ### Patch Changes

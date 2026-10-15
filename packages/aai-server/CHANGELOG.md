@@ -1,5 +1,17 @@
 # aai-server
 
+## 0.2.6
+
+### Patch Changes
+
+- b2e8001: The studio coding agent eval gains a multi-turn case: a follow-up must change
+  the tool the first turn built.
+- 265e845: The studio coding agent eval names its shipped-prompt copy at
+  packages/aai-guest-studio/studio-prompts/, where it moved.
+- aai-guest@0.6.20
+  - @alexkroman1/aai@0.15.5
+  - @alexkroman1/aai-runtime@0.15.5
+
 ## 0.2.5
 
 ### Patch Changes
