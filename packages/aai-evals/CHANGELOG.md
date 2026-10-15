@@ -1,5 +1,12 @@
 # aai-evals
 
+## 0.2.14
+
+### Patch Changes
+
+- @alexkroman1/aai@0.15.4
+  - @alexkroman1/aai-runtime@0.15.4
+
 ## 0.2.13
 
 ### Patch Changes
