@@ -17,8 +17,8 @@ queue) are in `../../CLAUDE.md`.
 
 - **The switcher is `PaneTabs`, rendered in the CANVAS toolbar, not the top
   bar.** It sits above the pane it switches (as in Bolt/Lovable); the top bar
-  keeps only what is about the project as a whole (Live, Publish, Account).
-  Over the UI pane the same toolbar carries `PreviewToolbar` (address, Reload,
+  keeps only what is about the project as a whole (Live, Publish, Account). Over
+  the UI pane the same toolbar carries `PreviewToolbar` (address, Reload,
   desktop/phone, open in a tab), whose reload counter and device live in
   `project-view.tsx` because the toolbar and the pane are siblings.
 - **Order: UI, Code, Secrets, Settings** — the running agent first, then the
