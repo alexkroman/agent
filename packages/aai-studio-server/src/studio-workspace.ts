@@ -483,7 +483,7 @@ export async function deleteWorkspace(
   await store.delete(scope, project);
 }
 
-/** List project names in a scope, sorted. */
+/** List project names in a scope, most recently written first. */
 export function listProjects(store: WorkspaceStore, scope: string): Promise<string[]> {
   return store.list(scope);
 }

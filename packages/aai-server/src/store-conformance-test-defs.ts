@@ -136,15 +136,22 @@ export function workspaceStoreConformance(make: () => WorkspaceStore): void {
     expect(patched?.doc).toEqual({ files: { "a.ts": "after" }, deployedSlug: "x" });
   });
 
-  test("list is scoped and sorted", async () => {
+  test("list is scoped and most recently written first", async () => {
     const store = make();
     const [s1, s2, s3] = [uid(), uid(), uid()];
-    await store.put(s1, "beta", {}, null);
     await store.put(s1, "alpha", {}, null);
+    await store.put(s1, "beta", {}, null);
+    await store.put(s1, "gamma", {}, null);
     await store.put(s2, "other", {}, null);
-    expect(await store.list(s1)).toEqual(["alpha", "beta"]);
+    expect(await store.list(s1)).toEqual(["gamma", "beta", "alpha"]);
     expect(await store.list(s2)).toEqual(["other"]);
     expect(await store.list(s3)).toEqual([]);
+    // Both write paths move a project to the top: a versioned put (a turn's
+    // workspace sync) and a patch (a preview or Publish stamp).
+    await store.put(s1, "alpha", { files: {} }, 1);
+    expect(await store.list(s1)).toEqual(["alpha", "gamma", "beta"]);
+    await store.patch(s1, "beta", { set: { deployedSlug: "x" } });
+    expect(await store.list(s1)).toEqual(["beta", "alpha", "gamma"]);
   });
 
   test("a scope that is a string PREFIX of another lists only its own", async () => {
