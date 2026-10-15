@@ -1,5 +1,13 @@
 # @alexkroman1/aai
 
+## 0.15.3
+
+### Patch Changes
+
+- 4a291dd: Studio packages reuse shared SDK helpers (runCapped, LogLine/formatLogTime,
+  estimateMessageTokens, walkWorkspaceFiles, ai UI-message helpers) instead of
+  hand-rolled copies; the studio adopt fetch now aborts on timeout.
+
 ## 0.15.2
 
 No changes in this release.

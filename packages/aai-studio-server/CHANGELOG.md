@@ -1,5 +1,27 @@
 # aai-studio-server
 
+## 0.11.30
+
+### Patch Changes
+
+- d87b9ff: Studio GitHub: route the OAuth code exchange and the user-installations check
+  through Octokit (`@octokit/oauth-methods`, `@octokit/plugin-paginate-rest`)
+  instead of raw fetch, and recognise GitHub errors by `RequestError`.
+- e870563: Studio prompt: the coding agent now ends a turn that adds a secret-reading tool
+  with a "Secrets to set" list naming each secret, what it is for, and where to
+  get it.
+- 4a291dd: Studio packages reuse shared SDK helpers (runCapped, LogLine/formatLogTime,
+  estimateMessageTokens, walkWorkspaceFiles, ai UI-message helpers) instead of
+  hand-rolled copies; the studio adopt fetch now aborts on timeout.
+- 04c1b13: Studio: the home sidebar lists projects most recently worked on first, like
+  other coding agents' chat lists, instead of alphabetically.
+- Updated dependencies [4a291dd]
+  - @alexkroman1/aai@0.15.3
+  - aai-server@0.2.4
+  - @alexkroman1/aai-runtime@0.15.3
+  - aai-studio-client@0.7.14
+  - @alexkroman1/aai-ui@0.15.3
+
 ## 0.11.29
 
 ### Patch Changes
