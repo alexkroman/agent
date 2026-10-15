@@ -107,6 +107,36 @@ describe("llmErrorSentence", () => {
     );
   });
 
+  test("a gateway model the account cannot use names billing and the llm field", () => {
+    const refused = new APICallError({
+      message: "invalid request body",
+      url: "https://llm-gateway.assemblyai.com/v1/chat/completions",
+      requestBodyValues: {},
+      statusCode: 400,
+      responseBody:
+        '{"metadata":{"errors":["Your account does not have access to this LLM Gateway model"]},"message":"invalid request body","code":400}',
+    });
+    const sentence = llmErrorSentence(
+      new RetryError({ message: "x", reason: "maxRetriesExceeded", errors: [refused] }),
+    );
+    expect(sentence).toMatch(/^Your AssemblyAI account cannot use this LLM Gateway model/);
+    expect(sentence).toContain("Billing");
+    expect(sentence).toContain("in agent.ts");
+  });
+
+  test("a model without tool calling is named, with where to change it", () => {
+    const refused = new APICallError({
+      message: "Bad Request",
+      url: "https://llm-gateway.assemblyai.com/v1/chat/completions",
+      requestBodyValues: {},
+      statusCode: 400,
+      responseBody: '{"errors":["model qwen3.5-4b-32k-fast does not support tools"]}',
+    });
+    expect(llmErrorSentence(refused)).toBe(
+      'The LLM model qwen3.5-4b-32k-fast cannot call tools, and this agent has tools. Set `llm: "<model id>"` in agent.ts to a model that supports tool calling.',
+    );
+  });
+
   test("any other failure is the plain error message", () => {
     expect(llmErrorSentence(new Error("connection reset"))).toBe("connection reset");
     expect(llmErrorSentence(httpError(500))).not.toContain("API key");

@@ -3,8 +3,8 @@
 
 /** @jsxImportSource react */
 
-import { render, screen } from "@testing-library/react";
-import { describe, expect, test } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, test, vi } from "vitest";
 import { createMockSessionCore } from "../_react-test-utils.ts";
 import { SessionProvider, ThemeProvider } from "../context.ts";
 import { Controls } from "./controls.tsx";
@@ -34,6 +34,22 @@ describe("Controls", () => {
   test("shows New Conversation button", () => {
     renderControls();
     expect(screen.getByText("New Conversation")).toBeInTheDocument();
+  });
+
+  test("End Call hangs up with end(), not a pause", () => {
+    const session = createMockSessionCore();
+    const end = vi.spyOn(session, "end");
+    const toggle = vi.spyOn(session, "toggle");
+    render(
+      <ThemeProvider>
+        <SessionProvider value={session}>
+          <Controls />
+        </SessionProvider>
+      </ThemeProvider>,
+    );
+    fireEvent.click(screen.getByText("End Call"));
+    expect(end).toHaveBeenCalledTimes(1);
+    expect(toggle).not.toHaveBeenCalled();
   });
 
   // Regression guard: the row was `shrink-0` with two nowrap buttons and the

@@ -7,7 +7,7 @@
 
 import { render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
-import { FileNav } from "./code-view.tsx";
+import { FileNav, OwnershipBanner } from "./code-view.tsx";
 
 describe("FileNav", () => {
   test("groups files by directory and selects by full path", () => {
@@ -33,5 +33,27 @@ describe("FileNav", () => {
     render(<FileNav paths={paths} currentFile={null} onSelectFile={vi.fn()} />);
     const buttons = screen.getAllByRole("button");
     expect(buttons[0]).toHaveTextContent(/^agent\.ts$/);
+  });
+});
+
+describe("OwnershipBanner", () => {
+  test("says the code is the user's, and links to GitHub sync where it exists", () => {
+    const onSyncToGithub = vi.fn();
+    render(<OwnershipBanner onSyncToGithub={onSyncToGithub} />);
+    expect(screen.getByText(/it is yours to keep/)).toBeInTheDocument();
+    screen.getByRole("button", { name: "Sync to GitHub" }).click();
+    expect(onSyncToGithub).toHaveBeenCalledTimes(1);
+  });
+
+  test("offers no GitHub link where the platform has no GitHub App", () => {
+    render(<OwnershipBanner />);
+    expect(screen.getByText(/it is yours to keep/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Sync to GitHub" })).toBeNull();
+    expect(screen.queryByText(/GitHub/)).toBeNull();
+  });
+
+  test("names no CLI command — GitHub sync is the one advertised way out", () => {
+    const { container } = render(<OwnershipBanner onSyncToGithub={vi.fn()} />);
+    expect(container.textContent).not.toMatch(/aai pull/);
   });
 });
