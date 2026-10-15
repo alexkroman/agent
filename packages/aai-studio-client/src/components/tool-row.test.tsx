@@ -103,10 +103,16 @@ describe("ToolRow", () => {
       state: "input-streaming",
     });
     expect(named).toContain("Web search");
-    // No toolName → the generic "tool" name (proved via the label lookup).
-    // Off the type on purpose: the transcript is read off the wire, and
-    // `isChatMessages` does not check the parts.
-    const nameless = { type: "dynamic-tool", toolCallId: "call-1" } as unknown as ToolPart;
+    // An empty toolName → the generic "tool" name (proved via the label
+    // lookup): the transcript is read off the wire, and `isChatMessages`
+    // does not check the parts.
+    const nameless: ToolPart = {
+      type: "dynamic-tool",
+      toolCallId: "call-1",
+      toolName: "",
+      state: "input-streaming",
+      input: undefined,
+    };
     const bare = renderToStaticMarkup(
       <ToolRow part={nameless} labels={{ tool: "Generic tool" }} />,
     );
