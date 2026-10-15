@@ -143,7 +143,7 @@ export function ConsoleShell({
           {icon ?? <AaiLogo size={22} />}
           {title && (
             <span
-              className="font-aai-serif text-[22px] leading-[1.2] font-normal truncate"
+              className="text-[22px] leading-[1.2] font-semibold tracking-[-0.2px] truncate"
               style={{ color: theme.text }}
             >
               {title}

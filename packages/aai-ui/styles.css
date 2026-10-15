@@ -4,12 +4,11 @@
 @source "../dist/ui/";
 
 /*
- * AssemblyAI design system ("website refresh") tokens.
- * - font-aai: Monument Grotesk when the host page loads it, warm system
- *   grotesque otherwise (the package ships no font binaries).
- * - font-aai-serif: editorial serif for headings (Source Serif 4 stand-in,
- *   graceful Georgia-class fallbacks).
- * - font-aai-mono: JetBrains Mono stand-in for code/tool rows.
+ * Default design tokens: a neutral blank canvas, deliberately NOT the studio's
+ * own type and palette, so an unthemed agent reads as the user's app.
+ * - font-aai: the platform's system UI face (SF Pro, Segoe UI, Roboto, …).
+ * - font-aai-serif: an optional editorial serif; no default component uses it.
+ * - font-aai-mono: the platform's system monospace for code/tool rows.
  * - radius-aai: the refresh's squared-off 4px control radius.
  * - color-aai-*: the five `ClientTheme` fields, so a Tailwind class can see
  *   them. `ThemeProvider` writes `--aai-bg` … `--aai-primary` onto `:root`
@@ -28,10 +27,10 @@
   --color-aai-border: var(--aai-border, #e4e4e7);
   --color-aai-primary: var(--aai-primary, #18181b);
   --font-aai:
-    "Monument Grotesk", "ABC Monument Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --font-aai-serif:
     "Source Serif 4", "Source Serif Pro", Charter, "Iowan Old Style", Georgia, serif;
-  --font-aai-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-aai-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --radius-aai: 4px;
 }
 

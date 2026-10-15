@@ -2053,7 +2053,7 @@ function StartScreen(props: {
 ```
 
 A centered start screen: a white card on the cream page with the logo, an
-eyebrow label, a serif title, subtitle, and the start CTA. Renders
+eyebrow label, a title, subtitle, and the start CTA. Renders
 `children` (the main app) once the session has started.
 
 #### Parameters
@@ -2096,7 +2096,7 @@ A line under the title.
 
 `string`
 
-The card's serif title. Defaults to the agent's declared name.
+The card's title. Defaults to the agent's declared name.
 
 #### Returns
 
