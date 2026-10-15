@@ -27,9 +27,9 @@ Three directories: `panes/` (the five modules `project-view.tsx` renders),
 - **The FRAME stays at `src/` root**: it is what a pane is mounted BY. `app.tsx`
   (the root), `main.tsx` (the Vite entry), `project-view.tsx` (renders the panes
   inside the canvas card), `top-bar.tsx` (the bar, Publish, and the `PaneTabs`
-  switcher the canvas toolbar renders) and `pane-shell.tsx` (the shared shell).
-  `auth.tsx`, `starters.ts` (an export subpath) and `_test-utils.ts` stay there
-  too.
+  switcher the bar carries over the canvas) and `pane-shell.tsx` (the shared
+  shell). `auth.tsx`, `starters.ts` (an export subpath) and `_test-utils.ts`
+  stay there too.
 - **`studio-client-pane-export` names THREE panes and that is not the roster.**
   Those three have a filename equal to their tab id, so they export `<Tab>Pane`;
   `code-view.tsx` (tab `code`) is named for what it is, and `chat.tsx` sits
@@ -79,9 +79,9 @@ in `.eyebrow` section labels.
 - **Spacing is a system, not per-screen numbers.** Framed surfaces (the canvas
   card, the composer, bubbles, step groups) sit on an 8px gutter (`main`'s
   `p-2 gap-2`); text and the header logo share a 16px edge. Control heights:
-  32px in the top bar and canvas toolbar (`h-8`), 36px for `.btn`/`.field` in
-  page content (the default), 28px for inline row actions (`.btn-sm`). A
-  `CopyLine`'s code box has a 36px floor so its button matches.
+  32px in the top bar (`h-8`), 36px for `.btn`/`.field` in page content (the
+  default), 28px for inline row actions (`.btn-sm`). A `CopyLine`'s code box has
+  a 36px floor so its button matches.
 - **The transcript forces `scrollbar-gutter: auto`** (`chat-transcript.tsx`):
   use-stick-to-bottom sets `stable both-edges` inline, which reserves a classic
   scrollbar on both sides and left the transcript 15px inside the composer.
@@ -92,6 +92,13 @@ in `.eyebrow` section labels.
   its FIRST call so it keeps its identity as calls stream in; inside it
   `ToolRow` passes a status mark as `ToolCallRow`'s `icon`, replacing the "TOOL"
   chip.
+- **Inside a project the top bar is ONE row split at the chat column**
+  (`TopBar`): its left zone takes `CHAT_COLUMN` (`pane-shell.tsx`), so the pane
+  tabs and the UI pane's browser chrome start at the canvas card's left edge and
+  the card has no toolbar row. Change the chat width through `CHAT_COLUMN` only,
+  or the split drifts off the canvas edge.
+- **A live project shows as a dot on Publish**, not a separate link; the
+  production URL is in the Publish menu and the button's tooltip.
 - **Log out lives in the Account panel**, and Publish is absent (not disabled)
   with no project open.
 

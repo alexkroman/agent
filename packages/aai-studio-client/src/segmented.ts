@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The studio's segmented control (the pane tabs in the canvas toolbar), as the
+// The studio's segmented control (the pane tabs in the top bar), as the
 // group and item class rules. Sizing is `.seg` in styles.css.
 
 /**

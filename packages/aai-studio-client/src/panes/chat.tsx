@@ -6,6 +6,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import type { UIMessage } from "ai";
+import clsx from "clsx";
 import {
   type Dispatch,
   type ReactNode,
@@ -20,6 +21,7 @@ import { EmptyStateBody, Transcript } from "../components/chat-transcript.tsx";
 import { Composer } from "../components/composer.tsx";
 import { SpinnerIcon } from "../components/icons.tsx";
 import { useMessageQueue } from "../hooks/use-message-queue.ts";
+import { CHAT_COLUMN } from "../pane-shell.tsx";
 import { createSandboxTransport } from "../sandbox-transport.ts";
 
 type ChatPanelProps = {
@@ -373,5 +375,5 @@ export function ChatPanel(props: ChatPanelProps) {
       />
     );
   }
-  return <div className="flex w-[392px] flex-none flex-col">{body}</div>;
+  return <div className={clsx("flex flex-none flex-col", CHAT_COLUMN)}>{body}</div>;
 }
