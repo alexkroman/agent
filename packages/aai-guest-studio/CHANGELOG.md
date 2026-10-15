@@ -1,5 +1,16 @@
 # aai-guest-studio
 
+## 0.6.20
+
+### Patch Changes
+
+- Updated dependencies [3bada25]
+  - @alexkroman1/aai-cli@0.15.5
+  - @alexkroman1/aai@0.15.5
+  - @alexkroman1/aai-runtime@0.15.5
+  - @alexkroman1/aai-ui@0.15.5
+  - aai-guest-core@0.6.19
+
 ## 0.6.19
 
 ### Patch Changes

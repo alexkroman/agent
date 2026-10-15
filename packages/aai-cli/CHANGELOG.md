@@ -1,5 +1,18 @@
 # @alexkroman1/aai-cli
 
+## 0.15.5
+
+### Patch Changes
+
+- 3bada25: Template fixes from a live eval run: `meeting-recap-agent` no longer cancels and
+  restarts a running recap (which paid for a second transcription),
+  `executive-inbox-agent` says `edit` sends and keeps it for real changes to the
+  draft, and the pizza, quickstart, topic-briefing and tabletop RPG prompts cover
+  cases they left ambiguous.
+- @alexkroman1/aai@0.15.5
+  - @alexkroman1/aai-runtime@0.15.5
+  - @alexkroman1/aai-ui@0.15.5
+
 ## 0.15.4
 
 ### Patch Changes
