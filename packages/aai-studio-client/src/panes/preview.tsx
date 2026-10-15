@@ -24,11 +24,14 @@ const PHONE_FRAME_WIDTH = 390;
 export type PreviewDevice = "desktop" | "phone";
 
 /**
- * The browser chrome the canvas toolbar shows over the UI pane: the preview's
- * address, a reload, the desktop/phone toggle, and open-in-a-tab.
+ * The browser chrome the top bar's canvas zone shows over the UI pane: the
+ * preview's address, a reload, the desktop/phone toggle, and open-in-a-tab.
  *
  * The address is the PREVIEW agent's, never production's — production is the
- * top bar's Live link. With no preview yet there is nothing to reload or open,
+ * Publish menu's link. It shows the PATH only: the platform host is the same
+ * for every project and was truncated anyway, so it rides in the tooltip and
+ * the open-in-a-tab link instead. Below 1180px the address itself goes,
+ * leaving reload and open. With no preview yet there is nothing to reload or open,
  * so those controls disable rather than vanish, keeping the bar's shape.
  */
 export function PreviewToolbar({
@@ -44,8 +47,8 @@ export function PreviewToolbar({
 }) {
   const url = previewSlug ? agentUrl(previewSlug) : null;
   return (
-    <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
-      <div className="flex h-8 max-w-md min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-line bg-cream px-1">
+    <div className="flex min-w-0 flex-1 items-center gap-1.5">
+      <div className="flex h-8 max-w-[22rem] flex-none items-center gap-1.5 rounded-lg border border-line bg-cream px-1 min-[1180px]:min-w-0 min-[1180px]:flex-1">
         <button
           type="button"
           className="icon-btn h-6 w-6"
@@ -57,10 +60,10 @@ export function PreviewToolbar({
           <ReloadIcon size={13} />
         </button>
         <span
-          className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted"
+          className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted max-[1180px]:hidden"
           title={url ?? undefined}
         >
-          {url ?? "No preview yet"}
+          {url ? new URL(url).pathname : "No preview yet"}
         </span>
         {url && (
           <a

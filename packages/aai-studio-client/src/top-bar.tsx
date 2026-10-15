@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The studio's shared top bar (brand, the open project, the production link,
-// Publish, Account), the Publish dropdown it opens, and the pane tabs the
-// canvas toolbar renders. Split from app.tsx, which owns all the state these
+// The studio's shared top bar (brand, the open project, the canvas controls,
+// Publish, Account), the Publish dropdown it opens, and the pane tabs the bar
+// carries over the canvas. Split from app.tsx, which owns all the state these
 // render. Project switching lives in the home sidebar (brand → home), not here.
 
 import clsx from "clsx";
@@ -17,6 +17,7 @@ import {
   PlayIcon,
   UserIcon,
 } from "./components/icons.tsx";
+import { CHAT_COLUMN } from "./pane-shell.tsx";
 import { agentUrl } from "./platform-origin.ts";
 import { SEG_GROUP, segItemClass } from "./segmented.ts";
 
@@ -127,7 +128,7 @@ export function PublishMenu(props: PublishMenuProps) {
 }
 
 /**
- * The project panes, all peers in the canvas toolbar's tabs, every one of them
+ * The project panes, all peers in the pane tabs, every one of them
  * offered from the moment a project exists.
  *
  * Settings joined them rather than staying a dropdown: it holds GitHub sync
@@ -160,9 +161,11 @@ const TABS: { id: StudioTab; label: string; icon: () => ReactNode }[] = [
 ];
 
 /**
- * The pane switcher. It lives in the canvas toolbar (project-view.tsx), above
- * the pane it switches, rather than in the top bar: the tabs belong to the
- * canvas, and the top bar keeps only what is about the project as a whole.
+ * The pane switcher. It rides in the top bar's CANVAS zone — the part of the
+ * bar that starts at the canvas card's left edge (see {@link TopBar}) — so it
+ * still sits directly above the pane it switches, without a toolbar row of
+ * its own. Below 1100px the labels collapse to icons; they stay in the
+ * accessible name and the tooltip.
  */
 export function PaneTabs({
   tab,
@@ -179,10 +182,11 @@ export function PaneTabs({
           type="button"
           aria-current={tab === entry.id ? "page" : undefined}
           className={clsx("seg", segItemClass(tab === entry.id))}
+          title={entry.label}
           onClick={() => onSelectTab(entry.id)}
         >
           {entry.icon()}
-          {entry.label}
+          <span className="max-[1100px]:sr-only">{entry.label}</span>
         </button>
       ))}
     </nav>
@@ -204,107 +208,138 @@ type TopBarProps = {
   publishOpen?: boolean;
   /** The Account panel is showing — same toggle semantics as Publish. */
   accountOpen?: boolean;
+  /**
+   * The canvas controls — the pane tabs and, over the UI pane, the preview's
+   * browser chrome. Rendered in the bar's canvas zone so the canvas card needs
+   * no toolbar row of its own.
+   */
+  children?: ReactNode;
   /** Brand click: back to the hero home (deselects the project). */
   onGoHome: () => void;
   onTogglePublish: () => void;
   onToggleAccount: () => void;
 };
 
-/** The shared top bar: brand / project on the left, Live, Publish and Account on the right. */
+/** Publish's tooltip: why it is locked, what pressing it does, or where the project is live. */
+function publishTooltip(props: TopBarProps, productionUrl: string | null): string | undefined {
+  if (!props.hasBuild) return "Publish unlocks after your first build";
+  if (props.chatBusy) return PUBLISH_WAIT_FOR_TURN;
+  if (props.publishOpen) return "Hide the publish menu";
+  if (productionUrl) return `Live at ${productionUrl}`;
+  return undefined;
+}
+
+/**
+ * The shared top bar. With a project open it is ONE row split at the chat
+ * column: the left zone is exactly the chat column's width (`CHAT_COLUMN`, the
+ * same 392px `ChatPanel` takes), so the project name sits over the
+ * conversation and everything from the pane tabs on starts at the canvas
+ * card's left edge. That split is what lets the canvas drop its own toolbar —
+ * the controls are still directly above the pane they drive, and the pane's
+ * content starts 48px higher.
+ *
+ * Inside a project the brand is the logo alone (it still goes home); the
+ * wordmark is for the home screen, where the bar has nothing else to say.
+ */
 export function TopBar(props: TopBarProps) {
-  // Once per render: the href and the title are the same URL, and `agentUrl`
+  // Once per render: the title and the dot both read it, and `agentUrl`
   // builds a `new URL` each time it is asked.
   const productionUrl = props.deployedSlug ? agentUrl(props.deployedSlug) : null;
-  let publishTitle: string | undefined;
-  if (!props.hasBuild) publishTitle = "Publish unlocks after your first build";
-  else if (props.chatBusy) publishTitle = PUBLISH_WAIT_FOR_TURN;
-  else if (props.publishOpen) publishTitle = "Hide the publish menu";
+  const publishTitle = publishTooltip(props, productionUrl);
   return (
-    <header className="flex h-[52px] flex-none items-center gap-2 border-b border-line bg-panel px-4">
-      <button
-        type="button"
-        className="-ml-1.5 flex flex-none cursor-pointer items-center gap-2 rounded-md border-none bg-transparent px-1.5 py-1 hover:bg-cream"
-        onClick={props.onGoHome}
-        title="Home"
+    <header className="flex h-[52px] flex-none items-center border-b border-line bg-panel px-4">
+      <div
+        className={clsx(
+          "flex min-w-0 items-center gap-2",
+          props.project ? `${CHAT_COLUMN} flex-none pr-2` : "flex-1",
+        )}
       >
-        <img src={logoUrl} alt="AssemblyAI" className="h-5 w-5" />
-        {/* The wordmark is the first thing to go when the bar runs out of
-            room — the logo still identifies the app. */}
-        <span className="hidden font-serif text-[16px] whitespace-nowrap text-fg md:inline">
-          AssemblyAI Build
-        </span>
-      </button>
-      {props.project && (
-        <>
-          <span className="flex-none text-[18px] font-light text-line-strong" aria-hidden>
-            /
-          </span>
-          <span className="min-w-0 truncate text-[13px] font-medium text-fg" title={props.project}>
-            {props.project}
-          </span>
-        </>
-      )}
-      <div className="flex-1" />
-      {/* The PRODUCTION URL (Publish's slug, never the preview's) — a plain
-          link that opens the deployed agent in a new tab. The pill says
-          "Live" and the title carries the URL: the address itself is in the
-          Publish menu, where there is room to read it. */}
-      {productionUrl && (
-        <a
-          className="flex h-8 flex-none items-center gap-1.5 rounded-md px-2.5 text-[13px] font-medium text-muted no-underline hover:bg-cream hover:text-fg"
-          href={productionUrl}
-          target="_blank"
-          rel="noreferrer"
-          title={`Production: ${productionUrl}`}
-        >
-          <span className="h-[7px] w-[7px] flex-none rounded-full bg-emerald-500" aria-hidden />
-          Live
-        </a>
-      )}
-      {/* Publish is project-scoped: the home screen has nothing to ship. */}
-      {props.project && (
         <button
           type="button"
-          {...{ [PUBLISH_TOGGLE_ATTR]: "" }}
-          className={clsx(
-            "btn btn-primary h-8 pr-2.5",
-            // Pressed: darker face, inset shadow, and the caret flipped — the
-            // three together read as "this is held down, press again to close".
-            props.publishOpen &&
-              "border-indigo-hover bg-indigo-hover shadow-[inset_0_2px_4px_rgb(20_18_12/0.35)]",
-          )}
-          onClick={props.onTogglePublish}
-          disabled={!props.hasBuild || props.chatBusy}
-          title={publishTitle}
-          aria-haspopup="dialog"
-          aria-expanded={props.publishOpen ?? false}
-          aria-controls={props.publishOpen ? PUBLISH_MENU_ID : undefined}
+          className="-ml-1.5 flex flex-none cursor-pointer items-center gap-2 rounded-md border-none bg-transparent px-1.5 py-1 hover:bg-cream"
+          onClick={props.onGoHome}
+          title="Home"
         >
-          Publish
-          <span aria-hidden className={clsx("flex", props.publishOpen && "rotate-180")}>
-            <ChevronDownIcon />
-          </span>
+          <img src={logoUrl} alt="AssemblyAI" className="h-5 w-5" />
+          {/* The wordmark is home-screen only: inside a project the logo
+              identifies the app, and the bar's room goes to the project. */}
+          {!props.project && (
+            <span className="hidden font-serif text-[16px] whitespace-nowrap text-fg md:inline">
+              AssemblyAI Build
+            </span>
+          )}
         </button>
-      )}
-      {/* Account-scoped, so it sits outside the project panes and is here on
-          the home screen too — where the API key would otherwise be
-          unreachable. Log out lives in the panel it opens. */}
-      <button
-        type="button"
-        {...{ [ACCOUNT_TOGGLE_ATTR]: "" }}
-        aria-label="Account"
-        className={clsx(
-          "flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-full border border-line bg-cream p-0 text-muted hover:border-line-strong hover:text-fg",
-          props.accountOpen && "border-fg text-fg",
+        {props.project && (
+          <>
+            <span className="flex-none text-[18px] font-light text-line-strong" aria-hidden>
+              /
+            </span>
+            <span
+              className="min-w-0 truncate text-[13px] font-medium text-fg"
+              title={props.project}
+            >
+              {props.project}
+            </span>
+          </>
         )}
-        onClick={props.onToggleAccount}
-        title="Account"
-        aria-haspopup="dialog"
-        aria-expanded={props.accountOpen ?? false}
-        aria-controls={props.accountOpen ? ACCOUNT_MENU_ID : undefined}
-      >
-        <UserIcon size={15} />
-      </button>
+      </div>
+      <div className="flex min-w-0 flex-1 items-center gap-3 pl-2">
+        {props.children}
+        <div className="flex-1" />
+        {/* Publish is project-scoped: the home screen has nothing to ship.
+            A project that is LIVE says so on the button itself (the dot); the
+            production address is in the menu it opens. */}
+        {props.project && (
+          <button
+            type="button"
+            {...{ [PUBLISH_TOGGLE_ATTR]: "" }}
+            className={clsx(
+              "btn btn-primary h-8 flex-none pr-2.5",
+              // Pressed: darker face, inset shadow, and the caret flipped — the
+              // three together read as "this is held down, press again to close".
+              props.publishOpen &&
+                "border-indigo-hover bg-indigo-hover shadow-[inset_0_2px_4px_rgb(20_18_12/0.35)]",
+            )}
+            onClick={props.onTogglePublish}
+            disabled={!props.hasBuild || props.chatBusy}
+            title={publishTitle}
+            aria-haspopup="dialog"
+            aria-expanded={props.publishOpen ?? false}
+            aria-controls={props.publishOpen ? PUBLISH_MENU_ID : undefined}
+          >
+            {productionUrl && (
+              <span
+                data-live
+                aria-hidden
+                className="h-[7px] w-[7px] flex-none rounded-full bg-emerald-300 ring-2 ring-white/20"
+              />
+            )}
+            Publish
+            <span aria-hidden className={clsx("flex", props.publishOpen && "rotate-180")}>
+              <ChevronDownIcon />
+            </span>
+          </button>
+        )}
+        {/* Account-scoped, so it sits outside the project panes and is here on
+            the home screen too — where the API key would otherwise be
+            unreachable. Log out lives in the panel it opens. */}
+        <button
+          type="button"
+          {...{ [ACCOUNT_TOGGLE_ATTR]: "" }}
+          aria-label="Account"
+          className={clsx(
+            "flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-full border border-line bg-cream p-0 text-muted hover:border-line-strong hover:text-fg",
+            props.accountOpen && "border-fg text-fg",
+          )}
+          onClick={props.onToggleAccount}
+          title="Account"
+          aria-haspopup="dialog"
+          aria-expanded={props.accountOpen ?? false}
+          aria-controls={props.accountOpen ? ACCOUNT_MENU_ID : undefined}
+        >
+          <UserIcon size={15} />
+        </button>
+      </div>
     </header>
   );
 }
