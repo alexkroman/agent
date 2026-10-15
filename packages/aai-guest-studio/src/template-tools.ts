@@ -24,6 +24,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { errorMessage, type ToolDef, tool } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import { walkWorkspaceFiles } from "@alexkroman1/aai/workspace-files";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "aai-guest-core/limits";
 import { z } from "zod";
 import { toolchainModules } from "./build.ts";
@@ -56,22 +57,6 @@ async function templateNames(root: string): Promise<string[]> {
     .sort();
 }
 
-/** Template-relative paths of one template's files (recursive, sorted). */
-async function templateFilePaths(templateDir: string): Promise<string[]> {
-  const out: string[] = [];
-  async function walk(current: string): Promise<void> {
-    const entries = await readdir(current, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isSymbolicLink()) continue;
-      const abs = path.join(current, entry.name);
-      if (entry.isDirectory()) await walk(abs);
-      else if (entry.isFile()) out.push(path.relative(templateDir, abs));
-    }
-  }
-  await walk(templateDir);
-  return out.sort((a, b) => a.localeCompare(b));
-}
-
 /** The agent's display name from a template's agent.ts, when extractable. */
 function displayName(agentSource: string): string | null {
   const match = agentSource.match(/\bname:\s*["'`]([^"'`]+)["'`]/);
@@ -82,7 +67,7 @@ function displayName(agentSource: string): string | null {
 async function templateListing(root: string, names: string[]): Promise<string> {
   const lines = await Promise.all(
     names.map(async (name) => {
-      const files = await templateFilePaths(path.join(root, name));
+      const files = await walkWorkspaceFiles(path.join(root, name));
       let label = "";
       if (files.includes("agent.ts")) {
         const source = await readFile(path.join(root, name, "agent.ts"), "utf-8");
@@ -218,7 +203,7 @@ async function copyTemplate(
     };
   }
   const templateDir = path.join(root, template);
-  const available = await templateFilePaths(templateDir);
+  const available = await walkWorkspaceFiles(templateDir);
   const unknown = (wanted ?? []).filter((rel) => !available.includes(rel));
   if (unknown.length > 0) {
     return {

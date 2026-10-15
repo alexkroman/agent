@@ -36,12 +36,7 @@ import type { HarnessBundleAccess, StudioSession } from "aai-guest-core/types";
 import { convertToModelMessages, type LanguageModel, type UIMessage } from "ai";
 import { createStudioAgent, STUDIO_TOOL_TIMEOUT_MS } from "./agent.ts";
 import { typecheckWorkspaceDir } from "./build.ts";
-import {
-  compactMessages,
-  DEFAULT_COMPACTION,
-  estimateTokens,
-  needsCompaction,
-} from "./compaction.ts";
+import { compactMessages, needsCompaction } from "./compaction.ts";
 import { CORS_HEADERS, readBody, sendJson } from "./http.ts";
 import { STUDIO_TOOL_LABELS } from "./tools.ts";
 import { createTurnPolicy } from "./turn-continue.ts";
@@ -139,7 +134,10 @@ async function runTurn(
   // coding agent is the harness's own agent, and a static import would put a
   // runtime copy in every guest, agent mode included — where the only runtime
   // is the one the user's bundle carries (`packages/aai-guest/CLAUDE.md`).
-  const { createTextAgent } = await import("@alexkroman1/aai-runtime");
+  const [{ createTextAgent }, { estimateMessageTokens }] = await Promise.all([
+    import("@alexkroman1/aai-runtime"),
+    import("@alexkroman1/aai-runtime/internal"),
+  ]);
   const chat = createTextAgent({
     agent: createStudioAgent(session, {
       loadBundle: deps.loadBundle,
@@ -183,11 +181,10 @@ async function runTurn(
     // logs) — one per attempt. Without this the raised step cap would just
     // trade a step-cap failure for a context-overflow one.
     prepareStep: async ({ messages: stepMessages }) => {
-      // One estimate per step, threaded into both readers: it stringifies every
-      // non-string message content, and this list is the whole conversation.
-      const estimate = estimateTokens(stepMessages);
-      const base = needsCompaction(stepMessages, DEFAULT_COMPACTION, estimate)
-        ? await compactMessages(chat.model, stepMessages, DEFAULT_COMPACTION, estimate)
+      // The runtime's estimator is memoized per message object, so re-measuring
+      // the whole conversation each step costs only the messages that are new.
+      const base = needsCompaction(stepMessages, estimateMessageTokens)
+        ? await compactMessages(chat.model, stepMessages, estimateMessageTokens)
         : stepMessages;
       // The deadline notices and the keep-going force all write `toolChoice`,
       // and their order is the behaviour — decided in one tested place.

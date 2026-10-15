@@ -20,11 +20,13 @@
  *
  * The fix has to put the error INTO the stream, because by the time the pipe's
  * rejection is observable the response is already closed: nothing can be
- * written afterwards. {@link withStreamErrorChunk} reads the UI message stream
- * itself and, on a source error, emits a final `error` chunk before closing —
- * which is exactly what the client's `processUIMessageStream` turns into a
- * thrown error, so the turn lands in `status: "error"` where the studio already
- * knows how to show it and hand queued follow-ups back to the composer.
+ * written afterwards. {@link deliverTurn} therefore re-streams the UI message
+ * stream through the AI SDK's `createUIMessageStream`, whose `writer.merge`
+ * turns a source error into a final `error` chunk (via `onError`) before the
+ * stream closes — which is exactly what the client's `processUIMessageStream`
+ * turns into a thrown error, so the turn lands in `status: "error"` where the
+ * studio already knows how to show it and hand queued follow-ups back to the
+ * composer.
  *
  * ## Assistant messages need an id that is not `""`
  *
@@ -73,6 +75,7 @@
 import type { ServerResponse } from "node:http";
 import {
   createIdGenerator,
+  createUIMessageStream,
   pipeUIMessageStreamToResponse,
   type UIMessage,
   type UIMessageChunk,
@@ -142,46 +145,6 @@ export function resetTurnGate(): void {
   processTurnGate = createTurnGate();
 }
 
-/**
- * Pass every chunk through, and turn a SOURCE ERROR into a final `error` chunk
- * followed by a clean close.
- *
- * A `TransformStream` cannot do this: when its source errors, the transform is
- * errored too and never gets the chance to enqueue anything. Hence the explicit
- * reader loop.
- *
- * The `catch` is the whole behaviour: it closes the controller, and a closed
- * stream is never `pull`ed again — so the `failed` latch this used to carry at
- * the top of `pull` could not run, and read as a second guard where there is
- * only one.
- */
-export function withStreamErrorChunk(
-  source: ReadableStream<UIMessageChunk>,
-  toErrorText: (error: unknown) => string,
-): ReadableStream<UIMessageChunk> {
-  const reader = source.getReader();
-  return new ReadableStream<UIMessageChunk>({
-    async pull(controller) {
-      try {
-        const { done, value } = await reader.read();
-        if (done) {
-          controller.close();
-          return;
-        }
-        controller.enqueue(value);
-      } catch (error) {
-        // The client's stream reader treats this as the turn failing, which is
-        // the whole point: a truncated reply must not read as a finished one.
-        controller.enqueue({ type: "error", errorText: toErrorText(error) });
-        controller.close();
-      }
-    },
-    cancel(reason) {
-      return reader.cancel(reason);
-    },
-  });
-}
-
 /** The `streamText` surface this module needs — structural, so tests can fake it. */
 export type TurnResultLike = {
   toUIMessageStream(options: {
@@ -233,9 +196,15 @@ export async function deliverTurn(
   const piped = pipeUIMessageStreamToResponse({
     response: res,
     headers: options.headers,
-    stream: withStreamErrorChunk(stream, (error) => {
-      record(error);
-      return options.toErrorText(error);
+    // `merge` reads the source and, if it errors, writes `onError`'s text as a
+    // final `error` chunk before the merged stream closes — the in-band failure
+    // the module doc is about.
+    stream: createUIMessageStream({
+      execute: ({ writer }) => writer.merge(stream),
+      onError: (error) => {
+        record(error);
+        return options.toErrorText(error);
+      },
     }),
   }).catch(record);
   // Drives the model stream to completion even if the browser goes away, so

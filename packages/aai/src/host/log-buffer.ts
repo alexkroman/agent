@@ -44,6 +44,17 @@ export type LogLine = {
   text: string;
 };
 
+/**
+ * A line's {@link LogLine.at} as `HH:MM:SS.mmm`, local time — the one shape
+ * every reader prints (the CLI's `aai logs`, the studio's `read_logs` tool and
+ * its logs pane), so a line reads the same wherever it is quoted.
+ */
+export function formatLogTime(at: number): string {
+  const d = new Date(at);
+  const pad = (n: number, width = 2) => String(n).padStart(width, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+}
+
 /** One read. */
 export type LogPage = {
   lines: LogLine[];

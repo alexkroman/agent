@@ -48,16 +48,16 @@ export type GuestBuildResult = {
   buildError?: string;
 };
 
+// Typed off the CLI subpaths themselves — TYPE-only, so it changes nothing
+// about loading them lazily in `loadToolchain` below.
+type ClientBuildOptions = Parameters<
+  typeof import("@alexkroman1/aai-cli/client-bundler")["buildClient"]
+>[1];
 type Toolchain = {
-  buildWorker: (cwd: string, opts: { minify?: boolean; configFile?: false }) => Promise<string>;
-  buildClient: (
-    cwd: string,
-    opts: { configFile?: false; plugins?: unknown[] },
-  ) => Promise<Record<string, string>>;
-  clientPlugins: () => unknown[];
-  typecheckProject: (
-    cwd: string,
-  ) => Promise<{ ok: true; skipped: boolean } | { ok: false; output: string }>;
+  buildWorker: typeof import("@alexkroman1/aai-cli/worker-bundler")["buildWorker"];
+  buildClient: typeof import("@alexkroman1/aai-cli/client-bundler")["buildClient"];
+  clientPlugins: () => NonNullable<NonNullable<ClientBuildOptions>["plugins"]>;
+  typecheckProject: typeof import("@alexkroman1/aai-cli/typecheck")["typecheckProject"];
 };
 
 /**
@@ -137,7 +137,7 @@ function loadToolchain(): Promise<Toolchain> {
     ]);
     return {
       buildWorker: worker.buildWorker,
-      buildClient: client.buildClient as Toolchain["buildClient"],
+      buildClient: client.buildClient,
       // Fresh plugin instances per build — Vite plugins are stateful.
       clientPlugins: () => [react.default(), tailwind.default()],
       typecheckProject: typecheck.typecheckProject,
@@ -230,8 +230,8 @@ export async function buildWorkspaceDir(
  */
 export async function typecheckWorkspaceDir(
   dir: string,
-): Promise<{ ok: true; skipped: boolean } | { ok: false; output: string }> {
-  let typecheckProject: typeof import("@alexkroman1/aai-cli/typecheck")["typecheckProject"];
+): ReturnType<Toolchain["typecheckProject"]> {
+  let typecheckProject: Toolchain["typecheckProject"];
   try {
     ({ typecheckProject } = await import("@alexkroman1/aai-cli/typecheck"));
   } catch (err) {

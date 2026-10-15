@@ -807,6 +807,9 @@ type FindOptions = {
 };
 
 // @public
+export function formatLogTime(at: number): string;
+
+// @public
 export function formatSchemaIssues(issues: readonly StandardSchemaIssue[]): string;
 
 // @internal

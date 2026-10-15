@@ -270,6 +270,10 @@ export { CARRIER_PARAM, TELEPHONY_PATH } from "./telephony/telephony-server.ts";
 // Running one tool call. `ExecuteTool`/`ExecuteToolOptions` — the shapes a host
 // substituting an executor names — are contracted, on the root barrel.
 export { executeToolCall } from "./tools/index.ts";
+// The memoized per-message token estimate the context budget charges with, for
+// the studio coding agent's compaction (`aai-guest-studio/compaction.ts`), so a
+// second, unmemoized estimator does not drift from this one.
+export { estimateMessageTokens } from "./transports/pipeline/history/context-budget.ts";
 export type { TransportEventBody, TransportEventType } from "./transports/types.ts";
 // The session-scoped token meter. `RuntimeOptions.usage`,
 // `ExecuteToolCallOptions.usage` and the subagent runner's bag all take one,

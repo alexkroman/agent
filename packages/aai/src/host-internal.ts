@@ -55,6 +55,7 @@ export {
   DEFAULT_LOG_BUFFER_LINES,
   DEFAULT_LOG_LINE_BYTES,
   DEFAULT_LOG_PAGE_LINES,
+  formatLogTime,
   LOG_LINE_TRUNCATED,
   type LogBuffer,
   type LogBufferOptions,

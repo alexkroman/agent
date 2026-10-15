@@ -53,7 +53,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai";
 import { createKeyedLock, isRecord, KeyedLockTimeoutError, withLock } from "@alexkroman1/aai/utils";
-import { NPM_TIMEOUT_MS, runNpm } from "./spawn.ts";
+import { NPM_TIMEOUT_MS, outputWithKillNote, runNpm } from "./spawn.ts";
 import { readWorkspaceManifest } from "./workspace-fs.ts";
 
 /**
@@ -162,16 +162,11 @@ export async function ensureWorkspaceDependencies(
         // Re-checked inside the lock: an overlapping build may have installed
         // exactly these while this one waited.
         if (missingDependencies(manifest, isResolvable).length === 0) return "";
-        const result = await (opts.runNpm ?? runNpm)(
-          dir,
-          ["install", "--omit=dev"],
-          opts.budgetMs ?? NPM_TIMEOUT_MS,
-        );
-        // `timedOut` too, not only `signal`: an npm that exits on SIGTERM
-        // reports no signal, and was still cut off mid-install.
-        return result.timedOut || result.signal
-          ? `killed by ${result.signal ?? "SIGTERM"} after ${opts.budgetMs ?? NPM_TIMEOUT_MS}ms`
-          : result.stdout.trim();
+        const budgetMs = opts.budgetMs ?? NPM_TIMEOUT_MS;
+        const result = await (opts.runNpm ?? runNpm)(dir, ["install", "--omit=dev"], budgetMs);
+        // Names a kill (by `timedOut` too, not only `signal`: an npm that exits
+        // on SIGTERM reports no signal, and was still cut off mid-install).
+        return outputWithKillNote(result, budgetMs).trim();
       },
       { timeoutMs: LOCK_ACQUIRE_TIMEOUT_MS },
     );

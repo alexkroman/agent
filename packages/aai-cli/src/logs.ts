@@ -19,6 +19,7 @@
  * re-derive that cursor anyway.
  */
 
+import { formatLogTime } from "@alexkroman1/aai/host-internal";
 import { sleep } from "@alexkroman1/aai/internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { checkedResponse } from "./_api-client.ts";
@@ -64,17 +65,10 @@ function isLogsPage(value: unknown): value is LogsPage {
   );
 }
 
-/** `HH:MM:SS.mmm`, local — the same shape the studio pane prints. */
-export function formatTime(at: number): string {
-  const d = new Date(at);
-  const pad = (n: number, width = 2) => String(n).padStart(width, "0");
-  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
-}
-
 /** One rendered line: time, then the text. `stderr` is called out by name. */
 export function formatLine(line: LogLine): string {
   const mark = line.stream === "stderr" ? " ERR" : "";
-  return `${formatTime(line.at)}${mark}  ${line.text}`;
+  return `${formatLogTime(line.at)}${mark}  ${line.text}`;
 }
 
 /**

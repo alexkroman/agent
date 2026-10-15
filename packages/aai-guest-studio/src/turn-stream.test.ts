@@ -7,14 +7,8 @@
 
 import type { ServerResponse } from "node:http";
 import type { UIMessage, UIMessageChunk } from "ai";
-import { describe, expect, test, vi } from "vitest";
-import { createTurnGate, deliverTurn, withStreamErrorChunk } from "./turn-stream.ts";
-
-async function collect(stream: ReadableStream<UIMessageChunk>): Promise<UIMessageChunk[]> {
-  const out: UIMessageChunk[] = [];
-  for await (const chunk of stream as unknown as AsyncIterable<UIMessageChunk>) out.push(chunk);
-  return out;
-}
+import { describe, expect, test } from "vitest";
+import { createTurnGate, deliverTurn } from "./turn-stream.ts";
 
 // The gate is observed through `enter()` alone: a `busy` reader existed once
 // and no production code ever read it, so these assertions were its only
@@ -53,59 +47,6 @@ describe("createTurnGate", () => {
     release?.();
     release?.();
     expect(gate.enter()).not.toBeNull();
-  });
-});
-
-describe("withStreamErrorChunk", () => {
-  test("passes chunks through untouched", async () => {
-    const source = new ReadableStream<UIMessageChunk>({
-      start(c) {
-        c.enqueue({ type: "start" });
-        c.enqueue({ type: "text-delta", id: "t", delta: "hi" } as UIMessageChunk);
-        c.close();
-      },
-    });
-    expect(await collect(withStreamErrorChunk(source, String))).toEqual([
-      { type: "start" },
-      { type: "text-delta", id: "t", delta: "hi" },
-    ]);
-  });
-
-  test("turns a source error into a final error chunk and closes cleanly", async () => {
-    // The response is already ended by the time the pipe's rejection is
-    // observable, so the error has to travel IN the stream or not at all.
-    // Errored on the SECOND pull, because that is the real ordering: the
-    // deltas were already delivered (and written to the response) when the
-    // model stream broke. Erroring in `start` would just discard them —
-    // erroring a stream clears whatever is still queued.
-    let pulls = 0;
-    const source = new ReadableStream<UIMessageChunk>({
-      pull(c) {
-        pulls += 1;
-        if (pulls === 1) {
-          c.enqueue({ type: "text-delta", id: "t", delta: "partial" } as UIMessageChunk);
-          return;
-        }
-        c.error(new Error("gateway dropped the body"));
-      },
-    });
-    const chunks = await collect(withStreamErrorChunk(source, (e) => (e as Error).message));
-    expect(chunks).toEqual([
-      { type: "text-delta", id: "t", delta: "partial" },
-      { type: "error", errorText: "gateway dropped the body" },
-    ]);
-  });
-
-  test("cancelling releases the source", async () => {
-    const cancel = vi.fn();
-    const source = new ReadableStream<UIMessageChunk>({
-      start() {
-        // Never produces — the test only cares that cancel reaches the source.
-      },
-      cancel,
-    });
-    await withStreamErrorChunk(source, String).cancel("done");
-    expect(cancel).toHaveBeenCalled();
   });
 });
 
@@ -205,8 +146,16 @@ describe("deliverTurn", () => {
       onFinish: () => undefined,
       toErrorText: (e) => (e as Error).message,
     });
-    expect(body()).toContain('"type":"error"');
-    expect(body()).toContain("stream broke");
+    // The deltas already sent survive, and the error is the LAST frame: the
+    // response is ended by then, so it travels in the stream or not at all.
+    const frames = body()
+      .split("\n\n")
+      .filter((f) => f.startsWith("data: ") && f !== "data: [DONE]")
+      .map((f) => JSON.parse(f.slice("data: ".length)) as UIMessageChunk);
+    expect(frames).toEqual([
+      { type: "text-delta", id: "t", delta: "half" },
+      { type: "error", errorText: "stream broke" },
+    ]);
     expect((out.failure as Error).message).toBe("stream broke");
   });
 });
