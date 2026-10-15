@@ -3,7 +3,8 @@
 // (studio-github-client.ts), against the fake GitHub every GitHub suite
 // shares. What the routes do with the answers is studio-github-routes.test.ts.
 
-import { describe, expect, test, vi } from "vitest";
+import { RequestError } from "@octokit/request-error";
+import { describe, expect, test } from "vitest";
 import {
   createFakeGithub,
   TEST_INSTALLATION_ID,
@@ -11,8 +12,8 @@ import {
 } from "./_studio-github-test-utils.ts";
 import {
   createGithubOctokit,
+  createGithubUserOctokit,
   createOrgRepo,
-  deadlineFetch,
   githubErrorStatus,
   listInstallationRepos,
   readRepoDefaultBranch,
@@ -24,28 +25,42 @@ const installationClient = (fetchFn: typeof globalThis.fetch) =>
   createGithubOctokit(testGithubApp, { installationId: TEST_INSTALLATION_ID, fetchFn });
 
 describe("githubErrorStatus", () => {
-  test("reads a numeric status off the error, and nothing else", () => {
-    expect(githubErrorStatus({ status: 404, message: "Not Found" })).toBe(404);
+  test("reads the status off a RequestError, and nothing else", () => {
+    const notFound = new RequestError("Not Found", 404, {
+      request: { method: "GET", url: "https://api.github.com/x", headers: {} },
+    });
+    expect(githubErrorStatus(notFound)).toBe(404);
+    // Duck-typed lookalikes are not GitHub's answer.
+    expect(githubErrorStatus({ status: 404, message: "Not Found" })).toBeUndefined();
     expect(githubErrorStatus({ status: "404" })).toBeUndefined();
     expect(githubErrorStatus(new Error("404 Not Found"))).toBeUndefined();
     expect(githubErrorStatus("404")).toBeUndefined();
   });
 });
 
-describe("deadlineFetch", () => {
-  test("always sends a deadline signal, composed with the caller's", async () => {
-    const base = vi.fn<typeof globalThis.fetch>(async () => new Response("{}"));
+describe("deadline", () => {
+  test("every client sends a deadline signal, composed with the caller's", async () => {
+    const github = createFakeGithub();
+    const signals: (AbortSignal | null | undefined)[] = [];
+    const fetchFn: typeof globalThis.fetch = (input, init) => {
+      signals.push(init?.signal);
+      return github.fetchFn(input, init);
+    };
+    await readRepoDefaultBranch(installationClient(fetchFn), "acme", "voice-agent");
     const caller = new AbortController();
-    await deadlineFetch(base)("https://api.github.com/x");
-    await deadlineFetch(base)("https://api.github.com/y", { signal: caller.signal });
+    await createGithubUserOctokit("gho_user", fetchFn).request("GET /user/installations", {
+      request: { signal: caller.signal },
+    });
 
-    const [unsignalled, signalled] = base.mock.calls.map(([, init]) => init?.signal);
-    expect(unsignalled).toBeInstanceOf(AbortSignal);
-    // Composed, never replaced: the caller's abort still ends the request.
+    expect(signals.length).toBeGreaterThan(1);
+    for (const signal of signals) expect(signal).toBeInstanceOf(AbortSignal);
+    // Composed, never replaced: the caller's abort still ends the request,
+    // and the others stay live.
+    const signalled = signals.at(-1);
     expect(signalled).not.toBe(caller.signal);
     caller.abort();
     expect(signalled?.aborted).toBe(true);
-    expect(unsignalled?.aborted).toBe(false);
+    expect(signals[0]?.aborted).toBe(false);
   });
 });
 

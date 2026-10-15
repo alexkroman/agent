@@ -919,6 +919,15 @@ importers:
       '@octokit/core':
         specifier: ^7.0.8
         version: 7.0.8
+      '@octokit/oauth-methods':
+        specifier: ^6.0.5
+        version: 6.0.5
+      '@octokit/plugin-paginate-rest':
+        specifier: ^16.0.0
+        version: 16.0.0(@octokit/core@7.0.8)
+      '@octokit/request-error':
+        specifier: ^7.1.2
+        version: 7.1.2
       aai-server:
         specifier: workspace:*
         version: link:../aai-server
@@ -2517,6 +2526,12 @@ packages:
 
   '@octokit/openapi-types@29.0.1':
     resolution: {integrity: sha512-9qWOMFNxxLokERcms42rU0PTLqQmVs7g5E41TI4mCOxmpFayD1rfC7XxOL55cG9MBZLFlC31BrR37myMKardwg==}
+
+  '@octokit/plugin-paginate-rest@16.0.0':
+    resolution: {integrity: sha512-7RtUeGZypAK4EA4LrjTCnsLALNOoUcYh5vOnCNXpdIQVTQCPh4OFu7324iPqAls3KGgVnZktKUnNKZCOKyHrlA==}
+    engines: {node: '>= 20'}
+    peerDependencies:
+      '@octokit/core': '>=6'
 
   '@octokit/request-error@7.1.2':
     resolution: {integrity: sha512-XZRuT3xZ84D3gYErI1DZvhJ33dCWVV6uzBtWkaBB4TvA/L6eOeTZodxLFVB44bBEEo3vEx7y00UfX1tBLrtLRg==}
@@ -9599,6 +9614,11 @@ snapshots:
       '@octokit/types': 18.0.0
 
   '@octokit/openapi-types@29.0.1': {}
+
+  '@octokit/plugin-paginate-rest@16.0.0(@octokit/core@7.0.8)':
+    dependencies:
+      '@octokit/core': 7.0.8
+      '@octokit/types': 18.0.0
 
   '@octokit/request-error@7.1.2':
     dependencies:
