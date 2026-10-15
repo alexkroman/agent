@@ -165,21 +165,14 @@ a sibling left a key, a connection or a stale session behind fails instead.
   fake timers and the jsdom document are per worker. A probe run failed ~1,900
   tests in 460 files, most of them correct.
 
-## Async-leak detection is an opt-in DIAGNOSTIC
+## Leak checks
 
-`pnpm test:leaks` runs every package's unit tier with vitest's
-`--detect-async-leaks` (the `detectAsyncLeaks` option): a timer, socket or
-handle a test file starts and never closes is reported against that file. It is
-OFF by default and wired into no pipeline: it slows a run substantially (async
-hooks on every resource), so its timeouts are not the tier's. A finding fails
-that package's run (`PROMISE leaking in <file>`), and it is a lead to read
-rather than a verdict — the first run reported 28 in `aai` alone, nearly all
-from `keyed-lock-property.test.ts`. For one package,
-`pnpm --filter <pkg> exec vitest run --detect-async-leaks` — a `--filter` given
-to `pnpm test:leaks` lands after its `--` and reaches vitest, not turbo. The
-listener-leak gate (`fail-on-process-warning.mjs`) stays the always-on check.
-`expect.requireAssertions` is deliberately NOT set: the `fc.assert` property
-suites assert inside the property, which it cannot see.
+The listener-leak gate (`fail-on-process-warning.mjs`) is the always-on leak
+check. Vitest's `--detect-async-leaks` is deliberately NOT wired up: it reports
+every promise still pending at test end, and the workflow engine parks walks on
+a promise that by design never settles (`workflow/replay/suspend.ts`), so it
+drowns in noise. `expect.requireAssertions` is deliberately NOT set: the
+`fc.assert` property suites assert inside the property, which it cannot see.
 
 ## Mutation score is a manual DIAGNOSTIC, not a tier and not a gate
 
