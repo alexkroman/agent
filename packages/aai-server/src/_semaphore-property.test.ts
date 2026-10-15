@@ -227,17 +227,18 @@ describe("createSemaphore under a generated interleaving", () => {
       { numRuns: 300 },
     );
 
-    // Ranges over 20 runs, each floor set under the OBSERVED MINIMUM.
+    // Ranges over 100 runs; each floor sits well under the OBSERVED MINIMUM,
+    // since the left tail is long (CI once saw grantedPastLapse at 20).
     expect(reached.queuedThenGranted, "no caller ever queued and was then granted").toBeGreaterThan(
-      150,
-    ); // Measured over 20 runs: 201-271.
+      100,
+    ); // Measured over 100 runs: 163-283.
     expect(
       reached.grantedPastLapse,
       "no caller was ever granted past a lapsed waiter",
-    ).toBeGreaterThan(20); // Measured over 20 runs: 32-67.
+    ).toBeGreaterThan(8); // Measured over 100 runs: 24-69.
     expect(
       reached.doubleReleaseContended,
       "no double release ever happened while a caller was queued",
-    ).toBeGreaterThan(25); // Measured over 20 runs: 40-71.
+    ).toBeGreaterThan(15); // Measured over 100 runs: 39-79.
   }, 30_000);
 });
