@@ -7,7 +7,6 @@ import type { ReactNode } from "react";
 import { useTheme } from "../context.ts";
 import type { AgentState } from "../types.ts";
 import { ERROR_COLOR, INK_FAINT_PCT, inkTint, THINKING_COLOR } from "./_colors.ts";
-import { AaiLogo } from "./aai-logo.tsx";
 import { Eyebrow } from "./eyebrow.tsx";
 import { SessionErrorBanner } from "./session-error-banner.tsx";
 import { StateDot } from "./session-state-dot.tsx";
@@ -42,7 +41,7 @@ function stateColor(state: AgentState, primary: string, idle: string): string {
  * @public
  */
 export type ConsoleShellProps = {
-  /** Element rendered in place of the logo in the header. */
+  /** Element rendered before the title in the header. None by default. */
   icon?: ReactNode | undefined;
   /** Title string for the header. */
   title?: string | undefined;
@@ -140,7 +139,7 @@ export function ConsoleShell({
       {/* Header: brand left, live status right */}
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-3 min-w-0">
-          {icon ?? <AaiLogo size={22} />}
+          {icon}
           {title && (
             <span
               className="text-[22px] leading-[1.2] font-semibold tracking-[-0.2px] truncate"
