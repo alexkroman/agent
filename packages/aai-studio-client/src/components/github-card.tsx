@@ -32,7 +32,7 @@ import {
   type GithubConnectResult,
   githubResultText,
 } from "../github-result.ts";
-import { queryKeys } from "../query-keys.ts";
+import { queryKeys, sharedQueries } from "../query-keys.ts";
 import { Card } from "./settings-card.tsx";
 
 /**
@@ -399,13 +399,8 @@ export function GithubCard({
 
   // Same as the repository listing below it — see there for what a refetch
   // costs. `api.githubStatus` documents itself as read once per pane open,
-  // which is only true with these two options set.
-  const status = useQuery({
-    queryKey: queryKeys.github(bearer),
-    queryFn: () => api.githubStatus(bearer),
-    staleTime: Number.POSITIVE_INFINITY,
-    refetchOnWindowFocus: false,
-  });
+  // which is only true with the options `sharedQueries.github` sets.
+  const status = useQuery(sharedQueries.github(bearer));
 
   // The install round trip reports through the URL, so it is read once on
   // mount and stripped. Empty deps: a re-render must not re-announce it, and

@@ -8,9 +8,7 @@
 import clsx from "clsx";
 import { useState } from "react";
 import { CheckIcon, ChevronRightIcon, SpinnerIcon } from "./icons.tsx";
-import { summarizeArgs, ToolRow, toolTitle } from "./tool-row.tsx";
-
-type ToolPart = Record<string, unknown> & { type: string };
+import { summarizeArgs, type ToolPart, ToolRow, toolTitle } from "./tool-row.tsx";
 
 /** A call that has not produced its result yet. */
 function isPending(part: ToolPart): boolean {
@@ -85,12 +83,7 @@ export function ToolGroup({
       {open && (
         <div className="mt-1 ml-3 border-l border-line pl-2.5">
           {parts.map((part, i) => (
-            <ToolRow
-              key={String(part.toolCallId ?? i)}
-              part={part}
-              active={active}
-              labels={labels}
-            />
+            <ToolRow key={part.toolCallId ?? i} part={part} active={active} labels={labels} />
           ))}
         </div>
       )}

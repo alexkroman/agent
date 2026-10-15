@@ -7,15 +7,15 @@
 import { fireEvent, render as renderDom, screen } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-import { prettyToolName, summarizeArgs, ToolRow } from "./tool-row.tsx";
+import { prettyToolName, summarizeArgs, type ToolPart, ToolRow } from "./tool-row.tsx";
 
-const render = (part: Record<string, unknown> & { type: string }): string =>
-  renderToStaticMarkup(<ToolRow part={part} />);
+const render = (part: ToolPart): string => renderToStaticMarkup(<ToolRow part={part} />);
 
 describe("ToolRow", () => {
   test("shows a status mark (no TOOL chip), a friendly tool name, and an args preview", () => {
     const html = render({
       type: "tool-read_file",
+      toolCallId: "call-1",
       state: "output-available",
       input: { path: "agent.ts" },
       output: "ok",
@@ -34,7 +34,13 @@ describe("ToolRow", () => {
   test("prefers the sandbox-served label over the prettified fallback", () => {
     const html = renderToStaticMarkup(
       <ToolRow
-        part={{ type: "tool-bash", state: "output-available", input: { command: "ls" } }}
+        part={{
+          type: "tool-bash",
+          toolCallId: "call-1",
+          state: "output-available",
+          input: { command: "ls" },
+          output: "",
+        }}
         labels={{ bash: "Run command" }}
       />,
     );
@@ -49,7 +55,12 @@ describe("ToolRow", () => {
   });
 
   test("a pending call shimmers instead of showing a spinner glyph", () => {
-    const html = render({ type: "tool-test_agent", state: "input-available" });
+    const html = render({
+      type: "tool-test_agent",
+      toolCallId: "call-1",
+      state: "input-available",
+      input: {},
+    });
     expect(html).toContain("tool-shimmer");
     expect(html).not.toContain("⏳");
   });
@@ -58,24 +69,46 @@ describe("ToolRow", () => {
     // A call abandoned by Stop (or a dropped stream) never reaches
     // output-available — it must not flash forever.
     const html = renderToStaticMarkup(
-      <ToolRow part={{ type: "tool-test_agent", state: "input-available" }} active={false} />,
+      <ToolRow
+        part={{
+          type: "tool-test_agent",
+          toolCallId: "call-1",
+          state: "input-available",
+          input: {},
+        }}
+        active={false}
+      />,
     );
     expect(html).not.toContain("tool-shimmer");
   });
 
   test("a completed call is expandable; one with nothing to show is not", () => {
-    const done = render({ type: "tool-x", state: "output-available", output: "result" });
+    const done = render({
+      type: "tool-x",
+      toolCallId: "call-1",
+      state: "output-available",
+      input: {},
+      output: "result",
+    });
     expect(done).toContain("▶");
-    const bare = render({ type: "tool-x", state: "input-streaming" });
+    const bare = render({ type: "tool-x", toolCallId: "call-1", state: "input-streaming" });
     expect(bare).not.toContain("▶");
   });
 
   test("dynamic tools use their toolName, or a generic fallback without one", () => {
-    const named = render({ type: "dynamic-tool", toolName: "web_search" });
+    const named = render({
+      type: "dynamic-tool",
+      toolCallId: "call-1",
+      toolName: "web_search",
+      state: "input-streaming",
+    });
     expect(named).toContain("Web search");
     // No toolName → the generic "tool" name (proved via the label lookup).
+    // Off the type on purpose: the transcript is read off the wire, and
+    // `isChatMessages` does not check the parts.
+    const nameless = { type: "dynamic-tool", toolCallId: "call-1" } as unknown as ToolPart;
     const bare = renderToStaticMarkup(
-      <ToolRow part={{ type: "dynamic-tool" }} labels={{ tool: "Generic tool" }} />,
+      <ToolRow part={nameless} labels={{ tool: "Generic tool" }} />,
     );
     expect(bare).toContain("Generic tool");
   });
@@ -85,6 +118,7 @@ describe("ToolRow", () => {
       <ToolRow
         part={{
           type: "tool-bash",
+          toolCallId: "call-1",
           state: "output-available",
           input: { command: "ls" },
           output: "agent.ts\nclient.tsx",
@@ -107,6 +141,7 @@ describe("ToolRow", () => {
       <ToolRow
         part={{
           type: "tool-test_agent",
+          toolCallId: "call-1",
           state: "output-available",
           input: {},
           output: { built: true },
@@ -120,7 +155,13 @@ describe("ToolRow", () => {
   test("an empty argument record is shown nowhere — not as `{}` twice", () => {
     const { container } = renderDom(
       <ToolRow
-        part={{ type: "tool-list_files", state: "output-available", input: {}, output: "agent.ts" }}
+        part={{
+          type: "tool-list_files",
+          toolCallId: "call-1",
+          state: "output-available",
+          input: {},
+          output: "agent.ts",
+        }}
       />,
     );
     expect(container).not.toHaveTextContent("{}");
@@ -135,6 +176,7 @@ describe("ToolRow", () => {
       <ToolRow
         part={{
           type: "tool-write_file",
+          toolCallId: "call-1",
           state: "output-available",
           input: { path: "a.ts" },
           output: "  ",
@@ -150,6 +192,7 @@ describe("ToolRow", () => {
       <ToolRow
         part={{
           type: "tool-grep",
+          toolCallId: "call-1",
           state: "output-available",
           input: { pattern: "x" },
           output: "y".repeat(700),
@@ -162,7 +205,14 @@ describe("ToolRow", () => {
 
   test("an in-flight call with args expands to the args alone — no output block", () => {
     const { container } = renderDom(
-      <ToolRow part={{ type: "tool-grep", state: "input-available", input: { pattern: "x" } }} />,
+      <ToolRow
+        part={{
+          type: "tool-grep",
+          toolCallId: "call-1",
+          state: "input-available",
+          input: { pattern: "x" },
+        }}
+      />,
     );
     fireEvent.click(screen.getByRole("button"));
     expect(screen.getByText(/"pattern": "x"/)).toBeInTheDocument();

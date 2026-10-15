@@ -138,12 +138,16 @@ outlives a swept deploy ("Waking a preview" in
 `useAgentPageReady` probes the unauthenticated agent health route (existence
 only) and keeps "Starting your preview" up until the page is there.
 
-- **The probe carries its own deadline** (`AGENT_PAGE_PROBE_TIMEOUT_MS`, 5s).
-  The loop re-arms from the SETTLED promise, so a hung probe would end polling
-  for good.
-- **Readiness is LATCHED per slug**: re-probing could unmount the iframe and
-  kill a voice session; a new deploy reaches the frame via the `previewVersion`
-  key. The first probe renders an empty pane, so a ready preview does not flash
+- **The probe is a query** (`queryKeys.agentPageReady`, `refetchInterval` from
+  `probeRetryMs` over the answer count, `gcTime: 0` so a slug come back to
+  starts over). **It carries its own deadline** (`AGENT_PAGE_PROBE_TIMEOUT_MS`,
+  5s): an interval tick joins an in-flight fetch, so a hung probe would end
+  polling for good.
+- **Readiness is LATCHED per slug**: a `true` answer turns the query's `enabled`
+  off, so neither the interval nor `App`'s invalidate-everything on a bearer
+  refresh re-probes it. Re-probing could unmount the iframe and kill a voice
+  session; a new deploy reaches the frame via the `previewVersion` key. The
+  first probe renders an empty pane, so a ready preview does not flash
   "starting".
 - **A build in flight takes the whole pane** (`building` =
   `previewStale && hasAgent && !previewError`). `hasAgent` keeps an untouched

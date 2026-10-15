@@ -6,8 +6,18 @@
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import { ToolCallRow } from "@alexkroman1/aai-ui";
-import type { UIMessage } from "ai";
+import {
+  type DynamicToolUIPart,
+  getToolName,
+  isTextUIPart,
+  isToolUIPart,
+  type ToolUIPart,
+  type UIMessage,
+} from "ai";
 import { CheckIcon } from "./icons.tsx";
+
+/** One tool call in a message — a static tool's part or a dynamic one's. */
+export type ToolPart = ToolUIPart | DynamicToolUIPart;
 
 /** Caps on the expanded row's raw JSON — a peek, not a document viewer. */
 const ARGS_PREVIEW_CHARS = 300;
@@ -94,11 +104,6 @@ function preview(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max)}\n… ${text.length - max} more characters` : text;
 }
 
-function toolPartName(part: { type: string; toolName?: string }): string {
-  if (part.type === "dynamic-tool") return part.toolName ?? "tool";
-  return part.type.replace(/^tool-/, "");
-}
-
 /** Fallback when the sandbox hasn't served a label: "write_file" → "Write file". */
 export function prettyToolName(name: string): string {
   const words = name.replace(/[_-]+/g, " ").trim();
@@ -106,16 +111,11 @@ export function prettyToolName(name: string): string {
 }
 
 /** The name a person reads for a tool part: the sandbox's label, else a prettified raw name. */
-export function toolTitle(
-  part: { type: string; toolName?: unknown },
-  labels?: Record<string, string> | undefined,
-): string {
-  const rawName = toolPartName(part as { type: string; toolName?: string });
+export function toolTitle(part: ToolPart, labels?: Record<string, string> | undefined): string {
+  // "tool" for a dynamic part that arrived without its name: the transcript
+  // is read off the wire, and `isChatMessages` does not check the parts.
+  const rawName = getToolName(part) || "tool";
   return labels?.[rawName] ?? prettyToolName(rawName);
-}
-
-function isToolPart(part: { type: string }): boolean {
-  return part.type.startsWith("tool-") || part.type === "dynamic-tool";
 }
 
 /**
@@ -129,7 +129,7 @@ export function ToolRow({
   active = true,
   labels,
 }: {
-  part: Record<string, unknown> & { type: string };
+  part: ToolPart;
   /** False once the turn is over — a call abandoned by Stop must not shimmer forever. */
   active?: boolean;
   /** Tool name → friendly label (from the sandbox's GET /studio/tools). */
@@ -137,7 +137,7 @@ export function ToolRow({
 }) {
   const name = toolTitle(part, labels);
   const done = part.state === "output-available";
-  const output = part.output;
+  const output = part.state === "output-available" ? part.output : undefined;
   // An empty record is not an argument — `{}` in the expansion said exactly
   // as little as `{}` in the header did, twice.
   const hasArgs =
@@ -198,7 +198,7 @@ function asText(output: unknown): string {
 
 type MessageBlock =
   | { key: string; kind: "text"; text: string }
-  | { key: string; kind: "tool"; part: Record<string, unknown> & { type: string } };
+  | { key: string; kind: "tool"; part: ToolPart };
 
 /**
  * Group a message's parts into renderable blocks with stable keys: tool
@@ -210,17 +210,17 @@ export function toBlocks(message: UIMessage): MessageBlock[] {
   const blocks: MessageBlock[] = [];
   let lastToolKey = "lead";
   for (const part of message.parts) {
-    if (part.type === "text") {
+    if (isTextUIPart(part)) {
       const last = blocks.at(-1);
       if (last?.kind === "text") {
         last.text += part.text;
       } else {
         blocks.push({ key: `text-${lastToolKey}`, kind: "text", text: part.text });
       }
-    } else if (isToolPart(part)) {
-      const raw = part as Record<string, unknown> & { type: string };
-      lastToolKey = String(raw.toolCallId ?? `tool-${blocks.length}`);
-      blocks.push({ key: lastToolKey, kind: "tool", part: raw });
+    } else if (isToolUIPart(part)) {
+      // The fallback for a wire part without its id, which nothing checked.
+      lastToolKey = part.toolCallId ?? `tool-${blocks.length}`;
+      blocks.push({ key: lastToolKey, kind: "tool", part });
     }
   }
   return blocks;

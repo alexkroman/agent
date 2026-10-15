@@ -6,9 +6,17 @@
  * `popstate` for Back/Forward.
  */
 
+import { VALID_SLUG_RE } from "@alexkroman1/aai/internal";
 import { useEffect, useState } from "react";
 
-const PROJECT_PATH_RE = /^\/studio\/chat\/([a-z0-9][a-z0-9_-]*)\/?$/;
+/**
+ * A project URL. The name segment is the platform's own slug grammar — the
+ * one the server validates project names against — with its `^…$` anchors
+ * stripped so it can sit inside this pattern; a URL naming something no
+ * project could be called opens the home hero rather than a project that
+ * cannot exist.
+ */
+const PROJECT_PATH_RE = new RegExp(`^/studio/chat/(${VALID_SLUG_RE.source.slice(1, -1)})/?$`);
 
 /** The project a studio URL names, or `null` for the home hero. */
 export function projectFromPath(pathname: string): string | null {

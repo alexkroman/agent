@@ -10,11 +10,13 @@
 // still deploying shows the pane's own screen instead of the platform's raw
 // 404 body.
 
+import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef } from "react";
 import { api } from "../api.ts";
 import { DesktopIcon, ExternalIcon, PhoneIcon, ReloadIcon } from "../components/icons.tsx";
 import { agentUrl } from "../platform-origin.ts";
+import { queryKeys } from "../query-keys.ts";
 import { SEG_GROUP, segItemClass } from "../segmented.ts";
 
 /** The width the frame takes in the phone view — a common handset's CSS width. */
@@ -174,50 +176,53 @@ function useAgentPageReady(
   slug: string | undefined,
   onMissing?: () => Promise<unknown>,
 ): boolean | null {
-  // Carries the slug it is about, so a probe that settles after the framed
-  // slug changed can't answer for the new one.
-  const [result, setResult] = useState<{ slug: string; ready: boolean } | null>(null);
-  // Through a ref so a caller passing an inline arrow doesn't restart the
-  // poll — and with it the failure count and the latch — on every render.
-  const onMissingRef = useRef(onMissing);
-  onMissingRef.current = onMissing;
+  const queryKey = queryKeys.agentPageReady(slug);
+  const probe = useQuery({
+    queryKey,
+    queryFn: slug ? () => api.agentPageReady(slug) : skipToken,
+    // The latch: a page that answered once turns the query OFF, so neither
+    // the interval nor an invalidation (app.tsx sweeps every query on a
+    // bearer refresh) can re-probe it and unmount a live frame.
+    enabled: (query) => query.state.data !== true,
+    // Every answer — `false` included — is a successful fetch, so the
+    // query's update count IS the failure count until the latch closes.
+    refetchInterval: (query) =>
+      query.state.data === true ? false : probeRetryMs(query.state.dataUpdateCount),
+    refetchIntervalInBackground: true,
+    // Only the interval re-probes; nothing else here should.
+    staleTime: Number.POSITIVE_INFINITY,
+    // Dropped as soon as the pane stops framing the slug, so coming back to
+    // it starts the count (and the report latch) over, as a fresh probe.
+    gcTime: 0,
+  });
+  const queryClient = useQueryClient();
+  // Read off the cache because the observer's result does not carry it;
+  // `dataUpdatedAt`, read below, is what re-renders this on every answer.
+  const failures =
+    probe.data === false ? (queryClient.getQueryState(queryKey)?.dataUpdateCount ?? 0) : 0;
 
+  // The slug a report is in flight or delivered for. Latches on DELIVERY: a
+  // report that never arrived is sent again on the next failure.
+  const reportedFor = useRef<string | null>(null);
+  const report = useEffectEvent((missing: string): void => {
+    if (!onMissing) return;
+    reportedFor.current = missing;
+    void onMissing().catch(() => {
+      if (reportedFor.current === missing) reportedFor.current = null;
+    });
+  });
+  const answeredAt = probe.dataUpdatedAt;
   useEffect(() => {
-    if (!slug) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let failures = 0;
-    let reported = false;
-    /** Latches on DELIVERY: a report that never arrived is sent again. */
-    const report = (): void => {
-      const send = onMissingRef.current;
-      if (!send) return;
-      reported = true;
-      void send().catch(() => {
-        reported = false;
-      });
-    };
-    const probe = (): void => {
-      void api.agentPageReady(slug).then((ready) => {
-        if (cancelled) return;
-        setResult({ slug, ready });
-        // Ready → no timer armed, so the polling stops here for good.
-        if (ready) return;
-        failures += 1;
-        if (failures >= PROBE_FAILURES_BEFORE_WAKE && !reported) report();
-        timer = setTimeout(probe, probeRetryMs(failures));
-      });
-    };
-    probe();
-    return () => {
-      cancelled = true;
-      if (timer !== undefined) clearTimeout(timer);
-    };
-  }, [slug]);
+    if (!slug || answeredAt === 0) return;
+    if (failures < PROBE_FAILURES_BEFORE_WAKE) {
+      // A fresh count for this slug (see `gcTime`) is a fresh latch too.
+      if (reportedFor.current === slug) reportedFor.current = null;
+      return;
+    }
+    if (reportedFor.current !== slug) report(slug);
+  }, [slug, failures, answeredAt]);
 
-  // `result?.slug === slug` alone would be TRUE for no result and no slug
-  // (undefined both sides) — the empty-project render.
-  return result !== null && result.slug === slug ? result.ready : null;
+  return slug ? (probe.data ?? null) : null;
 }
 
 type PreviewPaneProps = {

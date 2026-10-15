@@ -12,9 +12,7 @@ import { memo, type ReactNode } from "react";
 import type { StudioStatus } from "../api.ts";
 import { ChatStatusNote } from "./chat-status-note.tsx";
 import { ToolGroup } from "./tool-group.tsx";
-import { toBlocks } from "./tool-row.tsx";
-
-type ToolPart = Record<string, unknown> & { type: string };
+import { type ToolPart, toBlocks } from "./tool-row.tsx";
 
 /** A message's blocks with each run of consecutive tool calls folded into one group. */
 type Section =
