@@ -14,8 +14,8 @@ const PULSING_STATES: ReadonlySet<AgentState> = new Set(["listening", "speaking"
 
 /**
  * The main chat interface for a voice agent session — the design-system
- * "voice agent console": a 760px column on the cream page with a header
- * (logo + live-status eyebrow), the conversation on a raised white card,
+ * "voice agent console": a 760px column on the page with a header
+ * (optional icon + live-status eyebrow), the conversation on a raised card,
  * and the session controls beneath it.
  *
  * Must be rendered inside a `SessionProvider`.
@@ -42,7 +42,7 @@ export function ChatView({
   title,
   className,
 }: {
-  /** Element rendered in place of the logo in the header. */
+  /** Element rendered before the title in the header. None by default. */
   icon?: ReactNode | undefined;
   /** Title string for the header. Defaults to the agent's declared name. */
   title?: string | undefined;

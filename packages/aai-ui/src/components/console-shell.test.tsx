@@ -64,16 +64,18 @@ describe("ConsoleShell", () => {
     expect(screen.getByText("Dispatch")).toBeInTheDocument();
   });
 
-  test("shows the live state, and a custom icon in place of the logo", () => {
+  test("draws no vendor mark when given no icon", () => {
+    const { container } = shell({ state: "listening" });
+    expect(container.querySelector("svg")).toBeNull();
+  });
+
+  test("shows the live state and a custom icon", () => {
     const { container } = shell({
       state: "thinking",
       icon: <span data-testid="mark">*</span>,
     });
     expect(screen.getByText("thinking")).toBeInTheDocument();
     expect(container.querySelector("[data-testid='mark']")).not.toBeNull();
-    // The stock logo is an <svg>; a custom icon replaces it rather than joining
-    // it, which is what a branded chrome needs.
-    expect(container.querySelector("svg")).toBeNull();
   });
 
   test("appends className rather than replacing the shell's own layout classes", () => {

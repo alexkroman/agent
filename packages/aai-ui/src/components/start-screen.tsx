@@ -6,13 +6,12 @@ import clsx from "clsx";
 import type { ReactNode } from "react";
 import { useSessionCore, useSessionSelector, useTheme } from "../context.ts";
 import { INK_MUTED_PCT, inkTint } from "./_colors.ts";
-import { AaiLogo } from "./aai-logo.tsx";
 import { Button } from "./button.tsx";
 import { Eyebrow } from "./eyebrow.tsx";
 
 /**
- * A centered start screen: a white card on the cream page with the logo, an
- * eyebrow label, a title, subtitle, and the start CTA. Renders
+ * A centered start screen: a card with an optional icon, an eyebrow label, a
+ * title, subtitle, and the start CTA. Renders
  * `children` (the main app) once the session has started.
  *
  * @example
@@ -42,7 +41,7 @@ export function StartScreen({
 }: {
   /** The app, rendered once the session has started. */
   children: ReactNode;
-  /** Element rendered in place of the logo on the card. */
+  /** Element rendered above the eyebrow on the card. None by default. */
   icon?: ReactNode | undefined;
   /** The card's title. Defaults to the agent's declared name. */
   title?: string | undefined;
@@ -76,7 +75,7 @@ export function StartScreen({
           boxShadow: "0 4px 12px -2px rgb(20 18 12 / 0.08)",
         }}
       >
-        {icon ?? <AaiLogo size={24} />}
+        {icon}
         <Eyebrow>Voice Agent</Eyebrow>
         {title && (
           <h1

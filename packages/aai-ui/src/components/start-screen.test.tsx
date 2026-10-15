@@ -83,14 +83,14 @@ describe("StartScreen: the card", () => {
       core,
     );
     expect(screen.getByText("Voice Agent")).toBeInTheDocument();
-    // The default mark stands in until a caller passes its own icon.
-    expect(screen.getByRole("img", { name: "AssemblyAI" })).toBeInTheDocument();
+    // No vendor mark by default: the card is the user's app, not ours.
+    expect(screen.queryByRole("img", { name: "AssemblyAI" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Start Conversation" }));
     expect(start).toHaveBeenCalledOnce();
   });
 
-  test("a caller's icon replaces the default mark", () => {
+  test("renders a caller's icon", () => {
     const core = createMockSessionCore({ started: false });
     renderWithProvider(
       <StartScreen icon={<span data-testid="icon" />}>

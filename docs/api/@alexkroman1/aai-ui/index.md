@@ -397,8 +397,8 @@ function ChatView(props: {
 ```
 
 The main chat interface for a voice agent session — the design-system
-"voice agent console": a 760px column on the cream page with a header
-(logo + live-status eyebrow), the conversation on a raised white card,
+"voice agent console": a 760px column on the page with a header
+(optional icon + live-status eyebrow), the conversation on a raised card,
 and the session controls beneath it.
 
 Must be rendered inside a `SessionProvider`.
@@ -419,7 +419,7 @@ Additional CSS class names for the root element, appended to its own.
 
 `ReactNode`
 
-Element rendered in place of the logo in the header.
+Element rendered before the title in the header. None by default.
 
 ###### title?
 
@@ -2052,8 +2052,8 @@ function StartScreen(props: {
 }): ReactNode;
 ```
 
-A centered start screen: a white card on the cream page with the logo, an
-eyebrow label, a title, subtitle, and the start CTA. Renders
+A centered start screen: a card with an optional icon, an eyebrow label, a
+title, subtitle, and the start CTA. Renders
 `children` (the main app) once the session has started.
 
 #### Parameters
@@ -2084,7 +2084,7 @@ Additional CSS class names for the root element, appended to its own.
 
 `ReactNode`
 
-Element rendered in place of the logo on the card.
+Element rendered above the eyebrow on the card. None by default.
 
 ###### subtitle?
 
@@ -6071,7 +6071,7 @@ Row rendered beneath the card (controls).
 optional icon?: ReactNode;
 ```
 
-Element rendered in place of the logo in the header.
+Element rendered before the title in the header. None by default.
 
 ##### pulsing
 
