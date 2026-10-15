@@ -319,6 +319,8 @@ requests the slug. `DeployBodySchema` has no config or name field.
   the release of its own expand (`supabase db push` runs before old containers
   stop), so record the owed drop there: each entry asserts no source writes the
   column and the column still exists, and is deleted in the drop's commit.
+  `check:migration-contract` fails a contraction the released code still names
+  (`supabase/README.md`).
 
 ## Queryable run state is not `workflow_runs`' job
 

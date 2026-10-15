@@ -56,9 +56,9 @@
  * could not make", so an unresolvable base FAILS here, naming `--base`.
  */
 
-import { existsSync } from "node:fs";
 import { parseScriptArgs } from "./_args.mjs";
 import { SCHEMA_DIR } from "./_deploy-changeset-scope.mjs";
+import { migrationsAt, treeMigrations } from "./_migration-files.mjs";
 import { git } from "./_ratchet.mjs";
 
 /**
@@ -102,56 +102,6 @@ function assertBaseResolves(base) {
   process.exit(1);
 }
 
-/**
- * Just the basenames of the `.sql` files directly under {@link SCHEMA_DIR}.
- *
- * @param {readonly string[]} paths Repo-relative.
- * @returns {string[]}
- */
-function migrationNames(paths) {
-  const prefix = `${SCHEMA_DIR}/`;
-  return paths
-    .filter((path) => path.startsWith(prefix) && path.endsWith(".sql"))
-    .map((path) => path.slice(prefix.length))
-    .filter((name) => !name.includes("/"));
-}
-
-/**
- * The migrations the base commit carries.
- *
- * `git ls-tree` rather than `git show`/`git diff`: it names the files at that
- * commit outright, with no dependence on what the branch did to them.
- *
- * @param {string} mergeBase
- * @returns {string[]}
- */
-function baseMigrations(mergeBase) {
-  const listed = git(["ls-tree", "-r", "--name-only", mergeBase, "--", SCHEMA_DIR], {
-    allowNoMatch: true,
-  });
-  return migrationNames(listed.split("\n").filter(Boolean));
-}
-
-/**
- * The migrations the WORKING TREE carries, untracked files included.
- *
- * Untracked is the case that matters: a brand-new migration is invisible to
- * `git diff` and is precisely what this gate is about, so `pnpm check` has to
- * see it before it is ever committed.
- *
- * @returns {string[]}
- */
-function treeMigrations() {
-  const tracked = git(["ls-files", SCHEMA_DIR], { allowNoMatch: true });
-  const untracked = git(["ls-files", "--others", "--exclude-standard", SCHEMA_DIR], {
-    allowNoMatch: true,
-  });
-  const paths = [...new Set(`${tracked}\n${untracked}`.split("\n").filter(Boolean))];
-  // A tracked path the branch DELETED is still listed by `ls-files`, and a
-  // deletion is not an addition — filter to what is really on disk.
-  return migrationNames(paths.filter((path) => existsSync(path)));
-}
-
 const { values } = parseScriptArgs({
   script: import.meta.url,
   options: { base: { type: "string" } },
@@ -164,7 +114,7 @@ const BASE = values.base ?? "origin/main";
 assertBaseResolves(BASE);
 
 const mergeBase = git(["merge-base", BASE, "HEAD"]).trim();
-const base = baseMigrations(mergeBase);
+const base = migrationsAt(mergeBase);
 
 if (base.length < MIN_BASE_MIGRATIONS) {
   console.error(
