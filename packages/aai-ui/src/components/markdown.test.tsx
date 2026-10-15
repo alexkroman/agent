@@ -51,7 +51,7 @@ describe("Markdown", () => {
   test("links take the theme primary color", () => {
     // Element colors come from the theme (default theme outside a provider),
     // not hardcoded palette classes, so custom themes stay coherent.
-    expect(render("[docs](https://example.com)")).toContain("color:#3F2BC1");
+    expect(render("[docs](https://example.com)")).toContain("color:#18181B");
   });
 
   test("does not render raw HTML from model output", () => {

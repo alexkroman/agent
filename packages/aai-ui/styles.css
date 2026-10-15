@@ -22,11 +22,11 @@
  *   `context.ts`, which `theme-css-vars.test.ts` asserts.
  */
 @theme {
-  --color-aai-bg: var(--aai-bg, #fbf8f2);
+  --color-aai-bg: var(--aai-bg, #fafafa);
   --color-aai-surface: var(--aai-surface, #ffffff);
-  --color-aai-text: var(--aai-text, #1b1a18);
-  --color-aai-border: var(--aai-border, #dcd7cc);
-  --color-aai-primary: var(--aai-primary, #3f2bc1);
+  --color-aai-text: var(--aai-text, #18181b);
+  --color-aai-border: var(--aai-border, #e4e4e7);
+  --color-aai-primary: var(--aai-primary, #18181b);
   --font-aai:
     "Monument Grotesk", "ABC Monument Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --font-aai-serif:
@@ -180,7 +180,7 @@
  */
 .aai-scroll {
   scrollbar-width: thin;
-  scrollbar-color: var(--aai-scrollbar-thumb, var(--aai-border, #dcd7cc))
+  scrollbar-color: var(--aai-scrollbar-thumb, var(--aai-border, #e4e4e7))
     var(--aai-scrollbar-track, transparent);
 }
 .aai-scroll::-webkit-scrollbar {
@@ -190,6 +190,6 @@
   background: var(--aai-scrollbar-track, transparent);
 }
 .aai-scroll::-webkit-scrollbar-thumb {
-  background: var(--aai-scrollbar-thumb, var(--aai-border, #dcd7cc));
+  background: var(--aai-scrollbar-thumb, var(--aai-border, #e4e4e7));
   border-radius: 3px;
 }

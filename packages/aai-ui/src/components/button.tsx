@@ -69,8 +69,13 @@ function variantColors(variant: ButtonVariant, theme: Required<ClientTheme>): Va
         fg: theme.surface,
         border: "transparent",
         // Blended toward the theme's own ink, so one rule reads correctly on a
-        // dark theme (where "toward ink" is lighter) as on a light one.
-        hoverBg: inkTint(theme.text, theme.primary, 14),
+        // dark theme (where "toward ink" is lighter) as on a light one. A
+        // primary that IS the ink (the default theme) has nothing to blend
+        // toward, so it lifts toward the surface instead.
+        hoverBg:
+          theme.primary.toLowerCase() === theme.text.toLowerCase()
+            ? primaryTint(theme.primary, theme.surface, 82)
+            : inkTint(theme.text, theme.primary, 14),
         hoverFg: theme.surface,
         hoverBorder: "transparent",
       };

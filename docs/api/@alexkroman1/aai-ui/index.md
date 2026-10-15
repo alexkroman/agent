@@ -5987,7 +5987,7 @@ Theme color overrides for the AAI UI components.
 optional bg?: string;
 ```
 
-Background color, also painted on `html`/`body`. Default: `#FBF8F2`.
+Background color, also painted on `html`/`body`. Default: `#FAFAFA`.
 
 ##### border?
 
@@ -5995,7 +5995,7 @@ Background color, also painted on `html`/`body`. Default: `#FBF8F2`.
 optional border?: string;
 ```
 
-Border color. Default: `#DCD7CC`.
+Border color. Default: `#E4E4E7`.
 
 ##### primary?
 
@@ -6003,7 +6003,7 @@ Border color. Default: `#DCD7CC`.
 optional primary?: string;
 ```
 
-Primary accent color. Default: `#3F2BC1`.
+Primary accent color. Default: `#18181B`.
 
 ##### surface?
 
@@ -6019,7 +6019,7 @@ Surface/card color. Default: `#FFFFFF`.
 optional text?: string;
 ```
 
-Main text color. Default: `#1B1A18`.
+Main text color. Default: `#18181B`.
 
 ***
 

@@ -374,14 +374,14 @@ export type WebSocketConstructor = {
  * @public
  */
 export type ClientTheme = {
-  /** Background color, also painted on `html`/`body`. Default: `#FBF8F2`. */
+  /** Background color, also painted on `html`/`body`. Default: `#FAFAFA`. */
   bg?: string;
-  /** Primary accent color. Default: `#3F2BC1`. */
+  /** Primary accent color. Default: `#18181B`. */
   primary?: string;
-  /** Main text color. Default: `#1B1A18`. */
+  /** Main text color. Default: `#18181B`. */
   text?: string;
   /** Surface/card color. Default: `#FFFFFF`. */
   surface?: string;
-  /** Border color. Default: `#DCD7CC`. */
+  /** Border color. Default: `#E4E4E7`. */
   border?: string;
 };

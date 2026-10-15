@@ -58,6 +58,16 @@ describe("Button", () => {
     });
   });
 
+  test("the default variant's hover is visible when the primary is the ink", () => {
+    // The default theme's primary IS its text color, so blending toward the
+    // ink is a string-distinct no-op: `color-mix(X 14%, X)` paints X again.
+    const button = renderButton("default");
+    const hover = button.style.getPropertyValue("--aai-btn-bg-hover");
+    const blended = /color-mix\(in srgb, (\S+) \d+%, (\S+)\)/.exec(hover);
+    expect(blended).not.toBeNull();
+    expect(blended?.[1]?.toLowerCase()).not.toBe(blended?.[2]?.toLowerCase());
+  });
+
   test("a caller's own style prop still wins over the variant colors", () => {
     const button = renderButton("default", { style: { background: "rebeccapurple" } });
     // The colors moved to custom properties so a :hover rule could reach them
