@@ -1,5 +1,20 @@
 # aai-studio-server
 
+## 0.11.33
+
+### Patch Changes
+
+- f5ca0c1: Keep deployed agents reachable through a platform deploy: a shutting-down
+  replica hands its agent guests off to the fleet instead of draining them (a
+  draining guest held its sandbox name and refused every new session for up to ten
+  minutes), and a guest sandbox now stops the moment its harness exits, releasing
+  its name.
+- f5ca0c1: Studio: a replica going down in a deploy now drains its coding-agent sandboxes
+  (bounded) before terminating them, and the client regenerates a turn whose
+  sandbox dropped mid-stream instead of showing an error.
+- Updated dependencies [f5ca0c1]
+  - aai-server@0.2.7
+
 ## 0.11.32
 
 ### Patch Changes

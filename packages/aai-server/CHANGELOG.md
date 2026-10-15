@@ -1,5 +1,15 @@
 # aai-server
 
+## 0.2.7
+
+### Patch Changes
+
+- f5ca0c1: Keep deployed agents reachable through a platform deploy: a shutting-down
+  replica hands its agent guests off to the fleet instead of draining them (a
+  draining guest held its sandbox name and refused every new session for up to ten
+  minutes), and a guest sandbox now stops the moment its harness exits, releasing
+  its name.
+
 ## 0.2.6
 
 ### Patch Changes
