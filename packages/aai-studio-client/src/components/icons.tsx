@@ -115,6 +115,22 @@ export const PlusIcon = glyph(
   </>,
 );
 
+export const SearchIcon = glyph(
+  <>
+    <circle cx="11" cy="11" r="6.5" />
+    <path d="m20 20-4.2-4.2" />
+  </>,
+  14,
+);
+
+export const CloseIcon = glyph(
+  <>
+    <path d="M6 6l12 12" />
+    <path d="M18 6 6 18" />
+  </>,
+  14,
+);
+
 export const CheckIcon = glyph(<path d="m5 12 5 5 9-10" />, 14);
 
 export const WaveIcon = glyph(

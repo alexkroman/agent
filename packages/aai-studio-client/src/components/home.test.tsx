@@ -9,7 +9,7 @@ import { userEvent } from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 import { STARTERS } from "../starters.ts";
-import { HomeHero, HomeSidebar } from "./home.tsx";
+import { filterTerms, HomeHero, HomeSidebar, matchesTerms } from "./home.tsx";
 
 const noop = (): void => undefined;
 
@@ -159,5 +159,123 @@ describe("HomeSidebar with a long list", () => {
     fireEvent.click(screen.getByRole("button", { name: "sweep-agent" }));
 
     expect(onSelectProject).toHaveBeenCalledWith("sweep-agent");
+  });
+
+  test("every term must match, in any order — base and suffix together", async () => {
+    const user = userEvent.setup();
+    const names = [...many(20), "new-retail-from-retail-zw77pm", "new-retail-from-retail-ab12cd"];
+    render(<HomeSidebar projects={names} onSelectProject={noop} />);
+    await user.type(screen.getByLabelText("Filter projects"), "zw7 retail");
+
+    expect(
+      screen.getByRole("button", { name: "new-retail-from-retail-zw77pm" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "new-retail-from-retail-ab12cd" })).toBeNull();
+    // The count says how many survived, out of how many.
+    expect(screen.getByText(/Projects \(1 of 22\)/)).toBeInTheDocument();
+  });
+
+  test("marks the matched part of each surviving name", async () => {
+    const user = userEvent.setup();
+    render(<HomeSidebar projects={[...many(20), "sweep-agent"]} onSelectProject={noop} />);
+    await user.type(screen.getByLabelText("Filter projects"), "SWEEP");
+
+    const marks = Array.from(document.querySelectorAll("mark"), (m) => m.textContent);
+    expect(marks).toEqual(["sweep"]);
+  });
+
+  test("Enter opens the top match", async () => {
+    const user = userEvent.setup();
+    const onSelectProject = vi.fn();
+    render(
+      <HomeSidebar projects={[...many(20), "sweep-agent"]} onSelectProject={onSelectProject} />,
+    );
+    await user.type(screen.getByLabelText("Filter projects"), "sweep{Enter}");
+
+    expect(onSelectProject).toHaveBeenCalledWith("sweep-agent");
+  });
+
+  test("Enter in an empty filter opens nothing", async () => {
+    const user = userEvent.setup();
+    const onSelectProject = vi.fn();
+    render(<HomeSidebar projects={many(20)} onSelectProject={onSelectProject} />);
+    await user.type(screen.getByLabelText("Filter projects"), "{Enter}");
+
+    expect(onSelectProject).not.toHaveBeenCalled();
+  });
+
+  test("Escape clears the filter, then leaves the box", async () => {
+    const user = userEvent.setup();
+    render(<HomeSidebar projects={many(20)} onSelectProject={noop} />);
+    const box = screen.getByLabelText("Filter projects");
+    await user.type(box, "07{Escape}");
+    expect(box).toHaveValue("");
+    expect(box).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(box).not.toHaveFocus();
+  });
+
+  test("the × button and the empty state's link both reset the filter", async () => {
+    const user = userEvent.setup();
+    render(<HomeSidebar projects={many(20)} onSelectProject={noop} />);
+    const box = screen.getByLabelText("Filter projects");
+
+    await user.type(box, "nope");
+    await user.click(screen.getByRole("button", { name: "Clear search" }));
+    expect(box).toHaveValue("");
+
+    await user.type(box, "nope");
+    await user.click(screen.getByRole("button", { name: "Clear filter" }));
+    expect(box).toHaveValue("");
+    expect(screen.getAllByRole("button", { name: /use-transcript-workflow/ })).toHaveLength(20);
+  });
+
+  test("/ focuses the filter, but not while typing in another field", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <textarea aria-label="Prompt" />
+        <HomeSidebar projects={many(20)} onSelectProject={noop} />
+      </>,
+    );
+    const box = screen.getByLabelText("Filter projects");
+    const prompt = screen.getByLabelText("Prompt");
+
+    await user.click(prompt);
+    await user.keyboard("/");
+    expect(prompt).toHaveValue("/");
+    expect(box).not.toHaveFocus();
+
+    prompt.blur();
+    await user.keyboard("/");
+    expect(box).toHaveFocus();
+    expect(box).toHaveValue("");
+  });
+
+  test("ArrowDown walks from the filter into the rows and ArrowUp walks back", async () => {
+    const user = userEvent.setup();
+    render(<HomeSidebar projects={many(20)} onSelectProject={noop} />);
+    const box = screen.getByLabelText("Filter projects");
+    await user.click(box);
+
+    await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("button", { name: "use-transcript-workflow-00" })).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
+    expect(screen.getByRole("button", { name: "use-transcript-workflow-01" })).toHaveFocus();
+    await user.keyboard("{ArrowUp}{ArrowUp}");
+    expect(box).toHaveFocus();
+  });
+});
+
+describe("project filter terms", () => {
+  test("splits on whitespace, lowercases, and drops empties", () => {
+    expect(filterTerms("  Retail   ZW7 ")).toEqual(["retail", "zw7"]);
+    expect(filterTerms("   ")).toEqual([]);
+  });
+
+  test("matches only when every term is present", () => {
+    expect(matchesTerms("new-retail-from-retail-zw77pm", ["zw7", "retail"])).toBe(true);
+    expect(matchesTerms("new-retail-from-retail-zw77pm", ["zw7", "pizza"])).toBe(false);
+    expect(matchesTerms("anything", [])).toBe(true);
   });
 });
