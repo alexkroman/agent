@@ -36,6 +36,50 @@
     {
       "label": "A late-night picker for movies, music, and books",
       "prompt": "Use the entertainment-picks-agent template."
+    },
+    {
+      "label": "A boutique hotel front desk that books rooms and tables",
+      "prompt": "Use the hotel-reception-agent template."
+    },
+    {
+      "label": "A travel concierge for flights, hotels, and car rentals",
+      "prompt": "Use the travel-concierge-agent template."
+    },
+    {
+      "label": "A support line that checks its answers before it speaks",
+      "prompt": "Use the technical-support-agent template."
+    },
+    {
+      "label": "A front desk that hands you to billing or support",
+      "prompt": "Use the front-desk-agent template."
+    },
+    {
+      "label": "A smart speaker that sets reminders and runs research",
+      "prompt": "Use the home-assistant-agent template."
+    },
+    {
+      "label": "An executive assistant that triages your inbox",
+      "prompt": "Use the executive-inbox-agent template."
+    },
+    {
+      "label": "A hiring desk that scores applicants against a role",
+      "prompt": "Use the applicant-screening-agent template."
+    },
+    {
+      "label": "A research planner that works a plan step by step",
+      "prompt": "Use the research-planner-agent template."
+    },
+    {
+      "label": "A briefing desk that sends researchers out in parallel",
+      "prompt": "Use the topic-briefing-agent template."
+    },
+    {
+      "label": "A hold-to-talk notebook for field notes",
+      "prompt": "Use the push-to-talk-agent template."
+    },
+    {
+      "label": "A word-guessing game show host",
+      "prompt": "Use the word-game-agent template."
     }
   ]
 }
