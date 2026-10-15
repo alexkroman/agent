@@ -356,7 +356,9 @@ export function App(): ReactNode {
       </header>
 
       <label className="flex flex-col gap-1 text-sm md:max-w-md">
-        API key (the agent's <code>CALLS_API_KEY</code>)
+        <span>
+          API key (the agent's <code>CALLS_API_KEY</code>)
+        </span>
         <input
           className="rounded-md border border-aai-border bg-aai-bg px-3 py-2 font-mono text-sm text-aai-text"
           type="password"
