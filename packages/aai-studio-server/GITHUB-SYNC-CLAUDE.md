@@ -98,3 +98,10 @@ seam with a real RSA key, so App JWT minting and token exchange really run and
 the invisible properties (no `base_tree`, unforced PATCH, empty-repository path)
 are assertable. An unrecognized path answers **501 naming it**. Do not mock
 `syncWorkspaceToGithub` or our own wrappers.
+
+Every GitHub call — App, installation and user token, the OAuth code exchange
+included — goes through `studio-github-client.ts`'s clients, so all share one
+deadline, `RequestError` and `paginate`. A hand-built fake `Response` must pass
+through `servedFrom` (paginate parses `response.url`, empty on a constructed
+one) and page with a `Link: …; rel="next"` header, as GitHub does — a full page
+alone ends the walk.

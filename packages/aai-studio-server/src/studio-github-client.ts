@@ -21,13 +21,21 @@
  * GitHub call is a studio request that never answers.
  */
 
-import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { createAppAuth } from "@octokit/auth-app";
 import { Octokit } from "@octokit/core";
+import { paginateRest } from "@octokit/plugin-paginate-rest";
+import { RequestError } from "@octokit/request-error";
 import type { GithubAppConfig } from "./studio-github-config.ts";
 
+/**
+ * Octokit with `paginate`, so no list walk re-derives `Link`-header paging.
+ * Every client in this package — App, installation and user — is one of these.
+ */
+const PaginatingOctokit = Octokit.plugin(paginateRest);
+
 /** A GitHub client, as the rest of this package sees one. */
-export type GithubOctokit = InstanceType<typeof Octokit>;
+export type GithubOctokit = InstanceType<typeof PaginatingOctokit>;
 
 /** Per-call deadline. Sized for a cold GitHub API call, not for a build. */
 const GITHUB_REQUEST_TIMEOUT_MS = 20_000;
@@ -69,24 +77,18 @@ export type GithubInstallationAccount = {
  *
  * Read off the error's `status` and never its message: Octokit's
  * `RequestError` carries the number, and matching prose would turn a reworded
- * GitHub error into a silent behaviour change.
+ * GitHub error into a silent behaviour change. Only a `RequestError` counts —
+ * any other object that happens to carry a `status` is not GitHub's answer.
  */
 export function githubErrorStatus(err: unknown): number | undefined {
-  if (!isRecord(err)) return undefined;
-  return typeof err.status === "number" ? err.status : undefined;
+  return err instanceof RequestError ? err.status : undefined;
 }
 
 /**
- * `fetch` with the GitHub budget composed onto the caller's signal.
- *
- * Exported because `studio-github-user.ts` dials github.com directly (the
- * OAuth token exchange and `GET /user/installations` are USER-token calls, so
- * they cannot go through an installation-authenticated Octokit) and had
- * re-derived both halves — its own 20s constant, commented "same budget as
- * every other GitHub call", and its own `AbortSignal.any` composition. Two
- * numbers that drift the moment anyone tunes "the GitHub budget".
+ * `fetch` with the GitHub budget composed onto the caller's signal — the one
+ * place "the GitHub budget" is spelled, for every client this module builds.
  */
-export function deadlineFetch(base: typeof globalThis.fetch): typeof globalThis.fetch {
+function deadlineFetch(base: typeof globalThis.fetch): typeof globalThis.fetch {
   return (input, init) => {
     const deadline = AbortSignal.timeout(GITHUB_REQUEST_TIMEOUT_MS);
     // Composed, never replaced: `AbortSignal.any` settles on whichever fires
@@ -117,10 +119,28 @@ export function createGithubOctokit(
     privateKey: config.privateKey,
     ...omitUndefined({ installationId: options.installationId }),
   };
-  return new Octokit({
+  return new PaginatingOctokit({
     authStrategy: createAppAuth,
     auth,
     request: { fetch: deadlineFetch(options.fetchFn ?? globalThis.fetch) },
+  });
+}
+
+/**
+ * A client acting as a USER — the OAuth code exchange (no token yet) and the
+ * entitlement check's `GET /user/installations` (the token it returned).
+ *
+ * Neither can go through {@link createGithubOctokit}: an App JWT or
+ * installation token answers neither question. Same deadline, same error
+ * type, same pagination as every other GitHub call.
+ */
+export function createGithubUserOctokit(
+  userToken: string | undefined,
+  fetchFn: typeof globalThis.fetch = globalThis.fetch,
+): GithubOctokit {
+  return new PaginatingOctokit({
+    ...omitUndefined({ auth: userToken }),
+    request: { fetch: deadlineFetch(fetchFn) },
   });
 }
 
@@ -175,15 +195,13 @@ export async function listInstallationRepos(
   octokit: GithubOctokit,
 ): Promise<readonly GithubRepoSummary[]> {
   const repos: GithubRepoSummary[] = [];
-  for (let page = 1; page <= MAX_REPO_PAGES; page += 1) {
-    const { data } = await octokit.request("GET /installation/repositories", {
-      per_page: REPO_PAGE_SIZE,
-      page,
-    });
-    for (const repo of data.repositories) {
-      repos.push({ fullName: repo.full_name, private: repo.private });
-    }
-    if (data.repositories.length < REPO_PAGE_SIZE) break;
+  let pages = 0;
+  for await (const { data } of octokit.paginate.iterator("GET /installation/repositories", {
+    per_page: REPO_PAGE_SIZE,
+  })) {
+    for (const repo of data) repos.push({ fullName: repo.full_name, private: repo.private });
+    pages += 1;
+    if (pages >= MAX_REPO_PAGES) break;
   }
   return repos;
 }

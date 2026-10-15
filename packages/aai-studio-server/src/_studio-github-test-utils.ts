@@ -116,6 +116,39 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+/**
+ * Stamp `response.url` as a real `fetch` would. A constructed `Response` has
+ * an empty one, and Octokit's `paginate` parses it on a page with no `next`.
+ */
+export function servedFrom(url: string | URL, response: Response): Response {
+  Object.defineProperty(response, "url", { value: String(url) });
+  return response;
+}
+
+/** List routes GitHub pages with a `Link` header, and the key their items sit under. */
+const PAGED_LISTS: Readonly<Record<string, string>> = {
+  "/installation/repositories": "repositories",
+  "/user/installations": "installations",
+};
+
+/**
+ * A full page gets `Link: <…page=N+1>; rel="next"`, as GitHub sends it — the
+ * header, not a page's length, is what Octokit's `paginate` follows.
+ */
+async function withNextLink(url: URL, response: Response): Promise<Response> {
+  const key = PAGED_LISTS[url.pathname];
+  if (!key) return response;
+  const body = (await response.clone().json()) as Record<string, unknown>;
+  const items = body[key];
+  const perPage = Number(url.searchParams.get("per_page") ?? 30);
+  if (!(Array.isArray(items) && items.length >= perPage)) return response;
+  const next = new URL(url);
+  next.searchParams.set("page", String(Number(url.searchParams.get("page") ?? 1) + 1));
+  const headers = new Headers(response.headers);
+  headers.set("Link", `<${next}>; rel="next"`);
+  return new Response(await response.text(), { status: response.status, headers });
+}
+
 /** One fake route: does it match this request, and what does it answer. */
 type FakeRoute = {
   method: string;
@@ -168,7 +201,7 @@ const FAKE_ROUTES: readonly FakeRoute[] = [
     reply: (_call, ctx) =>
       ctx.rejectUserCode
         ? json({ error: "bad_verification_code" })
-        : json({ access_token: "gho_user_token", token_type: "bearer" }),
+        : json({ access_token: "gho_user_token", token_type: "bearer", scope: "" }),
   },
   // What the user finishing the install actually administers.
   {
@@ -321,9 +354,12 @@ export function createFakeGithub(options: FakeGithubOptions = {}): FakeGithub {
     const route = FAKE_ROUTES.find(
       (entry) => entry.method === call.method && entry.matches(call.path),
     );
-    return route
-      ? route.reply(call, ctx)
-      : json({ message: `fake github has no route for ${call.method} ${call.path}` }, 501);
+    return servedFrom(
+      url,
+      route
+        ? await withNextLink(url, route.reply(call, ctx))
+        : json({ message: `fake github has no route for ${call.method} ${call.path}` }, 501),
+    );
   };
 
   const lastCall = (pathIncludes: string): GithubCall | undefined =>

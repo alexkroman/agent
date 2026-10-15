@@ -8,6 +8,7 @@
 // forced (a concurrent push must not be discarded), and an empty repository
 // creates the ref rather than updating one.
 
+import { RequestError } from "@octokit/request-error";
 import { describe, expect, test } from "vitest";
 import {
   createFakeGithub,
@@ -347,24 +348,30 @@ describe("syncWorkspaceToGithub", () => {
   });
 });
 
+/** A failure as Octokit reports one — the only shape that carries a status. */
+const githubError = (status: number, message = "GitHub error"): RequestError =>
+  new RequestError(message, status, {
+    request: { method: "POST", url: "https://api.github.com/x", headers: {} },
+  });
+
 describe("githubSyncErrorMessage", () => {
   test("names the fix for each status this flow really produces", () => {
     // Each sentence has to name the ACTION, not the symptom: these are the
     // three misconfigurations a user meets, and "sync failed" leaves all of
     // them looking like a bug in the studio.
-    expect(githubSyncErrorMessage({ status: 404 })).toContain("reconnect GitHub");
-    expect(githubSyncErrorMessage({ status: 401 })).toContain("reconnect GitHub");
-    expect(githubSyncErrorMessage({ status: 403 })).toContain("Contents: read and write");
+    expect(githubSyncErrorMessage(githubError(404))).toContain("reconnect GitHub");
+    expect(githubSyncErrorMessage(githubError(401))).toContain("reconnect GitHub");
+    expect(githubSyncErrorMessage(githubError(403))).toContain("Contents: read and write");
     // Only the sync's OWN verdict, reached after the retries are spent, may
     // say the branch moved. A bare 409 or 422 is a request GitHub refuses on
     // its merits, and "try again" is advice that cannot ever work.
     expect(githubSyncErrorMessage(new GithubRefConflictError("main"))).toContain(
       "moved while the sync was running",
     );
-    expect(githubSyncErrorMessage({ status: 422, message: "tree.path is invalid" })).toBe(
+    expect(githubSyncErrorMessage(githubError(422, "tree.path is invalid"))).toBe(
       "tree.path is invalid",
     );
-    expect(githubSyncErrorMessage({ status: 409, message: "Git Repository is empty" })).toBe(
+    expect(githubSyncErrorMessage(githubError(409, "Git Repository is empty"))).toBe(
       "Git Repository is empty",
     );
   });
@@ -373,6 +380,6 @@ describe("githubSyncErrorMessage", () => {
     // Verbatim beats flattening: a message we did not plan for is more useful
     // as GitHub wrote it.
     expect(githubSyncErrorMessage(new Error("socket hang up"))).toBe("socket hang up");
-    expect(githubSyncErrorMessage({ status: 500, message: "x" })).not.toContain("reconnect");
+    expect(githubSyncErrorMessage(githubError(500, "x"))).not.toContain("reconnect");
   });
 });

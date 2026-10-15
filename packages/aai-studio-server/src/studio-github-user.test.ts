@@ -13,7 +13,7 @@
 // on the list itself, not only through the boolean.
 
 import { describe, expect, test, vi } from "vitest";
-import { testGithubApp } from "./_studio-github-test-utils.ts";
+import { servedFrom, testGithubApp } from "./_studio-github-test-utils.ts";
 import {
   exchangeUserCode,
   listUserInstallations,
@@ -21,16 +21,22 @@ import {
   userControlsInstallation,
 } from "./studio-github-user.ts";
 
-const json = (body: unknown, status = 200): Response =>
+const json = (body: unknown, status = 200, headers: Record<string, string> = {}): Response =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
   });
+
+/** A fake `fetch` answering each request with the next of `responses`. */
+const answering = (...responses: Response[]) =>
+  vi.fn<typeof globalThis.fetch>(async (input) =>
+    servedFrom(String(input), responses.shift() ?? json({ message: "no more pages" }, 500)),
+  );
 
 describe("exchangeUserCode", () => {
   test("returns the token GitHub answers with", async () => {
     const fetchFn = vi.fn<typeof globalThis.fetch>(async () =>
-      json({ access_token: "gho_token", token_type: "bearer" }),
+      json({ access_token: "gho_token", token_type: "bearer", scope: "" }),
     );
     expect(await exchangeUserCode(testGithubApp, "code-1", fetchFn)).toBe("gho_token");
 
@@ -62,28 +68,44 @@ describe("exchangeUserCode", () => {
       json(["not", "an", "object"]),
     ];
     for (const response of cases) {
-      const fetchFn = vi.fn<typeof globalThis.fetch>(async () => response);
-      expect(await exchangeUserCode(testGithubApp, "c", fetchFn)).toBeNull();
+      expect(await exchangeUserCode(testGithubApp, "c", answering(response))).toBeNull();
     }
+  });
+
+  test("a network failure is null too, not a throw", async () => {
+    const fetchFn = vi.fn<typeof globalThis.fetch>(async () => {
+      throw new TypeError("fetch failed");
+    });
+    expect(await exchangeUserCode(testGithubApp, "c", fetchFn)).toBeNull();
   });
 });
 
-const listing = (ids: number[], total = ids.length): Response =>
-  json({ total_count: total, installations: ids.map((id) => ({ id })) });
+/** One page of installations; `next` adds the `Link` header GitHub pages with. */
+const listing = (ids: number[], next?: number): Response =>
+  json(
+    { total_count: ids.length, installations: ids.map((id) => ({ id })) },
+    200,
+    next === undefined
+      ? {}
+      : {
+          Link: `<https://api.github.com/user/installations?per_page=100&page=${next}>; rel="next"`,
+        },
+  );
+
+const fullPage = (from: number) => Array.from({ length: 100 }, (_, i) => i + from);
 
 describe("listUserInstallations", () => {
   test("reports what the user administers, newest first", async () => {
-    const fetchFn = vi.fn<typeof globalThis.fetch>(async () => listing([7, 42]));
-    expect(await listUserInstallations("tok", fetchFn)).toEqual([42, 7]);
+    expect(await listUserInstallations("tok", answering(listing([7, 42])))).toEqual([42, 7]);
   });
 
   test("the bearer is the USER token, on GitHub's installations route", async () => {
-    const fetchFn = vi.fn<typeof globalThis.fetch>(async () => listing([42]));
+    const fetchFn = answering(listing([42]));
     await listUserInstallations("gho_user", fetchFn);
     const [url, init] = fetchFn.mock.calls[0] ?? [];
     expect(String(url)).toContain("https://api.github.com/user/installations");
     const headers = init?.headers as Record<string, string>;
-    expect(headers.Authorization).toBe("Bearer gho_user");
+    expect(headers.authorization).toBe("token gho_user");
   });
 
   test("every failure shape reports NOTHING, rather than throwing", async () => {
@@ -98,36 +120,44 @@ describe("listUserInstallations", () => {
       json({ installations: "nope" }),
     ];
     for (const response of responses) {
-      const fetchFn = vi.fn<typeof globalThis.fetch>(async () => response);
-      expect(await listUserInstallations("tok", fetchFn)).toEqual([]);
+      expect(await listUserInstallations("tok", answering(response))).toEqual([]);
     }
+    const unreachable = vi.fn<typeof globalThis.fetch>(async () => {
+      throw new TypeError("fetch failed");
+    });
+    expect(await listUserInstallations("tok", unreachable)).toEqual([]);
   });
 
   test("a page that fails MID-WALK discards what came before it", async () => {
-    const pages = [listing(Array.from({ length: 100 }, (_, i) => i + 1000)), json({}, 500)];
-    const fetchFn = vi.fn<typeof globalThis.fetch>(async () => pages.shift() ?? listing([]));
+    const fetchFn = answering(listing(fullPage(1000), 2), json({}, 500));
     expect(await listUserInstallations("tok", fetchFn)).toEqual([]);
+    expect(fetchFn).toHaveBeenCalledTimes(2);
   });
 
   test("a string id that merely looks like a number is dropped", async () => {
     // Identity, not coercion: `"42" == 42` would hand an attacker a match from
     // any endpoint that stringifies ids.
-    const fetchFn = vi.fn<typeof globalThis.fetch>(async () =>
-      json({ total_count: 1, installations: [{ id: "42" }] }),
-    );
+    const fetchFn = answering(json({ total_count: 1, installations: [{ id: "42" }] }));
     expect(await listUserInstallations("tok", fetchFn)).toEqual([]);
   });
 
-  test("walks to a second page, and stops at a short one", async () => {
-    const pages = [listing(Array.from({ length: 100 }, (_, i) => i + 1000)), listing([42])];
-    const fetchFn = vi.fn<typeof globalThis.fetch>(async () => pages.shift() ?? listing([]));
+  test("follows GitHub's next link, and stops where there is none", async () => {
+    const fetchFn = answering(listing(fullPage(1000), 2), listing([42]));
     expect(await listUserInstallations("tok", fetchFn)).toContain(42);
     expect(fetchFn).toHaveBeenCalledTimes(2);
+    expect(String(fetchFn.mock.calls[1]?.[0])).toContain("page=2");
 
-    // A short page means the listing is exhausted — no further request.
-    const short = vi.fn<typeof globalThis.fetch>(async () => listing([1]));
+    // No `next` means the listing is exhausted — no further request.
+    const short = answering(listing([1]));
     expect(await listUserInstallations("tok", short)).toEqual([1]);
     expect(short).toHaveBeenCalledTimes(1);
+  });
+
+  test("stops at its page bound however many pages GitHub offers", async () => {
+    const pages = Array.from({ length: 8 }, (_, i) => listing(fullPage(i * 100), i + 2));
+    const fetchFn = answering(...pages);
+    expect(await listUserInstallations("tok", fetchFn)).toHaveLength(500);
+    expect(fetchFn).toHaveBeenCalledTimes(5);
   });
 });
 

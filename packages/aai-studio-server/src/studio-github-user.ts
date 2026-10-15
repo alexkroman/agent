@@ -33,7 +33,8 @@
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
-import { deadlineFetch } from "./studio-github-client.ts";
+import { exchangeWebFlowCode } from "@octokit/oauth-methods";
+import { createGithubUserOctokit } from "./studio-github-client.ts";
 import type { GithubAppConfig } from "./studio-github-config.ts";
 
 /** Installations one `GET /user/installations` page may report. */
@@ -45,8 +46,10 @@ const MAX_PAGES = 5;
  * Exchange the callback's `code` for a user access token, or null.
  *
  * Null for every failure — a used code, a wrong one, a mismatched client
- * secret. The caller's recovery is the same in each case (start the connect
- * flow again), and the callback answers all of them identically.
+ * secret, a network error. The caller's recovery is the same in each case
+ * (start the connect flow again), and the callback answers all of them
+ * identically. `exchangeWebFlowCode` turns GitHub's `200 { error }` for a bad
+ * code into a thrown `RequestError`, so the catch covers that too.
  */
 export async function exchangeUserCode(
   config: GithubAppConfig,
@@ -54,22 +57,18 @@ export async function exchangeUserCode(
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<string | null> {
   if (!(config.clientId && config.clientSecret)) return null;
-  const res = await deadlineFetch(fetchFn)("https://github.com/login/oauth/access_token", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({
-      client_id: config.clientId,
-      client_secret: config.clientSecret,
+  try {
+    const { authentication } = await exchangeWebFlowCode({
+      clientType: "github-app",
+      clientId: config.clientId,
+      clientSecret: config.clientSecret,
       code,
-    }),
-  });
-  if (!res.ok) return null;
-  // GitHub answers 200 with `{ error: ... }` for a bad code, so the status is
-  // not the test — the presence of a token is.
-  const body: unknown = await res.json().catch(() => null);
-  if (!isRecord(body)) return null;
-  const token = body.access_token;
-  return typeof token === "string" && token.length > 0 ? token : null;
+      request: createGithubUserOctokit(undefined, fetchFn).request,
+    });
+    return authentication.token || null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -95,26 +94,26 @@ export async function listUserInstallations(
   fetchFn: typeof globalThis.fetch = globalThis.fetch,
 ): Promise<readonly number[]> {
   const ids: number[] = [];
-  const fetchWithDeadline = deadlineFetch(fetchFn);
-  for (let page = 1; page <= MAX_PAGES; page += 1) {
-    const url = `https://api.github.com/user/installations?per_page=${PAGE_SIZE}&page=${page}`;
-    const res = await fetchWithDeadline(url, {
-      headers: {
-        Authorization: `Bearer ${userToken}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-    });
+  const octokit = createGithubUserOctokit(userToken, fetchFn);
+  try {
+    let pages = 0;
+    for await (const { data } of octokit.paginate.iterator("GET /user/installations", {
+      per_page: PAGE_SIZE,
+    })) {
+      // Checked rather than trusted: the id is the whole authorization
+      // decision, so a shape GitHub did not used to send (or a stringified
+      // id) is dropped, never coerced.
+      for (const entry of data as unknown[]) {
+        if (isRecord(entry) && typeof entry.id === "number") ids.push(entry.id);
+      }
+      pages += 1;
+      if (pages >= MAX_PAGES) break;
+    }
+  } catch {
     // A partial read is discarded whole: a page that failed halfway through
     // cannot be told from a user who administers only what we already have,
     // and the difference decides both a refusal and an automatic pick.
-    if (!res.ok) return [];
-    const body: unknown = await res.json().catch(() => null);
-    if (!(isRecord(body) && Array.isArray(body.installations))) return [];
-    for (const entry of body.installations) {
-      if (isRecord(entry) && typeof entry.id === "number") ids.push(entry.id);
-    }
-    if (body.installations.length < PAGE_SIZE) break;
+    return [];
   }
   return ids.sort((a, b) => b - a);
 }
