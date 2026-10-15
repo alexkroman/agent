@@ -135,7 +135,9 @@ describeEval(agentDef, (test) => {
       // before `to_flight_assistant` is told so and recovers inside the turn.
       // That refusal is a legal step and it is asserted rather than tolerated —
       // its own message is what pointed the model at the way in.
-      for (const attempt of attempts.filter((call) => call !== staged)) {
+      // A second staging is not one: a desk that hears the request again
+      // without a yes may `cancel_action` and stage it afresh.
+      for (const attempt of attempts.filter((call) => !stagedSomething(call))) {
         expect(attempt.result).toMatch(
           new RegExp(`to_flight_assistant|${dialogRefusalPattern().source}`),
         );

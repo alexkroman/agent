@@ -93,6 +93,9 @@ export default agent({
     "keep_transcript with their answer.",
     "If they ask how it is going, call recap_progress. If they ask about earlier work, call",
     "recap_status. If they say to stop or forget it, call cancel_recap.",
+    "If they ask to start it again while one is running, call request_recap — it tells you",
+    "about the run they already have — and never cancel_recap first: a restart pays for a",
+    "second transcription of the same audio.",
     "Keep replies to one or two sentences; this is a voice call.",
   ].join(" "),
 

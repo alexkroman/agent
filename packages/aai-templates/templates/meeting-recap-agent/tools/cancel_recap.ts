@@ -2,7 +2,9 @@ import { tool } from "@alexkroman1/aai";
 import { recap } from "../shared.ts";
 
 export default tool({
-  description: "Stop the recap that is running. Use when the caller says to forget it.",
+  description:
+    "Stop the recap that is running. Use when the caller says to forget it — never as a " +
+    "step toward starting it again.",
   execute: async (_args, ctx) => {
     const [latest] = await ctx.workflows.find(recap, ctx.sessionId, { limit: 1 });
     if (!latest) return { cancelled: false, note: "Nothing started yet." };

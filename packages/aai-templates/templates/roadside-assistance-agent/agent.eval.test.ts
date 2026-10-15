@@ -41,7 +41,9 @@ describeEval(agentDef, (test) => {
     "takes where they are and what they are driving before anything else",
     async ({ session }) => {
       const turn = await session.say(
-        "Hi — my car just died on me. I'm on route nine eastbound, past the Millfield exit, " +
+        // "Won't start", not "died": `report_location` says not to guess the
+        // situation, and "died" is `battery` as much as `wont_start`.
+        "Hi — my car won't start. I'm on route nine eastbound, past the Millfield exit, " +
           "it's a silver Toyota Corolla. I'm well off the road on the grass.",
       );
 
