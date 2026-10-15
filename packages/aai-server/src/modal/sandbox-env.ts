@@ -28,17 +28,17 @@ export const DEFAULT_SANDBOX_TIMEOUT_MS = 4 * 60 * 60 * 1000;
  *
  * Idle detection can only kick in once the harness exec has actually exited
  * (Modal counts a running exec, stdin writes, and open tunnel TCP connections
- * as activity — the `sleep infinity` entrypoint does not count). The host's
- * control WebSocket is the liveness signal: a host that dies drops it, and
- * the harness self-exits after `HARNESS_ORPHAN_TIMEOUT_MS` (5 min) with no
- * host connected (`aai-guest/harness.ts`) — after which this timer is what
- * terminates the sandbox. So an ungracefully killed replica's guests linger
- * as ~2-3 MiB `sleep infinity` shells for orphan timeout + idle window
- * (~20 min) before Modal reaps them. That window is the backstop, not the
- * normal path: `run_node` in scripts/modal_image.py forwards container stop
- * signals to the node process so `teardownSandboxes` runs on
- * scale-in/redeploy — RETIRING agent guests (they finish their calls and
- * exit themselves) and terminating studio guests via the broker.
+ * as activity). It is now mostly a backstop for the backstop: the entrypoint
+ * ENDS the sandbox when the harness exits (`GUEST_SANDBOX_ENTRYPOINT` in
+ * modal/context.ts), so a studio guest whose host died is gone one orphan
+ * timeout (`HARNESS_ORPHAN_TIMEOUT_MS`, 5 min) after the host, and an agent
+ * guest the moment it self-exits — where both used to linger as `sleep
+ * infinity` shells for this whole window. What is left for this timer is a
+ * sandbox whose entrypoint never saw the marker. `run_node` in
+ * scripts/modal_image.py forwards container stop signals to the node process
+ * so `teardownSandboxes` runs on scale-in/redeploy — HANDING agent guests off
+ * to the fleet (they keep serving) and terminating studio guests via the
+ * broker.
  *
  * A *healthy* resident sandbox always has the harness exec running, so its
  * idle timer never starts; the GUEST owns idleness (agent-mode self-exit).

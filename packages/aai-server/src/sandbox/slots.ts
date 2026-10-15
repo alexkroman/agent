@@ -190,6 +190,21 @@ export function retireSlot(slot: AgentSlot, reason: string): Promise<void> {
   return sb ? retireSandbox(sb, { slug: slot.slug, reason }) : Promise.resolve();
 }
 
+/**
+ * Detach a slot's sandbox and leave it RUNNING, untouched — the replica-shutdown
+ * path when a fleet directory exists (teardown-sandboxes.ts).
+ *
+ * Neither retire nor terminate: the guest runs current code, its sessions dial
+ * it directly, and every other replica reaches it by name through the directory
+ * — so the only thing this replica's exit should change is who owns it, and a
+ * name needs no owner. The guest's own idle exit still ends it, and the
+ * sandbox's entrypoint ends with the harness (`guestSandboxCreateParams`), so
+ * nothing lingers holding the name.
+ */
+export function handOffSlot(slot: AgentSlot): boolean {
+  return detachSandbox(slot) !== undefined;
+}
+
 /** empty | ready → (absent). Callers detach a resident first; this only unmaps. */
 export function deleteSlot(slots: SlotCache, slug: string): boolean {
   return slots.delete(slug);

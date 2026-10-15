@@ -164,9 +164,11 @@ timeout (`SSE-CLAUDE.md`).
 - **The studio holds an always-empty slot cache** — local teardowns are no-ops
   there; the deploy's row-version bump does the work.
 - **The web service autoscales** (`MIN_CONTAINERS`/`MAX_CONTAINERS` in
-  `modal_deploy.py`). A replica going down retires its agent guests
-  (`teardownSandboxes`); live calls finish in the guests. Studio guests go down
-  with it (`dispose()`).
+  `modal_deploy.py`). A replica going down HANDS its agent guests off to the
+  fleet (`teardownSandboxes`, `handOff`): they keep serving, found by name.
+  Retiring them made every deploy refuse new sessions for up to the drain
+  budget, because a draining guest still holds its sandbox name. Studio guests
+  go down with it (`dispose()`).
 - **Shutdown stops BOOTING sandboxes before it stops serving**:
   `brokerSessionUrl` refuses a new sandbox when `isDraining` (503 → client
   re-brokers) while still serving a live resident, and `teardownSandboxes` waits

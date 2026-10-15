@@ -103,7 +103,14 @@ async function main(): Promise<void> {
   // release: without the dispose they outlive it and burn their orphan
   // timeout (billed, on Modal) on every scale-in.
   const teardown = async (): Promise<void> => {
-    await teardownSandboxes({ slots: base.slots, broker: { dispose: disposeStudio } });
+    await teardownSandboxes({
+      slots: base.slots,
+      broker: { dispose: disposeStudio },
+      // With a fleet directory a peer replica can find this one's agent guests
+      // by name, so they are handed off running rather than retired — see
+      // teardown-sandboxes.ts for the deploy outage retiring them caused.
+      handOff: base.directory !== undefined,
+    });
     await base.events.close();
   };
 
@@ -141,12 +148,12 @@ async function main(): Promise<void> {
     fetch: combinedFetch,
     port,
     injectWebSocket: (server) => orchestrator.injectWebSocket(server),
-    // Agent guests are RETIRED (they finish their calls and exit on their own
-    // clock — see teardown-sandboxes.ts); studio guests go down with the
-    // broker, being useless without this process's control channel.
+    // Agent guests are HANDED OFF to the fleet (left running for peer
+    // replicas to route to — see teardown-sandboxes.ts); studio guests go down
+    // with the broker, being useless without this process's control channel.
     onShutdown: async () => {
       draining = true;
-      log.info("shutting down (retiring guests)");
+      log.info("shutting down (releasing guests)");
       await teardown();
     },
   });

@@ -2,17 +2,32 @@
 /**
  * One shutdown teardown for both services.
  *
- * A replica going down treats its AGENT guests exactly like a redeploy
- * treats a superseded one: RETIRE, don't terminate. Sessions dial the
- * sandbox tunnel directly and the guest has zero dependency on this process
- * after boot, so killing it here would cut live calls to protect nothing —
- * the drain request hands each guest its budget, the guest finishes its
- * calls and exits itself (empty → immediate; deadline → bounded; Modal's
- * sandbox `timeoutMs` is the backstop). The drains ARE awaited, unlike a
- * deploy's fire-and-forget retirement: the process is about to exit, and an
- * undelivered drain request is a guest that never learns it was retired.
- * An idle guest exits within one lifecycle poll of the drain landing, so
- * the routine scale-in still reclaims promptly.
+ * A replica going down HANDS ITS AGENT GUESTS OFF when a fleet directory
+ * exists (Modal): they are left running, untouched. Sessions dial the sandbox
+ * tunnel directly and the guest has zero dependency on this process after
+ * boot, and — unlike a redeploy's superseded guest — it runs CURRENT code, so
+ * there is nothing to retire it for. Every other replica reaches it by its
+ * name (sandbox/directory.ts), and a name needs no owner.
+ *
+ * It used to be RETIRED here, like a superseded guest, and that was an outage
+ * on every deploy: a draining guest refuses new sessions (`1013`), but it
+ * still HOLDS the deploy's sandbox name, so the replacement replica's broker
+ * found it in the directory, routed every new session and every resume to it,
+ * and could not spawn a fresh one (`SandboxNameTakenError` routes straight back
+ * to the holder). Any slug with a live call was unreachable for new sessions
+ * for the whole drain budget — ten minutes — after every rolling deploy, and
+ * calls longer than that were cut at the deadline.
+ *
+ * The guest still ends on its own clock: it self-exits once idle, and its
+ * sandbox's entrypoint ends with the harness (`guestSandboxCreateParams`), so
+ * the name is released the moment it does.
+ *
+ * WITHOUT a directory (the subprocess and microsandbox backends — one process,
+ * no peers) nothing could ever find a handed-off guest again, so those are
+ * still RETIRED: the drain request hands each guest its budget, the guest
+ * finishes its calls and exits itself. Those drains ARE awaited: the process is
+ * about to exit, and an undelivered drain request is a guest that never learns
+ * it was retired.
  *
  * STUDIO guests are the opposite case: their coding-agent sessions live on
  * the host's control channel, so a dead host makes them useless — the
@@ -30,7 +45,7 @@ import { sleep } from "@alexkroman1/aai/internal";
 
 import { envMs } from "./constants.ts";
 import { createLogger } from "./logger.ts";
-import { retireSlot, type SlotCache } from "./sandbox/slots.ts";
+import { handOffSlot, retireSlot, type SlotCache } from "./sandbox/slots.ts";
 
 const log = createLogger("sandbox.teardown");
 
@@ -65,8 +80,14 @@ export function shutdownGraceMs(env: NodeJS.ProcessEnv = process.env): number {
 }
 
 export type TeardownTargets = {
-  /** The replica's slug→sandbox map; every resident is retired. */
+  /** The replica's slug→sandbox map; every resident is handed off or retired. */
   slots: SlotCache;
+  /**
+   * Leave agent guests running for the rest of the fleet instead of retiring
+   * them. True exactly when the service has a sandbox directory — the one way
+   * another replica can find a guest this one spawned.
+   */
+  handOff?: boolean;
   /**
    * The studio session broker, when this process serves the studio. Absent
    * in the agent-only service, and safe to pass when the lazily-created
@@ -79,6 +100,19 @@ export type TeardownTargets = {
    */
   graceMs?: number;
 };
+
+/**
+ * Empty every slot: hand the guests off to the fleet, or retire them when no
+ * other replica could ever find them. Returns the retirements to await.
+ */
+function releaseAgentGuests(slots: SlotCache, handOff: boolean): Promise<unknown>[] {
+  if (!handOff) {
+    return [...slots.values()].map((slot) => retireSlot(slot, "replica-shutdown"));
+  }
+  const handedOff = [...slots.values()].filter(handOffSlot).length;
+  if (handedOff > 0) log.info("handed agent guests off to the fleet", { handedOff });
+  return [];
+}
 
 /** Release every guest this process owns. Never throws. */
 export async function teardownSandboxes(targets: TeardownTargets): Promise<void> {
@@ -97,9 +131,7 @@ export async function teardownSandboxes(targets: TeardownTargets): Promise<void>
   const graceMs = targets.graceMs ?? shutdownGraceMs();
   if (graceMs > 0) await sleep(graceMs);
 
-  const work: Promise<unknown>[] = [...slots.values()].map((slot) =>
-    retireSlot(slot, "replica-shutdown"),
-  );
+  const work = releaseAgentGuests(slots, targets.handOff === true);
   // Sandboxes retired earlier by a mutation are deliberately not chased:
   // they are off the slot map and already self-governing.
   if (broker) work.push(broker.dispose());

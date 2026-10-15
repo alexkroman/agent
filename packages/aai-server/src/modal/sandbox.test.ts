@@ -9,7 +9,7 @@
 import { writeFile } from "node:fs/promises";
 import type { SandboxCreateParams } from "modal";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GUEST_SCRATCH_DIR } from "../guest/exec-env.ts";
+import { GUEST_SCRATCH_DIR, HARNESS_REMOTE_PATH } from "../guest/exec-env.ts";
 import type { RpcConnection } from "../rpc-transport.ts";
 import {
   createFakeGuestSocket,
@@ -19,7 +19,12 @@ import {
   makeFakeSandbox,
   makeHarnessFile,
 } from "../sandbox/_vm-test-utils.ts";
-import { GUEST_PORT, type ModalSpawnContext } from "./context.ts";
+import {
+  GUEST_PORT,
+  GUEST_SANDBOX_ENTRYPOINT,
+  guestHarnessExec,
+  type ModalSpawnContext,
+} from "./context.ts";
 import { _internals, spawnModalWarm } from "./sandbox.ts";
 import { DEFAULT_SANDBOX_IDLE_TIMEOUT_MS, DEFAULT_SANDBOX_TIMEOUT_MS } from "./sandbox-env.ts";
 
@@ -166,7 +171,7 @@ describe("spawnModalWarm", () => {
 
     expect(createParams).toHaveLength(1);
     expect(createParams[0]).toMatchObject({
-      command: ["sleep", "infinity"],
+      command: GUEST_SANDBOX_ENTRYPOINT,
       encryptedPorts: [GUEST_PORT],
       timeoutMs: DEFAULT_SANDBOX_TIMEOUT_MS,
       idleTimeoutMs: DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
@@ -181,7 +186,8 @@ describe("spawnModalWarm", () => {
     // The harness runs on Node with the per-sandbox token in the EXEC env.
     expect(sb.execCalls).toHaveLength(1);
     const { command, params } = sb.execCalls[0] ?? { command: [], params: undefined };
-    expect(command).toEqual(["node", expect.stringContaining("harness.mjs")]);
+    // Wrapped, so the harness's exit ends the sandbox and releases its name.
+    expect(command).toEqual(guestHarnessExec(HARNESS_REMOTE_PATH));
     const env = params?.env ?? {};
     expect(env.AAI_GUEST_PORT).toBe(String(GUEST_PORT));
     expect(env.AAI_GUEST_TOKEN).toMatch(/^[0-9a-f]{64}$/);

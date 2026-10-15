@@ -243,9 +243,9 @@ REGIONS = ["us-east-2", "us-east"]
 # The server holds no cross-request state (coordination lives in Supabase —
 # see CLAUDE.md "Stateless server"), so replicas are interchangeable:
 # scale-out is safe, and on scale-in/redeploy the node process's SIGTERM
-# handler RETIRES the replica's agent guests (one drain request each — the
-# guests finish their calls and exit on their own clock) and disposes the
-# studio broker. Voice sessions live in the guest sandboxes (browsers dial
+# handler HANDS the replica's agent guests off to the fleet (left running;
+# every replica finds them by sandbox name — see teardown-sandboxes.ts for the
+# outage retiring them caused) and disposes the studio broker. Voice sessions live in the guest sandboxes (browsers dial
 # the sandbox tunnel directly), so a replica going down cuts nothing;
 # clients auto-reconnect (?sessionId) and re-broker.
 #
@@ -420,8 +420,8 @@ app = modal.App("aai-server-web")
     min_containers=MIN_CONTAINERS,
     max_containers=MAX_CONTAINERS,
     buffer_containers=BUFFER_CONTAINERS,
-    # Shutdown is retire-and-exit (no session-drain wait): the node SIGTERM
-    # handler delivers one drain request per agent guest, disposes the studio
+    # Shutdown is hand-off-and-exit (no session-drain wait): the node SIGTERM
+    # handler leaves agent guests running for the fleet, disposes the studio
     # broker, and exits — seconds, well inside this grace period. Modal
     # signals this Python runtime, not the node child — `run_node` below
     # forwards the stop signal and waits, which is the only reason the node
