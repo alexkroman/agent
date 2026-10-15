@@ -120,7 +120,11 @@ describeEval(agentDef, (test) => {
       // scripted case never writes.
       const call = await simulate({
         persona: "a friendly commuter on a phone, who answers in short sentences",
-        goal: "find out whether to bring an umbrella in Seattle today",
+        // "Ask … in so many words": a short-sentence caller told only to FIND
+        // OUT answered the greeting's "which city?" with "Seattle.", heard a
+        // clear forecast and hung up — and the judge then graded the agent on a
+        // question nobody had said out loud.
+        goal: "ask, in so many words, whether you need an umbrella in Seattle today",
       });
 
       // The call ending on the caller's terms is the first thing to know: a

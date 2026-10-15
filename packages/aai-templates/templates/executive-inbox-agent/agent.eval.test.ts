@@ -71,6 +71,21 @@ const REWRITE = JSON.stringify({
 const DRAFT =
   "Yes — the on-prem deployment runs the speech models inside your VPC; nothing calls out.";
 
+/**
+ * The request, then the drafting nudge only if the request did not already stage.
+ *
+ * Whether the desk chains `draft_reply` into its first reply is a coin the live
+ * model flips. Sent unconditionally, the nudge can land on a WAITING draft,
+ * where it reads as dictated content and is answered with `edit`.
+ */
+async function untilStaged(session: EvalSession, request: string, nudge: string) {
+  const turns = [await session.say(request)];
+  if (!toolNames(turns[0]!.toolCalls).includes("draft_reply")) {
+    turns.push(await session.say(nudge));
+  }
+  return turns;
+}
+
 describeEval(agentDef, (test) => {
   test(
     "the call opens with a triage, and a triage sends nothing",
@@ -133,10 +148,16 @@ describeEval(agentDef, (test) => {
       // for me" was no better. What works is an instruction to ACT that names
       // the reply AND its content while saying nothing about sending — there is
       // no yes in it to mishear, and nothing to read as "wait".
-      const turns = await session.sayAll([
+      //
+      // And the nudge is sent ONLY when the first turn stopped short of staging.
+      // A desk that chained `draft_reply` into its first reply hears the nudge
+      // while the draft is waiting, as dictated content — which is `edit`, and
+      // `edit` sends.
+      const turns = await untilStaged(
+        session,
         "Open the one from Dana at Northwind and reply that yes, inference stays inside their VPC.",
         "Write the reply now — say yes, it stays inside their VPC.",
-      ]);
+      );
       const calls = toolCallsInTurns(turns);
       const names = toolNames(calls);
       // Across BOTH turns, and named: "expected [ 'open_email' ] to include
@@ -194,11 +215,13 @@ describeEval(agentDef, (test) => {
       // rather than chaining the staging into the same reply, which left this
       // case failing on a draft that had not happened yet rather than on the
       // gate it is here to measure. The yes is still the only send.
-      const turns = await session.sayAll([
+      // The middle one is sent only when needed, for the reason the case above gives.
+      const turns = await untilStaged(
+        session,
         "Open Dana's email from Northwind and reply that inference stays inside their VPC.",
         "Write the reply now — say inference stays inside their VPC.",
-        "Yes. Send it.",
-      ]);
+      );
+      turns.push(await session.say("Yes. Send it."));
       const calls = toolCallsInTurns(turns);
       const names = toolNames(calls);
       // Staged first, sent second, once each — reversed, or a send with nothing

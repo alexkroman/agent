@@ -317,7 +317,9 @@ const applyEdit = failable(async (args: InferSchemaOutput<typeof EDIT_ARGS>, ctx
 export function editTool(): ToolDef {
   return reviewFlow.tool({
     description:
-      `${name} dictated changes to the draft or the invite — send THEIR version. Give the ` +
+      `${name} dictated changes to the draft or the invite — send THEIR version. Only when ` +
+      "their words CHANGE what you read back; a restatement of it is not an edit, so ask " +
+      "whether to send. Give the " +
       "whole corrected email text, not the change; for an invite, the fields that change. " +
       "Use respond instead when they want you to redraft it yourself.",
     when: AWAITING,
