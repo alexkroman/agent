@@ -456,9 +456,16 @@ Links into the unrendered root barrel go in `externalSymbolLinkMappings`.
 
 ## `aai-runtime` contract hazards
 
-- **`TextTurnResult` is `ReturnType<typeof streamText<ToolSet>>`**, so an `ai`
-  package minor can move its contract hash with no change of ours. A change in a
-  constant's PROVENANCE line in the rollup can do the same.
+- **`TextTurnResult` is a declared SLICE of the `ai` streaming result**
+  (`textStream`, `text`, `response`, `consumeStream`), so an `ai` minor moves
+  `text` only through `ModelMessage` and the step types `TextTurnOptions` names.
+  A framework caller needing the rest (the studio's `toUIMessageStream`) takes
+  `createHostTextAgent` from `/internal`. A change in a constant's PROVENANCE
+  line in the rollup can still move a hash.
+- **A store the runtime owns every backend of is an opaque handle on the
+  contract** (`WorkflowJournal`, `createMemoryJournal`), never its interface:
+  `JournalStore` moved with every engine change and broke three capabilities
+  each time.
 - **`RuntimeServerOptions`' `logger`, `upgrade` and `request` accept
   `undefined`** so a `SharedServerOptions` bag can be spread into it under
   `exactOptionalPropertyTypes`. Do not narrow them back.

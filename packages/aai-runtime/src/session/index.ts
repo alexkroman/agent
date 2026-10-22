@@ -34,7 +34,12 @@ export { createSessionDirectory } from "./directory.ts";
 export type { SessionEmitter, SessionEventHookDeps } from "./emitter.ts";
 export { createSessionEmitter, hookDepsFor } from "./emitter.ts";
 export { historyFromEvents, modelHistoryOf } from "./event-history.ts";
-export type { SessionEventPage, SessionEventStream } from "./event-stream.ts";
+export type {
+  SessionEventLog,
+  SessionEventPage,
+  SessionEventStream,
+  sessionEventStreamBrand,
+} from "./event-stream.ts";
 export {
   createSessionEventStream,
   SESSION_EVENT_READ_LIMIT,

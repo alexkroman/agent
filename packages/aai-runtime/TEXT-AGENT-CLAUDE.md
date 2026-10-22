@@ -97,9 +97,10 @@ before touching either:
   `abort` or `error`, all through one `onChunk` — and guarded, first one wins.
   A/B'd: removing the guard fails seven specs, because the SDK's flush fires the
   backstop `onEnd` on an ordinary turn as well.
-- **It is ADDITIVE.** `TextTurnResult` is still the vendor's own
-  `StreamTextResult` for the reason `text-agent.ts` argues, and a text agent
-  with no `onEvent` installs no per-part callback at all.
+- **It is ADDITIVE.** A turn is still the vendor's own `StreamTextResult` at
+  runtime (published as the `TextTurnResult` slice; the full type is
+  `HostTextAgent`'s, internal), and a text agent with no `onEvent` installs no
+  per-part callback at all.
 
 ### A TEXT agent is evaluated by `openEvalTextAgent`, its own harness
 

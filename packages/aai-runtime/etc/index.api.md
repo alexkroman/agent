@@ -7,12 +7,8 @@
 import type { AgentDef } from '@alexkroman1/aai';
 import { AgentEnv } from '@alexkroman1/aai/host-internal';
 import type { ClientSink } from '@alexkroman1/aai/protocol';
-import type { Db } from '@alexkroman1/aai/internal';
 import { Duplex } from 'node:stream';
-import { ExecuteTool } from '@alexkroman1/aai/host-internal';
-import { ExecuteToolOptions } from '@alexkroman1/aai/host-internal';
 import type http from 'node:http';
-import type { JSONSchema7 } from 'json-schema';
 import { LanguageModel } from 'ai';
 import { LlmProvider } from '@alexkroman1/aai/llm';
 import type { McpServers } from '@alexkroman1/aai';
@@ -20,24 +16,18 @@ import type { ModelMessage } from 'ai';
 import type { PrepareStepFunction } from 'ai';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { ReadyConfig } from '@alexkroman1/aai/protocol';
-import { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import type { SessionEvent } from '@alexkroman1/aai';
-import type { SessionEventBody } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
-import type { streamText } from 'ai';
 import type { SttProvider } from '@alexkroman1/aai/stt';
 import { ToolBearingDef } from '@alexkroman1/aai/manifest';
 import { ToolCallRepairFunction } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
-import type { ToolInputSchema } from '@alexkroman1/aai';
 import { ToolRegistry } from '@alexkroman1/aai/manifest';
 import { ToolSet } from 'ai';
 import type { TtsProvider } from '@alexkroman1/aai/tts';
-import { WORKFLOW_API_PREFIX } from '@alexkroman1/aai/internal';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
-import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 export { AgentEnv }
 
@@ -73,13 +63,13 @@ export type AgentServer = {
     node: http.Server;
 };
 
-// @public
+// @public @input (undocumented)
 export interface AgentServerOptions extends SharedServerOptions {
     agent: AgentDef;
     clientDir?: string;
     db?: Db | undefined;
     env: AgentEnv;
-    journal?: JournalStore | undefined;
+    journal?: WorkflowJournal | undefined;
     page?: "voice" | "static" | undefined;
     providerEnv?: ProviderEnv | undefined;
     publicUrl?: string | undefined;
@@ -97,12 +87,11 @@ export const CARRIER_CODECS: {
 // @public
 export function carrierByName(name: string | null | undefined): CarrierCodec | null;
 
-// @public
+// @public @input
 export type CarrierCodec = {
     readonly name: string;
     decode(frame: unknown): CarrierInbound;
-    media(payload: string, streamId: string | null): unknown;
-    clear(streamId: string | null): unknown;
+    encode(out: CarrierOutbound): unknown;
 };
 
 // @public
@@ -126,20 +115,54 @@ export type CarrierInbound =
     kind: "media";
     payload: string;
 }
+/** The caller pressed a key: `0`-`9`, `*`, `#` (or `A`-`D` on carriers that send them). */
+| {
+    kind: "dtmf";
+    digit: string;
+}
 /** The carrier is ending the stream (the caller hung up). */
 | {
     kind: "stop";
 }
-/** Anything we do not act on: keepalives, marks, DTMF, unknown frame types. */
+/**
+* Everything else — keepalives, marks, the other leg's audio, frame types
+* this codec does not know. `type` is the carrier's own name for the frame
+* (`""` when it carried none), for a log line; a session acts on none of them.
+*/
 | {
-    kind: "ignore";
+    kind: "other";
+    type: string;
 };
 
 // @public
 export type CarrierName = string;
 
 // @public
-export type CloseableDb = Db & {
+export type CarrierOutbound =
+/** One chunk of base64 μ-law agent speech. */
+    {
+    kind: "media";
+    payload: string;
+    streamId: string | null;
+}
+/**
+* Discard agent audio the carrier has already buffered.
+*
+* This is what makes barge-in audible on a phone call. The carrier accepts
+* audio far faster than it plays it, so at the moment the caller interrupts
+* there are seconds of the agent's reply sitting in the carrier's own
+* buffer — beyond the reach of anything the session drops on its side. Sent
+* on `cancelled`/`reset`; without it the caller talks over an agent that
+* keeps speaking for several seconds after being interrupted.
+*/
+| {
+    kind: "clear";
+    streamId: string | null;
+};
+
+// @public @sealed
+export type CloseableDb = {
+    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
     reserve(): Promise<ReservedDb>;
     listen(channel: string, onNotify: () => void): Promise<() => void>;
     close(): Promise<void>;
@@ -155,12 +178,12 @@ export function createAgentServer(options: AgentServerOptions): AgentServer;
 export function createHostServer(options?: HostServerOptions): AgentServer;
 
 // @public
-export function createMemoryKeyStore(): WorkflowKeyStore;
+export function createMemoryJournal(): WorkflowJournal;
 
 // @public
 export function createPostgresDb(options: CreatePostgresDbOptions): CloseableDb;
 
-// @public
+// @public @input
 export type CreatePostgresDbOptions = {
     url: string;
     max?: number;
@@ -171,9 +194,6 @@ export type CreatePostgresDbOptions = {
     reservedQueryTimeoutMs?: number;
     reserveTimeoutMs?: number;
 };
-
-// @public
-export function createPostgresKeyStore(db: Db): WorkflowKeyStore;
 
 // @public
 export function createRuntime(options: RuntimeOptions): Runtime;
@@ -188,7 +208,12 @@ export function createTelephonyBridge(carrierSocket: SessionWebSocket, options: 
 export function createTextAgent(options: TextAgentOptions): TextAgent;
 
 // @public
-export function createToolCallRepair(model: LanguageModel, log: Logger, getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
+export function createToolCallRepair(options: ToolCallRepairOptions): ToolCallRepairFunction<ToolSet>;
+
+// @public @input
+export type Db = {
+    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+};
 
 // @public
 export const DEFAULT_LISTEN_HOST = "127.0.0.1";
@@ -208,19 +233,7 @@ export function ensureWorkflowJournalSchema(options: {
     logger: Logger;
 }): Promise<boolean>;
 
-export { ExecuteTool }
-
-export { ExecuteToolOptions }
-
-// @public
-type HookRecord = {
-    token: string;
-    delivered: boolean;
-    payload?: unknown;
-    closed?: boolean;
-};
-
-// @public
+// @public @input
 export interface HostAgentOptions {
     agent: AgentDef;
     fetch?: typeof globalThis.fetch;
@@ -231,7 +244,7 @@ export interface HostAgentOptions {
     workflows?: WorkflowClient | undefined;
 }
 
-// @public
+// @public @input (undocumented)
 export interface HostServerOptions extends SharedServerOptions {
     defaults?: HostSessionDefaults;
     env?: Record<string, string>;
@@ -241,32 +254,7 @@ export interface HostServerOptions extends SharedServerOptions {
 // @public
 export type HostSessionDefaults = Omit<Partial<AgentDef>, "systemPrompt" | "greeting" | "tools" | "sttPrompt">;
 
-// @public
-type JournalStore = {
-    createRun(record: RunRecord): Promise<void>;
-    getRun(runId: string): Promise<RunRecord | undefined>;
-    listRuns(workflow: string, limit: number): Promise<RunRecord[]>;
-    setStatus(runId: string, next: RunStatus, patch?: {
-        output?: unknown;
-        error?: {
-            message: string;
-        };
-    }, expect?: readonly RunStatus[]): Promise<boolean>;
-    readSteps(runId: string): Promise<StepEntry[]>;
-    readStep(runId: string, key: string): Promise<StepEntry | undefined>;
-    claimAttempt(runId: string, key: string, holder: string, leaseMs: number): Promise<number>;
-    releaseAttempt(runId: string, key: string, holder: string): Promise<void>;
-    readSleeps(runId: string): Promise<SleepEntry[]>;
-    claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
-    wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
-    claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
-    closeHook(runId: string, key: string): Promise<boolean>;
-    deliverHook(token: string, payload: unknown): Promise<string | undefined>;
-    resumableRuns?: ((limit: number) => Promise<ResumableRun[]>) | undefined;
-    appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
-};
-
-// @public
+// @public @input
 export type LlmRegistryEntry = {
     readonly envVar: string;
     readonly label: string;
@@ -279,7 +267,7 @@ export type LogContext = Record<string, unknown>;
 // @public
 export type LogFn = (message: string, ctx?: LogContext) => void;
 
-// @public
+// @public @input
 export interface Logger {
     // (undocumented)
     debug: LogFn;
@@ -303,33 +291,20 @@ export const MAX_WORKFLOW_INPUT_BYTES: number;
 // @public
 export const MCP_CONNECT_TIMEOUT_MS = 10000;
 
-// @public
-export type McpCallResult = {
-    isError: boolean;
-    text: string;
-    structured?: Record<string, unknown>;
-    otherParts: readonly string[];
-};
-
-// @public
+// @public @input
 export type McpConnectOptions = {
     fetch?: typeof globalThis.fetch | undefined;
     connectTimeoutMs?: number | undefined;
 };
 
-// @public
+// @public @sealed
 export type McpDrift = {
     added: readonly string[];
     removed: readonly string[];
     changed: readonly string[];
 };
 
-// @public
-export type McpInputSchema = ToolInputSchema & {
-    toJsonSchema(): JSONSchema7;
-};
-
-// @public
+// @public @sealed
 export type McpServerStatus = {
     key: string;
     url: string;
@@ -339,7 +314,7 @@ export type McpServerStatus = {
     unavailable?: string;
 };
 
-// @public
+// @public @input
 export type McpSession = {
     tools(): Promise<ToolSet>;
     close(): Promise<void>;
@@ -348,7 +323,7 @@ export type McpSession = {
 // @public
 export type McpSessionOpener = (server: ResolvedMcpServer) => Promise<McpSession>;
 
-// @public
+// @public @input
 export type McpToolsOptions = McpConnectOptions & {
     env?: Readonly<Partial<Record<string, string>>> | undefined;
     logger?: Logger | undefined;
@@ -362,14 +337,7 @@ export type McpToolSurface<D> = {
     close(): Promise<void>;
 };
 
-// @public
-export type McpTrust = {
-    fingerprints: Readonly<Record<string, string>>;
-    drift?: McpDrift;
-    refused: ReadonlySet<string>;
-};
-
-// @public
+// @public @input
 export type OpenerRegistryEntry<Opener, O extends object = Record<string, unknown>> = {
     readonly envVar: string;
     readonly open: (descriptor: {
@@ -391,12 +359,13 @@ export function registerTtsKind<O extends object = Record<string, unknown>>(kind
 // @public
 export function rejectingRuntime(message: string, logger?: Logger): SessionRuntime;
 
-// @public
-export type ReservedDb = Db & {
+// @public @sealed
+export type ReservedDb = {
+    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
     release(): void;
 };
 
-// @public
+// @public @sealed
 export type ResolvedMcpServer = {
     key: string;
     url: string;
@@ -405,36 +374,12 @@ export type ResolvedMcpServer = {
 };
 
 // @public
-export function resolveKeyStore(db: Db | undefined): WorkflowKeyStore;
-
-// @public
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel;
 
 // @public
-type ResumableRun = {
-    runId: string;
-    wakeAt?: number | undefined;
-};
-
-export { RunCodeExecutor }
-
-// @public
-type RunRecord = {
-    runId: string;
-    workflow: string;
-    status: RunStatus;
-    createdAt: number;
-    input: unknown;
-    output?: unknown;
-    error?: {
-        message: string;
-    } | undefined;
-    codeVersion?: string | undefined;
-    label?: string | undefined;
-};
-
-// @public
-type RunStatus = WorkflowRunStatus;
+export type RunCodeExecutor = (code: string) => Promise<string | {
+    error: string;
+}>;
 
 // @public @sealed
 export type Runtime = AgentRuntime & {
@@ -444,11 +389,11 @@ export type Runtime = AgentRuntime & {
 // @public
 export const runtimeBrand: unique symbol;
 
-// @public
+// @public @input
 export interface RuntimeOptions extends HostAgentOptions {
     db?: Db | undefined;
     env: AgentEnv;
-    journal?: JournalStore | undefined;
+    journal?: WorkflowJournal | undefined;
     llm?: LlmProvider | undefined;
     publicUrl?: string | undefined;
     shutdownTimeoutMs?: number | undefined;
@@ -456,7 +401,7 @@ export interface RuntimeOptions extends HostAgentOptions {
     tts?: TtsProvider | undefined;
 }
 
-// @public
+// @public @input
 export type RuntimeServerOptions = {
     runtime: SessionRuntime;
     name?: string;
@@ -471,13 +416,6 @@ export type RuntimeServerOptions = {
     page?: "voice" | "static";
     telephony?: boolean | readonly CarrierName[];
     auth?: SessionAuth | undefined;
-};
-
-// @public
-export type S2sConfig = {
-    wssUrl: string;
-    inputSampleRate: number;
-    outputSampleRate: number;
 };
 
 // @public
@@ -513,25 +451,22 @@ export type SessionConnection = {
 // @public
 export type SessionConnectOptions = Pick<SessionStartOptions, "skipGreeting" | "resumeFrom" | "logContext" | "onSessionEnd" | "audioLeadMs">;
 
-// @public
+// @public @sealed
 export type SessionEventPage = {
     events: readonly SessionEvent[];
     tail: number;
 };
 
-// @public
+// @public @sealed
 export type SessionEventStream = {
-    append(sessionId: string, body: SessionEventBody): SessionEvent;
+    readonly [sessionEventStreamBrand]: true;
     tail(sessionId: string): number;
     read(sessionId: string, startIndex: number, limit?: number): Promise<SessionEventPage>;
-    flush(sessionId: string, options?: {
-        final?: boolean;
-    }): Promise<void>;
-    hydrate(sessionId: string): Promise<void>;
-    discard(sessionId: string): void;
-    clear(): void;
     readonly durable: boolean;
 };
+
+// @public
+export const sessionEventStreamBrand: unique symbol;
 
 // @public
 export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents" | "deliverWorkflow" | "serveRoute">;
@@ -572,28 +507,12 @@ export type SessionWebSocket = {
     }) => void): void;
 };
 
-// @public
+// @public @input
 export type SharedServerOptions = {
     logger?: Logger | undefined;
     upgrade?: ServerUpgradeHook | undefined;
     request?: ServerRequestHook | undefined;
     auth?: SessionAuth | undefined;
-};
-
-// @public
-export type SkipGreetingOption = boolean | (() => boolean);
-
-// @public
-type SleepEntry = SleepRecord & {
-    key: string;
-};
-
-// @public
-type SleepRecord = {
-    wakeAt: number;
-    woken: boolean;
-    correlationId?: string | undefined;
-    kind: "sleep" | "hookTimeout";
 };
 
 // @public
@@ -604,23 +523,9 @@ export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: 
 }): void;
 
 // @public
-type StepEntry = {
-    key: string;
-    name: string;
-    status: "ok" | "failed";
-    output?: unknown;
-    error?: {
-        message: string;
-    } | undefined;
-    attempts: number;
-    startedAt: number;
-    finishedAt: number;
-};
-
-// @public
 export interface SttError extends Error {
     // (undocumented)
-    readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
+    readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error" | (string & {});
 }
 
 // @public (undocumented)
@@ -668,7 +573,7 @@ export type SttTurnMeta = {
 // @public
 export const TELEPHONY_SAMPLE_RATE = 8000;
 
-// @public
+// @public @input
 export type TelephonyBridgeOptions = {
     carrier: CarrierCodec;
     logger?: Logger;
@@ -688,7 +593,7 @@ export interface TextAgent {
     readonly tools: ToolSet;
 }
 
-// @public
+// @public @input
 export interface TextAgentOptions extends HostAgentOptions {
     db?: Db | undefined;
     env?: AgentEnv;
@@ -697,7 +602,7 @@ export interface TextAgentOptions extends HostAgentOptions {
     sessionId?: string;
 }
 
-// @public
+// @public @input
 export interface TextTurnOptions {
     maxSteps?: number;
     messages: ModelMessage[];
@@ -712,13 +617,29 @@ export interface TextTurnOptions {
     toolChoice?: ToolChoice;
 }
 
-// @public
-export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
+// @public @sealed
+export type TextTurnResult = {
+    readonly textStream: AsyncIterable<string>;
+    readonly text: PromiseLike<string>;
+    readonly response: PromiseLike<{
+        readonly messages: readonly ModelMessage[];
+    }>;
+    consumeStream(options?: {
+        onError?: ((error: unknown) => void) | undefined;
+    }): PromiseLike<void>;
+};
+
+// @public @input
+export type ToolCallRepairOptions = {
+    model: LanguageModel;
+    logger?: Logger | undefined;
+    abortSignal?: (() => AbortSignal | undefined) | undefined;
+};
 
 // @public
 export interface TtsError extends Error {
     // (undocumented)
-    readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
+    readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error" | (string & {});
 }
 
 // @public
@@ -781,18 +702,6 @@ export const UPLOAD_STORAGE_KEY_ENV = "AAI_UPLOAD_STORAGE_KEY";
 export const UPLOAD_STORAGE_URL_ENV = "AAI_UPLOAD_STORAGE_URL";
 
 // @public
-export type UploadMeta = {
-    name?: string | undefined;
-    type?: string | undefined;
-};
-
-// @public
-export type UploadPart = {
-    at: number;
-    bytes: number;
-};
-
-// @public
 export class UploadsUnavailableError extends Error {
     constructor(message: string);
 }
@@ -812,16 +721,16 @@ export function withToolsDir<D extends {
     readonly tools: ToolRegistry;
 }>(def: D, dir: string | URL): Promise<D>;
 
-export { WORKFLOW_API_PREFIX }
-
 // @public
 export const WORKFLOW_API_TOKEN_ENV = "AAI_WORKFLOW_API_TOKEN";
 
-// @public
-export type WorkflowKeyStore = {
-    record(workflow: string, key: string, runId: string): Promise<void>;
-    lookup(workflow: string, key: string, limit: number): Promise<string[]>;
+// @public @sealed
+export type WorkflowJournal = {
+    readonly [workflowJournalBrand]: true;
 };
+
+// @public
+export const workflowJournalBrand: unique symbol;
 
 // (No @packageDocumentation comment for this package)
 

@@ -42,7 +42,11 @@ import {
 } from "./simulate.ts";
 import { installStubLlm, type StubScript } from "./stub-llm.ts";
 
-/** What a case gets for running a simulated caller and grading the result. */
+/**
+ * What a case gets for running a simulated caller and grading the result.
+ *
+ * @sealed
+ */
 export type EvalSimulationContext = {
   /**
    * Run a simulated caller against this case's session (or text agent) until
@@ -64,7 +68,11 @@ export type EvalSimulationContext = {
   ): Promise<CallVerdict>;
 };
 
-/** What {@link evalSimulation} takes. */
+/**
+ * What {@link evalSimulation} takes.
+ *
+ * @input
+ */
 export type EvalSimulationOptions = {
   /** The agent under evaluation. Live, the caller and the judge default to its model. */
   readonly agent: AgentDef;

@@ -46,7 +46,11 @@ export type StubScript = string | readonly (string | StubStep)[];
 /** The env var the stub model resolves its (unused) credential from. */
 export const STUB_LLM_API_KEY_ENV = "AAI_EVAL_STUB_LLM_KEY";
 
-/** A registered stub model, and what to hand a session. */
+/**
+ * A registered stub model, and what to hand a session.
+ *
+ * @sealed
+ */
 export type StubLlm = {
   /** Pass as {@link EvalSessionOptions.llm}. */
   readonly llm: LlmProvider;

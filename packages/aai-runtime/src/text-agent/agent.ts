@@ -91,7 +91,13 @@ import { createTextAgentEvents } from "./events.ts";
 import { toContextMessages } from "./messages.ts";
 // Imported as well as re-exported below: a re-export does not bring a name into
 // this module's scope, and the factory's own signature needs all four.
-import type { TextAgent, TextAgentOptions, TextTurnOptions, TextTurnResult } from "./types.ts";
+import type {
+  FullTextTurnResult,
+  HostTextAgent,
+  TextAgent,
+  TextAgentOptions,
+  TextTurnOptions,
+} from "./types.ts";
 
 /**
  * The four public TYPES — `TextTurnResult`, `TextAgentOptions`,
@@ -150,6 +156,16 @@ export function textAgentHasNoSession(name: string): Error {
  * @public
  */
 export function createTextAgent(options: TextAgentOptions): TextAgent {
+  return createHostTextAgent(options);
+}
+
+/**
+ * {@link createTextAgent}, typed for this package's own harnesses — see
+ * `HostTextAgent`.
+ *
+ * @internal
+ */
+export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
   const { agent, logger = consoleLogger } = options;
   if (agent.mode !== "text") {
     throw new Error(
@@ -325,7 +341,7 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
     model,
     tools,
     sessionId,
-    stream(turn: TextTurnOptions): TextTurnResult {
+    stream(turn: TextTurnOptions): FullTextTurnResult {
       // One latch per RUN here, where the pipeline keeps one per session: a text
       // agent's turns are not serialized (two `stream()` calls may overlap), so
       // a shared latch would let one run's fatal tool abort another's request.
@@ -386,7 +402,11 @@ export function createTextAgent(options: TextAgentOptions): TextAgent {
           // failure, and it can install its own `prepareStep`.
           { stage: "force-final-answer", prepare: forceFinal },
         ]),
-        experimental_repairToolCall: createToolCallRepair(model, logger, () => turn.signal),
+        experimental_repairToolCall: createToolCallRepair({
+          model,
+          logger,
+          abortSignal: () => turn.signal,
+        }),
         // The caller's signal PLUS the fatal-tool latch, so a tool the author
         // declared unrecoverable stops the run instead of handing the model a
         // `tool-error` part to retry against — see `tools/error-policy.ts`.

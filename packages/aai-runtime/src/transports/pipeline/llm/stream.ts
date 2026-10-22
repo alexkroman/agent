@@ -214,7 +214,11 @@ export function createTurnLlmRunner(deps: TurnLlmRunnerDeps): TurnLlmRunner {
       // mutable turn state at repair time raced barge-in: settled, the repair
       // ran unsignalled (an orphaned billed call); replaced, it held the NEXT
       // turn's signal.
-      repairToolCall: createToolCallRepair(deps.llm, deps.log, () => signal),
+      repairToolCall: createToolCallRepair({
+        model: deps.llm,
+        logger: deps.log,
+        abortSignal: () => signal,
+      }),
       signal,
       onDelta,
       onStepPersisted,

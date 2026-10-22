@@ -8,7 +8,6 @@
 
 import type { SessionCall } from "@alexkroman1/aai";
 import type { AgentEnv } from "@alexkroman1/aai/host-internal";
-import type { Db } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import type { ClientSink, ReadyConfig, SessionCommand } from "@alexkroman1/aai/protocol";
@@ -17,12 +16,13 @@ import type { TtsProvider } from "@alexkroman1/aai/tts";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { HostGenerateFn } from "../generate.ts";
 import type { HostAgentOptions } from "../host-agent-options.ts";
+import type { Db } from "../postgres-db.ts";
 import type { CreateS2sWebSocket } from "../s2s/index.ts";
 import type { S2sConfig } from "../s2s-config.ts";
 import type { ServerSession, SessionEventStream, SessionWebSocket } from "../session/index.ts";
 import type { ExecuteTool } from "../tools/index.ts";
 import type { CreateOpenaiRealtimeWebSocket } from "../transports/openai-realtime-transport.ts";
-import type { JournalStore } from "../workflow/journal/types.ts";
+import type { WorkflowJournal } from "../workflow/journal/handle.ts";
 
 /** Per-session options passed to {@link AgentRuntime.startSession}. */
 export type SessionStartOptions = {
@@ -215,6 +215,7 @@ export type AgentRuntime = {
  * Extractor reads the tag at the declaration; they are `HostRuntimeOptions`
  * now, the move `generate` made first.
  *
+ * @input
  * @public
  */
 export interface RuntimeOptions extends HostAgentOptions {
@@ -276,7 +277,7 @@ export interface RuntimeOptions extends HostAgentOptions {
    * rescue path for it (an elapsed deadline is not a wait `wakeSleeps` may stop)
    * and nothing repeats the pass.
    */
-  journal?: JournalStore | undefined;
+  journal?: WorkflowJournal | undefined;
   /**
    * The base URL this agent is reachable at from OUTSIDE — origin plus, on the
    * managed platform, the agent's slug (`https://<platform>/<slug>`).

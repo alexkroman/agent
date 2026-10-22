@@ -15,5 +15,6 @@ export {
   type CloseableDb,
   type CreatePostgresDbOptions,
   createPostgresDb,
+  type Db,
   type ReservedDb,
 } from "../../runtime-barrel.ts";

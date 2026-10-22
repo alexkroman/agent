@@ -34,7 +34,7 @@
  * a turn with a ~1.0s time-to-first-token budget, on a call where a tool-heavy
  * turn emits tens of control events. So the two halves are separated:
  *
- * - **Recording is synchronous.** {@link SessionEventStream.append} assigns the
+ * - **Recording is synchronous.** {@link SessionEventLog.append} assigns the
  *   index and returns the stamped event before anything awaits, so ordering is
  *   deterministic, a client can be told its position immediately, and a hook
  *   never observes an event the log has not recorded.
@@ -132,7 +132,11 @@ type StreamEntry = {
   cappedReported: boolean;
 };
 
-/** One page of a stream read. */
+/**
+ * One page of a stream read.
+ *
+ * @sealed
+ */
 export type SessionEventPage = {
   /** The events, from the requested index, in order. */
   events: readonly SessionEvent[];
@@ -151,8 +155,37 @@ export type SessionEventHook = {
   readonly run: (event: SessionEvent) => void | Promise<void>;
 };
 
-/** The runtime's view of every session's event stream. */
+/**
+ * The seal {@link SessionEventStream} carries. TYPE-ONLY: there is no value to
+ * import, which is what stops a hand-written object from satisfying the type.
+ *
+ * @public
+ */
+export declare const sessionEventStreamBrand: unique symbol;
+
+/**
+ * Every session's event stream, as a READER of `runtime.sessionEvents` sees it.
+ *
+ * @sealed Only the runtime builds one — see {@link sessionEventStreamBrand}.
+ * The writing half (append, flush, hydrate, discard) is the runtime's own.
+ * @public
+ */
 export type SessionEventStream = {
+  /** The seal — see {@link sessionEventStreamBrand}. */
+  readonly [sessionEventStreamBrand]: true;
+  /** The log's length: the index the next event will take. */
+  tail(sessionId: string): number;
+  /** Read a page from `startIndex`. Flushes first, so a read sees everything recorded. */
+  read(sessionId: string, startIndex: number, limit?: number): Promise<SessionEventPage>;
+  /** Whether a read here can outlive the process. */
+  readonly durable: boolean;
+};
+
+/**
+ * The runtime's view of every session's event stream: the public reader plus
+ * the writing half only the session core drives.
+ */
+export type SessionEventLog = SessionEventStream & {
   /**
    * Record one event: stamp its envelope, assign its index, and return it.
    *
@@ -160,10 +193,6 @@ export type SessionEventStream = {
    * event to the client and then runs hooks, in that order.
    */
   append(sessionId: string, body: SessionEventBody): SessionEvent;
-  /** The log's length: the index the next event will take. */
-  tail(sessionId: string): number;
-  /** Read a page from `startIndex`. Flushes first, so a read sees everything recorded. */
-  read(sessionId: string, startIndex: number, limit?: number): Promise<SessionEventPage>;
   /**
    * Write out what is pending. Never rejects; a failure is logged and retried.
    * `final` is the session's stop: the backend also settles what it deferred.
@@ -175,8 +204,6 @@ export type SessionEventStream = {
   discard(sessionId: string): void;
   /** Drop every in-process entry (runtime shutdown). Stored rows are left alone. */
   clear(): void;
-  /** Whether a read here can outlive the process — for the resolved-mode log. */
-  readonly durable: boolean;
 };
 
 /**
@@ -186,13 +213,13 @@ export type SessionEventStream = {
  * nowhere to be recorded — a host-mode handshake rejection is the case: the
  * socket is answered and closed before any session is built. Those still need an
  * envelope, because the wire schema requires one. Everything with a session goes
- * through {@link SessionEventStream.append}, which calls this itself; a second
+ * through {@link SessionEventLog.append}, which calls this itself; a second
  * caller stamping an event the stream will also record would give one event two
  * ids, which is the one thing that makes the id useless.
  *
  * @internal
  */
-export function stampSessionEvent(body: SessionEventBody, now = Date.now()): SessionEvent {
+export function stampSessionEvent(body: SessionEventBody, now: number = Date.now()): SessionEvent {
   return { ...body, meta: { id: EVENT_ID_PREFIX + nextUlid(now), at: now } };
 }
 
@@ -204,7 +231,7 @@ export function stampSessionEvent(body: SessionEventBody, now = Date.now()): Ses
 export function createSessionEventStream(options: {
   backend: SessionStateBackend;
   logger?: Logger | undefined;
-}): SessionEventStream {
+}): SessionEventLog {
   const { backend, logger } = options;
   const sessions = new Map<string, StreamEntry>();
 
@@ -388,5 +415,7 @@ export function createSessionEventStream(options: {
     clear() {
       sessions.clear();
     },
-  };
+    // The brand is type-only (see `sessionEventStreamBrand`), so this literal is
+    // checked against everything else and then sealed.
+  } satisfies Omit<SessionEventLog, typeof sessionEventStreamBrand> as SessionEventLog;
 }

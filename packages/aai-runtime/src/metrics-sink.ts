@@ -119,6 +119,7 @@ export function recordSessionMetrics(event: MetricsCollectedEvent, context: Metr
  * structurally so this module imports no OpenTelemetry — `@opentelemetry/api`
  * is an optional peer, and a static import of it here would break every bundle
  * of a project that did not install it (`check:optional-peers`).
+ * @input
  * @public
  */
 export interface OtelMeterLike {

@@ -43,7 +43,11 @@ import type { EvalSession, EvalSessionOptions } from "./session.ts";
 import type { StubScript } from "./stub-llm.ts";
 import type { EvalWorkflows, EvalWorkflowsOptions } from "./workflows.ts";
 
-/** What a case gets to say about how it should be run. */
+/**
+ * What a case gets to say about how it should be run.
+ *
+ * @input
+ */
 export type EvalCaseOptions = {
   /**
    * What a SCRIPTED model does when this suite runs without a key — one entry
@@ -251,6 +255,8 @@ export type EvalTestContext = {
  * the step's HTTP while leaving the SESSION's model live. Both templates that
  * hand off to a run had to install that inside the case body, which worked only
  * because the engine publishes nothing when nobody passed one.
+ *
+ * @input
  */
 export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
   readonly workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;

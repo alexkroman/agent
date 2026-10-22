@@ -3,7 +3,7 @@
 import { requestPath } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../_logger-test-utils.ts";
-import { createSessionEventStream, type SessionEventStream } from "../session/index.ts";
+import { createSessionEventStream, type SessionEventLog } from "../session/index.ts";
 import { createMemoryStateBackend } from "../session-state/store.ts";
 import {
   createSessionEventsApi,
@@ -56,7 +56,7 @@ function makeReq(url: string, token?: string): SessionEventsRequest {
  */
 async function call(
   opts: {
-    stream?: SessionEventStream | undefined;
+    stream?: SessionEventLog | undefined;
     /** Absent means the route is configured with {@link TOKEN}. */
     token?: string | undefined;
     /** Absent means the request presents no `Authorization` header. */
@@ -81,7 +81,7 @@ async function call(
   return { claimed, res, json: () => JSON.parse(res.body) as Record<string, unknown> };
 }
 
-function seeded(): SessionEventStream {
+function seeded(): SessionEventLog {
   const stream = createSessionEventStream({ backend: createMemoryStateBackend() });
   stream.append(SID, { type: "userTranscript.committed", text: "one" });
   stream.append(SID, { type: "agentTranscript.committed", text: "two" });

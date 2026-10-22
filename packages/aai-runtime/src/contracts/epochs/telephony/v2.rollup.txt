@@ -1,0 +1,213 @@
+import type { ClientSink } from '@alexkroman1/aai/protocol';
+import type { ReadyConfig } from '@alexkroman1/aai/protocol';
+import type { SessionCall } from '@alexkroman1/aai';
+import { SessionEvent } from '@alexkroman1/aai';
+import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
+
+// @public
+type AgentRuntime = {
+    startSession(ws: SessionWebSocket, options?: SessionStartOptions): void;
+    shutdown(): Promise<void>;
+    readonly readyConfig: ReadyConfig;
+    readonly workflows?: WorkflowClient | undefined;
+    readonly deliverWorkflow?: ((runId: string) => Promise<unknown>) | undefined;
+    readonly sessionEvents?: SessionEventStream | undefined;
+    readonly serveRoute?: ((call: {
+        method: string;
+        path: string;
+        query: Readonly<Record<string, string>>;
+        headers?: Readonly<Record<string, string>> | undefined;
+        body: unknown;
+        rawBody?: string | undefined;
+        clientId?: string | undefined;
+        signal: AbortSignal;
+    }) => Promise<{
+        status: number;
+        body: unknown;
+        headers?: Readonly<Record<string, string>> | undefined;
+    }>) | undefined;
+};
+
+// @public
+export const CARRIER_CODECS: {
+    readonly twilio: CarrierCodec;
+    readonly telnyx: CarrierCodec;
+};
+
+// @public
+export function carrierByName(name: string | null | undefined): CarrierCodec | null;
+
+// @public @input
+export type CarrierCodec = {
+    readonly name: string;
+    decode(frame: unknown): CarrierInbound;
+    encode(out: CarrierOutbound): unknown;
+};
+
+// @public
+export type CarrierInbound =
+/**
+* The call's media stream has begun; `streamId` must be echoed on outbound
+* frames. `callId` and `parameters` are the call's identity, bounded by the
+* shipped codecs (see `MAX_CALL_PARAMETERS`). OPTIONAL so a codec written
+* before they existed still type-checks; absent reads as "none".
+*/
+    {
+    kind: "start";
+    streamId: string;
+    encoding: string | null;
+    sampleRate: number | null;
+    callId?: string | null;
+    parameters?: Readonly<Record<string, string>>;
+}
+/** One 20 ms chunk of caller audio, base64 μ-law. */
+| {
+    kind: "media";
+    payload: string;
+}
+/** The caller pressed a key: `0`-`9`, `*`, `#` (or `A`-`D` on carriers that send them). */
+| {
+    kind: "dtmf";
+    digit: string;
+}
+/** The carrier is ending the stream (the caller hung up). */
+| {
+    kind: "stop";
+}
+/**
+* Everything else — keepalives, marks, the other leg's audio, frame types
+* this codec does not know. `type` is the carrier's own name for the frame
+* (`""` when it carried none), for a log line; a session acts on none of them.
+*/
+| {
+    kind: "other";
+    type: string;
+};
+
+// @public
+export type CarrierName = string;
+
+// @public
+export type CarrierOutbound =
+/** One chunk of base64 μ-law agent speech. */
+    {
+    kind: "media";
+    payload: string;
+    streamId: string | null;
+}
+/**
+* Discard agent audio the carrier has already buffered.
+*
+* This is what makes barge-in audible on a phone call. The carrier accepts
+* audio far faster than it plays it, so at the moment the caller interrupts
+* there are seconds of the agent's reply sitting in the carrier's own
+* buffer — beyond the reach of anything the session drops on its side. Sent
+* on `cancelled`/`reset`; without it the caller talks over an agent that
+* keeps speaking for several seconds after being interrupted.
+*/
+| {
+    kind: "clear";
+    streamId: string | null;
+};
+
+// @public
+export function createTelephonyBridge(carrierSocket: SessionWebSocket, options: TelephonyBridgeOptions): SessionWebSocket;
+
+// @public
+type LogContext = Record<string, unknown>;
+
+// @public
+type LogFn = (message: string, ctx?: LogContext) => void;
+
+// @public @input
+interface Logger {
+    // (undocumented)
+    debug: LogFn;
+    // (undocumented)
+    error: LogFn;
+    // (undocumented)
+    info: LogFn;
+    // (undocumented)
+    warn: LogFn;
+}
+
+// @public @sealed
+type SessionEventPage = {
+    events: readonly SessionEvent[];
+    tail: number;
+};
+
+// @public @sealed
+type SessionEventStream = {
+    readonly [sessionEventStreamBrand]: true;
+    tail(sessionId: string): number;
+    read(sessionId: string, startIndex: number, limit?: number): Promise<SessionEventPage>;
+    readonly durable: boolean;
+};
+
+// @public
+const sessionEventStreamBrand: unique symbol;
+
+// @public
+type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents" | "deliverWorkflow" | "serveRoute">;
+
+// @public
+type SessionStartOptions = {
+    skipGreeting?: boolean;
+    resumeFrom?: string;
+    clientLocation?: string;
+    clientId?: string;
+    clientPhone?: string;
+    call?: SessionCall;
+    logContext?: Record<string, string>;
+    onOpen?: () => void;
+    onClose?: () => void;
+    onSessionEnd?: (sessionId: string, sink?: ClientSink) => void;
+    onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
+    audioLeadMs?: number;
+};
+
+// @public
+type SessionWebSocket = {
+    readonly readyState: number;
+    readonly bufferedAmount?: number | undefined;
+    send(data: string | ArrayBuffer | Uint8Array): void;
+    close?(code?: number, reason?: string): void;
+    ping?(): void;
+    addEventListener(type: "open", listener: () => void): void;
+    addEventListener(type: "close", listener: (event: {
+        code?: number;
+        reason?: string;
+    }) => void): void;
+    addEventListener(type: "message", listener: (event: {
+        data: unknown;
+    }) => void): void;
+    addEventListener(type: "error", listener: (event: {
+        message?: string;
+    }) => void): void;
+};
+
+// @public
+export function startTelephonySession(carrierSocket: SessionWebSocket, runtime: SessionRuntime, options: {
+    carrier: CarrierCodec;
+    logger?: Logger;
+    startTimeoutMs?: number;
+}): void;
+
+// @public
+export const TELEPHONY_SAMPLE_RATE = 8000;
+
+// @public @input
+export type TelephonyBridgeOptions = {
+    carrier: CarrierCodec;
+    logger?: Logger;
+    onStart?: (start: Extract<CarrierInbound, {
+        kind: "start";
+    }>) => void;
+};
+
+// @public
+export const telnyxCodec: CarrierCodec;
+
+// @public
+export const twilioCodec: CarrierCodec;

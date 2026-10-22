@@ -35,7 +35,11 @@ import type { EvalSession, EvalTurn } from "./session.ts";
 import type { SimulatedCall } from "./simulate.ts";
 import { conversationOf } from "./transcript.ts";
 
-/** One criterion's ruling. */
+/**
+ * One criterion's ruling.
+ *
+ * @sealed
+ */
 export type CriterionVerdict = {
   readonly criterion: string;
   readonly pass: boolean;
@@ -43,7 +47,11 @@ export type CriterionVerdict = {
   readonly reason: string;
 };
 
-/** The judge's verdict over a whole conversation. */
+/**
+ * The judge's verdict over a whole conversation.
+ *
+ * @sealed
+ */
 export type CallVerdict = {
   /** Every criterion passed. */
   readonly pass: boolean;
@@ -57,7 +65,11 @@ export type CallVerdict = {
   explain(): string;
 };
 
-/** What {@link judgeCall} takes. */
+/**
+ * What {@link judgeCall} takes.
+ *
+ * @input
+ */
 export type JudgeCallOptions = {
   /**
    * What must be true of the conversation, one claim each — "the agent

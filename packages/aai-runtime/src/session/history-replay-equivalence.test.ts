@@ -9,7 +9,7 @@
  * ```
  * live:   transport pushes ──────────────────→ createPipelineHistory().conversation
  *              │  (pipeline-history.ts)
- *              └─ callbacks.report(event) ──→ SessionEventStream
+ *              └─ callbacks.report(event) ──→ SessionEventLog
  *                                                 │
  *  resume:                        historyFromEvents / messagesFromEvents
  *                                     (session-event-history.ts)

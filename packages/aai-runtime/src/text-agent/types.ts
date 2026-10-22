@@ -13,7 +13,6 @@
 
 import type { SessionEvent, ToolChoice } from "@alexkroman1/aai";
 import type { AgentEnv } from "@alexkroman1/aai/host-internal";
-import type { Db } from "@alexkroman1/aai/internal";
 import type {
   LanguageModel,
   ModelMessage,
@@ -23,18 +22,45 @@ import type {
   ToolSet,
 } from "ai";
 import type { HostAgentOptions } from "../host-agent-options.ts";
+import type { Db } from "../postgres-db.ts";
 
 /**
- * What one turn hands back: the AI SDK's own `streamText` result, with this
- * SDK's tool set.
+ * The AI SDK's whole `streamText` result, which is what a turn really returns.
  *
- * Spelled as `ReturnType<typeof streamText<ToolSet>>` rather than by naming
- * `StreamTextResult`'s three type parameters, so the two type arguments we
- * have no opinion about (the runtime context and the structured-output shape)
- * keep tracking the vendor's own defaults instead of being pinned to whatever
- * they were on the day this was written.
+ * Internal: published, every `ai` minor that touched any of its forty-odd
+ * members was a break of `text`. The runtime's own harnesses (`runTextAgent`)
+ * and the studio's coding agent (which pipes a UI-message stream) read it
+ * through {@link HostTextAgent}; a caller gets {@link TextTurnResult}.
+ *
+ * @internal
  */
-export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
+export type FullTextTurnResult = ReturnType<typeof streamText<ToolSet>>;
+
+/**
+ * What one turn hands back: the slice of the AI SDK's streaming result a
+ * caller drives — the text as it arrives, the turn's messages once it settles,
+ * and draining it.
+ *
+ * DECLARED here rather than `ReturnType<typeof streamText>`, so an `ai` minor
+ * that reshapes the rest of that result is not a break of this contract. The
+ * object IS the AI SDK's result, so a member this slice lacks is a request to
+ * add one, not a cast to write.
+ *
+ * @sealed
+ */
+export type TextTurnResult = {
+  /** The model's text, delta by delta, across every step of the turn. */
+  readonly textStream: AsyncIterable<string>;
+  /** The whole turn's text, once it settles. */
+  readonly text: PromiseLike<string>;
+  /** What the turn added to the conversation — append these to the next turn's `messages`. */
+  readonly response: PromiseLike<{ readonly messages: readonly ModelMessage[] }>;
+  /**
+   * Drive the turn to completion without reading it. The stream is LAZY:
+   * nothing settles, and no tool runs, until something consumes it.
+   */
+  consumeStream(options?: { onError?: ((error: unknown) => void) | undefined }): PromiseLike<void>;
+};
 
 /**
  * Session-fixed configuration for `createTextAgent`.
@@ -47,6 +73,8 @@ export type TextTurnResult = ReturnType<typeof streamText<ToolSet>>;
  * `BuiltinToolOptions`); `logger` defaults to `consoleLogger`; and a text agent
  * whose tools install packages or type-check a workspace wants a larger
  * `toolTimeoutMs` than the 30s voice-turn default.
+ *
+ * @input
  */
 export interface TextAgentOptions extends HostAgentOptions {
   /**
@@ -95,7 +123,11 @@ export interface TextAgentOptions extends HostAgentOptions {
   sessionId?: string;
 }
 
-/** Per-turn parameters for {@link TextAgent.stream}. */
+/**
+ * Per-turn parameters for {@link TextAgent.stream}.
+ *
+ * @input
+ */
 export interface TextTurnOptions {
   /** The conversation so far, in AI SDK `ModelMessage` form. */
   messages: ModelMessage[];
@@ -152,4 +184,14 @@ export interface TextAgent {
   readonly sessionId: string;
   /** Run one turn, streaming. */
   stream(turn: TextTurnOptions): TextTurnResult;
+}
+
+/**
+ * The text agent as this package's own harnesses hold it: the same object,
+ * with the turn typed as the full AI SDK result.
+ *
+ * @internal
+ */
+export interface HostTextAgent extends TextAgent {
+  stream(turn: TextTurnOptions): FullTextTurnResult;
 }

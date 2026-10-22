@@ -32,6 +32,8 @@ export type LogFn = (message: string, ctx?: LogContext) => void;
  * };
  * createRuntime({ agent: agent({ name: "My Agent" }), env: {}, logger: myLogger });
  * ```
+ *
+ * @input
  */
 export interface Logger {
   info: LogFn;

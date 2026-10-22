@@ -22,14 +22,28 @@
  */
 
 import type { AgentDef } from "@alexkroman1/aai";
-import type { ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
+import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "./logger.ts";
+
+/**
+ * An isolated executor for the `run_code` builtin: takes the model's
+ * JavaScript, answers its printed output or an `{ error }` the model reads.
+ *
+ * DECLARED here rather than re-exported from the SDK's non-semver
+ * `/host-internal` (where the SDK's identical type lives), so the `runtime`
+ * capability hashes its shape rather than its name. A host implements it; the
+ * runtime only calls it.
+ *
+ * @public
+ */
+export type RunCodeExecutor = (code: string) => Promise<string | { error: string }>;
 
 /**
  * What every entry point that runs an agent definition takes — see the module
  * doc for why `env` and `llm` are declared by each rather than here.
  *
+ * @input
  * @public
  */
 export interface HostAgentOptions {

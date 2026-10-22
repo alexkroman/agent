@@ -1801,6 +1801,8 @@ TypeError when a menu has no options, or a turn carries no `dtmf`.
 
 ### EvalSessionOptions
 
+**`Input`**
+
 What [openEvalSession](#openevalsession) takes.
 
 The fields every way of running an agent shares are [HostAgentOptions](#hostagentoptions);
@@ -2069,6 +2071,8 @@ transform and the real engine cannot start it.
 
 ### EvalTextAgentOptions
 
+**`Input`**
+
 What [openEvalTextAgent](#openevaltextagent) takes.
 
 The fields every way of running an agent shares are [HostAgentOptions](#hostagentoptions);
@@ -2275,6 +2279,8 @@ transform and the real engine cannot start it.
 
 ### HostAgentOptions
 
+**`Input`**
+
 What every entry point that runs an agent definition takes — see the module
 doc for why `env` and `llm` are declared by each rather than here.
 
@@ -2415,6 +2421,8 @@ transform and the real engine cannot start it.
 
 ### Logger
 
+**`Input`**
+
 Structured logger interface. Used by tests to suppress output and by
 consumers to plug in custom logging backends.
 
@@ -2462,43 +2470,6 @@ warn: LogFn;
 
 ***
 
-### StepUsage
-
-What one completed step reported.
-
-Every field optional and possibly `undefined`, because that is what the
-vendor type says and what real providers do: a gateway that omits
-`inputTokens` on a cached turn is common, and `NaN`/`undefined` arriving into
-a running total is how a budget silently stops working.
-
-Public rather than `@internal`, unlike its two neighbours here: it is the
-parameter of `HostGenerateFn`'s `onUsage`, which `/eval` publishes, so an
-eval supplying a `generate` double has to be able to write this type.
-`UsageMeter` and `UsageSnapshot` stay internal and are reachable only from
-`@alexkroman1/aai-runtime/internal`.
-
-#### Properties
-
-##### inputTokens?
-
-```ts
-optional inputTokens?: number;
-```
-
-##### outputTokens?
-
-```ts
-optional outputTokens?: number;
-```
-
-##### totalTokens?
-
-```ts
-optional totalTokens?: number;
-```
-
-***
-
 ### SttError
 
 Error raised by an STT provider stream, with a typed `code` naming the
@@ -2513,7 +2484,12 @@ failure phase: connecting, authenticating, or mid-stream.
 ##### code
 
 ```ts
-readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
+readonly code: 
+  | string & {
+}
+  | "stt_connect_failed"
+  | "stt_auth_failed"
+  | "stt_stream_error";
 ```
 
 ***
@@ -2724,7 +2700,12 @@ failure phase: connecting, authenticating, or mid-stream.
 ##### code
 
 ```ts
-readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
+readonly code: 
+  | string & {
+}
+  | "tts_connect_failed"
+  | "tts_auth_failed"
+  | "tts_stream_error";
 ```
 
 ***
@@ -2933,6 +2914,8 @@ type CallVerdict = {
 };
 ```
 
+**`Sealed`**
+
 The judge's verdict over a whole conversation.
 
 #### Methods
@@ -2995,6 +2978,8 @@ type CriterionVerdict = {
 };
 ```
 
+**`Sealed`**
+
 One criterion's ruling.
 
 #### Properties
@@ -3031,6 +3016,8 @@ type EvalCredentials = {
   reason: string | undefined;
 };
 ```
+
+**`Sealed`**
 
 What [evalCredentials](#evalcredentials-1) found on this machine.
 
@@ -3080,6 +3067,8 @@ type EvalEmitted = {
   namespace: string;
 };
 ```
+
+**`Sealed`**
 
 One chunk `stepEmit()` wrote during a run, and the stream it named.
 
@@ -3262,6 +3251,8 @@ type EvalNetworkOptions<State = undefined> = {
 };
 ```
 
+**`Input`**
+
 What [evalNetwork](#evalnetwork-1) takes.
 
 #### Type Parameters
@@ -3360,7 +3351,11 @@ type EvalRequest = {
   headers: Readonly<Record<string, string>>;
   host: string;
   method: string;
-  outcome: "routed" | "passthrough" | "refused";
+  outcome:   | "routed"
+     | "passthrough"
+     | "refused"
+     | string & {
+   };
   route?: string;
   status?: number;
   text: string;
@@ -3410,7 +3405,12 @@ Upper-case, `"GET"` when the caller named none.
 ##### outcome
 
 ```ts
-readonly outcome: "routed" | "passthrough" | "refused";
+readonly outcome: 
+  | "routed"
+  | "passthrough"
+  | "refused"
+  | string & {
+};
 ```
 
 What became of it: answered by a `route`, sent on to the real network
@@ -3509,6 +3509,8 @@ type EvalRunOptions = StartOptions & {
   timeoutMs?: number;
 };
 ```
+
+**`Input`**
 
 Per-run knobs.
 
@@ -3726,6 +3728,8 @@ type EvalSimulationContext = {
 };
 ```
 
+**`Sealed`**
+
 What a case gets for running a simulated caller and grading the result.
 
 #### Methods
@@ -3811,6 +3815,8 @@ type EvalSimulationOptions = {
   target: SimulationTarget;
 };
 ```
+
+**`Input`**
 
 What [evalSimulation](#evalsimulation) takes.
 
@@ -3911,6 +3917,8 @@ type EvalSleep = {
   label: string;
 };
 ```
+
+**`Sealed`**
 
 One durable `sleep()` a body asked for — and did NOT take.
 
@@ -4249,133 +4257,6 @@ readonly toolCalls: readonly EvalToolCall[];
 This turn's tool calls, in call order, each with its result — minus the
 `think` builtin's scratchpad calls (an authored `think` stays). `events`
 still carries every call.
-
-***
-
-### EvalWorkflowEngineOptions
-
-```ts
-type EvalWorkflowEngineOptions = {
-  env: Readonly<Record<string, string>>;
-  speech?: SpeechSynthesizer;
-  stepAttempt?: {
-     attempt: number;
-     maxAttempts: number;
-  };
-  stepFetch?: StepFetch;
-  workflows: Readonly<Record<string, WorkflowDef>>;
-};
-```
-
-How the in-process engine behind `openEvalWorkflows` is configured.
-
-Public because [EvalWorkflowsOptions](#evalworkflowsoptions) indexes into it for its `speech`
-and `stepFetch` fields — the engine factory itself stays internal, so this
-describes the shape rather than naming it.
-
-#### Properties
-
-##### env
-
-```ts
-readonly env: Readonly<Record<string, string>>;
-```
-
-The agent env a step reads with `stepEnv`/`requireStepEnv`.
-
-Published rather than left to `process.env`, which is what an unpublished
-slot falls back to: publishing is what makes a step read exactly the keys the
-agent declares, in an eval as in a deployment.
-
-##### speech?
-
-```ts
-readonly optional speech?: SpeechSynthesizer;
-```
-
-A speech synthesizer to publish, for a flow whose step calls `stepSpeak`.
-
-Nothing by default, so an unpublished slot fails by name — which is the
-SDK's own behaviour and the right one: there is no global synthesizer to
-fall back to. A case supplies `installStubSpeech`
-(`@alexkroman1/aai/testing/vitest`); a host wanting the real socket passes
-`speakOverWebSocket`, which is not named here for the same graph reason as
-[EvalWorkflowEngineOptions.stepFetch](#stepfetch).
-
-##### stepAttempt?
-
-```ts
-readonly optional stepAttempt?: {
-  attempt: number;
-  maxAttempts: number;
-};
-```
-
-What `stepInfo()` answers this app's steps, when a case needs a body's
-NON-degraded branch.
-
-Defaults to a first-and-only attempt (`attempt: 1, maxAttempts: 1`), which
-is the truth about this engine — it never replays, so no step is ever
-retried. The consequence is easy to miss and it is the reason this option
-exists: `isLastAttempt` is therefore always `true`, so a body that degrades
-on its last try is measured on that branch by EVERY eval and its primary
-path is exercised by none.
-
-`link-digest-workflow` is the worked case. Its digest step asks its call
-site for six attempts and reads `isLastAttempt` to swap in a blunter
-instruction and a fallback model; under the default every eval of it took
-that arm, so the prompt a real run uses five times out of six had no
-coverage at all. `{ attempt: 1, maxAttempts: 6 }` measures that one.
-
-It does NOT make the engine retry — there is nothing to intercept, per
-`maxRetries` being inert above. What it changes is only what the body is
-TOLD, which is what selects the branch.
-
-###### attempt
-
-```ts
-readonly attempt: number;
-```
-
-###### maxAttempts
-
-```ts
-readonly maxAttempts: number;
-```
-
-##### stepFetch?
-
-```ts
-readonly optional stepFetch?: StepFetch;
-```
-
-A `stepFetch` to publish for this app's steps. Nothing is published by
-default, which means a step's HTTP falls back to `globalThis.fetch`.
-
-**Taken as a VALUE rather than built here, and that is a graph decision
-rather than a style one.** `createStepFetch` reaches `undici`, and naming it
-from this module put the runtime's whole step graph into the program of
-every package whose eval file imports `/eval/vitest` — which is
-`aai-templates`, where it failed on an unrelated `BodyInit` mismatch under
-`exactOptionalPropertyTypes`. That is the hazard
-`packages/aai-runtime/CLAUDE.md` records for `host-internal`, arriving by a
-new route. A host that wants the pooled HTTP/1.1 fetch passes its own; a
-template eval does not need one.
-
-The cost, stated: `globalThis.fetch` offers `h2` in ALPN, so a WIDE live
-fan-out through it can collect stream resets a pooled HTTP/1.1 fetch would
-not (`sdk/step-fetch.ts` has the measurements). An eval is not where a
-fan-out's concurrency is measured, and the upside is that BOTH published
-fakes work — `installStubGateway` over the global, and
-`installStubStepFetch` / `installStubTranscribe` over the slot.
-
-##### workflows
-
-```ts
-readonly workflows: Readonly<Record<string, WorkflowDef>>;
-```
-
-The agent's declared workflows, keyed as `agent({ workflows })` keys them.
 
 ***
 
@@ -4773,11 +4654,25 @@ type EvalWorkflowsOptions = {
   agent: AgentDef;
   env?: Record<string, string>;
   logger?: Logger;
-  speech?: EvalWorkflowEngineOptions["speech"];
-  stepFetch?: EvalWorkflowEngineOptions["stepFetch"];
+  speech?: (request: {
+     apiKey: string;
+     language?: string;
+     sampleRate: number;
+     signal: AbortSignal;
+     text: string;
+     voice: string;
+  }) => Promise<Uint8Array>;
+  stepFetch?: (url: string, init?: {
+     body?: Uint8Array | string | AsyncIterable<Uint8Array>;
+     headers?: Record<string, string>;
+     method?: string;
+     signal?: AbortSignal;
+  }) => Promise<Response>;
   timeoutMs?: number;
 };
 ```
+
+**`Input`**
 
 What [openEvalWorkflows](#openevalworkflows) takes.
 
@@ -4815,24 +4710,101 @@ Defaults to silent. Pass `consoleLogger` when diagnosing a case.
 ##### speech?
 
 ```ts
-readonly optional speech?: EvalWorkflowEngineOptions["speech"];
+readonly optional speech?: (request: {
+  apiKey: string;
+  language?: string;
+  sampleRate: number;
+  signal: AbortSignal;
+  text: string;
+  voice: string;
+}) => Promise<Uint8Array>;
 ```
 
 A speech synthesizer to publish, for a flow whose step calls `stepSpeak` —
-nothing by default. See [EvalWorkflowEngineOptions.speech](#speech).
+nothing by default, so an unpublished slot fails by name. A case supplies
+`installStubSpeech` (`@alexkroman1/aai-runtime/testing/vitest`).
+
+###### Parameters
+
+###### request
+
+###### apiKey
+
+`string`
+
+###### language?
+
+`string`
+
+###### sampleRate
+
+`number`
+
+###### signal
+
+`AbortSignal`
+
+###### text
+
+`string`
+
+###### voice
+
+`string`
+
+###### Returns
+
+`Promise`\<`Uint8Array`\>
 
 ##### stepFetch?
 
 ```ts
-readonly optional stepFetch?: EvalWorkflowEngineOptions["stepFetch"];
+readonly optional stepFetch?: (url: string, init?: {
+  body?: Uint8Array | string | AsyncIterable<Uint8Array>;
+  headers?: Record<string, string>;
+  method?: string;
+  signal?: AbortSignal;
+}) => Promise<Response>;
 ```
 
 A `stepFetch` to publish for this app's steps — nothing by default, so a
-step's HTTP falls back to `globalThis.fetch`.
+step's HTTP falls back to `globalThis.fetch` (which is what
+`installStubGateway` stubs).
 
 Taken as a value rather than built here, and the reason is a MODULE GRAPH
-one that a reader would otherwise undo: see
-[EvalWorkflowEngineOptions.stepFetch](#stepfetch).
+one that a reader would otherwise undo: the pooled step fetch reaches
+`undici`, and naming it from this module put the runtime's whole step graph
+into every program whose eval file imports `/eval/vitest`. The type is
+spelled out rather than named for the same reason the SDK's `StepFetch` is
+not — it is on a non-semver subpath.
+
+###### Parameters
+
+###### url
+
+`string`
+
+###### init?
+
+###### body?
+
+`Uint8Array` \| `string` \| `AsyncIterable`\<`Uint8Array`\>
+
+###### headers?
+
+`Record`\<`string`, `string`\>
+
+###### method?
+
+`string`
+
+###### signal?
+
+`AbortSignal`
+
+###### Returns
+
+`Promise`\<`Response`\>
 
 ##### timeoutMs?
 
@@ -4841,61 +4813,6 @@ readonly optional timeoutMs?: number;
 ```
 
 Overrides the default per-run timeout for every run of this app.
-
-***
-
-### HostGenerateFn
-
-```ts
-type HostGenerateFn = (options: GenerateOptions, callOptions?: {
-  onUsage?: (usage: StepUsage) => void;
-  signal?: AbortSignal;
-}) => Promise<GenerateResult>;
-```
-
-The host-side `ctx.generate` implementation — takes `GenerateOptions` and
-resolves a `GenerateResult`, with an extra per-call options bag: the tool
-executor binds the issuing turn's abort signal so an in-flight generation
-stops on barge-in / reset / session stop.
-
-Public because `EvalSessionOptions.generate` takes one: substituting the
-in-tool LLM call is how a case asserts on what a tool DID without paying for
-a second live model, and an option whose type has no name is an option a
-spec can pass and not hold in a variable. It was `@internal` while nothing
-published a field of this type.
-
-#### Parameters
-
-##### options
-
-[`GenerateOptions`](../aai/index.md#generateoptions)
-
-##### callOptions?
-
-###### onUsage?
-
-(`usage`: [`StepUsage`](#stepusage)) => `void`
-
-Fold this call's reported usage into the issuing session's meter.
-
-A `ctx.generate` from a tool body is a real model request on the
-session's bill, and until this existed it was invisible to both
-`usage.updated` and `usageLimits` — a planner that reasons in a tool
-spent most of what it spent here. Passed per CALL rather than built into
-the function because the meter is per SESSION and this function is per
-runtime; the tool executor is what knows which session is asking.
-
-Called once per completed step (there is one, unless a future option
-makes this a loop), with what the provider reported — see
-`usage-meter.ts`.
-
-###### signal?
-
-`AbortSignal`
-
-#### Returns
-
-`Promise`\<[`GenerateResult`](../aai/index.md#generateresult)\>
 
 ***
 
@@ -4909,6 +4826,8 @@ type JudgeCallOptions = {
   providerEnv?: ProviderEnv;
 };
 ```
+
+**`Input`**
 
 What [judgeCall](#judgecall) takes.
 
@@ -5026,6 +4945,8 @@ type PhoneMenu = {
 };
 ```
 
+**`Input`**
+
 One automated menu: a prompt, and where each entry leads.
 
 #### Properties
@@ -5078,6 +4999,8 @@ type PhoneTreeLeaf = {
 };
 ```
 
+**`Input`**
+
 Where a phone tree ends: whoever the menu puts the call through to — a
 person picking up, a voicemail greeting, a recorded "we are closed".
 
@@ -5110,6 +5033,8 @@ type PhoneTreeStep = {
   pressed: string;
 };
 ```
+
+**`Sealed`**
 
 One menu played: what the agent pressed after hearing it, and where that led.
 
@@ -5147,10 +5072,16 @@ Every key the agent pressed on that turn, joined, pauses dropped. `""` when it p
 type PhoneTreeWalk = {
   path: readonly PhoneTreeStep[];
   reached: string | undefined;
-  stopped: "hung-up" | "max-prompts" | undefined;
+  stopped:   | "hung-up"
+     | "max-prompts"
+     | string & {
+   }
+     | undefined;
   turns: readonly EvalTurn[];
 };
 ```
+
+**`Sealed`**
 
 What [walkPhoneTree](#walkphonetree) saw.
 
@@ -5175,7 +5106,12 @@ The [PhoneTreeLeaf.name](#name-4) the agent got through to; `undefined` when it 
 ##### stopped
 
 ```ts
-readonly stopped: "hung-up" | "max-prompts" | undefined;
+readonly stopped: 
+  | "hung-up"
+  | "max-prompts"
+  | string & {
+}
+  | undefined;
 ```
 
 Why the walk ended short of a leaf: the agent hung up, or the menus played
@@ -5201,7 +5137,13 @@ type RunCodeExecutor = (code: string) => Promise<
 }>;
 ```
 
-Isolated executor backing the run_code builtin (see the module doc).
+An isolated executor for the `run_code` builtin: takes the model's
+JavaScript, answers its printed output or an `{ error }` the model reads.
+
+DECLARED here rather than re-exported from the SDK's non-semver
+`/host-internal` (where the SDK's identical type lives), so the `runtime`
+capability hashes its shape rather than its name. A host implements it; the
+runtime only calls it.
 
 #### Parameters
 
@@ -5229,6 +5171,8 @@ type SimulateCallOptions = {
   providerEnv?: ProviderEnv;
 };
 ```
+
+**`Input`**
 
 What [simulateCall](#simulatecall) takes.
 
@@ -5277,7 +5221,11 @@ machine's environment, the same trust decision `openEvalSession` makes.
 ```ts
 type SimulatedCall = {
   caller: SimulatedCaller;
-  endedBy: "caller" | "agent" | "max-turns";
+  endedBy:   | "caller"
+     | "agent"
+     | "max-turns"
+     | string & {
+   };
   endReason: string | undefined;
   greeting: readonly string[];
   metrics: SimulationMetrics;
@@ -5285,6 +5233,8 @@ type SimulatedCall = {
   transcript: string;
 };
 ```
+
+**`Sealed`**
 
 A finished simulated call.
 
@@ -5313,7 +5263,12 @@ readonly caller: SimulatedCaller;
 ##### endedBy
 
 ```ts
-readonly endedBy: "caller" | "agent" | "max-turns";
+readonly endedBy: 
+  | "caller"
+  | "agent"
+  | "max-turns"
+  | string & {
+};
 ```
 
 `"caller"` — it called `end_call`. `"agent"` — the AGENT hung up: a tool
@@ -5408,6 +5363,8 @@ type SimulatedTurn = {
 };
 ```
 
+**`Sealed`**
+
 One exchange: what the caller said and the turn it produced.
 
 #### Properties
@@ -5454,6 +5411,8 @@ type SimulationMetrics = {
   turns: number;
 };
 ```
+
+**`Sealed`**
 
 What was measured over the whole call.
 
@@ -5701,6 +5660,8 @@ type StubLlm = {
 };
 ```
 
+**`Sealed`**
+
 A registered stub model, and what to hand a session.
 
 #### Methods
@@ -5759,6 +5720,8 @@ type StubSpeechProviders = {
   ttsSession: StubTtsSession | undefined;
 };
 ```
+
+**`Sealed`**
 
 Both fake stages, registered, with the handles a case needs.
 
@@ -5857,6 +5820,8 @@ type StubSttSession = SttSession & {
 };
 ```
 
+**`Sealed`**
+
 One open fake STT stream, plus the two edges a case drives.
 
 #### Type Declaration
@@ -5906,6 +5871,8 @@ type StubTtsSession = TtsSession & {
   spoken: readonly string[];
 };
 ```
+
+**`Sealed`**
 
 One open fake TTS stream, plus what it captured.
 
@@ -6043,6 +6010,8 @@ type VmRunCodeOptions = {
 };
 ```
 
+**`Input`**
+
 What [createVmRunCode](#createvmruncode) takes.
 
 #### Properties
@@ -6083,6 +6052,8 @@ type WalkPhoneTreeOptions = {
   noInputPrefix?: string;
 };
 ```
+
+**`Input`**
 
 Knobs for [walkPhoneTree](#walkphonetree).
 

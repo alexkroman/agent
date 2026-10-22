@@ -883,6 +883,8 @@ type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
 };
 ```
 
+**`Input`**
+
 What [describeEval](#describeeval) takes beyond the agent.
 
 The session options, plus `workflowOptions` for the engine it opens per case
@@ -941,6 +943,8 @@ readonly optional workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
 type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent">;
 ```
 
+**`Input`**
+
 What [describeTextEval](#describetexteval) takes beyond the agent.
 
 ***
@@ -960,6 +964,8 @@ type EvalCaseOptions = {
   stubReply?: StubScript;
 };
 ```
+
+**`Input`**
 
 What a case gets to say about how it should be run.
 
@@ -1363,6 +1369,8 @@ type EvalWorkflowCaseOptions = {
   live?: boolean;
 };
 ```
+
+**`Input`**
 
 What a workflow case gets to say about how it should be run.
 
@@ -2222,12 +2230,6 @@ Re-exports [evalWorkflowCredentials](../eval.md#evalworkflowcredentials)
 
 ***
 
-### EvalWorkflowEngineOptions
-
-Re-exports [EvalWorkflowEngineOptions](../eval.md#evalworkflowengineoptions)
-
-***
-
 ### EvalWorkflowRun
 
 Re-exports [EvalWorkflowRun](../eval.md#evalworkflowrun)
@@ -2261,12 +2263,6 @@ Re-exports [expectToolBeforeSpeech](../eval.md#expecttoolbeforespeech)
 ### HostAgentOptions
 
 Re-exports [HostAgentOptions](../eval.md#hostagentoptions)
-
-***
-
-### HostGenerateFn
-
-Re-exports [HostGenerateFn](../eval.md#hostgeneratefn)
 
 ***
 
@@ -2453,12 +2449,6 @@ Re-exports [SimulationTarget](../eval.md#simulationtarget)
 ### statesIn
 
 Re-exports [statesIn](../eval.md#statesin)
-
-***
-
-### StepUsage
-
-Re-exports [StepUsage](../eval.md#stepusage)
 
 ***
 

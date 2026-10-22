@@ -30,10 +30,8 @@
  * reachable from a spec the day it lands, rather than silently absent. The cost
  * is that the type is INLINED into this rollup, so a signature change on
  * `TextAgentOptions` moves this capability's hash as well as `text`'s and both
- * want classifying. That is the same coupling `JournalStore` already puts here
- * (epochs 2 and 3 were dropped for exactly it), and it is the honest one: a
- * change to what a text agent accepts really is a change to what this harness
- * accepts. Restating the fields by hand would hide it and re-open the omission.
+ * want classifying. It is the honest coupling: a change to what a text agent
+ * accepts really is a change to what this harness accepts. Restating the fields by hand would hide it and re-open the omission.
  *
  * ONE subpath, and deliberately not a `/testing/vitest` sibling: nothing here
  * installs a process-global or owns a lifetime a runner has to unwind, which is
@@ -47,31 +45,14 @@
  * See `scripts/api-contracts.mjs`.
  */
 
-// ## The JOURNAL shapes, because `journal` is a documented seam
+// ## No JOURNAL shapes
 //
-// `RunWorkflowOptions.journal` invites a store of your own — the point being
-// that a deployment which already owns a database can drive a spec against it —
-// and `JournalStore` is a dozen methods over exactly these six records plus
-// `RunStatus`. Publishing the store without them published a shape nobody could
-// read: `getRun` answered a `RunRecord` no `import type` named, and `claimHook`
-// documented throwing a `JournalConflictError` a caller could not catch. Same
-// argument as `TextAgentOptions` above — a contract a caller must satisfy and
-// cannot name is not a contract, so the names a spec needs move this epoch
-// rather than none.
-export type {
-  HookRecord,
-  JournalStore,
-  ResumableRun,
-  RunRecord,
-  RunStatus,
-  SleepEntry,
-  SleepRecord,
-  StepEntry,
-} from "../../testing-barrel.ts";
+// `RunWorkflowOptions.journal` takes the opaque `WorkflowJournal` (owned by
+// `workflow`), not the sixteen-method store, which moved with every engine
+// change and dragged this capability with it. What a spec reads off a run's
+// journal is the handle's own `steps`, `reads` and `waits`.
 export {
   DEFAULT_MAX_DELIVERIES,
-  type DeterminismKind,
-  JournalConflictError,
   type RunTextAgentOptions,
   type RunWorkflowOptions,
   runTextAgent,
@@ -85,4 +66,5 @@ export {
   type WorkflowTestRead,
   type WorkflowTestRun,
   type WorkflowTestStep,
+  type WorkflowTestWait,
 } from "../../testing-barrel.ts";

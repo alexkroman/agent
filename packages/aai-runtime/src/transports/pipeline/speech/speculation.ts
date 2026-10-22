@@ -363,7 +363,11 @@ export function createPipelineSpeculation(deps: {
           // Never reached — the tool set cannot execute, so there is no call to
           // repair — but it is part of the request, and request parity is the
           // premise adoption rests on.
-          repairToolCall: createToolCallRepair(llm, log, () => deps.sessionSignal),
+          repairToolCall: createToolCallRepair({
+            model: llm,
+            logger: log,
+            abortSignal: () => deps.sessionSignal,
+          }),
         },
         userText,
         log,

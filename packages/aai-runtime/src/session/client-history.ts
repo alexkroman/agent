@@ -56,7 +56,7 @@ import type { Logger } from "../logger.ts";
 import type { ClientSessionRecord } from "../session-state/clients.ts";
 import type { SessionStateBackend } from "../session-state/store.ts";
 import { historyMessageOf, seededToolResult } from "./event-history.ts";
-import { SESSION_EVENT_READ_LIMIT, type SessionEventStream } from "./event-stream.ts";
+import { SESSION_EVENT_READ_LIMIT, type SessionEventLog } from "./event-stream.ts";
 
 /** The default size of a client's prior history in a new session, in (estimated) tokens. */
 export const CLIENT_HISTORY_TOKEN_BUDGET = 8000;
@@ -80,7 +80,7 @@ const TRANSCRIPT_READ_CONCURRENCY = 4;
 /** The backend and stream a client's log is read through. */
 export type ClientHistoryDeps = {
   backend: SessionStateBackend;
-  stream: SessionEventStream;
+  stream: SessionEventLog;
   logger?: Logger | undefined;
 };
 

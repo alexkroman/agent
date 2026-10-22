@@ -41,7 +41,7 @@ export const OTEL_METRICS_ENDPOINT_ENVS: readonly ["OTEL_EXPORTER_OTLP_METRICS_E
 // @public
 export const OTEL_METRICS_EXPORTER_ENV = "OTEL_METRICS_EXPORTER";
 
-// @public
+// @public @input
 export interface OtelMeterLike {
     // (undocumented)
     createCounter(name: string, options?: {

@@ -103,7 +103,11 @@ const MCP_CLIENT_NAME = "aai-runtime";
  */
 const MCP_CLIENT_VERSION = "1";
 
-/** One MCP server with its credential already resolved out of the agent env. */
+/**
+ * One MCP server with its credential already resolved out of the agent env.
+ *
+ * @sealed
+ */
 export type ResolvedMcpServer = {
   /** The author's key for this server — the first segment of its tool names. */
   key: string;
@@ -153,6 +157,8 @@ export type McpCallResult = {
  * the AI SDK's `ToolSet` rather than a shape of ours: that is the type
  * `fingerprintTools` reads, so reducing it here would mean re-deriving the
  * fingerprint from a lossy copy.
+ *
+ * @input
  */
 export type McpSession = {
   tools(): Promise<ToolSet>;
@@ -167,7 +173,11 @@ export type McpSession = {
  */
 export type McpSessionOpener = (server: ResolvedMcpServer) => Promise<McpSession>;
 
-/** Options {@link openMcpSession} takes; every one of them is a test seam. */
+/**
+ * Options {@link openMcpSession} takes; every one of them is a test seam.
+ *
+ * @input
+ */
 export type McpConnectOptions = {
   /**
    * `fetch` for the transport. Callers must leave it unset — same rule as

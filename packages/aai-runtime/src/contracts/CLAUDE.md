@@ -24,6 +24,16 @@ discovered by whoever's build breaks.
   different reader imports it. Adding a feature to an existing capability makes
   every change to it an epoch of that capability; that is why `auth`, `metrics`,
   `eval-simulate` and `eval-assert` are separate.
+- **The eval family is cut by what MOVES together**: `eval-assert` is every pure
+  reader and claim plus the `EvalTurn`/`EvalToolCall` records (stable); `eval`
+  the drivers, their options and records, and the runtime's OWN stubs
+  (`installStubLlm`, the stub openers, `createVmRunCode`) — a mirror may hold
+  only the SDK's names; `eval-network`, `eval-phone-tree`, `eval-simulate` one
+  young feature each.
+- **A capability whose last consumer goes is deleted, not emptied**: remove its
+  entry point, its `epochs/<cap>/` and its `contracts.json` entry, and move the
+  names to `/internal` if anything still imports them (`keys` went this way — no
+  published signature took a key store).
 - `tools` (one name, `withToolsDir`) is its own capability because it assembles
   the DEFINITION a runtime is handed, not any part of the engine.
 - **A capability is not a subpath.** The two testing doors re-export across
@@ -41,9 +51,15 @@ discovered by whoever's build breaks.
   (`scripts/_api-contracts-mirror.mjs`). A helper added to the SDK still needs a
   line in the door's barrel and in the mirror's entry point.
 - **Shape debt is baselined in `api-shape-baseline.json`** (`check:api-shape`,
-  `docs/CLAUDE.md`): this package's 24 non-authoring imports (`AgentEnv`,
-  `RunCodeExecutor`, `StepFetch`, `Db`… from `/host-internal` and `/internal`)
-  and the `ai` types it names are the entries to pay down first.
+  `docs/CLAUDE.md`). A non-authoring SDK name in a contracted signature is
+  either re-declared here (`Db`, `RunCodeExecutor`), spelled inline
+  (`EvalWorkflowsOptions.stepFetch`/`speech`) or dropped; `AgentEnv` and
+  `ProviderEnv` stay baselined, because a copy here would not carry the SDK's
+  host-credential marker and would let a `HostCredentialEnv` into `ctx.env`.
+- **A handle passed back in is reached both ways** (`Runtime`,
+  `WorkflowJournal`, `SessionEventStream`), and so is an implementer interface
+  (the opener contract, `CarrierCodec`): their `positions` entries are the cost
+  of the shape, not debt to tag away.
 - Which barrel a name goes on, and the `@internal` rules, are in the package
   guide, "The published surface: two barrels and a rule between them".
 

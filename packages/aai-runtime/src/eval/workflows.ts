@@ -89,7 +89,6 @@ import {
   type EvalEmitted,
   type EvalRunRecord,
   type EvalSleep,
-  type EvalWorkflowEngineOptions,
 } from "./workflow-engine.ts";
 
 /**
@@ -186,13 +185,21 @@ export type EvalWorkflowRun<R = unknown> = {
   readonly snapshot: WorkflowRunSnapshot<R>;
 };
 
-/** Per-run knobs. */
+/**
+ * Per-run knobs.
+ *
+ * @input
+ */
 export type EvalRunOptions = StartOptions & {
   /** Overrides {@link DEFAULT_RUN_TIMEOUT_MS} for this run. */
   readonly timeoutMs?: number | undefined;
 };
 
-/** What {@link openEvalWorkflows} takes. */
+/**
+ * What {@link openEvalWorkflows} takes.
+ *
+ * @input
+ */
 export type EvalWorkflowsOptions = {
   /** The agent under eval — an ordinary `agent()` or `workflowApp()` definition. */
   readonly agent: AgentDef;
@@ -207,18 +214,42 @@ export type EvalWorkflowsOptions = {
   readonly env?: Record<string, string> | undefined;
   /**
    * A `stepFetch` to publish for this app's steps — nothing by default, so a
-   * step's HTTP falls back to `globalThis.fetch`.
+   * step's HTTP falls back to `globalThis.fetch` (which is what
+   * `installStubGateway` stubs).
    *
    * Taken as a value rather than built here, and the reason is a MODULE GRAPH
-   * one that a reader would otherwise undo: see
-   * {@link EvalWorkflowEngineOptions.stepFetch}.
+   * one that a reader would otherwise undo: the pooled step fetch reaches
+   * `undici`, and naming it from this module put the runtime's whole step graph
+   * into every program whose eval file imports `/eval/vitest`. The type is
+   * spelled out rather than named for the same reason the SDK's `StepFetch` is
+   * not — it is on a non-semver subpath.
    */
-  readonly stepFetch?: EvalWorkflowEngineOptions["stepFetch"];
+  readonly stepFetch?:
+    | ((
+        url: string,
+        init?: {
+          method?: string | undefined;
+          headers?: Record<string, string> | undefined;
+          body?: Uint8Array | string | AsyncIterable<Uint8Array> | undefined;
+          signal?: AbortSignal | undefined;
+        },
+      ) => Promise<Response>)
+    | undefined;
   /**
    * A speech synthesizer to publish, for a flow whose step calls `stepSpeak` —
-   * nothing by default. See {@link EvalWorkflowEngineOptions.speech}.
+   * nothing by default, so an unpublished slot fails by name. A case supplies
+   * `installStubSpeech` (`@alexkroman1/aai-runtime/testing/vitest`).
    */
-  readonly speech?: EvalWorkflowEngineOptions["speech"];
+  readonly speech?:
+    | ((request: {
+        text: string;
+        apiKey: string;
+        voice: string;
+        language?: string | undefined;
+        sampleRate: number;
+        signal: AbortSignal;
+      }) => Promise<Uint8Array>)
+    | undefined;
   /** Overrides the default per-run timeout for every run of this app. */
   readonly timeoutMs?: number | undefined;
   /** Defaults to silent. Pass `consoleLogger` when diagnosing a case. */

@@ -8,7 +8,8 @@
  */
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
-import { DEFAULT_LISTEN_HOST, WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runtime";
+import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
+import { DEFAULT_LISTEN_HOST } from "@alexkroman1/aai-runtime";
 import { SERVER_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import getPort from "get-port";
 import { describe, expect, vi } from "vitest";

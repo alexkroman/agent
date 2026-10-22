@@ -187,8 +187,10 @@ export {
   type WorkflowContextOptions,
   type WorkflowContextRecorder,
 } from "@alexkroman1/aai/testing";
-// What `TextAgentOptions` extends, so a spec building turn options can name it.
+// What `TextAgentOptions` extends and the `Db` its `db` takes (owned by
+// `runtime` and `db`), so a spec building turn options can name them.
 export type { HostAgentOptions } from "./host-agent-options.ts";
+export type { Db } from "./postgres-db.ts";
 export {
   type RunTextAgentOptions,
   runTextAgent,
@@ -205,6 +207,7 @@ export type {
   WorkflowTestRead,
   WorkflowTestRun,
   WorkflowTestStep,
+  WorkflowTestWait,
 } from "./testing/run-workflow-types.ts";
 export {
   type ScriptedTextStep,
@@ -216,29 +219,14 @@ export {
 // declaration `@alexkroman1/aai-runtime` exports, re-exported so a spec that
 // builds turn options up in a helper can name what it is building.
 export type { TextAgentOptions, TextTurnOptions } from "./text-agent/index.ts";
-// The six records a journal holds. `JournalStore` is a dozen methods over
-// exactly these, so publishing the store and not the records published a shape
-// nobody could read: `getRun` answered a `RunRecord` no `import type` named.
-// They are also what a spec asserting on a real run inspects directly.
-export type {
-  HookRecord,
-  ResumableRun,
-  RunRecord,
-  SleepEntry,
-  SleepRecord,
-  StepEntry,
-} from "./workflow/journal/records.ts";
-// The two types those name and this subpath did not publish. `journal` is the
-// documented seam for running a spec against a real store rather than the
-// memory one, which is unusable if the store's shape has no name here; and
-// `WorkflowTestRead.kind` is what a determinism assertion switches on.
-// `JournalConflictError` is a VALUE, and it is on this subpath for the same
-// reason `JournalStore` is: `runWorkflow`'s `journal` option invites a store of
-// your own, and `claimHook` documents throwing this to signal a duplicate wait
-// token. A contract a caller must satisfy and cannot name is not a contract.
+// The opaque journal `RunWorkflowOptions.journal` takes and the factory for one
+// (to start two runs in one world) — owned by `workflow` on the root barrel,
+// re-exported so a spec can name what its options take without the root.
 export {
-  JournalConflictError,
-  type JournalStore,
-  type RunStatus,
-} from "./workflow/journal/types.ts";
-export type { DeterminismKind } from "./workflow/replay/determinism.ts";
+  createMemoryJournal,
+  type WorkflowJournal,
+  type workflowJournalBrand,
+} from "./workflow/journal/handle.ts";
+// The journal STORE and its records are not here: `runWorkflow` takes the
+// opaque `WorkflowJournal` (the `workflow` capability, on the root barrel), and
+// what a spec reads off a run is the handle's own `steps`, `reads` and `waits`.

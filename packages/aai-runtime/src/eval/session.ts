@@ -92,7 +92,11 @@ const DEFAULT_TURN_TIMEOUT_MS = 90_000;
 /** How often the turn wait re-reads the event list. */
 const POLL_MS = 25;
 
-/** What {@link evalCredentials} found on this machine. */
+/**
+ * What {@link evalCredentials} found on this machine.
+ *
+ * @sealed
+ */
 export type EvalCredentials = {
   /**
    * The provider credentials the host environment carries, ready to hand to

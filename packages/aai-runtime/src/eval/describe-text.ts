@@ -73,7 +73,11 @@ export type EvalTextTest = (
   options?: EvalCaseOptions,
 ) => void;
 
-/** What {@link describeTextEval} takes beyond the agent. */
+/**
+ * What {@link describeTextEval} takes beyond the agent.
+ *
+ * @input
+ */
 export type DescribeTextEvalOptions = Omit<EvalTextAgentOptions, "agent">;
 
 /** What a stub-mode model says when a case scripts nothing. */

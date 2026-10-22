@@ -5,6 +5,7 @@
 ```ts
 
 import type http from 'node:http';
+import { SESSION_AUTH_PROTOCOL_PREFIX as SESSION_AUTH_PROTOCOL_PREFIX_2 } from '@alexkroman1/aai/protocol';
 
 // @public
 export function createSessionAuth(options: SessionAuthOptions): SessionAuth;
@@ -13,7 +14,7 @@ export function createSessionAuth(options: SessionAuthOptions): SessionAuth;
 export function createSessionToken(input: SessionTokenInput): string;
 
 // @public
-export const SESSION_AUTH_PROTOCOL_PREFIX = "aai.auth.";
+export const SESSION_AUTH_PROTOCOL_PREFIX: typeof SESSION_AUTH_PROTOCOL_PREFIX_2;
 
 // @public
 export const SESSION_SECRET_ENV = "AAI_SESSION_SECRET";
@@ -29,7 +30,7 @@ export type SessionAuth = {
 // @public
 export const sessionAuthBrand: unique symbol;
 
-// @public
+// @public @input
 export type SessionAuthOptions = {
     secret?: string | undefined;
     verify?: SessionVerifier | undefined;
@@ -43,7 +44,7 @@ export type SessionIdentity = {
     claims?: Record<string, unknown>;
 };
 
-// @public
+// @public @input
 export type SessionTokenInput = SessionIdentity & {
     secret: string;
     ttlSeconds?: number;
@@ -56,7 +57,7 @@ export type SessionVerifier = (token: string, req: http.IncomingMessage) => Sess
 // @public
 export function verifySessionToken(token: string, options: VerifySessionTokenOptions): SessionIdentity | undefined;
 
-// @public
+// @public @input
 export type VerifySessionTokenOptions = {
     secret: string;
     now?: number;

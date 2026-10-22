@@ -13,7 +13,7 @@
 
 export { mergeBuiltinSurface } from "./builtin-surface.ts";
 export { pairToolCalls, pairToolCallsInPlace, pairToolCallsLogged } from "./call-pairs.ts";
-export { createToolCallRepair, salvageJson } from "./call-repair.ts";
+export { createToolCallRepair, salvageJson, type ToolCallRepairOptions } from "./call-repair.ts";
 export type { ClientToolAnswer, ClientToolBroker } from "./client-tool-broker.ts";
 export { createClientToolBroker } from "./client-tool-broker.ts";
 export type { FatalToolLatch } from "./error-policy.ts";

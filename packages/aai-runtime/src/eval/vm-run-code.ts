@@ -49,13 +49,17 @@
  */
 
 import { runInNewContext } from "node:vm";
-import type { RunCodeExecutor } from "@alexkroman1/aai/host-internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
+import type { RunCodeExecutor } from "../host-agent-options.ts";
 
 /** How long generated code may run before the context is torn down. */
 const DEFAULT_TIMEOUT_MS = 1000;
 
-/** What {@link createVmRunCode} takes. */
+/**
+ * What {@link createVmRunCode} takes.
+ *
+ * @input
+ */
 export type VmRunCodeOptions = {
   /**
    * Wall-clock budget for one evaluation, in milliseconds. Defaults to 1000.

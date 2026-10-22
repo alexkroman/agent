@@ -46,6 +46,7 @@ export type HostSessionDefaults = Omit<
 
 /** Configuration for {@link createHostServer}. */
 // An interface, not an intersection — see the note on `AgentServerOptions`.
+/** @input */
 export interface HostServerOptions extends SharedServerOptions {
   /**
    * What every tenant session inherits. Omit for the default all-AssemblyAI

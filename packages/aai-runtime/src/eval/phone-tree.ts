@@ -49,6 +49,7 @@ import type { EvalSession, EvalTurn } from "./session-types.ts";
  * Where a phone tree ends: whoever the menu puts the call through to — a
  * person picking up, a voicemail greeting, a recorded "we are closed".
  *
+ * @input
  * @public
  */
 export type PhoneTreeLeaf = {
@@ -61,6 +62,7 @@ export type PhoneTreeLeaf = {
 /**
  * One automated menu: a prompt, and where each entry leads.
  *
+ * @input
  * @public
  */
 export type PhoneMenu = {
@@ -87,6 +89,7 @@ export type PhoneTree = PhoneMenu | PhoneTreeLeaf;
 /**
  * One menu played: what the agent pressed after hearing it, and where that led.
  *
+ * @sealed
  * @public
  */
 export type PhoneTreeStep = {
@@ -101,6 +104,7 @@ export type PhoneTreeStep = {
 /**
  * What {@link walkPhoneTree} saw.
  *
+ * @sealed
  * @public
  */
 export type PhoneTreeWalk = {
@@ -114,12 +118,13 @@ export type PhoneTreeWalk = {
    * Why the walk ended short of a leaf: the agent hung up, or the menus played
    * {@link WalkPhoneTreeOptions.maxPrompts} times. `undefined` when it reached one.
    */
-  readonly stopped: "hung-up" | "max-prompts" | undefined;
+  readonly stopped: "hung-up" | "max-prompts" | (string & {}) | undefined;
 };
 
 /**
  * Knobs for {@link walkPhoneTree}.
  *
+ * @input
  * @public
  */
 export type WalkPhoneTreeOptions = {

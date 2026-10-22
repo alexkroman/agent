@@ -82,7 +82,7 @@ export type EvalRequest = {
    * What became of it: answered by a `route`, sent on to the real network
    * (`passthrough`), or `refused`.
    */
-  readonly outcome: "routed" | "passthrough" | "refused";
+  readonly outcome: "routed" | "passthrough" | "refused" | (string & {});
   /** The route key that answered it, for `outcome: "routed"`. */
   readonly route?: string;
   /** The response's status, for a request that got one. */
@@ -105,7 +105,11 @@ export type EvalRoute<State = undefined> = (
   state: State,
 ) => unknown;
 
-/** What {@link evalNetwork} takes. */
+/**
+ * What {@link evalNetwork} takes.
+ *
+ * @input
+ */
 export type EvalNetworkOptions<State = undefined> = {
   /**
    * The fake services' STATE — the rows a fake database holds — built by

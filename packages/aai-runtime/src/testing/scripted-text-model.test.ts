@@ -23,7 +23,7 @@ import { type AgentDef, agent, tool } from "@alexkroman1/aai";
 import { type ToolRegistry, withTools } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { createTextAgent } from "../text-agent/index.ts";
+import { createHostTextAgent } from "../text-agent/index.ts";
 import { scriptedTextModel } from "./scripted-text-model.ts";
 
 /** A text agent WITH its tools — `agent()` takes none, a tool being a FILE. */
@@ -43,7 +43,7 @@ async function turn(
   script: Parameters<typeof scriptedTextModel>[0],
   tools: ToolRegistry = {},
 ): Promise<string> {
-  const chat = createTextAgent({ agent: textAgent(tools), model: scriptedTextModel(script) });
+  const chat = createHostTextAgent({ agent: textAgent(tools), model: scriptedTextModel(script) });
   return await drain(chat.stream({ messages: [{ role: "user", content: "hi" }] }));
 }
 
@@ -101,7 +101,7 @@ describe("scriptedTextModel", () => {
     // narration while the tool runs. Reversing the two would make a spec about
     // that ordering pass against the wrong thing.
     const seen: string[] = [];
-    const chat = createTextAgent({
+    const chat = createHostTextAgent({
       agent: textAgent({
         ping: tool({
           description: "Ping",
@@ -132,7 +132,7 @@ describe("scriptedTextModel", () => {
         return "ok";
       },
     });
-    const chat = createTextAgent({
+    const chat = createHostTextAgent({
       agent: textAgent({ note: noted }),
       model: scriptedTextModel([
         { toolCalls: [{ name: "note" }, { name: "note" }] },
@@ -158,8 +158,14 @@ describe("scriptedTextModel", () => {
     const script = [{ toolCalls: [{ name: "ping" }] }, { text: "pong." }];
     const tools = { ping: tool({ description: "Ping", execute: () => "pong" }) };
 
-    const first = createTextAgent({ agent: textAgent(tools), model: scriptedTextModel(script) });
-    const second = createTextAgent({ agent: textAgent(tools), model: scriptedTextModel(script) });
+    const first = createHostTextAgent({
+      agent: textAgent(tools),
+      model: scriptedTextModel(script),
+    });
+    const second = createHostTextAgent({
+      agent: textAgent(tools),
+      model: scriptedTextModel(script),
+    });
     const a = first.stream({ messages: [{ role: "user", content: "hi" }] });
     const b = second.stream({ messages: [{ role: "user", content: "hi" }] });
     await drain(a);
@@ -174,7 +180,7 @@ describe("scriptedTextModel", () => {
     // A one-step script driven for a SECOND call: the model answers an empty
     // step, so a turn that took one step more than the spec expected fails on
     // the assertion that names the difference rather than inside the fake.
-    const chat = createTextAgent({
+    const chat = createHostTextAgent({
       agent: textAgent(),
       model: scriptedTextModel([{ text: "one" }]),
     });

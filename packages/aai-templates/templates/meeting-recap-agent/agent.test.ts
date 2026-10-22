@@ -50,13 +50,11 @@ import {
   createStubWorkflows,
   createToolContext,
   createWorkflowContext,
-  type JournalStore,
   parseSchemaInput,
   type RecordedStep,
   type RunWorkflowOptions,
   runTool,
   runWorkflow,
-  type SleepRecord,
   schemaInputIssues,
   stubGatewayRoute,
   toolRunner,
@@ -64,6 +62,7 @@ import {
   type WorkflowTestHandle,
   type WorkflowTestRun,
   type WorkflowTestStep,
+  type WorkflowTestWait,
 } from "@alexkroman1/aai-runtime/testing";
 import {
   installStubGateway,
@@ -1208,8 +1207,8 @@ describe("the run is DURABLE", () => {
   }
 
   /** What each of a run's parks IS — an ordinary sleep, or a window's deadline. */
-  function parkKinds(sleeps: readonly SleepRecord[]): SleepRecord["kind"][] {
-    return sleeps.map((sleep) => sleep.kind);
+  function parkKinds(waits: readonly WorkflowTestWait[]): WorkflowTestWait["kind"][] {
+    return waits.map((wait) => wait.kind);
   }
 
   beforeEach(() => {
@@ -1286,7 +1285,7 @@ describe("the run is DURABLE", () => {
   test("journals the gate as a hook DEADLINE and the poll as a sleep", async () => {
     // The distinction the whole retention pattern rests on, read off the
     // journal rather than inferred from behaviour. A run parks twice for two
-    // different reasons, and `SleepRecord.kind` is what keeps them apart:
+    // different reasons, and `WorkflowTestWait.kind` is what keeps them apart:
     // `wakeUp` (with no correlation ids) reaches only `sleep`, which is why
     // `expireWaits` exists at all and why "send it now" cannot be made to
     // answer an approval window it was never told the answer to.
@@ -1294,13 +1293,11 @@ describe("the run is DURABLE", () => {
     const run = await startRecap();
     await run.advanceSleep();
 
-    // `JournalStore` is the store the run really lives in — the same interface
-    // the platform's Postgres backend implements — so this is the durable
-    // record and not the driver's view of it.
-    const journal: JournalStore = run.journal;
-    // One of each, without a claim about the order: the journal answers by KEY
-    // rather than by when the run reached each park.
-    const kinds = parkKinds(await journal.readSleeps(run.runId));
+    // `waits` is read off the journal the run really lives in, so this is the
+    // durable record and not the driver's view of it. One of each, without a
+    // claim about the order: the list is by KEY rather than by when the run
+    // reached each park.
+    const kinds = parkKinds(run.waits);
     expect(kinds).toHaveLength(2);
     expect(kinds).toContain("sleep");
     expect(kinds).toContain("hookTimeout");

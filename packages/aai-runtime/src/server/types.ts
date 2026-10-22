@@ -82,6 +82,8 @@ export type ServerRequestHook = (
  * `RuntimeServerOptions["…"]`: an indexed field has no doc of its own and
  * moves whenever the other type does, so a change to one door's option read
  * as a change to every door's.
+ *
+ * @input
  */
 export type SharedServerOptions = {
   /** Structured logger. Defaults to the console logger. */
@@ -99,7 +101,11 @@ export type SharedServerOptions = {
   auth?: SessionAuth | undefined;
 };
 
-/** Configuration for {@link createServerForRuntime}. */
+/**
+ * Configuration for {@link createServerForRuntime}.
+ *
+ * @input
+ */
 export type RuntimeServerOptions = {
   /** The runtime sessions are started on — see `createRuntime`. */
   runtime: SessionRuntime;

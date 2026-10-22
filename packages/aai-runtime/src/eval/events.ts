@@ -37,8 +37,11 @@
  * @module
  */
 
-import type { SessionEvent } from "@alexkroman1/aai";
-import { formatSchemaIssues, type StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
+// `StandardSchemaV1` from the SDK ROOT, where it is contracted, rather than
+// `/host-internal`: these readers are published, and a non-semver import in their
+// signatures hashed only the name.
+import type { SessionEvent, StandardSchemaV1 } from "@alexkroman1/aai";
+import { formatSchemaIssues } from "@alexkroman1/aai/host-internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 
 /** One tool call, paired with its result when the stream carries one. */

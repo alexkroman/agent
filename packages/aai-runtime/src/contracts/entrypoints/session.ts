@@ -20,5 +20,6 @@ export type {
   SessionEventPage,
   SessionEventStream,
   SessionWebSocket,
+  sessionEventStreamBrand,
 } from "../../runtime-barrel.ts";
 export { SESSION_EVENTS_TOKEN_ENV } from "../../runtime-barrel.ts";

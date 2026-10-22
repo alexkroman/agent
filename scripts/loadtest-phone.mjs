@@ -41,7 +41,7 @@
 //
 // Read those `clear` frames as the other half: continuous caller audio makes the
 // stub STT commit repeatedly and interrupt the agent, so a run exercises the
-// barge-in path `CarrierCodec.clear` exists for — the one that decides whether a
+// barge-in path the codec's `clear` frame exists for — the one that decides whether a
 // caller who interrupts is talked over for several seconds.
 //
 // Global `WebSocket` (Node 22+), so this has no dependencies.

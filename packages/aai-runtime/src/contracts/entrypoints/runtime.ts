@@ -15,8 +15,6 @@ export {
   type AgentRuntime,
   connectSession,
   createRuntime,
-  type ExecuteTool,
-  type ExecuteToolOptions,
   // The base `RuntimeOptions` extends — and `TextAgentOptions` and the eval
   // option bags, which reach it by name. Owned here, where the engine's own
   // options are.
@@ -30,5 +28,4 @@ export {
   type SessionConnectOptions,
   type SessionRuntime,
   type SessionStartOptions,
-  type SkipGreetingOption,
 } from "../../runtime-barrel.ts";

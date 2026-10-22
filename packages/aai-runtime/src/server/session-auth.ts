@@ -77,7 +77,7 @@ export {
 export const SESSION_SECRET_ENV = "AAI_SESSION_SECRET";
 
 /** `Sec-WebSocket-Protocol` entry prefix a ticket travels under (the SDK's wire value). */
-export const SESSION_AUTH_PROTOCOL_PREFIX = WIRE_AUTH_PREFIX;
+export const SESSION_AUTH_PROTOCOL_PREFIX: typeof WIRE_AUTH_PREFIX = WIRE_AUTH_PREFIX;
 
 /**
  * The close code a refused session ends with — HTTP 401 in the 4000-4999
@@ -100,6 +100,8 @@ export type SessionVerifier = (
  * Give `secret` for the built-in ticket ({@link createSessionToken}), or
  * `verify` to check tokens yourself; with neither, `AAI_SESSION_SECRET` in the
  * server's `env` is read. `verify` wins when both are set.
+ *
+ * @input
  */
 export type SessionAuthOptions = {
   /** HMAC secret for the built-in ticket. */

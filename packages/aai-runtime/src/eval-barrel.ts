@@ -96,18 +96,6 @@
  * @module eval
  */
 
-// The two types a CASE names, re-exported so an eval imports from this subpath
-// and nothing else.
-//
-// That is not a convenience. `@alexkroman1/aai-runtime`'s root barrel reaches
-// `server/agent-server.ts` → `server/server.ts` → `workflow/install.ts` → `step-fetch.ts`, so
-// a template eval that imports the root for one type drags the runtime's
-// node-reaching modules into a program that may have no node types — three
-// `BodyInit`/`exactOptionalPropertyTypes` errors in files the eval never calls.
-// It happened the day this shipped, in three template evals reaching for
-// `RunCodeExecutor`. Same hazard `@alexkroman1/aai/host-internal`'s own note
-// records, arriving by a new route.
-export type { RunCodeExecutor, StepFetch } from "@alexkroman1/aai/host-internal";
 export {
   customEventsIn,
   describeToolCalls,
@@ -262,11 +250,6 @@ export { createVmRunCode, type VmRunCodeOptions } from "./eval/vm-run-code.ts";
 // case asserts on, and because the SLEEP one is the harness admitting what it
 // cannot do: a durable suspension is recorded, never taken.
 export type { EvalEmitted, EvalSleep } from "./eval/workflow-engine.ts";
-// `EvalWorkflowsOptions` indexes into this for its `speech` and `stepFetch`
-// fields, so the options type was unreadable without it: an author could see
-// `EvalWorkflowEngineOptions["speech"]` in a signature and had no subpath to
-// import the thing being indexed from.
-export type { EvalWorkflowEngineOptions } from "./eval/workflow-engine-types.ts";
 // Driving a WORKFLOW. The engine underneath is NOT durable — no journal, no
 // replay, no retry — and `eval/workflow-engine.ts` is where that is spelled out;
 // a case declared here may not be reported as covering any of the three.
@@ -280,19 +263,27 @@ export {
   evalWorkflowCredentials,
   openEvalWorkflows,
 } from "./eval/workflows.ts";
+// The two types a CASE names, re-exported so an eval imports from this subpath
+// and nothing else.
+//
+// That is not a convenience. `@alexkroman1/aai-runtime`'s root barrel reaches
+// `server/agent-server.ts` → `server/server.ts` → `workflow/install.ts` → `step-fetch.ts`, so
+// a template eval that imports the root for one type drags the runtime's
+// node-reaching modules into a program that may have no node types — three
+// `BodyInit`/`exactOptionalPropertyTypes` errors in files the eval never calls.
+// It happened the day this shipped, in three template evals reaching for
+// `RunCodeExecutor`. Same hazard `@alexkroman1/aai/host-internal`'s own note
+// records, arriving by a new route.
 // `Logger` is what `EvalSessionOptions.logger` takes, so a case holding a logger
 // that collects lines for an assertion can name it — the same declaration
 // `@alexkroman1/aai-runtime` exports, re-exported rather than redeclared, on the
-// principle the `host-internal` line above already applies: a subpath names the
-// types of its own options. `HostGenerateFn` was `EvalSessionOptions.generate`'s
-// type; that field is host-only now (`HostEvalSessionOptions`), and the type
-// stays published because a retained epoch's frozen case still names it.
-export type { HostGenerateFn } from "./generate.ts";
+// principle the `RunCodeExecutor` line above already applies: a subpath names the
+// types of its own options.
 // What both eval option bags EXTEND. Owned by the `runtime` capability (it is
 // on the root barrel, beside `RuntimeOptions`, which extends it too); re-exported
 // here so a case can name what its options inherit without importing the root,
 // for the node-types reason above.
-export type { HostAgentOptions } from "./host-agent-options.ts";
+export type { HostAgentOptions, RunCodeExecutor } from "./host-agent-options.ts";
 export type { LogContext, LogFn, Logger, LogLevel } from "./logger.ts";
 // The opener contract those stubs implement. Owned by the `providers`
 // capability, on the root barrel beside `registerSttKind`; re-exported here
@@ -314,7 +305,3 @@ export type {
   TtsWordTiming,
   Unsubscribe,
 } from "./providers/openers.ts";
-// `HostGenerateFn`'s `onUsage` takes one, so a case holding that callback in a
-// variable has to be able to write its parameter type — the same rule the
-// comment above states for `generate` and `logger` themselves.
-export type { StepUsage } from "./usage-meter.ts";

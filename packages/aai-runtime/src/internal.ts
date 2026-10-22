@@ -123,6 +123,10 @@ export type { StateSyncSession } from "./_state-sync.ts";
  * and the log line cannot come to disagree about what a header means.
  */
 export { parseTraceparent, type TraceParent, traceIdOf } from "./_trace-context.ts";
+// The `generate` seam `ExecuteToolCallOptions` names (a host substituting the
+// model call `ctx.generate` makes), and the runtime's own `Db`, which
+// `HostTextAgent`'s options name beside the SDK's internal one.
+export type { HostGenerateFn } from "./generate.ts";
 // What a bundle hands the runtime-less guest harness, as `__aaiCreateRuntime.host`.
 export { GUEST_HOST, GUEST_HOST_VERSION, type GuestHost } from "./guest-host.ts";
 // The console-backed `Logger` the CLI, the guest and the platform's own logger
@@ -165,6 +169,7 @@ export {
   parsePlatformFrame,
   platformSocketUrl,
 } from "./platform/index.ts";
+export type { Db } from "./postgres-db.ts";
 export type { ProviderEnvVarsQuery } from "./providers/_provider-env-var.ts";
 // The CLI's two credential helpers. `withHostCredentialFallback` fills a
 // provider key from the host shell for `aai dev`/`aai console`/`npm start`;
@@ -221,11 +226,13 @@ export type {
 // its own socket server builds one per runtime (`session/directory.ts`).
 // Reading a session's events back, and stamping one on the way in. The two
 // TYPES a reader names (`SessionEventPage`, `SessionEventStream`) are
-// contracted, on the root barrel.
+// contracted, on the root barrel; `SessionEventLog` is the writing half the
+// factory returns.
 export {
   createSessionDirectory,
   createSessionEventStream,
   type SessionDirectory,
+  type SessionEventLog,
   type SessionWiring,
   stampSessionEvent,
   wireSessionSocket,
@@ -267,8 +274,16 @@ export {
 // An embedder bridging a call itself chooses its own path, so neither is part of
 // the `telephony` contract.
 export { CARRIER_PARAM, TELEPHONY_PATH } from "./telephony/telephony-server.ts";
-// Running one tool call. `ExecuteTool`/`ExecuteToolOptions` — the shapes a host
-// substituting an executor names — are contracted, on the root barrel.
+// The text agent with its turn typed as the WHOLE AI SDK result, for the
+// studio's coding agent, which pipes `toUIMessageStream` to its browser. The
+// public `TextTurnResult` is a slice, so an `ai` minor is not a break of `text`.
+export {
+  createHostTextAgent,
+  type FullTextTurnResult,
+  type HostTextAgent,
+} from "./text-agent/index.ts";
+// Running one tool call. Its `ExecuteTool` shape is the SDK's (`/host-internal`)
+// and no published signature takes one, so it is on neither barrel.
 export { executeToolCall } from "./tools/index.ts";
 // The memoized per-message token estimate the context budget charges with, for
 // the studio coding agent's compaction (`aai-guest-studio/compaction.ts`), so a
@@ -279,7 +294,7 @@ export type { TransportEventBody, TransportEventType } from "./transports/types.
 // `ExecuteToolCallOptions.usage` and the subagent runner's bag all take one,
 // so a framework caller on this subpath that holds a meter — or reads a
 // snapshot off `usage.updated` — has to be able to write both types.
-export type { UsageMeter, UsageSnapshot } from "./usage-meter.ts";
+export type { StepUsage, UsageMeter, UsageSnapshot } from "./usage-meter.ts";
 // The workflow HTTP API's method list, which the platform's guest-route table
 // has to agree with. The HANDLER is not here: `createServerForRuntime` mounts the route
 // itself, so nothing outside this package wires one by hand.
@@ -301,17 +316,6 @@ export { WORKFLOW_DATA_DIR_ENV } from "./workflow/data-dir.ts";
  * not about latency.
  */
 export { firstWriteWins } from "./workflow/journal/_claim.ts";
-/**
- * A run journal in this process's memory, for a host that must hold one across
- * a rebuild.
- *
- * `aai dev` is the importer and the reason: it rebuilds the runtime on every
- * file save, and the engine's own default is a FRESH journal per build — so
- * every save discarded the runs. STORAGE per process, CODE per build. What a
- * host does with this is pass it as `RuntimeOptions.journal`; nothing else here
- * builds a store by hand.
- */
-export { createMemoryJournal } from "./workflow/journal/backends/memory.ts";
 /**
  * The journal's PLATFORM backend — the HTTP client `aai-server` serves.
  *
@@ -338,8 +342,26 @@ export {
   applyWorkflowJournalDdl,
   workflowJournalDdl,
 } from "./workflow/journal/schema.ts";
+// The store those three backends implement and the records it answers — what
+// their signatures name. Internal since the public options took the opaque
+// `WorkflowJournal`; nameable here so a framework caller holding a backend can
+// write its type (`check:api-nameable`).
+export type {
+  HookRecord,
+  JournalStore,
+  ResumableRun,
+  RunRecord,
+  RunStatus,
+  SleepEntry,
+  SleepRecord,
+  StepEntry,
+} from "./workflow/journal/types.ts";
 // Asking the PLATFORM to queue a message for one of this guest's own runs.
 // `aai-server`'s enqueue handler is the other end.
+// The correlation-key index's Postgres store, for `aai-server`'s scenario suite
+// that drives it against a real database. No published signature takes a key
+// store — the runtime selects its own from `RuntimeOptions.db`.
+export { createPostgresKeyStore, type WorkflowKeyStore } from "./workflow/keys.ts";
 export { createPlatformQueueSend, type PlatformQueueOptions } from "./workflow/platform-queue.ts";
 // The CLASSIFIER over the queue-name grammar. It began as the DevKit's
 // (`parseQueueName` in `@workflow/world`) and is ours now. It is a declared
@@ -385,6 +407,8 @@ export {
   partsOf,
   UPLOADS_TABLE,
   type UploadBackend,
+  type UploadMeta,
+  type UploadPart,
   type UploadStore,
 } from "./workflow/uploads.ts";
 

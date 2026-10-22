@@ -30,13 +30,10 @@ import {
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import type {
-  JournalStore,
-  ResumableRun,
   RunWorkflowOptions,
-  SleepRecord,
-  StepEntry,
-  WorkflowTestHandle,
   WorkflowTestRun,
+  WorkflowTestStep,
+  WorkflowTestWait,
 } from "@alexkroman1/aai-runtime/testing";
 import {
   createRunSnapshot,
@@ -697,22 +694,13 @@ describe("the run is DURABLE", () => {
    * The run's snapshot carries `wakeAt` and nothing about WHICH wait it is, so
    * the correlation id `file_it_now` names is only visible here.
    */
-  async function reviewSleep(run: WorkflowTestHandle<unknown>): Promise<SleepRecord | undefined> {
-    const sleeps = await run.journal.readSleeps(run.runId);
-    return sleeps.find((sleep) => sleep.correlationId === REVIEW_SLEEP_ID);
+  function reviewSleep(run: WorkflowTestRun<unknown>): WorkflowTestWait | undefined {
+    return run.waits.find((wait) => wait.correlationId === REVIEW_SLEEP_ID);
   }
 
   /** What an `investigate` left in the journal for a resume to reuse. */
-  async function journaledResearch(
-    journal: JournalStore,
-    runId: string,
-  ): Promise<StepEntry | undefined> {
-    return (await journal.readSteps(runId)).find((step) => step.name === "investigate");
-  }
-
-  /** What a boot sweep would still owe — the query a stranded run is found by. */
-  async function resumable(journal: JournalStore): Promise<ResumableRun[]> {
-    return (await journal.resumableRuns?.(10)) ?? [];
+  function journaledResearch(run: WorkflowTestRun<unknown>): WorkflowTestStep | undefined {
+    return run.steps.find((step) => step.name === "investigate");
   }
 
   test("suspends on the review wait with the whole report already journaled", async () => {
@@ -742,7 +730,7 @@ describe("the run is DURABLE", () => {
     installStubGateway(SCRIPT);
     const run = await runWorkflow(research, INPUT, RUN);
 
-    const sleep = await reviewSleep(run);
+    const sleep = reviewSleep(run);
     expect(sleep, "the run holds no sleep under the review correlation id").toBeDefined();
     expect(sleep?.woken).toBe(false);
     expect(sleep?.kind).toBe("sleep");
@@ -799,13 +787,13 @@ describe("the run is DURABLE", () => {
     // WHY the resume is free, read off the store rather than inferred from a
     // call count: the finished angle's own result is sitting in the journal,
     // which is what the second walk answers `investigate#0` from.
-    const done = await journaledResearch(run.journal, run.runId);
+    const done = journaledResearch(run);
     expect(done?.status).toBe("ok");
     expect(done?.output).toMatchObject({ angle: "Tool use" });
     // And the run is still FINDABLE: a dead worker leaves it for a boot sweep,
     // which is what makes "resume" a platform behaviour rather than a promise
     // this handle keeps.
-    expect((await resumable(run.journal)).map((one) => one.runId)).toContain(run.runId);
+    expect(run.resumable).toBe(true);
 
     await run.restart();
     await run.advanceSleep([REVIEW_SLEEP_ID]);

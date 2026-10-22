@@ -13,7 +13,7 @@ import type { SessionEvent } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
 import { makeMockCore } from "../_session-test-utils.ts";
 import { attachSessionStream } from "../runtime/index.ts";
-import type { SessionEventStream } from "./event-stream.ts";
+import type { SessionEventLog, sessionEventStreamBrand } from "./event-stream.ts";
 import { composeSessionGreeting, createResumeFindings } from "./resume-found.ts";
 
 describe("createResumeFindings", () => {
@@ -34,12 +34,14 @@ describe("createResumeFindings", () => {
  * A stream holding exactly these events for every session.
  *
  * Every member is implemented rather than cast past: the contract is nine
- * members, and a `as unknown as SessionEventStream` would keep compiling after
+ * members, and a `as unknown as SessionEventLog` would keep compiling after
  * one is ADDED — which for a fake standing in for the log is the exact moment it
  * stops being a valid double.
  */
-function streamOf(events: SessionEvent[]): SessionEventStream {
-  return {
+function streamOf(events: SessionEvent[]): SessionEventLog {
+  // Everything but the type-only brand, checked; then sealed the way the real
+  // one is.
+  const fake: Omit<SessionEventLog, typeof sessionEventStreamBrand> = {
     append: vi.fn((_sid: string, body) => ({ ...body, index: 0 }) as SessionEvent),
     tail: vi.fn(() => events.length),
     read: vi.fn(() => Promise.resolve({ events, tail: events.length })),
@@ -49,6 +51,7 @@ function streamOf(events: SessionEvent[]): SessionEventStream {
     clear: vi.fn(),
     durable: false,
   };
+  return fake as SessionEventLog;
 }
 
 /**

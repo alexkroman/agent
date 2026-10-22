@@ -135,11 +135,13 @@ async function runTurn(
   // coding agent is the harness's own agent, and a static import would put a
   // runtime copy in every guest, agent mode included — where the only runtime
   // is the one the user's bundle carries (`packages/aai-guest/CLAUDE.md`).
-  const [{ createTextAgent }, { estimateMessageTokens }] = await Promise.all([
-    import("@alexkroman1/aai-runtime"),
-    import("@alexkroman1/aai-runtime/internal"),
-  ]);
-  const chat = createTextAgent({
+  // `createHostTextAgent` is `createTextAgent` with the turn typed as the whole
+  // AI SDK result: `deliverTurn` pipes its UI-message stream, which the public
+  // `TextTurnResult` slice does not carry.
+  const { createHostTextAgent, estimateMessageTokens } = await import(
+    "@alexkroman1/aai-runtime/internal"
+  );
+  const chat = createHostTextAgent({
     agent: createStudioAgent(session, {
       loadBundle: deps.loadBundle,
       executeTool: deps.executeTool,

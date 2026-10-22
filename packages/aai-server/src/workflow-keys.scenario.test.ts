@@ -43,7 +43,8 @@
  * ```
  */
 
-import { createPostgresDb, createPostgresKeyStore } from "@alexkroman1/aai-runtime";
+import { createPostgresDb } from "@alexkroman1/aai-runtime";
+import { createPostgresKeyStore } from "@alexkroman1/aai-runtime/internal";
 import { afterAll, beforeAll, expect, test } from "vitest";
 import { describeWithPg, pgUrl, ulid } from "./_pg-test-utils.ts";
 

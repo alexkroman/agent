@@ -11,20 +11,23 @@
 
 import type { WorkflowRunStatus } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "../logger.ts";
-import type { JournalStore } from "../workflow/journal/types.ts";
-import type { DeterminismKind } from "../workflow/replay/determinism.ts";
+import type { WorkflowJournal } from "../workflow/journal/handle.ts";
 
 /**
  * One journaled determinism read — what `ctx.now()`, `ctx.random()` or
  * `ctx.uuid()` answered, and will answer again on every later walk.
  *
+ * @sealed
  * @public
  */
 export type WorkflowTestRead = {
   /** `now!0`, `random!0`, `uuid!0` — the reserved key space, per kind. */
   readonly key: string;
-  /** Which affordance this reach was. */
-  readonly kind: DeterminismKind;
+  /**
+   * Which affordance this reach was: `now`, `random` or `uuid`. Open, so a new
+   * determinism read is not a break for a spec switching over this.
+   */
+  readonly kind: "now" | "random" | "uuid" | (string & {});
   /** The value the journal holds, which every replay reads back. */
   readonly value: unknown;
 };
@@ -36,6 +39,7 @@ export type WorkflowTestRead = {
  * `finishedAt` is a wall clock, so a spec that could see it would be a spec that
  * could depend on it.
  *
+ * @sealed
  * @public
  */
 export type WorkflowTestStep = {
@@ -43,7 +47,8 @@ export type WorkflowTestStep = {
   readonly key: string;
   /** The name the body passed `ctx.step`. */
   readonly name: string;
-  readonly status: "ok" | "failed";
+  /** `ok` or `failed` today; open, so a new settle state is not a break. */
+  readonly status: "ok" | "failed" | (string & {});
   /** What the step returned. Present when `status` is `ok`. */
   readonly output?: unknown;
   /** Why it failed. Present when `status` is `failed`. */
@@ -62,6 +67,7 @@ export type WorkflowTestStep = {
  *
  * @typeParam R - What the body returns, taken from the declaration.
  *
+ * @sealed
  * @public
  */
 export type WorkflowTestRun<R> = {
@@ -137,6 +143,47 @@ export type WorkflowTestRun<R> = {
   readonly deliveries: number;
   /** True once a {@link RunWorkflowOptions.crashAt} delivery was killed. */
   readonly crashed: boolean;
+  /**
+   * Every wait the journal holds for this run — a `ctx.sleep`'s deadline or a
+   * `ctx.waitFor` window's — ordered by key.
+   *
+   * The durable record rather than the driver's view of it: what tells an
+   * ordinary sleep from an approval window's deadline is
+   * {@link WorkflowTestWait.kind}, and only the journal carries it.
+   */
+  readonly waits: readonly WorkflowTestWait[];
+  /**
+   * Would a boot sweep pick this run up?
+   *
+   * The query a worker that died mid-run is found by: `true` for every run not
+   * yet settled — parked on a deadline (the sweep re-arms it) or abandoned
+   * mid-walk (the sweep redelivers it) — which is what makes "resume" a
+   * platform behaviour rather than a promise this handle keeps.
+   */
+  readonly resumable: boolean;
+};
+
+/**
+ * One wait the run's journal holds.
+ *
+ * @sealed
+ * @public
+ */
+export type WorkflowTestWait = {
+  /** The journal key of the suspension (`sleep!poll#0`, …). */
+  readonly key: string;
+  /**
+   * `sleep` for a `ctx.sleep`, `hookTimeout` for a `ctx.waitFor` window's
+   * deadline — the distinction a bare `advanceSleep()` respects (it ends only
+   * sleeps). Open, so a new kind of wait is not a break.
+   */
+  readonly kind: "sleep" | "hookTimeout" | (string & {});
+  /** The journaled wake time, epoch milliseconds. */
+  readonly wakeAt: number;
+  /** Already woken: a later walk past it returns immediately. */
+  readonly woken: boolean;
+  /** The correlation id a targeted wake names, when the body gave one. */
+  readonly correlationId: string | undefined;
 };
 
 /**
@@ -159,6 +206,7 @@ export type WorkflowTestRun<R> = {
  * console.log(run.status, run.output);
  * ```
  *
+ * @sealed
  * @public
  */
 export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
@@ -173,7 +221,7 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
    *
    * A bare call reaches SLEEPS only. A hook's deadline is a different kind of
    * wait and is ended by naming its correlation id, or by answering it with
-   * `signal` — see `SleepRecord.kind` for the approval
+   * `signal` — see {@link WorkflowTestWait.kind} for the approval
    * window a bare wake used to close.
    *
    * Resolves this handle. Read `wakeAt` before calling it to assert what the
@@ -205,7 +253,7 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
    *
    * It does NOT move a clock and does not rewrite the stored record. It answers
    * the deadline READ the way an elapsed one answers it — `woken`, which
-   * `SleepRecord` defines as "a woken sleep returns immediately" — for the
+   * {@link WorkflowTestWait.woken} defines as "returns immediately" — for the
    * duration of the delivery it triggers. Everything downstream is the engine's
    * own: the close is still a compare-and-set on `delivered`, so a payload that
    * landed first still wins and the body still takes the ANSWERED branch.
@@ -230,12 +278,12 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
    */
   restart(): Promise<WorkflowTestHandle<R>>;
   /**
-   * The journal the run lives in, for an assertion this handle does not cover.
-   *
-   * The same store a caller may pass in as {@link RunWorkflowOptions.journal},
-   * so a spec can start a second run against the same world.
+   * The journal the run lives in — opaque, and what a caller may pass back in
+   * as {@link RunWorkflowOptions.journal} to start a second run against the
+   * same world. What it holds for this run is {@link WorkflowTestRun.steps},
+   * {@link WorkflowTestRun.reads} and {@link WorkflowTestRun.waits}.
    */
-  readonly journal: JournalStore;
+  readonly journal: WorkflowJournal;
   /**
    * Stop the engine.
    *
@@ -249,6 +297,7 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
 /**
  * What {@link runWorkflow} takes.
  *
+ * @input
  * @public
  */
 export type RunWorkflowOptions = {
@@ -261,12 +310,12 @@ export type RunWorkflowOptions = {
    */
   name?: string;
   /**
-   * The store the run lives in. Defaults to a fresh in-memory journal.
+   * The journal the run lives in. Defaults to a fresh in-memory one.
    *
-   * Pass one to start two runs in the same world, or to inspect the journal a
-   * previous run left behind.
+   * Pass a previous run's `journal` (or a
+   * `createMemoryJournal()` of your own) to start two runs in the same world.
    */
-  journal?: JournalStore;
+  journal?: WorkflowJournal;
   /** Where the engine logs. Defaults to silence. */
   logger?: Logger;
   /**
