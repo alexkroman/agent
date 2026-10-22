@@ -19,7 +19,7 @@
  *   name: "Jane",
  *   stt: assemblyAIStt({ model: "universal-3-5-pro" }),
  *   llm: llm({ provider: "assemblyai", model: "qwen3-next-80b-a3b" }),
- *   tts: assemblyAITts({ voice: "jane" }),
+ *   tts: assemblyAITts({ voice: "aai-jane" }),
  * });
  * ```
  *
@@ -28,11 +28,11 @@
  * preset, then structurally — an `agent()` that declares no providers runs
  * this pipeline by default, unset stages of a partial triple are filled from
  * it, and a voice is one descriptor option
- * (`tts: assemblyAITts({ voice: "jane" })`). The golden path needs no preset:
+ * (`tts: assemblyAITts({ voice: "aai-jane" })`). The golden path needs no preset:
  *
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * export default agent({ name: "Jane" }); // the default pipeline, voice "jane"
+ * export default agent({ name: "Jane" }); // the default pipeline, voice "aai-jane"
  * // Swap one stage; the other two stay on AssemblyAI:
  * agent({ name: "Jane", llm: "claude-sonnet-4-6" });
  * ```
@@ -62,22 +62,23 @@ import type { LlmProvider, SttProvider, TtsProvider } from "../providers.ts";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL } from "./llm/assemblyai.ts";
 import { llm } from "./llm/llm.ts";
 import { assemblyAIStt } from "./stt/assemblyai.ts";
-import { type AssemblyAITtsVoice, assemblyAITts } from "./tts/assemblyai.ts";
+import {
+  ASSEMBLYAI_TTS_EU_HOST,
+  type AssemblyAITtsVoice,
+  assemblyAITts,
+} from "./tts/assemblyai.ts";
 
 export interface AssemblyAIPipelineOptions {
   /**
-   * TTS voice id, e.g. `"jane"`, `"michael"`, `"alba"`. Defaults to
-   * `"jane"` (US-accented English). Each voice speaks exactly one
-   * language — see
-   * `ASSEMBLYAI_TTS_VOICES` (from `@alexkroman1/aai/tts`) for the
-   * catalog; a name outside it fails in-band after connect and leaves the
-   * agent silent. (`tts: assemblyAITts({ voice })` is the same setting
+   * TTS voice id, e.g. `"aai-jane"`, `"aai-michael"`, `"aai-alba"`. Defaults
+   * to `"aai-jane"`. See `ASSEMBLYAI_TTS_VOICES` (from `@alexkroman1/aai/tts`)
+   * for the library voices; an unknown id is refused when the session opens. (`tts: assemblyAITts({ voice })` is the same setting
    * without the preset.)
    */
   voice?: AssemblyAITtsVoice;
   /**
-   * EU data residency. Applies to STT and the LLM gateway; TTS has a single
-   * endpoint. Note the EU gateway serves only Claude and most Gemini models,
+   * EU data residency. Applies to all three stages: STT, the LLM gateway, and
+   * TTS (`host: ASSEMBLYAI_TTS_EU_HOST`). Note the EU gateway serves only Claude and most Gemini models,
    * so an EU agent must also override `llm` with a model the EU endpoint
    * carries (e.g. `llm: "claude-sonnet-4-6"` after the spread). An override
    * that replaces a whole stage descriptor must re-declare `region` itself —
@@ -149,6 +150,8 @@ export function assemblyAIPipeline(options: AssemblyAIPipelineOptions = {}): {
       model: ASSEMBLYAI_LLM_DEFAULT_MODEL,
       providerOptions: { reasoningEffort: "none", ...omitUndefined({ region }) },
     }),
-    tts: assemblyAITts(voice ? { voice } : {}),
+    tts: assemblyAITts(
+      omitUndefined({ voice, host: region === "eu" ? ASSEMBLYAI_TTS_EU_HOST : undefined }),
+    ),
   };
 }

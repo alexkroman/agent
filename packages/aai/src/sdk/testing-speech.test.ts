@@ -19,7 +19,7 @@ describe("stubSpeech", () => {
       {
         text: "Three findings.",
         apiKey: "key",
-        voice: "jane",
+        voice: "aai-jane",
         language: undefined,
         sampleRate: 24_000,
       },

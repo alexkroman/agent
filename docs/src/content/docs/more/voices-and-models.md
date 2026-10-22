@@ -17,20 +17,19 @@ default — so swapping one thing is one line.
 import { agent } from "@alexkroman1/aai";
 import { assemblyAITts } from "@alexkroman1/aai/tts";
 
-export default agent({ name: "My Agent", tts: assemblyAITts({ voice: "michael" }) });
+export default agent({ name: "My Agent", tts: assemblyAITts({ voice: "aai-michael" }) });
 ```
 
-The ids are the keys of `ASSEMBLYAI_TTS_VOICES` (`@alexkroman1/aai/tts`). Every
-voice speaks exactly one language, so changing the language usually means
-changing the voice too.
+The ids are the `voice_id` slugs in `ASSEMBLYAI_TTS_VOICES`
+(`@alexkroman1/aai/tts`) — the `aai-` prefix is part of the id. Every library
+voice speaks all six supported languages; `language` picks which.
 
 The type autocompletes but does not guard. The catalog belongs to the service,
 so a voice added after your SDK release still has to work.
 
-:::caution[A misspelled voice id is refused after the socket opens] That leaves
-an agent that connects, reports ready, and never speaks. So `aai build` and
-`aai dev` warn about an id they do not recognize, and name the ones it is
-closest to. :::
+:::caution[A misspelled voice id is refused when the session opens] The service
+answers it with a 3012 error. So `aai build` and `aai dev` warn about an id they
+do not recognize, and name the ones it is closest to. :::
 
 ## A model
 

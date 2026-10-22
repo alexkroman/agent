@@ -129,9 +129,10 @@
     "ASSEMBLYAI_STT_DEFAULT_MODEL",
     "ASSEMBLYAI_STT_KIND",
     "ASSEMBLYAI_TTS_API_KEY_ENV",
-    "ASSEMBLYAI_TTS_DEPRECATED_VOICES",
+    "ASSEMBLYAI_TTS_EU_HOST",
     "ASSEMBLYAI_TTS_HOST",
     "ASSEMBLYAI_TTS_KIND",
+    "ASSEMBLYAI_TTS_MAX_GENERATE_CHARS",
     "AgentEnv",
     "BuiltinToolOptions",
     "CARTESIA_API_KEY_ENV",
@@ -1131,7 +1132,6 @@
     "AssemblyAITtsLanguage",
     "AssemblyAITtsOptions",
     "AssemblyAITtsVoice",
-    "AssemblyAITtsVoiceInfo",
     "CARTESIA_DEFAULT_VOICE",
     "CartesiaTtsOptions",
     "ProviderCredentialOptions",
@@ -1141,9 +1141,7 @@
     "assemblyAITts",
     "cartesiaTts",
     "fallback",
-    "rimeTts",
-    "ttsVoiceIds",
-    "ttsVoiceInfo"
+    "rimeTts"
   ],
   "@alexkroman1/aai/utils": [
     "FitToolResultOptions",

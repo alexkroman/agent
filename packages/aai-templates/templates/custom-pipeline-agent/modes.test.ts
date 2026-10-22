@@ -86,11 +86,11 @@ describe("three modes, three members", () => {
     // reads the second. A voice has no shorthand: it is the TTS descriptor's.
     const def: AgentDef = agent({
       ...SHARED,
-      tts: assemblyAITts({ voice: "michael" }),
+      tts: assemblyAITts({ voice: "aai-michael" }),
       llm: "claude-sonnet-4-6",
     });
     expect(def.tts?.kind).toBe("assemblyai");
-    expect(def.tts?.options.voice).toBe("michael");
+    expect(def.tts?.options.voice).toBe("aai-michael");
     expect(def.llm?.options.model).toBe("claude-sonnet-4-6");
   });
 });
@@ -104,11 +104,11 @@ test("the preset takes OPTIONS — one setting across the three stages at once",
   // on two descriptors that can drift apart, and `voice` to TTS. (An EU agent
   // also has to name a model the EU gateway carries — Claude and most Gemini
   // ids — which is the half no shorthand can do for you.)
-  const options: AssemblyAIPipelineOptions = { region: "eu", voice: "michael" };
+  const options: AssemblyAIPipelineOptions = { region: "eu", voice: "aai-michael" };
   const pipeline = assemblyAIPipeline(options);
   expect(pipeline.stt.options.region).toBe("eu");
   expect(pipeline.llm.options.providerOptions).toMatchObject({ region: "eu" });
-  expect(pipeline.tts.options.voice).toBe("michael");
+  expect(pipeline.tts.options.voice).toBe("aai-michael");
 
   // And a stage declared AFTER the spread still wins — that is the whole point
   // of it being a plain object, and it is how this template's own `agent.ts`

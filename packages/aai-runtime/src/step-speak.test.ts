@@ -29,7 +29,7 @@ async function speak(
     {
       text: "Three findings.",
       apiKey: "aai-key",
-      voice: "jane",
+      voice: "aai-jane",
       sampleRate: 24_000,
       signal: new AbortController().signal,
       ...overrides,
@@ -44,15 +44,16 @@ async function speak(
 }
 
 describe("speakOverWebSocket", () => {
-  test("dials the streaming-TTS host with the voice and rate as query params", async () => {
-    const { audio, ws } = await speak({ voice: "michael", sampleRate: 16_000 });
+  test("dials the documented streaming-TTS host with voice_id and rate as query params", async () => {
+    const { audio, ws } = await speak({ voice: "aai-michael", sampleRate: 16_000 });
     ws._msg({ type: "FlushDone" });
     await audio;
 
     const url = new URL(ws.url);
-    expect(url.host).toBe("streaming-tts.assemblyai.com");
-    expect(url.pathname).toBe("/v1/ws/");
-    expect(url.searchParams.get("voice")).toBe("michael");
+    expect(url.host).toBe("tts.us.assemblyai.com");
+    expect(url.pathname).toBe("/v1/ws");
+    expect(url.searchParams.get("voice_id")).toBe("aai-michael");
+    expect(url.searchParams.has("voice")).toBe(false);
     expect(url.searchParams.get("sample_rate")).toBe("16000");
   });
 
@@ -76,6 +77,25 @@ describe("speakOverWebSocket", () => {
     ]);
   });
 
+  test("a text over 2000 characters goes out as several Generate frames, then one Flush", async () => {
+    // The service refuses a Generate over the cap with 3006 and closes.
+    const text = "word ".repeat(900); // 4500 chars
+    const { audio, ws } = await speak({ text });
+    ws._msg({ type: "FlushDone" });
+    await audio;
+
+    const frames = ws._frames() as { type: string; text?: string }[];
+    expect(frames.map((f) => f.type)).toEqual([
+      "Generate",
+      "Generate",
+      "Generate",
+      "Flush",
+      "Terminate",
+    ]);
+    expect(frames.map((f) => f.text ?? "").join("")).toBe(text);
+    for (const frame of frames) expect((frame.text ?? "").length).toBeLessThanOrEqual(2000);
+  });
+
   test("joins every Audio frame's PCM in arrival order", async () => {
     const { audio, ws } = await speak();
     ws._msg({ type: "Audio", audio: pcmBase64([1, 2]) });
@@ -87,17 +107,10 @@ describe("speakOverWebSocket", () => {
     expect(Buffer.from(pcm).readInt16LE(4)).toBe(3);
   });
 
-  test("an `is_final` Audio frame ends the synthesis, for a server that sends no FlushDone", async () => {
-    const { audio, ws } = await speak();
-    ws._msg({ type: "Audio", audio: pcmBase64([7]), is_final: true });
-
-    expect(await audio).toHaveLength(2);
-  });
-
   test("ignores the frames that are not audio and not an ending", async () => {
     const { audio, ws } = await speak();
-    ws._msg({ type: "Begin", configuration: { voice: "jane" } });
-    ws._msg({ type: "Warning", warning: "something informational" });
+    ws._msg({ type: "Begin", configuration: { voice_id: "aai-jane" } });
+    ws._msg({ type: "WordBoundaries", flush_id: 0, words: [] });
     ws._msg({ type: "Audio", audio: pcmBase64([5]) });
     ws._msg({ type: "FlushDone" });
 
@@ -153,7 +166,7 @@ describe("speakOverWebSocket", () => {
         {
           text: "hello",
           apiKey: "k",
-          voice: "jane",
+          voice: "aai-jane",
           sampleRate: 24_000,
           signal: AbortSignal.abort(reason),
         },
@@ -193,7 +206,7 @@ describe("speakOverWebSocket", () => {
   });
 
   test("translates the language code, because the wire wants the whole word", async () => {
-    const { audio, ws } = await speak({ voice: "lola", language: "es" });
+    const { audio, ws } = await speak({ voice: "aai-jane", language: "es" });
     ws._msg({ type: "FlushDone" });
     await audio;
 
@@ -206,7 +219,7 @@ describe("speakOverWebSocket", () => {
         {
           text: "hello",
           apiKey: "k",
-          voice: "jane",
+          voice: "aai-jane",
           language: "kl",
           sampleRate: 24_000,
           signal: new AbortController().signal,

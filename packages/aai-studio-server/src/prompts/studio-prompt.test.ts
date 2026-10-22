@@ -80,7 +80,7 @@ describe("studioSystemPrompt", () => {
     // scaffold reference, and when it spelled out the long form, 11 of 11
     // starter-eval agents wrote the three stage-factory imports by hand.
     expect(prompt).toContain("declaring no provider fields at all");
-    expect(prompt).toContain('voice: "jane"');
+    expect(prompt).toContain('voice: "aai-jane"');
     // The preset survives only as the EU-residency spelling.
     expect(prompt).toContain("assemblyAIPipeline");
     // Real gateway ids are interpolated so the agent can't invent one
@@ -99,7 +99,7 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain(
       `"${ASSEMBLYAI_LLM_DEFAULT_MODEL}" unless the user asks for a different model`,
     );
-    expect(prompt).toContain(`universal-3-5-pro,\n  ${ASSEMBLYAI_LLM_DEFAULT_MODEL}, jane`);
+    expect(prompt).toContain(`universal-3-5-pro,\n  ${ASSEMBLYAI_LLM_DEFAULT_MODEL}, aai-jane`);
     // Publishing is the user's call, so the agent must be told it cannot.
     expect(prompt).toContain("You cannot publish");
     // Working-style rules: implement with tools instead of pasting code

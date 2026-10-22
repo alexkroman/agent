@@ -30,29 +30,28 @@ describe("assemblyAIVoiceWarning", () => {
     // The reader of this line has 40-odd names to search and the one they
     // meant is one character away. "Look it up" is the version that costs an
     // afternoon.
-    const warning = assemblyAIVoiceWarning(assemblyAITts({ voice: "michal" }));
-    expect(warning).toContain('"michal" is not in this release\'s catalog');
-    expect(warning).toContain('Did you mean "michael"');
+    const warning = assemblyAIVoiceWarning(assemblyAITts({ voice: "aai-michal" }));
+    expect(warning).toContain('"aai-michal" is not one of the library voices');
+    expect(warning).toContain('Did you mean "aai-michael"');
+  });
+
+  test("points a bare library name at its slug — the service refuses the bare form", () => {
+    // `voice_id=jane` is a 3012; the retired `voice` param took bare names.
+    expect(assemblyAIVoiceWarning(assemblyAITts({ voice: "jane" }))).toContain(
+      'Did you mean "aai-jane"?',
+    );
   });
 
   test("suggests nothing when nothing is close, rather than the nearest name", () => {
     // Past the bound the "nearest" catalog entry is a different voice, and
     // offering it would be worse than the honest "check the catalog".
     const warning = assemblyAIVoiceWarning(assemblyAITts({ voice: "voice-shipped-last-week" }));
-    expect(warning).toContain("not in this release's catalog");
-    expect(warning).not.toContain("Did you mean");
-  });
-
-  test("a DEPRECATED voice gets its own sentence and no correction", () => {
-    // It works today, so "not in the catalog" would be wrong, and there is
-    // nothing to have meant instead.
-    const warning = assemblyAIVoiceWarning(assemblyAITts({ voice: "emma" }));
-    expect(warning).toContain("scheduled for removal");
+    expect(warning).toContain("not one of the library voices");
     expect(warning).not.toContain("Did you mean");
   });
 
   test("says nothing about a listed voice, or a stage it does not own", () => {
-    expect(assemblyAIVoiceWarning(assemblyAITts({ voice: "michael" }))).toBeUndefined();
+    expect(assemblyAIVoiceWarning(assemblyAITts({ voice: "aai-michael" }))).toBeUndefined();
     expect(assemblyAIVoiceWarning(assemblyAITts())).toBeUndefined();
     expect(assemblyAIVoiceWarning({ kind: "cartesia", options: { voice: "x" } })).toBeUndefined();
   });
@@ -60,21 +59,21 @@ describe("assemblyAIVoiceWarning", () => {
 
 describe("the voice warning is computed once, off the descriptor", () => {
   test("agentConfigWarnings carries it for an author-written descriptor", () => {
-    const voiceLines = warningsFor(assemblyAITts({ voice: "michal" })).filter((line) =>
-      line.includes('"michal"'),
+    const voiceLines = warningsFor(assemblyAITts({ voice: "aai-michal" })).filter((line) =>
+      line.includes('"aai-michal"'),
     );
     expect(voiceLines).toHaveLength(1);
-    expect(voiceLines[0]).toContain('Did you mean "michael"');
+    expect(voiceLines[0]).toContain('Did you mean "aai-michael"');
   });
 
   test("with no `language` set, which is the common shape", () => {
-    const lines = warningsFor(assemblyAITts({ voice: "estele" }));
-    expect(lines).toContainEqual(expect.stringContaining('Did you mean "estelle"'));
+    const lines = warningsFor(assemblyAITts({ voice: "aai-verra" }));
+    expect(lines).toContainEqual(expect.stringContaining('Did you mean "aai-vera"'));
   });
 
   test("toAgentConfig prints nothing — the CLI's warning list is the one channel", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    configTts(assemblyAITts({ voice: "michal" }));
+    configTts(assemblyAITts({ voice: "aai-michal" }));
     expect(warn).not.toHaveBeenCalled();
   });
 
@@ -86,9 +85,9 @@ describe("the voice warning is computed once, off the descriptor", () => {
   });
 
   test("says nothing about a listed voice", () => {
-    expect(warningsFor(assemblyAITts({ voice: "michael" })).some((l) => l.includes("voice"))).toBe(
-      false,
-    );
+    expect(
+      warningsFor(assemblyAITts({ voice: "aai-michael" })).some((l) => l.includes("voice")),
+    ).toBe(false);
   });
 
   test("the language rules still THROW — only the voice check is a warning", () => {

@@ -28,7 +28,7 @@ import {
   ASSEMBLYAI_TTS_DEFAULT_VOICE,
   ASSEMBLYAI_TTS_VOICES,
   type AssemblyAITtsVoice,
-  ttsVoiceInfo,
+  isCatalogVoice,
 } from "../tts-voices.ts";
 
 // The voice CATALOG lives in its own module (the file-length cap); re-exported
@@ -37,8 +37,6 @@ export {
   ASSEMBLYAI_TTS_DEFAULT_VOICE,
   ASSEMBLYAI_TTS_VOICES,
   type AssemblyAITtsVoice,
-  type AssemblyAITtsVoiceInfo,
-  ttsVoiceInfo,
 } from "../tts-voices.ts";
 
 /** This vendor's registration (see `define-provider.ts`); the constants below derive from it. */
@@ -57,46 +55,22 @@ export const ASSEMBLYAI_TTS_KIND = ASSEMBLYAI_TTS_PROVIDER.kind;
 /** Agent-env variable holding the AssemblyAI API key (same key as STT/LLM). */
 export const ASSEMBLYAI_TTS_API_KEY_ENV: string = ASSEMBLYAI_TTS_PROVIDER.envVar;
 
-/** Production streaming-TTS host. */
-export const ASSEMBLYAI_TTS_HOST = "streaming-tts.assemblyai.com";
+/**
+ * Production streaming-TTS host (US). The service has no global endpoint:
+ * https://www.assemblyai.com/docs/tts/endpoints-and-data-zones lists this and
+ * {@link ASSEMBLYAI_TTS_EU_HOST}, and nothing else.
+ */
+export const ASSEMBLYAI_TTS_HOST = "tts.us.assemblyai.com";
+
+/** The EU streaming-TTS host — pass it as `assemblyAITts({ host })` for EU residency. */
+export const ASSEMBLYAI_TTS_EU_HOST = "tts.eu.assemblyai.com";
 
 /**
- * Voices the service still accepts but has scheduled for removal.
- *
- * Listed so that "is this name real?" and "should I use it?" stay separate
- * questions — an existing agent naming one of these is working today and
- * should not be told it is broken, while a new agent should not be pointed
- * at a voice that is going away.
- *
- * Not published to authors: the answer to "should I use it?" is
- * {@link ASSEMBLYAI_TTS_VOICES}, which lists only what to pick. This tuple's
- * one reader is the template gate that checks no shipped template names a
- * retired voice, so it lives on `@alexkroman1/aai/host-internal` — its 21
- * literals were otherwise inlined into the published `.d.ts` for nobody.
+ * The most text one `Generate` frame may carry
+ * (https://www.assemblyai.com/docs/tts/message-frames). Consecutive frames are
+ * joined with no separator, so a longer text is split across several.
  */
-export const ASSEMBLYAI_TTS_DEPRECATED_VOICES = [
-  "arjun",
-  "bella",
-  "david",
-  "diego",
-  "dmitri",
-  "eleanor",
-  "emma",
-  "giulia",
-  "helen",
-  "ivy",
-  "james",
-  "kyle",
-  "luca",
-  "lucia",
-  "martha",
-  "mateo",
-  "pierre",
-  "river",
-  "tyler",
-  "victor",
-  "winter",
-] as const;
+export const ASSEMBLYAI_TTS_MAX_GENERATE_CHARS = 2000;
 
 /**
  * ISO 639-1 code → the `language` query-param value the service accepts.
@@ -110,7 +84,7 @@ export const ASSEMBLYAI_TTS_DEPRECATED_VOICES = [
  * knob in the ecosystem (AssemblyAI STT's `language_codes`, Cartesia) is a
  * code, so the codes are the SDK's contract and this map is the translation.
  *
- * Keys are the six languages the voice catalog covers.
+ * Keys are the six languages every library voice speaks.
  */
 export const ASSEMBLYAI_TTS_LANGUAGES = {
   en: "english",
@@ -121,7 +95,7 @@ export const ASSEMBLYAI_TTS_LANGUAGES = {
   es: "spanish",
 } as const;
 
-/** ISO 639-1 code for a language the AssemblyAI voice catalog speaks. */
+/** ISO 639-1 code for a language AssemblyAI streaming TTS speaks. */
 export type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 
 /**
@@ -167,7 +141,7 @@ export function assertAssemblyAITtsLanguage(tts: unknown): void {
   const { kind, options } = tts;
   if (kind !== ASSEMBLYAI_TTS_KIND) return;
   if (!isRecord(options)) return;
-  const { language, voice } = options;
+  const { language } = options;
   if (language === undefined) return;
   if (typeof language !== "string" || resolveAssemblyAITtsLanguage(language) === undefined) {
     throw new Error(
@@ -175,41 +149,6 @@ export function assertAssemblyAITtsLanguage(tts: unknown): void {
         `(supported: ${assemblyAITtsLanguageCodes().join(", ")})`,
     );
   }
-  assertVoiceSpeaks(language, voice);
-}
-
-/**
- * Reject a `language` the chosen voice does not speak.
- *
- * The same failure as an unmapped code, from the other side: every voice in the
- * catalog speaks exactly ONE language, so `{ voice: "estelle", language: "en" }`
- * is refused in-band after the socket opens and the agent is connected, ready
- * and mute. Checked here for the reason the code is — this is the last layer
- * that sees it while somebody is still authoring.
- *
- * **Two things keep this from becoming the assert the voice catalog
- * deliberately does NOT have** (see {@link AssemblyAITtsVoice}): a voice the
- * catalog does not list is passed through untouched, so a voice AssemblyAI ships
- * after this release still compiles and still runs; and a descriptor with no
- * `language` is never consulted, which is the overwhelmingly common shape (the
- * server infers the language from the voice).
- *
- * It also catches the pair the SDK itself used to manufacture:
- * `assemblyAITts({ language: "fr" })` fills in the default voice, which speaks
- * English — so asking for French, and nothing else, produced a silent agent.
- */
-function assertVoiceSpeaks(language: string, voice: unknown): void {
-  if (typeof voice !== "string") return;
-  const known = ttsVoiceInfo(voice);
-  if (known === undefined || known.language === language) return;
-  const speakers = Object.entries(ASSEMBLYAI_TTS_VOICES)
-    .filter(([, meta]) => meta.language === language)
-    .map(([id]) => id);
-  throw new Error(
-    `AssemblyAI TTS: voice "${voice}" speaks ${known.language}, not the declared language "${language}" — ` +
-      "a mismatch is refused after the socket opens, which leaves the agent ready and silent. " +
-      `Voices that speak "${language}": ${speakers.join(", ")}.`,
-  );
 }
 
 /**
@@ -217,19 +156,15 @@ function assertVoiceSpeaks(language: string, voice: unknown): void {
  * `undefined` when there is nothing to say.
  *
  * The WARNING half of the argument {@link AssemblyAITtsVoice} makes against an
- * assert. Refusing an unlisted voice would refuse one AssemblyAI shipped after
- * this release, which is the same silent mute from the other side — but saying
- * nothing at all leaves the commonest version of that failure, a TYPO, with no
- * signal anywhere: the agent connects, reports ready, and never speaks. A line
- * printed by `aai build` and `aai dev` costs a new voice one sentence and costs
- * `voice: "michal"` an afternoon less.
+ * assert. Refusing an unlisted voice would refuse an open-dataset voice, a
+ * cloned one, or one AssemblyAI shipped after this release — but saying
+ * nothing leaves a TYPO with no signal before the service's `3012` at connect.
+ * A line printed by `aai build` and `aai dev` costs a real custom voice one
+ * sentence and costs `voice: "aai-michal"` an afternoon less.
  *
- * A deprecated voice gets its own line: it works today, so "unknown" would be
- * wrong, and it is going away, so silence would be too.
- *
- * Takes the DESCRIPTOR rather than the id, so a caller can hand it any stage
- * (the AssemblyAI S2S descriptor carries a `voice` from the same catalog) and
- * anything that is not one is simply not warned about.
+ * Reads the TTS descriptor only: the S2S descriptor shares the `"assemblyai"`
+ * kind but its voices are the Voice Agent API's, which this catalog does not
+ * describe — so a caller hands it `config.tts`, never `config.s2s`.
  *
  * @internal
  */
@@ -239,46 +174,44 @@ export function assemblyAIVoiceWarning(descriptor: unknown): string | undefined 
   if (kind !== ASSEMBLYAI_TTS_KIND || !isRecord(options)) return undefined;
   const { voice } = options;
   if (typeof voice !== "string" || voice === "") return undefined;
-  if (ttsVoiceInfo(voice) !== undefined) return undefined;
-  const deprecated: readonly string[] = ASSEMBLYAI_TTS_DEPRECATED_VOICES;
-  if (deprecated.includes(voice)) {
-    return `AssemblyAI voice "${voice}" still works but is scheduled for removal — pick a current one from ASSEMBLYAI_TTS_VOICES (@alexkroman1/aai/tts).`;
-  }
-  // The catalog's own keys are the candidate list; `_nearest-names.ts` knows
-  // nothing about voices, which is what keeps that seam one-way.
-  const near = nearestNames(voice, Object.keys(ASSEMBLYAI_TTS_VOICES));
+  if (isCatalogVoice(voice)) return undefined;
+  // The catalog is the candidate list; `_nearest-names.ts` knows nothing about
+  // voices, which is what keeps that seam one-way. A bare library name
+  // (`jane`) is the commonest miss, so it is matched against the slugs too.
+  const near = nearestNames(voice, [...ASSEMBLYAI_TTS_VOICES]);
+  const bare = `aai-${voice}`;
+  const candidates = isCatalogVoice(bare) ? [bare] : near;
   const suggestion =
-    near.length > 0 ? ` Did you mean ${near.map((id) => `"${id}"`).join(", ")}?` : "";
-  return `AssemblyAI voice "${voice}" is not in this release's catalog.${suggestion} If it is a typo the agent will connect, report ready and never speak — the service refuses an unknown voice after the socket opens. Check it against ASSEMBLYAI_TTS_VOICES (@alexkroman1/aai/tts); a voice added since this release is fine.`;
+    candidates.length > 0 ? ` Did you mean ${candidates.map((id) => `"${id}"`).join(", ")}?` : "";
+  return `AssemblyAI voice "${voice}" is not one of the library voices.${suggestion} The service refuses an unknown voice_id (3012) when the session opens. Fine if it is your own voice's slug or UUID; otherwise pick one from ASSEMBLYAI_TTS_VOICES (@alexkroman1/aai/tts).`;
 }
 
 export interface AssemblyAITtsOptions extends ProviderCredentialOptions {
   /**
-   * Voice id, e.g. `"jane"`, `"michael"`, `"vera"`. Defaults to
-   * {@link ASSEMBLYAI_TTS_DEFAULT_VOICE}. Each voice speaks exactly one
-   * language — see {@link ASSEMBLYAI_TTS_VOICES} for the catalog.
+   * The `voice_id`: a library slug such as `"aai-jane"`, `"aai-michael"` or
+   * `"aai-vera"` (see {@link ASSEMBLYAI_TTS_VOICES}), or any other voice slug or
+   * UUID the service knows. Defaults to {@link ASSEMBLYAI_TTS_DEFAULT_VOICE}.
+   * Every library voice speaks every supported language.
    */
   voice?: AssemblyAITtsVoice;
   /**
    * Spoken language as an ISO 639-1 code (`"en"`, `"fr"`, `"de"`, `"es"`,
-   * `"it"`, `"pt"`). Omitted by default so the server infers it from the
-   * voice — set it only alongside a voice that speaks it. Translated
-   * internally to the service's language name; see
+   * `"it"`, `"pt"`). Omitted by default, which the service reads as English.
+   * Translated internally to the service's language name; see
    * {@link ASSEMBLYAI_TTS_LANGUAGES} for the supported set. An unsupported
-   * code fails at connect time rather than muting the session.
+   * code fails at build and connect time rather than muting the session.
    */
   language?: AssemblyAITtsLanguage;
   /**
-   * Streaming-TTS host to dial, replacing the production `ASSEMBLYAI_TTS_HOST`. A bare
-   * host (`streaming-tts.sandbox000.assemblyai-labs.com`), not a URL — the
-   * adapter owns the `wss://` scheme and the `/v1/ws/` path, so a full URL here
-   * would be wrong in a way that only shows up at connect.
+   * Streaming-TTS host to dial, replacing `ASSEMBLYAI_TTS_HOST` (US). A bare
+   * host, not a URL — the adapter owns the `wss://` scheme and the `/v1/ws`
+   * path, so a full URL here would be wrong in a way that only shows up at
+   * connect.
    *
-   * Intended for pre-release/staging clusters, and it is the TTS half of the
-   * same A/B `assemblyAIStt({ streamingUrl })` gives STT. A staging cluster
+   * `"tts.eu.assemblyai.com"` is EU residency (`assemblyAIPipeline({ region:
+   * "eu" })` sets it). Any other value is a pre-release/staging cluster; one
    * generally issues its own keys, so point every AssemblyAI stage at the same
-   * environment or the ones left on production reject the key. Leave unset in
-   * production.
+   * environment or the ones left on production reject the key.
    */
   host?: string;
 }
@@ -302,14 +235,14 @@ export interface AssemblyAITtsOptions extends ProviderCredentialOptions {
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   tts: assemblyAITts({ voice: "michael" }),
+ *   tts: assemblyAITts({ voice: "aai-michael" }),
  * });
  * ```
  *
  * The default pipeline's stage is `assemblyAITts()` — the default voice —
- * so this is how its voice is changed. Voice ids come from {@link ASSEMBLYAI_TTS_VOICES} and
- * nowhere else — an unrecognised one leaves an agent that connects,
- * reports ready and never speaks.
+ * so this is how its voice is changed. Pick from {@link ASSEMBLYAI_TTS_VOICES}
+ * unless you mean a voice of your own — the service refuses an unknown one when
+ * the session opens.
  */
 export function assemblyAITts(options: AssemblyAITtsOptions = {}): TtsProvider {
   return describeProvider(ASSEMBLYAI_TTS_PROVIDER, {
@@ -323,9 +256,8 @@ export function assemblyAITts(options: AssemblyAITtsOptions = {}): TtsProvider {
  * options with every host-side default filled in. Shared by the opener and
  * the runtime's "Session mode resolved" log.
  *
- * A wrong voice id is rejected IN BAND after the socket opens, so the agent
- * reports ready and is permanently silent — which is exactly the failure that
- * wants the resolved voice printed once at startup.
+ * A wrong voice id is refused in band after the upgrade (`3012`), so the
+ * resolved voice is worth printing once at startup.
  */
 export function resolveAssemblyAITtsSettings(options: AssemblyAITtsOptions): {
   voice: string;
@@ -333,8 +265,7 @@ export function resolveAssemblyAITtsSettings(options: AssemblyAITtsOptions): {
 } {
   return {
     voice: options.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE,
-    // Omitted unless set: every voice speaks one language, so the server
-    // infers it, and a mismatched pair is worse than no hint.
+    // Omitted unless set: the service's own default (English) applies.
     ...omitUndefined({ language: options.language }),
   };
 }

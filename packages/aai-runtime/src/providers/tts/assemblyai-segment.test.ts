@@ -13,7 +13,7 @@
 import { DEAD_AIR_OPENING_PHRASE } from "@alexkroman1/aai/host-internal";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { openSession } from "./_assemblyai-session-test-utils.ts";
-import { FakeWebSocket, pcmBase64 } from "./_fake-ws-test-utils.ts";
+import { FakeWebSocket } from "./_fake-ws-test-utils.ts";
 
 beforeEach(() => {
   FakeWebSocket.reset();
@@ -264,48 +264,6 @@ describe("AssemblyAI TTS segment flushing", () => {
     session.flush(); // nothing buffered, but the segment is unacknowledged
     expect(onDone).not.toHaveBeenCalled();
 
-    ws._msg({ type: "FlushDone" });
-    expect(onDone).toHaveBeenCalledTimes(1);
-  });
-
-  test("a segment's is_final does not end the turn either", async () => {
-    // Older servers flag the last Audio frame instead of sending FlushDone;
-    // per segment that signal means the same thing and must be gated the same.
-    const { session, ws } = await openSession();
-    const onDone = vi.fn();
-    session.on("done", onDone);
-    session.sendText("First sentence here. ");
-    ws._msg({ type: "Audio", audio: pcmBase64([1]), is_final: true });
-    expect(onDone).not.toHaveBeenCalled();
-  });
-
-  test("an is_final AND its FlushDone count as one acknowledgement", async () => {
-    // A server may signal a synthesis's completion both ways. Counting the
-    // pair twice reads the surplus FlushDone as unsolicited and ends the
-    // turn mid-reply — done fires while later sentences are still
-    // synthesizing, audio_done overtakes their audio, and the buffered text
-    // below ("And the rest") is dropped: the voice cuts off before the
-    // reply finishes. Exhaustive ack-pairing cases: assemblyai-turn.test.ts.
-    const { session, ws } = await openSession();
-    const onDone = vi.fn();
-    session.on("done", onDone);
-
-    session.sendText("First sentence here. ");
-    session.sendText("And the rest");
-    ws._msg({ type: "Audio", audio: pcmBase64([1]), is_final: true }); // segment's final frame
-    ws._msg({ type: "FlushDone" }); // same flush, acked again
-    expect(onDone).not.toHaveBeenCalled();
-
-    session.sendText(" of the reply. ");
-    session.flush(); // end of turn — "And the rest of the reply. " must go out
-    expect(ws._frames()).toContainEqual({
-      type: "Generate",
-      text: "And the rest of the reply. ",
-    });
-    expect(onDone).not.toHaveBeenCalled();
-
-    ws._msg({ type: "Audio", audio: pcmBase64([2]), is_final: true });
-    expect(onDone).toHaveBeenCalledTimes(1); // exactly once, on the LAST flush's acknowledgement
     ws._msg({ type: "FlushDone" });
     expect(onDone).toHaveBeenCalledTimes(1);
   });

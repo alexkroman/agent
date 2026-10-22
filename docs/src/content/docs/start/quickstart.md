@@ -62,7 +62,7 @@ export default agent({
   name: "Quickstart Assistant",
   description: "Looks up the current weather for any city",
   greeting: "Hi — I can look up the weather anywhere. Which city?",
-  tts: assemblyAITts({ voice: "jane" }),
+  tts: assemblyAITts({ voice: "aai-jane" }),
 });
 ```
 

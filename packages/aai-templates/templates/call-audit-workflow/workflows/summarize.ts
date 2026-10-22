@@ -186,7 +186,7 @@ export async function narrate(
     });
 
     await stepReport(
-      `Recorded a ${Math.round(spoken.durationMs / 1000)}s audit in ${spoken.voice}'s voice — ` +
+      `Recorded a ${Math.round(spoken.durationMs / 1000)}s audit with voice ${spoken.voice} — ` +
         `${formatBytes(bytes)} of MP3, from ${formatBytes(spoken.audio.byteLength)} of WAV.`,
     );
     return {

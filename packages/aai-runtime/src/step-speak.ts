@@ -23,23 +23,19 @@
  * the whole exchange:
  *
  * ```text
- *   open      wss://streaming-tts.assemblyai.com/v1/ws/?voice=&sample_rate=
- *   send      {"type":"Generate","text":"…"}   (buffers; synthesizes nothing)
- *   send      {"type":"Flush"}                 (this is what starts synthesis)
+ *   open      wss://tts.us.assemblyai.com/v1/ws?voice_id=&sample_rate=
+ *   send      {"type":"Generate","text":"…"} × N  (≤2000 chars each; buffers)
+ *   send      {"type":"Flush"}                    (concludes the request)
  *   receive   {"type":"Audio","audio":"<base64 PCM16 LE>"} × N
- *   receive   {"type":"FlushDone"}             (or an Audio frame `is_final`)
+ *   receive   {"type":"FlushDone"}
  *   send      {"type":"Terminate"}
  * ```
  *
- * **`Flush` is what starts synthesis** — `Generate` only buffers, measured
- * against production — so the pair is sent together and a step that forgot the
- * second would wait out its deadline having received nothing. That, the raw
- * `Authorization` header (not `Bearer`, which upgrades fine and is then
- * refused IN BAND), and the base64 PCM16 payload are the three facts this
- * shares with the session opener, and they are the reason the frame vocabulary
- * is documented in `providers/tts/assemblyai-frames.ts` rather than here: it
- * was read back from the service, which has no public documentation for this
- * endpoint at all.
+ * **`Flush` is what concludes a request** — short text stays buffered until it
+ * — so the frames are sent together and a step that forgot it would wait out
+ * its deadline having received nothing. The URL and the `Generate` framing are
+ * shared with the session opener (`providers/tts/assemblyai-wire.ts`); the frame
+ * vocabulary is https://www.assemblyai.com/docs/tts/message-frames.
  *
  * ## One socket per utterance, and it is not a pool
  *
@@ -60,16 +56,12 @@
  */
 
 import type { SpeechSynthesizer } from "@alexkroman1/aai/host-internal";
-import {
-  ASSEMBLYAI_TTS_HOST,
-  assemblyAITtsLanguageCodes,
-  resolveAssemblyAITtsLanguage,
-} from "@alexkroman1/aai/host-internal";
 import { errorMessage, safeJsonParse } from "@alexkroman1/aai/utils";
 import WebSocket from "ws";
 import { base64ToUint8 } from "./_base64.ts";
 import { PROVIDER_WS_OPTIONS } from "./_ws.ts";
 import type { ProviderSocket } from "./providers/_utils.ts";
+import { assemblyAITtsUrl, generateFrames } from "./providers/tts/assemblyai-wire.ts";
 import { withWalkSignal } from "./workflow/run-context.ts";
 
 /** The frames this exchange reads. See `providers/tts/assemblyai-frames.ts`. */
@@ -77,8 +69,6 @@ type TtsFrame = {
   type?: string;
   /** Base64 PCM16 LE payload, on `Audio` frames. */
   audio?: string;
-  /** Set on the last `Audio` frame of a synthesis by some server versions. */
-  is_final?: boolean;
   error?: string;
   error_code?: string | number;
 };
@@ -89,25 +79,9 @@ function speechUrl(request: {
   language?: string | undefined;
   sampleRate: number;
 }): string {
-  const params = new URLSearchParams({
-    voice: request.voice,
-    sample_rate: String(request.sampleRate),
-  });
-  if (request.language !== undefined) {
-    // The wire wants `spanish`, not `es`. An unsupported code must throw HERE:
-    // the service's own refusal arrives in-band after the socket is open,
-    // which would leave this waiting out its deadline for audio that is never
-    // coming rather than failing with the code it was given.
-    const language = resolveAssemblyAITtsLanguage(request.language);
-    if (language === undefined) {
-      throw new Error(
-        `stepSpeak: unsupported language ${JSON.stringify(request.language)} ` +
-          `(supported: ${assemblyAITtsLanguageCodes().join(", ")})`,
-      );
-    }
-    params.set("language", language);
-  }
-  return `wss://${ASSEMBLYAI_TTS_HOST}/v1/ws/?${params.toString()}`;
+  // An unsupported language must throw HERE: the service's own refusal arrives
+  // in band after the upgrade, which would fail later with less to go on.
+  return assemblyAITtsUrl(request, (msg) => new Error(`stepSpeak: ${msg}`));
 }
 
 /** Join the collected frames, sizing the buffer in one pass first. */
@@ -133,7 +107,7 @@ function joinPcm(frames: readonly Uint8Array[]): Uint8Array {
  *
  * `undefined` means "keep listening", which covers a frame that carried audio
  * as much as one this does not understand: `Begin` echoes the configuration and
- * `Warning` is informational.
+ * `WordBoundaries` is not read here.
  */
 function readFrame(
   raw: WebSocket.Data,
@@ -149,8 +123,7 @@ function readFrame(
       const bytes = base64ToUint8(frame.audio);
       if (bytes.length > 0) frames.push(bytes);
     }
-    // Older servers flag the final frame; the live one sends FlushDone.
-    return frame.is_final ? { pcm: joinPcm(frames) } : undefined;
+    return undefined;
   }
   if (frame.type === "FlushDone") return { pcm: joinPcm(frames) };
   if (frame.type === "Error") {
@@ -236,7 +209,7 @@ export const speakOver = (
       return;
     }
     const frames: Uint8Array[] = [];
-    // Raw key, not `Bearer` — see the module doc.
+    // The raw key, as the docs show — see the module doc.
     const ws = createSocket(url, {
       headers: { Authorization: request.apiKey },
       ...PROVIDER_WS_OPTIONS,
@@ -273,9 +246,9 @@ export const speakOver = (
     signal.addEventListener("abort", onAbort, { once: true });
 
     ws.on("open", () => {
-      // Together, and in this order: `Generate` only BUFFERS — the service
-      // synthesizes nothing until the `Flush`. See the module doc.
-      ws.send(JSON.stringify({ type: "Generate", text: request.text }));
+      // Together, and in this order: the `Flush` concludes the request. The text
+      // goes as several `Generate` frames past the per-frame cap.
+      for (const frame of generateFrames(request.text)) ws.send(JSON.stringify(frame));
       ws.send(JSON.stringify({ type: "Flush" }));
     });
 

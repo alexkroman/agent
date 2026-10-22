@@ -25,7 +25,7 @@ import { assemblyAITts } from "@alexkroman1/aai/tts";
 export default agent({
   name: "Support Line",
   greeting: "Support line — what can I help with?",
-  tts: assemblyAITts({ voice: "michael" }),
+  tts: assemblyAITts({ voice: "aai-michael" }),
 });
 ```
 
@@ -33,7 +33,7 @@ export default agent({
 | ------------- | ---------------------------------------------------------------- |
 | `name`        | Display name — the only required field                           |
 | `greeting`    | The first thing the agent says                                   |
-| `tts`         | The speaking stage; `assemblyAITts({ voice: "michael" })`        |
+| `tts`         | The speaking stage; `assemblyAITts({ voice: "aai-michael" })`    |
 | `llm`         | A model id, e.g. `"claude-sonnet-4-6"`; defaults to AssemblyAI's |
 | `requiredEnv` | Keys your tools read; a deploy checks they are all set           |
 

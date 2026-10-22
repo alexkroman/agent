@@ -21,5 +21,5 @@ export default agent({
   // Any name from `ASSEMBLYAI_TTS_VOICES`. The voice is the speaking stage's
   // own option, so this replaces only that stage; the other two stay on the
   // default pipeline.
-  tts: assemblyAITts({ voice: "jane" }),
+  tts: assemblyAITts({ voice: "aai-jane" }),
 });

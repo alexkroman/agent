@@ -16,7 +16,7 @@ export default agent({
   // something to project rather than an empty state object.
   // A narrator wants a narrative voice; everything else stays on the
   // default all-AssemblyAI pipeline.
-  tts: assemblyAITts({ voice: "paul" }),
+  tts: assemblyAITts({ voice: "aai-paul" }),
   /**
    * The status line, pushed to the CRT's top bar — where you are, your score,
    * your rank and the turn count, the four facts the printed games put across

@@ -26,7 +26,7 @@ import {
   WAV_HEADER_BYTES,
 } from "@alexkroman1/aai/step";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import { ASSEMBLYAI_TTS_DEFAULT_VOICE, ttsVoiceInfo } from "@alexkroman1/aai/tts";
+import { ASSEMBLYAI_TTS_DEFAULT_VOICE } from "@alexkroman1/aai/tts";
 import {
   createWorkflowContext,
   runWorkflow,
@@ -41,7 +41,7 @@ import {
   installStubUploads,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import agentDef, { SUMMARY_LANGUAGE, spokenSummary, VOICES } from "./agent.ts";
+import agentDef, { spokenSummary, VOICES } from "./agent.ts";
 import { speak, spokenSummaryFlow, summarize } from "./workflows/summarize.ts";
 import { createJob, pollTranscript, uploadToProvider } from "./workflows/transcribe.ts";
 
@@ -118,14 +118,9 @@ describe("the declaration", () => {
 
   test("the voice that fills in when nobody chooses is one the form would have offered", () => {
     // `voice` is OPTIONAL, so an unchosen summary is read by the SDK's own
-    // default rather than by anything this template names — and every voice in
-    // the catalog speaks exactly one language. If that default ever stopped
-    // speaking `SUMMARY_LANGUAGE`, the form would still offer nothing but
-    // English while the common path spoke something else, which is the failure
-    // no voice-id validation can see: the id is real, it is simply the wrong
-    // one. Asked of the catalog rather than restated, so the answer stays true.
+    // default rather than by anything this template names. Asked of the
+    // catalog rather than restated, so the answer stays true.
     expect(VOICES).toContain(ASSEMBLYAI_TTS_DEFAULT_VOICE);
-    expect(ttsVoiceInfo(ASSEMBLYAI_TTS_DEFAULT_VOICE)?.language).toBe(SUMMARY_LANGUAGE);
   });
 });
 
@@ -285,10 +280,10 @@ describe("speaking", () => {
     const speech = installStubSpeech();
     installStubReporter();
 
-    await speak("Hello.", { voice: "michael" });
+    await speak("Hello.", { voice: "aai-michael" });
     await speak("Hello.");
 
-    expect(speech.calls[0]?.voice).toBe("michael");
+    expect(speech.calls[0]?.voice).toBe("aai-michael");
     // The SDK's own default, named rather than restated — a literal here would
     // have been this template quietly keeping a second copy of it.
     expect(speech.calls[1]?.voice).toBe(ASSEMBLYAI_TTS_DEFAULT_VOICE);
@@ -369,9 +364,12 @@ describe("the whole run", () => {
     installStubReporter();
     const speech = installStubSpeech();
 
-    await spokenSummaryFlow({ recording: UPLOAD_ID, voice: "michael" }, createWorkflowContext());
+    await spokenSummaryFlow(
+      { recording: UPLOAD_ID, voice: "aai-michael" },
+      createWorkflowContext(),
+    );
 
-    expect(speech.calls[0]).toMatchObject({ text: "Spoken.", voice: "michael" });
+    expect(speech.calls[0]).toMatchObject({ text: "Spoken.", voice: "aai-michael" });
   });
 
   test("a recording the provider gave up on fails the run rather than half-summarizing", async () => {

@@ -670,7 +670,7 @@ trip.
 import { stepSpeak, stepWriteUpload } from "@alexkroman1/aai/step";
 
 export async function narrate(script: string) {
-  const spoken = await stepSpeak(script, { voice: "jane" });
+  const spoken = await stepSpeak(script, { voice: "aai-jane" });
   const stored = await stepWriteUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
   return { audio: stored.id, durationMs: spoken.durationMs };
 }

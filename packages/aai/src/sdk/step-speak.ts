@@ -12,7 +12,7 @@
  * import { requireStepEnv, stepSpeak } from "@alexkroman1/aai/step";
  *
  * export async function narrate(summary: string) {
- *   const spoken = await stepSpeak(summary, { voice: "jane" });
+ *   const spoken = await stepSpeak(summary, { voice: "aai-jane" });
  *   return { wav: spoken.audio, seconds: spoken.durationMs / 1000 };
  * }
  * ```
@@ -84,9 +84,10 @@ export const STEP_SPEAK_TIMEOUT_MS: number = 120_000;
 /** What {@link stepSpeak} accepts. */
 export type SpeakOptions = {
   /**
-   * Voice id, e.g. `"jane"`, `"michael"`, `"vera"`. Defaults to
-   * `ASSEMBLYAI_TTS_DEFAULT_VOICE`; the catalog is `ASSEMBLYAI_TTS_VOICES` on
-   * `@alexkroman1/aai/tts`, and every voice speaks exactly one language.
+   * Voice id, e.g. `"aai-jane"`, `"aai-michael"`, `"aai-vera"`. Defaults to
+   * `ASSEMBLYAI_TTS_DEFAULT_VOICE`; the library voices are
+   * `ASSEMBLYAI_TTS_VOICES` on `@alexkroman1/aai/tts`, each speaking every
+   * supported language.
    */
   voice?: string | undefined;
   /**
@@ -225,7 +226,7 @@ export const SPEECH_UNAVAILABLE_MESSAGE =
  * import { stepSpeak, stepWriteUpload } from "@alexkroman1/aai/step";
  *
  * export async function narrate(summary: string): Promise<string> {
- *   const spoken = await stepSpeak(summary, { voice: "jane" });
+ *   const spoken = await stepSpeak(summary, { voice: "aai-jane" });
  *   const stored = await stepWriteUpload(spoken.audio, {
  *     name: "summary.wav",
  *     type: "audio/wav",

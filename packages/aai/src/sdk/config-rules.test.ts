@@ -143,27 +143,25 @@ describe("agentConfigWarnings", () => {
     // stale, so refusing an unlisted voice would refuse one shipped last week.
     // Saying nothing leaves the common case — a typo — to surface as an agent
     // that connects, reports ready and never speaks.
-    expect(agentConfigWarnings({ tts: assemblyAITts({ voice: "michal" }) })).toEqual([
-      expect.stringContaining('AssemblyAI voice "michal" is not in this release\'s catalog'),
+    expect(agentConfigWarnings({ tts: assemblyAITts({ voice: "aai-michal" }) })).toEqual([
+      expect.stringContaining('AssemblyAI voice "aai-michal" is not one of the library voices'),
     ]);
   });
 
   test("says nothing about a voice the catalog lists", () => {
-    expect(agentConfigWarnings({ tts: assemblyAITts({ voice: "michael" }) })).toEqual([]);
+    expect(agentConfigWarnings({ tts: assemblyAITts({ voice: "aai-michael" }) })).toEqual([]);
   });
 
-  test("tells a DEPRECATED voice apart from an unknown one", () => {
-    // It works today, so "unknown" would be wrong; it is going away, so
-    // silence would be too.
-    expect(agentConfigWarnings({ tts: assemblyAITts({ voice: "emma" }) })).toEqual([
-      expect.stringContaining("scheduled for removal"),
+  test("points a bare library name at its slug — the form the service takes", () => {
+    expect(agentConfigWarnings({ tts: assemblyAITts({ voice: "jane" }) })).toEqual([
+      expect.stringContaining('Did you mean "aai-jane"?'),
     ]);
   });
 
-  test("reads the S2S descriptor too, whose voice comes from the same catalog", () => {
-    expect(agentConfigWarnings({ s2s: assemblyAIS2s({ voice: "michal" }) })).toEqual([
-      expect.stringContaining('"michal"'),
-    ]);
+  test("does not hold an S2S voice to the streaming-TTS catalog", () => {
+    // Same `"assemblyai"` kind, different service: the Voice Agent API's
+    // voices are not the TTS library's slugs.
+    expect(agentConfigWarnings({ s2s: assemblyAIS2s({ voice: "michal" }) })).toEqual([]);
   });
 
   test("says a vendor voice it CANNOT judge is unjudged, rather than nothing", () => {
@@ -385,7 +383,7 @@ describe("toAgentConfig — AssemblyAI TTS language validation", () => {
     const fields = {
       stt: { kind: "assemblyai", options: {} },
       llm: { kind: "anthropic", options: { model: "m" } },
-      tts: { kind: "assemblyai", options: { voice: "lola", language: "spanish" } },
+      tts: { kind: "assemblyai", options: { voice: "aai-jane", language: "spanish" } },
     };
     expect(() => config(fields)).toThrow(/unsupported language "spanish".*en, fr, de, it, pt, es/s);
   });
@@ -402,45 +400,9 @@ describe("toAgentConfig — AssemblyAI TTS language validation", () => {
     },
   );
 
-  test("rejects a language the declared voice does not speak", () => {
-    // Every catalog voice speaks exactly one language, and the service refuses
-    // the pair in-band after the socket opens — the same mute session as an
-    // unmapped code, reached from the other side.
-    expect(() =>
-      config({
-        stt: { kind: "assemblyai", options: {} },
-        llm: { kind: "anthropic", options: { model: "m" } },
-        tts: { kind: "assemblyai", options: { voice: "estelle", language: "en" } },
-      }),
-    ).toThrow(/voice "estelle" speaks fr, not the declared language "en"/);
-  });
-
-  test("names the voices that DO speak the declared language", () => {
-    expect(() =>
-      config({
-        stt: { kind: "assemblyai", options: {} },
-        llm: { kind: "anthropic", options: { model: "m" } },
-        tts: { kind: "assemblyai", options: { voice: "jane", language: "it" } },
-      }),
-    ).toThrow(/Voices that speak "it": giovanni/);
-  });
-
-  test("catches the mismatch the FACTORY used to manufacture", () => {
-    // `assemblyAITts({ language })` fills in the default voice, which speaks
-    // English — so asking for French and nothing else shipped a silent agent.
-    expect(() =>
-      config({
-        stt: { kind: "assemblyai", options: {} },
-        llm: { kind: "anthropic", options: { model: "m" } },
-        tts: assemblyAITts({ language: "fr" }),
-      }),
-    ).toThrow(/Voices that speak "fr": estelle/);
-  });
-
   test("passes through a voice the catalog does not list", () => {
     // The catalog is the SERVICE's and a snapshot of it goes stale between
-    // releases, so a voice shipped after this one must still run — this check
-    // only ever fires on a voice we know the language of.
+    // releases, so a voice shipped after this one must still run.
     const parsed = config({
       stt: { kind: "assemblyai", options: {} },
       llm: { kind: "anthropic", options: { model: "m" } },
@@ -449,13 +411,14 @@ describe("toAgentConfig — AssemblyAI TTS language validation", () => {
     expect(parsed.tts?.options.voice).toBe("voice-shipped-last-week");
   });
 
-  test("a matching pair is left alone", () => {
+  test("any library voice with any supported language is left alone", () => {
+    // Every library voice speaks all six languages, so there is no pairing.
     const parsed = config({
       stt: { kind: "assemblyai", options: {} },
       llm: { kind: "anthropic", options: { model: "m" } },
-      tts: assemblyAITts({ voice: "lola", language: "es" }),
+      tts: assemblyAITts({ voice: "aai-jane", language: "es" }),
     });
-    expect(parsed.tts?.options).toMatchObject({ voice: "lola", language: "es" });
+    expect(parsed.tts?.options).toMatchObject({ voice: "aai-jane", language: "es" });
   });
 });
 
@@ -520,18 +483,40 @@ describe("author conveniences on raw configs (no agent())", () => {
 });
 
 describe("EU residency warning", () => {
-  // `assemblyAIPipeline({ region: "eu" })` — the call in that function's own
-  // @example — routes STT and the LLM gateway to the EU and TTS to the single
-  // (US) endpoint. Documented in a JSDoc, which is the wrong strength of
-  // statement for the one option here that is a compliance claim.
-  test("warns when an EU stage sits beside a TTS stage that has no EU endpoint", () => {
+  // An EU STT or LLM beside a TTS stage left on the US host sends the agent's
+  // own speech out of the region — a compliance claim, so said at build time.
+  test("warns when an EU stage sits beside AssemblyAI TTS on the US host", () => {
     const warnings = agentConfigWarnings({
       stt: { kind: "assemblyai", options: { region: "eu" } },
       llm: { kind: "assemblyai", options: { region: "eu" } },
       tts: { kind: "assemblyai", options: {} },
     });
     expect(warnings.join("\n")).toContain("outside the EU");
-    expect(warnings.join("\n")).toContain("streaming-tts.assemblyai.com");
+    expect(warnings.join("\n")).toContain("tts.us.assemblyai.com");
+    expect(warnings.join("\n")).toContain("tts.eu.assemblyai.com");
+  });
+
+  test("says nothing when AssemblyAI TTS is on the EU host", () => {
+    expect(
+      agentConfigWarnings({
+        stt: { kind: "assemblyai", options: { region: "eu" } },
+        tts: { kind: "assemblyai", options: { host: "tts.eu.assemblyai.com" } },
+      }),
+    ).toEqual([]);
+  });
+
+  test("assemblyAIPipeline({ region: 'eu' }) puts TTS in-region too", () => {
+    const preset = assemblyAIPipeline({ region: "eu" });
+    expect(preset.tts.options).toMatchObject({ host: "tts.eu.assemblyai.com" });
+    expect(agentConfigWarnings(preset)).toEqual([]);
+  });
+
+  test("warns for another vendor's TTS beside an EU stage", () => {
+    const warnings = agentConfigWarnings({
+      stt: { kind: "assemblyai", options: { region: "eu" } },
+      tts: { kind: "cartesia", options: { voice: "x" } },
+    });
+    expect(warnings.join("\n")).toContain("not one the SDK can route");
   });
 
   test("says nothing for a US agent", () => {
@@ -558,12 +543,11 @@ describe("EU residency warning", () => {
   });
 });
 
-test("the warning fires on assemblyAIPipeline({ region: 'eu' }) itself", () => {
+test("the warning stays silent on assemblyAIPipeline({ region: 'eu' }) itself", () => {
   // The call in `assemblyAIPipeline`'s own @example. Built through the real
   // preset rather than a hand-written descriptor, so a change to how the preset
-  // threads `region` cannot pass this by accident.
-  const warnings = agentConfigWarnings(assemblyAIPipeline({ region: "eu" }));
-  expect(warnings.join("\n")).toContain("outside the EU");
+  // threads `region` cannot pass this by accident: every stage is in-region.
+  expect(agentConfigWarnings(assemblyAIPipeline({ region: "eu" }))).toEqual([]);
 });
 
 describe("the end-of-turn window", () => {

@@ -68,7 +68,7 @@ export default agent({
 - `agent()` — the agent definition; every field and default is documented on
   [`AgentDef`](https://alexkroman.github.io/agent/). With no provider fields it
   runs the default all-AssemblyAI STT → LLM → TTS pipeline, billed to one
-  `ASSEMBLYAI_API_KEY`; `voice: "michael"` picks its TTS voice.
+  `ASSEMBLYAI_API_KEY`; `voice: "aai-michael"` picks its TTS voice.
 - `tool()` — a typed tool for the stateless case: Zod `inputSchema` and an
   `execute(args, ctx)` that runs server-side with `ctx.env` (secrets),
   `ctx.signal` (aborts on barge-in), `ctx.generate` (one-shot LLM calls),
@@ -104,7 +104,7 @@ export default agent({
   name: "Storefront",
   systemPrompt: "You help callers order from the catalog. Confirm before charging.",
   greeting: "Storefront here — what are you after?",
-  tts: assemblyAITts({ voice: "michael" }),
+  tts: assemblyAITts({ voice: "aai-michael" }),
   // Server-side helpers the model may call, on top of your own tool files.
   builtinTools: ["calculate"],
   // Tool-calling steps per reply, and how long a pause ends the caller's turn.

@@ -112,7 +112,7 @@ export default agent({
 
 | Factory         | Default voice                            | Env var              |
 | --------------- | ---------------------------------------- | -------------------- |
-| `assemblyAITts` | `"jane"`                                 | `ASSEMBLYAI_API_KEY` |
+| `assemblyAITts` | `"aai-jane"`                             | `ASSEMBLYAI_API_KEY` |
 | `cartesiaTts`   | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY`   |
 | `rimeTts`       | `"cove"` (model `mistv2`)                | `RIME_API_KEY`       |
 
@@ -121,20 +121,19 @@ Override with `{ voice, model, language }`.
 
 **AssemblyAI TTS** shares `ASSEMBLYAI_API_KEY` with AssemblyAI STT and the LLM
 Gateway, so an all-AssemblyAI pipeline needs exactly one secret. On the default
-pipeline, `tts: assemblyAITts({ voice: "michael" })` changes the voice and
-leaves the other two stages on the default. Each voice speaks one language, and
-this is the whole catalog — **a voice not on this list is rejected after the
-socket opens, which leaves the agent connected, "ready", and permanently
-silent**, so pick one from here rather than guessing a plausible name:
+pipeline, `tts: assemblyAITts({ voice: "aai-michael" })` changes the voice and
+leaves the other two stages on the default. A voice is a `voice_id` SLUG — the
+`aai-` prefix is part of it, and the bare name is refused — and **an unknown one
+is refused when the session opens**, so pick from the library
+(`ASSEMBLYAI_TTS_VOICES`) rather than guessing a plausible name:
 
-- **English, US accent**: `alba`, `anna`, `charles`, `eve`, `george`, `jane`
-  (the default), `jean`, `mary`, `michael`
-- **English, UK accent**: `paul`, `vera`
-- **Native accent, code-switches with English**: `estelle` (fr), `giovanni`
-  (it), `juergen` (de), `lola` (es), `rafael` (pt)
+`aai-alba`, `aai-anna`, `aai-charles`, `aai-eve`, `aai-george`, `aai-jane` (the
+default), `aai-jean`, `aai-mary`, `aai-michael`, `aai-paul`, `aai-vera`
 
-There is no separate age/gender/style axis — match the persona by picking a name
-and accent, and put the delivery in the system prompt instead.
+Every library voice speaks all six languages; `language` (`"en"`, `"fr"`,
+`"de"`, `"it"`, `"pt"`, `"es"`) picks which. There is no separate
+age/gender/style axis — match the persona by picking a voice, and put the
+delivery in the system prompt instead.
 
 Set `language` only alongside a voice that speaks it, as an ISO 639-1 code —
 `"en"`, `"fr"`, `"de"`, `"it"`, `"pt"`, `"es"` are the six the catalog covers,

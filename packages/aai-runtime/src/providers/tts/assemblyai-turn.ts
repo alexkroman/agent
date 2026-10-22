@@ -5,20 +5,10 @@
  * The adapter flushes per segment, so one turn spans several `Flush` frames
  * and the turn ends only when the LAST one is acknowledged — see the module
  * doc in `assemblyai.ts`. This module owns that bookkeeping: how many flushes
- * are outstanding, whether the pipeline has closed the turn, and the one
- * wrinkle that makes counting non-trivial — a server may acknowledge the SAME
- * synthesis twice, as an `Audio` frame flagged `is_final` and then that
- * flush's `FlushDone`. The pair must count as ONE acknowledgement:
- * double-counting frees the turn while later segments are still synthesizing,
- * so `done` — and with it the client's `audio_done` — overtakes their audio
- * and the reply is audibly cut off before the voice finishes (any text still
- * buffered for the turn is dropped with it). The socket answers in order, so
- * an `is_final` always precedes its own `FlushDone`; `flushDoneDebt` pairs
- * them.
+ * are outstanding, and whether the pipeline has closed the turn. Each `Flush`
+ * is answered by exactly one `FlushDone`, in order
+ * (https://www.assemblyai.com/docs/tts/message-frames), so a count is enough.
  */
-
-/** Which frame acknowledged a synthesis — see {@link TurnTracker.onAck}. */
-export type SynthesisAck = "is_final" | "flush_done";
 
 /** Per-turn flush/acknowledgement state machine. */
 export interface TurnTracker {
@@ -32,14 +22,11 @@ export interface TurnTracker {
   /** A `Generate`+`Flush` pair went out for this turn. */
   onFlushSent(): void;
   /**
-   * A completion frame arrived. Dedups the `is_final`+`FlushDone` pair (see
-   * the module doc), then either retires one outstanding flush — emitting
-   * `done` when it was the last one of a closed turn — or, with nothing
-   * pending, treats the ack as the turn ending (a server that flags frames
-   * rather than sending FlushDone, or a stray ack), as this adapter always
-   * has.
+   * A `FlushDone` arrived: retire one outstanding flush, emitting `done` when
+   * it was the last one of a closed turn. One with nothing outstanding belongs
+   * to no flush this turn sent and is ignored.
    */
-  onAck(ack: SynthesisAck): void;
+  onAck(): void;
   /**
    * The pipeline has no more text for this turn: the last outstanding
    * acknowledgement ends it — or, when every segment was already
@@ -91,8 +78,6 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
   let outstandingFlushes = 0;
   // `closeTurn()` ran for the current turn: the pipeline has no more text.
   let turnClosed = false;
-  // FlushDone frames already accounted for by an `is_final` Audio frame.
-  let flushDoneDebt = 0;
   // A turn owns the word timeline — see `wordsOpen()`.
   let wordsOpen = false;
 
@@ -109,14 +94,6 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
       wordsOpen = true;
       turnClosed = false;
       outstandingFlushes = 0;
-      // `flushDoneDebt` deliberately survives the turn boundary: it pairs
-      // per-SOCKET frames, not per-turn state. The previous turn's last
-      // synthesis may have been acknowledged by its `is_final` — ending that
-      // turn — while the paired `FlushDone` is still on the wire. Zeroing the
-      // debt here would let that stale frame retire one of THIS turn's
-      // outstanding flushes, emitting `done` while its audio is still
-      // streaming. The debt resets only in `cancel()`, where the socket is
-      // actually swapped (or its queued frames discarded).
       return true;
     },
 
@@ -124,16 +101,8 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
       outstandingFlushes += 1;
     },
 
-    onAck(ack: SynthesisAck): void {
-      if (ack === "flush_done" && flushDoneDebt > 0) {
-        flushDoneDebt -= 1;
-        return;
-      }
-      if (ack === "is_final") flushDoneDebt += 1;
-      if (outstandingFlushes === 0) {
-        emitDoneOnce();
-        return;
-      }
+    onAck(): void {
+      if (outstandingFlushes === 0) return;
       outstandingFlushes -= 1;
       if (outstandingFlushes === 0 && turnClosed) emitDoneOnce();
     },
@@ -149,14 +118,8 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
       // is emitted for it below, so this is what stops a trailing frame
       // landing on a reply the client has dropped.
       wordsOpen = false;
-      // With no turn in flight the adapter sends no `Cancel` and the socket
-      // keeps its frames — including the last turn's trailing `FlushDone`,
-      // which the debt still has to absorb. Zeroing it here let that frame
-      // retire one of the NEXT turn's flushes, ending it mid-reply
-      // (`assemblyai-cancel-race.test.ts`).
       if (doneEmitted) return false;
       outstandingFlushes = 0;
-      flushDoneDebt = 0;
       turnClosed = false;
       emitDoneOnce();
       return true;
@@ -164,7 +127,6 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
 
     abandonFlushes(): void {
       outstandingFlushes = 0;
-      flushDoneDebt = 0;
       if (turnClosed) emitDoneOnce();
     },
 

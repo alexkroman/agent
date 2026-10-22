@@ -18,7 +18,9 @@ import { isRecord } from "./is-record.ts";
 import { stageMembers } from "./providers/fallback.ts";
 import { KNOWN_LLM_PROVIDERS } from "./providers/llm/llm.ts";
 import {
+  ASSEMBLYAI_TTS_EU_HOST,
   ASSEMBLYAI_TTS_HOST,
+  ASSEMBLYAI_TTS_KIND,
   type AssemblyAITtsOptions,
   assemblyAIVoiceWarning,
 } from "./providers/tts/assemblyai.ts";
@@ -42,9 +44,9 @@ import { VOICE_PRESET_NAMES } from "./voice-presets.ts";
  * `aai build` and `aai dev` print them, and a config layer with nowhere to put
  * a warning can ignore them without a channel to thread.
  *
- * Both AssemblyAI stages that carry a voice are read — the TTS descriptor and
- * the S2S one, whose `voice` comes from the same catalog and has the same
- * failure.
+ * Only the TTS descriptor's voice is held to the AssemblyAI catalog: the S2S
+ * descriptor shares its kind, but the Voice Agent API's voices are not the
+ * streaming-TTS library's.
  *
  * @internal
  */
@@ -63,7 +65,6 @@ export function agentConfigWarnings(config: {
   const tts = stageMembers(config.tts);
   return [
     ...tts.map(assemblyAIVoiceWarning),
-    assemblyAIVoiceWarning(config.s2s),
     ...tts.map(uncatalogedVoiceWarning),
     euResidencyWarning(config),
     ...stageMembers(config.llm).map(unknownLlmProviderWarning),
@@ -238,18 +239,24 @@ function uncatalogedVoiceWarning(descriptor: unknown): string | undefined {
   );
 }
 
+/** The host an AssemblyAI TTS descriptor dials, or `undefined` for any other stage. */
+function assemblyAITtsHost(tts: unknown): string | undefined {
+  if (!(isRecord(tts) && tts.kind === ASSEMBLYAI_TTS_KIND && isRecord(tts.options))) {
+    return undefined;
+  }
+  const { host } = tts.options;
+  return typeof host === "string" && host.length > 0 ? host : ASSEMBLYAI_TTS_HOST;
+}
+
 /**
- * `region: "eu"` on STT or the LLM gateway, with a TTS stage that has no EU
- * endpoint to route to.
+ * `region: "eu"` on STT or the LLM gateway, with a TTS stage that does not
+ * synthesize in the EU.
  *
- * `AssemblyAIPipelineOptions.region` documents this ("TTS has a single
- * endpoint"), and a JSDoc is the wrong strength of statement for the one option
- * on this surface that is a COMPLIANCE claim rather than a preference. What
- * actually happens is that `assemblyAIPipeline({ region: "eu" })` — the call in
- * that function's own `@example` — routes transcription and generation to the
- * EU and synthesis to `streaming-tts.assemblyai.com`, so the agent's own speech
- * leaves the region. That is a thing to be told once per build, not a thing to
- * find in a doc comment after someone asks.
+ * `assemblyAIPipeline({ region: "eu" })` routes all three stages in-region, so
+ * this fires for a config that put a TTS stage beside an EU STT or LLM some
+ * other way: an `assemblyAITts()` left on the US host, or another vendor's
+ * TTS. The agent's own speech then leaves the region, which is a thing to be
+ * told once per build, not a thing to find in a doc comment after someone asks.
  *
  * A warning rather than an error: the configuration is legal and may be exactly
  * what an author wants (residency rules that bind transcripts often do not bind
@@ -269,16 +276,23 @@ function euResidencyWarning(config: {
     (stage.options.region === "eu" ||
       (isRecord(stage.options.providerOptions) && stage.options.providerOptions.region === "eu"));
   if (!(inEu(config.stt) || inEu(config.llm))) return undefined;
-  if (config.tts === undefined) return undefined;
+  const { tts } = config;
+  if (tts === undefined) return undefined;
+  const ttsHost = assemblyAITtsHost(tts);
+  if (ttsHost === ASSEMBLYAI_TTS_EU_HOST) return undefined;
   // The remedy names `assemblyAITts`'s own option rather than spelling the call
   // out: Biome's `noSecrets` reads a dense run of backticks and braces as a
   // high-entropy literal, and a suppression would raise the escape-hatch
   // baseline, which only moves down. Same dodge as `ENDPOINTING_KEYS`.
   const host = "host" satisfies keyof AssemblyAITtsOptions;
+  const where =
+    ttsHost === undefined
+      ? "this agent's TTS stage is not one the SDK can route to the EU"
+      : `AssemblyAI TTS is dialled at ${ttsHost}, outside the EU`;
   return (
-    'This agent sets `region: "eu"`, but AssemblyAI TTS has a single endpoint — the synthesized ' +
-    `audio is served from ${ASSEMBLYAI_TTS_HOST}, outside the EU. ` +
-    "Transcription and generation stay in-region. If that is not acceptable, declare a TTS " +
-    `stage with an in-region \`${host}\`, or run the agent without a TTS stage.`
+    `This agent sets \`region: "eu"\`, but ${where}. ` +
+    "Transcription and generation stay in-region; the synthesized audio does not. If that is " +
+    `not acceptable, give \`assemblyAITts\` the \`${host}\` ${ASSEMBLYAI_TTS_EU_HOST}, ` +
+    "or run the agent without a TTS stage."
   );
 }

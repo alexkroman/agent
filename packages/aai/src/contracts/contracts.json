@@ -155,9 +155,11 @@
     "dropped": {}
   },
   "tts": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Streaming TTS moved to the documented API: voices are voice_id slugs (aai-jane), not bare names, and every library voice speaks every language, so the per-voice language/accent map (ASSEMBLYAI_TTS_VOICES as a record, AssemblyAITtsVoiceInfo, ttsVoiceInfo, ttsVoiceIds(language)) is gone; ASSEMBLYAI_TTS_VOICES is now a tuple of slugs."
+    }
   },
   "turn-taking": {
     "current": 1,

@@ -86,7 +86,7 @@ describe("captureTtsTrace", () => {
       [0, 6],
       [6, 4],
     ]);
-    expect(trace).toMatchObject({ sampleRate: 24_000, provider: "assemblyai", voice: "jane" });
+    expect(trace).toMatchObject({ sampleRate: 24_000, provider: "assemblyai", voice: "aai-jane" });
     expect(trace.firstAudioMs).toBeGreaterThanOrEqual(0);
     expect(trace.doneMs).toBeGreaterThanOrEqual(trace.firstAudioMs);
     // The text went out as deltas, the way an LLM stream would send it.

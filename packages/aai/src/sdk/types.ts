@@ -366,7 +366,7 @@ export interface AgentDeclaration
   /**
    * Pluggable TTS provider for pipeline mode. Unset (with no `s2s`), the
    * stage defaults to `assemblyAITts()`. A voice is this descriptor's option
-   * (`assemblyAITts({ voice: "michael" })`); there is no agent-level field.
+   * (`assemblyAITts({ voice: "aai-michael" })`); there is no agent-level field.
    */
   tts?: TtsProvider;
   /**

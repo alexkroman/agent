@@ -284,9 +284,10 @@ export {
 } from "./sdk/providers/stt/soniox.ts";
 export {
   ASSEMBLYAI_TTS_API_KEY_ENV,
-  ASSEMBLYAI_TTS_DEPRECATED_VOICES,
+  ASSEMBLYAI_TTS_EU_HOST,
   ASSEMBLYAI_TTS_HOST,
   ASSEMBLYAI_TTS_KIND,
+  ASSEMBLYAI_TTS_MAX_GENERATE_CHARS,
   assemblyAITtsLanguageCodes,
   resolveAssemblyAITtsLanguage,
   resolveAssemblyAITtsSettings,

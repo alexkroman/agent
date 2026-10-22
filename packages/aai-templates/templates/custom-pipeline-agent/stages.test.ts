@@ -58,7 +58,6 @@ import {
   type AssemblyAITtsLanguage,
   type AssemblyAITtsOptions,
   type AssemblyAITtsVoice,
-  type AssemblyAITtsVoiceInfo,
   assemblyAITts,
   CARTESIA_DEFAULT_VOICE,
   type CartesiaTtsOptions,
@@ -67,8 +66,6 @@ import {
   type RimeTtsOptions,
   rimeTts,
   type TtsProvider,
-  ttsVoiceIds,
-  ttsVoiceInfo,
 } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
 
@@ -261,34 +258,16 @@ describe("the TTS stage", () => {
     }
   });
 
-  test("a voice speaks exactly ONE language, and a pair that disagrees is refused", () => {
-    // The catalog is `voice id -> { language, accent }`, and every language the
-    // stage supports has at least one speaker. Pick from it rather than pairing
-    // by hand: `{ language: "fr" }` alone fills in the default voice, which
-    // speaks English, so asking for French and nothing else used to produce an
-    // agent that connected, reported ready, and never spoke.
-    // `ttsVoiceInfo` is the lookup by an OPEN voice id — `undefined` for one
-    // this release's catalog does not list — so it needs no cast.
-    const info: AssemblyAITtsVoiceInfo | undefined = ttsVoiceInfo(ASSEMBLYAI_TTS_DEFAULT_VOICE);
-    expect(info?.language).toBe("en");
-    expect(ttsVoiceInfo("a-voice-shipped-next-week")).toBeUndefined();
-    // With no language, `ttsVoiceIds()` is the whole catalog, in its order.
-    expect(ttsVoiceIds()).toEqual(Object.keys(ASSEMBLYAI_TTS_VOICES));
-
+  test("every library voice speaks every supported language", () => {
+    // The catalog is a tuple of `voice_id` slugs (what `z.enum` takes), and
+    // language is a separate axis: any voice, any of the six languages.
+    expect(ASSEMBLYAI_TTS_VOICES).toContain(ASSEMBLYAI_TTS_DEFAULT_VOICE);
     for (const language of Object.keys(ASSEMBLYAI_TTS_LANGUAGES) as AssemblyAITtsLanguage[]) {
-      // `ttsVoiceIds(language)` is the catalog filtered to its speakers.
-      const [voice] = ttsVoiceIds(language);
-      expect(voice, language).toBeDefined();
-      if (!voice) continue;
-      const speaking = agent({ name: NAME, tts: assemblyAITts({ language, voice }) });
-      expect(() => toAgentConfig(speaking), language).not.toThrow();
+      for (const voice of ASSEMBLYAI_TTS_VOICES) {
+        const speaking = agent({ name: NAME, tts: assemblyAITts({ language, voice }) });
+        expect(() => toAgentConfig(speaking), `${voice}/${language}`).not.toThrow();
+      }
     }
-
-    // `toAgentConfig` is the last layer that sees the mismatch while somebody
-    // is still authoring — after it, the refusal is in-band, after the socket
-    // opens, with the agent ready and mute.
-    const mismatched = agent({ name: NAME, tts: assemblyAITts({ language: "fr" }) });
-    expect(() => toAgentConfig(mismatched)).toThrow(/speaks en/);
   });
 
   test("the catalog is not an allow-list: a voice shipped later still compiles", () => {

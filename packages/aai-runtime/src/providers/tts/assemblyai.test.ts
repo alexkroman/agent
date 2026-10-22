@@ -40,20 +40,22 @@ describe("AssemblyAI TTS adapter", () => {
     },
   );
 
-  test("connects to the production streaming-TTS host with voice and sample rate", async () => {
-    const { ws } = await openSession({ voice: "michael" });
+  test("connects to the documented streaming-TTS host with voice_id and sample rate", async () => {
+    const { ws } = await openSession({ voice: "aai-michael" });
     const url = new URL(ws.url);
-    expect(url.host).toBe("streaming-tts.assemblyai.com");
-    expect(url.pathname).toBe("/v1/ws/");
-    expect(url.searchParams.get("voice")).toBe("michael");
+    expect(url.host).toBe("tts.us.assemblyai.com");
+    expect(url.pathname).toBe("/v1/ws");
+    expect(url.searchParams.get("voice_id")).toBe("aai-michael");
+    // Retired: the service closes a session sending it with 3006.
+    expect(url.searchParams.has("voice")).toBe(false);
     expect(url.searchParams.get("sample_rate")).toBe("16000");
   });
 
   test("defaults the voice and omits language unless set", async () => {
     const { ws } = await openSession();
     const params = new URL(ws.url).searchParams;
-    expect(params.get("voice")).toBe("jane");
-    // Every voice speaks one language; a mismatched pair is worse than no hint.
+    expect(params.get("voice_id")).toBe("aai-jane");
+    // Unset means the service's own default.
     expect(params.has("language")).toBe(false);
   });
 
@@ -61,7 +63,7 @@ describe("AssemblyAI TTS adapter", () => {
     // The service rejects codes in-band: `Bad connection parameters: language:
     // language 'es' not in supported set ['english', ...]` — which arrives
     // AFTER the socket opens, so an unmapped code is a silently mute session.
-    const { ws } = await openSession({ voice: "lola", language: "es" });
+    const { ws } = await openSession({ voice: "aai-jane", language: "es" });
     expect(new URL(ws.url).searchParams.get("language")).toBe("spanish");
   });
 
@@ -125,6 +127,24 @@ describe("AssemblyAI TTS adapter", () => {
     expect(ws._frames()).toEqual([{ type: "Generate", text: "Hello there" }, { type: "Flush" }]);
   });
 
+  test("flush frames a long unsegmented remainder under the 2000-char Generate cap", async () => {
+    // One run with no segment boundary stays buffered until the end of the
+    // turn; a single Generate over the cap is refused with 3006 and ends the
+    // session, so it goes out as several.
+    const { session, ws } = await openSession();
+    const text = "x".repeat(4500);
+    session.sendText(text);
+    session.flush();
+
+    const frames = ws._frames() as { type: string; text?: string }[];
+    const generates = frames.filter((f) => f.type === "Generate");
+    expect(generates.length).toBeGreaterThan(1);
+    for (const frame of generates) expect(frame.text?.length).toBeLessThanOrEqual(2000);
+    expect(generates.map((f) => f.text).join("")).toBe(text);
+    expect(frames.at(-1)).toEqual({ type: "Flush" });
+    expect(frames.filter((f) => f.type === "Flush")).toHaveLength(1);
+  });
+
   test("empty text is not sent", async () => {
     const { session, ws } = await openSession();
     session.sendText("");
@@ -156,24 +176,16 @@ describe("AssemblyAI TTS adapter", () => {
     expect(onDone).toHaveBeenCalledTimes(1);
   });
 
-  test("an Audio frame flagged is_final also ends the turn", async () => {
-    // Older servers flag the last frame instead of sending FlushDone.
-    const { session, ws } = await openSession();
-    const onDone = vi.fn();
-    session.on("done", onDone);
-    session.sendText("hi");
-    ws._msg({ type: "Audio", audio: pcmBase64([7]), is_final: true });
-    expect(onDone).toHaveBeenCalledTimes(1);
-  });
-
   test("a new turn can complete after the previous one finished", async () => {
     const { session, ws } = await openSession();
     const onDone = vi.fn();
     session.on("done", onDone);
 
     session.sendText("one");
+    session.flush();
     ws._msg({ type: "FlushDone" });
     session.sendText("two");
+    session.flush();
     ws._msg({ type: "FlushDone" });
 
     expect(onDone).toHaveBeenCalledTimes(2);
@@ -187,14 +199,14 @@ describe("AssemblyAI TTS adapter", () => {
     expect(onDone).not.toHaveBeenCalled();
   });
 
-  test("Begin and Warning frames are not treated as audio or errors", async () => {
+  test("Begin and Termination frames are not treated as audio or errors", async () => {
     const { session, ws } = await openSession();
     const seen: string[] = [];
     session.on("audio", () => seen.push("audio"));
     session.on("error", () => seen.push("error"));
 
     ws._msg({ type: "Begin", configuration: { sample_rate: 16_000 } });
-    ws._msg({ type: "Warning", warning: "voice fallback" });
+    ws._msg({ type: "Termination", session_duration_seconds: 1 });
 
     expect(seen).toEqual([]);
   });

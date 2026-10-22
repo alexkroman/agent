@@ -262,12 +262,12 @@ placeholders or guess missing parameters.
     export default agent({ name: "…" });
   An agent() with no stt/llm/tts runs the default AssemblyAI pipeline with
   real defaults for all three stages (universal-3-5-pro,
-  gpt-5.6-luna, jane), so
+  gpt-5.6-luna, aai-jane), so
   there is no gateway model id to invent — an invented one is a 400 at the
   first session, with no compile-time or deploy-time check to catch it.
   To change a stage, declare just that field — every stage you leave unset
   stays on the AssemblyAI default. A voice is the TTS descriptor's option:
-    agent({ name: "…", tts: assemblyAITts({ voice: "michael" }) });
+    agent({ name: "…", tts: assemblyAITts({ voice: "aai-michael" }) });
     agent({ name: "…", tts: cartesiaTts({ voice: "…" }) });
   The gateway LLM model works the same way — llm accepts the model id as a
   plain string:
@@ -712,7 +712,7 @@ import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
-  tts: assemblyAITts({ voice: "paul" }),
+  tts: assemblyAITts({ voice: "aai-paul" }),
   llm: "claude-sonnet-4-6",
   greeting: "Hi, how can I help?",
   builtinTools: ["think", "web_search"],
@@ -722,7 +722,7 @@ export default agent({
 ```
 
 The fields almost every agent sets: `name` (required), `greeting` (default: "Hey
-there..."; `""` starts silent), `tts` (voice `jane` unless set), `llm`,
+there..."; `""` starts silent), `tts` (voice `aai-jane` unless set), `llm`,
 `builtinTools` (omitted = `["think"]` only; setting it REPLACES the default),
 `maxSteps` (default 10 tool-calling steps per reply) and `requiredEnv` (every
 env var a tool or step reads; **publishing checks it**, so a missing key fails
@@ -2474,7 +2474,7 @@ trip.
 import { stepSpeak, stepWriteUpload } from "@alexkroman1/aai/step";
 
 export async function narrate(script: string) {
-  const spoken = await stepSpeak(script, { voice: "jane" });
+  const spoken = await stepSpeak(script, { voice: "aai-jane" });
   const stored = await stepWriteUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
   return { audio: stored.id, durationMs: spoken.durationMs };
 }
@@ -2652,7 +2652,7 @@ export default agent({
   mode: "s2s",
   sttPrompt: "Callers spell order numbers one character at a time.",
   s2s: assemblyAIS2s({
-    voice: "michael",
+    voice: "aai-michael",
     languages: ["en"],
     keyterms: ["Acme Rewards", "SKU"],
   }),
@@ -2950,7 +2950,7 @@ export default agent({
 
 | Factory         | Default voice                            | Env var              |
 | --------------- | ---------------------------------------- | -------------------- |
-| `assemblyAITts` | `"jane"`                                 | `ASSEMBLYAI_API_KEY` |
+| `assemblyAITts` | `"aai-jane"`                             | `ASSEMBLYAI_API_KEY` |
 | `cartesiaTts`   | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY`   |
 | `rimeTts`       | `"cove"` (model `mistv2`)                | `RIME_API_KEY`       |
 
@@ -2959,20 +2959,19 @@ Override with `{ voice, model, language }`.
 
 **AssemblyAI TTS** shares `ASSEMBLYAI_API_KEY` with AssemblyAI STT and the LLM
 Gateway, so an all-AssemblyAI pipeline needs exactly one secret. On the default
-pipeline, `tts: assemblyAITts({ voice: "michael" })` changes the voice and
-leaves the other two stages on the default. Each voice speaks one language, and
-this is the whole catalog — **a voice not on this list is rejected after the
-socket opens, which leaves the agent connected, "ready", and permanently
-silent**, so pick one from here rather than guessing a plausible name:
+pipeline, `tts: assemblyAITts({ voice: "aai-michael" })` changes the voice and
+leaves the other two stages on the default. A voice is a `voice_id` SLUG — the
+`aai-` prefix is part of it, and the bare name is refused — and **an unknown one
+is refused when the session opens**, so pick from the library
+(`ASSEMBLYAI_TTS_VOICES`) rather than guessing a plausible name:
 
-- **English, US accent**: `alba`, `anna`, `charles`, `eve`, `george`, `jane`
-  (the default), `jean`, `mary`, `michael`
-- **English, UK accent**: `paul`, `vera`
-- **Native accent, code-switches with English**: `estelle` (fr), `giovanni`
-  (it), `juergen` (de), `lola` (es), `rafael` (pt)
+`aai-alba`, `aai-anna`, `aai-charles`, `aai-eve`, `aai-george`, `aai-jane` (the
+default), `aai-jean`, `aai-mary`, `aai-michael`, `aai-paul`, `aai-vera`
 
-There is no separate age/gender/style axis — match the persona by picking a name
-and accent, and put the delivery in the system prompt instead.
+Every library voice speaks all six languages; `language` (`"en"`, `"fr"`,
+`"de"`, `"it"`, `"pt"`, `"es"`) picks which. There is no separate
+age/gender/style axis — match the persona by picking a voice, and put the
+delivery in the system prompt instead.
 
 Set `language` only alongside a voice that speaks it, as an ISO 639-1 code —
 `"en"`, `"fr"`, `"de"`, `"it"`, `"pt"`, `"es"` are the six the catalog covers,

@@ -86,23 +86,18 @@
  */
 
 import { workflow, workflowApp } from "@alexkroman1/aai";
-import { ttsVoiceIds } from "@alexkroman1/aai/tts";
+import { ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
 import type { WorkflowDef } from "@alexkroman1/aai/workflow-api";
 import { z } from "zod";
 import { auditFlow, type CallAudit } from "./workflows/audit.ts";
 
 /**
- * The voices the form offers, as the tuple `z.enum` takes.
- *
- * READ from the SDK's catalog rather than listed, because a wrong voice id is a
- * SILENT failure — it is a free-form string the service rejects in band after
- * the socket is open, so the synthesis simply produces nothing. Narrowed to the
- * English ones because the audit is written in the transcript's language and
- * the prompt does not translate; every voice in the catalog speaks exactly one.
- * `ttsVoiceIds` owns the derivation, including the fallback to the SDK's own
- * default voice should the filter ever match nothing.
+ * The voices the form offers: the SDK's library voices, as the tuple `z.enum`
+ * takes. READ from the catalog rather than listed, because a wrong voice id is
+ * refused when the synthesis socket opens. Every library voice speaks every
+ * supported language, so none needs filtering out.
  */
-const VOICES = ttsVoiceIds("en");
+const VOICES = ASSEMBLYAI_TTS_VOICES;
 
 /**
  * The run input, as its own const.

@@ -23,11 +23,11 @@
  *
  * **Picking a voice is the one setting a TTS stage cannot infer**, and an
  * unrecognised id has no authoring-time symptom: the agent connects, reports
- * ready and is permanently silent. For AssemblyAI the ids are enumerated in
- * {@link ASSEMBLYAI_TTS_VOICES}, with each accent alongside — read them there
- * rather than trusting a name from anywhere else, and note the TYPE cannot
- * enforce it ({@link AssemblyAITtsVoice} says why). A voice is always a
- * descriptor option — `tts: assemblyAITts({ voice: "michael" })` — so this
+ * ready and is permanently silent. For AssemblyAI the library voices are
+ * {@link ASSEMBLYAI_TTS_VOICES} — read them there rather than trusting a name
+ * from anywhere else, and note the TYPE cannot enforce it
+ * ({@link AssemblyAITtsVoice} says why). A voice is always a descriptor
+ * option — `tts: assemblyAITts({ voice: "aai-michael" })` — so this
  * barrel is where one is chosen.
  *
  * **Credentials are never passed here.** Each factory's vendor names the env
@@ -73,12 +73,7 @@ export {
   type AssemblyAITtsLanguage,
   type AssemblyAITtsOptions,
   type AssemblyAITtsVoice,
-  type AssemblyAITtsVoiceInfo,
   assemblyAITts,
-  ttsVoiceInfo,
 } from "./tts/assemblyai.ts";
 export { CARTESIA_DEFAULT_VOICE, type CartesiaTtsOptions, cartesiaTts } from "./tts/cartesia.ts";
 export { RIME_DEFAULT_VOICE, type RimeTtsOptions, rimeTts } from "./tts/rime.ts";
-// The catalog as the non-empty tuple `z.enum` takes — the one authoring READ
-// over `ASSEMBLYAI_TTS_VOICES`, for a form that offers the caller a voice.
-export { ttsVoiceIds } from "./tts-voice-ids.ts";

@@ -134,7 +134,7 @@ export async function captureTtsTrace(opts: {
   timeoutMs?: number;
 }): Promise<TtsTrace> {
   const sampleRate = opts.sampleRate ?? TRACE_SAMPLE_RATE;
-  const voice = opts.voice ?? "jane";
+  const voice = opts.voice ?? "aai-jane";
   const controller = new AbortController();
   const session = await opts.open({ sampleRate, signal: controller.signal });
 

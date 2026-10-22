@@ -26,11 +26,11 @@ export default agent({
 
 **Picking a voice is the one setting a TTS stage cannot infer**, and an
 unrecognised id has no authoring-time symptom: the agent connects, reports
-ready and is permanently silent. For AssemblyAI the ids are enumerated in
-[ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices), with each accent alongside — read them there
-rather than trusting a name from anywhere else, and note the TYPE cannot
-enforce it ([AssemblyAITtsVoice](#assemblyaittsvoice) says why). A voice is always a
-descriptor option — `tts: assemblyAITts({ voice: "michael" })` — so this
+ready and is permanently silent. For AssemblyAI the library voices are
+[ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices) — read them there rather than trusting a name
+from anywhere else, and note the TYPE cannot enforce it
+([AssemblyAITtsVoice](#assemblyaittsvoice) says why). A voice is always a descriptor
+option — `tts: assemblyAITts({ voice: "aai-michael" })` — so this
 barrel is where one is chosen.
 
 **Credentials are never passed here.** Each factory's vendor names the env
@@ -94,14 +94,14 @@ import { assemblyAITts } from "@alexkroman1/aai/tts";
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
-  tts: assemblyAITts({ voice: "michael" }),
+  tts: assemblyAITts({ voice: "aai-michael" }),
 });
 ```
 
 The default pipeline's stage is `assemblyAITts()` — the default voice —
-so this is how its voice is changed. Voice ids come from [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices) and
-nowhere else — an unrecognised one leaves an agent that connects,
-reports ready and never speaks.
+so this is how its voice is changed. Pick from [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices)
+unless you mean a voice of your own — the service refuses an unknown one when
+the session opens.
 
 ***
 
@@ -171,88 +171,6 @@ export default agent({
 });
 ```
 
-***
-
-### ttsVoiceIds()
-
-```ts
-function ttsVoiceIds(language?: "en" | "fr" | "de" | "it" | "pt" | "es"): [AssemblyAITtsVoice, ...AssemblyAITtsVoice[]];
-```
-
-The catalog's voice ids, optionally only those speaking `language`, as the
-non-empty tuple a `z.enum` takes.
-
-Read from [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices) rather than listed, because a wrong
-voice id is a SILENT failure — a free-form string the service rejects in band
-after the socket is open, so the synthesis simply produces nothing. Every
-voice speaks exactly one language, so a run whose text is in one language
-offers only the voices that speak it.
-
-**An empty filter falls back to the default voice** rather than throwing or
-returning `[]`: the tuple has to have a head for `z.enum`, and a form that
-cannot render a picker is worse than one offering the SDK's own default. The
-fallback is reachable only when the catalog carries no voice for a language
-the SDK translates, which is a catalog refresh away from impossible; it is
-documented because the type promises a head.
-
-Catalog order — the order an author reads on the docs page.
-
-#### Parameters
-
-##### language?
-
-`"en"` \| `"fr"` \| `"de"` \| `"it"` \| `"pt"` \| `"es"`
-
-#### Returns
-
-\[[`AssemblyAITtsVoice`](#assemblyaittsvoice), `...AssemblyAITtsVoice[]`\]
-
-#### Example
-
-```ts
-import { ttsVoiceIds } from "@alexkroman1/aai/tts";
-import { z } from "zod";
-
-const input = z.object({
-  voice: z.enum(ttsVoiceIds("en")).optional().describe("Voice to read it in"),
-});
-```
-
-***
-
-### ttsVoiceInfo()
-
-```ts
-function ttsVoiceInfo(voice: AssemblyAITtsVoice): AssemblyAITtsVoiceInfo | undefined;
-```
-
-What the catalog records about `voice` — its language and accent — or
-`undefined` for a voice this release's catalog does not list.
-
-The lookup [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices) cannot do by index: its keys are the
-catalog's literals while [AssemblyAITtsVoice](#assemblyaittsvoice) is open, so indexing it
-with an author's voice needed a cast — and a cast that also let
-`"toString"` read `Object.prototype`. An own-key check answers both.
-
-#### Parameters
-
-##### voice
-
-[`AssemblyAITtsVoice`](#assemblyaittsvoice)
-
-#### Returns
-
-[`AssemblyAITtsVoiceInfo`](#assemblyaittsvoiceinfo) \| `undefined`
-
-#### Example
-
-```ts
-import { ttsVoiceInfo } from "@alexkroman1/aai/tts";
-
-ttsVoiceInfo("estelle")?.language; // "fr"
-ttsVoiceInfo("a-voice-shipped-next-week"); // undefined
-```
-
 ## Interfaces
 
 ### AssemblyAITtsOptions
@@ -308,16 +226,15 @@ Names a VARIABLE, not a key.
 optional host?: string;
 ```
 
-Streaming-TTS host to dial, replacing the production `ASSEMBLYAI_TTS_HOST`. A bare
-host (`streaming-tts.sandbox000.assemblyai-labs.com`), not a URL — the
-adapter owns the `wss://` scheme and the `/v1/ws/` path, so a full URL here
-would be wrong in a way that only shows up at connect.
+Streaming-TTS host to dial, replacing `ASSEMBLYAI_TTS_HOST` (US). A bare
+host, not a URL — the adapter owns the `wss://` scheme and the `/v1/ws`
+path, so a full URL here would be wrong in a way that only shows up at
+connect.
 
-Intended for pre-release/staging clusters, and it is the TTS half of the
-same A/B `assemblyAIStt({ streamingUrl })` gives STT. A staging cluster
+`"tts.eu.assemblyai.com"` is EU residency (`assemblyAIPipeline({ region:
+"eu" })` sets it). Any other value is a pre-release/staging cluster; one
 generally issues its own keys, so point every AssemblyAI stage at the same
-environment or the ones left on production reject the key. Leave unset in
-production.
+environment or the ones left on production reject the key.
 
 ##### language?
 
@@ -326,11 +243,10 @@ optional language?: "en" | "fr" | "de" | "it" | "pt" | "es";
 ```
 
 Spoken language as an ISO 639-1 code (`"en"`, `"fr"`, `"de"`, `"es"`,
-`"it"`, `"pt"`). Omitted by default so the server infers it from the
-voice — set it only alongside a voice that speaks it. Translated
-internally to the service's language name; see
+`"it"`, `"pt"`). Omitted by default, which the service reads as English.
+Translated internally to the service's language name; see
 [ASSEMBLYAI\_TTS\_LANGUAGES](#assemblyai_tts_languages) for the supported set. An unsupported
-code fails at connect time rather than muting the session.
+code fails at build and connect time rather than muting the session.
 
 ##### voice?
 
@@ -338,45 +254,10 @@ code fails at connect time rather than muting the session.
 optional voice?: AssemblyAITtsVoice;
 ```
 
-Voice id, e.g. `"jane"`, `"michael"`, `"vera"`. Defaults to
-[ASSEMBLYAI\_TTS\_DEFAULT\_VOICE](#assemblyai_tts_default_voice). Each voice speaks exactly one
-language — see [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices) for the catalog.
-
-***
-
-### AssemblyAITtsVoiceInfo
-
-What the catalog records about one voice: the language it speaks and the
-accent it speaks with.
-
-A named interface rather than an inferred `as const` shape, because the
-inferred one put every row into the rolled-up `.d.ts` — 16 voices as 64
-lines of `readonly language: "en"; readonly accent: "US"` — and so into the
-`aai:tts` contract hash. Re-accenting a voice is a catalog refresh, not an
-API change, and it was forcing an epoch classification.
-
-The IDS stay literal (the catalog's keys, and the literal half of the open
-[AssemblyAITtsVoice](#assemblyaittsvoice)), because those are the half an author types and
-the half autocomplete exists for. That is the split: which voices exist is
-autocomplete, what each one sounds like is data.
-
-#### Properties
-
-##### accent
-
-```ts
-readonly accent: string;
-```
-
-Accent tag as the service publishes it, e.g. `"US"`, `"UK"`, `"FR"`.
-
-##### language
-
-```ts
-readonly language: "en" | "fr" | "de" | "it" | "pt" | "es";
-```
-
-ISO 639-1 code of the language this voice speaks.
+The `voice_id`: a library slug such as `"aai-jane"`, `"aai-michael"` or
+`"aai-vera"` (see [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices)), or any other voice slug or
+UUID the service knows. Defaults to [ASSEMBLYAI\_TTS\_DEFAULT\_VOICE](#assemblyai_tts_default_voice).
+Every library voice speaks every supported language.
 
 ***
 
@@ -488,7 +369,7 @@ Rime speaker ID. Defaults to [RIME\_DEFAULT\_VOICE](#rime_default_voice).
 type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 ```
 
-ISO 639-1 code for a language the AssemblyAI voice catalog speaks.
+ISO 639-1 code for a language AssemblyAI streaming TTS speaks.
 
 ***
 
@@ -496,44 +377,29 @@ ISO 639-1 code for a language the AssemblyAI voice catalog speaks.
 
 ```ts
 type AssemblyAITtsVoice = 
-  | "alba"
-  | "anna"
-  | "charles"
-  | "eve"
-  | "george"
-  | "jane"
-  | "jean"
-  | "mary"
-  | "michael"
-  | "paul"
-  | "vera"
-  | "giovanni"
-  | "lola"
-  | "juergen"
-  | "rafael"
-  | "estelle"
+  | "aai-alba"
+  | "aai-anna"
+  | "aai-charles"
+  | "aai-eve"
+  | "aai-george"
+  | "aai-jane"
+  | "aai-jean"
+  | "aai-mary"
+  | "aai-michael"
+  | "aai-paul"
+  | "aai-vera"
   | string & {
 };
 ```
 
-A voice id from [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices).
+A `voice_id`: a slug from [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices), or any other slug or
+voice UUID the service knows.
 
 The `(string & {})` arm is deliberate: the catalog is the service's, not
-ours, so a voice added after this release must still compile, and so must
-a deprecated one an existing agent already names. It keeps the current
-names visible at the call site without turning a stale SDK into a build
-failure.
-
-**So this type is AUTOCOMPLETE, not a guard, and there is no runtime assert
-to pair with it** the way `assertAssemblyAITtsLanguage` pairs with
-[AssemblyAITtsLanguage](#assemblyaittslanguage). The two are not the same job: the language
-map is a TRANSLATION this SDK owns (an ISO code the service has never heard
-of, rendered as a name it accepts), so a code outside it cannot be sent at
-all and rejecting it is a fact about this package. The voice catalog is the
-SERVICE's, and a snapshot of it goes stale between releases — an assert
-would refuse a voice AssemblyAI shipped last week, which is the same
-silent-mute failure from the other side. Read the catalog; do not expect the
-compiler to check you did.
+ours, so a voice added after this release, an open-dataset voice, or the
+author's own cloned voice must still compile. **So this type is
+AUTOCOMPLETE, not a guard** — an unlisted voice is warned about at build
+time (`assemblyAIVoiceWarning`), never refused.
 
 ## Variables
 
@@ -543,12 +409,8 @@ compiler to check you did.
 const ASSEMBLYAI_TTS_DEFAULT_VOICE: AssemblyAITtsVoice;
 ```
 
-Default voice when `assemblyAITts()` is called with no `voice` — a
-US-accented English voice, since most agents face US callers (it was
-`"vera"` for a while, which put a UK accent on every agent that never
-chose). Pick from [ASSEMBLYAI\_TTS\_VOICES](#assemblyai_tts_voices) to change it; every voice
-in the catalog speaks exactly one language, so changing `language`
-generally means changing `voice` too.
+Default voice when `assemblyAITts()` is called with no `voice` — the
+service's own default, so leaving it unset and naming it are the same session.
 
 ***
 
@@ -576,7 +438,7 @@ the agent connected, "ready", and permanently mute. Every other language
 knob in the ecosystem (AssemblyAI STT's `language_codes`, Cartesia) is a
 code, so the codes are the SDK's contract and this map is the translation.
 
-Keys are the six languages the voice catalog covers.
+Keys are the six languages every library voice speaks.
 
 #### Type Declaration
 
@@ -621,54 +483,25 @@ readonly pt: "portuguese";
 ### ASSEMBLYAI\_TTS\_VOICES
 
 ```ts
-const ASSEMBLYAI_TTS_VOICES: Readonly<Record<
-  | "alba"
-  | "anna"
-  | "charles"
-  | "eve"
-  | "george"
-  | "jane"
-  | "jean"
-  | "mary"
-  | "michael"
-  | "paul"
-  | "vera"
-  | "giovanni"
-  | "lola"
-  | "juergen"
-  | "rafael"
-| "estelle", AssemblyAITtsVoiceInfo>>;
+const ASSEMBLYAI_TTS_VOICES: readonly ["aai-alba", "aai-anna", "aai-charles", "aai-eve", "aai-george", "aai-jane", "aai-jean", "aai-mary", "aai-michael", "aai-paul", "aai-vera"];
 ```
 
-The voice catalog — voice id → the language it speaks and its accent.
-The accent is descriptive metadata for choosing a voice, not a settable
-option: `AssemblyAITtsOptions` has no `accent` field.
+The AssemblyAI library voices, as the `voice_id` slugs the service takes.
 
-A constant rather than a sentence in a doc comment, because a wrong voice
-id is a *silent* failure: it is a free-form string the service rejects
-in-band after the socket opens, so the agent connects, reports ready, and
-never speaks — the same shape as the unmapped-`language` bug below, and
-nothing upstream of a live session catches it.
+Source: https://www.assemblyai.com/docs/tts/voices. **Every one of them speaks
+all six languages** — `language` picks what a voice speaks, the voice only how
+it sounds — so there is no voice/language pairing to get wrong.
 
-It is a constant for a second reason, learned the hard way. The list this
-replaced lived in a doc comment and was simply wrong — it carried ten names
-(`azelma`, `cosette`, `fantine`, `javert`, `marius`, `peter_yearsley` …)
-that are in no published catalog, while omitting most of the real ones. A
-list nobody can check drifts into fiction, and here the fiction is
-indistinguishable, at authoring time, from a working agent.
+A tuple rather than a map because a slug is all there is to know about one,
+and a tuple is what `z.enum` takes: a form offering the caller a voice is
+`z.enum(ASSEMBLYAI_TTS_VOICES)`.
 
-Source: https://assemblyai.com/docs/voice-agents/voice-agent-api/voices
-
-Anything that shows an author their choices — the scaffold guide, a picker
-— should read this rather than restate it. A partial list is what sends
-someone guessing, which is the failure being prevented. To look a voice up by
-a value typed [AssemblyAITtsVoice](#assemblyaittsvoice), use [ttsVoiceInfo](#ttsvoiceinfo).
-
-The keys are spelled out in the annotation rather than named as a closed
-`AssemblyAITtsVoiceId` union: a closed union an author can import is one a
-catalog refresh breaks, and the open [AssemblyAITtsVoice](#assemblyaittsvoice) carries the
-same literals for autocomplete. `tts-voice-ids.test.ts` holds the two lists
-equal.
+A constant rather than a sentence in a doc comment because a wrong voice id
+is a refusal the service sends after the upgrade (`3012 voice_not_found`), so
+nothing at authoring time can tell a typo from a working agent except a list
+to check it against. The service's own list (`GET /v1/voices`) has thousands
+of open-dataset voices beside these; any of their slugs, a cloned voice's
+slug, or a voice UUID is a valid `voice` too.
 
 ***
 

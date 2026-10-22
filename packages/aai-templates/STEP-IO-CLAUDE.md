@@ -326,10 +326,10 @@ gets wrong:
   it reads down a phone, and one a prompt alone does not hold — hence a required
   `spoken` field rather than a defaulted one, so a missing script is a retry
   instead of half a second of silence.
-- **Derive the voice list from `ASSEMBLYAI_TTS_VOICES`.** A wrong voice id is a
-  SILENT failure — the service accepts the socket and refuses in band — so the
-  form's enum is read from the SDK's catalog rather than typed out, which also
-  makes the control a `<select>` for free.
+- **Derive the voice list from `ASSEMBLYAI_TTS_VOICES`.** A wrong voice id is
+  refused only when the synthesis socket opens, so the form's enum is the SDK's
+  catalog (a tuple `z.enum` takes) rather than typed out, which also makes the
+  control a `<select>` for free.
 
 It transcribes through the ASYNC API rather than cutting the file up, and that
 is a deliberate narrowing: the fan-out is a whole subject and it already has a
