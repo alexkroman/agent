@@ -183,7 +183,7 @@ import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
-  tts: assemblyAITts({ voice: "michael" }),
+  tts: assemblyAITts({ voice: "aai-michael" }),
   llm: "claude-sonnet-4-6",
 });
 ```
@@ -4414,7 +4414,7 @@ optional tts?: TtsProvider;
 
 Pluggable TTS provider for pipeline mode. Unset (with no `s2s`), the
 stage defaults to `assemblyAITts()`. A voice is this descriptor's option
-(`assemblyAITts({ voice: "michael" })`); there is no agent-level field.
+(`assemblyAITts({ voice: "aai-michael" })`); there is no agent-level field.
 
 ##### turnTaking?
 
@@ -5371,7 +5371,7 @@ optional tts?: TtsProvider;
 
 Pluggable TTS provider for pipeline mode. Unset (with no `s2s`), the
 stage defaults to `assemblyAITts()`. A voice is this descriptor's option
-(`assemblyAITts({ voice: "michael" })`); there is no agent-level field.
+(`assemblyAITts({ voice: "aai-michael" })`); there is no agent-level field.
 
 ###### Inherited from
 
@@ -6027,8 +6027,8 @@ finished utterance. Read `DEFAULT_MAX_TURN_SILENCE_MS` and
 optional region?: "us" | "eu";
 ```
 
-EU data residency. Applies to STT and the LLM gateway; TTS has a single
-endpoint. Note the EU gateway serves only Claude and most Gemini models,
+EU data residency. Applies to all three stages: STT, the LLM gateway, and
+TTS (`host: ASSEMBLYAI_TTS_EU_HOST`). Note the EU gateway serves only Claude and most Gemini models,
 so an EU agent must also override `llm` with a model the EU endpoint
 carries (e.g. `llm: "claude-sonnet-4-6"` after the spread). An override
 that replaces a whole stage descriptor must re-declare `region` itself —
@@ -6041,12 +6041,9 @@ preset's descriptor including its region.
 optional voice?: AssemblyAITtsVoice;
 ```
 
-TTS voice id, e.g. `"jane"`, `"michael"`, `"alba"`. Defaults to
-`"jane"` (US-accented English). Each voice speaks exactly one
-language — see
-`ASSEMBLYAI_TTS_VOICES` (from `@alexkroman1/aai/tts`) for the
-catalog; a name outside it fails in-band after connect and leaves the
-agent silent. (`tts: assemblyAITts({ voice })` is the same setting
+TTS voice id, e.g. `"aai-jane"`, `"aai-michael"`, `"aai-alba"`. Defaults
+to `"aai-jane"`. See `ASSEMBLYAI_TTS_VOICES` (from `@alexkroman1/aai/tts`)
+for the library voices; an unknown id is refused when the session opens. (`tts: assemblyAITts({ voice })` is the same setting
 without the preset.)
 
 ***
@@ -14227,7 +14224,7 @@ optional tts?: TtsProvider;
 ```
 
 See [AgentDeclaration.tts](#tts). The voice is the descriptor's own option
-(`assemblyAITts({ voice: "michael" })`); unset, the default stage
+(`assemblyAITts({ voice: "aai-michael" })`); unset, the default stage
 speaks `ASSEMBLYAI_TTS_DEFAULT_VOICE`.
 
 ***

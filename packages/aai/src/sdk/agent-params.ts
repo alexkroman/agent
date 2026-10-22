@@ -128,7 +128,7 @@ export type PipelineAgentParams = SharedAgentParams &
     s2s?: undefined;
     /**
      * See {@link AgentDeclaration.tts}. The voice is the descriptor's own option
-     * (`assemblyAITts({ voice: "michael" })`); unset, the default stage
+     * (`assemblyAITts({ voice: "aai-michael" })`); unset, the default stage
      * speaks `ASSEMBLYAI_TTS_DEFAULT_VOICE`.
      */
     tts?: TtsProvider;

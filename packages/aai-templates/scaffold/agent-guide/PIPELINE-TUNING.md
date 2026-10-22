@@ -41,7 +41,7 @@ export default agent({
   mode: "s2s",
   sttPrompt: "Callers spell order numbers one character at a time.",
   s2s: assemblyAIS2s({
-    voice: "michael",
+    voice: "aai-michael",
     languages: ["en"],
     keyterms: ["Acme Rewards", "SKU"],
   }),

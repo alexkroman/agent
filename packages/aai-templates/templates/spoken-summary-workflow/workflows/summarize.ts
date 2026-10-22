@@ -254,7 +254,7 @@ export async function speak(
   });
 
   await stepReport(
-    `Recorded a ${Math.round(spoken.durationMs / 1000)}s summary in ${spoken.voice}'s voice.`,
+    `Recorded a ${Math.round(spoken.durationMs / 1000)}s summary with voice ${spoken.voice}.`,
   );
   return { audio: stored.id, durationMs: spoken.durationMs };
 }

@@ -52,11 +52,13 @@ describe("handleMessage", () => {
     expect(onComplete).not.toHaveBeenCalled();
   });
 
-  test("FlushDone and an is_final Audio frame each acknowledge the synthesis", () => {
+  test("FlushDone acknowledges the synthesis; an Audio frame never does", () => {
+    // The documented Audio frame has no `is_final`: only FlushDone ends a flush.
     const { audio, deliver, onComplete } = setup();
-    deliver({ type: "FlushDone" });
     deliver({ type: "Audio", audio: pcmBase64([7]), is_final: true });
-    expect(onComplete.mock.calls).toEqual([["flush_done"], ["is_final"]]);
+    expect(onComplete).not.toHaveBeenCalled();
+    deliver({ type: "FlushDone" });
+    expect(onComplete).toHaveBeenCalledTimes(1);
     expect(audio).toEqual([[7]]);
   });
 

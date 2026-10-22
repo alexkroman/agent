@@ -2371,10 +2371,10 @@ export const ASSEMBLYAI_STT_KIND: "assemblyai";
 export const ASSEMBLYAI_TTS_API_KEY_ENV: string;
 
 // @public
-export const ASSEMBLYAI_TTS_DEPRECATED_VOICES: readonly ["arjun", "bella", "david", "diego", "dmitri", "eleanor", "emma", "giulia", "helen", "ivy", "james", "kyle", "luca", "lucia", "martha", "mateo", "pierre", "river", "tyler", "victor", "winter"];
+export const ASSEMBLYAI_TTS_EU_HOST = "tts.eu.assemblyai.com";
 
 // @public
-export const ASSEMBLYAI_TTS_HOST = "streaming-tts.assemblyai.com";
+export const ASSEMBLYAI_TTS_HOST = "tts.us.assemblyai.com";
 
 // @public
 export const ASSEMBLYAI_TTS_KIND: "assemblyai";
@@ -2388,6 +2388,9 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
     readonly pt: "portuguese";
     readonly es: "spanish";
 };
+
+// @public
+export const ASSEMBLYAI_TTS_MAX_GENERATE_CHARS = 2000;
 
 // @public
 type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
@@ -2430,7 +2433,7 @@ interface AssemblyAITtsOptions extends ProviderCredentialOptions {
 }
 
 // @public
-type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
+type AssemblyAITtsVoice = "aai-alba" | "aai-anna" | "aai-charles" | "aai-eve" | "aai-george" | "aai-jane" | "aai-jean" | "aai-mary" | "aai-michael" | "aai-paul" | "aai-vera" | (string & {});
 
 // @internal
 export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s2s?: unknown): Exclude<SessionMode, "text">;
@@ -4310,7 +4313,7 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
 }
 
 // @public
-type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
+type AssemblyAITtsVoice = "aai-alba" | "aai-anna" | "aai-charles" | "aai-eve" | "aai-george" | "aai-jane" | "aai-jean" | "aai-mary" | "aai-michael" | "aai-paul" | "aai-vera" | (string & {});
 
 // @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
@@ -13240,7 +13243,7 @@ export const ASSEMBLYAI_TTS_LANGUAGES: {
 };
 
 // @public
-export const ASSEMBLYAI_TTS_VOICES: Readonly<Record<"alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle", AssemblyAITtsVoiceInfo>>;
+export const ASSEMBLYAI_TTS_VOICES: readonly ["aai-alba", "aai-anna", "aai-charles", "aai-eve", "aai-george", "aai-jane", "aai-jean", "aai-mary", "aai-michael", "aai-paul", "aai-vera"];
 
 // @public
 export function assemblyAITts(options?: AssemblyAITtsOptions): TtsProvider;
@@ -13256,13 +13259,7 @@ export interface AssemblyAITtsOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
-
-// @public
-export interface AssemblyAITtsVoiceInfo {
-    readonly accent: string;
-    readonly language: AssemblyAITtsLanguage;
-}
+export type AssemblyAITtsVoice = "aai-alba" | "aai-anna" | "aai-charles" | "aai-eve" | "aai-george" | "aai-jane" | "aai-jean" | "aai-mary" | "aai-michael" | "aai-paul" | "aai-vera" | (string & {});
 
 // @public
 export const CARTESIA_DEFAULT_VOICE: string;
@@ -13334,12 +13331,6 @@ type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "tts";
 };
-
-// @public
-export function ttsVoiceIds(language?: AssemblyAITtsLanguage): [AssemblyAITtsVoice, ...AssemblyAITtsVoice[]];
-
-// @public
-export function ttsVoiceInfo(voice: AssemblyAITtsVoice): AssemblyAITtsVoiceInfo | undefined;
 ```
 
 ## `@alexkroman1/aai/utils`

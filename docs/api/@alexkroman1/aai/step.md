@@ -1677,7 +1677,7 @@ this in two would carry the audio across the queue on every resume.
 import { stepSpeak, stepWriteUpload } from "@alexkroman1/aai/step";
 
 export async function narrate(summary: string): Promise<string> {
-  const spoken = await stepSpeak(summary, { voice: "jane" });
+  const spoken = await stepSpeak(summary, { voice: "aai-jane" });
   const stored = await stepWriteUpload(spoken.audio, {
     name: "summary.wav",
     type: "audio/wav",
@@ -3694,9 +3694,10 @@ than replacing it, so a caller passing one still cannot hang forever.
 optional voice?: string;
 ```
 
-Voice id, e.g. `"jane"`, `"michael"`, `"vera"`. Defaults to
-`ASSEMBLYAI_TTS_DEFAULT_VOICE`; the catalog is `ASSEMBLYAI_TTS_VOICES` on
-`@alexkroman1/aai/tts`, and every voice speaks exactly one language.
+Voice id, e.g. `"aai-jane"`, `"aai-michael"`, `"aai-vera"`. Defaults to
+`ASSEMBLYAI_TTS_DEFAULT_VOICE`; the library voices are
+`ASSEMBLYAI_TTS_VOICES` on `@alexkroman1/aai/tts`, each speaking every
+supported language.
 
 ***
 

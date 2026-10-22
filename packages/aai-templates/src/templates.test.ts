@@ -20,7 +20,6 @@
 
 import type { AgentDef } from "@alexkroman1/aai";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
-import { ASSEMBLYAI_TTS_DEPRECATED_VOICES } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_MAX_STEPS, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { agentToolsets, agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 import { ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
@@ -117,17 +116,15 @@ describe("template build smoke", () => {
  */
 describe("scaffold guide voice catalog", () => {
   test("lists every current voice", () => {
-    const missing = Object.keys(ASSEMBLYAI_TTS_VOICES).filter(
-      (v) => !scaffoldGuide.includes(`\`${v}\``),
-    );
+    const missing = ASSEMBLYAI_TTS_VOICES.filter((v) => !scaffoldGuide.includes(`\`${v}\``));
     expect(missing).toEqual([]);
   });
 
-  test("points at no deprecated voice", () => {
-    const stale = ASSEMBLYAI_TTS_DEPRECATED_VOICES.filter((v) =>
-      scaffoldGuide.includes(`\`${v}\``),
+  test("names no voice by its bare name — the service refuses `jane` for `aai-jane`", () => {
+    const bare = ASSEMBLYAI_TTS_VOICES.map((v) => v.replace(/^aai-/, "")).filter(
+      (name) => scaffoldGuide.includes(`\`${name}\``) || scaffoldGuide.includes(`"${name}"`),
     );
-    expect(stale).toEqual([]);
+    expect(bare).toEqual([]);
   });
 });
 

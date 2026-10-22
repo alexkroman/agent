@@ -45,11 +45,7 @@ const actionArb: fc.Arbitrary<ActionKind> = fc.oneof(
   { weight: 1, arbitrary: fc.constant("ackDeadline" as const) },
 );
 
-/** How the server acknowledges one synthesis — both shapes production sends. */
-type AckStyle = "flushDone" | "isFinalThenFlushDone";
-
 type ServerBehavior = {
-  ackStyles: readonly AckStyle[];
   /** Audio frames per synthesis, cycled. */
   audioFrames: readonly number[];
   /** Does the server answer a `Cancel` with `Cancelled`? Cycled; mostly yes. */
@@ -57,10 +53,6 @@ type ServerBehavior = {
 };
 
 const behaviorArb: fc.Arbitrary<ServerBehavior> = fc.record({
-  ackStyles: fc.array(fc.constantFrom<AckStyle>("flushDone", "isFinalThenFlushDone"), {
-    minLength: 1,
-    maxLength: 4,
-  }),
   audioFrames: fc.array(fc.integer({ min: 1, max: 3 }), { minLength: 1, maxLength: 4 }),
   answersCancel: fc.array(
     fc.oneof(
@@ -144,11 +136,9 @@ function produce(far: Far, server: Server): void {
 function synthesize(far: Far, server: Server): void {
   const turn = server.turnOfText;
   const n = nextOf(far, far.behavior.audioFrames, "frames");
-  const isFinal = nextOf(far, far.behavior.ackStyles, "ack") === "isFinalThenFlushDone";
   for (let i = 0; i < n; i++) {
-    const flagged = isFinal && i === n - 1 ? { is_final: true } : {};
     server.synth.push({
-      payload: { type: "Audio", audio: pcmBase64([turn, turn]), ...flagged },
+      payload: { type: "Audio", audio: pcmBase64([turn, turn]) },
       turn,
       audio: true,
     });
@@ -428,41 +418,6 @@ describe("AssemblyAI TTS: cancel racing the socket", () => {
     expect(cov.turnsCancelled, "no turn was ever cancelled").toBeGreaterThan(120);
     // Measured over 20 runs: 116-160.
     expect(cov.turnAfterCancel, "no turn followed a cancel").toBeGreaterThan(80);
-  });
-
-  // The property's second finding, frozen by hand (the shrinker cannot keep a
-  // scheduler ordering once the step list shrinks under it): a barge-in AFTER
-  // the reply had ended — the commonest kind, the caller talking over the tail
-  // of the audio — zeroed the is_final/FlushDone pairing debt, so the ended
-  // turn's trailing FlushDone retired one of the next turn's flushes and that
-  // turn's `done` overtook its own last segment.
-  test("an idle cancel leaves the last turn's trailing FlushDone paired", async () => {
-    FakeWebSocket.reset();
-    const opening = openAssemblyAITts({}, createFakeWebSocket).open({
-      sampleRate: 16_000,
-      apiKey: "k",
-      signal: new AbortController().signal,
-    });
-    await flush();
-    const session = (await opening) as AssemblyAITtsSession;
-    const ws = FakeWebSocket.instances.at(-1) as FakeWebSocket;
-    let done = 0;
-    session.on("done", () => done++);
-
-    session.sendText("t1 one. ");
-    session.flush();
-    ws._msg({ type: "Audio", audio: pcmBase64([1]), is_final: true });
-    expect(done).toBe(1); // t1's FlushDone is still on the wire
-    session.cancel(); // nothing in flight: no Cancel goes out
-    session.sendText("t2 two. ");
-    session.sendText("t2 three. ");
-    ws._msg({ type: "FlushDone" }); // t1's, trailing
-    ws._msg({ type: "Audio", audio: pcmBase64([2]), is_final: true }); // t2's first segment
-    session.flush();
-    expect(done).toBe(1); // t2's second segment has not been synthesized yet
-    ws._msg({ type: "Audio", audio: pcmBase64([2]), is_final: true });
-    expect(done).toBe(2);
-    await session.close();
   });
 
   // The property's first finding, shrunk: `text, cancel, text, flush` with the

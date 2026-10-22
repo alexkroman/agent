@@ -113,7 +113,7 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
  *
  * export default agent({
  *   name: "My Agent",
- *   tts: assemblyAITts({ voice: "michael" }),
+ *   tts: assemblyAITts({ voice: "aai-michael" }),
  *   llm: "claude-sonnet-4-6",
  * });
  * ```

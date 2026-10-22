@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 596 names
+- [Agent authoring](#agent-authoring) — 593 names
 - [Browser client](#browser-client) — 183 names
 - [Testing and evals](#testing-and-evals) — 252 names
 - [Hosting and tooling](#hosting-and-tooling) — 234 names
-- [Framework internals](#framework-internals) — 448 names
+- [Framework internals](#framework-internals) — 449 names
 
 ## Agent authoring
 
@@ -32,9 +32,9 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | --- | --- | --- | --- | --- |
 | `ASSEMBLYAI_LLM_DEFAULT_MODEL` | const | `@alexkroman1/aai/llm` | `aai:llm` | The gateway model to reach for when an agent has no opinion. |
 | `ASSEMBLYAI_STT_EU_URL` | const | `@alexkroman1/aai/stt` | `aai:stt` | EU data-residency streaming endpoint. |
-| `ASSEMBLYAI_TTS_DEFAULT_VOICE` | const | `@alexkroman1/aai/tts` | `aai:tts` | Default voice when `assemblyAITts()` is called with no `voice` — a US-accented English voice, since most agents face US callers (it was `"vera"` for a while, … |
+| `ASSEMBLYAI_TTS_DEFAULT_VOICE` | const | `@alexkroman1/aai/tts` | `aai:tts` | Default voice when `assemblyAITts()` is called with no `voice` — the service's own default, so leaving it unset and naming it are the same session. |
 | `ASSEMBLYAI_TTS_LANGUAGES` | const | `@alexkroman1/aai/tts` | `aai:tts` | ISO 639-1 code → the `language` query-param value the service accepts. |
-| `ASSEMBLYAI_TTS_VOICES` | const | `@alexkroman1/aai/tts` | `aai:tts` | The voice catalog — voice id → the language it speaks and its accent. |
+| `ASSEMBLYAI_TTS_VOICES` | const | `@alexkroman1/aai/tts` | `aai:tts` | The AssemblyAI library voices, as the `voice_id` slugs the service takes. |
 | `AgentClient` | type | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai-ui`) | `aai:workflow-api` | Everything one agent answers: every `WorkflowApi` call, plus the front door. |
 | `AgentClientInbox` | interface | `@alexkroman1/aai` | `aai:agent` | The device-inbox half of an agent declaration — see this module's header. |
 | `AgentDeclaration` | interface | `@alexkroman1/aai` | `aai:agent` | What an author may WRITE in `agent({ … })` — and THE reference for what every field means. |
@@ -55,9 +55,8 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `AssemblyAIGatewayModel` | type | `@alexkroman1/aai/llm` (also `@alexkroman1/aai`) | `aai:llm` | A model id on AssemblyAI's LLM Gateway — one the gateway advertised when this catalog was generated, or any other string. |
 | `AssemblyAILlmProviderOptions` | type | `@alexkroman1/aai/llm` | `aai:llm` | `providerOptions` for `provider: "assemblyai"`. |
 | `AssemblyAIReasoningEffort` | type | `@alexkroman1/aai/llm` | `aai:llm` | Reasoning effort forwarded to a gateway model — one of the levels the GPT-5 family accepts, or any other string. |
-| `AssemblyAITtsLanguage` | type | `@alexkroman1/aai/tts` | `aai:tts` | ISO 639-1 code for a language the AssemblyAI voice catalog speaks. |
-| `AssemblyAITtsVoice` | type | `@alexkroman1/aai/tts` | `aai:tts` | A voice id from `ASSEMBLYAI_TTS_VOICES`. |
-| `AssemblyAITtsVoiceInfo` | interface | `@alexkroman1/aai/tts` | `aai:tts` | What the catalog records about one voice: the language it speaks and the accent it speaks with. |
+| `AssemblyAITtsLanguage` | type | `@alexkroman1/aai/tts` | `aai:tts` | ISO 639-1 code for a language AssemblyAI streaming TTS speaks. |
+| `AssemblyAITtsVoice` | type | `@alexkroman1/aai/tts` | `aai:tts` | A `voice_id`: a slug from `ASSEMBLYAI_TTS_VOICES`, or any other slug or voice UUID the service knows. |
 | `BASH_TIMEOUT_MAX_MS` | const | `@alexkroman1/aai/coding-tools` | `aai:coding` |  |
 | `BASH_TIMEOUT_MS` | const | `@alexkroman1/aai/coding-tools` | `aai:coding` | Default and maximum wall-clock for one `bash` command. |
 | `BuiltinTool` | type | `@alexkroman1/aai` | `aai:agent` | Identifier for a built-in server-side tool. |
@@ -567,8 +566,6 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `toolFailure` | function | `@alexkroman1/aai` (also `@alexkroman1/aai/utils`) | `aai:tool` | Build a `ToolFailure` — the failure a tool `execute` RETURNS when the model should see it and recover. |
 | `toolRefusal` | function | `@alexkroman1/aai` (also `@alexkroman1/aai/utils`) | `aai:tool` | Build a `ToolRefusal`. |
 | `transcodeToWav`, `TranscodeToWavOptions` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | Re-encode anything ffmpeg can read into linear-PCM WAV bytes. |
-| `ttsVoiceIds` | function | `@alexkroman1/aai/tts` | `aai:tts` | The catalog's voice ids, optionally only those speaking `language`, as the non-empty tuple a `z.enum` takes. |
-| `ttsVoiceInfo` | function | `@alexkroman1/aai/tts` | `aai:tts` | What the catalog records about `voice` — its language and accent — or `undefined` for a voice this release's catalog does not list. |
 | `verifyStandardWebhook` | function | `@alexkroman1/aai` | `aai:agent` | Whether a route request is a genuine Standard Webhooks delivery signed with `secret`: its `webhook-signature` carries a `v1` HMAC-SHA256 of … |
 | `visitWebpage` | function | `@alexkroman1/aai/tools` | `aai:builtins` | Fetch a page and return its content as clean text. |
 | `wavEncodeArgs` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | The encoder half of a linear-PCM WAV argv — no input, no output. |
@@ -1231,9 +1228,10 @@ trace or a type error can be traced back to something.
 | `ASSEMBLYAI_STT_DEFAULT_MODEL` | const | `@alexkroman1/aai/host-internal` |  | Streaming model used when the descriptor names none. |
 | `ASSEMBLYAI_STT_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
 | `ASSEMBLYAI_TTS_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the AssemblyAI API key (same key as STT/LLM). |
-| `ASSEMBLYAI_TTS_DEPRECATED_VOICES` | const | `@alexkroman1/aai/host-internal` |  | Voices the service still accepts but has scheduled for removal. |
-| `ASSEMBLYAI_TTS_HOST` | const | `@alexkroman1/aai/host-internal` |  | Production streaming-TTS host. |
+| `ASSEMBLYAI_TTS_EU_HOST` | const | `@alexkroman1/aai/host-internal` |  | The EU streaming-TTS host — pass it as `assemblyAITts({ host })` for EU residency. |
+| `ASSEMBLYAI_TTS_HOST` | const | `@alexkroman1/aai/host-internal` |  | Production streaming-TTS host (US). |
 | `ASSEMBLYAI_TTS_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
+| `ASSEMBLYAI_TTS_MAX_GENERATE_CHARS` | const | `@alexkroman1/aai/host-internal` |  | The most text one `Generate` frame may carry (https://www.assemblyai.com/docs/tts/message-frames). |
 | `ApiUrlChip` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `AttachSessionOptions` | type | `@alexkroman1/aai-runtime/internal` |  | Options for `attachSession`. |
 | `BOUNDARY_KEYS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |

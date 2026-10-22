@@ -168,7 +168,7 @@ import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
-  tts: assemblyAITts({ voice: "paul" }),
+  tts: assemblyAITts({ voice: "aai-paul" }),
   llm: "claude-sonnet-4-6",
   greeting: "Hi, how can I help?",
   builtinTools: ["think", "web_search"],
@@ -178,7 +178,7 @@ export default agent({
 ```
 
 The fields almost every agent sets: `name` (required), `greeting` (default: "Hey
-there..."; `""` starts silent), `tts` (voice `jane` unless set), `llm`,
+there..."; `""` starts silent), `tts` (voice `aai-jane` unless set), `llm`,
 `builtinTools` (omitted = `["think"]` only; setting it REPLACES the default),
 `maxSteps` (default 10 tool-calling steps per reply) and `requiredEnv` (every
 env var a tool or step reads; **publishing checks it**, so a missing key fails

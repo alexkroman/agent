@@ -125,12 +125,17 @@ trust a prose default (currently `gpt-5.6-luna`).
 (`RIME_API_KEY`), `assemblyAITts({ voice, language? })` (`ASSEMBLYAI_API_KEY` —
 one key for an all-AssemblyAI pipeline).
 
-**`aai-runtime`'s `providers/tts/assemblyai.ts` module doc owns the protocol**:
-raw-key auth, not blocking on `Begin`, and **`Generate` only buffers — `Flush`
-starts synthesis**. So the adapter buffers host-side and emits
+**The wire is <https://www.assemblyai.com/docs/tts>** (`tts.us`/`tts.eu`
+`.assemblyai.com/v1/ws`, `voice_id=<slug>`; the retired `voice` param is a
+3006). `aai-runtime`'s `providers/tts/assemblyai-wire.ts` builds the URL and the
+`Generate` frames (≤2000 chars each — longer is a fatal 3006) for both the
+session opener and `stepSpeak`; the opener's module doc owns the rest: raw-key
+auth, not blocking on `Begin`, and **`Flush` concludes a request — short text
+stays buffered until it**. So the adapter buffers host-side and emits
 `Generate`+`Flush` **per segment** (a sentence end, or 40 characters —
 `splitSegment` in `assemblyai-segment.ts`, whose module doc owns the measured
-curve; read it before touching either constant). Invariants:
+curve; read it before touching either constant). Each `Flush` earns exactly one
+`FlushDone` (no `is_final`). Invariants:
 
 - only the turn's **last** acknowledgement may emit `done`;
 - the end-of-turn flush is never sent empty;
@@ -138,18 +143,20 @@ curve; read it before touching either constant). Invariants:
 
 ## Voices
 
-**`ASSEMBLYAI_TTS_VOICES` in `tts/assemblyai.ts` is the list** — do not restate
-it or trust a name absent from it (a wrong id connects, reports ready and stays
-silent). Forms read `ttsVoiceIds(language?)` (`/tts`, the non-empty tuple
-`z.enum` takes); `ttsVoiceInfo(voice)` is the lookup. **`AssemblyAITtsVoice` is
-autocomplete, not a guard**; `assertAssemblyAITtsLanguage` says why only the
-language pairing is checked. Both are on the root and `/tts`.
+**`ASSEMBLYAI_TTS_VOICES` (`tts-voices.ts`) is the list**: the docs' 11 library
+voices as `voice_id` slugs (`aai-jane`), a tuple a form passes straight to
+`z.enum`. Do not restate it; a bare name (`jane`) is a 3012 at connect. Every
+library voice speaks all six languages, so only the language CODE is checked
+(`assertAssemblyAITtsLanguage`). **`AssemblyAITtsVoice` is autocomplete, not a
+guard** — an open-dataset or cloned voice's slug or UUID is valid too. Both are
+on the root and `/tts`.
 
 A voice has ONE spelling, the descriptor's option (`assemblyAITts({ voice })`,
 `assemblyAIS2s({ voice })`); there is no agent-level `voice`, and the
 stray-field check names the descriptor. Its unknown/near-miss warning is
-computed once, off the descriptor, by `agentConfigWarnings` (`_nearest-names.ts`
-ranks the suggestions, shared with the stray-field check).
+computed once, off the TTS descriptor only (S2S voices are the Voice Agent
+API's, not this catalog), by `agentConfigWarnings` (`_nearest-names.ts` ranks
+the suggestions, shared with the stray-field check).
 
 ## Adding a provider
 

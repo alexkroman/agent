@@ -67,9 +67,9 @@ describe("assemblyAIPipeline", () => {
     expect([stt.kind, llm.kind, tts.kind]).toEqual(["assemblyai", "assemblyai", "assemblyai"]);
   });
 
-  test("puts a named voice on the TTS stage, and the region on the LLM's options", () => {
-    const { llm, tts } = assemblyAIPipeline({ voice: "jess", region: "eu" });
-    expect(tts.options).toEqual({ voice: "jess" });
+  test("puts a named voice and the EU host on the TTS stage, the region on the LLM's", () => {
+    const { llm, tts } = assemblyAIPipeline({ voice: "aai-vera", region: "eu" });
+    expect(tts.options).toEqual({ voice: "aai-vera", host: "tts.eu.assemblyai.com" });
     expect(llm.options.providerOptions).toMatchObject({ region: "eu" });
   });
 });

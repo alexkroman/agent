@@ -7,19 +7,14 @@
  * and `assemblyai-lifecycle.ts` are — the adapter owns socket and turn lifecycle,
  * this owns one rule.
  *
- * **The client->server vocabulary is exactly `Generate`, `Flush`, `Terminate`,
- * `KeepAlive`, `Cancel`** — not inferred, but read back from the service,
- * which answers an unknown `type` with `expected one of ...`. There is no
- * public documentation for this endpoint at all (AssemblyAI's docs state it
- * does not offer standalone TTS), so that is the only way to know, and it is
- * worth knowing: `Cancel` went unused here for a year because this doc assumed
- * it away, and `KeepAlive` still is. **There is also no continuous/streaming
- * mode** — see `assemblyai-segment.ts`, which owns that consequence. The
- * `Begin` frame likewise echoes a complete `configuration` (`voice`,
- * `language`, `sample_rate`, `encoding` — `pcm_mulaw` is accepted —
- * `inactivity_timeout`, an integer of at least 5 seconds, and
- * `word_boundaries`), and that echo reflects ONLY params the server
- * RECOGNIZES, which makes it how to test whether a new one is real.
+ * **The vocabulary is https://www.assemblyai.com/docs/tts/message-frames.**
+ * Client: `Generate`, `Flush`, `Cancel`, `KeepAlive`, `Terminate`. Server:
+ * `Begin`, `Audio`, `FlushDone`, `WordBoundaries`, `Cancelled`, `Termination`,
+ * `Error` — and nothing else: there is no warning frame, and no `is_final` on
+ * `Audio` (each `Flush` is answered by one `FlushDone`). **There is also no
+ * continuous/streaming mode** — see `assemblyai-segment.ts`, which owns that
+ * consequence. `Begin.configuration.unknown_params` lists any query param the
+ * server did not recognize, which is how to test whether a new one is real.
  */
 
 import { safeJsonParse } from "@alexkroman1/aai/utils";
@@ -28,7 +23,6 @@ import { base64ToUint8 } from "../../_base64.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
 import type { SessionShell } from "../_utils.ts";
 import type { TtsEvents } from "../openers.ts";
-import type { SynthesisAck } from "./assemblyai-turn.ts";
 
 /**
  * The cancel window as the frame handler reads it: the `cancelling` phase of
@@ -42,24 +36,13 @@ export interface CancelWindow {
 }
 
 export interface AssemblyAITtsMessage {
-  type:
-    | "Begin"
-    | "Audio"
-    | "FlushDone"
-    | "Warning"
-    | "Error"
-    | "WordBoundaries"
-    | "Cancelled"
-    | string;
+  type: "Begin" | "Audio" | "FlushDone" | "Error" | "WordBoundaries" | "Cancelled" | string;
   /** Base64 PCM16 LE payload on `Audio` frames. */
   audio?: string;
   /** Word timings on `WordBoundaries` frames — shape read defensively. */
   words?: unknown;
-  /** Set on the last `Audio` frame of a synthesis by some server versions. */
-  is_final?: boolean;
   error?: string;
   error_code?: string | number;
-  warning?: string;
 }
 
 /**
@@ -87,7 +70,7 @@ function formatErrorFrame(msg: AssemblyAITtsMessage): string {
 export function handleMessage(
   raw: WebSocket.Data,
   shell: SessionShell<TtsEvents>,
-  onSynthesisComplete: (ack: SynthesisAck) => void,
+  onSynthesisComplete: () => void,
   onWords: (msg: AssemblyAITtsMessage) => void,
   cancels: CancelWindow,
 ): void {
@@ -112,12 +95,10 @@ export function handleMessage(
         const pcm = bytesToPcm16(base64ToUint8(msg.audio));
         if (pcm.length > 0) shell.emit("audio", pcm);
       }
-      // Older servers flag the final frame; the live one uses FlushDone.
-      if (msg.is_final) onSynthesisComplete("is_final");
       return;
     }
     case "FlushDone":
-      onSynthesisComplete("flush_done");
+      onSynthesisComplete();
       return;
     case "WordBoundaries":
       // Deliberately NOT an acknowledgement — see the module doc.
@@ -127,7 +108,7 @@ export function handleMessage(
       shell.streamError(`AssemblyAI TTS ${formatErrorFrame(msg)}`);
       return;
     default:
-      // Begin is consumed by the handshake below; Warning is informational.
+      // Begin and Termination carry nothing this adapter acts on.
       return;
   }
 }

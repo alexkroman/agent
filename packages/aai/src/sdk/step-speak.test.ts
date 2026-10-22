@@ -41,7 +41,7 @@ describe("stepSpeak", () => {
     expect(spoken.pcm).toBe(ONE_SECOND);
     expect(spoken.sampleRate).toBe(STEP_SPEAK_SAMPLE_RATE);
     expect(spoken.durationMs).toBe(1000);
-    expect(spoken.voice).toBe("jane");
+    expect(spoken.voice).toBe("aai-jane");
   });
 
   test("resolves the credential from the step env rather than taking one", async () => {
@@ -64,11 +64,11 @@ describe("stepSpeak", () => {
   test("passes the voice, language and rate through, trimming the text", async () => {
     const { calls } = install();
 
-    await stepSpeak("  buenos dias  ", { voice: "lola", language: "es", sampleRate: 16_000 });
+    await stepSpeak("  buenos dias  ", { voice: "aai-vera", language: "es", sampleRate: 16_000 });
 
     expect(calls[0]).toMatchObject({
       text: "buenos dias",
-      voice: "lola",
+      voice: "aai-vera",
       language: "es",
       sampleRate: 16_000,
     });

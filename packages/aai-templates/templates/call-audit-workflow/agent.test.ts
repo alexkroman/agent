@@ -220,7 +220,8 @@ describe("the declaration", () => {
         ?.issues,
     ).toBeTruthy();
     expect(
-      (await audit.input?.["~standard"].validate({ recording: UPLOAD_ID, voice: "jane" }))?.issues,
+      (await audit.input?.["~standard"].validate({ recording: UPLOAD_ID, voice: "aai-jane" }))
+        ?.issues,
     ).toBeUndefined();
   });
 
@@ -829,7 +830,7 @@ describe("the ffmpeg steps, up to the spawn", () => {
     installStubReporter();
     installStubUploads({}, { writable: true });
 
-    await expect(narrate("Read this back.", "jane")).rejects.toBeInstanceOf(FatalError);
+    await expect(narrate("Read this back.", "aai-jane")).rejects.toBeInstanceOf(FatalError);
     expect(speech.calls.length).toBe(1);
     expect(speech.calls[0]?.text).toBe("Read this back.");
   });

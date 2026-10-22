@@ -158,7 +158,7 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
 }
 
 // @public
-type AssemblyAITtsVoice = "alba" | "anna" | "charles" | "eve" | "george" | "jane" | "jean" | "mary" | "michael" | "paul" | "vera" | "giovanni" | "lola" | "juergen" | "rafael" | "estelle" | (string & {});
+type AssemblyAITtsVoice = "aai-alba" | "aai-anna" | "aai-charles" | "aai-eve" | "aai-george" | "aai-jane" | "aai-jean" | "aai-mary" | "aai-michael" | "aai-paul" | "aai-vera" | (string & {});
 
 // @public
 export type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});

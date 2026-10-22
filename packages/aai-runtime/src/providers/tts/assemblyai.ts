@@ -2,32 +2,25 @@
 /**
  * AssemblyAI streaming TTS opener (host-only).
  *
- * One long-lived WebSocket per session against
- * `wss://streaming-tts.assemblyai.com/v1/ws/`. Voice, language, and sample
- * rate are fixed at connect time as query params.
+ * One long-lived WebSocket per session against `wss://tts.us.assemblyai.com/v1/ws`
+ * (or the EU host), per https://www.assemblyai.com/docs/tts. Voice
+ * (`voice_id`), language and sample rate are fixed at connect time as query
+ * params — `assemblyai-wire.ts` builds the URL.
  *
- * **Auth.** The streaming sockets (STT and TTS) authenticate with the **raw**
- * API key in `Authorization` — *not* `Bearer <key>`, which is what the Voice
- * Agent socket wants. The raw form is verified working against production; the
- * AssemblyAI CLI additionally reports that a Bearer token upgrades fine and is
- * then refused in-band as an `Error` frame, which would make the mistake look
- * like a runtime failure rather than a handshake rejection.
+ * **Auth.** The raw API key in `Authorization`, as the docs show (they accept a
+ * `Bearer ` prefix too). A rejected key — or a rejected param, such as an
+ * unknown `voice_id` (3012) — arrives AFTER the upgrade: the server sends an
+ * `Error` frame instead of `Begin` and closes, so bad credentials surface as
+ * `tts_stream_error`, not `tts_auth_failed` (which only covers a key missing
+ * from the agent's env).
  *
- * A rejected key arrives the same way — the socket opens, then the server
- * sends `{"type":"Error","error_code":1008,"error":"Unauthorized: Invalid API
- * key"}` — so bad credentials surface as `tts_stream_error`, not
- * `tts_auth_failed` (which only covers a key missing from the agent's env).
- *
- * **Protocol.** The server may open with a `Begin` frame, but this adapter
- * does not wait for one: the rate is already fixed by the `sample_rate` query
- * param, and against production no frame arrives until the client speaks
- * first. (The AssemblyAI CLI blocks on `Begin` before sending anything, which
- * is one reason it treats streaming TTS as sandbox-only.) Client sends
- * `{type:"Generate",text}` per LLM delta and `{type:"Flush"}` to force
- * synthesis of anything buffered; the server replies with `{type:"Audio",
- * audio:<base64 PCM16 LE>}` frames and ends the turn with `FlushDone` (or an
- * `Audio` frame flagged `is_final`). `Warning` frames are informational;
- * `Error` frames carry `error_code` + `error`. `Terminate` closes cleanly.
+ * **Protocol.** The server opens with `Begin`, but this adapter does not wait
+ * for it: the rate is already fixed by the `sample_rate` query param, and a
+ * frame sent before `Begin` is processed in order. Client sends
+ * `{type:"Generate",text}` and `{type:"Flush"}`; the server replies with
+ * `{type:"Audio", audio:<base64 PCM16 LE>, flush_id}` frames and ends each
+ * flush with `FlushDone`. `Error` frames carry `error_code` + `error`.
+ * `Terminate` closes cleanly.
  * `WordBoundaries` frames carry per-word audio offsets; they are parsed and
  * re-emitted as the `words` TtsEvent (see `assemblyai-words.ts`, which owns the
  * tolerant parse and the rebase onto the turn's timeline). They are NOT
@@ -80,9 +73,8 @@
  * `done`, so a segment's completion leaking through would advance the
  * orchestrator while audio is still streaming — and, since the end-of-turn
  * flush may have nothing to send, "last" cannot simply mean "the final flush's
- * ack" either. That bookkeeping — including the `is_final`+`FlushDone`
- * double-acknowledgement dedup that would otherwise end the turn mid-reply —
- * lives in `assemblyai-turn.ts` (`createTurnTracker`).
+ * ack" either. That bookkeeping lives in `assemblyai-turn.ts`
+ * (`createTurnTracker`).
  *
  * **Cancel.** A mid-turn `cancel()` sends a `Cancel` frame and KEEPS the
  * socket; the service's `Cancelled` is the boundary past which the abandoned
@@ -99,9 +91,6 @@
 
 import {
   ASSEMBLYAI_TTS_API_KEY_ENV,
-  ASSEMBLYAI_TTS_HOST,
-  assemblyAITtsLanguageCodes,
-  resolveAssemblyAITtsLanguage,
   resolveAssemblyAITtsSettings,
   TTS_RECONNECT_TIMEOUT_MS,
 } from "@alexkroman1/aai/host-internal";
@@ -139,43 +128,13 @@ import {
 } from "./assemblyai-frames.ts";
 import { createAssemblyAITtsLifecycle } from "./assemblyai-lifecycle.ts";
 import { splitSegment } from "./assemblyai-segment.ts";
-import { createTurnTracker, type SynthesisAck } from "./assemblyai-turn.ts";
+import { createTurnTracker } from "./assemblyai-turn.ts";
+import { assemblyAITtsUrl, generateFrames } from "./assemblyai-wire.ts";
 import { createWordTimeline, readWordBoundaries } from "./assemblyai-words.ts";
 
 export interface AssemblyAITtsSession extends TtsSession {
   /** @internal Test-only: exposes the underlying raw WebSocket. */
   readonly _ws: ProviderSocket;
-}
-
-function buildUrl(
-  opts: AssemblyAITtsOptions,
-  sampleRate: number,
-  fail: (message: string) => Error,
-): string {
-  const params = new URLSearchParams({
-    voice: resolveAssemblyAITtsSettings(opts).voice,
-    sample_rate: String(sampleRate),
-  });
-  // Omitted unless set: every voice speaks one language, so the server infers
-  // it, and a mismatched pair is worse than no hint.
-  if (opts.language) {
-    // The wire wants `spanish`, not `es` — see ASSEMBLYAI_TTS_LANGUAGES. An
-    // unsupported code must throw here: the service's own refusal arrives
-    // in-band after the socket is open, which leaves the session "ready" and
-    // silently mute instead of failing it.
-    const language = resolveAssemblyAITtsLanguage(opts.language);
-    if (language === undefined) {
-      throw fail(
-        `AssemblyAI TTS: unsupported language ${JSON.stringify(opts.language)} ` +
-          `(supported: ${assemblyAITtsLanguageCodes().join(", ")})`,
-      );
-    }
-    params.set("language", language);
-  }
-  // Length-checked rather than `??`: an empty `host` is a misconfiguration, and
-  // treating it as "unset" beats building `wss:///v1/ws/` and failing at connect.
-  const host = (opts.host?.length ?? 0) > 0 ? opts.host : ASSEMBLYAI_TTS_HOST;
-  return `wss://${host}/v1/ws/?${params.toString()}`;
 }
 
 export function openAssemblyAITts(
@@ -195,9 +154,13 @@ export function openAssemblyAITts(
       const sampleRate = assertPcm16Rate(openOpts.sampleRate, "AssemblyAI TTS", connectError);
       // Built once so an unsupported language throws here, at open, rather
       // than on a cancel-triggered reconnect mid-conversation.
-      const url = buildUrl(opts, sampleRate, connectError);
+      const settings = resolveAssemblyAITtsSettings(opts);
+      const url = assemblyAITtsUrl(
+        { voice: settings.voice, language: settings.language, sampleRate, host: opts.host },
+        (msg) => connectError(`AssemblyAI TTS: ${msg}`),
+      );
 
-      // Raw key, not `Bearer` — see the module doc.
+      // The raw key, as the docs show — see the module doc.
       const createSocket = (): ProviderSocket =>
         newSocket(url, {
           headers: { Authorization: apiKey },
@@ -241,8 +204,8 @@ export function openAssemblyAITts(
         },
       });
 
-      // Flush/acknowledgement bookkeeping — which ack ends the turn, and the
-      // is_final+FlushDone pair dedup — lives in assemblyai-turn.ts. No closed
+      // Flush/acknowledgement bookkeeping — which ack ends the turn — lives in
+      // assemblyai-turn.ts. No closed
       // check: the shell's `emit` is already a no-op once the session closes.
       const turn = createTurnTracker(() => {
         // The turn is over, so text still held here belongs to nothing. Keeping
@@ -251,7 +214,7 @@ export function openAssemblyAITts(
         shell.emit("done");
       });
 
-      const onSynthesisComplete = (ack: SynthesisAck): void => turn.onAck(ack);
+      const onSynthesisComplete = (): void => turn.onAck();
 
       // Word timings, rebased onto the turn's own audio timeline.
       //
@@ -412,7 +375,9 @@ export function openAssemblyAITts(
           if (buffered.length > 0) {
             const text = buffered;
             buffered = "";
-            if (send({ type: "Generate", text }) && send({ type: "Flush" })) {
+            // A remainder can outgrow one `Generate` (a long run with no
+            // segment boundary), so it is framed under the per-frame cap.
+            if (generateFrames(text).every((frame) => send(frame)) && send({ type: "Flush" })) {
               turn.onFlushSent();
             }
           }

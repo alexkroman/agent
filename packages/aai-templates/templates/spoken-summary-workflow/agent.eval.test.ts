@@ -200,7 +200,7 @@ describeWorkflowEval(
       // the run renders.
       expect(run.reported[0]).toMatch(/^Uploading standup\.wav /);
       expect(run.reported).toContain("Summarizing the transcript.");
-      expect(run.reported.at(-1)).toMatch(/^Recorded a 2s summary in \w+'s voice\.$/);
+      expect(run.reported.at(-1)).toMatch(/^Recorded a 2s summary with voice [\w-]+\.$/);
       // The job finished on its first poll, so no durable wait was asked for.
       expect(run.slept).toEqual([]);
       // One upload of the recording, and one submit — the split that exists so a
@@ -218,7 +218,7 @@ describeWorkflowEval(
       const { model } = scriptProvider();
       const speech = installStubSpeech();
 
-      const run = await app.run(spokenSummary, { recording: UPLOAD_ID, voice: "michael" });
+      const run = await app.run(spokenSummary, { recording: UPLOAD_ID, voice: "aai-michael" });
 
       expect(run.error).toBeUndefined();
       const spokenText = speech.calls[0]?.text;
@@ -227,7 +227,7 @@ describeWorkflowEval(
       // whatever was spoken, it was not the list.
       for (const point of REPLY.points) expect(spokenText).not.toContain(point);
       // The form's choice really reaches the synthesizer.
-      expect(speech.calls[0]?.voice).toBe("michael");
+      expect(speech.calls[0]?.voice).toBe("aai-michael");
       // Both shapes survive to the output — one to read, one that was heard.
       expect(run.output?.points).toEqual(REPLY.points);
       expect(run.output?.spoken).toBe(REPLY.spoken);

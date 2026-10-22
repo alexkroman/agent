@@ -52,12 +52,12 @@ export const STUDIO_SDK_GUIDANCE = `## Data Persistence and Storage
     export default agent({ name: "…" });
   An agent() with no stt/llm/tts runs the default AssemblyAI pipeline with
   real defaults for all three stages (universal-3-5-pro,
-  ${ASSEMBLYAI_LLM_DEFAULT_MODEL}, jane), so
+  ${ASSEMBLYAI_LLM_DEFAULT_MODEL}, aai-jane), so
   there is no gateway model id to invent — an invented one is a 400 at the
   first session, with no compile-time or deploy-time check to catch it.
   To change a stage, declare just that field — every stage you leave unset
   stays on the AssemblyAI default. A voice is the TTS descriptor's option:
-    agent({ name: "…", tts: assemblyAITts({ voice: "michael" }) });
+    agent({ name: "…", tts: assemblyAITts({ voice: "aai-michael" }) });
     agent({ name: "…", tts: cartesiaTts({ voice: "…" }) });
   The gateway LLM model works the same way — llm accepts the model id as a
   plain string:

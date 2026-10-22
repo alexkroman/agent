@@ -51,7 +51,7 @@ describe("agentConfigWarnings", () => {
     });
     expect(warnings).toHaveLength(2);
     expect(warnings).toContainEqual(expect.stringContaining("Cartesia"));
-    expect(warnings).toContainEqual(expect.stringContaining(ASSEMBLYAI_TTS_HOST));
+    expect(warnings).toContainEqual(expect.stringContaining('region: "eu"'));
   });
 });
 
@@ -61,11 +61,10 @@ describe("an AssemblyAI voice outside this release's catalog", () => {
     expect(warning).toContain('"jain"');
   });
 
-  test("is warned about on the S2S descriptor too — same catalog, same failure", () => {
-    // The S2S stage carries a voice from the same catalog, and it is read
-    // because a typo there mutes the agent in exactly the same way.
-    const [warning] = agentConfigWarnings({ s2s: descriptor("assemblyai", { voice: "jain" }) });
-    expect(warning).toContain('"jain"');
+  test("is NOT warned about on the S2S descriptor — the Voice Agent API's voices differ", () => {
+    // Same `"assemblyai"` kind, but the streaming-TTS catalog does not
+    // describe the Voice Agent API's voices, so holding one to it is noise.
+    expect(agentConfigWarnings({ s2s: descriptor("assemblyai", { voice: "jain" }) })).toEqual([]);
   });
 
   test("a catalog voice says nothing", () => {
