@@ -107,6 +107,12 @@ nothing else from the host — that is what keeps platform credentials out.
 - Takes effect at guest BOOT only (redeploy or idle exit), and is per REPLICA.
 - Only `AAI_DEBUG` is forwarded. Not `LOG_LEVEL=DEBUG` (a generic host name that
   would arm tenant logging by accident), not `AAI_DEBUG_PARTIALS` (too noisy).
+- **A production guest never logs what was said**, `AAI_DEBUG` or not: in a
+  contained guest (`AAI_SANDBOX_CONTAINED=1`) or under `NODE_ENV=production`,
+  every transcript-carrying line (the STT trace, the committed turn, a quiet
+  final, a tool's spoken line, an S2S `tool.call` payload) carries a character
+  count (`textChars`) in place of the text — `transcriptField` in
+  `aai-runtime/logger.ts`. The verbatim trace is an `aai dev` tool.
 
 Read output from the host log or `aai logs`.
 

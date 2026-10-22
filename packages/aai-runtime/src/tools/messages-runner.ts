@@ -54,7 +54,7 @@ import { sleep } from "@alexkroman1/aai/internal";
 import { isToolFailure, omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { createRestartableTimer } from "../_timer.ts";
-import type { Logger } from "../logger.ts";
+import { type Logger, transcriptField } from "../logger.ts";
 import type { InReplyLineFlags } from "../transports/pipeline/index.ts";
 
 /** START and DELAYED lines: filler, never on the record — rule 1 above. */
@@ -261,8 +261,9 @@ export function createToolSpeechController(deps: ToolSpeechDeps): ToolSpeechCont
     channel.speak(text, FILLER);
     // LOGGED for the reason the dead-air cover's line is: these never reach a
     // transcript, so without it a harness trajectory shows a covered gap and an
-    // uncovered one identically.
-    log.info("Tool message", { sid, kind, tool: toolName, text });
+    // uncovered one identically. The words themselves are what the caller
+    // HEARS, so in production the line carries their length only.
+    log.info("Tool message", { sid, kind, tool: toolName, ...transcriptField("text", text) });
     return true;
   }
 

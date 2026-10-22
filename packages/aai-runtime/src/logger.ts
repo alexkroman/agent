@@ -90,6 +90,56 @@ export const debugLoggingEnabled: boolean =
  */
 export const debugPartialsEnabled: boolean = isDebugEnv(process.env.AAI_DEBUG_PARTIALS);
 
+/**
+ * Whether `env` describes a PRODUCTION process: a contained guest
+ * (`AAI_SANDBOX_CONTAINED=1`, which the platform's spawners set — see
+ * `CONTAINED_ENV` in the SDK's `host/ssrf.ts`) or `NODE_ENV=production` (a
+ * self-hosted deploy). `aai dev`, a plain `aai start` and the test tiers are
+ * none of these.
+ *
+ * @internal
+ */
+export function isProductionEnv(env: {
+  readonly NODE_ENV?: string | undefined;
+  readonly AAI_SANDBOX_CONTAINED?: string | undefined;
+}): boolean {
+  return env.NODE_ENV === "production" || env.AAI_SANDBOX_CONTAINED === "1";
+}
+
+/**
+ * Whether a log line may carry what was SAID — a caller's transcript, the
+ * words a tool speaks, a tool call's arguments. Never in production
+ * ({@link isProductionEnv}), whatever `AAI_DEBUG` says: a deployed agent's
+ * log is read by `aai logs`, the studio's `read_logs` and the host's own
+ * aggregation, and none of those should hold a conversation. Elsewhere the
+ * text is what makes the STT→LLM trace answer "what did the LLM actually
+ * receive for this turn?", so it stays.
+ *
+ * Read once at module load, like {@link debugLoggingEnabled}: it sits on
+ * per-transcript hot paths.
+ *
+ * @internal
+ */
+export const transcriptLoggingEnabled: boolean = !isProductionEnv(process.env);
+
+/**
+ * The transcript field of a log line: `{ [key]: text }` where transcript
+ * logging is enabled, else `{ [key + "Chars"]: text.length }`, so the line
+ * still says that something was said and how much — a timing or endpointing
+ * question survives the redaction — without saying what.
+ *
+ * `enabled` is a seam for specs; every call site takes the process default.
+ *
+ * @internal
+ */
+export function transcriptField(
+  key: string,
+  text: string,
+  enabled: boolean = transcriptLoggingEnabled,
+): LogContext {
+  return enabled ? { [key]: text } : { [`${key}Chars`]: text.length };
+}
+
 const noopLog: LogFn = () => undefined;
 
 /**

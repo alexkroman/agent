@@ -1,10 +1,17 @@
 // Copyright 2026 the AAI authors. MIT license.
 // The logger factories: the console logger's `debug` must be a no-op unless
 // AAI_DEBUG enables it, so per-message hot-path logs cost nothing; the silent
-// logger drops everything and carries no call history.
+// logger drops everything and carries no call history. And the transcript
+// gate: a production process never logs what was said.
 
 import { describe, expect, test, vi } from "vitest";
-import { createConsoleLogger, isDebugEnv, silentLogger } from "./logger.ts";
+import {
+  createConsoleLogger,
+  isDebugEnv,
+  isProductionEnv,
+  silentLogger,
+  transcriptField,
+} from "./logger.ts";
 
 describe("isDebugEnv", () => {
   test("enables on '1' and 'true' only", () => {
@@ -14,6 +21,45 @@ describe("isDebugEnv", () => {
     expect(isDebugEnv("false")).toBe(false);
     expect(isDebugEnv("")).toBe(false);
     expect(isDebugEnv(undefined)).toBe(false);
+  });
+});
+
+describe("isProductionEnv", () => {
+  test("a contained guest is production, whatever NODE_ENV says", () => {
+    // The platform's spawners set AAI_SANDBOX_CONTAINED=1 and no NODE_ENV.
+    expect(isProductionEnv({ AAI_SANDBOX_CONTAINED: "1" })).toBe(true);
+    expect(isProductionEnv({ AAI_SANDBOX_CONTAINED: "1", NODE_ENV: "development" })).toBe(true);
+  });
+
+  test("NODE_ENV=production is production — a self-hosted deploy", () => {
+    expect(isProductionEnv({ NODE_ENV: "production" })).toBe(true);
+  });
+
+  test("anything else is not: aai dev, the test tiers, an empty env", () => {
+    expect(isProductionEnv({})).toBe(false);
+    expect(isProductionEnv({ NODE_ENV: "test" })).toBe(false);
+    expect(isProductionEnv({ NODE_ENV: "development", AAI_SANDBOX_CONTAINED: "0" })).toBe(false);
+    expect(isProductionEnv({ AAI_SANDBOX_CONTAINED: "" })).toBe(false);
+  });
+});
+
+describe("transcriptField", () => {
+  test("carries the text under its key when transcript logging is enabled", () => {
+    expect(transcriptField("text", "track my order PO999", true)).toEqual({
+      text: "track my order PO999",
+    });
+  });
+
+  test("in production carries only the length, under a `Chars` key", () => {
+    // The line still says that something was said and how much — a timing
+    // question survives — and never what.
+    const field = transcriptField("transcript", "track my order PO999", false);
+    expect(field).toEqual({ transcriptChars: 20 });
+    expect(JSON.stringify(field)).not.toContain("PO999");
+  });
+
+  test("an empty transcript is still reported, as a zero", () => {
+    expect(transcriptField("text", "", false)).toEqual({ textChars: 0 });
   });
 });
 
