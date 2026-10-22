@@ -118,7 +118,9 @@ export default agent({
                                              // name: { cart: cartSlot.projected } (read it
                                              // with useAgentState; see UI.md)
   events?: SessionEventHandlers;             // observe the session; "metrics.collected" is each
-                                             // reply's latency/tokens: createMetricsCollector()
+                                             // reply's latency/tokens: createMetricsCollector();
+                                             // "error.reported" carries a SessionErrorCode (open:
+                                             // switch with a default); "*" gets AnySessionEvent
   sessionContext?: (args) => SessionContext; // fetched once per connect, before the first model
                                              // call: extra instructions, history cut-off, refusal
   onSessionEnd?: (ctx) => unknown;           // after every hang-up / disconnect / idle close
