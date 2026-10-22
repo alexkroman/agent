@@ -31,7 +31,11 @@ import { isTransientStatus, retryAfter } from "./step-retry.ts";
  */
 export const TRANSCRIBE_TIMEOUT_MS: number = 60_000;
 
-/** Options every call in this family accepts. */
+/**
+ * Options every call in this family accepts.
+ *
+ * @input
+ */
 export type TranscribeRequestOptions = {
   /**
    * Env var holding the credential, replacing `ASSEMBLYAI_API_KEY`.
@@ -41,7 +45,7 @@ export type TranscribeRequestOptions = {
    */
   apiKeyEnv?: string | undefined;
   /**
-   * Deadline for this one request. Defaults to {@link TRANSCRIBE_TIMEOUT_MS}.
+   * Deadline for this one request. Defaults to `TRANSCRIBE_TIMEOUT_MS`.
    */
   timeoutMs?: number | undefined;
   /**

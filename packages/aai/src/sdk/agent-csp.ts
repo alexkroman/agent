@@ -38,7 +38,7 @@
  *
  * @internal
  */
-export const AGENT_CSP =
+export const AGENT_CSP: string =
   "default-src 'self'; script-src 'self' 'unsafe-eval' blob:; " +
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
   "connect-src 'self' wss: ws:; img-src 'self' data:; " +

@@ -178,7 +178,7 @@ export const PLAYBACK_DONE_POLL_MS = 1000;
  *
  * @internal
  */
-export const PLAYBACK_DONE_MAX_WAIT_MS = PLAYBACK_BUFFER_SECONDS * 1000 + 5000;
+export const PLAYBACK_DONE_MAX_WAIT_MS: number = PLAYBACK_BUFFER_SECONDS * 1000 + 5000;
 
 /**
  * Bounded wait for the capture worklet's 'stopped' ack after a 'stop'
@@ -198,7 +198,7 @@ export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
  *
  * @internal
  */
-export const MIC_SEND_MAX_BUFFERED_BYTES = 64 * 1024;
+export const MIC_SEND_MAX_BUFFERED_BYTES: number = 64 * 1024;
 
 /**
  * How often a client reports its unplayed agent-audio backlog to the host

@@ -175,31 +175,7 @@ export default agent({
 
 ### AssemblyAITtsOptions
 
-The credential override every provider descriptor accepts.
-
-Names an env VARIABLE holding this stage's key, replacing the provider
-default (`DEEPGRAM_API_KEY`, `ASSEMBLYAI_API_KEY`, …). It names a variable
-and never a key, so the descriptor stays secret-free and safe to serialize
-across the CLI → server → guest boundary. The variable must be present in
-the agent's env (`.env`, or `aai secret put`), like any other credential.
-
-#### Remarks
-
-**Every provider options interface extends this, because the host has always
-honoured the field on every provider.** `descriptorEnvVar()` in
-`@alexkroman1/aai-runtime` reads `apiKeyEnv` off any descriptor's options
-through an untyped cast, so all thirteen factories accepted it at runtime
-while only the four AssemblyAI options types could spell it — a shape that
-cost the `aai:s2s` contract an epoch, where the field was added to one stage
-and left off the rest.
-
-The argument for keeping it AssemblyAI-only was that AssemblyAI keys are
-environment-scoped, so a mixed staging/production pipeline needs two live at
-once, and no other vendor has that problem. True, and not the whole test: a
-type that cannot spell what the runtime accepts is wrong regardless of who
-needs it, and per-stage key separation is equally the answer for two accounts
-with one vendor, for per-tenant keys, and for a rotation that runs both keys
-briefly.
+**`Input`**
 
 #### Extends
 
@@ -263,6 +239,8 @@ Every library voice speaks every supported language.
 
 ### CartesiaTtsOptions
 
+**`Input`**
+
 Options for [cartesiaTts](#cartesiatts).
 
 #### Extends
@@ -311,6 +289,8 @@ Cartesia voice ID. Defaults to [CARTESIA\_DEFAULT\_VOICE](#cartesia_default_voic
 ***
 
 ### RimeTtsOptions
+
+**`Input`**
 
 Options for [rimeTts](#rimetts).
 
@@ -483,7 +463,7 @@ readonly pt: "portuguese";
 ### ASSEMBLYAI\_TTS\_VOICES
 
 ```ts
-const ASSEMBLYAI_TTS_VOICES: readonly ["aai-alba", "aai-anna", "aai-charles", "aai-eve", "aai-george", "aai-jane", "aai-jean", "aai-mary", "aai-michael", "aai-paul", "aai-vera"];
+const ASSEMBLYAI_TTS_VOICES: readonly AssemblyAITtsVoice[];
 ```
 
 The AssemblyAI library voices, as the `voice_id` slugs the service takes.
@@ -492,9 +472,11 @@ Source: https://www.assemblyai.com/docs/tts/voices. **Every one of them speaks
 all six languages** — `language` picks what a voice speaks, the voice only how
 it sounds — so there is no voice/language pairing to get wrong.
 
-A tuple rather than a map because a slug is all there is to know about one,
-and a tuple is what `z.enum` takes: a form offering the caller a voice is
-`z.enum(ASSEMBLYAI_TTS_VOICES)`.
+A list rather than a map because a slug is all there is to know about one,
+and a list is what `z.enum` takes: a form offering the caller a voice is
+`z.enum(ASSEMBLYAI_TTS_VOICES)`. Typed as a plain array, not a literal
+tuple, so a voice added to the catalog is not a type change a reader's
+exhaustive check breaks on.
 
 A constant rather than a sentence in a doc comment because a wrong voice id
 is a refusal the service sends after the upgrade (`3012 voice_not_found`), so

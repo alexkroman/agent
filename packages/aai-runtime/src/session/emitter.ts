@@ -117,8 +117,8 @@ function watchWrites(inner: SlotStore): { slots: SlotStore; writes: () => number
   return {
     slots: {
       read: (key) => inner.read(key),
-      write: (key, value, durable) => {
-        inner.write(key, value, durable);
+      write: (key, value, options) => {
+        inner.write(key, value, options);
         writes += 1;
       },
     },

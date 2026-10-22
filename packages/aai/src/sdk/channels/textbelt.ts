@@ -54,7 +54,7 @@ export const TEXTBELT_ENDPOINT = "https://textbelt.com/text";
  * The longest text a Textbelt channel sends, in characters; a longer render is
  * cut with an ellipsis. See the module doc for why a cap and not a split.
  */
-export const TEXTBELT_MAX_MESSAGE_CHARS = 1000;
+export const TEXTBELT_MAX_MESSAGE_CHARS: number = 1000;
 
 /**
  * What {@link textbeltChannel} takes.
@@ -64,6 +64,7 @@ export const TEXTBELT_MAX_MESSAGE_CHARS = 1000;
  * step's argument, so build the channel inside the step from `stepEnv()` (or in
  * a tool from `ctx.env`) rather than passing it through a run's input.
  *
+ * @input
  * @public
  */
 export interface TextbeltChannelOptions {
@@ -83,7 +84,11 @@ export interface TextbeltChannelOptions {
   readonly links?: "keep" | "strip";
 }
 
-/** A Textbelt channel descriptor, as returned by {@link textbeltChannel}. */
+/**
+ * A Textbelt channel descriptor, as returned by {@link textbeltChannel}.
+ *
+ * @sealed
+ */
 export type TextbeltChannel = Channel & {
   readonly kind: typeof TEXTBELT_CHANNEL_KIND;
   readonly options: TextbeltChannelOptions & Record<string, unknown>;

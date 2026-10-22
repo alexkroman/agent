@@ -187,6 +187,7 @@ export function runFfmpeg(
   );
 }
 
+/** @input */
 export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
   /** The `ffprobe` binary. Defaults to `AAI_FFPROBE_PATH`, `FFPROBE_PATH`, then `ffprobe`. */
   binary?: string;
@@ -276,6 +277,7 @@ export function describeMedia(info: MediaInfo): string {
   return length ?? codec ?? "the recording";
 }
 
+/** @input */
 export type WavEncodeOptions = {
   /** Output sample rate. Omit to keep the input's. */
   sampleRate?: number;

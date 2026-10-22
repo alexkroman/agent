@@ -53,7 +53,11 @@ export const ASSEMBLYAI_STT_API_KEY_ENV: string = ASSEMBLYAI_STT_PROVIDER.envVar
 /** EU data-residency streaming endpoint. */
 export const ASSEMBLYAI_STT_EU_URL: string = "wss://streaming.eu.assemblyai.com/v3/ws";
 
-/** Options for {@link assemblyAIStt}. */
+/**
+ * Options for {@link assemblyAIStt}.
+ *
+ * @input
+ */
 export interface AssemblyAISttOptions extends ProviderCredentialOptions {
   /**
    * Streaming speech model. Defaults to `"universal-3-5-pro"` (Universal-3.5
@@ -100,7 +104,7 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
    * A single-element list pins one language and keeps code-switching off; omit
    * for a genuinely multilingual line.
    */
-  languages?: string[];
+  languages?: readonly string[];
   /**
    * Voice focus (voice isolation) mode, sent as the `voice_focus` connection
    * parameter. Defaults to `"near-field"` to suppress background noise for
@@ -242,7 +246,7 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
   voiceFocusThreshold: number;
   connectTimeoutMs: number;
   maxConnectRetries: number;
-  languages?: string[];
+  languages?: readonly string[];
   streamingUrl?: string;
   region?: "us" | "eu";
   formatTurns?: boolean;

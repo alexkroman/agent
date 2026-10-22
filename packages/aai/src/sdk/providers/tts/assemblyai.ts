@@ -186,6 +186,7 @@ export function assemblyAIVoiceWarning(descriptor: unknown): string | undefined 
   return `AssemblyAI voice "${voice}" is not one of the library voices.${suggestion} The service refuses an unknown voice_id (3012) when the session opens. Fine if it is your own voice's slug or UUID; otherwise pick one from ASSEMBLYAI_TTS_VOICES (@alexkroman1/aai/tts).`;
 }
 
+/** @input */
 export interface AssemblyAITtsOptions extends ProviderCredentialOptions {
   /**
    * The `voice_id`: a library slug such as `"aai-jane"`, `"aai-michael"` or

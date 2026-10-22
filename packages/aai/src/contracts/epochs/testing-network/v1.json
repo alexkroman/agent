@@ -1,0 +1,29 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "testing-network",
+  "epoch": 1,
+  "rule": 3,
+  "sha256": "60089d8216be39f17db15887cf5c49a710521b7d4d9b6cc207bb55c28b2b4004",
+  "exports": [
+    "FetchRouteHandler",
+    "FetchRouteHit",
+    "FetchRouteRequest",
+    "FetchRouteTable",
+    "FetchRoutesOptions",
+    "StubFetchRoutes",
+    "StubGateway",
+    "StubGatewayCall",
+    "StubGatewayOptions",
+    "StubGatewayRoute",
+    "StubStepAnswer",
+    "StubStepFetch",
+    "StubStepRequest",
+    "installStubGateway",
+    "installStubStepFetch",
+    "stubFetchRoutes",
+    "stubGateway",
+    "stubGatewayRoute",
+    "stubStepFetch"
+  ],
+  "rollup": "578beaf523706c7540f69e5dfc4baa8b374910fdcabde441d65bb9eb8fe49d5b"
+}

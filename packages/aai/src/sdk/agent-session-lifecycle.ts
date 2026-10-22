@@ -77,6 +77,7 @@ export interface SessionContextArgs {
 /**
  * What {@link AgentSessionLifecycle.sessionContext} may answer.
  *
+ * @sealed
  * @public
  */
 export type SessionContext = {
@@ -206,6 +207,7 @@ export interface SessionEndContext {
  * The session-bracketing half of an agent declaration — see this module's
  * header.
  *
+ * @input
  * @public
  */
 export interface AgentSessionLifecycle {

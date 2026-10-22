@@ -241,6 +241,24 @@ function mirrorUpstream(pkg, contract) {
   return { upstream, capability: target.capability };
 }
 
+/**
+ * The names a mirror target contracts, read as a FAMILY: the capability itself
+ * plus every capability of the same package named `<capability>-*`. A
+ * capability split for size (`aai:testing` → `testing-steps`, …) stays one
+ * mirror target, so a door re-exporting the whole surface needs no contract
+ * edit in the package that mirrors it — each name is still governed by exactly
+ * one upstream epoch.
+ */
+function familyNames(upstream, capability) {
+  const names = new Set();
+  for (const member of capabilities(upstream)) {
+    if (member !== capability && !member.startsWith(`${capability}-`)) continue;
+    if (isMirror(readTable(upstream)[member])) continue;
+    for (const name of parseEntrypoint(upstream, member).names) names.add(name);
+  }
+  return names;
+}
+
 export function checkMirrors(pkg, table, reports) {
   const issues = [];
   for (const [capability, contract] of Object.entries(table)) {
@@ -264,7 +282,7 @@ export function checkMirrors(pkg, table, reports) {
         target: String(contract.mirrors),
         body: generated.body,
         upstreamPackage: String(resolved.upstream.name),
-        upstreamNames: parseEntrypoint(resolved.upstream, resolved.capability).names,
+        upstreamNames: familyNames(resolved.upstream, resolved.capability),
         ...omitUndefined({
           baseNames: baseText === undefined ? undefined : entrypointNames(baseText),
         }),

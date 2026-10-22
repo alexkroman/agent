@@ -1,6 +1,6 @@
 /** The def a DEPLOYED agent runs: authored, plus what `system-prompt.md` says. */
 import agentDef from "virtual:aai/agent";
-import { MCP_TOOL_NAME_MAX, MCP_TOOL_PREFIX, mcpToolName } from "@alexkroman1/aai";
+import { MCP_TOOL_PREFIX, mcpToolName } from "@alexkroman1/aai";
 import { expectDeployable, expectPromptBuiltinsDeclared } from "@alexkroman1/aai-runtime/testing";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ARCHIVE_KEY, ARCHIVE_TOKEN_ENV, ARCHIVE_URL_ENV } from "./agent.ts";
@@ -172,11 +172,11 @@ describe("the archive MCP server", () => {
     // the archive publishing its own `web_search` cannot land where Scout's
     // builtin of that name stood. The key is the first segment of that name and
     // is the template's own choice, so this is where its length is spent —
-    // `MCP_TOOL_NAME_MAX` is a hard cap and a name that exceeds it is TRUNCATED,
+    // the 64-character tool-name cap providers enforce is hard and a name that exceeds it is TRUNCATED,
     // which is how two of a server's tools collapse onto one name and one of
     // them is silently dropped.
     const name = mcpToolName(ARCHIVE_KEY, "web_search");
     expect(name).toBe(`${MCP_TOOL_PREFIX}${ARCHIVE_KEY}_web_search`);
-    expect(name.length).toBeLessThanOrEqual(MCP_TOOL_NAME_MAX);
+    expect(name.length).toBeLessThanOrEqual(64);
   });
 });

@@ -26,7 +26,11 @@ import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { safeJsonParse } from "./safe-json-parse.ts";
 
-/** One request a {@link StubGateway} answered. */
+/**
+ * One request a {@link StubGateway} answered.
+ *
+ * @sealed
+ */
 export interface StubGatewayCall {
   /** The endpoint the call went to, so a spec can assert the gateway URL. */
   url: string;
@@ -46,7 +50,11 @@ export interface StubGatewayCall {
   headers: Record<string, string>;
 }
 
-/** Options for {@link stubGateway}. */
+/**
+ * Options for {@link stubGateway}.
+ *
+ * @input
+ */
 export interface StubGatewayOptions {
   /**
    * HTTP status to answer with. Defaults to 200. A non-2xx answers with an
@@ -58,7 +66,11 @@ export interface StubGatewayOptions {
   headers?: Record<string, string>;
 }
 
-/** A fake gateway: the `fetch` to install, and what it was asked. */
+/**
+ * A fake gateway: the `fetch` to install, and what it was asked.
+ *
+ * @sealed
+ */
 export interface StubGateway {
   /** Install with `vi.stubGlobal("fetch", gateway.fetch)`. */
   fetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -143,7 +155,11 @@ export function stubGateway(
  */
 const COMPLETIONS_PATH = "/chat/completions";
 
-/** A gateway answer for a `stepFetch`-published slot, plus what it was asked. */
+/**
+ * A gateway answer for a `stepFetch`-published slot, plus what it was asked.
+ *
+ * @sealed
+ */
 export interface StubGatewayRoute {
   /**
    * Answers a completion request and `undefined` for anything else, so the

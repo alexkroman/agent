@@ -2862,6 +2862,8 @@ type CallStatusOptions = {
 };
 ```
 
+**`Input`**
+
 What [stepCallStatus](#stepcallstatus) takes.
 
 #### Properties
@@ -2908,6 +2910,8 @@ type ClientNotice = {
   id: string;
 };
 ```
+
+**`Input`**
 
 One thing to tell a client.
 
@@ -2957,6 +2961,8 @@ type ClientTranscript = {
 };
 ```
 
+**`Sealed`**
+
 What [stepClientTranscript](#stepclienttranscript) returns.
 
 #### Properties
@@ -2976,10 +2982,15 @@ Oldest session first.
 ```ts
 type ClientTranscriptMessage = {
   at: number;
-  role: "user" | "assistant";
+  role:   | "user"
+     | "assistant"
+     | string & {
+   };
   text: string;
 };
 ```
+
+**`Sealed`**
 
 One committed line of a client's conversation.
 
@@ -2996,7 +3007,11 @@ Epoch ms the line was recorded.
 ##### role
 
 ```ts
-role: "user" | "assistant";
+role: 
+  | "user"
+  | "assistant"
+  | string & {
+};
 ```
 
 ##### text
@@ -3018,6 +3033,8 @@ type ClientTranscriptSession = {
   tools: ClientTranscriptTool[];
 };
 ```
+
+**`Sealed`**
 
 One of a client's sessions, as [stepClientTranscript](#stepclienttranscript) reads it.
 
@@ -3071,6 +3088,8 @@ type ClientTranscriptTool = {
 };
 ```
 
+**`Sealed`**
+
 One settled tool call in a client's conversation.
 
 #### Properties
@@ -3112,7 +3131,13 @@ What it returned, serialized and capped as the client's own frame carries it.
 ### ClientUnreachableReason
 
 ```ts
-type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
+type ClientUnreachableReason = 
+  | "offline"
+  | "busy"
+  | "no-ack"
+  | "disconnected"
+  | string & {
+};
 ```
 
 Why a notice was not taken.
@@ -3127,6 +3152,8 @@ type EnvContext = {
   signal?: AbortSignal;
 };
 ```
+
+**`Sealed`**
 
 The part of a context a helper needs to reach an outside service: the agent's
 env, and a signal to stop on.
@@ -3170,6 +3197,8 @@ type MultipartBody = {
 };
 ```
 
+**`Sealed`**
+
 A ready-to-send multipart body, as [multipartBody](#multipartbody-1) returns it.
 
 #### Properties
@@ -3210,6 +3239,8 @@ type MultipartPart = {
   type?: string;
 };
 ```
+
+**`Input`**
 
 One file part, as [multipartBody](#multipartbody-1) takes it.
 
@@ -3269,6 +3300,8 @@ type PcmFormat = {
 };
 ```
 
+**`Input`**
+
 How to read the samples handed to [encodeWav](#encodewav).
 
 Only `sampleRate` is required, because the other two have an answer that is
@@ -3316,6 +3349,8 @@ type PlaceCallCredentials = {
   authToken: string;
 };
 ```
+
+**`Input`**
 
 A Twilio account's credentials. Pass them to name them yourself; omitted,
 they are read from the step env as [TWILIO\_ACCOUNT\_SID\_ENV](#twilio_account_sid_env) and
@@ -3421,7 +3456,7 @@ in `sessionContext`.
 optional ringTimeoutS?: number;
 ```
 
-How long it rings before `no-answer`, in seconds. Default [DEFAULT\_CALL\_RING\_TIMEOUT\_S](#default_call_ring_timeout_s).
+How long it rings before `no-answer`, in seconds. Default `DEFAULT_CALL_RING_TIMEOUT_S`.
 
 ##### signal?
 
@@ -3435,7 +3470,7 @@ optional signal?: AbortSignal;
 optional timeLimitS?: number;
 ```
 
-Hard cap on the connected call, in seconds. Default [DEFAULT\_CALL\_TIME\_LIMIT\_S](#default_call_time_limit_s).
+Hard cap on the connected call, in seconds. Default `DEFAULT_CALL_TIME_LIMIT_S`.
 
 ##### to
 
@@ -3454,6 +3489,8 @@ type PlacedCall = {
   callId: string;
 };
 ```
+
+**`Sealed`**
 
 What [stepPlaceCall](#stepplacecall) resolves: the carrier's id for the call (Twilio's `CA…` SID).
 
@@ -3478,7 +3515,9 @@ type PlacedCallStatus =
   | "busy"
   | "no-answer"
   | "failed"
-  | "canceled";
+  | "canceled"
+  | string & {
+};
 ```
 
 Where a placed call is. The last five are OVER — nothing moves off them:
@@ -3496,6 +3535,8 @@ type ReadUploadOptions = {
   start?: number;
 };
 ```
+
+**`Input`**
 
 Options for [stepReadUpload](#stepreadupload).
 
@@ -3542,6 +3583,8 @@ type SayFailureOnClientOptions<I> = Pick<StepSayOnClientOptions,
   text: (error: Error, input: I, reason: string) => string;
 };
 ```
+
+**`Input`**
 
 Options for [sayFailureOnClient](#sayfailureonclient).
 
@@ -3644,6 +3687,8 @@ type SpeakOptions = {
 };
 ```
 
+**`Input`**
+
 What [stepSpeak](#stepspeak) accepts.
 
 #### Properties
@@ -3687,7 +3732,7 @@ anyway (a phone line is 8 kHz), since the file scales linearly with it.
 optional signal?: AbortSignal;
 ```
 
-Abort the synthesis. Combined with [STEP\_SPEAK\_TIMEOUT\_MS](#step_speak_timeout_ms) rather
+Abort the synthesis. Combined with `STEP_SPEAK_TIMEOUT_MS` rather
 than replacing it, so a caller passing one still cannot hang forever.
 
 ##### voice?
@@ -3714,6 +3759,8 @@ type SpokenAudio = {
   voice: string;
 };
 ```
+
+**`Sealed`**
 
 What [stepSpeak](#stepspeak) resolves with.
 
@@ -3775,6 +3822,8 @@ type StepClientTranscriptOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [stepClientTranscript](#stepclienttranscript).
 
 #### Properties
@@ -3825,6 +3874,8 @@ type StepFetchInit = {
   signal?: AbortSignal;
 };
 ```
+
+**`Input`**
 
 What [stepFetch](#stepfetch) accepts.
 
@@ -3887,6 +3938,8 @@ type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions &
 };
 ```
 
+**`Input`**
+
 Options for [stepGenerateJson](#stepgeneratejson): [StepGenerateOptions](#stepgenerateoptions) plus the shape.
 
 #### Type Declaration
@@ -3925,6 +3978,8 @@ type StepGenerateOptions = {
   timeoutMs?: number;
 };
 ```
+
+**`Input`**
 
 Options for [stepGenerate](#stepgenerate).
 
@@ -4019,6 +4074,8 @@ type StepInfo = {
 };
 ```
 
+**`Sealed`**
+
 Which step is running, and which attempt of it.
 
 #### Properties
@@ -4098,6 +4155,8 @@ type StepNotifyClientOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [stepNotifyClient](#stepnotifyclient).
 
 #### Properties
@@ -4110,7 +4169,7 @@ optional ackTimeoutMs?: number;
 
 How long to wait for the ack once the notice is sent. It covers the client
 TAKING it — reading the audio, for one that acks after queueing it — not the
-whole playback. Default [DEFAULT\_CLIENT\_ACK\_TIMEOUT\_MS](#default_client_ack_timeout_ms).
+whole playback. Default `DEFAULT_CLIENT_ACK_TIMEOUT_MS`.
 
 ##### retryAfterMs?
 
@@ -4119,7 +4178,7 @@ optional retryAfterMs?: number;
 ```
 
 When the next attempt runs after the client was unreachable. Default
-[DEFAULT\_CLIENT\_RETRY\_MS](#default_client_retry_ms).
+`DEFAULT_CLIENT_RETRY_MS`.
 
 ##### signal?
 
@@ -4139,6 +4198,8 @@ type StepPollUntilOptions<T> = {
   signal?: AbortSignal;
 };
 ```
+
+**`Input`**
 
 Options for [stepPollUntil](#steppolluntil).
 
@@ -4213,6 +4274,8 @@ type StepSayOnClientOptions = {
   voice?: string;
 };
 ```
+
+**`Input`**
 
 Options for [stepSayOnClient](#stepsayonclient).
 
@@ -4313,6 +4376,8 @@ type StepTextOwnerOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [stepTextOwner](#steptextowner).
 
 #### Properties
@@ -4400,6 +4465,8 @@ type TranscribeRequestOptions = {
 };
 ```
 
+**`Input`**
+
 Options every call in this family accepts.
 
 #### Properties
@@ -4430,7 +4497,7 @@ a caller passing one still cannot hang forever.
 optional timeoutMs?: number;
 ```
 
-Deadline for this one request. Defaults to [TRANSCRIBE\_TIMEOUT\_MS](#transcribe_timeout_ms).
+Deadline for this one request. Defaults to `TRANSCRIBE_TIMEOUT_MS`.
 
 ***
 
@@ -4442,6 +4509,8 @@ type TranscribeSubmitOptions = TranscribeRequestOptions & {
   params?: Record<string, unknown>;
 };
 ```
+
+**`Input`**
 
 What [stepTranscribeSubmit](#steptranscribesubmit) accepts.
 
@@ -4485,6 +4554,8 @@ type TranscribeSyncOptions = TranscribeRequestOptions & {
   type?: string;
 };
 ```
+
+**`Input`**
 
 What [stepTranscribeSync](#steptranscribesync) accepts.
 
@@ -4595,6 +4666,8 @@ type UploadInfo = {
 };
 ```
 
+**`Sealed`**
+
 What a stored upload is, minus its bytes.
 
 #### Properties
@@ -4704,6 +4777,8 @@ type UploadRange = {
 };
 ```
 
+**`Sealed`**
+
 A half-open window of an upload's bytes, `[start, end)`.
 
 #### Properties
@@ -4732,6 +4807,8 @@ type UploadSlice = {
   start: number;
 };
 ```
+
+**`Sealed`**
 
 One window of an upload, as [stepReadUpload](#stepreadupload) resolves it.
 
@@ -4782,6 +4859,8 @@ type WavFormat = {
   sampleRate: number;
 };
 ```
+
+**`Sealed`**
 
 A WAV's `fmt ` chunk plus where its samples actually live.
 
@@ -4841,6 +4920,8 @@ type WriteUploadOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [stepWriteUpload](#stepwriteupload).
 
 #### Properties
@@ -4887,39 +4968,6 @@ budget runs out.
 
 ***
 
-### DEFAULT\_CALL\_RING\_TIMEOUT\_S
-
-```ts
-const DEFAULT_CALL_RING_TIMEOUT_S: number;
-```
-
-Default [PlaceCallOptions.ringTimeoutS](#ringtimeouts): thirty seconds of ringing, then
-`no-answer` — about five rings, short of most voicemail pickups.
-
-***
-
-### DEFAULT\_CALL\_TIME\_LIMIT\_S
-
-```ts
-const DEFAULT_CALL_TIME_LIMIT_S: number;
-```
-
-Default [PlaceCallOptions.timeLimitS](#timelimits): Twilio hangs up after ten
-minutes whatever the agent is doing, so a stuck conversation cannot run up
-hours of minutes (Twilio's own default is four hours).
-
-***
-
-### DEFAULT\_CLIENT\_ACK\_TIMEOUT\_MS
-
-```ts
-const DEFAULT_CLIENT_ACK_TIMEOUT_MS: 30000 = 30000;
-```
-
-Default [StepNotifyClientOptions.ackTimeoutMs](#acktimeoutms).
-
-***
-
 ### DEFAULT\_CLIENT\_DELIVERY\_ATTEMPTS
 
 ```ts
@@ -4931,16 +4979,6 @@ at `stepNotifyClient`'s 30-second retry.
 
 ***
 
-### DEFAULT\_CLIENT\_RETRY\_MS
-
-```ts
-const DEFAULT_CLIENT_RETRY_MS: 30000 = 30000;
-```
-
-Default [StepNotifyClientOptions.retryAfterMs](#retryafterms).
-
-***
-
 ### STEP\_SPEAK\_SAMPLE\_RATE
 
 ```ts
@@ -4948,23 +4986,6 @@ const STEP_SPEAK_SAMPLE_RATE: number;
 ```
 
 Sample rate [stepSpeak](#stepspeak) asks for when a caller names none.
-
-***
-
-### STEP\_SPEAK\_TIMEOUT\_MS
-
-```ts
-const STEP_SPEAK_TIMEOUT_MS: number;
-```
-
-How long one [stepSpeak](#stepspeak) call may take before it is abandoned.
-
-Generous, and sized for the JOB rather than for a round trip: synthesis runs
-at a multiple of real time, so a long digest is legitimately tens of
-seconds. What it is really there to bound is the failure this endpoint
-actually has — a socket that opens, accepts the text and then says nothing,
-which without a deadline is a step that hangs until the run's own budget
-runs out with nothing anywhere naming the cause.
 
 ***
 
@@ -4981,7 +5002,7 @@ The async API's base.
 ### TRANSCRIBE\_MODELS
 
 ```ts
-const TRANSCRIBE_MODELS: readonly [string];
+const TRANSCRIBE_MODELS: readonly string[];
 ```
 
 The models a job asks for when a caller names none.
@@ -4995,16 +5016,6 @@ workflow's output.
 
 ***
 
-### TRANSCRIBE\_SYNC\_ENDPOINT
-
-```ts
-const TRANSCRIBE_SYNC_ENDPOINT: string;
-```
-
-The synchronous endpoint. Global — it routes to the nearest region.
-
-***
-
 ### TRANSCRIBE\_SYNC\_MODEL
 
 ```ts
@@ -5012,61 +5023,6 @@ const TRANSCRIBE_SYNC_MODEL: string;
 ```
 
 Required on every sync request; the endpoint routes on it.
-
-***
-
-### TRANSCRIBE\_SYNC\_TIMEOUT\_MS
-
-```ts
-const TRANSCRIBE_SYNC_TIMEOUT_MS: number;
-```
-
-The endpoint's own per-request deadline, plus room to upload.
-
-Longer than the async API's default because the audio and the transcription
-share one request here: the far side is doing the work while this waits,
-where a submit merely queues it.
-
-***
-
-### TRANSCRIBE\_TIMEOUT\_MS
-
-```ts
-const TRANSCRIBE_TIMEOUT_MS: number;
-```
-
-Per-request deadline when a caller names none.
-
-Sized for a JSON round trip, which is what every call here is EXCEPT the
-upload — that one is a function of the file rather than of the service and
-carries its own budget. Nothing in the async API blocks: a submit answers
-with an id and a poll answers with a status, both immediately.
-
-***
-
-### TRANSCRIBE\_UPLOAD\_TIMEOUT\_MS
-
-```ts
-const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number;
-```
-
-Deadline for the upload leg.
-
-Its own budget because it is the one request whose duration is a function of
-the FILE rather than of the service, and a deadline sized for a JSON round
-trip would cancel exactly the uploads this exists to handle.
-
-***
-
-### TRANSCRIBE\_WINDOW\_BYTES
-
-```ts
-const TRANSCRIBE_WINDOW_BYTES: number;
-```
-
-How much of a stored upload one outbound window carries.
-
-The recording is never held whole — see [stepTranscribeUpload](#steptranscribeupload).
 
 ***
 
@@ -5093,7 +5049,7 @@ The step env key [stepPlaceCall](#stepplacecall) reads the Twilio auth token fro
 ### WAV\_HEADER\_BYTES
 
 ```ts
-const WAV_HEADER_BYTES: 44 = 44;
+const WAV_HEADER_BYTES: number;
 ```
 
 Bytes of WAV header [encodeWav](#encodewav) writes — `RIFF`, `fmt `, and `data`.

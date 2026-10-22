@@ -764,6 +764,8 @@ readonly options: Options;
 
 ### ChannelHandler
 
+**`Input`**
+
 Everything one channel kind supplies: how to turn a [ChannelMessage](#channelmessage)
 into the request body that platform takes, and what to say when the platform
 refuses one.
@@ -852,6 +854,8 @@ Turn a message into this platform's request.
 
 ### ChannelMessage
 
+**`Input`**
+
 What gets posted, in terms no single platform owns.
 
 **`text` is not decoration and it is not optional.** It is what a push
@@ -901,6 +905,8 @@ The notification line, and the fallback body. Always sent.
 
 ### ChannelPayload
 
+**`Input`**
+
 A rendered request: where to POST and what to send.
 
 Returned by [renderChannelPayload](#renderchannelpayload), which is PURE — the branch a
@@ -936,6 +942,8 @@ Absolute URL to POST to.
 ***
 
 ### ChannelRegistration
+
+**`Input`**
 
 What a registration carries BESIDE the handler: the two things only some
 platforms need, declared by the platform that needs them.
@@ -986,6 +994,8 @@ reason, or `undefined` when the body means delivered. Without it, every
 ***
 
 ### ChannelSection
+
+**`Input`**
 
 One block of a message: a titled chunk, optionally linked, with prose and
 bullets under it.
@@ -1040,6 +1050,8 @@ Where `title` points.
 
 ### SlackChannelOptions
 
+**`Input`**
+
 What [slackChannel](#slackchannel-1) takes.
 
 **No credential is read from the environment**, and that is a deliberate
@@ -1079,6 +1091,8 @@ An incoming webhook (`hooks.slack.com/services/…`) or a workflow trigger
 
 ### SmsRecipientEnv
 
+**`Input`**
+
 The env this rule reads. Both optional so a `ctx.env` or a `stepEnv()` record
 can be passed as is.
 
@@ -1105,6 +1119,8 @@ The owner's own number: the default recipient, and implicitly allowed.
 ***
 
 ### TextbeltChannelOptions
+
+**`Input`**
 
 What [textbeltChannel](#textbeltchannel-1) takes.
 
@@ -1182,6 +1198,8 @@ type SlackChannel = Channel & {
 };
 ```
 
+**`Sealed`**
+
 A Slack channel descriptor, as returned by [slackChannel](#slackchannel-1).
 
 #### Type Declaration
@@ -1209,6 +1227,8 @@ type TextbeltChannel = Channel & {
 };
 ```
 
+**`Sealed`**
+
 A Textbelt channel descriptor, as returned by [textbeltChannel](#textbeltchannel-1).
 
 #### Type Declaration
@@ -1226,17 +1246,6 @@ readonly options: TextbeltChannelOptions & Record<string, unknown>;
 ```
 
 ## Variables
-
-### CHANNEL\_POST\_TIMEOUT\_MS
-
-```ts
-const CHANNEL_POST_TIMEOUT_MS: number;
-```
-
-A platform is not slow. A post that has not answered in 30s is not going to,
-and a step holding a socket open past that is a step nobody can cancel.
-
-***
 
 ### SLACK\_CHANNEL\_HANDLER
 
@@ -1289,7 +1298,7 @@ The `kind` tag on a Textbelt channel descriptor.
 ### TEXTBELT\_MAX\_MESSAGE\_CHARS
 
 ```ts
-const TEXTBELT_MAX_MESSAGE_CHARS: 1000 = 1000;
+const TEXTBELT_MAX_MESSAGE_CHARS: number;
 ```
 
 The longest text a Textbelt channel sends, in characters; a longer render is

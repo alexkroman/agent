@@ -58,6 +58,7 @@ export const ASSEMBLYAI_S2S_API_KEY_ENV: string = ASSEMBLYAI_S2S_PROVIDER.envVar
  * Deliberately absent: `turn_detection`. Its service default is adaptive and
  * entity-aware — it waits out a spelled-out value — and setting
  * `min_silence`/`max_silence` disables both for the rest of the session.
+ * @input
  */
 export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
   /**

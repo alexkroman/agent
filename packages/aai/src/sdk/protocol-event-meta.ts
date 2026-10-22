@@ -25,7 +25,7 @@ import { z } from "zod";
 export const EVENT_ID_PREFIX = "evt_";
 
 /** Zod schema for {@link SessionEventMeta}. */
-export const SessionEventMetaSchema = z.object({
+export const SessionEventMetaSchema: z.ZodType<SessionEventMeta> = z.object({
   /**
    * This event's identity, for the whole of its life: `evt_` + a ULID, minted
    * once when the event is written and stored with it.
@@ -49,5 +49,15 @@ export const SessionEventMetaSchema = z.object({
   at: z.number().int().nonnegative(),
 });
 
-/** The envelope every session event carries. */
-export type SessionEventMeta = z.infer<typeof SessionEventMetaSchema>;
+/**
+ * The envelope every session event carries.
+ *
+ * @sealed
+ * @public
+ */
+export interface SessionEventMeta {
+  /** This event's identity: `evt_` + a ULID — the key for idempotent ingestion, not a cursor. */
+  id: string;
+  /** When the event was stamped — epoch milliseconds, the writer's clock. */
+  at: number;
+}

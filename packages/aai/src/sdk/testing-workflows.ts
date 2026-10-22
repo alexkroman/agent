@@ -21,9 +21,10 @@ import { rejectingWorkflows } from "./workflow-unavailable.ts";
  * What {@link createRunSnapshot} accepts: the shared fields, plus whatever the
  * chosen status requires.
  *
- * The `status`-bearing half mirrors {@link WorkflowRunSnapshot}'s own union, so
- * asking for `status: "completed"` without an `output` is a compile error rather
- * than a fixture that lies.
+ * The `status`-bearing half is DERIVED from {@link WorkflowRunSnapshot}'s own
+ * union, arm by arm, so asking for `status: "completed"` without an `output` is
+ * a compile error rather than a fixture that lies — and an arm the snapshot
+ * grows is one this accepts without a second edit.
  *
  * @typeParam R - The workflow's return type, when the caller names it.
  *
@@ -31,10 +32,12 @@ import { rejectingWorkflows } from "./workflow-unavailable.ts";
  */
 export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> &
   (
-    | { status?: "pending" | "running" | undefined }
-    | { status: "completed"; output: R }
-    | { status: "failed"; error: string }
-    | { status: "cancelled" }
+    | { status?: undefined }
+    | (WorkflowRunSnapshot<R> extends infer S
+        ? S extends unknown
+          ? Omit<S, keyof WorkflowRunBase>
+          : never
+        : never)
   );
 
 /** Defaults, so a spec names only the field its assertion is about. */

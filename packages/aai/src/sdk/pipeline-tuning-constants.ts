@@ -19,7 +19,7 @@
  *
  * @internal
  */
-export const DEFAULT_FALSE_INTERRUPTION_PROMPT =
+export const DEFAULT_FALSE_INTERRUPTION_PROMPT: string =
   "Your last reply was cut off by a false interruption — the user did not " +
   "actually say anything. Continue your reply from where it was cut off, " +
   "without repeating what you already said. This includes the sentence you were " +

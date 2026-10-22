@@ -44,7 +44,11 @@ import {
 } from "./standard-schema.ts";
 import { type StepGenerateOptions, stepGenerate } from "./step-generate.ts";
 
-/** Options for {@link stepGenerateJson}: {@link StepGenerateOptions} plus the shape. */
+/**
+ * Options for {@link stepGenerateJson}: {@link StepGenerateOptions} plus the shape.
+ *
+ * @input
+ */
 export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
   /**
    * The shape the reply must satisfy — any

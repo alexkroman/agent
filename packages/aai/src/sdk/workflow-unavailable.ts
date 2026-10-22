@@ -38,7 +38,7 @@ import type { WorkflowClient } from "./workflow.ts";
  *
  * @internal
  */
-export const WORKFLOWS_UNAVAILABLE_MESSAGE =
+export const WORKFLOWS_UNAVAILABLE_MESSAGE: string =
   "Workflows are not available for this app: it declares none. Add them with " +
   "`agent({ workflows })`, with each body an exported async function in a module " +
   "under `workflows/` taking `(input, ctx)`.";
@@ -100,7 +100,7 @@ export function rejectingWorkflows(message: string): WorkflowClient {
  *
  * @internal
  */
-export const PUBLIC_URL_UNCONFIGURED_MESSAGE =
+export const PUBLIC_URL_UNCONFIGURED_MESSAGE: string =
   "This agent does not know its own public URL, so a webhook URL cannot be minted. " +
   "Set `publicUrl` on createAgentServer/createRuntime (server.mjs reads PUBLIC_URL), " +
   "or set AAI_PUBLIC_ORIGIN on the platform.";

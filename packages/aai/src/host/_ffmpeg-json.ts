@@ -27,7 +27,11 @@
 import { isRecord } from "../sdk/is-record.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
 
-/** One elementary stream inside a container. */
+/**
+ * One elementary stream inside a container.
+ *
+ * @sealed
+ */
 export type MediaStreamInfo = {
   /** ffprobe's own stream index — what `-map 0:<index>` names. */
   index: number;
@@ -48,7 +52,11 @@ export type MediaStreamInfo = {
   durationSec?: number;
 };
 
-/** What `parseProbeJson` makes of one media file — see `@alexkroman1/aai/ffmpeg`. */
+/**
+ * What `parseProbeJson` makes of one media file — see `@alexkroman1/aai/ffmpeg`.
+ *
+ * @sealed
+ */
 export type MediaInfo = {
   /** Duration in seconds, or `undefined` when the container does not say. */
   durationSec?: number;

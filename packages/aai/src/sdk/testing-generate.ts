@@ -26,7 +26,11 @@
 import { scriptRouter } from "./_testing-script.ts";
 import type { GenerateFn, GenerateOptions } from "./generate.ts";
 
-/** One `ctx.generate` call, as recorded by {@link stubGenerate}. */
+/**
+ * One `ctx.generate` call, as recorded by {@link stubGenerate}.
+ *
+ * @sealed
+ */
 export interface StubGenerateCall {
   /** The user prompt — what the tool actually asked. */
   prompt: string;
@@ -102,7 +106,11 @@ export type StubGenerateScript =
       readonly reply?: never;
     };
 
-/** A fake `ctx.generate`: the function to pass, and what it was asked. */
+/**
+ * A fake `ctx.generate`: the function to pass, and what it was asked.
+ *
+ * @sealed
+ */
 export interface StubGenerate {
   /** Pass as `generate` to `createToolContext`. */
   generate: GenerateFn;

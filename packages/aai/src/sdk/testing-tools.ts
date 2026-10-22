@@ -19,7 +19,7 @@ import { createToolContext } from "./_testing-context.ts";
 import type { AnyDialog } from "./dialog-handle.ts";
 import { isRecord } from "./is-record.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
-import { agentToolsets, composeToolsets, type Toolset } from "./toolset.ts";
+import { agentToolsets, composeToolsets, type ToolBearingDef } from "./toolset.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 
 /**
@@ -30,11 +30,11 @@ import type { ToolContext, ToolDef } from "./types.ts";
  * Structural rather than `AgentDef`, so a spec may pass the agent's default
  * export, a bare `{ tools }` literal, or anything else carrying one.
  *
+ * @input
  * @public
  */
 export type ToolBearingAgent = {
   readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
-  readonly toolsets?: readonly Toolset[] | undefined;
   readonly dialogs?: readonly AnyDialog[] | undefined;
 };
 
@@ -93,7 +93,7 @@ function resolveTool(
         : `toolOf(agent, "${name}") was handed ${describe(given)} rather than an agent definition. Import the agent as DEPLOYED: \`import agentDef from "virtual:aai/agent"\` under vitest, or \`deployedAgent\` from @alexkroman1/aai/testing under any other runner.`,
     );
   }
-  const table = composeToolsets(agentToolsets(agent));
+  const table = composeToolsets(agentToolsets(agent as ToolBearingDef));
   const found = table.resolve(name);
   if (!found) {
     const declared = table.tools.map((one) => one.name);

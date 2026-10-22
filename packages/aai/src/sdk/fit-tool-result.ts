@@ -37,6 +37,7 @@ const MAX_TRIM_PASSES = 256;
 /**
  * What {@link fitToolResult} takes.
  *
+ * @input
  * @public
  */
 export interface FitToolResultOptions {

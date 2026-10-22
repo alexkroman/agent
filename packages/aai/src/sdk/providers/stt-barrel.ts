@@ -85,7 +85,6 @@ export {
   assemblyAIStt,
 } from "./stt/assemblyai.ts";
 export {
-  DEEPGRAM_DEFAULT_ENDPOINTING_MS,
   type DeepgramSttOptions,
   deepgramStt,
 } from "./stt/deepgram.ts";

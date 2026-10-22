@@ -4,7 +4,7 @@
 
 ```ts
 
-// @public
+// @public @input
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
@@ -28,7 +28,7 @@ export function bytesPerSecond(format: Pick<WavFormat, "channels" | "bitsPerSamp
 // @public
 export const CALL_OVER_STATUSES: ReadonlySet<PlacedCallStatus>;
 
-// @public
+// @public @input
 export type CallStatusOptions = {
     carrier: "twilio";
     callId: string;
@@ -36,14 +36,14 @@ export type CallStatusOptions = {
     signal?: AbortSignal;
 };
 
-// @public
+// @public @input
 interface ClientEventMap {
 }
 
 // @public
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
 
-// @public
+// @public @input
 export type ClientNotice = {
     id: string;
     event: string;
@@ -51,19 +51,19 @@ export type ClientNotice = {
     audio?: Uint8Array;
 };
 
-// @public
+// @public @sealed
 export type ClientTranscript = {
     sessions: ClientTranscriptSession[];
 };
 
-// @public
+// @public @sealed
 export type ClientTranscriptMessage = {
-    role: "user" | "assistant";
+    role: "user" | "assistant" | (string & {});
     text: string;
     at: number;
 };
 
-// @public
+// @public @sealed
 export type ClientTranscriptSession = {
     sessionId: string;
     startedAt: number;
@@ -72,7 +72,7 @@ export type ClientTranscriptSession = {
     tools: ClientTranscriptTool[];
 };
 
-// @public
+// @public @sealed
 export type ClientTranscriptTool = {
     name: string | undefined;
     args: Readonly<Record<string, unknown>> | undefined;
@@ -90,37 +90,25 @@ export class ClientUnreachableError extends RetryableError {
 }
 
 // @public
-export type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
-
-// @public
-export const DEFAULT_CALL_RING_TIMEOUT_S: number;
-
-// @public
-export const DEFAULT_CALL_TIME_LIMIT_S: number;
-
-// @public
-export const DEFAULT_CLIENT_ACK_TIMEOUT_MS = 30000;
+export type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected" | (string & {});
 
 // @public
 export const DEFAULT_CLIENT_DELIVERY_ATTEMPTS: number;
 
-// @public
-export const DEFAULT_CLIENT_RETRY_MS = 30000;
-
-// @public
+// @public @sealed
 interface DelegateAnswer {
     steps: number;
     text: string;
     toolCalls: readonly DelegateToolCall[];
 }
 
-// @public
+// @public @sealed
 type DelegateFn = {
     <T>(subagent: TypedSpeakerDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
     (subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult>;
 };
 
-// @public
+// @public @input
 interface DelegateOptions {
     context?: string;
     maxSteps?: number;
@@ -134,7 +122,7 @@ interface DelegateResult extends DelegateAnswer {
     revisions: number;
 }
 
-// @public
+// @public @sealed
 interface DelegateToolCall {
     input: unknown;
     name: string;
@@ -143,13 +131,13 @@ interface DelegateToolCall {
 // @public
 export function encodeWav(samples: Uint8Array | readonly Uint8Array[], format: PcmFormat): Uint8Array<ArrayBuffer>;
 
-// @public
+// @public @sealed
 export type EnvContext = {
     env: Readonly<Partial<Record<string, string>>>;
     signal?: AbortSignal;
 };
 
-// @public
+// @public @input
 type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
@@ -157,12 +145,12 @@ type FindByKeyOptions = {
     withOutput?: boolean;
 };
 
-// @public
+// @public @input
 type FindOptions = {
     limit?: number;
 };
 
-// @public
+// @public @sealed
 type GenerateFn = {
     <S extends StandardSchemaV1>(options: GenerateOptions & {
         schema: S;
@@ -170,13 +158,13 @@ type GenerateFn = {
     (options: GenerateOptions): Promise<GenerateResult>;
 };
 
-// @public
+// @public @sealed
 type GenerateObjectResult<T> = {
     text: string;
     object: T;
 };
 
-// @public
+// @public @input
 type GenerateOptions = {
     prompt: string;
     system?: string;
@@ -198,7 +186,7 @@ type GuardrailVerdict = true | string;
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
-// @public
+// @public @input
 interface InterruptionTuning {
     backoffMs?: number;
     minDurationMs?: number;
@@ -239,20 +227,20 @@ export function mapSettled<T, R>(items: readonly T[], width: number, run: (item:
 
 // @public
 type Message = {
-    role: "user" | "assistant" | "tool";
+    role: "user" | "assistant" | "tool" | (string & {});
     content: string;
     toolName?: string;
     toolCallId?: string;
 };
 
-// @public
+// @public @input
 interface ModelTuning {
     maxOutputTokens?: number;
     maxRetries?: number;
     temperature?: number;
 }
 
-// @public
+// @public @sealed
 export type MultipartBody = {
     body: Uint8Array;
     headers: {
@@ -263,7 +251,7 @@ export type MultipartBody = {
 // @public
 export function multipartBody(...parts: readonly MultipartPart[]): MultipartBody;
 
-// @public
+// @public @input
 export type MultipartPart = {
     name: string;
     bytes: Uint8Array | readonly Uint8Array[];
@@ -290,21 +278,21 @@ export function partitionSettled<T, R>(settled: readonly Settled<T, R>[]): {
 // @public
 export function pcmDurationMs(byteLength: number, format: PcmFormat): number;
 
-// @public
+// @public @input
 export type PcmFormat = {
     sampleRate: number;
     channels?: number | undefined;
     bitsPerSample?: number | undefined;
 };
 
-// @public
+// @public @input
 interface PipelineTuning {
     interruption?: InterruptionTuning | "off";
     silence?: SilenceTuning;
     turnTaking?: TurnTakingTuning;
 }
 
-// @public
+// @public @input
 export type PlaceCallCredentials = {
     readonly accountSid: string;
     readonly authToken: string;
@@ -342,15 +330,15 @@ export type PlaceCallOptions = {
     signal?: AbortSignal;
 };
 
-// @public
+// @public @sealed
 export type PlacedCall = {
     callId: string;
 };
 
 // @public
-export type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed" | "busy" | "no-answer" | "failed" | "canceled";
+export type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed" | "busy" | "no-answer" | "failed" | "canceled" | (string & {});
 
-// @public
+// @public @input
 type PollOptions<T> = {
     everyMs: number;
     maxMs: number;
@@ -358,7 +346,7 @@ type PollOptions<T> = {
     maxAttempts?: number | undefined;
 };
 
-// @public
+// @public @sealed
 export type PollResult<T> = {
     value: T;
     done: boolean;
@@ -376,7 +364,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 // @public
 type RandomSource = () => number;
 
-// @public
+// @public @input
 export type ReadUploadOptions = {
     start?: number | undefined;
     end?: number | undefined;
@@ -392,7 +380,7 @@ class RetryableError extends Error {
     readonly retryAfter: Date;
 }
 
-// @public
+// @public @input
 type RetryableErrorOptions = {
     retryAfter?: number | Date;
     cause?: unknown;
@@ -409,7 +397,7 @@ export function sayFailureOnClient<I>(options: SayFailureOnClientOptions<I>): {
     maxAttempts: number;
 };
 
-// @public
+// @public @input
 export type SayFailureOnClientOptions<I> = Pick<StepSayOnClientOptions, "event" | "sampleRate" | "voice" | "language" | "ackTimeoutMs" | "retryAfterMs"> & {
     clientId: (input: I) => string | undefined;
     text: (error: Error, input: I, reason: string) => string;
@@ -417,7 +405,7 @@ export type SayFailureOnClientOptions<I> = Pick<StepSayOnClientOptions, "event" 
     maxAttempts?: number | undefined;
 };
 
-// @public
+// @public @input
 type SayOnClientNotice = {
     id?: string | undefined;
     event: string;
@@ -432,7 +420,7 @@ type SayOnClientNotice = {
     maxAttempts?: number | undefined;
 };
 
-// @public
+// @public @input
 type SayOptions = {
     interrupt?: boolean | undefined;
     interruptible?: boolean | undefined;
@@ -456,30 +444,32 @@ export type Settled<T, R> = {
     readonly error: string;
 };
 
-// @public
+// @public @input
 interface SilenceNudge {
     afterMs: number;
     prompt?: string;
 }
 
-// @public
+// @public @input
 interface SilenceTuning {
     deadAirCoverMs?: number;
     nudge?: SilenceNudge;
 }
 
-// @public
+// @public @input
 type SleepOptions = {
     correlationId?: string;
 };
 
-// @public
+// @public @sealed
 type SlotStore = {
     read(key: string): unknown;
-    write(key: string, value: unknown, durable: boolean): void;
+    write(key: string, value: unknown, options?: {
+        durable?: boolean | undefined;
+    }): void;
 };
 
-// @public
+// @public @input
 interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
@@ -501,7 +491,7 @@ interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRe
 // @public
 type SpeakerGuardrail = (answer: DelegateAnswer) => GuardrailVerdict | Promise<GuardrailVerdict>;
 
-// @public
+// @public @input
 export type SpeakOptions = {
     voice?: string | undefined;
     language?: string | undefined;
@@ -517,9 +507,9 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped";
+type SpeechOutcome = "played" | "interrupted" | "dropped" | (string & {});
 
-// @public
+// @public @sealed
 export type SpokenAudio = {
     audio: Uint8Array<ArrayBuffer>;
     pcm: Uint8Array;
@@ -561,7 +551,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
     };
 }
 
-// @public
+// @public @input
 type StartOptions = {
     key?: string;
     dedupeKey?: string;
@@ -573,15 +563,12 @@ type StartOptions = {
 export const STEP_SPEAK_SAMPLE_RATE: number;
 
 // @public
-export const STEP_SPEAK_TIMEOUT_MS: number;
-
-// @public
 export function stepCallStatus(options: CallStatusOptions): Promise<PlacedCallStatus>;
 
 // @public
 export function stepClientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
 
-// @public
+// @public @input
 export type StepClientTranscriptOptions = {
     since?: number | undefined;
     afterEventIndex?: {
@@ -605,7 +592,7 @@ export function stepEnvContext(): EnvContext;
 // @public
 export function stepFetch(url: string, init?: StepFetchInit): Promise<Response>;
 
-// @public
+// @public @input
 export type StepFetchInit = {
     method?: string | undefined;
     headers?: Record<string, string> | undefined;
@@ -632,12 +619,12 @@ export class StepGenerateError extends Error {
 // @public
 export function stepGenerateJson<S extends StandardSchemaV1>(prompt: string, options: StepGenerateJsonOptions<S>): Promise<InferSchemaOutput<S>>;
 
-// @public
+// @public @input
 export type StepGenerateJsonOptions<S extends StandardSchemaV1> = StepGenerateOptions & {
     schema: S;
 };
 
-// @public
+// @public @input
 export type StepGenerateOptions = {
     system?: string;
     model?: string;
@@ -649,7 +636,7 @@ export type StepGenerateOptions = {
     responseSchema?: Record<string, unknown>;
 };
 
-// @public
+// @public @sealed
 export type StepInfo = {
     readonly name: string;
     readonly key: string;
@@ -665,14 +652,14 @@ export function stepInfo(): StepInfo | undefined;
 // @public
 export function stepNotifyClient(clientId: string, notice: ClientNotice, options?: StepNotifyClientOptions): Promise<void>;
 
-// @public
+// @public @input
 export type StepNotifyClientOptions = {
     ackTimeoutMs?: number;
     retryAfterMs?: number;
     signal?: AbortSignal;
 };
 
-// @public
+// @public @input
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
     schema?: S | undefined;
@@ -684,7 +671,7 @@ export function stepPlaceCall(options: PlaceCallOptions): Promise<PlacedCall>;
 // @public
 export function stepPollUntil<T>(check: () => Promise<T> | T, options: StepPollUntilOptions<T>): Promise<PollResult<T>>;
 
-// @public
+// @public @input
 export type StepPollUntilOptions<T> = {
     everyMs: number;
     maxMs: number;
@@ -704,7 +691,7 @@ export function stepRequireCompleteUpload(id: string): Promise<UploadInfo>;
 // @public
 export function stepSayOnClient(clientId: string, options: StepSayOnClientOptions): Promise<string>;
 
-// @public
+// @public @input
 export type StepSayOnClientOptions = {
     id: string;
     event: string;
@@ -718,7 +705,7 @@ export type StepSayOnClientOptions = {
     signal?: AbortSignal | undefined;
 };
 
-// @public
+// @public @input
 type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
     schema: S;
 };
@@ -729,7 +716,7 @@ export function stepSpeak(text: string, options?: SpeakOptions): Promise<SpokenA
 // @public
 export function stepTextOwner(text: string, options?: StepTextOwnerOptions): Promise<StepTextOwnerResult>;
 
-// @public
+// @public @input
 export type StepTextOwnerOptions = {
     phone?: string | undefined;
     links?: "keep" | "strip" | undefined;
@@ -779,7 +766,7 @@ export function stepWebhookUrl(token: string): string;
 // @public
 export function stepWriteUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, options?: WriteUploadOptions): Promise<UploadInfo>;
 
-// @public
+// @public @input
 type StreamOptions = {
     namespace?: string;
     startIndex?: number;
@@ -794,7 +781,7 @@ type ToolChoice = "auto" | "required" | "none" | {
     toolName: string;
 };
 
-// @public
+// @public @input
 type ToolCompletionMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -820,7 +807,7 @@ type ToolContext = {
     random: RandomSource;
 };
 
-// @public
+// @public @input
 type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
@@ -829,7 +816,7 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     messages?: ToolMessagesInput;
 };
 
-// @public
+// @public @input
 type ToolDelayedMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -850,14 +837,14 @@ type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 // @public
 type ToolMap = Readonly<Record<string, ToolDef>>;
 
-// @public
+// @public @input
 type ToolMessageCondition = {
     arg: string;
     op?: ToolConditionOperator | undefined;
     value: string | number | boolean | null;
 };
 
-// @public
+// @public @input
 type ToolMessagesInput = {
     start?: boolean | string | readonly (string | ToolStartMessage)[];
     delayed?: readonly ToolDelayedMessage[];
@@ -865,7 +852,7 @@ type ToolMessagesInput = {
     failed?: string | readonly (string | ToolCompletionMessage)[];
 };
 
-// @public
+// @public @input
 type ToolStartMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -876,25 +863,10 @@ type ToolStartMessage = {
 export const TRANSCRIBE_API: string;
 
 // @public
-export const TRANSCRIBE_MODELS: readonly [string];
-
-// @public
-export const TRANSCRIBE_SYNC_ENDPOINT: string;
+export const TRANSCRIBE_MODELS: readonly string[];
 
 // @public
 export const TRANSCRIBE_SYNC_MODEL: string;
-
-// @public
-export const TRANSCRIBE_SYNC_TIMEOUT_MS: number;
-
-// @public
-export const TRANSCRIBE_TIMEOUT_MS: number;
-
-// @public
-export const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number;
-
-// @public
-export const TRANSCRIBE_WINDOW_BYTES: number;
 
 // @public
 export class TranscribeError extends Error {
@@ -918,20 +890,20 @@ export type TranscribeProgress = {
     transcript: Transcript;
 };
 
-// @public
+// @public @input
 export type TranscribeRequestOptions = {
     apiKeyEnv?: string | undefined;
     timeoutMs?: number | undefined;
     signal?: AbortSignal | undefined;
 };
 
-// @public
+// @public @input
 export type TranscribeSubmitOptions = TranscribeRequestOptions & {
     models?: readonly string[] | undefined;
     params?: Record<string, unknown> | undefined;
 };
 
-// @public
+// @public @input
 export type TranscribeSyncOptions = TranscribeRequestOptions & {
     model?: string | undefined;
     filename?: string | undefined;
@@ -949,7 +921,7 @@ export type Transcript = {
 // @public
 type TurnDetectionMode = "auto" | "manual" | (string & {});
 
-// @public
+// @public @input
 interface TurnTakingTuning {
     detection?: TurnDetectionMode;
     maxSilenceMs?: number;
@@ -965,12 +937,12 @@ export const TWILIO_ACCOUNT_SID_ENV = "TWILIO_ACCOUNT_SID";
 // @public
 export const TWILIO_AUTH_TOKEN_ENV = "TWILIO_AUTH_TOKEN";
 
-// @public
+// @public @sealed
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
 
-// @public
+// @public @input
 interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
@@ -988,7 +960,7 @@ export class UploadIncompleteError extends Error {
     readonly stored: number;
 }
 
-// @public
+// @public @sealed
 export type UploadInfo = {
     id: string;
     name: string;
@@ -998,13 +970,13 @@ export type UploadInfo = {
     ranges?: readonly UploadRange[];
 };
 
-// @public
+// @public @sealed
 export type UploadRange = {
     start: number;
     end: number;
 };
 
-// @public
+// @public @sealed
 export type UploadSlice = {
     info: UploadInfo;
     bytes: Uint8Array;
@@ -1012,32 +984,32 @@ export type UploadSlice = {
     end: number;
 };
 
-// @public
+// @public @input
 interface UserTurnLimit {
     maxDurationMs?: number | undefined;
     maxWords?: number | undefined;
 }
 
-// @public
+// @public @input
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     timeoutMs: number;
     schema?: S | undefined;
 };
 
-// @public
+// @public @input
 type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     schema: S;
 };
 
-// @public
+// @public @input
 type WakeUpOptions = {
     correlationIds?: string[];
 };
 
 // @public
-export const WAV_HEADER_BYTES = 44;
+export const WAV_HEADER_BYTES: number;
 
-// @public
+// @public @sealed
 export type WavFormat = {
     sampleRate: number;
     channels: number;
@@ -1052,7 +1024,7 @@ export function wavHeader(format: PcmFormat, byteLength: number): Uint8Array<Arr
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
-// @public
+// @public @sealed
 type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
@@ -1076,7 +1048,7 @@ type WorkflowClient = {
     listing(): WorkflowSummary[];
 };
 
-// @public
+// @public @sealed
 type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
@@ -1094,7 +1066,7 @@ type WorkflowContext = {
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
-// @public
+// @public @input
 type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
@@ -1104,7 +1076,7 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
 };
 
-// @public
+// @public @sealed
 type WorkflowFailureContext<I = unknown> = {
     readonly runId: string;
     readonly workflow: string;
@@ -1120,7 +1092,7 @@ type WorkflowFailureHandler<I = unknown> = WorkflowFailureHook<I> | {
 // @public
 type WorkflowFailureHook<I = unknown> = (error: Error, context: WorkflowFailureContext<I>) => Promise<void> | void;
 
-// @public
+// @public @sealed
 type WorkflowRunBase = {
     runId: string;
     workflow: string;
@@ -1151,7 +1123,7 @@ type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 // @public
 type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
-// @public
+// @public @sealed
 type WorkflowSummary = {
     name: string;
     description?: string;
@@ -1160,7 +1132,7 @@ type WorkflowSummary = {
     uploads?: readonly string[];
 };
 
-// @public
+// @public @input
 export type WriteUploadOptions = {
     name?: string | undefined;
     type?: string | undefined;

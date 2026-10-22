@@ -51,6 +51,7 @@ export const TERMINAL_WORKFLOW_STATUSES = [
  * inlining the fields five times is what makes a field added here reach every
  * status at once.
  *
+ * @sealed
  * @public
  */
 export type WorkflowRunBase = {

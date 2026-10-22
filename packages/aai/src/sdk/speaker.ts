@@ -82,6 +82,7 @@ export const DEFAULT_GUARDRAIL_MAX_REVISIONS: number = 1;
  * @typeParam N - The `name`, as a literal when {@link speaker} infers it — what
  *   lets `Roster.handoff` refuse a misspelled target at compile time.
  *
+ * @input
  * @public
  */
 export interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRetries"> {
@@ -304,6 +305,7 @@ export interface SpeakerDef<N extends string = string> extends Omit<ModelTuning,
  * A {@link SpeakerDef} that declares a {@link SpeakerDef.schema} — what
  * {@link speaker} returns for one, so `ctx.delegate` types `object`.
  *
+ * @input
  * @public
  */
 export interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
@@ -326,7 +328,12 @@ export function speaker(def: SpeakerDef): SpeakerDef {
   return def;
 }
 
-/** Per-call options for {@link DelegateFn}. @public */
+/**
+ * Per-call options for {@link DelegateFn}.
+ *
+ * @input
+ * @public
+ */
 export interface DelegateOptions {
   /**
    * The task, as the subagent's first user message. Write it as a complete
@@ -347,7 +354,12 @@ export interface DelegateOptions {
   maxSteps?: number;
 }
 
-/** One tool call a subagent made, as reported back to the caller. @public */
+/**
+ * One tool call a subagent made, as reported back to the caller.
+ *
+ * @sealed
+ * @public
+ */
 export interface DelegateToolCall {
   /** The tool's name, as the subagent's model called it. */
   name: string;
@@ -369,6 +381,7 @@ export interface DelegateToolCall {
  * verdicts, and asking it to judge an answer against its own past judgements is
  * not a check, it is a loop.
  *
+ * @sealed
  * @public
  */
 export interface DelegateAnswer {
@@ -451,6 +464,7 @@ export interface DelegateResult extends DelegateAnswer {
  * answer is a delegation that happened and produced something, and a caller on
  * a live call can use the difference.
  *
+ * @sealed
  * @public
  */
 export interface TypedDelegateResult<T> extends DelegateResult {
@@ -479,6 +493,7 @@ export interface TypedDelegateResult<T> extends DelegateResult {
  * {@link SpeakerDef}, so a model-chosen delegation is untyped, which is
  * correct: nothing at that call site knows which subagent the model picked.
  *
+ * @sealed
  * @public
  */
 export type DelegateFn = {

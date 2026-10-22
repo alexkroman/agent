@@ -39,6 +39,7 @@ const WHSEC_PREFIX = "whsec_";
 /**
  * What {@link verifyStandardWebhook} takes beside the request and secret.
  *
+ * @input
  * @public
  */
 export interface StandardWebhookOptions {
@@ -147,6 +148,7 @@ export async function verifyStandardWebhook(
 /**
  * What {@link webhookRoute} takes.
  *
+ * @input
  * @public
  */
 export interface WebhookRouteOptions {

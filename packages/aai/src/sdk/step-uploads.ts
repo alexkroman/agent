@@ -101,7 +101,11 @@
 import { globalSlot } from "./_boundary.ts";
 import { UPLOAD_TOKEN_RE } from "./upload-constants.ts";
 
-/** What a stored upload is, minus its bytes. */
+/**
+ * What a stored upload is, minus its bytes.
+ *
+ * @sealed
+ */
 export type UploadInfo = {
   /**
    * The handle a run input carries.
@@ -171,10 +175,18 @@ export type UploadInfo = {
   ranges?: readonly UploadRange[];
 };
 
-/** A half-open window of an upload's bytes, `[start, end)`. */
+/**
+ * A half-open window of an upload's bytes, `[start, end)`.
+ *
+ * @sealed
+ */
 export type UploadRange = { start: number; end: number };
 
-/** One window of an upload, as {@link stepReadUpload} resolves it. */
+/**
+ * One window of an upload, as {@link stepReadUpload} resolves it.
+ *
+ * @sealed
+ */
 export type UploadSlice = {
   /** The upload this came from — `size` is the WHOLE file, not this window. */
   info: UploadInfo;
@@ -194,6 +206,7 @@ export type UploadSlice = {
  * `{ start: maybe }` would otherwise be a compile error at every call site that
  * has one — which is most of them, since "no start" and "start 0" mean the same
  * thing here.
+ * @input
  */
 export type ReadUploadOptions = {
   /** First byte to read. Defaults to 0. */
@@ -317,7 +330,7 @@ export function publishUploadReader(reader: UploadAccess | undefined): void {
  *
  * @internal
  */
-export const UPLOADS_UNAVAILABLE_MESSAGE =
+export const UPLOADS_UNAVAILABLE_MESSAGE: string =
   "No upload store in this process. Uploads are served by `createServerForRuntime`, which every " +
   "deployed agent, every self-hosted server and `aai dev` go through. In a test, publish " +
   "a reader of your own with the `publishUploadReader` helper on the runtime subpath.";

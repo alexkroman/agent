@@ -19,7 +19,7 @@
  * @module
  */
 
-import type { SessionEvent, SessionEventType } from "./session-event-map.ts";
+import type { AnySessionEvent, SessionEvent, SessionEventType } from "./session-event-map.ts";
 import type { SessionSpeech } from "./session-speech.ts";
 import type { SlotStore } from "./session-state.ts";
 
@@ -118,7 +118,7 @@ export type SessionEventContext = {
  * checks for a promise at run time to decide whether to attach a rejection
  * handler.
  */
-export type SessionEventHandler<E extends SessionEvent = SessionEvent> = (
+export type SessionEventHandler<E extends AnySessionEvent = SessionEvent> = (
   event: E,
   ctx: SessionEventContext,
 ) => unknown;
@@ -128,15 +128,18 @@ export type SessionEventHandler<E extends SessionEvent = SessionEvent> = (
  *
  * The mapped half is what makes a handler's parameter TYPED: declaring
  * `"tool.called"` hands the handler an event that has `toolName` and `args`,
- * with no narrowing at the call site. `"*"` receives the whole union, which is
- * the right shape for the handlers that motivate it (a log line, a metrics
- * counter) and the reason it cannot be typed more narrowly.
+ * with no narrowing at the call site. `"*"` receives any event by its ENVELOPE
+ * ({@link AnySessionEvent}: `type` and `meta`) — the right shape for the
+ * handlers that motivate it (a log line, a metrics counter), and open, so a new
+ * event reaching a wildcard handler is not a type change. Read a member's
+ * fields from its own per-name handler.
  *
+ * @input
  * @public
  */
 export type SessionEventHandlers = {
   [K in SessionEventType]?: SessionEventHandler<SessionEvent<K>>;
 } & {
   /** Runs for every event, AFTER the typed handler for that event. */
-  "*"?: SessionEventHandler;
+  "*"?: SessionEventHandler<AnySessionEvent>;
 };

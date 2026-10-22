@@ -202,7 +202,7 @@ describe("the push to a transport holding its prompt as session state", () => {
     const slots = createDetachedSlotStore();
     // What a session resumed across a rename looks like: the slot names a
     // persona nobody declares any more.
-    slots.write("aai.speaker", { active: "renamed", from: null, note: null }, true);
+    slots.write("aai.speaker", { active: "renamed", from: null, note: null }, { durable: true });
     const { prompt, logger } = setup(desk, slots);
     expect(prompt.resolve()).toContain("## Active persona: triage");
     expect(logger.warn).toHaveBeenCalledWith(

@@ -51,11 +51,11 @@
  * The same shape a tool file name must have (`tool-registry.ts`), for the same
  * reason: it becomes part of what the MODEL calls, and providers reject a tool
  * name outside `[a-zA-Z0-9_-]`. Capped at 24 so that a key plus the `mcp_`
- * prefix plus a realistic remote name still clears {@link MCP_TOOL_NAME_MAX}
+ * prefix plus a realistic remote name still clears `MCP_TOOL_NAME_MAX`
  * without truncation, which is the case where two remote tools can collapse
  * onto one name.
  */
-export const MCP_SERVER_KEY_RE = /^[a-z][a-z0-9_]{0,23}$/;
+export const MCP_SERVER_KEY_RE: RegExp = /^[a-z][a-z0-9_]{0,23}$/;
 
 /**
  * Longest tool name a provider accepts — OpenAI's `^[a-zA-Z0-9_-]{1,64}$`, the
@@ -88,6 +88,7 @@ export const MCP_TOOL_PREFIX = "mcp_";
  * with the `clientId` that step passed. The value is held for that connection
  * and never re-asked, so a resolver that creates something remote (a per-user
  * session URL) creates it once per connection, not per tool call.
+ * @sealed
  */
 export type McpResolveContext = {
   /**
@@ -110,7 +111,11 @@ export type McpResolveContext = {
  */
 export type McpResolvable<T> = T | ((context: McpResolveContext) => T | Promise<T>);
 
-/** One MCP server an agent may take tools from. */
+/**
+ * One MCP server an agent may take tools from.
+ *
+ * @input
+ */
 export type McpServerConfig = {
   /**
    * The server's streamable-HTTP endpoint, e.g.
@@ -202,7 +207,7 @@ export type McpServers = Readonly<Record<string, McpServerConfig>>;
  * an MCP server's names are its own (`getWeather`, `search-docs`) and refusing
  * them would make whole servers unusable for a spelling.
  *
- * Truncation at {@link MCP_TOOL_NAME_MAX} is the one lossy step, and it is why
+ * Truncation at `MCP_TOOL_NAME_MAX` is the one lossy step, and it is why
  * the caller must still dedupe: two long remote names can land on one truncated
  * name. `registerTools` resolves that the same way it resolves every other
  * collision — first wins in a sorted order, the loser is dropped and logged —

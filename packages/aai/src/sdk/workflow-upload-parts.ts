@@ -100,6 +100,7 @@ import type {
  * Both fields have defaults sized on the constants' own reasoning, and a caller
  * that just wants the speed passes `parallel: true` and never sees this type.
  *
+ * @input
  * @public
  */
 export type UploadPartsOptions = {

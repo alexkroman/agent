@@ -26,6 +26,7 @@ import { DEFAULT_STEP_MAX_ATTEMPTS } from "./workflow-ctx-options.ts";
 /**
  * What an `onFailure` hook is told about the run that failed.
  *
+ * @sealed
  * @public
  */
 export type WorkflowFailureContext<I = unknown> = {

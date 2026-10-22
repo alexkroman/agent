@@ -106,9 +106,9 @@ describe("receive", () => {
       sessionId: ctx.sessionId,
       slots: {
         read: (key: string) => ctx.slots.read(key),
-        write: (key: string, value: unknown, durable: boolean) => {
+        write: (key: string, value: unknown, options?: { durable?: boolean }) => {
           writes += 1;
-          ctx.slots.write(key, value, durable);
+          ctx.slots.write(key, value, options);
         },
       },
     };

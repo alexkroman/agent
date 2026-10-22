@@ -69,7 +69,7 @@ import {
   statePaths,
   toStatePath,
 } from "./_dialog-snapshot.ts";
-import type { Dialog, DialogOptions } from "./dialog-handle.ts";
+import type { Dialog, DialogMachine, DialogOptions } from "./dialog-handle.ts";
 import type {
   DialogEvent,
   DialogPosition,
@@ -96,6 +96,7 @@ import { isToolFailure, type ToolFailure, type ToolRefusal, toolRefusal } from "
 export type {
   AnyDialog,
   Dialog,
+  DialogMachine,
   DialogOptions,
 } from "./dialog-handle.ts";
 export type {
@@ -219,11 +220,11 @@ type DialogEventOf = EventFromLogic<AnyStateMachine>;
  *
  * @public
  */
-export function dialog<M extends AnyStateMachine>(
+export function dialog<E extends { type: string }>(
   key: string,
-  machine: M,
+  machine: DialogMachine<E>,
   options?: DialogOptions,
-): Dialog<M>;
+): Dialog<E>;
 /**
  * Declare a dialog from a plain state map — see {@link DialogSpec}.
  *
@@ -246,12 +247,12 @@ export function dialog<const S extends DialogSpec>(
   key: string,
   spec: S,
   options?: DialogOptions,
-): Dialog<AnyStateMachine, DialogEvent<S>>;
+): Dialog<DialogEvent<S>>;
 export function dialog(
   key: string,
-  source: AnyStateMachine | DialogSpec,
+  source: DialogMachine | DialogSpec,
   options: DialogOptions = {},
-): Dialog<AnyStateMachine> {
+): Dialog {
   // Before the `in` test, because `dialog(spec)` — the one-argument shape every
   // other authoring function in this SDK takes — lands here with `source`
   // undefined and used to die on `Cannot use 'in' operator to search for
@@ -267,7 +268,10 @@ export function dialog(
   // only the machine has behaviour. Machine-first in the overload list for the
   // same reason — a plain object cannot satisfy `AnyStateMachine`, where a
   // machine could be read as a spec.
-  const machine = "transition" in source ? source : machineFromSpec(key, source);
+  // The machine form is an XState machine by contract (`DialogMachine` is its
+  // structural, XState-free name), so the cast restores the type the body reads.
+  const machine: AnyStateMachine =
+    "transition" in source ? (source as AnyStateMachine) : machineFromSpec(key, source);
   // Before the graph guard, which reads the transitions XState desugars `after`
   // INTO and would therefore call a delay-only state perfectly healthy — the
   // exact reason a dialog could declare a transition that can never fire.

@@ -4,12 +4,10 @@
 
 ```ts
 
-import type { AnyStateMachine } from 'xstate';
-import type { EventFromLogic } from 'xstate';
 import type { JSONSchema7 } from 'json-schema';
 import { z } from 'zod';
 
-// @public
+// @public @input
 interface AgentClientInbox {
     clientInbox?: ClientInboxOptions | undefined;
 }
@@ -125,7 +123,7 @@ export function agentConfigWarnings(config: {
     telephony?: unknown;
 }): string[];
 
-// @public
+// @public @input
 interface AgentDeclaration extends PipelineTuning, PipelinePhrases, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
@@ -149,17 +147,16 @@ interface AgentDeclaration extends PipelineTuning, PipelinePhrases, AgentModelTu
     workflows?: Readonly<Record<string, WorkflowDef>>;
 }
 
-// @public
+// @public @sealed
 interface AgentDef extends Omit<AgentDeclaration, "syncState"> {
     syncState?: Readonly<Record<string, StateProjection>>;
     tools: ToolMap;
-    toolsets?: readonly Toolset[];
 }
 
 // @public
 type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdict | Promise<GuardrailVerdict>;
 
-// @public
+// @public @input
 interface AgentGuardrails {
     inputGuardrails?: readonly AgentGuardrail[];
     outputGuardrails?: readonly AgentGuardrail[];
@@ -168,19 +165,19 @@ interface AgentGuardrails {
 // @public
 type AgentMode = "pipeline" | "s2s" | "text" | "workflow-app";
 
-// @public
+// @public @input
 interface AgentModelTuning extends ModelTuning {
     resetToolChoice?: boolean;
     usageLimits?: UsageLimits;
 }
 
-// @public
+// @public @input
 interface AgentObservation {
     events?: SessionEventHandlers;
     syncState?: SyncStateDeclaration;
 }
 
-// @public
+// @public @input
 interface AgentRoutes {
     routes?: Record<string, RouteHandler> | undefined;
 }
@@ -192,7 +189,7 @@ interface AgentSessionContext {
     slots: SlotStore;
 }
 
-// @public
+// @public @input
 interface AgentSessionLifecycle {
     onSessionEnd?: (ctx: SessionEndContext) => unknown;
     sessionContext?: (ctx: SessionContextArgs) => Promise<SessionContext | undefined> | SessionContext | undefined;
@@ -208,14 +205,25 @@ export function agentToolsets(def: ToolBearingDef): Toolset[];
 export function agentToolsToSchemas(toolsets: readonly Toolset[]): ToolSchema[];
 
 // @public
+type AgentTranscriptRecovery = "turn-failed" | "session-failed" | (string & {});
+
+// @public @input
 interface AgentVoicePresets {
     voicePresets?: readonly VoicePresetName[];
 }
 
 // @public
-type AnyDialog = Dialog<AnyStateMachine, unknown>;
+type AnyDialog = Dialog<unknown>;
 
-// @public
+// @public @sealed
+interface AnySessionEvent {
+    // (undocumented)
+    readonly meta: SessionEventMeta;
+    // (undocumented)
+    readonly type: string;
+}
+
+// @public @input
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
@@ -230,31 +238,31 @@ type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-202
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
-// @public
+// @public @input
 interface ClientEventMap {
 }
 
 // @public
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
 
-// @public
+// @public @input
 type ClientInboxOptions = {
     sampleRate?: number | undefined;
 };
 
-// @public
+// @public @sealed
 type ClientTranscript = {
     sessions: ClientTranscriptSession[];
 };
 
-// @public
+// @public @sealed
 type ClientTranscriptMessage = {
-    role: "user" | "assistant";
+    role: "user" | "assistant" | (string & {});
     text: string;
     at: number;
 };
 
-// @public
+// @public @sealed
 type ClientTranscriptSession = {
     sessionId: string;
     startedAt: number;
@@ -263,7 +271,7 @@ type ClientTranscriptSession = {
     tools: ClientTranscriptTool[];
 };
 
-// @public
+// @public @sealed
 type ClientTranscriptTool = {
     name: string | undefined;
     args: Readonly<Record<string, unknown>> | undefined;
@@ -274,20 +282,20 @@ type ClientTranscriptTool = {
 // @public
 export function composeToolsets(sets: readonly Toolset[], onShadowed?: (name: string, kept: ToolSource, dropped: ToolSource) => void): ToolTable;
 
-// @public
+// @public @sealed
 interface DelegateAnswer {
     steps: number;
     text: string;
     toolCalls: readonly DelegateToolCall[];
 }
 
-// @public
+// @public @sealed
 type DelegateFn = {
     <T>(subagent: TypedSpeakerDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
     (subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult>;
 };
 
-// @public
+// @public @input
 interface DelegateOptions {
     context?: string;
     maxSteps?: number;
@@ -301,16 +309,18 @@ interface DelegateResult extends DelegateAnswer {
     revisions: number;
 }
 
-// @public
+// @public @sealed
 interface DelegateToolCall {
     input: unknown;
     name: string;
 }
 
 // @public @sealed
-interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
+interface Dialog<E = {
+    type: string;
+}> {
     readonly key: string;
-    readonly machine: M;
+    readonly machine: unknown;
     matches(ctx: SlotHolder, state: string): boolean;
     position(ctx: SlotHolder): DialogPosition;
     projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
@@ -322,7 +332,7 @@ interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
-// @public
+// @public @input
 interface DialogGate<R, E> {
     send?: E;
     sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
@@ -337,7 +347,7 @@ interface DialogPosition {
     readonly state: string;
 }
 
-// @public
+// @public @input
 interface DialogTimeout {
     readonly afterMs: number;
     readonly event: {
@@ -345,7 +355,7 @@ interface DialogTimeout {
     };
 }
 
-// @public
+// @public @input
 interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
 }
@@ -355,7 +365,7 @@ interface DialogToolResult<R> extends DialogPosition {
     readonly result: R;
 }
 
-// @public
+// @public @input
 interface DialogVoiceConfig {
     readonly interruption?: PipelineTuning["interruption"];
     readonly temperature?: number;
@@ -363,14 +373,7 @@ interface DialogVoiceConfig {
     readonly voice?: string;
 }
 
-// @public
-type EventMapOf<U extends {
-    type: string;
-}> = {
-    [E in U as E["type"]]: E;
-};
-
-// @public
+// @public @input
 type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
@@ -378,7 +381,7 @@ type FindByKeyOptions = {
     withOutput?: boolean;
 };
 
-// @public
+// @public @input
 type FindOptions = {
     limit?: number;
 };
@@ -386,7 +389,7 @@ type FindOptions = {
 // @public
 export function gateToolset(set: Toolset, gates: readonly ToolGate[]): Toolset;
 
-// @public
+// @public @sealed
 type GenerateFn = {
     <S extends StandardSchemaV1>(options: GenerateOptions & {
         schema: S;
@@ -394,13 +397,13 @@ type GenerateFn = {
     (options: GenerateOptions): Promise<GenerateResult>;
 };
 
-// @public
+// @public @sealed
 type GenerateObjectResult<T> = {
     text: string;
     object: T;
 };
 
-// @public
+// @public @input
 type GenerateOptions = {
     prompt: string;
     system?: string;
@@ -419,7 +422,7 @@ type GenerateResult = {
 // @public
 type GuardrailVerdict = true | string;
 
-// @public
+// @public @input
 interface HandoffOptions {
     note?: string;
 }
@@ -442,7 +445,7 @@ export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
-// @public
+// @public @input
 interface InterruptionTuning {
     backoffMs?: number;
     minDurationMs?: number;
@@ -472,14 +475,14 @@ type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (s
 // @public
 type McpResolvable<T> = T | ((context: McpResolveContext) => T | Promise<T>);
 
-// @public
+// @public @sealed
 type McpResolveContext = {
     readonly clientId: string | undefined;
     readonly env: Readonly<Partial<Record<string, string>>>;
     readonly signal: AbortSignal;
 };
 
-// @public
+// @public @input
 type McpServerConfig = {
     url: McpResolvable<string>;
     headers?: McpResolvable<Readonly<Record<string, string>>>;
@@ -493,13 +496,13 @@ type McpServers = Readonly<Record<string, McpServerConfig>>;
 
 // @public
 type Message = {
-    role: "user" | "assistant" | "tool";
+    role: "user" | "assistant" | "tool" | (string & {});
     content: string;
     toolName?: string;
     toolCallId?: string;
 };
 
-// @public
+// @public @input
 interface ModelTuning {
     maxOutputTokens?: number;
     maxRetries?: number;
@@ -509,20 +512,20 @@ interface ModelTuning {
 // @public
 export function normalizeToolMessages(input: ToolMessagesInput | undefined): ToolMessages | undefined;
 
-// @public
+// @public @input
 interface PipelinePhrases {
     errorPhrase?: string;
     startFailurePhrase?: string;
 }
 
-// @public
+// @public @input
 interface PipelineTuning {
     interruption?: InterruptionTuning | "off";
     silence?: SilenceTuning;
     turnTaking?: TurnTakingTuning;
 }
 
-// @public
+// @public @input
 type PollOptions<T> = {
     everyMs: number;
     maxMs: number;
@@ -530,7 +533,7 @@ type PollOptions<T> = {
     maxAttempts?: number | undefined;
 };
 
-// @public
+// @public @sealed
 type PollResult<T> = {
     value: T;
     done: boolean;
@@ -555,6 +558,11 @@ export const ProviderDescriptorSchema: z.ZodObject<{
 type RandomSource = () => number;
 
 // @public
+export type ResolvedAgentDef = AgentDef & {
+    readonly toolsets?: readonly Toolset[] | undefined;
+};
+
+// @public
 export interface ResolvedTool {
     // (undocumented)
     readonly entry: ToolsetEntry;
@@ -562,6 +570,20 @@ export interface ResolvedTool {
     readonly name: string;
     // (undocumented)
     readonly toolset: Toolset;
+}
+
+// @public @sealed
+interface RestoredToolCall {
+    afterMessageIndex: number;
+    // (undocumented)
+    args: Record<string, unknown>;
+    // (undocumented)
+    callId: string;
+    // (undocumented)
+    name: string;
+    // (undocumented)
+    result?: string | undefined;
+    status: "pending" | "done";
 }
 
 // @public @sealed
@@ -587,8 +609,8 @@ interface RouteContext {
 type RouteHandler = (req: RouteRequest, ctx: RouteContext) => unknown;
 
 // @public @sealed
-interface RouteRequest {
-    body: unknown;
+interface RouteRequest<Body = unknown> {
+    body: Body;
     clientId?: string;
     headers: Record<string, string>;
     method: string;
@@ -603,7 +625,7 @@ type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "s2s";
 };
 
-// @public
+// @public @input
 type SayOnClientNotice = {
     id?: string | undefined;
     event: string;
@@ -618,21 +640,21 @@ type SayOnClientNotice = {
     maxAttempts?: number | undefined;
 };
 
-// @public
+// @public @input
 type SayOptions = {
     interrupt?: boolean | undefined;
     interruptible?: boolean | undefined;
     record?: boolean | undefined;
 };
 
-// @public
+// @public @sealed
 type SessionCall = {
     readonly carrier: string;
     readonly callId?: string;
     readonly parameters: Readonly<Record<string, string>>;
 };
 
-// @public
+// @public @sealed
 type SessionContext = {
     instructions?: string | undefined;
     historySince?: number | undefined;
@@ -661,6 +683,9 @@ interface SessionEndContext {
 }
 
 // @public
+type SessionErrorCode = "stt" | "llm" | "tts" | "tool" | "protocol" | "connection" | "audio" | "internal" | (string & {});
+
+// @public
 type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
 
 // @public @sealed
@@ -672,250 +697,176 @@ type SessionEventContext = {
 };
 
 // @public
-type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx: SessionEventContext) => unknown;
+type SessionEventHandler<E extends AnySessionEvent = SessionEvent> = (event: E, ctx: SessionEventContext) => unknown;
 
-// @public
+// @public @input
 type SessionEventHandlers = {
     [K in SessionEventType]?: SessionEventHandler<SessionEvent<K>>;
 } & {
-    "*"?: SessionEventHandler;
+    "*"?: SessionEventHandler<AnySessionEvent>;
 };
 
-// @public
-interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {
+// @public @sealed
+interface SessionEventMap {
+    "agentTranscript.committed": {
+        type: "agentTranscript.committed";
+        meta: SessionEventMeta;
+        text: string;
+        recovery?: AgentTranscriptRecovery | undefined;
+        recorded?: false | undefined;
+    };
+    "agentTranscript.updated": {
+        type: "agentTranscript.updated";
+        meta: SessionEventMeta;
+        text: string;
+    };
+    "audio.completed": {
+        type: "audio.completed";
+        meta: SessionEventMeta;
+    };
+    "custom.emitted": {
+        type: "custom.emitted";
+        meta: SessionEventMeta;
+        event: string;
+        data: unknown;
+    };
+    // (undocumented)
+    "error.reported": {
+        type: "error.reported";
+        meta: SessionEventMeta;
+        code: SessionErrorCode;
+        message: string;
+        fatal: boolean;
+    };
+    "guardrail.blocked": {
+        type: "guardrail.blocked";
+        meta: SessionEventMeta;
+        direction: "input" | "output" | (string & {});
+        replacement: string;
+    };
+    "history.restored": {
+        type: "history.restored";
+        meta: SessionEventMeta;
+        messages: {
+            role: "user" | "assistant";
+            content: string;
+        }[];
+        toolCalls: RestoredToolCall[];
+    };
+    "metrics.collected": {
+        type: "metrics.collected";
+        meta: SessionEventMeta;
+        interrupted: boolean;
+        latencyMs?: number | undefined;
+        stt?: {
+            endpointingMs?: number | undefined;
+        } | undefined;
+        llm?: {
+            ttftMs?: number | undefined;
+            durationMs: number;
+            steps: number;
+            inputTokens?: number | undefined;
+            outputTokens?: number | undefined;
+        } | undefined;
+        tts?: {
+            ttfbMs?: number | undefined;
+            characters: number;
+        } | undefined;
+    };
+    "provider.failedOver": {
+        type: "provider.failedOver";
+        meta: SessionEventMeta;
+        stage: "stt" | "llm" | "tts" | (string & {});
+        from: string;
+        to: string;
+        reason: string;
+    };
+    "reply.cancelled": {
+        type: "reply.cancelled";
+        meta: SessionEventMeta;
+    };
+    "reply.completed": {
+        type: "reply.completed";
+        meta: SessionEventMeta;
+    };
+    "session.configured": {
+        type: "session.configured";
+        meta: SessionEventMeta;
+        audioFormat: string;
+        sampleRate: number;
+        ttsSampleRate: number;
+        sessionId: string;
+    };
+    "session.reset": {
+        type: "session.reset";
+        meta: SessionEventMeta;
+    };
+    "session.timedOut": {
+        type: "session.timedOut";
+        meta: SessionEventMeta;
+    };
+    "speech.started": {
+        type: "speech.started";
+        meta: SessionEventMeta;
+    };
+    // (undocumented)
+    "speech.stopped": {
+        type: "speech.stopped";
+        meta: SessionEventMeta;
+    };
+    "state.updated": {
+        type: "state.updated";
+        meta: SessionEventMeta;
+        state: Record<string, unknown>;
+    };
+    // (undocumented)
+    "tool.called": {
+        type: "tool.called";
+        meta: SessionEventMeta;
+        toolCallId: string;
+        toolName: string;
+        args: Record<string, unknown>;
+    };
+    // (undocumented)
+    "tool.completed": {
+        type: "tool.completed";
+        meta: SessionEventMeta;
+        toolCallId: string;
+        result: string;
+    };
+    "usage.updated": {
+        type: "usage.updated";
+        meta: SessionEventMeta;
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+        steps: number;
+    };
+    "userTranscript.committed": {
+        type: "userTranscript.committed";
+        meta: SessionEventMeta;
+        text: string;
+    };
+    "userTranscript.updated": {
+        type: "userTranscript.updated";
+        meta: SessionEventMeta;
+        text: string;
+        eotConfidence?: number | undefined;
+    };
+    "userTurn.exceeded": {
+        type: "userTurn.exceeded";
+        meta: SessionEventMeta;
+        limit: "words" | "duration" | (string & {});
+        words: number;
+        durationMs: number;
+    };
 }
 
-// @public
-const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
-    type: z.ZodLiteral<"session.configured">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    audioFormat: z.ZodString;
-    sampleRate: z.ZodNumber;
-    ttsSampleRate: z.ZodNumber;
-    sessionId: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"audio.completed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"speech.started">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"speech.stopped">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"userTranscript.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-    eotConfidence: z.ZodOptional<z.ZodNumber>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"userTranscript.committed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agentTranscript.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agentTranscript.committed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-    recovery: z.ZodOptional<z.ZodEnum<{
-        "session-failed": "session-failed";
-        "turn-failed": "turn-failed";
-    }>>;
-    recorded: z.ZodOptional<z.ZodLiteral<false>>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"tool.called">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    toolCallId: z.ZodString;
-    toolName: z.ZodString;
-    args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"tool.completed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    toolCallId: z.ZodString;
-    result: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"reply.completed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"reply.cancelled">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"session.reset">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"session.timedOut">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"error.reported">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    code: z.ZodEnum<{
-        audio: "audio";
-        connection: "connection";
-        internal: "internal";
-        llm: "llm";
-        protocol: "protocol";
-        stt: "stt";
-        tool: "tool";
-        tts: "tts";
-    }>;
-    message: z.ZodString;
-    fatal: z.ZodBoolean;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"custom.emitted">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    event: z.ZodString;
-    data: z.ZodUnknown;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"state.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"usage.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    inputTokens: z.ZodNumber;
-    outputTokens: z.ZodNumber;
-    totalTokens: z.ZodNumber;
-    steps: z.ZodNumber;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"guardrail.blocked">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    direction: z.ZodEnum<{
-        input: "input";
-        output: "output";
-    }>;
-    replacement: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"userTurn.exceeded">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    limit: z.ZodEnum<{
-        duration: "duration";
-        words: "words";
-    }>;
-    words: z.ZodNumber;
-    durationMs: z.ZodNumber;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"provider.failedOver">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    stage: z.ZodEnum<{
-        llm: "llm";
-        stt: "stt";
-        tts: "tts";
-    }>;
-    from: z.ZodString;
-    to: z.ZodString;
-    reason: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"metrics.collected">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    interrupted: z.ZodBoolean;
-    latencyMs: z.ZodOptional<z.ZodNumber>;
-    stt: z.ZodOptional<z.ZodObject<{
-        endpointingMs: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    llm: z.ZodOptional<z.ZodObject<{
-        ttftMs: z.ZodOptional<z.ZodNumber>;
-        durationMs: z.ZodNumber;
-        steps: z.ZodNumber;
-        inputTokens: z.ZodOptional<z.ZodNumber>;
-        outputTokens: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    tts: z.ZodOptional<z.ZodObject<{
-        ttfbMs: z.ZodOptional<z.ZodNumber>;
-        characters: z.ZodNumber;
-    }, z.core.$strip>>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"history.restored">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    messages: z.ZodArray<z.ZodObject<{
-        role: z.ZodEnum<{
-            assistant: "assistant";
-            user: "user";
-        }>;
-        content: z.ZodString;
-    }, z.core.$strip>>;
-    toolCalls: z.ZodArray<z.ZodObject<{
-        callId: z.ZodString;
-        name: z.ZodString;
-        args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-        status: z.ZodEnum<{
-            done: "done";
-            pending: "pending";
-        }>;
-        result: z.ZodOptional<z.ZodString>;
-        afterMessageIndex: z.ZodNumber;
-    }, z.core.$strip>>;
-}, z.core.$strip>], "type">;
+// @public @sealed
+interface SessionEventMeta {
+    at: number;
+    id: string;
+}
 
 // @public
 type SessionEventType = Extract<keyof SessionEventMap, string>;
@@ -929,36 +880,38 @@ interface SessionSpeech {
     say(text: string, options?: SayOptions): SpeechHandle;
 }
 
-// @public
+// @public @input
 interface SilenceNudge {
     afterMs: number;
     prompt?: string;
 }
 
-// @public
+// @public @input
 interface SilenceTuning {
     deadAirCoverMs?: number;
     nudge?: SilenceNudge;
 }
 
-// @public
+// @public @input
 type SleepOptions = {
     correlationId?: string;
 };
 
-// @public
+// @public @sealed
 type SlotHolder = {
     readonly slots: SlotStore;
     readonly sessionId: string;
 };
 
-// @public
+// @public @sealed
 type SlotStore = {
     read(key: string): unknown;
-    write(key: string, value: unknown, durable: boolean): void;
+    write(key: string, value: unknown, options?: {
+        durable?: boolean | undefined;
+    }): void;
 };
 
-// @public
+// @public @input
 interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
@@ -998,7 +951,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped";
+type SpeechOutcome = "played" | "interrupted" | "dropped" | (string & {});
 
 // @public
 interface StandardSchemaIssue {
@@ -1033,7 +986,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
     };
 }
 
-// @public
+// @public @input
 type StartOptions = {
     key?: string;
     dedupeKey?: string;
@@ -1041,14 +994,14 @@ type StartOptions = {
     notify?: boolean | string;
 };
 
-// @public
+// @public @sealed
 interface StateProjection<V = unknown> {
     (value?: unknown): V;
     readonly create: () => unknown;
     readonly key: string;
 }
 
-// @public
+// @public @input
 type StepClientTranscriptOptions = {
     since?: number | undefined;
     afterEventIndex?: {
@@ -1057,18 +1010,18 @@ type StepClientTranscriptOptions = {
     } | undefined;
 };
 
-// @public
+// @public @input
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
     schema?: S | undefined;
 };
 
-// @public
+// @public @input
 type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
     schema: S;
 };
 
-// @public
+// @public @input
 type StreamOptions = {
     namespace?: string;
     startIndex?: number;
@@ -1091,7 +1044,7 @@ type TelephonyCarrier = "twilio" | "telnyx" | (string & {});
 // @public
 export function toAgentConfig(source: AgentConfigSource): AgentConfig;
 
-// @public
+// @public (undocumented)
 export interface ToolBearingDef {
     // (undocumented)
     readonly tools: ToolMap;
@@ -1105,7 +1058,7 @@ type ToolChoice = "auto" | "required" | "none" | {
     toolName: string;
 };
 
-// @public
+// @public @input
 export type ToolCompletionMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -1131,7 +1084,7 @@ type ToolContext = {
     random: RandomSource;
 };
 
-// @public
+// @public @input
 type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
@@ -1140,7 +1093,7 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     messages?: ToolMessagesInput;
 };
 
-// @public
+// @public @input
 export type ToolDelayedMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -1154,7 +1107,7 @@ export function toolEntry(def: ToolDef): ToolsetEntry;
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
 
 // @public
-type ToolExecutor = "host" | "client";
+export type ToolExecutor = "host" | "client";
 
 // @public
 type ToolFailure = {
@@ -1170,14 +1123,14 @@ type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 // @public
 type ToolMap = Readonly<Record<string, ToolDef>>;
 
-// @public
+// @public @input
 export type ToolMessageCondition = {
     arg: string;
     op?: ToolConditionOperator | undefined;
     value: string | number | boolean | null;
 };
 
-// @public
+// @public @sealed
 export type ToolMessages = {
     start?: ToolStartMessage[] | undefined;
     delayed?: ToolDelayedMessage[] | undefined;
@@ -1185,7 +1138,7 @@ export type ToolMessages = {
     failed?: ToolCompletionMessage[] | undefined;
 };
 
-// @public
+// @public @input
 export type ToolMessagesInput = {
     start?: boolean | string | readonly (string | ToolStartMessage)[];
     delayed?: readonly ToolDelayedMessage[];
@@ -1196,13 +1149,13 @@ export type ToolMessagesInput = {
 // @public
 export type ToolModules = Readonly<Record<string, unknown>>;
 
-// @public
+// @public @sealed
 type ToolRefusal = ToolFailure & {
     reason: ToolRefusalReason;
 };
 
 // @public
-type ToolRefusalReason = "unknown_tool" | "invalid_arguments" | "cancelled" | "persona" | "dialog" | "roster";
+type ToolRefusalReason = "unknown_tool" | "invalid_arguments" | "cancelled" | "persona" | "dialog" | "roster" | (string & {});
 
 // @public
 export type ToolRegistry = Readonly<Record<string, ToolDef<ToolInputSchema>>>;
@@ -1300,7 +1253,7 @@ export const ToolSchemaSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
-interface Toolset {
+export interface Toolset {
     execute(name: string, args: unknown, ctx: ToolContext): unknown;
     gate(name: string, ctx: ToolContext): ToolRefusal | undefined;
     list(): Readonly<Record<string, ToolsetEntry>>;
@@ -1312,7 +1265,7 @@ interface Toolset {
 export function toolset(source: ToolSource, tools: ToolMap, gate?: ToolGate): Toolset;
 
 // @public
-interface ToolsetEntry {
+export interface ToolsetEntry {
     readonly def: ToolDef;
     // (undocumented)
     readonly executor: ToolExecutor;
@@ -1320,9 +1273,9 @@ interface ToolsetEntry {
 }
 
 // @public
-type ToolSource = "files" | "builtin" | "mcp" | "roster" | "subagent";
+export type ToolSource = "files" | "builtin" | "mcp" | "roster" | "subagent";
 
-// @public
+// @public @input
 export type ToolStartMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -1344,7 +1297,7 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 // @public
 type TurnDetectionMode = "auto" | "manual" | (string & {});
 
-// @public
+// @public @input
 interface TurnTakingTuning {
     detection?: TurnDetectionMode;
     maxSilenceMs?: number;
@@ -1354,23 +1307,23 @@ interface TurnTakingTuning {
     userTurnLimit?: UserTurnLimit;
 }
 
-// @public
+// @public @sealed
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
 
-// @public
+// @public @input
 interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
 }
 
-// @public
+// @public @input
 interface UsageLimits {
     totalTokens?: number;
 }
 
-// @public
+// @public @input
 interface UserTurnLimit {
     maxDurationMs?: number | undefined;
     maxWords?: number | undefined;
@@ -1379,18 +1332,18 @@ interface UserTurnLimit {
 // @public
 type VoicePresetName = "echoVerification" | "speechNormalization" | "natoAlphabet" | (string & {});
 
-// @public
+// @public @input
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     timeoutMs: number;
     schema?: S | undefined;
 };
 
-// @public
+// @public @input
 type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     schema: S;
 };
 
-// @public
+// @public @input
 type WakeUpOptions = {
     correlationIds?: string[];
 };
@@ -1408,7 +1361,7 @@ export function withTools<D extends {
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
-// @public
+// @public @sealed
 type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
@@ -1432,7 +1385,7 @@ type WorkflowClient = {
     listing(): WorkflowSummary[];
 };
 
-// @public
+// @public @sealed
 type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
@@ -1450,7 +1403,7 @@ type WorkflowContext = {
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
-// @public
+// @public @input
 type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
@@ -1460,7 +1413,7 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
 };
 
-// @public
+// @public @sealed
 type WorkflowFailureContext<I = unknown> = {
     readonly runId: string;
     readonly workflow: string;
@@ -1476,7 +1429,7 @@ type WorkflowFailureHandler<I = unknown> = WorkflowFailureHook<I> | {
 // @public
 type WorkflowFailureHook<I = unknown> = (error: Error, context: WorkflowFailureContext<I>) => Promise<void> | void;
 
-// @public
+// @public @sealed
 type WorkflowRunBase = {
     runId: string;
     workflow: string;
@@ -1507,7 +1460,7 @@ type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 // @public
 type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
-// @public
+// @public @sealed
 type WorkflowSummary = {
     name: string;
     description?: string;

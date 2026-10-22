@@ -78,6 +78,7 @@ export type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure |
  * });
  * ```
  *
+ * @input
  * @public
  */
 export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {

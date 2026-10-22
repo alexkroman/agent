@@ -22,6 +22,7 @@ import { normalizeE164 } from "./session-phone.ts";
 /**
  * What {@link normalizePhone} takes.
  *
+ * @input
  * @public
  */
 export interface NormalizePhoneOptions {

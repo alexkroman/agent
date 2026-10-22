@@ -3,8 +3,16 @@
 // aggregates over everything, percentiles over a bounded window, and a stat
 // that is ABSENT until its first sample rather than a row of zeroes.
 
-import { describe, expect, test } from "vitest";
-import { createMetricsCollector, type MetricsSample } from "./metrics-collector.ts";
+import { describe, expect, expectTypeOf, test } from "vitest";
+import {
+  createMetricsCollector,
+  type MetricsCollectedEvent,
+  type MetricsSample,
+} from "./metrics-collector.ts";
+
+test("a metrics.collected event is a MetricsSample, so a hook hands it straight in", () => {
+  expectTypeOf<MetricsCollectedEvent>().toExtend<MetricsSample>();
+});
 
 const REPLY: MetricsSample = {
   interrupted: false,

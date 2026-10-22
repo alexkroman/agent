@@ -176,6 +176,7 @@ export function requireStepEnv(name: string): string {
  * app hand-building `{ env: { KEY: stepEnv("KEY"), … } }` per workflow and
  * forgetting a key the helper later grew.
  *
+ * @sealed
  * @public
  */
 export type EnvContext = {

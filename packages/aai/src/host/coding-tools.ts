@@ -90,6 +90,7 @@ const READ_MAX_LINE = 2000;
  * `noUncheckedIndexedAccess` a `Record<string, ToolDef>` hands back
  * `ToolDef | undefined`. Nothing has to name the parameter — it is inferred
  * from {@link CodingToolsOptions.only}, and defaults to every tool.
+ * @input
  */
 export type CodingToolsOptions<N extends CodingToolName = CodingToolName> = {
   /** Absolute path of the workspace root. Nothing outside it is reachable. */
@@ -107,7 +108,7 @@ export type CodingToolsOptions<N extends CodingToolName = CodingToolName> = {
   afterWrite?: (rel: string) => Promise<string | undefined>;
   /** The `bash` child's environment. Defaults to this process's own. */
   env?: NodeJS.ProcessEnv;
-  /** Per-tool description overrides, merged over {@link CODING_TOOL_DESCRIPTIONS}. */
+  /** Per-tool description overrides, merged over `CODING_TOOL_DESCRIPTIONS`. */
   descriptions?: Partial<Record<CodingToolName, string>>;
   /**
    * Build only these tools. Defaults to all nine.

@@ -24,6 +24,7 @@ import type { PollResult } from "./workflow-ctx-options.ts";
 /**
  * Options for {@link stepPollUntil}.
  *
+ * @input
  * @public
  */
 export type StepPollUntilOptions<T> = {

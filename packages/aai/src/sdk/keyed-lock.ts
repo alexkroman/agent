@@ -39,6 +39,7 @@ export class KeyedLockTimeoutError extends Error {
   }
 }
 
+/** @input */
 export type KeyedLockOptions = {
   /**
    * Give up waiting after this long and reject with
@@ -47,6 +48,7 @@ export type KeyedLockOptions = {
   timeoutMs?: number | undefined;
 };
 
+/** @sealed */
 export type KeyedLock = ((key: string, options?: KeyedLockOptions) => Promise<() => void>) & {
   /** Number of keys currently held or queued. Exposed for tests and metrics. */
   readonly size: number;

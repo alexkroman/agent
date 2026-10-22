@@ -100,6 +100,7 @@ export type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
  * @typeParam O - The options `render` and `advice` read, as `options` narrows
  *   them. Defaults to the raw record.
  *
+ * @input
  * @public
  */
 export interface ChannelHandler<O = Record<string, unknown>> {
@@ -119,6 +120,7 @@ export interface ChannelHandler<O = Record<string, unknown>> {
  * than demanding a shape — a section with only `body` is a paragraph, one with
  * only `title` and `url` is a link.
  *
+ * @input
  * @public
  */
 export interface ChannelSection {
@@ -146,6 +148,7 @@ export interface ChannelSection {
  * it off and Slack notifies as "[no preview]"; that is the failure this field
  * exists to prevent.
  *
+ * @input
  * @public
  */
 export interface ChannelMessage {
@@ -166,6 +169,7 @@ export interface ChannelMessage {
  * channel takes over its own options is testable without a network, and on
  * Slack that branch is the difference between a delivered message and a 400.
  *
+ * @input
  * @public
  */
 export interface ChannelPayload {

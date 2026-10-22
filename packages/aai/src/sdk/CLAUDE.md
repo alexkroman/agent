@@ -121,6 +121,13 @@ detail; the rules:
   `generate`/`delegate` take a SCRIPT or a function; a FUNCTION is always the
   seam itself. `ctx.model`/`ctx.desk` are always present (empty `calls` when
   unwired).
+- **`createSlotStore()`** is the store `createToolContext` defaults to, named so
+  one session's state can be shared by two contexts. A store's
+  `write(key, value, { durable })` defaults to durable.
+- **`aai:testing` is a FAMILY** — `testing` (context, tool runs, model fakes),
+  `testing-steps`, `testing-network`, `testing-workflow`, `testing-client`,
+  `testing-deploy` — split for the 40-name budget; all on the same two subpaths,
+  and `aai-runtime`'s doors mirror the whole family.
 - **A script NAMES its shape — `{ reply }` or `{ routes }`** — everywhere one is
   taken; a computed route is `{ reply: (call) => … }`; a bare shape reaching the
   runtime untyped throws at bind.
@@ -450,16 +457,19 @@ here" in `packages/aai-runtime/src/CLAUDE.md`.
 Files, builtins, MCP, a roster, a subagent's map: each is a `Toolset` — `list()`
 (entries: def + executor + deadline), `gate(name, ctx)`,
 `execute(name, args, ctx)` — and `agentToolsToSchemas`/`executeToolCall` read
-nothing else. **Composition is first-wins** (`composeToolsets`): files, then
-`AgentDef.toolsets` (resolved, never authored — `agent()`'s roster set,
-`withMcpTools`' MCP set), then builtins. **`toolEntry` is the only place a def's
-identity is read** (the `clientTool` brand → `executor: "client"`). A
-`dialog.tool` refuses in its OWN `execute`, with no toolset layer, so the check
-travels with the def (specs, subagents). **A refusal is a `ToolRefusal`** — a
-`ToolFailure` plus `reason` (`unknown_tool`, `invalid_arguments`, `cancelled`,
-`persona`, `dialog`, `roster`); `reason` is NOT on `ToolFailure` itself, so an
-author's `{ error }` literal still narrows. `toolOf` is the lookup (the author's
-def); `runTool(agent, name)` is the CALL (gated).
+nothing else. **Composition is first-wins** (`composeToolsets`): files, then the
+resolved toolsets (never authored — `agent()`'s roster set, `withMcpTools`' MCP
+set), then builtins. **`Toolset` and the resolved field are plumbing on
+`/manifest` (`ResolvedAgentDef`)**, off the public `AgentDef`: an author never
+names a toolset, so its type is not on the contracted surface. **`toolEntry` is
+the only place a def's identity is read** (the `clientTool` brand →
+`executor: "client"`). A `dialog.tool` refuses in its OWN `execute`, with no
+toolset layer, so the check travels with the def (specs, subagents). **A refusal
+is a `ToolRefusal`** — a `ToolFailure` plus `reason` (`unknown_tool`,
+`invalid_arguments`, `cancelled`, `persona`, `dialog`, `roster`); `reason` is
+NOT on `ToolFailure` itself, so an author's `{ error }` literal still narrows.
+`toolOf` is the lookup (the author's def); `runTool(agent, name)` is the CALL
+(gated).
 
 ## Speech boundary and voice presets
 

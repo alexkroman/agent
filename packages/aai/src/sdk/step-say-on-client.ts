@@ -47,6 +47,7 @@ export const DEFAULT_CLIENT_DELIVERY_ATTEMPTS: number = Math.ceil(
 /**
  * Options for {@link stepSayOnClient}.
  *
+ * @input
  * @public
  */
 export type StepSayOnClientOptions = {

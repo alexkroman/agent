@@ -4,7 +4,7 @@
 
 ```ts
 
-// @public (undocumented)
+// @public @input (undocumented)
 export type CallOptions = {
     fetch?: typeof globalThis.fetch;
     signal?: AbortSignal;
@@ -18,7 +18,7 @@ export function fetchJson<T = UntypedJsonBody>(url: string | ({
     url: string;
 } & FetchJsonOptions), options?: FetchJsonOptions): Promise<T | ToolFailure>;
 
-// @public
+// @public @input
 export type FetchJsonOptions = {
     headers?: Record<string, string>;
     method?: string;

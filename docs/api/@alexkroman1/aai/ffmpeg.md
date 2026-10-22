@@ -416,7 +416,14 @@ The tail of the child's stderr — ffmpeg's log.
 ### FfmpegFailureKind
 
 ```ts
-type FfmpegFailureKind = "exit" | "timeout" | "aborted" | "missing-binary" | "output-too-large";
+type FfmpegFailureKind = 
+  | "exit"
+  | "timeout"
+  | "aborted"
+  | "missing-binary"
+  | "output-too-large"
+  | string & {
+};
 ```
 
 Which way a run failed — see [FfmpegError](#ffmpegerror).
@@ -435,6 +442,8 @@ type FfmpegRunOptions = {
   timeoutMs?: number;
 };
 ```
+
+**`Input`**
 
 #### Properties
 
@@ -498,6 +507,8 @@ type FfmpegRunResult = {
 };
 ```
 
+**`Sealed`**
+
 #### Properties
 
 ##### durationMs
@@ -550,6 +561,8 @@ type MediaInfo = {
   video?: MediaStreamInfo;
 };
 ```
+
+**`Sealed`**
 
 What `parseProbeJson` makes of one media file — see `@alexkroman1/aai/ffmpeg`.
 
@@ -637,6 +650,8 @@ type MediaStreamInfo = {
 };
 ```
 
+**`Sealed`**
+
 One elementary stream inside a container.
 
 #### Properties
@@ -721,6 +736,8 @@ type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
 };
 ```
 
+**`Input`**
+
 #### Type Declaration
 
 ##### binary?
@@ -750,6 +767,8 @@ type WavEncodeOptions = {
   sampleRate?: number;
 };
 ```
+
+**`Input`**
 
 #### Properties
 

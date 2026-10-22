@@ -253,6 +253,7 @@ export function installStubTranscribe(options: StubTranscribeOptions = {}): Stub
  * answer "nothing has run" — which is the arm a `*_status` tool branches on
  * first and the one most specs of one want.
  *
+ * @input
  * @public
  */
 export type StubWorkflowsOptions = {

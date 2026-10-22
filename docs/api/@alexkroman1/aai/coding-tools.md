@@ -87,6 +87,8 @@ type CodingToolsOptions<N extends CodingToolName = CodingToolName> = {
 };
 ```
 
+**`Input`**
+
 What [createCodingTools](#createcodingtools) takes.
 
 Generic in the tool NAMES so the result is a record with literal keys rather
@@ -129,7 +131,7 @@ a host hangs diagnostics on. Answer undefined when there is nothing to add.
 optional descriptions?: Partial<Record<CodingToolName, string>>;
 ```
 
-Per-tool description overrides, merged over [CODING\_TOOL\_DESCRIPTIONS](#coding_tool_descriptions).
+Per-tool description overrides, merged over `CODING_TOOL_DESCRIPTIONS`.
 
 ##### dir
 
@@ -182,49 +184,3 @@ so say what to do about it and not only what is wrong.
 ###### Returns
 
 `Promise`\<`string` \| `undefined`\>
-
-## Variables
-
-### BASH\_TIMEOUT\_MAX\_MS
-
-```ts
-const BASH_TIMEOUT_MAX_MS: number;
-```
-
-***
-
-### BASH\_TIMEOUT\_MS
-
-```ts
-const BASH_TIMEOUT_MS: number;
-```
-
-Default and maximum wall-clock for one `bash` command.
-
-***
-
-### CODING\_TOOL\_DESCRIPTIONS
-
-```ts
-const CODING_TOOL_DESCRIPTIONS: Readonly<Record<CodingToolName, string>>;
-```
-
-***
-
-### GLOB\_LIMIT
-
-```ts
-const GLOB_LIMIT: number;
-```
-
-Max `glob` results before the list is truncated, newest first.
-
-***
-
-### READ\_LIMIT
-
-```ts
-const READ_LIMIT: number;
-```
-
-`read_file` paging default and hard cap, in lines.

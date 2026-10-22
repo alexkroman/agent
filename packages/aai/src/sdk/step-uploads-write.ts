@@ -16,6 +16,7 @@ import { requireUploadAccess, type UploadInfo } from "./step-uploads.ts";
 /**
  * Options for {@link stepWriteUpload}.
  *
+ * @input
  * @public
  */
 export type WriteUploadOptions = {
@@ -98,7 +99,7 @@ export async function stepWriteUpload(
  *
  * @internal
  */
-export const UPLOAD_WRITES_UNAVAILABLE_MESSAGE =
+export const UPLOAD_WRITES_UNAVAILABLE_MESSAGE: string =
   "The upload store in this process is read-only, so `stepWriteUpload` has nowhere to put the " +
   "bytes. Every deployed agent, every self-hosted server and `aai dev` publish a writable " +
   "store through `createServerForRuntime`; in a test, pass `{ writable: true }` to `stubUploads` from " +

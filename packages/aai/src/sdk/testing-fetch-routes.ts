@@ -49,6 +49,7 @@ import {
  * `headers`, `body` — the same fields `stubStepFetch` records) plus the parts a
  * route branches on, already parsed.
  *
+ * @sealed
  * @public
  */
 export type FetchRouteRequest = StubStepRequest & {
@@ -94,7 +95,12 @@ export type FetchRouteHandler = (
  */
 export type FetchRouteTable = Readonly<Record<string, FetchRouteHandler | StubStepAnswer>>;
 
-/** What {@link stubFetchRoutes} may be told. @public */
+/**
+ * What {@link stubFetchRoutes} may be told.
+ *
+ * @input
+ * @public
+ */
 export type FetchRoutesOptions = {
   /**
    * What a request no route answers means.
@@ -131,15 +137,16 @@ export type FetchRoutesOptions = {
 /**
  * One request the router saw, whatever became of it.
  *
+ * @sealed
  * @public
  */
 export type FetchRouteHit = FetchRouteRequest & {
   /** Answered by a route, sent to the real network, or answered by nothing. */
-  readonly outcome: "routed" | "passthrough" | "unmatched";
+  readonly outcome: "routed" | "passthrough" | "unmatched" | (string & {});
   /** The table key that answered it (a list's routes have none). */
   readonly route?: string | undefined;
   /** Which fetch it arrived through. */
-  readonly via: "fetch" | "stepFetch";
+  readonly via: "fetch" | "stepFetch" | (string & {});
   /** The response's status, for a request that got one. */
   readonly status?: number | undefined;
 };
@@ -147,6 +154,7 @@ export type FetchRouteHit = FetchRouteRequest & {
 /**
  * What {@link stubFetchRoutes} returns.
  *
+ * @sealed
  * @public
  */
 export type StubFetchRoutes = {

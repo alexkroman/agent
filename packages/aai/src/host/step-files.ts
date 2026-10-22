@@ -131,7 +131,11 @@ export const STEP_FILE_WINDOW_BYTES: number = 8_388_608;
  */
 export const STEP_FILE_READ_CONCURRENCY: number = 4;
 
-/** Options for {@link withTempDir}. */
+/**
+ * Options for {@link withTempDir}.
+ *
+ * @input
+ */
 export type WithTempDirOptions = {
   /**
    * Prefix for the directory's name, under the OS temp directory.
@@ -175,7 +179,11 @@ export async function withTempDir<T>(
   }
 }
 
-/** Options for {@link readUploadToFile}. */
+/**
+ * Options for {@link readUploadToFile}.
+ *
+ * @input
+ */
 export type ReadUploadToFileOptions = {
   /**
    * How many bytes the upload holds. Defaults to what `stepRequireCompleteUpload`
@@ -438,7 +446,11 @@ async function capacityOf(dir: string): Promise<string> {
   return ` (the mount holding it is ${formatBytes(total)}, ${formatBytes(free)} free)`;
 }
 
-/** Options for {@link writeUploadFromFile} — {@link WriteUploadOptions}, plus the window. */
+/**
+ * Options for {@link writeUploadFromFile} — {@link WriteUploadOptions}, plus the window.
+ *
+ * @input
+ */
 export type WriteUploadFromFileOptions = WriteUploadOptions & {
   /** Bytes per read. Defaults to {@link STEP_FILE_WINDOW_BYTES}. */
   windowBytes?: number | undefined;

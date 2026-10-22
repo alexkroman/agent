@@ -171,7 +171,7 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
   const applyCaps = compileSlotCaps<T>(key, options.caps);
 
   const store = (ctx: SlotHolder, value: T): void => {
-    slots(ctx).write(key, applyCaps(value), durable);
+    slots(ctx).write(key, applyCaps(value), { durable });
   };
 
   /** Refuse a direct write while a draft of the same slot is open. */

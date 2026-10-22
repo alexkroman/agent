@@ -1,0 +1,89 @@
+// @public @input
+type ClientNotice = {
+    id: string;
+    event: string;
+    data?: unknown;
+    audio?: Uint8Array;
+};
+
+// @public @sealed
+type ClientTranscript = {
+    sessions: ClientTranscriptSession[];
+};
+
+// @public @sealed
+type ClientTranscriptMessage = {
+    role: "user" | "assistant" | (string & {});
+    text: string;
+    at: number;
+};
+
+// @public @sealed
+type ClientTranscriptSession = {
+    sessionId: string;
+    startedAt: number;
+    lastEventIndex: number;
+    messages: ClientTranscriptMessage[];
+    tools: ClientTranscriptTool[];
+};
+
+// @public @sealed
+type ClientTranscriptTool = {
+    name: string | undefined;
+    args: Readonly<Record<string, unknown>> | undefined;
+    result: string;
+    at: number;
+};
+
+// @public
+type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected" | (string & {});
+
+// @public
+export function installStubClientInbox(options?: StubClientInboxOptions): StubClientInbox;
+
+// @public @input
+type StepClientTranscriptOptions = {
+    since?: number | undefined;
+    afterEventIndex?: {
+        sessionId: string;
+        index: number;
+    } | undefined;
+};
+
+// @public @sealed
+export type StubClientInbox = {
+    calls: StubClientInboxCall[];
+    restore(): void;
+};
+
+// @public
+export function stubClientInbox(options?: StubClientInboxOptions): StubClientInbox;
+
+// @public @sealed
+export type StubClientInboxCall = {
+    clientId: string;
+    notice: ClientNotice;
+};
+
+// @public @input
+export type StubClientInboxOptions = {
+    answer?: "acked" | ClientUnreachableReason | ((call: StubClientInboxCall) => "acked" | ClientUnreachableReason) | undefined;
+};
+
+// @public @sealed
+export type StubClientTranscript = {
+    calls: StubClientTranscriptCall[];
+    restore(): void;
+};
+
+// @public
+export function stubClientTranscript(answer?: StubClientTranscriptAnswer): StubClientTranscript;
+
+// @public
+export type StubClientTranscriptAnswer = ClientTranscript | ((call: StubClientTranscriptCall) => ClientTranscript);
+
+// @public @sealed
+export type StubClientTranscriptCall = {
+    clientId: string;
+    options: StepClientTranscriptOptions;
+};

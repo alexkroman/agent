@@ -1,0 +1,25 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "agent-session",
+  "epoch": 1,
+  "rule": 3,
+  "sha256": "f45e05a531d8613be625b44d8ad06128a40a4a224863e45c60e46e7610c8de80",
+  "exports": [
+    "AgentSessionContext",
+    "AgentSessionLifecycle",
+    "EndSessionOptions",
+    "SayOptions",
+    "SessionCall",
+    "SessionContext",
+    "SessionContextArgs",
+    "SessionEndContext",
+    "SessionEventContext",
+    "SessionSpeech",
+    "SpeechHandle",
+    "SpeechOutcome",
+    "endSession",
+    "sessionCall",
+    "sessionClientLocation"
+  ],
+  "rollup": "b9133c927f8dbcaeecddda44a619bd5e3953f394ee45ac501fc54110424eeb07"
+}

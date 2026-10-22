@@ -63,9 +63,13 @@ const STEP_NOTIFY_CLIENT_SLOT = globalSlot<ClientNotifier>("stepNotifyClient");
  *
  * @internal
  */
-export const CLIENT_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+export const CLIENT_ID_RE: RegExp = /^[A-Za-z0-9_-]{1,64}$/;
 
-/** One thing to tell a client. */
+/**
+ * One thing to tell a client.
+ *
+ * @input
+ */
 export type ClientNotice = {
   /**
    * Identifies the DELIVERY, so a client can drop a repeat — the run id, when a
@@ -83,29 +87,38 @@ export type ClientNotice = {
   audio?: Uint8Array;
 };
 
-/** Options for {@link stepNotifyClient}. */
+/**
+ * Options for {@link stepNotifyClient}.
+ *
+ * @input
+ */
 export type StepNotifyClientOptions = {
   /**
    * How long to wait for the ack once the notice is sent. It covers the client
    * TAKING it — reading the audio, for one that acks after queueing it — not the
-   * whole playback. Default {@link DEFAULT_CLIENT_ACK_TIMEOUT_MS}.
+   * whole playback. Default `DEFAULT_CLIENT_ACK_TIMEOUT_MS`.
    */
   ackTimeoutMs?: number;
   /**
    * When the next attempt runs after the client was unreachable. Default
-   * {@link DEFAULT_CLIENT_RETRY_MS}.
+   * `DEFAULT_CLIENT_RETRY_MS`.
    */
   retryAfterMs?: number;
   signal?: AbortSignal;
 };
 
 /** Default {@link StepNotifyClientOptions.ackTimeoutMs}. */
-export const DEFAULT_CLIENT_ACK_TIMEOUT_MS = 30_000;
+export const DEFAULT_CLIENT_ACK_TIMEOUT_MS: number = 30_000;
 /** Default {@link StepNotifyClientOptions.retryAfterMs}. */
-export const DEFAULT_CLIENT_RETRY_MS = 30_000;
+export const DEFAULT_CLIENT_RETRY_MS: number = 30_000;
 
 /** Why a notice was not taken. */
-export type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
+export type ClientUnreachableReason =
+  | "offline"
+  | "busy"
+  | "no-ack"
+  | "disconnected"
+  | (string & {});
 
 /**
  * The client did not take the notice. Retryable: throw it (or let it
@@ -151,7 +164,7 @@ export type ClientNotifier = (
  *
  * @internal
  */
-export const CLIENT_INBOX_UNAVAILABLE_MESSAGE =
+export const CLIENT_INBOX_UNAVAILABLE_MESSAGE: string =
   "This process has no client inbox, so a step cannot reach a device. It is served by " +
   "createServerForRuntime (aai dev, aai start, a self-hosted server) at WS /inbox. " +
   "In a test, publish a notifier of your own with `publishClientNotifier`.";

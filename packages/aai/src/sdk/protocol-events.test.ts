@@ -5,6 +5,7 @@ import {
   EVENT_ID_PREFIX,
   RestoredToolCallSchema,
   SESSION_EVENT_TYPES,
+  SESSION_EVENT_UNION,
   SessionErrorCodeSchema,
   SessionEventSchema,
 } from "./protocol-events.ts";
@@ -82,7 +83,7 @@ describe("AgentTranscriptRecoverySchema", () => {
 
 describe("SESSION_EVENT_TYPES", () => {
   test("names every member of the event union, and nothing else", () => {
-    expect(SESSION_EVENT_TYPES.size).toBe(SessionEventSchema.options.length);
+    expect(SESSION_EVENT_TYPES.size).toBe(SESSION_EVENT_UNION.options.length);
     expect(SESSION_EVENT_TYPES.has("speech.started")).toBe(true);
     expect(SESSION_EVENT_TYPES.has("unknown_event_type")).toBe(false);
   });

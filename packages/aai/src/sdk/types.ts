@@ -25,7 +25,6 @@ import type { TelephonyAccess } from "./telephony-config.ts";
 // Imported as well as re-exported below: a re-export does not bring the name
 // into this module's scope, and `AgentDef.tools` needs `ToolMap`.
 import type { ToolChoice, ToolMap } from "./tool-def.ts";
-import type { Toolset } from "./toolset.ts";
 // Imported as well as re-exported below: `AgentDef` extends it.
 import type { AgentVoicePresets } from "./voice-presets.ts";
 import type { WorkflowDef } from "./workflow.ts";
@@ -153,8 +152,8 @@ export {
  * no prose of their own; a field's documentation lives here once.
  *
  * `agent()` returns the RESOLVED shape, {@link AgentDef}: these fields with the
- * defaults applied and the conveniences normalized away, plus the two tables
- * no author writes (`tools`, `toolsets`).
+ * defaults applied and the conveniences normalized away, plus the one table
+ * no author writes (`tools`).
  *
  * The field groups live on interfaces this extends, each sharing ONE rule:
  * {@link PipelineTuning} and {@link PipelinePhrases} (pipeline transport or
@@ -167,6 +166,7 @@ export {
  * runtime refusal for an untyped caller are both cut from those groups, so no
  * field skips either.
  *
+ * @input
  * @public
  */
 export interface AgentDeclaration
@@ -291,7 +291,7 @@ export interface AgentDeclaration
   /**
    * The {@link SpeakerDef}s the MODEL routes to: `handoff` puts a `speaks: true`
    * entry on the line, `delegate` hands the rest a task. Mints both tools (and
-   * each speaking entry's gated tools) into `toolsets`, so a `tools/handoff.ts`
+   * each speaking entry's gated tools) onto the resolved agent, so a `tools/handoff.ts`
    * or `tools/delegate.ts` beside it is a collision. Host-only. See `sdk/roster.ts`.
    */
   roster?: Roster;
@@ -432,6 +432,7 @@ export interface AgentDeclaration
  * tables nobody authors. Optional fields remain optional — `undefined` means
  * "not configured". Write an {@link AgentParams} member; read this.
  *
+ * @sealed
  * @public
  */
 export interface AgentDef extends Omit<AgentDeclaration, "syncState"> {
@@ -456,12 +457,6 @@ export interface AgentDef extends Omit<AgentDeclaration, "syncState"> {
    * no state type: a tool reaches session state through {@link sessionSlot}.
    */
   tools: ToolMap;
-  /**
-   * Every toolset beyond the `tools/` files — RESOLVED, never authored: `agent()`
-   * puts the roster's here and `withMcpTools` an MCP server's. Read the whole
-   * table through `agentToolsets` (`/manifest`). Host-only. See `sdk/toolset.ts`.
-   */
-  toolsets?: readonly Toolset[];
 }
 
 // The zod schemas for `BuiltinTool` and `ToolChoice` used to be re-exported

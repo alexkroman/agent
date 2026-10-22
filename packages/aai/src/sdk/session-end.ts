@@ -47,6 +47,7 @@ import type { ToolContext } from "./tool-context.ts";
 /**
  * Options for {@link endSession}.
  *
+ * @input
  * @public
  */
 export type EndSessionOptions = {

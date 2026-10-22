@@ -68,6 +68,7 @@ import {
   assemblyAITts,
 } from "./tts/assemblyai.ts";
 
+/** @input */
 export interface AssemblyAIPipelineOptions {
   /**
    * TTS voice id, e.g. `"aai-jane"`, `"aai-michael"`, `"aai-alba"`. Defaults

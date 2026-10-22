@@ -17,10 +17,18 @@ import {
   publishClientNotifier,
 } from "./step-notify-client.ts";
 
-/** One pushed notice, as {@link stubClientInbox} records it. */
+/**
+ * One pushed notice, as {@link stubClientInbox} records it.
+ *
+ * @sealed
+ */
 export type StubClientInboxCall = { clientId: string; notice: ClientNotice };
 
-/** What {@link stubClientInbox} may be told. */
+/**
+ * What {@link stubClientInbox} may be told.
+ *
+ * @input
+ */
 export type StubClientInboxOptions = {
   /**
    * How the device answers each notice: `"acked"` (the default), or a reason it
@@ -34,7 +42,11 @@ export type StubClientInboxOptions = {
     | undefined;
 };
 
-/** What {@link stubClientInbox} returns: the call log, and how to put the slot back. */
+/**
+ * What {@link stubClientInbox} returns: the call log, and how to put the slot back.
+ *
+ * @sealed
+ */
 export type StubClientInbox = {
   /** Every notice pushed, in order — including those the device did not take. */
   calls: StubClientInboxCall[];

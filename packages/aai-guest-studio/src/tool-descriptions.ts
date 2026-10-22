@@ -18,14 +18,14 @@
  * than one that names no number at all.
  */
 
-import { BASH_TIMEOUT_MAX_MS, BASH_TIMEOUT_MS } from "@alexkroman1/aai/coding-tools";
+import { BASH_TIMEOUT_MAX_MS, BASH_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
 
 export {
   BASH_TIMEOUT_MAX_MS,
   BASH_TIMEOUT_MS,
   GLOB_LIMIT,
   READ_LIMIT,
-} from "@alexkroman1/aai/coding-tools";
+} from "@alexkroman1/aai/host-internal";
 
 /**
  * Lines one `read_logs` call may ask for.

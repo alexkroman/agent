@@ -450,7 +450,7 @@ function App() {
 ### CheckboxField()
 
 ```ts
-function CheckboxField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): Element;
+function CheckboxField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "className" | "name" | "type">): Element;
 ```
 
 A checkbox. Contributes a BOOLEAN to [FormValues](#formvalues).
@@ -463,7 +463,7 @@ rather than above it, so `hint` is the place for guidance.
 
 ##### props
 
-[`FieldShell`](#fieldshell) & `Omit`\<`InputHTMLAttributes`\<`HTMLInputElement`\>, `"name"` \| `"className"` \| `"type"`\>
+[`FieldShell`](#fieldshell) & `Omit`\<`InputHTMLAttributes`\<`HTMLInputElement`\>, `"className"` \| `"name"` \| `"type"`\>
 
 [FieldShell](#fieldshell) props plus `<input>` attributes.
 
@@ -983,13 +983,7 @@ function RunFacts({ words, cut }: { words: number; cut: number }) {
 function fetchClientConfig(platformUrl?: string, fetchFn?: {
   (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
   (input: string | Request | URL, init?: RequestInit): Promise<Response>;
-}): Promise<{
-  greeting?: string;
-  name?: string;
-  page: "static" | "voice";
-  sessionToken?: string;
-  sessionUrl?: string;
-}>;
+}): Promise<ClientConfigResponse>;
 ```
 
 Fetch the agent's declared `name`, `greeting` and front door; any failure
@@ -1035,13 +1029,7 @@ supplies its own credentials. Defaults to the global `fetch`.
 
 #### Returns
 
-`Promise`\<\{
-  `greeting?`: `string`;
-  `name?`: `string`;
-  `page`: `"static"` \| `"voice"`;
-  `sessionToken?`: `string`;
-  `sessionUrl?`: `string`;
-\}\>
+`Promise`\<[`ClientConfigResponse`](#clientconfigresponse)\>
 
 The agent's config, or `{}` when the lookup produced no answer.
 
@@ -1214,7 +1202,7 @@ function kindsOf(summary: WorkflowSummary): Record<string, WorkflowFieldKind> {
 function FileField(props: FieldShell & {
   read?: FileReadMode;
   upload?: boolean;
-} & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): Element;
+} & Omit<InputHTMLAttributes<HTMLInputElement>, "className" | "name" | "type">): Element;
 ```
 
 A file picker. Contributes a [FileValue](#filevalue) (or an array, with `multiple`)
@@ -1246,7 +1234,7 @@ Otherwise accepts every `<input>` attribute except `name`, `className` and
 [`FieldShell`](#fieldshell) & \{
   `read?`: [`FileReadMode`](#filereadmode);
   `upload?`: `boolean`;
-\} & `Omit`\<`InputHTMLAttributes`\<`HTMLInputElement`\>, `"name"` \| `"className"` \| `"type"`\>
+\} & `Omit`\<`InputHTMLAttributes`\<`HTMLInputElement`\>, `"className"` \| `"name"` \| `"type"`\>
 
 [FieldShell](#fieldshell) props, `read`/`upload`, and `<input>`
 attributes.
@@ -1513,7 +1501,7 @@ If the target element is not found in the DOM.
 ### NumberField()
 
 ```ts
-function NumberField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): Element;
+function NumberField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "className" | "name" | "type">): Element;
 ```
 
 A number input. Contributes a NUMBER to [FormValues](#formvalues), or nothing when
@@ -1527,7 +1515,7 @@ passed straight through.
 
 ##### props
 
-[`FieldShell`](#fieldshell) & `Omit`\<`InputHTMLAttributes`\<`HTMLInputElement`\>, `"name"` \| `"className"` \| `"type"`\>
+[`FieldShell`](#fieldshell) & `Omit`\<`InputHTMLAttributes`\<`HTMLInputElement`\>, `"className"` \| `"name"` \| `"type"`\>
 
 [FieldShell](#fieldshell) props plus `<input>` attributes.
 
@@ -1711,7 +1699,7 @@ function SelectField(props: FieldShell & {
      label: string;
      value: string;
   })[];
-} & Omit<SelectHTMLAttributes<HTMLSelectElement>, "name" | "className">): Element;
+} & Omit<SelectHTMLAttributes<HTMLSelectElement>, "className" | "name">): Element;
 ```
 
 A dropdown.
@@ -1736,7 +1724,7 @@ contributes an ARRAY (`[]` when nothing is chosen).
      `label`: `string`;
      `value`: `string`;
   \})[];
-\} & `Omit`\<`SelectHTMLAttributes`\<`HTMLSelectElement`\>, `"name"` \| `"className"`\>
+\} & `Omit`\<`SelectHTMLAttributes`\<`HTMLSelectElement`\>, `"className"` \| `"name"`\>
 
 [FieldShell](#fieldshell) props, `options`, and `<select>`
 attributes.
@@ -2182,7 +2170,7 @@ function Digest({ pending }: { pending: boolean }) {
 ### TextAreaField()
 
 ```ts
-function TextAreaField(props: FieldShell & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): Element;
+function TextAreaField(props: FieldShell & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "className" | "name">): Element;
 ```
 
 A multi-line text input.
@@ -2194,7 +2182,7 @@ shared [FieldShell](#fieldshell) props. `rows` defaults to 4.
 
 ##### props
 
-[`FieldShell`](#fieldshell) & `Omit`\<`TextareaHTMLAttributes`\<`HTMLTextAreaElement`\>, `"name"` \| `"className"`\>
+[`FieldShell`](#fieldshell) & `Omit`\<`TextareaHTMLAttributes`\<`HTMLTextAreaElement`\>, `"className"` \| `"name"`\>
 
 [FieldShell](#fieldshell) props plus `<textarea>` attributes.
 
@@ -2207,7 +2195,7 @@ shared [FieldShell](#fieldshell) props. `rows` defaults to 4.
 ### TextField()
 
 ```ts
-function TextField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">): Element;
+function TextField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "className" | "name">): Element;
 ```
 
 A single-line text input.
@@ -2219,7 +2207,7 @@ component owns, plus the shared [FieldShell](#fieldshell) props.
 
 ##### props
 
-[`FieldShell`](#fieldshell) & `Omit`\<`InputHTMLAttributes`\<`HTMLInputElement`\>, `"name"` \| `"className"`\>
+[`FieldShell`](#fieldshell) & `Omit`\<`InputHTMLAttributes`\<`HTMLInputElement`\>, `"className"` \| `"name"`\>
 
 [FieldShell](#fieldshell) props plus `<input>` attributes.
 
@@ -4671,7 +4659,61 @@ function Panel({ runId, onClear }: { runId: string; onClear: () => void }) {
 
 ## Interfaces
 
+### ClientConfigResponse
+
+**`Sealed`**
+
+Parsed body of `GET /client-config` — the fields documented on
+[ClientConfigResponseSchema](../aai/workflow-api.md#clientconfigresponseschema). Declared rather than inferred from the
+schema, so zod's types stay off the contract; the schema is typed against it.
+
+#### Properties
+
+##### greeting?
+
+```ts
+optional greeting?: string;
+```
+
+The agent's greeting.
+
+##### name?
+
+```ts
+optional name?: string;
+```
+
+Agent display name.
+
+##### page
+
+```ts
+page: "voice" | "static";
+```
+
+The front door: a voice page, or a static workflow-app page with no socket.
+
+##### sessionToken?
+
+```ts
+optional sessionToken?: string;
+```
+
+A ticket the session socket presents, when the server mints one.
+
+##### sessionUrl?
+
+```ts
+optional sessionUrl?: string;
+```
+
+Absolute WebSocket URL of the live session endpoint, when the server brokers one.
+
+***
+
 ### ClientRun
+
+**`Sealed`**
 
 One row of the list [clientRunsRoutes](../aai/index.md#clientrunsroutes) answers — plain JSON, what a
 page renders a run from.
@@ -4732,6 +4774,8 @@ The workflow's key in `agent({ workflows })`.
 ***
 
 ### ClientRunsResponse
+
+**`Sealed`**
 
 The body the list route answers.
 
@@ -4855,16 +4899,7 @@ Empty string when nobody is speaking.
 ```ts
 type AgentClient = WorkflowApi & {
   baseUrl: string;
-  config: Promise<{
-     greeting?: z.ZodOptional<z.ZodString>;
-     name?: z.ZodOptional<z.ZodString>;
-     page: z.ZodEnum<{
-        static: "static";
-        voice: "voice";
-     }>;
-     sessionToken?: z.ZodOptional<z.ZodString>;
-     sessionUrl?: z.ZodOptional<z.ZodString>;
-  }>;
+  config: Promise<ClientConfigResponse>;
 };
 ```
 
@@ -4894,16 +4929,7 @@ trailing-slash `//workflows` 404 this normalizes away.
 ##### config()
 
 ```ts
-config(): Promise<{
-  greeting?: z.ZodOptional<z.ZodString>;
-  name?: z.ZodOptional<z.ZodString>;
-  page: z.ZodEnum<{
-     static: "static";
-     voice: "voice";
-  }>;
-  sessionToken?: z.ZodOptional<z.ZodString>;
-  sessionUrl?: z.ZodOptional<z.ZodString>;
-}>;
+config(): Promise<ClientConfigResponse>;
 ```
 
 What the agent says it IS: `{ name?, greeting?, page?, sessionUrl? }`.
@@ -4921,16 +4947,7 @@ this call works with no `token`, and a workflow API closed by
 
 ###### Returns
 
-`Promise`\<\{
-  `greeting?`: `z.ZodOptional`\<`z.ZodString`\>;
-  `name?`: `z.ZodOptional`\<`z.ZodString`\>;
-  `page`: `z.ZodEnum`\<\{
-     `static`: `"static"`;
-     `voice`: `"voice"`;
-  \}\>;
-  `sessionToken?`: `z.ZodOptional`\<`z.ZodString`\>;
-  `sessionUrl?`: `z.ZodOptional`\<`z.ZodString`\>;
-\}\>
+`Promise`\<[`ClientConfigResponse`](#clientconfigresponse)\>
 
 ***
 
@@ -5892,16 +5909,6 @@ before the ban was lifted. What was left banned was `sidebar` beside a
 
 ***
 
-### ClientConfigResponse
-
-```ts
-type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
-```
-
-Parsed body of `GET /client-config`.
-
-***
-
 ### ClientHandle
 
 ```ts
@@ -5957,7 +5964,14 @@ The underlying session core.
 ### ClientRunStatus
 
 ```ts
-type ClientRunStatus = "waiting" | "running" | "completed" | "failed" | "cancelled";
+type ClientRunStatus = 
+  | "waiting"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | string & {
+};
 ```
 
 A [ClientRun](#clientrun)'s status: a run's own, with `pending` said as
@@ -7990,35 +8004,21 @@ Additional CSS class names for the banner, appended to its own.
 ### SessionErrorCode
 
 ```ts
-type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
+type SessionErrorCode = 
+  | "stt"
+  | "llm"
+  | "tts"
+  | "tool"
+  | "protocol"
+  | "connection"
+  | "audio"
+  | "internal"
+  | string & {
+};
 ```
 
-Error codes for categorizing session errors on the wire.
-
-#### Remarks
-
-The field a client renders its error banner from (`error.reported.code`, and
-`SessionError.code` in `@alexkroman1/aai-ui`). Eight values, by where the
-failure came from:
-
-- `stt` — speech-to-text: the provider refused the connection, or its stream
-  failed mid-utterance.
-- `llm` — the model call for a reply failed. In pipeline mode the caller also
-  hears `errorPhrase`, so the turn is handed back rather than going silent.
-- `tts` — synthesis failed, which is the one the caller cannot hear.
-- `tool` — a tool threw and the failure could not be given to the model.
-- `protocol` — a frame that does not parse, or one sent in a state that has
-  no answer for it.
-- `connection` — the session's own link, or a provider's, went away.
-- `audio` — the audio path: a rate the transport cannot honour, a decode.
-- `internal` — anything the runtime could not classify.
-
-**Severity is `fatal`, not the code**, and the two are independent: any of
-these can arrive on a session that continues. `fatal: false` means surface
-the message and keep the session interactive. It is REQUIRED: a fatal frame
-is not a banner — `aai-ui` answers one by releasing the microphone and ending
-the call — so every emitter states which it means rather than inheriting a
-default that takes the whole session down.
+What a session reports when a SUBSYSTEM fails — the `code` of an
+`error.reported` event. Open: a new subsystem's code is not a break.
 
 ***
 
@@ -12134,6 +12134,8 @@ type WorkflowSummary = {
   uploads?: readonly string[];
 };
 ```
+
+**`Sealed`**
 
 One declared workflow, as `GET /workflows` lists it.
 

@@ -4,8 +4,6 @@
 
 ```ts
 
-import type { AnyStateMachine } from 'xstate';
-import type { EventFromLogic } from 'xstate';
 import { z } from 'zod';
 
 // @public
@@ -22,9 +20,12 @@ interface AgentSessionContext {
 type AgentSystemPrompt = string | ((ctx: AgentSessionContext) => string);
 
 // @public
-type AnyDialog = Dialog<AnyStateMachine, unknown>;
+type AgentTranscriptRecovery = "turn-failed" | "session-failed" | (string & {});
 
 // @public
+type AnyDialog = Dialog<unknown>;
+
+// @public @input
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
@@ -39,14 +40,14 @@ type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-202
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
 
-// @public
+// @public @input
 interface ClientEventMap {
 }
 
 // @public
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
 
-// @public
+// @public @input
 type ClientNotice = {
     id: string;
     event: string;
@@ -54,19 +55,19 @@ type ClientNotice = {
     audio?: Uint8Array;
 };
 
-// @public
+// @public @sealed
 type ClientTranscript = {
     sessions: ClientTranscriptSession[];
 };
 
-// @public
+// @public @sealed
 type ClientTranscriptMessage = {
-    role: "user" | "assistant";
+    role: "user" | "assistant" | (string & {});
     text: string;
     at: number;
 };
 
-// @public
+// @public @sealed
 type ClientTranscriptSession = {
     sessionId: string;
     startedAt: number;
@@ -75,7 +76,7 @@ type ClientTranscriptSession = {
     tools: ClientTranscriptTool[];
 };
 
-// @public
+// @public @sealed
 type ClientTranscriptTool = {
     name: string | undefined;
     args: Readonly<Record<string, unknown>> | undefined;
@@ -84,13 +85,16 @@ type ClientTranscriptTool = {
 };
 
 // @public
-type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
+type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected" | (string & {});
 
 // @public
 export function createRecordingWorkflows(options?: RecordingWorkflowsOptions): RecordingWorkflows;
 
 // @public
 export function createRunSnapshot<R = unknown>(overrides?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
+
+// @public
+export function createSlotStore(): SlotStore;
 
 // @public
 export function createStubWorkflows(overrides?: Partial<WorkflowClient>): WorkflowClient;
@@ -101,20 +105,20 @@ export function createToolContext(overrides?: ToolContextOverrides): TestToolCon
 // @public
 export function createWorkflowContext(options?: WorkflowContextOptions): WorkflowContextRecorder;
 
-// @public
+// @public @sealed
 interface DelegateAnswer {
     steps: number;
     text: string;
     toolCalls: readonly DelegateToolCall[];
 }
 
-// @public
+// @public @sealed
 type DelegateFn = {
     <T>(subagent: TypedSpeakerDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
     (subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult>;
 };
 
-// @public
+// @public @input
 interface DelegateOptions {
     context?: string;
     maxSteps?: number;
@@ -128,7 +132,7 @@ interface DelegateResult extends DelegateAnswer {
     revisions: number;
 }
 
-// @public
+// @public @sealed
 interface DelegateToolCall {
     input: unknown;
     name: string;
@@ -166,9 +170,11 @@ export interface DeployedStage {
 }
 
 // @public @sealed
-interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
+interface Dialog<E = {
+    type: string;
+}> {
     readonly key: string;
-    readonly machine: M;
+    readonly machine: unknown;
     matches(ctx: SlotHolder, state: string): boolean;
     position(ctx: SlotHolder): DialogPosition;
     projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
@@ -180,7 +186,7 @@ interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
-// @public
+// @public @input
 interface DialogGate<R, E> {
     send?: E;
     sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
@@ -206,7 +212,7 @@ export function dialogResultSchema<T extends z.ZodType>(result: T): z.ZodObject<
     instruction: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 
-// @public
+// @public @input
 interface DialogTimeout {
     readonly afterMs: number;
     readonly event: {
@@ -214,7 +220,7 @@ interface DialogTimeout {
     };
 }
 
-// @public
+// @public @input
 interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
 }
@@ -224,7 +230,7 @@ interface DialogToolResult<R> extends DialogPosition {
     readonly result: R;
 }
 
-// @public
+// @public @input
 interface DialogVoiceConfig {
     readonly interruption?: PipelineTuning["interruption"];
     readonly temperature?: number;
@@ -236,13 +242,6 @@ interface DialogVoiceConfig {
 export function endSessionCalls(ctx: Pick<ToolContext, "sessionId">): readonly {
     afterReply: boolean;
 }[];
-
-// @public
-type EventMapOf<U extends {
-    type: string;
-}> = {
-    [E in U as E["type"]]: E;
-};
 
 // @public
 export function eventsOf<E extends {
@@ -281,15 +280,15 @@ export function expectToolOk<T>(result: unknown): T;
 // @public
 export type FetchRouteHandler = (request: FetchRouteRequest) => StubStepAnswer | undefined | Promise<StubStepAnswer | undefined>;
 
-// @public
+// @public @sealed
 export type FetchRouteHit = FetchRouteRequest & {
-    readonly outcome: "routed" | "passthrough" | "unmatched";
+    readonly outcome: "routed" | "passthrough" | "unmatched" | (string & {});
     readonly route?: string | undefined;
-    readonly via: "fetch" | "stepFetch";
+    readonly via: "fetch" | "stepFetch" | (string & {});
     readonly status?: number | undefined;
 };
 
-// @public
+// @public @sealed
 export type FetchRouteRequest = StubStepRequest & {
     readonly host: string;
     readonly pathname: string;
@@ -297,7 +296,7 @@ export type FetchRouteRequest = StubStepRequest & {
     readonly json: unknown;
 };
 
-// @public
+// @public @input
 export type FetchRoutesOptions = {
     unmatched?: "throw" | "notFound" | "passthrough" | undefined;
     passThrough?: RegExp | undefined;
@@ -308,7 +307,7 @@ export type FetchRoutesOptions = {
 // @public
 export type FetchRouteTable = Readonly<Record<string, FetchRouteHandler | StubStepAnswer>>;
 
-// @public
+// @public @input
 type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
@@ -316,12 +315,12 @@ type FindByKeyOptions = {
     withOutput?: boolean;
 };
 
-// @public
+// @public @input
 type FindOptions = {
     limit?: number;
 };
 
-// @public
+// @public @sealed
 type GenerateFn = {
     <S extends StandardSchemaV1>(options: GenerateOptions & {
         schema: S;
@@ -329,13 +328,13 @@ type GenerateFn = {
     (options: GenerateOptions): Promise<GenerateResult>;
 };
 
-// @public
+// @public @sealed
 type GenerateObjectResult<T> = {
     text: string;
     object: T;
 };
 
-// @public
+// @public @input
 type GenerateOptions = {
     prompt: string;
     system?: string;
@@ -357,7 +356,7 @@ type GuardrailVerdict = true | string;
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
-// @public
+// @public @input
 interface InterruptionTuning {
     backoffMs?: number;
     minDurationMs?: number;
@@ -393,13 +392,13 @@ type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (s
 
 // @public
 type Message = {
-    role: "user" | "assistant" | "tool";
+    role: "user" | "assistant" | "tool" | (string & {});
     content: string;
     toolName?: string;
     toolCallId?: string;
 };
 
-// @public
+// @public @input
 interface ModelTuning {
     maxOutputTokens?: number;
     maxRetries?: number;
@@ -412,7 +411,7 @@ export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSc
 // @public
 export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAgent, name: string, value: unknown): Promise<T>;
 
-// @public
+// @public @input
 interface PipelineTuning {
     interruption?: InterruptionTuning | "off";
     silence?: SilenceTuning;
@@ -420,9 +419,9 @@ interface PipelineTuning {
 }
 
 // @public
-type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed" | "busy" | "no-answer" | "failed" | "canceled";
+type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed" | "busy" | "no-answer" | "failed" | "canceled" | (string & {});
 
-// @public
+// @public @input
 type PollOptions<T> = {
     everyMs: number;
     maxMs: number;
@@ -430,14 +429,14 @@ type PollOptions<T> = {
     maxAttempts?: number | undefined;
 };
 
-// @public
+// @public @sealed
 type PollResult<T> = {
     value: T;
     done: boolean;
     checks: number;
 };
 
-// @public
+// @public @input
 export type ProjectFiles = {
     readonly tools?: Readonly<Record<string, unknown>>;
     readonly systemPrompt?: string;
@@ -454,14 +453,14 @@ interface ProviderDescriptor<Kind extends string, Options> {
 // @public
 type RandomSource = () => number;
 
-// @public
+// @public @sealed
 export type RecordedSleep = {
     label: string;
     until: number | Date;
     correlationId?: string | undefined;
 };
 
-// @public
+// @public @sealed
 export type RecordedStart = {
     readonly workflow: string;
     readonly def: AnyWorkflowDef | undefined;
@@ -470,13 +469,13 @@ export type RecordedStart = {
     readonly runId: string;
 };
 
-// @public
+// @public @sealed
 export type RecordedStep = {
     name: string;
     maxAttempts?: number | undefined;
 };
 
-// @public
+// @public @sealed
 export type RecordingWorkflows = WorkflowClient & {
     readonly starts: RecordedStart[];
     started(workflow?: string | AnyWorkflowDef): RecordedStart[];
@@ -484,28 +483,34 @@ export type RecordingWorkflows = WorkflowClient & {
     seed(...runs: WorkflowRunSnapshot[]): void;
 };
 
-// @public
+// @public @input
 export type RecordingWorkflowsOptions = {
     workflows?: Readonly<Record<string, AnyWorkflowDef>> | undefined;
     runs?: readonly WorkflowRunSnapshot[] | undefined;
     runIdPrefix?: string | undefined;
 };
 
+// @public @sealed
+interface RestoredToolCall {
+    afterMessageIndex: number;
+    // (undocumented)
+    args: Record<string, unknown>;
+    // (undocumented)
+    callId: string;
+    // (undocumented)
+    name: string;
+    // (undocumented)
+    result?: string | undefined;
+    status: "pending" | "done";
+}
+
 // @public
 export function runGuardrail(def: SpeakerDef, text: string, answer?: Partial<DelegateAnswer>): GuardrailVerdict;
 
 // @public
 export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
-    status?: "pending" | "running" | undefined;
-} | {
-    status: "completed";
-    output: R;
-} | {
-    status: "failed";
-    error: string;
-} | {
-    status: "cancelled";
-});
+    status?: undefined;
+} | (WorkflowRunSnapshot<R> extends infer S ? S extends unknown ? Omit<S, keyof WorkflowRunBase> : never : never));
 
 // @public
 export function runTool<T extends {
@@ -515,7 +520,7 @@ export function runTool<T extends {
 // @public
 export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
 
-// @public
+// @public @sealed
 export interface SaidLine {
     readonly interrupt: boolean;
     readonly interruptible: boolean;
@@ -523,7 +528,7 @@ export interface SaidLine {
     readonly text: string;
 }
 
-// @public
+// @public @input
 type SayOnClientNotice = {
     id?: string | undefined;
     event: string;
@@ -538,7 +543,7 @@ type SayOnClientNotice = {
     maxAttempts?: number | undefined;
 };
 
-// @public
+// @public @input
 type SayOptions = {
     interrupt?: boolean | undefined;
     interruptible?: boolean | undefined;
@@ -548,7 +553,7 @@ type SayOptions = {
 // @public
 export function schemaInputIssues(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<readonly StandardSchemaIssue[] | undefined>;
 
-// @public
+// @public @sealed
 export interface SentEvent {
     // (undocumented)
     data: unknown;
@@ -556,7 +561,7 @@ export interface SentEvent {
     event: string;
 }
 
-// @public
+// @public @sealed
 type SessionCall = {
     readonly carrier: string;
     readonly callId?: string;
@@ -564,243 +569,172 @@ type SessionCall = {
 };
 
 // @public
+type SessionErrorCode = "stt" | "llm" | "tts" | "tool" | "protocol" | "connection" | "audio" | "internal" | (string & {});
+
+// @public
 type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
 
-// @public
-interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {
+// @public @sealed
+interface SessionEventMap {
+    "agentTranscript.committed": {
+        type: "agentTranscript.committed";
+        meta: SessionEventMeta;
+        text: string;
+        recovery?: AgentTranscriptRecovery | undefined;
+        recorded?: false | undefined;
+    };
+    "agentTranscript.updated": {
+        type: "agentTranscript.updated";
+        meta: SessionEventMeta;
+        text: string;
+    };
+    "audio.completed": {
+        type: "audio.completed";
+        meta: SessionEventMeta;
+    };
+    "custom.emitted": {
+        type: "custom.emitted";
+        meta: SessionEventMeta;
+        event: string;
+        data: unknown;
+    };
+    // (undocumented)
+    "error.reported": {
+        type: "error.reported";
+        meta: SessionEventMeta;
+        code: SessionErrorCode;
+        message: string;
+        fatal: boolean;
+    };
+    "guardrail.blocked": {
+        type: "guardrail.blocked";
+        meta: SessionEventMeta;
+        direction: "input" | "output" | (string & {});
+        replacement: string;
+    };
+    "history.restored": {
+        type: "history.restored";
+        meta: SessionEventMeta;
+        messages: {
+            role: "user" | "assistant";
+            content: string;
+        }[];
+        toolCalls: RestoredToolCall[];
+    };
+    "metrics.collected": {
+        type: "metrics.collected";
+        meta: SessionEventMeta;
+        interrupted: boolean;
+        latencyMs?: number | undefined;
+        stt?: {
+            endpointingMs?: number | undefined;
+        } | undefined;
+        llm?: {
+            ttftMs?: number | undefined;
+            durationMs: number;
+            steps: number;
+            inputTokens?: number | undefined;
+            outputTokens?: number | undefined;
+        } | undefined;
+        tts?: {
+            ttfbMs?: number | undefined;
+            characters: number;
+        } | undefined;
+    };
+    "provider.failedOver": {
+        type: "provider.failedOver";
+        meta: SessionEventMeta;
+        stage: "stt" | "llm" | "tts" | (string & {});
+        from: string;
+        to: string;
+        reason: string;
+    };
+    "reply.cancelled": {
+        type: "reply.cancelled";
+        meta: SessionEventMeta;
+    };
+    "reply.completed": {
+        type: "reply.completed";
+        meta: SessionEventMeta;
+    };
+    "session.configured": {
+        type: "session.configured";
+        meta: SessionEventMeta;
+        audioFormat: string;
+        sampleRate: number;
+        ttsSampleRate: number;
+        sessionId: string;
+    };
+    "session.reset": {
+        type: "session.reset";
+        meta: SessionEventMeta;
+    };
+    "session.timedOut": {
+        type: "session.timedOut";
+        meta: SessionEventMeta;
+    };
+    "speech.started": {
+        type: "speech.started";
+        meta: SessionEventMeta;
+    };
+    // (undocumented)
+    "speech.stopped": {
+        type: "speech.stopped";
+        meta: SessionEventMeta;
+    };
+    "state.updated": {
+        type: "state.updated";
+        meta: SessionEventMeta;
+        state: Record<string, unknown>;
+    };
+    // (undocumented)
+    "tool.called": {
+        type: "tool.called";
+        meta: SessionEventMeta;
+        toolCallId: string;
+        toolName: string;
+        args: Record<string, unknown>;
+    };
+    // (undocumented)
+    "tool.completed": {
+        type: "tool.completed";
+        meta: SessionEventMeta;
+        toolCallId: string;
+        result: string;
+    };
+    "usage.updated": {
+        type: "usage.updated";
+        meta: SessionEventMeta;
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+        steps: number;
+    };
+    "userTranscript.committed": {
+        type: "userTranscript.committed";
+        meta: SessionEventMeta;
+        text: string;
+    };
+    "userTranscript.updated": {
+        type: "userTranscript.updated";
+        meta: SessionEventMeta;
+        text: string;
+        eotConfidence?: number | undefined;
+    };
+    "userTurn.exceeded": {
+        type: "userTurn.exceeded";
+        meta: SessionEventMeta;
+        limit: "words" | "duration" | (string & {});
+        words: number;
+        durationMs: number;
+    };
 }
 
-// @public
-const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
-    type: z.ZodLiteral<"session.configured">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    audioFormat: z.ZodString;
-    sampleRate: z.ZodNumber;
-    ttsSampleRate: z.ZodNumber;
-    sessionId: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"audio.completed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"speech.started">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"speech.stopped">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"userTranscript.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-    eotConfidence: z.ZodOptional<z.ZodNumber>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"userTranscript.committed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agentTranscript.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"agentTranscript.committed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    text: z.ZodString;
-    recovery: z.ZodOptional<z.ZodEnum<{
-        "session-failed": "session-failed";
-        "turn-failed": "turn-failed";
-    }>>;
-    recorded: z.ZodOptional<z.ZodLiteral<false>>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"tool.called">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    toolCallId: z.ZodString;
-    toolName: z.ZodString;
-    args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"tool.completed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    toolCallId: z.ZodString;
-    result: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"reply.completed">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"reply.cancelled">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"session.reset">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"session.timedOut">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"error.reported">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    code: z.ZodEnum<{
-        audio: "audio";
-        connection: "connection";
-        internal: "internal";
-        llm: "llm";
-        protocol: "protocol";
-        stt: "stt";
-        tool: "tool";
-        tts: "tts";
-    }>;
-    message: z.ZodString;
-    fatal: z.ZodBoolean;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"custom.emitted">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    event: z.ZodString;
-    data: z.ZodUnknown;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"state.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"usage.updated">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    inputTokens: z.ZodNumber;
-    outputTokens: z.ZodNumber;
-    totalTokens: z.ZodNumber;
-    steps: z.ZodNumber;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"guardrail.blocked">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    direction: z.ZodEnum<{
-        input: "input";
-        output: "output";
-    }>;
-    replacement: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"userTurn.exceeded">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    limit: z.ZodEnum<{
-        duration: "duration";
-        words: "words";
-    }>;
-    words: z.ZodNumber;
-    durationMs: z.ZodNumber;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"provider.failedOver">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    stage: z.ZodEnum<{
-        llm: "llm";
-        stt: "stt";
-        tts: "tts";
-    }>;
-    from: z.ZodString;
-    to: z.ZodString;
-    reason: z.ZodString;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"metrics.collected">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    interrupted: z.ZodBoolean;
-    latencyMs: z.ZodOptional<z.ZodNumber>;
-    stt: z.ZodOptional<z.ZodObject<{
-        endpointingMs: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    llm: z.ZodOptional<z.ZodObject<{
-        ttftMs: z.ZodOptional<z.ZodNumber>;
-        durationMs: z.ZodNumber;
-        steps: z.ZodNumber;
-        inputTokens: z.ZodOptional<z.ZodNumber>;
-        outputTokens: z.ZodOptional<z.ZodNumber>;
-    }, z.core.$strip>>;
-    tts: z.ZodOptional<z.ZodObject<{
-        ttfbMs: z.ZodOptional<z.ZodNumber>;
-        characters: z.ZodNumber;
-    }, z.core.$strip>>;
-}, z.core.$strip>, z.ZodObject<{
-    type: z.ZodLiteral<"history.restored">;
-    meta: z.ZodObject<{
-        id: z.ZodString;
-        at: z.ZodNumber;
-    }, z.core.$strip>;
-    messages: z.ZodArray<z.ZodObject<{
-        role: z.ZodEnum<{
-            assistant: "assistant";
-            user: "user";
-        }>;
-        content: z.ZodString;
-    }, z.core.$strip>>;
-    toolCalls: z.ZodArray<z.ZodObject<{
-        callId: z.ZodString;
-        name: z.ZodString;
-        args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-        status: z.ZodEnum<{
-            done: "done";
-            pending: "pending";
-        }>;
-        result: z.ZodOptional<z.ZodString>;
-        afterMessageIndex: z.ZodNumber;
-    }, z.core.$strip>>;
-}, z.core.$strip>], "type">;
+// @public @sealed
+interface SessionEventMeta {
+    at: number;
+    id: string;
+}
 
 // @public
 type SessionEventType = Extract<keyof SessionEventMap, string>;
@@ -811,36 +745,38 @@ interface SessionSpeech {
     say(text: string, options?: SayOptions): SpeechHandle;
 }
 
-// @public
+// @public @input
 interface SilenceNudge {
     afterMs: number;
     prompt?: string;
 }
 
-// @public
+// @public @input
 interface SilenceTuning {
     deadAirCoverMs?: number;
     nudge?: SilenceNudge;
 }
 
-// @public
+// @public @input
 type SleepOptions = {
     correlationId?: string;
 };
 
-// @public
+// @public @sealed
 type SlotHolder = {
     readonly slots: SlotStore;
     readonly sessionId: string;
 };
 
-// @public
+// @public @sealed
 type SlotStore = {
     read(key: string): unknown;
-    write(key: string, value: unknown, durable: boolean): void;
+    write(key: string, value: unknown, options?: {
+        durable?: boolean | undefined;
+    }): void;
 };
 
-// @public
+// @public @input
 interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
@@ -869,7 +805,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped";
+type SpeechOutcome = "played" | "interrupted" | "dropped" | (string & {});
 
 // @public
 interface StandardSchemaIssue {
@@ -904,7 +840,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
     };
 }
 
-// @public
+// @public @input
 type StartOptions = {
     key?: string;
     dedupeKey?: string;
@@ -912,14 +848,14 @@ type StartOptions = {
     notify?: boolean | string;
 };
 
-// @public
+// @public @sealed
 interface StateProjection<V = unknown> {
     (value?: unknown): V;
     readonly create: () => unknown;
     readonly key: string;
 }
 
-// @public
+// @public @input
 type StepClientTranscriptOptions = {
     since?: number | undefined;
     afterEventIndex?: {
@@ -928,27 +864,27 @@ type StepClientTranscriptOptions = {
     } | undefined;
 };
 
-// @public
+// @public @input
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
     schema?: S | undefined;
 };
 
-// @public
+// @public @input
 type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
     schema: S;
 };
 
-// @public
+// @public @input
 type StreamOptions = {
     namespace?: string;
     startIndex?: number;
 };
 
 // @public
-export const STUB_SPEECH_PCM_BYTES = 12000;
+export const STUB_SPEECH_PCM_BYTES: number;
 
-// @public
+// @public @sealed
 export type StubClientInbox = {
     calls: StubClientInboxCall[];
     restore(): void;
@@ -957,18 +893,18 @@ export type StubClientInbox = {
 // @public
 export function stubClientInbox(options?: StubClientInboxOptions): StubClientInbox;
 
-// @public
+// @public @sealed
 export type StubClientInboxCall = {
     clientId: string;
     notice: ClientNotice;
 };
 
-// @public
+// @public @input
 export type StubClientInboxOptions = {
     answer?: "acked" | ClientUnreachableReason | ((call: StubClientInboxCall) => "acked" | ClientUnreachableReason) | undefined;
 };
 
-// @public
+// @public @sealed
 export type StubClientTranscript = {
     calls: StubClientTranscriptCall[];
     restore(): void;
@@ -980,13 +916,13 @@ export function stubClientTranscript(answer?: StubClientTranscriptAnswer): StubC
 // @public
 export type StubClientTranscriptAnswer = ClientTranscript | ((call: StubClientTranscriptCall) => ClientTranscript);
 
-// @public
+// @public @sealed
 export type StubClientTranscriptCall = {
     clientId: string;
     options: StepClientTranscriptOptions;
 };
 
-// @public
+// @public @sealed
 export interface StubDelegate {
     calls: StubDelegateCall[];
     delegate: DelegateFn;
@@ -995,7 +931,7 @@ export interface StubDelegate {
 // @public
 export function stubDelegate(script: StubDelegateScript): StubDelegate;
 
-// @public
+// @public @sealed
 export interface StubDelegateCall {
     options: DelegateOptions;
     subagent: SpeakerDef;
@@ -1023,13 +959,13 @@ export type StubDelegateScript = {
     readonly reply?: never;
 };
 
-// @public
+// @public @sealed
 export type StubEmitted = {
     namespace: string;
     chunk: unknown;
 };
 
-// @public
+// @public @sealed
 export type StubFetchRoutes = {
     readonly hits: FetchRouteHit[];
     to(filter: string | RegExp): FetchRouteHit[];
@@ -1040,7 +976,7 @@ export type StubFetchRoutes = {
 // @public
 export function stubFetchRoutes(routes: FetchRouteTable | readonly FetchRouteHandler[], options?: FetchRoutesOptions): StubFetchRoutes;
 
-// @public
+// @public @sealed
 export interface StubGateway {
     calls: StubGatewayCall[];
     fetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -1049,7 +985,7 @@ export interface StubGateway {
 // @public
 export function stubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGateway;
 
-// @public
+// @public @sealed
 export interface StubGatewayCall {
     body: Record<string, unknown>;
     headers: Record<string, string>;
@@ -1058,13 +994,13 @@ export interface StubGatewayCall {
     url: string;
 }
 
-// @public
+// @public @input
 export interface StubGatewayOptions {
     headers?: Record<string, string>;
     status?: number;
 }
 
-// @public
+// @public @sealed
 export interface StubGatewayRoute {
     calls: StubGatewayCall[];
     route: (request: StubStepRequest) => StubStepAnswer | undefined;
@@ -1073,7 +1009,7 @@ export interface StubGatewayRoute {
 // @public
 export function stubGatewayRoute(replies: string | readonly string[], options?: StubGatewayOptions): StubGatewayRoute;
 
-// @public
+// @public @sealed
 export interface StubGenerate {
     calls: StubGenerateCall[];
     generate: GenerateFn;
@@ -1082,7 +1018,7 @@ export interface StubGenerate {
 // @public
 export function stubGenerate(script: StubGenerateScript): StubGenerate;
 
-// @public
+// @public @sealed
 export interface StubGenerateCall {
     options: GenerateOptions;
     prompt: string;
@@ -1107,7 +1043,7 @@ export type StubGenerateScript = {
     readonly reply?: never;
 };
 
-// @public
+// @public @sealed
 export type StubPlaceCall = {
     calls: StubPlacedCall[];
     restore(): void;
@@ -1116,7 +1052,7 @@ export type StubPlaceCall = {
 // @public
 export function stubPlaceCall(options?: StubPlaceCallOptions): StubPlaceCall;
 
-// @public
+// @public @input
 export type StubPlaceCallOptions = {
     dial?: "accept" | StubPlaceCallRefusal | ((call: StubPlacedCall) => "accept" | StubPlaceCallRefusal);
     status?: PlacedCallStatus | "initiated" | ((call: StubPlacedCall) => PlacedCallStatus | "initiated");
@@ -1124,14 +1060,14 @@ export type StubPlaceCallOptions = {
     publicUrl?: string;
 };
 
-// @public
+// @public @input
 export type StubPlaceCallRefusal = {
     status: number;
     code?: number;
     message?: string;
 };
 
-// @public
+// @public @sealed
 export type StubPlacedCall = {
     callId: string | undefined;
     to: string;
@@ -1143,7 +1079,7 @@ export type StubPlacedCall = {
     polls: number;
 };
 
-// @public
+// @public @sealed
 export type StubReporter = {
     lines: string[];
     emitted: StubEmitted[];
@@ -1153,7 +1089,7 @@ export type StubReporter = {
 // @public
 export function stubReporter(): StubReporter;
 
-// @public
+// @public @sealed
 export type StubSpeech = {
     calls: StubSpeechCall[];
     restore(): void;
@@ -1162,7 +1098,7 @@ export type StubSpeech = {
 // @public
 export function stubSpeech(options?: StubSpeechOptions): StubSpeech;
 
-// @public
+// @public @sealed
 export type StubSpeechCall = {
     text: string;
     apiKey: string;
@@ -1171,7 +1107,7 @@ export type StubSpeechCall = {
     sampleRate: number;
 };
 
-// @public
+// @public @input
 export type StubSpeechOptions = {
     pcmBytes?: number | undefined;
     error?: Error | undefined;
@@ -1185,7 +1121,7 @@ export type StubStepAnswer = Response | {
     headers?: Record<string, string>;
 };
 
-// @public
+// @public @sealed
 export interface StubStepDelegate {
     calls: StubDelegateCall[];
     restore(): void;
@@ -1194,7 +1130,7 @@ export interface StubStepDelegate {
 // @public
 export function stubStepDelegate(script: StubDelegateScript): StubStepDelegate;
 
-// @public
+// @public @sealed
 export type StubStepFetch = {
     calls: StubStepRequest[];
     restore: () => void;
@@ -1212,7 +1148,7 @@ export function stubStepInfo(step: {
     restore: () => void;
 };
 
-// @public
+// @public @sealed
 export type StubStepRequest = {
     url: string;
     method: string;
@@ -1220,7 +1156,7 @@ export type StubStepRequest = {
     body: Uint8Array | string | undefined;
 };
 
-// @public
+// @public @sealed
 export type StubTranscribe = {
     calls: StubTranscribeCall[];
     restore(): void;
@@ -1229,12 +1165,12 @@ export type StubTranscribe = {
 // @public
 export function stubTranscribe(options?: StubTranscribeOptions): StubTranscribe;
 
-// @public
+// @public @sealed
 export type StubTranscribeCall = StubStepRequest & {
     leg: StubTranscribeLeg;
 };
 
-// @public
+// @public @input
 export type StubTranscribeFailure = {
     leg?: StubTranscribeLeg | readonly StubTranscribeLeg[] | undefined;
     status?: number | undefined;
@@ -1243,9 +1179,9 @@ export type StubTranscribeFailure = {
 };
 
 // @public
-export type StubTranscribeLeg = "upload" | "submit" | "poll" | "sync" | "other";
+export type StubTranscribeLeg = "upload" | "submit" | "poll" | "sync" | "other" | (string & {});
 
-// @public
+// @public @input
 export type StubTranscribeOptions = {
     text?: string | readonly string[] | undefined;
     durationSec?: number | undefined;
@@ -1265,7 +1201,7 @@ export type StubUpload = Uint8Array | {
     complete?: boolean;
 };
 
-// @public
+// @public @sealed
 export type StubUploads = {
     restore(): void;
     writes: StubUploadWrite[];
@@ -1275,13 +1211,13 @@ export type StubUploads = {
 // @public
 export function stubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
 
-// @public
+// @public @input
 export type StubUploadsOptions = {
     writable?: boolean | undefined;
     idPrefix?: string | undefined;
 };
 
-// @public
+// @public @sealed
 export type StubUploadWrite = {
     id: string;
     name: string;
@@ -1298,10 +1234,9 @@ export type TestToolContext = ToolContext & {
     readonly desk: StubDelegate;
 };
 
-// @public
+// @public @input
 export type ToolBearingAgent = {
     readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
-    readonly toolsets?: readonly Toolset[] | undefined;
     readonly dialogs?: readonly AnyDialog[] | undefined;
 };
 
@@ -1311,7 +1246,7 @@ type ToolChoice = "auto" | "required" | "none" | {
     toolName: string;
 };
 
-// @public
+// @public @input
 type ToolCompletionMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -1337,7 +1272,7 @@ type ToolContext = {
     random: RandomSource;
 };
 
-// @public
+// @public @input
 export type ToolContextOverrides = {
     env?: ToolContext["env"] | undefined;
     slots?: ToolContext["slots"] | undefined;
@@ -1359,7 +1294,7 @@ export type ToolContextOverrides = {
     call?: SessionCall | undefined;
 };
 
-// @public
+// @public @input
 type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
@@ -1368,7 +1303,7 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     messages?: ToolMessagesInput;
 };
 
-// @public
+// @public @input
 type ToolDelayedMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -1377,9 +1312,6 @@ type ToolDelayedMessage = {
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
-
-// @public
-type ToolExecutor = "host" | "client";
 
 // @public
 type ToolFailure = {
@@ -1395,14 +1327,14 @@ type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 // @public
 type ToolMap = Readonly<Record<string, ToolDef>>;
 
-// @public
+// @public @input
 type ToolMessageCondition = {
     arg: string;
     op?: ToolConditionOperator | undefined;
     value: string | number | boolean | null;
 };
 
-// @public
+// @public @input
 type ToolMessagesInput = {
     start?: boolean | string | readonly (string | ToolStartMessage)[];
     delayed?: readonly ToolDelayedMessage[];
@@ -1414,40 +1346,12 @@ type ToolMessagesInput = {
 export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema>;
 
 // @public
-type ToolRefusal = ToolFailure & {
-    reason: ToolRefusalReason;
-};
-
-// @public
-type ToolRefusalReason = "unknown_tool" | "invalid_arguments" | "cancelled" | "persona" | "dialog" | "roster";
-
-// @public
 export type ToolRunner = (name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext) => Promise<unknown>;
 
 // @public
 export function toolRunner(agent: ToolBearingAgent): ToolRunner;
 
-// @public
-interface Toolset {
-    execute(name: string, args: unknown, ctx: ToolContext): unknown;
-    gate(name: string, ctx: ToolContext): ToolRefusal | undefined;
-    list(): Readonly<Record<string, ToolsetEntry>>;
-    // (undocumented)
-    readonly source: ToolSource;
-}
-
-// @public
-interface ToolsetEntry {
-    readonly def: ToolDef;
-    // (undocumented)
-    readonly executor: ToolExecutor;
-    readonly timeoutMs?: number | undefined;
-}
-
-// @public
-type ToolSource = "files" | "builtin" | "mcp" | "roster" | "subagent";
-
-// @public
+// @public @input
 type ToolStartMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -1457,7 +1361,7 @@ type ToolStartMessage = {
 // @public
 type TurnDetectionMode = "auto" | "manual" | (string & {});
 
-// @public
+// @public @input
 interface TurnTakingTuning {
     detection?: TurnDetectionMode;
     maxSilenceMs?: number;
@@ -1467,46 +1371,46 @@ interface TurnTakingTuning {
     userTurnLimit?: UserTurnLimit;
 }
 
-// @public
+// @public @sealed
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
 
-// @public
+// @public @input
 interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
 }
 
-// @public
+// @public @input
 interface UserTurnLimit {
     maxDurationMs?: number | undefined;
     maxWords?: number | undefined;
 }
 
-// @public
+// @public @input
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     timeoutMs: number;
     schema?: S | undefined;
 };
 
-// @public
+// @public @input
 type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     schema: S;
 };
 
-// @public
+// @public @input
 type WakeUpOptions = {
     correlationIds?: string[];
 };
 
 // @public
-export const WORKFLOW_CONTEXT_NOW = 1767225600000;
+export const WORKFLOW_CONTEXT_NOW: number;
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
-// @public
+// @public @sealed
 type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
@@ -1530,7 +1434,7 @@ type WorkflowClient = {
     listing(): WorkflowSummary[];
 };
 
-// @public
+// @public @sealed
 type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
@@ -1548,7 +1452,7 @@ type WorkflowContext = {
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
-// @public
+// @public @input
 export type WorkflowContextOptions = {
     runId?: string;
     workflow?: string;
@@ -1560,14 +1464,14 @@ export type WorkflowContextOptions = {
     uuid?: string | (() => string);
 };
 
-// @public
+// @public @sealed
 export type WorkflowContextRecorder = WorkflowContext & {
     readonly steps: RecordedStep[];
     readonly slept: RecordedSleep[];
     readonly waited: string[];
 };
 
-// @public
+// @public @input
 type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
@@ -1577,7 +1481,7 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
 };
 
-// @public
+// @public @sealed
 type WorkflowFailureContext<I = unknown> = {
     readonly runId: string;
     readonly workflow: string;
@@ -1593,7 +1497,7 @@ type WorkflowFailureHandler<I = unknown> = WorkflowFailureHook<I> | {
 // @public
 type WorkflowFailureHook<I = unknown> = (error: Error, context: WorkflowFailureContext<I>) => Promise<void> | void;
 
-// @public
+// @public @sealed
 type WorkflowRunBase = {
     runId: string;
     workflow: string;
@@ -1624,7 +1528,7 @@ type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 // @public
 type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
-// @public
+// @public @sealed
 type WorkflowSummary = {
     name: string;
     description?: string;

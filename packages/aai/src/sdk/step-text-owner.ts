@@ -38,6 +38,7 @@ import { stepEnv } from "./step-env.ts";
 /**
  * Options for {@link stepTextOwner}.
  *
+ * @input
  * @public
  */
 export type StepTextOwnerOptions = {

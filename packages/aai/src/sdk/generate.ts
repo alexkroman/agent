@@ -60,6 +60,7 @@ import type { InferSchemaOutput, StandardSchemaV1 } from "./schema.ts";
  *
  * No `signal`: the call is already bound to `ctx.signal` by the runtime — see
  * the module doc for why a field here would be a second, competing one.
+ * @input
  */
 export type GenerateOptions = {
   /** The user prompt for this call. */
@@ -114,6 +115,7 @@ export type GenerateResult = {
  * `const { object } = await ctx.generate({ prompt, schema })` — needed a `!`
  * or an `if` before any field could be read, even though `host/generate.ts`
  * returns `{ text, object }` unconditionally on that path.
+ * @sealed
  */
 export type GenerateObjectResult<T> = {
   /** The generated text — the JSON-stringified object. */
@@ -127,6 +129,7 @@ export type GenerateObjectResult<T> = {
  * Standard Schema `schema` returns a result whose `object` is typed by that
  * schema and non-optional; a plain-JSON-Schema or schemaless call returns
  * {@link GenerateResult}, whose `object` is `unknown` and must be narrowed.
+ * @sealed
  */
 export type GenerateFn = {
   <S extends StandardSchemaV1>(

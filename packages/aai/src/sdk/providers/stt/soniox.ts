@@ -27,7 +27,11 @@ export const SONIOX_KIND = SONIOX_PROVIDER.kind;
 /** Agent-env variable holding the Soniox API key. */
 export const SONIOX_API_KEY_ENV: string = SONIOX_PROVIDER.envVar;
 
-/** Options for {@link sonioxStt}. */
+/**
+ * Options for {@link sonioxStt}.
+ *
+ * @input
+ */
 export interface SonioxSttOptions extends ProviderCredentialOptions {
   /**
    * Streaming model. Defaults to `"stt-rt-v3"`. Any string is forwarded

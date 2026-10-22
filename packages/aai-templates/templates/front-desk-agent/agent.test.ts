@@ -18,19 +18,17 @@ function refusal(result: unknown): string {
 describe("the roster", () => {
   test("triage answers the phone, and every persona's tools plus `handoff` are on the agent", () => {
     expect(desk.list.map((one) => one.name)).toEqual(["triage", "billing", "support"]);
-    // The `tools/` files, plus the toolset the roster minted.
-    const served = [
-      ...Object.keys(agentDef.tools),
-      ...(agentDef.toolsets ?? []).flatMap((set) => Object.keys(set.list())),
-    ];
-    expect(served.sort()).toEqual([
+    // The `tools/` files are the shared ones; the roster minted the rest.
+    expect(Object.keys(agentDef.tools).sort()).toEqual(["verify_account"]);
+    for (const name of [
       HANDOFF_TOOL_NAME,
       "issue_refund",
       "lookup_invoice",
       "run_diagnostic",
       "schedule_technician",
-      "verify_account",
-    ]);
+    ]) {
+      expect(toolOf(agentDef, name).description).not.toBe("");
+    }
     expect(desk.active(createToolContext())).toBe(triage);
   });
 

@@ -1122,8 +1122,9 @@ export default agent({
 `sessionContext` is bounded (1.5 s) and a throw, a timeout or `undefined` starts
 the session without it; `onSessionEnd` is fire-and-forget and at-least-once, so
 key any run it starts. A `routes` handler's return value is the JSON body;
-`routeResponse(status, body)` picks another status and a thrown
-`routeError(status, message)` answers `{ error: message }`.
+`routeResponse(status, body, { headers })` picks another status (and any headers
+— a `Location`, a `Retry-After`) and a thrown `routeError(status, message)`
+answers `{ error: message }`.
 
 ## Composing a system prompt
 

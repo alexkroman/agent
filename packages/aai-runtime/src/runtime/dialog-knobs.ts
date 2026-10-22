@@ -107,7 +107,8 @@ export function reportDialogKnobs(dialogs: readonly AnyDialog[], logger: Logger)
   reported.add(dialogs);
   let live = false;
   for (const dialog of dialogs) {
-    for (const node of nodesOf(dialog.machine)) {
+    // A `DialogMachine` is an XState machine under its SDK-owned structural name.
+    for (const node of nodesOf(dialog.machine as AnyStateMachine)) {
       const meta = metaOf(node);
       if (meta === undefined) continue;
       if (LIVE_KNOBS.some((knob) => meta[knob] !== undefined)) live = true;

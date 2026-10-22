@@ -156,6 +156,7 @@ export type WorkflowBody<I = unknown, R = unknown> = (
  *   passing the workflow to `start`/`get`/`find` is what makes a completed
  *   run's result typed instead of `unknown`.
  *
+ * @input
  * @public
  */
 export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
@@ -264,6 +265,7 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
  * Typing the parameter as `never` inverts that — `never` is assignable to every
  * parameter type — which is exactly right for a position that only ever reads
  * `R`, and makes the def unusable for CALLING the body, which nothing here does.
+ * @input
  */
 export type AnyWorkflowDef<R = unknown> = {
   description?: string;
@@ -284,6 +286,7 @@ export type AnyWorkflowDef<R = unknown> = {
  * a Node process: the API serves it, and a static page's client renders a form
  * from it.
  *
+ * @sealed
  * @public
  */
 export type WorkflowSummary = {

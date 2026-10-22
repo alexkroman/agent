@@ -63,6 +63,7 @@ export interface ProviderDescriptor<Kind extends string, Options> {
  * needs it, and per-stage key separation is equally the answer for two accounts
  * with one vendor, for per-tenant keys, and for a rotation that runs both keys
  * briefly.
+ * @input
  */
 export interface ProviderCredentialOptions {
   /**

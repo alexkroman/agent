@@ -27,7 +27,6 @@ import type {
   SpeakerDef,
   ToolContext,
   ToolDef,
-  Toolset,
 } from "@alexkroman1/aai";
 import type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-internal";
 import {
@@ -44,6 +43,7 @@ import {
   TOOL_EXECUTION_TIMEOUT_MS,
   WORKFLOWS_UNAVAILABLE_MESSAGE,
 } from "@alexkroman1/aai/internal";
+import type { Toolset } from "@alexkroman1/aai/manifest";
 import { composeToolsets } from "@alexkroman1/aai/manifest";
 import { errorDetail, errorMessage } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";

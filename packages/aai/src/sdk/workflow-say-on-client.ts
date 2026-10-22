@@ -35,6 +35,7 @@ import type { StepOptions } from "./workflow-ctx-options.ts";
  * `WorkflowContext` lives on does not reach into `/step`'s types;
  * `workflow-say-on-client.test-d.ts` pins the two key sets together.
  *
+ * @input
  * @public
  */
 export type SayOnClientNotice = {

@@ -39,6 +39,7 @@ import type { WorkflowRunSnapshot } from "./workflow-run.ts";
  * `agent({ workflows })`, so that record stays the single source of the name,
  * and to its `workflowId` through its own `run` function.
  *
+ * @sealed
  * @public
  */
 export type WorkflowClient = {

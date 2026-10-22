@@ -81,7 +81,11 @@ export const STEP_SPEAK_SAMPLE_RATE: number = 24_000;
  */
 export const STEP_SPEAK_TIMEOUT_MS: number = 120_000;
 
-/** What {@link stepSpeak} accepts. */
+/**
+ * What {@link stepSpeak} accepts.
+ *
+ * @input
+ */
 export type SpeakOptions = {
   /**
    * Voice id, e.g. `"aai-jane"`, `"aai-michael"`, `"aai-vera"`. Defaults to
@@ -112,13 +116,17 @@ export type SpeakOptions = {
    */
   apiKeyEnv?: string | undefined;
   /**
-   * Abort the synthesis. Combined with {@link STEP_SPEAK_TIMEOUT_MS} rather
+   * Abort the synthesis. Combined with `STEP_SPEAK_TIMEOUT_MS` rather
    * than replacing it, so a caller passing one still cannot hang forever.
    */
   signal?: AbortSignal | undefined;
 };
 
-/** What {@link stepSpeak} resolves with. */
+/**
+ * What {@link stepSpeak} resolves with.
+ *
+ * @sealed
+ */
 export type SpokenAudio = {
   /**
    * A complete `.wav` file — the container a browser, a bucket and a
@@ -199,7 +207,7 @@ export function keylessSynthesizer(synthesizer: SpeechSynthesizer): SpeechSynthe
  *
  * @internal
  */
-export const SPEECH_UNAVAILABLE_MESSAGE =
+export const SPEECH_UNAVAILABLE_MESSAGE: string =
   "No speech synthesizer in this process. Speech is served by `createServerForRuntime`, which every " +
   "deployed agent, every self-hosted server and `aai dev` go through. In a test, publish a " +
   "synthesizer of your own with `stubSpeech` from `@alexkroman1/aai/testing`.";

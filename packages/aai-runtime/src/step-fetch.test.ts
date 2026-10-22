@@ -16,7 +16,7 @@ import {
   STEP_FETCH_KEEP_ALIVE_MS,
   STEP_FETCH_PIPELINING,
 } from "@alexkroman1/aai/host-internal";
-import { TRANSCRIBE_SYNC_TIMEOUT_MS } from "@alexkroman1/aai/step";
+import { TRANSCRIBE_SYNC_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { describe, expect, test } from "vitest";
 import { createEgressPool, type EgressPoolOptions } from "./_egress-pool.ts";
 import { createStepFetch as createRealStepFetch, type StepFetchDeps } from "./step-fetch.ts";

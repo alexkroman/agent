@@ -48,6 +48,7 @@ import { DEFAULT_STEP_MAX_ATTEMPTS } from "./workflow-ctx-options.ts";
 
 export { dialogRefusalPattern } from "./_dialog-refusal.ts";
 export {
+  createSlotStore,
   createToolContext,
   endSessionCalls,
   type SentEvent,
@@ -201,7 +202,11 @@ export {
   type RunSnapshotOverrides,
 } from "./testing-workflows.ts";
 
-/** One chunk `stepEmit()` wrote, and the stream it went to. */
+/**
+ * One chunk `stepEmit()` wrote, and the stream it went to.
+ *
+ * @sealed
+ */
 export type StubEmitted = {
   /** The stream named at the call site. */
   namespace: string;
@@ -209,7 +214,11 @@ export type StubEmitted = {
   chunk: unknown;
 };
 
-/** What {@link stubReporter} returns. */
+/**
+ * What {@link stubReporter} returns.
+ *
+ * @sealed
+ */
 export type StubReporter = {
   /** Every line `stepReport()` wrote, oldest first. */
   lines: string[];

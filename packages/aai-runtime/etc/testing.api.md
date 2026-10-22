@@ -8,6 +8,7 @@ import type { AgentDef } from '@alexkroman1/aai';
 import type { AgentEnv } from '@alexkroman1/aai/host-internal';
 import { createRecordingWorkflows } from '@alexkroman1/aai/testing';
 import { createRunSnapshot } from '@alexkroman1/aai/testing';
+import { createSlotStore } from '@alexkroman1/aai/testing';
 import { createStubWorkflows } from '@alexkroman1/aai/testing';
 import { createToolContext } from '@alexkroman1/aai/testing';
 import { createWorkflowContext } from '@alexkroman1/aai/testing';
@@ -130,6 +131,8 @@ import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 export { createRecordingWorkflows }
 
 export { createRunSnapshot }
+
+export { createSlotStore }
 
 export { createStubWorkflows }
 

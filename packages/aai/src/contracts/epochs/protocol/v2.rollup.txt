@@ -1,0 +1,545 @@
+import { z } from 'zod';
+
+// @public
+export type AgentTranscriptRecovery = "turn-failed" | "session-failed" | (string & {});
+
+// @public
+export function buildClientConfig(source: {
+    name?: string | undefined;
+    greeting?: string | undefined;
+    sessionUrl?: string | undefined;
+    page?: "voice" | "static" | undefined;
+    sessionToken?: string | undefined;
+}): ClientConfigResponse;
+
+// @public
+export function buildReadyConfig(s2sConfig: {
+    inputSampleRate: number;
+    outputSampleRate: number;
+}): ReadyConfig;
+
+// @public
+export const CLIENT_CONFIG_METHODS: readonly string[];
+
+// @public
+export const CLIENT_CONFIG_PATH = "client-config";
+
+// @public @sealed
+interface ClientConfigResponse {
+    greeting?: string | undefined;
+    name?: string | undefined;
+    page: "voice" | "static";
+    sessionToken?: string | undefined;
+    sessionUrl?: string | undefined;
+}
+
+// @public @input
+export interface ClientSink {
+    close?(reason?: string): void;
+    event(event: SessionEvent): void;
+    readonly open: boolean;
+    playAudioChunk(chunk: Uint8Array): void;
+}
+
+// @public
+export const EVENT_ID_PREFIX = "evt_";
+
+// @public
+export type HostConfig = z.infer<typeof HostConfigSchema>;
+
+// @public
+export const HostConfigMessageSchema: z.ZodObject<{
+    type: z.ZodLiteral<"config">;
+    host: z.ZodObject<{
+        systemPrompt: z.ZodString;
+        greeting: z.ZodOptional<z.ZodString>;
+        tools: z.ZodArray<z.ZodObject<{
+            type: z.ZodLiteral<"function">;
+            name: z.ZodString;
+            description: z.ZodString;
+            parameters: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+            messages: z.ZodOptional<z.ZodObject<{
+                start: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    content: z.ZodString;
+                    when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                        arg: z.ZodString;
+                        op: z.ZodOptional<z.ZodEnum<{
+                            eq: "eq";
+                            gt: "gt";
+                            gte: "gte";
+                            lt: "lt";
+                            lte: "lte";
+                            neq: "neq";
+                        }>>;
+                        value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                    }, z.core.$strip>>>;
+                    blocking: z.ZodOptional<z.ZodBoolean>;
+                }, z.core.$strip>>>;
+                delayed: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    content: z.ZodString;
+                    when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                        arg: z.ZodString;
+                        op: z.ZodOptional<z.ZodEnum<{
+                            eq: "eq";
+                            gt: "gt";
+                            gte: "gte";
+                            lt: "lt";
+                            lte: "lte";
+                            neq: "neq";
+                        }>>;
+                        value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                    }, z.core.$strip>>>;
+                    afterMs: z.ZodNumber;
+                }, z.core.$strip>>>;
+                complete: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    content: z.ZodString;
+                    when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                        arg: z.ZodString;
+                        op: z.ZodOptional<z.ZodEnum<{
+                            eq: "eq";
+                            gt: "gt";
+                            gte: "gte";
+                            lt: "lt";
+                            lte: "lte";
+                            neq: "neq";
+                        }>>;
+                        value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                    }, z.core.$strip>>>;
+                    role: z.ZodOptional<z.ZodEnum<{
+                        assistant: "assistant";
+                        system: "system";
+                    }>>;
+                }, z.core.$strip>>>;
+                failed: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    content: z.ZodString;
+                    when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                        arg: z.ZodString;
+                        op: z.ZodOptional<z.ZodEnum<{
+                            eq: "eq";
+                            gt: "gt";
+                            gte: "gte";
+                            lt: "lt";
+                            lte: "lte";
+                            neq: "neq";
+                        }>>;
+                        value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                    }, z.core.$strip>>>;
+                    role: z.ZodOptional<z.ZodEnum<{
+                        assistant: "assistant";
+                        system: "system";
+                    }>>;
+                }, z.core.$strip>>>;
+            }, z.core.$strip>>;
+        }, z.core.$strip>>;
+        sttPrompt: z.ZodOptional<z.ZodString>;
+        credentials: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+        audioLeadMs: z.ZodOptional<z.ZodUnion<readonly [z.ZodNumber, z.ZodNull]>>;
+    }, z.core.$strip>;
+    audioFormat: z.ZodOptional<z.ZodEnum<{
+        pcm16: "pcm16";
+    }>>;
+    sampleRate: z.ZodOptional<z.ZodNumber>;
+    ttsSampleRate: z.ZodOptional<z.ZodNumber>;
+}, z.core.$strip>;
+
+// @public
+export const HostConfigSchema: z.ZodObject<{
+    systemPrompt: z.ZodString;
+    greeting: z.ZodOptional<z.ZodString>;
+    tools: z.ZodArray<z.ZodObject<{
+        type: z.ZodLiteral<"function">;
+        name: z.ZodString;
+        description: z.ZodString;
+        parameters: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+        messages: z.ZodOptional<z.ZodObject<{
+            start: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                content: z.ZodString;
+                when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    arg: z.ZodString;
+                    op: z.ZodOptional<z.ZodEnum<{
+                        eq: "eq";
+                        gt: "gt";
+                        gte: "gte";
+                        lt: "lt";
+                        lte: "lte";
+                        neq: "neq";
+                    }>>;
+                    value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                }, z.core.$strip>>>;
+                blocking: z.ZodOptional<z.ZodBoolean>;
+            }, z.core.$strip>>>;
+            delayed: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                content: z.ZodString;
+                when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    arg: z.ZodString;
+                    op: z.ZodOptional<z.ZodEnum<{
+                        eq: "eq";
+                        gt: "gt";
+                        gte: "gte";
+                        lt: "lt";
+                        lte: "lte";
+                        neq: "neq";
+                    }>>;
+                    value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                }, z.core.$strip>>>;
+                afterMs: z.ZodNumber;
+            }, z.core.$strip>>>;
+            complete: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                content: z.ZodString;
+                when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    arg: z.ZodString;
+                    op: z.ZodOptional<z.ZodEnum<{
+                        eq: "eq";
+                        gt: "gt";
+                        gte: "gte";
+                        lt: "lt";
+                        lte: "lte";
+                        neq: "neq";
+                    }>>;
+                    value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                }, z.core.$strip>>>;
+                role: z.ZodOptional<z.ZodEnum<{
+                    assistant: "assistant";
+                    system: "system";
+                }>>;
+            }, z.core.$strip>>>;
+            failed: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                content: z.ZodString;
+                when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    arg: z.ZodString;
+                    op: z.ZodOptional<z.ZodEnum<{
+                        eq: "eq";
+                        gt: "gt";
+                        gte: "gte";
+                        lt: "lt";
+                        lte: "lte";
+                        neq: "neq";
+                    }>>;
+                    value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                }, z.core.$strip>>>;
+                role: z.ZodOptional<z.ZodEnum<{
+                    assistant: "assistant";
+                    system: "system";
+                }>>;
+            }, z.core.$strip>>>;
+        }, z.core.$strip>>;
+    }, z.core.$strip>>;
+    sttPrompt: z.ZodOptional<z.ZodString>;
+    credentials: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+    audioLeadMs: z.ZodOptional<z.ZodUnion<readonly [z.ZodNumber, z.ZodNull]>>;
+}, z.core.$strip>;
+
+// @public
+export type InboxClientFrame = z.infer<typeof InboxClientFrameSchema>;
+
+// @public
+export const InboxClientFrameSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    type: z.ZodLiteral<"ack">;
+    id: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"busy">;
+    id: z.ZodString;
+}, z.core.$strip>], "type">;
+
+// @public
+export type InboxServerFrame = z.infer<typeof InboxServerFrameSchema>;
+
+// @public
+export const InboxServerFrameSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    type: z.ZodLiteral<"notice">;
+    id: z.ZodString;
+    event: z.ZodString;
+    data: z.ZodOptional<z.ZodUnknown>;
+    bytes: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"session_event">;
+    sessionId: z.ZodString;
+    event: z.ZodObject<{
+        type: z.ZodString;
+    }, z.core.$loose>;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"session_ended">;
+    sessionId: z.ZodString;
+}, z.core.$strip>], "type">;
+
+// @public
+export function lenientParse<T>(schema: z.ZodType<T>, json: unknown, knownTypes?: ReadonlySet<string>): {
+    ok: true;
+    data: T;
+} | {
+    ok: false;
+    malformed: boolean;
+    error: string;
+};
+
+// @public
+export type ReadyConfig = z.infer<typeof ReadyConfigSchema>;
+
+// @public
+export const ReadyConfigSchema: z.ZodObject<{
+    audioFormat: z.ZodEnum<{
+        pcm16: "pcm16";
+    }>;
+    sampleRate: z.ZodNumber;
+    ttsSampleRate: z.ZodNumber;
+}, z.core.$strip>;
+
+// @public @sealed
+export interface RestoredToolCall {
+    afterMessageIndex: number;
+    // (undocumented)
+    args: Record<string, unknown>;
+    // (undocumented)
+    callId: string;
+    // (undocumented)
+    name: string;
+    // (undocumented)
+    result?: string | undefined;
+    status: "pending" | "done";
+}
+
+// @public
+export const RestoredToolCallSchema: z.ZodObject<{
+    callId: z.ZodString;
+    name: z.ZodString;
+    args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    status: z.ZodEnum<{
+        done: "done";
+        pending: "pending";
+    }>;
+    result: z.ZodOptional<z.ZodString>;
+    afterMessageIndex: z.ZodNumber;
+}, z.core.$strip>;
+
+// @public
+export const SESSION_AUTH_PROTOCOL_PREFIX = "aai.auth.";
+
+// @public
+export const SESSION_COMMAND_TYPES: ReadonlySet<string>;
+
+// @public
+export const SESSION_EVENT_TYPES: ReadonlySet<string>;
+
+// @public
+export const SESSION_PROTOCOL = "aai.session";
+
+// @public
+export const SESSION_TICKET_HEADER = "aai-session-ticket";
+
+// @public
+export type SessionCommand = z.infer<typeof SessionCommandSchema>;
+
+// @public
+export const SessionCommandSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
+    type: z.ZodLiteral<"audio_ready">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"cancel">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"reset">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user_turn_start">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user_turn_commit">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user_turn_clear">;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"user_text">;
+    text: z.ZodString;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"playback_progress">;
+    bufferedMs: z.ZodNumber;
+}, z.core.$strip>, z.ZodObject<{
+    type: z.ZodLiteral<"tool_result">;
+    toolCallId: z.ZodString;
+    result: z.ZodPipe<z.ZodString, z.ZodTransform<string, string>>;
+    error: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>], "type">;
+
+// @public
+export type SessionErrorCode = "stt" | "llm" | "tts" | "tool" | "protocol" | "connection" | "audio" | "internal" | (string & {});
+
+// @public
+export const SessionErrorCodeSchema: z.ZodEnum<{
+    audio: "audio";
+    connection: "connection";
+    internal: "internal";
+    llm: "llm";
+    protocol: "protocol";
+    stt: "stt";
+    tool: "tool";
+    tts: "tts";
+}>;
+
+// @public
+type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
+
+// @public @sealed
+interface SessionEventMap {
+    "agentTranscript.committed": {
+        type: "agentTranscript.committed";
+        meta: SessionEventMeta;
+        text: string;
+        recovery?: AgentTranscriptRecovery | undefined;
+        recorded?: false | undefined;
+    };
+    "agentTranscript.updated": {
+        type: "agentTranscript.updated";
+        meta: SessionEventMeta;
+        text: string;
+    };
+    "audio.completed": {
+        type: "audio.completed";
+        meta: SessionEventMeta;
+    };
+    "custom.emitted": {
+        type: "custom.emitted";
+        meta: SessionEventMeta;
+        event: string;
+        data: unknown;
+    };
+    // (undocumented)
+    "error.reported": {
+        type: "error.reported";
+        meta: SessionEventMeta;
+        code: SessionErrorCode;
+        message: string;
+        fatal: boolean;
+    };
+    "guardrail.blocked": {
+        type: "guardrail.blocked";
+        meta: SessionEventMeta;
+        direction: "input" | "output" | (string & {});
+        replacement: string;
+    };
+    "history.restored": {
+        type: "history.restored";
+        meta: SessionEventMeta;
+        messages: {
+            role: "user" | "assistant";
+            content: string;
+        }[];
+        toolCalls: RestoredToolCall[];
+    };
+    "metrics.collected": {
+        type: "metrics.collected";
+        meta: SessionEventMeta;
+        interrupted: boolean;
+        latencyMs?: number | undefined;
+        stt?: {
+            endpointingMs?: number | undefined;
+        } | undefined;
+        llm?: {
+            ttftMs?: number | undefined;
+            durationMs: number;
+            steps: number;
+            inputTokens?: number | undefined;
+            outputTokens?: number | undefined;
+        } | undefined;
+        tts?: {
+            ttfbMs?: number | undefined;
+            characters: number;
+        } | undefined;
+    };
+    "provider.failedOver": {
+        type: "provider.failedOver";
+        meta: SessionEventMeta;
+        stage: "stt" | "llm" | "tts" | (string & {});
+        from: string;
+        to: string;
+        reason: string;
+    };
+    "reply.cancelled": {
+        type: "reply.cancelled";
+        meta: SessionEventMeta;
+    };
+    "reply.completed": {
+        type: "reply.completed";
+        meta: SessionEventMeta;
+    };
+    "session.configured": {
+        type: "session.configured";
+        meta: SessionEventMeta;
+        audioFormat: string;
+        sampleRate: number;
+        ttsSampleRate: number;
+        sessionId: string;
+    };
+    "session.reset": {
+        type: "session.reset";
+        meta: SessionEventMeta;
+    };
+    "session.timedOut": {
+        type: "session.timedOut";
+        meta: SessionEventMeta;
+    };
+    "speech.started": {
+        type: "speech.started";
+        meta: SessionEventMeta;
+    };
+    // (undocumented)
+    "speech.stopped": {
+        type: "speech.stopped";
+        meta: SessionEventMeta;
+    };
+    "state.updated": {
+        type: "state.updated";
+        meta: SessionEventMeta;
+        state: Record<string, unknown>;
+    };
+    // (undocumented)
+    "tool.called": {
+        type: "tool.called";
+        meta: SessionEventMeta;
+        toolCallId: string;
+        toolName: string;
+        args: Record<string, unknown>;
+    };
+    // (undocumented)
+    "tool.completed": {
+        type: "tool.completed";
+        meta: SessionEventMeta;
+        toolCallId: string;
+        result: string;
+    };
+    "usage.updated": {
+        type: "usage.updated";
+        meta: SessionEventMeta;
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+        steps: number;
+    };
+    "userTranscript.committed": {
+        type: "userTranscript.committed";
+        meta: SessionEventMeta;
+        text: string;
+    };
+    "userTranscript.updated": {
+        type: "userTranscript.updated";
+        meta: SessionEventMeta;
+        text: string;
+        eotConfidence?: number | undefined;
+    };
+    "userTurn.exceeded": {
+        type: "userTurn.exceeded";
+        meta: SessionEventMeta;
+        limit: "words" | "duration" | (string & {});
+        words: number;
+        durationMs: number;
+    };
+}
+
+// @public @sealed
+export interface SessionEventMeta {
+    at: number;
+    id: string;
+}
+
+// @public
+export const SessionEventMetaSchema: z.ZodType<SessionEventMeta>;
+
+// @public
+export const SessionEventSchema: z.ZodType<SessionEvent>;
+
+// @public
+type SessionEventType = Extract<keyof SessionEventMap, string>;

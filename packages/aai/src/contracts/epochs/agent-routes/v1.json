@@ -1,0 +1,31 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "agent-routes",
+  "epoch": 1,
+  "rule": 3,
+  "sha256": "f71c11c6d7f34548f66c5d42ba72b5f3bbf55145ad97297b832db9278a6ed808",
+  "exports": [
+    "AgentRoutes",
+    "ClientRun",
+    "ClientRunStatus",
+    "ClientRunsResponse",
+    "ClientRunsRoutesOptions",
+    "RouteContext",
+    "RouteDef",
+    "RouteError",
+    "RouteHandler",
+    "RouteRequest",
+    "RouteResponse",
+    "RouteResponseOptions",
+    "StandardWebhookOptions",
+    "ValidatedRouteRequest",
+    "WebhookRouteOptions",
+    "clientRunsRoutes",
+    "route",
+    "routeError",
+    "routeResponse",
+    "verifyStandardWebhook",
+    "webhookRoute"
+  ],
+  "rollup": "edf20d86b23d49f5e9d7e2fbff5de7eefbf20646e5be89224276b09f91665001"
+}

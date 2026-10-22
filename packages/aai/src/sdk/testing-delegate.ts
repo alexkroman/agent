@@ -31,7 +31,11 @@ import type {
 import { publishStepDelegate } from "./step-delegate.ts";
 import { stripJsonFence } from "./step-generate-json.ts";
 
-/** One `ctx.delegate` call, as recorded by {@link stubDelegate}. */
+/**
+ * One `ctx.delegate` call, as recorded by {@link stubDelegate}.
+ *
+ * @sealed
+ */
 export interface StubDelegateCall {
   /** The subagent that was asked. */
   subagent: SpeakerDef;
@@ -107,7 +111,11 @@ export type StubDelegateScript =
       readonly reply?: never;
     };
 
-/** A fake `ctx.delegate`: the function to pass, and what it was asked. */
+/**
+ * A fake `ctx.delegate`: the function to pass, and what it was asked.
+ *
+ * @sealed
+ */
 export interface StubDelegate {
   /** Pass as `delegate` to `createToolContext`. */
   delegate: DelegateFn;
@@ -175,7 +183,11 @@ export function stubDelegate(script: StubDelegateScript): StubDelegate {
   return { delegate: run as DelegateFn, calls };
 }
 
-/** A fake `stepDelegate`: the calls it recorded, and the slot to give back. */
+/**
+ * A fake `stepDelegate`: the calls it recorded, and the slot to give back.
+ *
+ * @sealed
+ */
 export interface StubStepDelegate {
   /** Every call, in order — the same log {@link stubDelegate} keeps. */
   calls: StubDelegateCall[];

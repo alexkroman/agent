@@ -12,7 +12,7 @@
  */
 
 /** Slug shape accepted by the platform: lowercase letters, digits, `-`, `_` (2–64 chars). */
-export const VALID_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
+export const VALID_SLUG_RE: RegExp = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
 
 /** Longest slug `VALID_SLUG_RE` accepts — for callers that truncate to fit. */
 export const MAX_SLUG_LENGTH = 64;

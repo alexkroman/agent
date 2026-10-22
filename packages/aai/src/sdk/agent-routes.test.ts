@@ -4,6 +4,16 @@ import { describe, expect, test, vi } from "vitest";
 import { readRouteResponse, routeResponse } from "./agent-routes.ts";
 
 describe("routeResponse", () => {
+  test("carries headers across the boundary, and only a record of strings", () => {
+    const answer = routeResponse(201, { id: 7 }, { headers: { Location: "/memories/7" } });
+    expect(readRouteResponse(answer)).toEqual({
+      status: 201,
+      body: { id: 7 },
+      headers: { Location: "/memories/7" },
+    });
+    expect(readRouteResponse(routeResponse(200, "x"))).toEqual({ status: 200, body: "x" });
+  });
+
   test("carries its status and body, and the brand never reaches JSON", () => {
     const answer = routeResponse(404, { error: "No such memory" });
     expect(answer).toEqual({ status: 404, body: { error: "No such memory" } });

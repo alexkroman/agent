@@ -93,6 +93,7 @@ export type StepFetch = (url: string, init?: StepFetchInit) => Promise<Response>
  * `[object FormData]`, answered `415` by a server that was told nothing.
  * `body` therefore takes BYTES or a string, and {@link multipartBody} is how a
  * file becomes bytes.
+ * @input
  */
 export type StepFetchInit = {
   method?: string | undefined;
@@ -283,7 +284,11 @@ function causeChain(err: unknown): { text: string; code?: string }[] {
   return chain;
 }
 
-/** One file part, as {@link multipartBody} takes it. */
+/**
+ * One file part, as {@link multipartBody} takes it.
+ *
+ * @input
+ */
 export type MultipartPart = {
   /** The form field name the endpoint reads. */
   name: string;
@@ -307,7 +312,11 @@ export type MultipartPart = {
   type?: string | undefined;
 };
 
-/** A ready-to-send multipart body, as {@link multipartBody} returns it. */
+/**
+ * A ready-to-send multipart body, as {@link multipartBody} returns it.
+ *
+ * @sealed
+ */
 export type MultipartBody = {
   /** The whole encoded body. */
   body: Uint8Array;

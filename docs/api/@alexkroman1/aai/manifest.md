@@ -28,7 +28,7 @@ resolve against host options.
 
 #### Returns
 
-[`Toolset`](index.md#toolset)[]
+[`Toolset`](#toolset-1)[]
 
 ***
 
@@ -42,7 +42,7 @@ function agentToolsToSchemas(toolsets: readonly Toolset[]): ToolSchema[];
 
 ##### toolsets
 
-readonly [`Toolset`](index.md#toolset)[]
+readonly [`Toolset`](#toolset-1)[]
 
 #### Returns
 
@@ -63,11 +63,11 @@ dropped, and `onShadowed` hears about it — the precedence is the order.
 
 ##### sets
 
-readonly [`Toolset`](index.md#toolset)[]
+readonly [`Toolset`](#toolset-1)[]
 
 ##### onShadowed?
 
-(`name`: `string`, `kept`: [`ToolSource`](index.md#toolsource), `dropped`: [`ToolSource`](index.md#toolsource)) => `void`
+(`name`: `string`, `kept`: [`ToolSource`](#toolsource), `dropped`: [`ToolSource`](#toolsource)) => `void`
 
 #### Returns
 
@@ -87,7 +87,7 @@ Layer extra gates over a set — every gate must pass, the set's own first.
 
 ##### set
 
-[`Toolset`](index.md#toolset)
+[`Toolset`](#toolset-1)
 
 ##### gates
 
@@ -95,7 +95,7 @@ readonly [`ToolGate`](#toolgate)[]
 
 #### Returns
 
-[`Toolset`](index.md#toolset)
+[`Toolset`](#toolset-1)
 
 ***
 
@@ -549,7 +549,7 @@ A `clientTool` (its brand) is executed by the page; everything else here.
 
 #### Returns
 
-[`ToolsetEntry`](index.md#toolsetentry)
+[`ToolsetEntry`](#toolsetentry)
 
 ***
 
@@ -587,13 +587,13 @@ function toolset(
 ): Toolset;
 ```
 
-Build a [Toolset](index.md#toolset) over a map of defs, optionally gated.
+Build a [Toolset](#toolset-1) over a map of defs, optionally gated.
 
 #### Parameters
 
 ##### source
 
-[`ToolSource`](index.md#toolsource)
+[`ToolSource`](#toolsource)
 
 ##### tools
 
@@ -605,7 +605,7 @@ Build a [Toolset](index.md#toolset) over a map of defs, optionally gated.
 
 #### Returns
 
-[`Toolset`](index.md#toolset)
+[`Toolset`](#toolset-1)
 
 ***
 
@@ -671,7 +671,7 @@ carries none still passes and this module still names no builtin catalog.
 `D` *extends* \{
   `builtinTools?`: readonly `string`[];
   `tools`: [`ToolRegistry`](#toolregistry);
-  `toolsets?`: readonly [`Toolset`](index.md#toolset)[];
+  `toolsets?`: readonly [`Toolset`](#toolset-1)[];
 \}
 
 #### Parameters
@@ -718,8 +718,6 @@ readonly toolset: Toolset;
 
 ### ToolBearingDef
 
-What [agentToolsets](#agenttoolsets) reads off a definition.
-
 #### Properties
 
 ##### tools
@@ -733,6 +731,121 @@ readonly tools: ToolMap;
 ```ts
 readonly optional toolsets?: readonly Toolset[];
 ```
+
+***
+
+### Toolset
+
+A source of tools, as the runtime consumes it.
+
+The advertised list is fixed per session on every transport (an S2S service
+holds its tool list for the whole session), so a rule about WHEN a tool may
+run is a [Toolset.gate](#gate) at the call — which is also where the model is
+told why, and how to recover.
+
+#### Methods
+
+##### execute()
+
+```ts
+execute(
+   name: string, 
+   args: unknown, 
+   ctx: ToolContext
+): unknown;
+```
+
+Run `name`'s body with already-validated arguments. Gating is the caller's.
+
+###### Parameters
+
+###### name
+
+`string`
+
+###### args
+
+`unknown`
+
+###### ctx
+
+[`ToolContext`](index.md#toolcontext)
+
+###### Returns
+
+`unknown`
+
+##### gate()
+
+```ts
+gate(name: string, ctx: ToolContext): ToolRefusal | undefined;
+```
+
+`undefined` when `name` may run now; otherwise the refusal the model reads.
+
+###### Parameters
+
+###### name
+
+`string`
+
+###### ctx
+
+[`ToolContext`](index.md#toolcontext)
+
+###### Returns
+
+[`ToolRefusal`](index.md#toolrefusal) \| `undefined`
+
+##### list()
+
+```ts
+list(): Readonly<Record<string, ToolsetEntry>>;
+```
+
+Every tool this set advertises, by the name the model calls.
+
+###### Returns
+
+`Readonly`\<`Record`\<`string`, [`ToolsetEntry`](#toolsetentry)\>\>
+
+#### Properties
+
+##### source
+
+```ts
+readonly source: ToolSource;
+```
+
+***
+
+### ToolsetEntry
+
+One advertised tool: the def the model reads, and who executes it.
+
+#### Properties
+
+##### def
+
+```ts
+readonly def: ToolDef;
+```
+
+Description, schema, `messages` and `onError` — what the model and the executor read.
+
+##### executor
+
+```ts
+readonly executor: ToolExecutor;
+```
+
+##### timeoutMs?
+
+```ts
+readonly optional timeoutMs?: number;
+```
+
+A per-call deadline the entry carries (a `clientTool`'s `timeoutMs`).
 
 ***
 
@@ -843,6 +956,30 @@ A host-only `AgentDef` field name stripped by `toAgentConfig` (`tools`, `events`
 
 ***
 
+### ResolvedAgentDef
+
+```ts
+type ResolvedAgentDef = AgentDef & {
+  toolsets?: readonly Toolset[];
+};
+```
+
+An [AgentDef](index.md#agentdef) as the RUNTIME holds it: plus every toolset beyond the
+`tools/` files — RESOLVED, never authored. `agent()` attaches the roster's
+and `withMcpTools` an MCP server's; read the whole table through
+[agentToolsets](#agenttoolsets). Not on the authoring surface: an author never names a
+toolset, so the public `AgentDef` does not carry the field's type.
+
+#### Type Declaration
+
+##### toolsets?
+
+```ts
+readonly optional toolsets?: readonly Toolset[];
+```
+
+***
+
 ### SessionMode
 
 ```ts
@@ -862,13 +999,24 @@ transport over a socket.
 
 ***
 
+### ToolExecutor
+
+```ts
+type ToolExecutor = "host" | "client";
+```
+
+Who runs a tool's body: this process (`"host"`), or the connected browser page
+(`"client"`, a `clientTool` — the call waits for the page's `tool_result`).
+
+***
+
 ### ToolGate
 
 ```ts
 type ToolGate = (name: string, def: ToolDef, ctx: ToolContext) => ToolRefusal | undefined;
 ```
 
-A gate over one def — what [toolset](#toolset-1) composes into [Toolset.gate](index.md#gate).
+A gate over one def — what [toolset](#toolset-2) composes into [Toolset.gate](#gate).
 
 #### Parameters
 
@@ -970,6 +1118,17 @@ parameters: JSONSchema7;
 ```ts
 type: "function";
 ```
+
+***
+
+### ToolSource
+
+```ts
+type ToolSource = "files" | "builtin" | "mcp" | "roster" | "subagent";
+```
+
+Where a [Toolset](#toolset-1)'s tools come from — for a log line, a collision
+message, and a spec. It decides nothing about execution; the entry does.
 
 ## Variables
 

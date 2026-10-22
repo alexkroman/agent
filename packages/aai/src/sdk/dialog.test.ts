@@ -587,7 +587,7 @@ describe("stored shape", () => {
   test("a slot holding something else starts the machine over rather than throwing", () => {
     const claim = dialog("claim", claimMachine());
     const ctx = createToolContext();
-    ctx.slots.write("claim", { snapshot: "not a snapshot" }, true);
+    ctx.slots.write("claim", { snapshot: "not a snapshot" }, { durable: true });
     expect(claim.position(ctx).state).toBe("verifying");
   });
 });

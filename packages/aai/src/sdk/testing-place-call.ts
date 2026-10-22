@@ -31,7 +31,11 @@ import {
   publishStepPublicUrl,
 } from "./step-place-call.ts";
 
-/** One call a step placed, as {@link stubPlaceCall} records it. */
+/**
+ * One call a step placed, as {@link stubPlaceCall} records it.
+ *
+ * @sealed
+ */
 export type StubPlacedCall = {
   /** The call id the stub answered with (`CA` + a counter), or `undefined` for a refused dial. */
   callId: string | undefined;
@@ -51,10 +55,18 @@ export type StubPlacedCall = {
   polls: number;
 };
 
-/** A Twilio refusal to stage: the HTTP status and, optionally, Twilio's error code and message. */
+/**
+ * A Twilio refusal to stage: the HTTP status and, optionally, Twilio's error code and message.
+ *
+ * @input
+ */
 export type StubPlaceCallRefusal = { status: number; code?: number; message?: string };
 
-/** What {@link stubPlaceCall} may be told. */
+/**
+ * What {@link stubPlaceCall} may be told.
+ *
+ * @input
+ */
 export type StubPlaceCallOptions = {
   /**
    * How Twilio answers each dial: `"accept"` (the default), or a refusal —
@@ -86,7 +98,11 @@ export type StubPlaceCallOptions = {
   publicUrl?: string;
 };
 
-/** What {@link stubPlaceCall} returns: the call log, and how to put the slot back. */
+/**
+ * What {@link stubPlaceCall} returns: the call log, and how to put the slot back.
+ *
+ * @sealed
+ */
 export type StubPlaceCall = {
   /** Every dial, in order — including refused ones. */
   calls: StubPlacedCall[];

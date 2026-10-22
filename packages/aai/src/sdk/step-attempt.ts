@@ -72,6 +72,7 @@ const STEP_INFO_SLOT = globalSlot<StepInfoReader>("stepInfoReader");
 /**
  * Which step is running, and which attempt of it.
  *
+ * @sealed
  * @public
  */
 export type StepInfo = {

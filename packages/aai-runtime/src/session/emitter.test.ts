@@ -269,7 +269,7 @@ describe("session event hooks", () => {
     expect(commit).not.toHaveBeenCalled();
 
     const wrote = setup({
-      handlers: { "speech.started": (_e, ctx) => ctx.slots.write("k", 1, true) },
+      handlers: { "speech.started": (_e, ctx) => ctx.slots.write("k", 1, { durable: true }) },
       commit,
     });
     wrote.emitter.emit({ type: "speech.started" });
@@ -280,7 +280,9 @@ describe("session event hooks", () => {
   test("a hook's write reaches the SAME store a tool call reads", () => {
     const slots = slotsFor();
     const { emitter } = setup({
-      handlers: { "userTranscript.committed": (e, ctx) => ctx.slots.write("last", e.text, true) },
+      handlers: {
+        "userTranscript.committed": (e, ctx) => ctx.slots.write("last", e.text, { durable: true }),
+      },
       slots,
     });
 
@@ -303,7 +305,7 @@ describe("session event hooks", () => {
       handlers: {
         "*": (e, ctx) => {
           seen.push(e.type);
-          ctx.slots.write("k", seen.length, true);
+          ctx.slots.write("k", seen.length, { durable: true });
         },
       },
       commit,
@@ -327,7 +329,7 @@ describe("session event hooks", () => {
       handlers: {
         "speech.started": async (_e, ctx) => {
           await Promise.resolve();
-          ctx.slots.write("late", true, true);
+          ctx.slots.write("late", true, { durable: true });
         },
       },
       commit,
@@ -347,9 +349,9 @@ describe("session event hooks", () => {
     const { emitter, slots } = setup({
       handlers: {
         "speech.started": async (_e, ctx) => {
-          ctx.slots.write("early", 1, true);
+          ctx.slots.write("early", 1, { durable: true });
           await Promise.resolve();
-          ctx.slots.write("late", 2, true);
+          ctx.slots.write("late", 2, { durable: true });
         },
       },
       commit,

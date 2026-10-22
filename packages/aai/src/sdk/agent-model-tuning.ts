@@ -66,6 +66,7 @@
  * a budget that silently guesses wrong is worse than one stated in the unit the
  * provider actually reports.
  *
+ * @input
  * @public
  */
 export interface UsageLimits {
@@ -106,6 +107,7 @@ export interface UsageLimits {
  * `maxRetries`, which {@link SpeakerDef} omits: its guardrail budget is
  * `maxRevisions`.
  *
+ * @input
  * @public
  */
 export interface ModelTuning {
@@ -159,6 +161,7 @@ export interface ModelTuning {
  * A subagent takes {@link ModelTuning} alone — it has no `toolChoice` to reset,
  * and it spends on its PARENT's budget, which is where `usageLimits` lives.
  *
+ * @input
  * @public
  */
 export interface AgentModelTuning extends ModelTuning {

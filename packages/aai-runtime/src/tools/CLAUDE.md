@@ -17,10 +17,11 @@ modules' in [`../CLAUDE.md`](../CLAUDE.md). Outside this directory, import its
 ### Every tool source is a `Toolset`, and the executor reads nothing else
 
 `agentToolsToSchemas` and `executeToolCall` consume `Toolset`s
-(`aai/sdk/toolset.ts`): `agentToolsets(agent)` (files, then `agent.toolsets` —
-the roster's, MCP's — each layered with the dialogs' gates), then the
-`"builtin"` set LAST from `mergeBuiltinSurface`. `createToolDispatcher` composes
-them first-wins, the same table the schemas were drawn from.
+(`aai/sdk/toolset.ts`): `agentToolsets(agent)` (files, then the resolved
+toolsets — the roster's, MCP's, on `ResolvedAgentDef` (`/manifest`), never the
+public `AgentDef` — each layered with the dialogs' gates), then the `"builtin"`
+set LAST from `mergeBuiltinSurface`. `createToolDispatcher` composes them
+first-wins, the same table the schemas were drawn from.
 
 - **`executeToolCall(name, args, { toolset })`**: entry lookup
   (`reason: "unknown_tool"`), schema (`"invalid_arguments"`), context, cancel

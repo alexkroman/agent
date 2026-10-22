@@ -72,6 +72,7 @@ pins both halves.
 Three host seams: `validate` refuses a write BEFORE it lands, `afterWrite`
 appends to a successful write's result, `env` is `bash`'s child environment
 (defaults to this process's — a sandbox must pass an allow-list).
-`CODING_TOOL_DESCRIPTIONS` and the four limits are exported so an override
-quotes the enforced number. The edit matcher, grep and capped spawn are
-`/host-internal`. Worked example: `templates/coding-agent`.
+`CODING_TOOL_DESCRIPTIONS` and the four limits are on `/host-internal` (an
+author overrides through `descriptions`; the studio quotes the enforced
+numbers), as are the edit matcher, grep and capped spawn. Worked example:
+`templates/coding-agent`.

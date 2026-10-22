@@ -89,7 +89,7 @@ export type StepWebhookMinter = (token: string) => string;
  *
  * @internal
  */
-export const STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE =
+export const STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE: string =
   "This process cannot mint a public webhook URL, so a step has no callback to hand out. " +
   "On the platform it comes from the deployment (AAI_PUBLIC_BASE_URL in the guest's exec env, " +
   "or AAI_PUBLIC_ORIGIN); on a self-hosted server from `publicUrl` on " +

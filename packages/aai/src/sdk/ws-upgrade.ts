@@ -28,7 +28,7 @@ import { CLIENT_ID_RE } from "./step-notify-client.ts";
  *
  * @internal
  */
-export const RESUME_ID_RE = /^[A-Za-z0-9_-]{1,128}$/;
+export const RESUME_ID_RE: RegExp = /^[A-Za-z0-9_-]{1,128}$/;
 
 /**
  * A client-reported phone number (`?phone=`) in E.164 form, or `undefined`.

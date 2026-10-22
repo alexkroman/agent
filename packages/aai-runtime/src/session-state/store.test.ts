@@ -86,7 +86,7 @@ describe("the commit point", () => {
   test("a slot write reaches the backend on FLUSH, and not before", async () => {
     const { store, backend } = makeStore();
 
-    store.viewFor(SID).write("cart", { items: ["apple"] }, true);
+    store.viewFor(SID).write("cart", { items: ["apple"] }, { durable: true });
 
     // The tool call is still running: `slot.update` is synchronous and cannot
     // await a write of its own, so nothing is stored yet.
@@ -100,7 +100,7 @@ describe("the commit point", () => {
   test("a REPLACEMENT process reads back what the last one committed", async () => {
     const backend = createMemoryStateBackend();
     const before = createSessionStateStore({ backend });
-    before.viewFor(SID).write("cart", { items: ["apple"], total: 1.5 }, true);
+    before.viewFor(SID).write("cart", { items: ["apple"], total: 1.5 }, { durable: true });
     await before.flush(SID);
 
     // The crash / redeploy: a new store, the same backend, nothing in its cache.
@@ -125,7 +125,7 @@ describe("the commit point", () => {
     const { store, backend } = makeStore();
     const socket = { close: () => undefined };
 
-    store.viewFor(SID).write("link", socket, false);
+    store.viewFor(SID).write("link", socket, { durable: false });
     await store.flush(SID);
 
     // Readable in this process — and frozen by nothing, since a virtual slot
@@ -141,11 +141,11 @@ describe("write only what CHANGED", () => {
     const store = createSessionStateStore({ backend });
     const view = store.viewFor(SID);
 
-    view.write("cart", { items: ["apple"] }, true);
+    view.write("cart", { items: ["apple"] }, { durable: true });
     await store.flush(SID);
     // The draft model hands back a NEW object on every mutation, so identity
     // says nothing and the serialization is the comparison.
-    view.write("cart", { items: ["apple"] }, true);
+    view.write("cart", { items: ["apple"] }, { durable: true });
     await store.flush(SID);
 
     expect(commits).toEqual([new Map([["cart", '{"items":["apple"]}']])]);
@@ -155,12 +155,12 @@ describe("write only what CHANGED", () => {
     const { backend, commits } = recordingBackend();
     const store = createSessionStateStore({ backend });
     const view = store.viewFor(SID);
-    view.write("cart", { items: [] }, true);
-    view.write("profile", { name: "Ada" }, true);
+    view.write("cart", { items: [] }, { durable: true });
+    view.write("profile", { name: "Ada" }, { durable: true });
     await store.flush(SID);
 
-    view.write("cart", { items: ["apple"] }, true);
-    view.write("profile", { name: "Ada" }, true);
+    view.write("cart", { items: ["apple"] }, { durable: true });
+    view.write("profile", { name: "Ada" }, { durable: true });
     await store.flush(SID);
 
     expect(commits).toHaveLength(2);
@@ -171,12 +171,12 @@ describe("write only what CHANGED", () => {
     const { backend, commits } = recordingBackend();
     const store = createSessionStateStore({ backend });
     const view = store.viewFor(SID);
-    view.write("cart", { items: [] }, true);
+    view.write("cart", { items: [] }, { durable: true });
     await store.flush(SID);
 
-    view.write("cart", { items: ["apple"] }, true);
+    view.write("cart", { items: ["apple"] }, { durable: true });
     await store.flush(SID);
-    view.write("cart", { items: [] }, true);
+    view.write("cart", { items: [] }, { durable: true });
     await store.flush(SID);
 
     // Three commits, not two: the comparison is against the last COMMITTED
@@ -200,7 +200,7 @@ describe("write only what CHANGED", () => {
     };
     const store = createSessionStateStore({ backend });
     const view = store.viewFor(SID);
-    view.write("cart", { items: ["first"] }, true);
+    view.write("cart", { items: ["first"] }, { durable: true });
 
     const flushing = store.flush(SID);
     // Let the commit pass really START before writing. A flush is COALESCED, so
@@ -210,7 +210,7 @@ describe("write only what CHANGED", () => {
     await tick();
     // The dirty set is cleared before the await, so this write re-dirties the
     // slot rather than being swallowed by the in-flight commit.
-    view.write("cart", { items: ["second"] }, true);
+    view.write("cart", { items: ["second"] }, { durable: true });
     gate.resolve();
     await flushing;
 
@@ -226,8 +226,8 @@ describe("the size cap", () => {
     const runaway = { blob: "x".repeat(MAX_SESSION_STATE_BYTES) };
     const view = store.viewFor(SID);
 
-    view.write("transcript", runaway, true);
-    view.write("cart", { items: ["apple"] }, true);
+    view.write("transcript", runaway, { durable: true });
+    view.write("cart", { items: ["apple"] }, { durable: true });
     // Never rejects: this runs in a tool call's `finally`.
     await expect(store.flush(SID)).resolves.toBeUndefined();
 
@@ -263,7 +263,7 @@ describe("the size cap", () => {
     expect(json.length).toBeLessThan(MAX_SESSION_STATE_BYTES);
     expect(Buffer.byteLength(json)).toBeGreaterThan(MAX_SESSION_STATE_BYTES);
 
-    store.viewFor(SID).write("transcript", cjk, true);
+    store.viewFor(SID).write("transcript", cjk, { durable: true });
     await expect(store.flush(SID)).resolves.toBeUndefined();
 
     await expect(backend.load(SID)).resolves.toEqual(new Map());
@@ -280,7 +280,7 @@ describe("the size cap", () => {
     // Serializes to the string plus its two quotes — comfortably inside.
     const big = "x".repeat(MAX_SESSION_STATE_BYTES - 100);
 
-    store.viewFor(SID).write("transcript", big, true);
+    store.viewFor(SID).write("transcript", big, { durable: true });
     await store.flush(SID);
 
     await expect(backend.load(SID)).resolves.toEqual(
@@ -300,7 +300,7 @@ describe("a failed commit is a DURABILITY failure", () => {
         down ? Promise.reject(new Error("connection terminated")) : inner.commit(sessionId, values),
     };
     const { store, logger } = makeStore(backend);
-    store.viewFor(SID).write("cart", { items: ["apple"] }, true);
+    store.viewFor(SID).write("cart", { items: ["apple"] }, { durable: true });
 
     // A storage fault must never become the tool's result.
     await expect(store.flush(SID)).resolves.toBeUndefined();
@@ -324,7 +324,7 @@ describe("a failed commit is a DURABILITY failure", () => {
       commit: () => Promise.reject(new Error("connection terminated")),
     });
 
-    store.viewFor(SID).write("cart", { items: ["apple"] }, true);
+    store.viewFor(SID).write("cart", { items: ["apple"] }, { durable: true });
     await store.flush(SID);
 
     expect(store.viewFor(SID).read("cart")).toEqual({ items: ["apple"] });
@@ -388,9 +388,9 @@ describe("commits are COALESCED per session", () => {
     const view = store.viewFor(SID);
 
     // Two concurrent tool calls on one session: each writes, then flushes.
-    view.write("cart", { items: ["v1"] }, true);
+    view.write("cart", { items: ["v1"] }, { durable: true });
     const first = store.flush(SID);
-    view.write("cart", { items: ["v2"] }, true);
+    view.write("cart", { items: ["v2"] }, { durable: true });
     const second = store.flush(SID);
     await Promise.all([first, second]);
 
@@ -408,12 +408,12 @@ describe("commits are COALESCED per session", () => {
     const store = createSessionStateStore({ backend: g.backend });
     const view = store.viewFor(SID);
 
-    view.write("cart", { items: ["v1"] }, true);
+    view.write("cart", { items: ["v1"] }, { durable: true });
     const first = store.flush(SID);
     // The second caller's write lands while the first commit is in flight, so
     // only a pass that STARTS after this call can carry it. That is what the
     // runner promises, and what the commit point depends on.
-    view.write("cart", { items: ["v2"] }, true);
+    view.write("cart", { items: ["v2"] }, { durable: true });
     await store.flush(SID);
 
     await expect(g.inner.load(SID)).resolves.toEqual(new Map([["cart", '{"items":["v2"]}']]));
@@ -429,7 +429,7 @@ describe("commits are COALESCED per session", () => {
     // wide step arrives in, against a pool the run's own writes queue behind.
     await Promise.all(
       Array.from({ length: 8 }, (_, i) => {
-        view.write("cart", { items: [`v${i}`] }, true);
+        view.write("cart", { items: [`v${i}`] }, { durable: true });
         return store.flush(SID);
       }),
     );
@@ -446,8 +446,8 @@ describe("commits are COALESCED per session", () => {
   test("two SESSIONS never wait on each other", async () => {
     const g = reorderingBackend();
     const store = createSessionStateStore({ backend: g.backend });
-    store.viewFor("s-a").write("cart", { items: ["a"] }, true);
-    store.viewFor("s-b").write("cart", { items: ["b"] }, true);
+    store.viewFor("s-a").write("cart", { items: ["a"] }, { durable: true });
+    store.viewFor("s-b").write("cart", { items: ["b"] }, { durable: true });
 
     // The runner is per session, so these overlap — a busy session must not
     // serialize an unrelated one.
@@ -539,7 +539,7 @@ describe("hydration is FAIL-OPEN", () => {
 
     // Hydration runs before the session is ready, but a direct caller could
     // already have touched the slot — and the live value is the newer one.
-    store.viewFor(SID).write("cart", { items: ["live"] }, true);
+    store.viewFor(SID).write("cart", { items: ["live"] }, { durable: true });
     await store.hydrate(SID);
 
     expect(store.viewFor(SID).read("cart")).toEqual({ items: ["live"] });
@@ -564,7 +564,7 @@ describe("has()", () => {
   test("true once a slot is written", () => {
     const { store } = makeStore();
 
-    store.viewFor(SID).write("cart", { items: [] }, true);
+    store.viewFor(SID).write("cart", { items: [] }, { durable: true });
 
     // What `pushStateSnapshot` gates on: a brand-new session has nothing to
     // show, and this is the line between the two.
@@ -597,7 +597,7 @@ describe("has()", () => {
 describe("reclamation", () => {
   test("discard drops the cache entry AND the stored rows", async () => {
     const { store, backend } = makeStore();
-    store.viewFor(SID).write("cart", { items: ["apple"] }, true);
+    store.viewFor(SID).write("cart", { items: ["apple"] }, { durable: true });
     await store.flush(SID);
 
     store.discard(SID);
@@ -613,7 +613,7 @@ describe("reclamation", () => {
       ...createMemoryStateBackend(),
       discard: () => Promise.reject(new Error("connection terminated")),
     });
-    store.viewFor(SID).write("cart", { items: [] }, true);
+    store.viewFor(SID).write("cart", { items: [] }, { durable: true });
 
     expect(() => store.discard(SID)).not.toThrow();
 
@@ -627,7 +627,7 @@ describe("reclamation", () => {
 
   test("clear drops every cache entry and leaves the rows alone", async () => {
     const { store, backend } = makeStore();
-    store.viewFor(SID).write("cart", { items: ["apple"] }, true);
+    store.viewFor(SID).write("cart", { items: ["apple"] }, { durable: true });
     await store.flush(SID);
 
     store.clear();

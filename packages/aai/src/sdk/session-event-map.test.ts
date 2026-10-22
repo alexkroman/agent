@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, expectTypeOf, test } from "vitest";
-import { SESSION_EVENT_TYPES, SessionEventSchema } from "./protocol-events.ts";
+import type { z } from "zod";
+import { SESSION_EVENT_TYPES, SESSION_EVENT_UNION } from "./protocol-events.ts";
 import {
   SESSION_SOURCED_EVENT_TYPES,
   type SessionEvent,
@@ -11,11 +12,15 @@ import {
 
 describe("SessionEventMap", () => {
   test("is keyed by exactly the schema's event names", () => {
-    const fromSchema = SessionEventSchema.options.map((o) => o.shape.type.value).sort();
+    const fromSchema = SESSION_EVENT_UNION.options.map((o) => o.shape.type.value).sort();
     expect([...SESSION_EVENT_TYPES].sort()).toEqual(fromSchema);
     expectTypeOf<SessionEventType>().toEqualTypeOf<
-      (typeof SessionEventSchema.options)[number]["shape"]["type"]["value"]
+      (typeof SESSION_EVENT_UNION.options)[number]["shape"]["type"]["value"]
     >();
+  });
+
+  test("what the schema parses is a SessionEvent — the hand-declared map cannot drift from it", () => {
+    expectTypeOf<z.infer<typeof SESSION_EVENT_UNION>>().toExtend<SessionEvent>();
   });
 
   test("a lookup is the member, and a bare SessionEvent the whole union", () => {

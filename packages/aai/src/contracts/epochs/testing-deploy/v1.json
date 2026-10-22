@@ -1,0 +1,16 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "testing-deploy",
+  "epoch": 1,
+  "rule": 3,
+  "sha256": "824e02c93eaa73d7034430d3e9afe2705bb36a51dfb6b294696ac30c8758e328",
+  "exports": [
+    "DeployedConfig",
+    "DeployedStage",
+    "ProjectFiles",
+    "deployedAgent",
+    "expectDeployable",
+    "expectPromptBuiltinsDeclared"
+  ],
+  "rollup": "2553692e0b3bd3885769aaa786a39706b563e6ce74d3d66c8488c99886ab0341"
+}

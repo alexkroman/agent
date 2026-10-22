@@ -65,6 +65,7 @@ import {
   UserTurnExceededEventSchema,
 } from "./protocol-events-accounting.ts";
 import { MetricsCollectedEventSchema } from "./protocol-events-metrics.ts";
+import type { SessionEvent } from "./session-event-map.ts";
 
 /**
  * The event ENVELOPE — `EVENT_ID_PREFIX`, `SessionEventMetaSchema` and
@@ -130,7 +131,11 @@ export const SessionErrorCodeSchema = z.enum([
  *
  * @public
  */
-export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
+export type {
+  AgentTranscriptRecovery,
+  RestoredToolCall,
+  SessionErrorCode,
+} from "./session-event-map.ts";
 
 // ─── The events ────────────────────────────────────────────────────────────
 
@@ -157,60 +162,19 @@ export const RestoredToolCallSchema = z.object({
 });
 
 /**
- * One tool call as a resume reports it.
- *
- * Public for the reason its schema is: it rides the wire inside
- * `history.restored`, so a custom client reads exactly this shape. It was tagged
- * `@internal` while the schema it is inferred from was not, which went unseen
- * until `/protocol` joined the contract system.
- */
-export type RestoredToolCall = z.infer<typeof RestoredToolCallSchema>;
-
-/**
  * Zod schema for {@link AgentTranscriptRecovery}.
  * @public
  */
 export const AgentTranscriptRecoverySchema = z.enum(["turn-failed", "session-failed"]);
 
 /**
- * Why the TRANSPORT spoke a committed transcript on its own behalf.
+ * The session event schema as zod builds it — the union `SessionEventSchema`
+ * publishes under the SDK-owned type, kept for the readers that need its
+ * `options` (the known-types set below, and the specs).
  *
- * @remarks
- * Absent — the overwhelming majority — means the agent's own words: an ordinary
- * reply, or the declared greeting. Present names one of the three sentences a
- * pipeline session speaks when the model does not:
- *
- * - `turn-failed` — `errorPhrase`, after an LLM turn failed, so a provider
- *   outage hands the conversation back instead of going quiet.
- * - `session-failed` — `startFailurePhrase`, when a provider failed to open and
- *   there is no conversation to have.
- * **A recovery utterance is SPOKEN but never RECORDED, and this field is the
- * only thing on the wire that says so.** Both phrases reach the caller's ears
- * and the caller's caption — that is deliberate, the UI matching the audio — and
- * both are kept out of history and out of `ctx.messages` for a measured reason:
- * teaching the model that its own replies open with apologies is how it starts
- * producing them unprompted. Without the field the two rules composed into the
- * outcome both forbid, because a reader of the retained stream could not tell a
- * failure phrase from a reply: the phrase was excluded from history for a whole
- * call and then seeded back into it by the first reconnect (and into
- * `ctx.messages` immediately, by the live event dispatch).
- *
- * So a reader that reconstructs the CONVERSATION must skip an event carrying
- * this; a reader that renders the TRANSCRIPT must not. An older reader that
- * knows nothing of the field keeps its previous behaviour on both counts —
- * unknown keys are stripped, never rejected.
- *
- * @public
+ * @internal
  */
-export type AgentTranscriptRecovery = z.infer<typeof AgentTranscriptRecoverySchema>;
-
-/**
- * The session event vocabulary — the ONE source of truth. `SessionEventMap`,
- * `SessionEvent` and `SessionEventType` are all derived from it.
- *
- * @public
- */
-export const SessionEventSchema = z.discriminatedUnion("type", [
+export const SESSION_EVENT_UNION = z.discriminatedUnion("type", [
   /**
    * The handshake: audio negotiation plus the session's own id.
    *
@@ -463,13 +427,18 @@ export const SessionEventSchema = z.discriminatedUnion("type", [
 ]);
 
 /**
- * `SessionEvent`, `SessionEventBody` and the typed map they are read through are
- * declared in `session-event-map.ts`, derived from the schema above — see that
- * module for why the vocabulary is a MAP an author keys off rather than a union
- * each consumer restates.
+ * The session event schema — what a client parsing frames validates with.
+ *
+ * Typed as `z.ZodType<SessionEvent>` rather than as the union zod infers, so
+ * zod's internals stay out of the published contract: the TYPE is the SDK's
+ * own `SessionEventMap` (`session-event-map.ts`, where the vocabulary is
+ * declared), and `session-event-map.test.ts` holds this schema's output to it.
+ *
+ * @public
  */
+export const SessionEventSchema: z.ZodType<SessionEvent> = SESSION_EVENT_UNION;
 
 /** Every event name, as a set — for `lenientParse`'s known-types argument. */
 export const SESSION_EVENT_TYPES: ReadonlySet<string> = new Set(
-  SessionEventSchema.options.map((option) => option.shape.type.value),
+  SESSION_EVENT_UNION.options.map((option) => option.shape.type.value),
 );

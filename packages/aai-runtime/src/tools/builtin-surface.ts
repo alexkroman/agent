@@ -9,9 +9,10 @@
  * @module
  */
 
-import type { AgentDef, Toolset } from "@alexkroman1/aai";
+import type { AgentDef } from "@alexkroman1/aai";
 import { resolveAllBuiltins } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_BUILTIN_TOOLS } from "@alexkroman1/aai/internal";
+import type { Toolset } from "@alexkroman1/aai/manifest";
 import { type ToolSchema, toolset } from "@alexkroman1/aai/manifest";
 import type { Logger } from "../logger.ts";
 

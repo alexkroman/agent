@@ -93,6 +93,35 @@ const workflows = createStubWorkflows({
 
 ***
 
+### createSlotStore()
+
+```ts
+function createSlotStore(): SlotStore;
+```
+
+A fresh, empty, REAL slot store — one session's, with no backend: a durable
+write is checked and frozen exactly as a deployed session's is.
+
+What `createToolContext()` puts on `ctx.slots` by default; named so a spec
+can hand ONE store to two contexts (a tool and an event handler sharing a
+session), or build a `SlotHolder` without a whole context.
+
+#### Returns
+
+[`SlotStore`](index.md#slotstore)
+
+#### Example
+
+```ts
+import { createSlotStore, createToolContext } from "@alexkroman1/aai/testing";
+
+const slots = createSlotStore();
+const first = createToolContext({ slots });
+const second = createToolContext({ slots, sessionId: first.sessionId });
+```
+
+***
+
 ### createStubWorkflows()
 
 ```ts
@@ -2487,6 +2516,8 @@ The descriptor's options, as they cross the wire.
 
 ### SaidLine
 
+**`Sealed`**
+
 One `ctx.speech.say` a [createToolContext](#createtoolcontext) context recorded.
 
 #### Properties
@@ -2527,6 +2558,8 @@ The text, exactly as passed.
 
 ### SentEvent
 
+**`Sealed`**
+
 One `ctx.send(event, data)` call that would REACH the client, as recorded by
 [createToolContext](#createtoolcontext) — see the `send` default for what is left out.
 
@@ -2547,6 +2580,8 @@ event: string;
 ***
 
 ### StubDelegate
+
+**`Sealed`**
 
 A fake `ctx.delegate`: the function to pass, and what it was asked.
 
@@ -2571,6 +2606,8 @@ Pass as `delegate` to `createToolContext`.
 ***
 
 ### StubDelegateCall
+
+**`Sealed`**
 
 One `ctx.delegate` call, as recorded by [stubDelegate](#stubdelegate-1).
 
@@ -2603,6 +2640,8 @@ The task it was given.
 ***
 
 ### StubGateway
+
+**`Sealed`**
 
 A fake gateway: the `fetch` to install, and what it was asked.
 
@@ -2641,6 +2680,8 @@ Install with `vi.stubGlobal("fetch", gateway.fetch)`.
 ***
 
 ### StubGatewayCall
+
+**`Sealed`**
 
 One request a [StubGateway](#stubgateway) answered.
 
@@ -2694,6 +2735,8 @@ The endpoint the call went to, so a spec can assert the gateway URL.
 
 ### StubGatewayOptions
 
+**`Input`**
+
 Options for [stubGateway](#stubgateway-1).
 
 #### Properties
@@ -2719,6 +2762,8 @@ quotes back in its `StepGenerateError`.
 ***
 
 ### StubGatewayRoute
+
+**`Sealed`**
 
 A gateway answer for a `stepFetch`-published slot, plus what it was asked.
 
@@ -2758,6 +2803,8 @@ flow that also fetches a page, or straight into `stubTranscribe`'s
 
 ### StubGenerate
 
+**`Sealed`**
+
 A fake `ctx.generate`: the function to pass, and what it was asked.
 
 #### Properties
@@ -2781,6 +2828,8 @@ Pass as `generate` to `createToolContext`.
 ***
 
 ### StubGenerateCall
+
+**`Sealed`**
 
 One `ctx.generate` call, as recorded by [stubGenerate](#stubgenerate-1).
 
@@ -2813,6 +2862,8 @@ The system instruction, or `undefined` when the call carried none.
 ***
 
 ### StubStepDelegate
+
+**`Sealed`**
 
 A fake `stepDelegate`: the calls it recorded, and the slot to give back.
 
@@ -2880,12 +2931,21 @@ spec's own.
 
 ```ts
 type FetchRouteHit = FetchRouteRequest & {
-  outcome: "routed" | "passthrough" | "unmatched";
+  outcome:   | "routed"
+     | "passthrough"
+     | "unmatched"
+     | string & {
+   };
   route?: string;
   status?: number;
-  via: "fetch" | "stepFetch";
+  via:   | "fetch"
+     | "stepFetch"
+     | string & {
+   };
 };
 ```
+
+**`Sealed`**
 
 One request the router saw, whatever became of it.
 
@@ -2894,7 +2954,12 @@ One request the router saw, whatever became of it.
 ##### outcome
 
 ```ts
-readonly outcome: "routed" | "passthrough" | "unmatched";
+readonly outcome: 
+  | "routed"
+  | "passthrough"
+  | "unmatched"
+  | string & {
+};
 ```
 
 Answered by a route, sent to the real network, or answered by nothing.
@@ -2918,7 +2983,11 @@ The response's status, for a request that got one.
 ##### via
 
 ```ts
-readonly via: "fetch" | "stepFetch";
+readonly via: 
+  | "fetch"
+  | "stepFetch"
+  | string & {
+};
 ```
 
 Which fetch it arrived through.
@@ -2935,6 +3004,8 @@ type FetchRouteRequest = StubStepRequest & {
   searchParams: URLSearchParams;
 };
 ```
+
+**`Sealed`**
 
 One request as a route sees it: the recorded request (`url`, `method`,
 `headers`, `body` — the same fields `stubStepFetch` records) plus the parts a
@@ -2986,6 +3057,8 @@ type FetchRoutesOptions = {
   unmatched?: "throw" | "notFound" | "passthrough";
 };
 ```
+
+**`Input`**
 
 What [stubFetchRoutes](#stubfetchroutes-1) may be told.
 
@@ -3071,6 +3144,8 @@ type ProjectFiles = {
 };
 ```
 
+**`Input`**
+
 What the BUILD lowers onto an `agent.ts` default export — the files beside it
 that a deployed agent runs with and a spec has to apply itself.
 
@@ -3123,6 +3198,8 @@ type RecordedSleep = {
 };
 ```
 
+**`Sealed`**
+
 One wait the body asked for — and did NOT take.
 
 #### Properties
@@ -3164,6 +3241,8 @@ type RecordedStart = {
   workflow: string;
 };
 ```
+
+**`Sealed`**
 
 One `start` the client recorded.
 
@@ -3220,6 +3299,8 @@ type RecordedStep = {
 };
 ```
 
+**`Sealed`**
+
 One step the body reached, as the recorder saw it.
 
 #### Properties
@@ -3250,6 +3331,8 @@ type RecordingWorkflows = WorkflowClient & {
   started: RecordedStart[];
 };
 ```
+
+**`Sealed`**
 
 A `WorkflowClient` that records, plus its log.
 
@@ -3328,6 +3411,8 @@ type RecordingWorkflowsOptions = {
 };
 ```
 
+**`Input`**
+
 What [createRecordingWorkflows](#createrecordingworkflows) takes.
 
 #### Properties
@@ -3368,27 +3453,18 @@ def is recorded under its `description` and matched by identity.
 ```ts
 type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & 
   | {
-  status?: "pending" | "running";
+  status?: undefined;
 }
-  | {
-  output: R;
-  status: "completed";
-}
-  | {
-  error: string;
-  status: "failed";
-}
-  | {
-  status: "cancelled";
-};
+  | WorkflowRunSnapshot<R> extends infer S ? S extends unknown ? Omit<S, keyof WorkflowRunBase> : never : never;
 ```
 
 What [createRunSnapshot](#createrunsnapshot) accepts: the shared fields, plus whatever the
 chosen status requires.
 
-The `status`-bearing half mirrors [WorkflowRunSnapshot](workflow-api.md#workflowrunsnapshot)'s own union, so
-asking for `status: "completed"` without an `output` is a compile error rather
-than a fixture that lies.
+The `status`-bearing half is DERIVED from [WorkflowRunSnapshot](workflow-api.md#workflowrunsnapshot)'s own
+union, arm by arm, so asking for `status: "completed"` without an `output` is
+a compile error rather than a fixture that lies — and an arm the snapshot
+grows is one this accepts without a second edit.
 
 #### Type Parameters
 
@@ -3408,6 +3484,8 @@ type StubClientInbox = {
   restore: void;
 };
 ```
+
+**`Sealed`**
 
 What [stubClientInbox](#stubclientinbox-1) returns: the call log, and how to put the slot back.
 
@@ -3446,6 +3524,8 @@ type StubClientInboxCall = {
 };
 ```
 
+**`Sealed`**
+
 One pushed notice, as [stubClientInbox](#stubclientinbox-1) records it.
 
 #### Properties
@@ -3474,6 +3554,8 @@ type StubClientInboxOptions = {
 };
 ```
 
+**`Input`**
+
 What [stubClientInbox](#stubclientinbox-1) may be told.
 
 #### Properties
@@ -3501,6 +3583,8 @@ type StubClientTranscript = {
   restore: void;
 };
 ```
+
+**`Sealed`**
 
 What [stubClientTranscript](#stubclienttranscript-1) returns: the call log, and how to put the slot back.
 
@@ -3550,6 +3634,8 @@ type StubClientTranscriptCall = {
   options: StepClientTranscriptOptions;
 };
 ```
+
+**`Sealed`**
 
 One read, as [stubClientTranscript](#stubclienttranscript-1) records it.
 
@@ -3749,6 +3835,8 @@ type StubEmitted = {
 };
 ```
 
+**`Sealed`**
+
 One chunk `stepEmit()` wrote, and the stream it went to.
 
 #### Properties
@@ -3781,6 +3869,8 @@ type StubFetchRoutes = {
   to: FetchRouteHit[];
 };
 ```
+
+**`Sealed`**
 
 What [stubFetchRoutes](#stubfetchroutes-1) returns.
 
@@ -3974,6 +4064,8 @@ type StubPlaceCall = {
 };
 ```
 
+**`Sealed`**
+
 What [stubPlaceCall](#stubplacecall-1) returns: the call log, and how to put the slot back.
 
 #### Methods
@@ -4018,6 +4110,8 @@ type StubPlaceCallOptions = {
      | ((call: StubPlacedCall) => PlacedCallStatus | "initiated");
 };
 ```
+
+**`Input`**
 
 What [stubPlaceCall](#stubplacecall-1) may be told.
 
@@ -4092,6 +4186,8 @@ type StubPlaceCallRefusal = {
 };
 ```
 
+**`Input`**
+
 A Twilio refusal to stage: the HTTP status and, optionally, Twilio's error code and message.
 
 #### Properties
@@ -4130,6 +4226,8 @@ type StubPlacedCall = {
   webhookUrl: string | undefined;
 };
 ```
+
+**`Sealed`**
 
 One call a step placed, as [stubPlaceCall](#stubplacecall-1) records it.
 
@@ -4205,6 +4303,8 @@ type StubReporter = {
 };
 ```
 
+**`Sealed`**
+
 What [stubReporter](#stubreporter-1) returns.
 
 #### Properties
@@ -4247,6 +4347,8 @@ type StubSpeech = {
   restore: void;
 };
 ```
+
+**`Sealed`**
 
 What [stubSpeech](#stubspeech-1) returns: the call log, and how to put the slot back.
 
@@ -4291,6 +4393,8 @@ type StubSpeechCall = {
   voice: string;
 };
 ```
+
+**`Sealed`**
 
 One `stepSpeak` call, as [stubSpeech](#stubspeech-1) records it.
 
@@ -4349,6 +4453,8 @@ type StubSpeechOptions = {
   requireApiKey?: boolean;
 };
 ```
+
+**`Input`**
 
 What [stubSpeech](#stubspeech-1) may be told.
 
@@ -4424,6 +4530,8 @@ type StubStepFetch = {
 };
 ```
 
+**`Sealed`**
+
 What [stubStepFetch](#stubstepfetch-1) returns.
 
 #### Properties
@@ -4460,6 +4568,8 @@ type StubStepRequest = {
   url: string;
 };
 ```
+
+**`Sealed`**
 
 One request a [stubStepFetch](#stubstepfetch-1) recorder captured.
 
@@ -4508,6 +4618,8 @@ type StubTranscribe = {
 };
 ```
 
+**`Sealed`**
+
 What [stubTranscribe](#stubtranscribe-1) returns.
 
 #### Methods
@@ -4548,6 +4660,8 @@ type StubTranscribeCall = StubStepRequest & {
 };
 ```
 
+**`Sealed`**
+
 One request [stubTranscribe](#stubtranscribe-1) answered, with the leg it belonged to.
 
 #### Type Declaration
@@ -4573,6 +4687,8 @@ type StubTranscribeFailure = {
   status?: number;
 };
 ```
+
+**`Input`**
 
 A refusal to stage, as an HTTP answer the SDK then classifies.
 
@@ -4634,7 +4750,14 @@ The status to answer. Defaults to `500`.
 ### StubTranscribeLeg
 
 ```ts
-type StubTranscribeLeg = "upload" | "submit" | "poll" | "sync" | "other";
+type StubTranscribeLeg = 
+  | "upload"
+  | "submit"
+  | "poll"
+  | "sync"
+  | "other"
+  | string & {
+};
 ```
 
 Which transcription call a request was.
@@ -4661,6 +4784,8 @@ type StubTranscribeOptions = {
   text?: string | readonly string[];
 };
 ```
+
+**`Input`**
 
 What [stubTranscribe](#stubtranscribe-1) may be told.
 
@@ -4859,6 +4984,8 @@ type StubUploads = {
 };
 ```
 
+**`Sealed`**
+
 What [stubUploads](#stubuploads-1) returns.
 
 An OBJECT, like every other fake here (`stubSpeech`, `stubReporter`,
@@ -4934,6 +5061,8 @@ type StubUploadsOptions = {
 };
 ```
 
+**`Input`**
+
 What [stubUploads](#stubuploads-1) may be told beyond the files themselves.
 
 #### Properties
@@ -4974,6 +5103,8 @@ type StubUploadWrite = {
   type: string;
 };
 ```
+
+**`Sealed`**
 
 One file a step WROTE into a [stubUploads](#stubuploads-1) store.
 
@@ -5093,9 +5224,10 @@ is not here, for the same reason it is not in the browser.
 type ToolBearingAgent = {
   dialogs?: readonly AnyDialog[];
   tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
-  toolsets?: readonly Toolset[];
 };
 ```
+
+**`Input`**
 
 The slice of an agent these helpers read: its tool table — the `tools/`
 files plus every toolset `agent()` attached (a roster's `handoff`, `delegate`
@@ -5116,12 +5248,6 @@ readonly optional dialogs?: readonly AnyDialog[];
 
 ```ts
 readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
-```
-
-##### toolsets?
-
-```ts
-readonly optional toolsets?: readonly Toolset[];
 ```
 
 ***
@@ -5152,6 +5278,8 @@ type ToolContextOverrides = {
   workflows?: ToolContext["workflows"];
 };
 ```
+
+**`Input`**
 
 What [createToolContext](#createtoolcontext) accepts: a field per [ToolContext](index.md#toolcontext) field,
 each also taking `undefined` for one the caller does not have.
@@ -5415,6 +5543,8 @@ type WorkflowContextOptions = {
 };
 ```
 
+**`Input`**
+
 What [createWorkflowContext](#createworkflowcontext) takes.
 
 #### Properties
@@ -5525,6 +5655,8 @@ type WorkflowContextRecorder = WorkflowContext & {
 };
 ```
 
+**`Sealed`**
+
 What [createWorkflowContext](#createworkflowcontext) answers: a real `WorkflowContext` plus its log.
 
 #### Type Declaration
@@ -5558,7 +5690,7 @@ Every token `ctx.waitFor` was called with, in order.
 ### STUB\_SPEECH\_PCM\_BYTES
 
 ```ts
-const STUB_SPEECH_PCM_BYTES: 12000 = 12000;
+const STUB_SPEECH_PCM_BYTES: number;
 ```
 
 PCM bytes [stubSpeech](#stubspeech-1) answers with when no size is named — ~0.25s at 24 kHz.
@@ -5568,7 +5700,7 @@ PCM bytes [stubSpeech](#stubspeech-1) answers with when no size is named — ~0.
 ### WORKFLOW\_CONTEXT\_NOW
 
 ```ts
-const WORKFLOW_CONTEXT_NOW: 1767225600000 = 1767225600000;
+const WORKFLOW_CONTEXT_NOW: number;
 ```
 
 The instant [createWorkflowContext](#createworkflowcontext) freezes `ctx.now()` at.

@@ -193,6 +193,7 @@ export {
  * one type would put those in reach of a body that re-runs them on each resume,
  * the bug the DevKit migration removed and which this must not reintroduce.
  *
+ * @sealed
  * @public
  */
 export type WorkflowContext = {

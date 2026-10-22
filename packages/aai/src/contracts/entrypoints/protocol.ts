@@ -31,6 +31,7 @@
  */
 
 export {
+  type AgentTranscriptRecovery,
   buildClientConfig,
   buildReadyConfig,
   CLIENT_CONFIG_METHODS,
@@ -60,4 +61,5 @@ export {
   SessionErrorCodeSchema,
   type SessionEventMeta,
   SessionEventMetaSchema,
+  SessionEventSchema,
 } from "../../sdk/protocol-barrel.ts";

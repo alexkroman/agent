@@ -17,7 +17,11 @@ import {
   type StepClientTranscriptOptions,
 } from "./step-client-transcript.ts";
 
-/** One read, as {@link stubClientTranscript} records it. */
+/**
+ * One read, as {@link stubClientTranscript} records it.
+ *
+ * @sealed
+ */
 export type StubClientTranscriptCall = { clientId: string; options: StepClientTranscriptOptions };
 
 /** What {@link stubClientTranscript} answers each read with. */
@@ -25,7 +29,11 @@ export type StubClientTranscriptAnswer =
   | ClientTranscript
   | ((call: StubClientTranscriptCall) => ClientTranscript);
 
-/** What {@link stubClientTranscript} returns: the call log, and how to put the slot back. */
+/**
+ * What {@link stubClientTranscript} returns: the call log, and how to put the slot back.
+ *
+ * @sealed
+ */
 export type StubClientTranscript = {
   /** Every read, in order. */
   calls: StubClientTranscriptCall[];

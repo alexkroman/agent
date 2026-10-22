@@ -66,6 +66,7 @@ export type UploadBody = Blob | ArrayBuffer | ArrayBufferView | string;
 /**
  * How far an upload has got, as {@link UploadOptions.onProgress} reports it.
  *
+ * @sealed
  * @public
  */
 export type UploadProgress = {
@@ -87,7 +88,11 @@ export type UploadProgress = {
   fraction: number | undefined;
 };
 
-/** Options for an upload. */
+/**
+ * Options for an upload.
+ *
+ * @input
+ */
 export type UploadOptions = {
   /** Filename to store. Defaults to a `File`'s own `name`, else `""`. */
   name?: string | undefined;
@@ -167,7 +172,11 @@ export type UploadOptions = {
 
 export type { UploadParallelOption, UploadPartsOptions } from "./workflow-upload-parts.ts";
 
-/** A stored upload, as `WorkflowApi.upload` resolves it. */
+/**
+ * A stored upload, as `WorkflowApi.upload` resolves it.
+ *
+ * @sealed
+ */
 export type UploadRef = {
   /** The handle a run input carries. */
   id: string;

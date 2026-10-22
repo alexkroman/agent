@@ -6,7 +6,7 @@
  * unions that make a mode mistake a compile error, and the shape a declaration
  * resolves to.
  *
- * **Three families that used to be here are capabilities of their own now**,
+ * **Six families that used to be here are capabilities of their own now**,
  * because each moves for a reason unrelated to declaring an agent and every
  * move renumbered this, the flagship contract every template imports:
  *
@@ -16,13 +16,11 @@
  * - the pipeline turn-taking field group, `PipelineVoiceTuning` and
  *   `UserTurnLimit` — `turn-taking`. `AgentDef` still extends the group by name.
  * - personas — `persona`, which already owned the roster.
- *
- * `SessionEventContext` stays: it is the twin of `AgentSessionContext`, below.
- * So does the `SessionSpeech` family (`SayOptions`, `SpeechHandle`,
- * `SpeechOutcome`) that its `speech` field names, owned here rather than by
- * `tool`, which reaches it through `ToolContext.speech` too: `RouteContext`'s
- * `speech(sessionId)` is on this capability as well, so two of its three
- * readers are here.
+ * - the `routes` field group, its handler vocabulary and helpers —
+ *   `agent-routes`. `AgentDef` still extends `AgentRoutes` by name.
+ * - the `mcpServers` field's vocabulary — `agent-mcp`.
+ * - what a session hands the callbacks (the lifecycle group, the two context
+ *   twins, `SessionSpeech`, the session readings) — `agent-session`.
  *
  * `ProviderCredentialOptions` is here for the same reason as
  * `ProviderDescriptor`: every provider options interface on all four stages
@@ -44,13 +42,6 @@
  * one interface with four reference pages, a name four capabilities each
  * half-owned. The four stage types themselves stay with their stages, which
  * publish the factories that produce them.
- *
- * The eight `Mcp*` names are here for the same reason `AgentDef` is: `mcpServers`
- * is a field of an agent declaration, so its shape, the grammar of a server
- * key, and the rule turning a server's tool name into the one the model calls
- * are all part of what declaring an agent looks like. The CLIENT that reads
- * them is `withMcpTools` on `@alexkroman1/aai-runtime` and belongs to that
- * package's own `tools` capability — this SDK opens no sockets.
  *
  * **The FIELD-GROUP interfaces are here.** `AgentDef` is declared as an
  * extension of them — `AgentModelTuning`, `AgentGuardrails` and
@@ -79,19 +70,6 @@
  * `agent()` declaration cannot omit, and a resolver is a way of writing it
  * rather than a separate thing to write.
  *
- * `AgentSessionContext` is the one real choice among these, and it lands here
- * because of what it is the context OF: the three `agent()` fields that are
- * callbacks rather than values (`systemPrompt` as a resolver, and the two
- * guardrail arrays), all three of them contracted above. It is declared to be
- * the same shape as `SessionEventContext` and to carry the same omissions —
- * no `send`, no `generate`, no `messages` — and `SessionEventContext` is
- * already on this contract, so splitting the twins across two capabilities
- * would let one move without bumping the other, which is the exact drift the
- * two modules warn each other against. It is NOT `state`'s, though it carries a
- * `SlotStore`: `state` owns what a slot IS, and a context that hands one to an
- * author is a field of the agent declaration, the same way `ToolContext.slots`
- * does not make `ToolContext` part of `state`.
- *
  * **The three voice-preset names are here for the field-group reason above**,
  * with one addition. `AgentVoicePresets` is the fifth interface `AgentDef`
  * extends and `VoicePresetName` is the vocabulary its one field takes, so both
@@ -102,24 +80,7 @@
  * accepts, and its keys and that field's type are one union. What `defaults`
  * covers is what an agent that declares NOTHING is given.
  *
- * `AgentSessionLifecycle` and its three context types are the sixth field
- * group, here for the field-group reason above: `sessionContext` and
- * `onSessionEnd` are written in the same `agent({ … })` literal as `name`.
- * `sessionClientLocation` rides with them: it reads back the `location` a
- * `SessionContext` answers. So do `sessionCall` and `SessionCall` — the `call`
- * both lifecycle contexts carry, read back by a tool — and `endSession` with
- * its options, the tool-side way a session reaches the `onSessionEnd` above.
- *
- * `AgentRoutes` is the seventh, with its request/context/handler types and
- * `routeResponse`, for the same reason: `routes` is a field of the literal, and
- * what a handler receives and returns is what declaring one looks like. So are
- * the handler helpers written inside that literal: `route` (with `RouteDef`
- * and `ValidatedRouteRequest`), the thrown `routeError`/`RouteError`,
- * `webhookRoute`/`verifyStandardWebhook` with their options, and
- * `clientRunsRoutes` with its options and the `ClientRun` rows it answers —
- * handlers spread into that same `routes` literal.
- *
- * `AgentClientInbox` is the eighth, with `ClientInboxOptions`, for the same
+ * `AgentClientInbox` is a field group too, with `ClientInboxOptions`, for the same
  * reason: `clientInbox` is a field of the literal.
  *
  * `workflowApp()` belongs here rather than in `workflow`: it declares an AGENT
@@ -143,9 +104,6 @@ export {
   type AgentModelTuning,
   type AgentObservation,
   type AgentParams,
-  type AgentRoutes,
-  type AgentSessionContext,
-  type AgentSessionLifecycle,
   type AgentSystemPrompt,
   type AgentVoicePresets,
   type AssemblyAIPipelineOptions,
@@ -153,62 +111,22 @@ export {
   assemblyAIPipeline,
   type BuiltinTool,
   type ClientInboxOptions,
-  type ClientRun,
-  type ClientRunStatus,
-  type ClientRunsResponse,
-  type ClientRunsRoutesOptions,
-  clientRunsRoutes,
-  type EndSessionOptions,
-  endSession,
-  MCP_SERVER_KEY_RE,
-  MCP_TOOL_NAME_MAX,
-  MCP_TOOL_PREFIX,
-  type McpResolvable,
-  type McpResolveContext,
-  type McpServerConfig,
-  type McpServers,
   type ModeAgentDef,
   type ModelTuning,
-  mcpToolName,
   type PipelineAgentParams,
   type ProviderCredentialOptions,
   type ProviderDescriptor,
-  type RouteContext,
-  type RouteDef,
-  RouteError,
-  type RouteHandler,
-  type RouteRequest,
-  type RouteResponse,
-  route,
-  routeError,
-  routeResponse,
   type S2sAgentParams,
-  type SayOptions,
-  type SessionCall,
-  type SessionContext,
-  type SessionContextArgs,
-  type SessionEndContext,
-  type SessionEventContext,
-  type SessionSpeech,
   type SharedAgentParams,
-  type SpeechHandle,
-  type SpeechOutcome,
-  type StandardWebhookOptions,
   type SyncStateDeclaration,
-  sessionCall,
-  sessionClientLocation,
   type TelephonyAccess,
   type TelephonyCarrier,
   type TextAgentParams,
   type ToolChoice,
   type TurnDetectionMode,
   type UsageLimits,
-  type ValidatedRouteRequest,
   VOICE_PRESETS,
   type VoicePresetName,
-  verifyStandardWebhook,
-  type WebhookRouteOptions,
   type WorkflowAppAgentParams,
-  webhookRoute,
   workflowApp,
 } from "../../index.ts";

@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import type { AnyStateMachine } from "xstate";
 import { normalizeAgentParams } from "./_author-conveniences.ts";
 import { declaredPersonas } from "./_dialog-meta.ts";
 import { assertNoStrayFields } from "./_stray-fields.ts";
@@ -20,6 +21,7 @@ import { omitUndefined } from "./omit-undefined.ts";
 import { bindRosterDialogs, type Roster } from "./roster.ts";
 import { rosterToolset } from "./roster-tools.ts";
 import type { ToolInputSchema } from "./schema.ts";
+import type { ResolvedAgentDef } from "./toolset.ts";
 import { type AgentDef, DEFAULT_SYSTEM_PROMPT, type ToolContext, type ToolDef } from "./types.ts";
 
 /**
@@ -205,7 +207,7 @@ function buildAgent(def: object): AgentDef {
   // `Roster.position` afterwards.
   if (params.roster) bindRosterDialogs(params.roster, params.dialogs ?? []);
   const toolsets = params.roster ? [rosterToolset(params.roster)] : [];
-  return {
+  const resolved: ResolvedAgentDef = {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     greeting: DEFAULT_GREETING,
     maxSteps: DEFAULT_MAX_STEPS,
@@ -214,6 +216,7 @@ function buildAgent(def: object): AgentDef {
     tools: {},
     toolsets,
   };
+  return resolved;
 }
 
 /**
@@ -229,7 +232,8 @@ function buildAgent(def: object): AgentDef {
 function checkPins(roster: Roster | undefined, dialogs: AgentDef["dialogs"]): void {
   const known = roster && new Set(roster.speaking.map((one) => one.name));
   for (const dialog of dialogs ?? []) {
-    for (const name of declaredPersonas(dialog.machine)) {
+    // Every `DialogMachine` is an XState machine (see its doc), which carries `states`.
+    for (const name of declaredPersonas(dialog.machine as AnyStateMachine)) {
       if (known === undefined) {
         throw new Error(
           `The "${dialog.key}" dialog pins the speaker "${name}", but this agent declares no \`roster\`. Declare the roster, or drop the \`persona\` field from that state.`,

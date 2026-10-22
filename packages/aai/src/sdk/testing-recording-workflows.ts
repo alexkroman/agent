@@ -30,6 +30,7 @@ import { rejectingWorkflows } from "./workflow-unavailable.ts";
 /**
  * One `start` the client recorded.
  *
+ * @sealed
  * @public
  */
 export type RecordedStart = {
@@ -48,6 +49,7 @@ export type RecordedStart = {
 /**
  * What {@link createRecordingWorkflows} takes.
  *
+ * @input
  * @public
  */
 export type RecordingWorkflowsOptions = {
@@ -80,6 +82,7 @@ export type RecordingWorkflowsOptions = {
  * `publicWebhookUrl`) REJECT, as `createStubWorkflows`' do — spread over it to
  * answer one.
  *
+ * @sealed
  * @public
  */
 export type RecordingWorkflows = WorkflowClient & {

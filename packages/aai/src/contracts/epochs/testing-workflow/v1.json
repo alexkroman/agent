@@ -1,0 +1,25 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "testing-workflow",
+  "epoch": 1,
+  "rule": 3,
+  "sha256": "e631a435ddf8178c6f0f053baa79481d0863c0aea23d65e53152c9234fdd95cb",
+  "exports": [
+    "RecordedSleep",
+    "RecordedStart",
+    "RecordedStep",
+    "RecordingWorkflows",
+    "RecordingWorkflowsOptions",
+    "RunSnapshotOverrides",
+    "StubWorkflowsOptions",
+    "WORKFLOW_CONTEXT_NOW",
+    "WorkflowContextOptions",
+    "WorkflowContextRecorder",
+    "createRecordingWorkflows",
+    "createRunSnapshot",
+    "createStubWorkflows",
+    "createWorkflowContext",
+    "installStubWorkflows"
+  ],
+  "rollup": "a1369d5460fa10982bc833542f53e91d1266f6b08d40990d494eac23350c580d"
+}

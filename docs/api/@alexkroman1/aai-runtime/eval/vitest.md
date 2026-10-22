@@ -799,6 +799,8 @@ Completion contents, in order; the last repeats. A bare
 
 ### StubGatewayRoute
 
+**`Sealed`**
+
 A gateway answer for a `stepFetch`-published slot, plus what it was asked.
 
 #### Properties
@@ -836,6 +838,8 @@ flow that also fetches a page, or straight into `stubTranscribe`'s
 ***
 
 ### StubStepDelegate
+
+**`Sealed`**
 
 A fake `stepDelegate`: the calls it recorded, and the slot to give back.
 
@@ -1456,6 +1460,8 @@ type RecordingWorkflows = WorkflowClient & {
 };
 ```
 
+**`Sealed`**
+
 A `WorkflowClient` that records, plus its log.
 
 `start` records and resolves a fresh run id, and the run it "started" is
@@ -1533,6 +1539,8 @@ type RecordingWorkflowsOptions = {
 };
 ```
 
+**`Input`**
+
 What [createRecordingWorkflows](#createrecordingworkflows) takes.
 
 #### Properties
@@ -1577,6 +1585,8 @@ type StubSpeech = {
 };
 ```
 
+**`Sealed`**
+
 What [stubSpeech](../testing.md#stubspeech) returns: the call log, and how to put the slot back.
 
 #### Methods
@@ -1618,6 +1628,8 @@ type StubSpeechOptions = {
   requireApiKey?: boolean;
 };
 ```
+
+**`Input`**
 
 What [stubSpeech](../testing.md#stubspeech) may be told.
 
@@ -1672,6 +1684,8 @@ type StubStepFetch = {
 };
 ```
 
+**`Sealed`**
+
 What [stubStepFetch](../testing.md#stubstepfetch) returns.
 
 #### Properties
@@ -1706,6 +1720,8 @@ type StubTranscribe = {
   restore: void;
 };
 ```
+
+**`Sealed`**
 
 What [stubTranscribe](../testing.md#stubtranscribe) returns.
 
@@ -1756,6 +1772,8 @@ type StubTranscribeOptions = {
   text?: string | readonly string[];
 };
 ```
+
+**`Input`**
 
 What [stubTranscribe](../testing.md#stubtranscribe) may be told.
 
@@ -1885,6 +1903,8 @@ type StubUploads = {
 };
 ```
 
+**`Sealed`**
+
 What [stubUploads](../testing.md#stubuploads) returns.
 
 An OBJECT, like every other fake here (`stubSpeech`, `stubReporter`,
@@ -1959,6 +1979,8 @@ type StubUploadsOptions = {
   writable?: boolean;
 };
 ```
+
+**`Input`**
 
 What [stubUploads](../testing.md#stubuploads) may be told beyond the files themselves.
 

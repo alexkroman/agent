@@ -62,6 +62,7 @@ const DEFAULT_TEXT_PARAM = "text";
  * names. So it is passed in, and the guard for it ({@link isSlackWebhookUrl})
  * is published so the check can happen at the form's edge.
  *
+ * @input
  * @public
  */
 export interface SlackChannelOptions {
@@ -81,7 +82,11 @@ export interface SlackChannelOptions {
   readonly textParam?: string;
 }
 
-/** A Slack channel descriptor, as returned by {@link slackChannel}. */
+/**
+ * A Slack channel descriptor, as returned by {@link slackChannel}.
+ *
+ * @sealed
+ */
 export type SlackChannel = Channel & {
   readonly kind: typeof SLACK_CHANNEL_KIND;
   readonly options: SlackChannelOptions & Record<string, unknown>;

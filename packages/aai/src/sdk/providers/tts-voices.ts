@@ -16,9 +16,11 @@
  * all six languages** — `language` picks what a voice speaks, the voice only how
  * it sounds — so there is no voice/language pairing to get wrong.
  *
- * A tuple rather than a map because a slug is all there is to know about one,
- * and a tuple is what `z.enum` takes: a form offering the caller a voice is
- * `z.enum(ASSEMBLYAI_TTS_VOICES)`.
+ * A list rather than a map because a slug is all there is to know about one,
+ * and a list is what `z.enum` takes: a form offering the caller a voice is
+ * `z.enum(ASSEMBLYAI_TTS_VOICES)`. Typed as a plain array, not a literal
+ * tuple, so a voice added to the catalog is not a type change a reader's
+ * exhaustive check breaks on.
  *
  * A constant rather than a sentence in a doc comment because a wrong voice id
  * is a refusal the service sends after the upgrade (`3012 voice_not_found`), so
@@ -27,7 +29,7 @@
  * of open-dataset voices beside these; any of their slugs, a cloned voice's
  * slug, or a voice UUID is a valid `voice` too.
  */
-export const ASSEMBLYAI_TTS_VOICES = [
+export const ASSEMBLYAI_TTS_VOICES: readonly AssemblyAITtsVoice[] = [
   "aai-alba",
   "aai-anna",
   "aai-charles",
@@ -39,7 +41,7 @@ export const ASSEMBLYAI_TTS_VOICES = [
   "aai-michael",
   "aai-paul",
   "aai-vera",
-] as const;
+];
 
 /**
  * Default voice when `assemblyAITts()` is called with no `voice` — the

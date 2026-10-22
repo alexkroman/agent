@@ -9,7 +9,7 @@
  * that the same events are readable back off the runtime.
  */
 
-import type { SessionEvent } from "@alexkroman1/aai";
+import type { AnySessionEvent } from "@alexkroman1/aai";
 import { dialog, type SessionEventHandlers } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { makeAgent } from "../_agent-test-utils.ts";
@@ -35,7 +35,7 @@ function runtimeWith(events: SessionEventHandlers) {
 
 describe("agent({ events }) through the runtime", () => {
   test("a declared handler sees the session's own events", () => {
-    const seen: SessionEvent[] = [];
+    const seen: AnySessionEvent[] = [];
     const runtime = runtimeWith({ "*": (e) => seen.push(e) });
     const client = makeClientSink();
 

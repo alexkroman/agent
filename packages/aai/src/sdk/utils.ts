@@ -331,7 +331,8 @@ export type ToolRefusalReason =
   | "cancelled"
   | "persona"
   | "dialog"
-  | "roster";
+  | "roster"
+  | (string & {});
 
 /**
  * A {@link ToolFailure} the RUNTIME or a gate answered before the body ran, its
@@ -339,6 +340,7 @@ export type ToolRefusalReason =
  * field is not on `ToolFailure` itself, so an author's own `{ error }` literal
  * keeps narrowing out of a `T | ToolFailure` union.
  *
+ * @sealed
  * @public
  */
 export type ToolRefusal = ToolFailure & { reason: ToolRefusalReason };

@@ -372,6 +372,7 @@ export function voicePresetSection(
  * cost: **every name in the list is paid for on every model request**, and
  * {@link VOICE_PRESETS}' table is the price list.
  *
+ * @input
  * @public
  */
 export interface AgentVoicePresets {

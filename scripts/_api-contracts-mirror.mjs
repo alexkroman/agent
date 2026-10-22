@@ -17,8 +17,9 @@
  * - it is PURE: its rollup declares nothing and re-exports every name from the
  *   upstream package (anything else is a surface of its own, which needs an
  *   epoch — make it an ordinary capability);
- * - every name it carries is in the upstream capability today, so the
- *   upstream epoch governs each one's shape;
+ * - every name it carries is in the upstream capability today — read as a
+ *   FAMILY, the capability plus its `<capability>-*` siblings, so a split for
+ *   size stays one target — and an upstream epoch governs each one's shape;
  * - it does not DROP a name upstream still exports (measured against the
  *   merge-base's entry point): that breaks an importer of the door while the
  *   upstream epoch says nothing changed, so it is refused rather than recorded

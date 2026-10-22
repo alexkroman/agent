@@ -122,7 +122,7 @@ interface AgentSessionContext {
 // @public
 type AgentSystemPrompt = string | ((ctx: AgentSessionContext) => string);
 
-// @public
+// @public @input
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
@@ -444,7 +444,7 @@ export const ASSEMBLYAI_TTS_MAX_GENERATE_CHARS = 2000;
 // @public
 type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
-// @public
+// @public @input
 type AssemblyAILlmProviderOptions = {
     readonly region?: "us" | "eu";
     readonly reasoningEffort?: AssemblyAIReasoningEffort;
@@ -453,11 +453,11 @@ type AssemblyAILlmProviderOptions = {
 // @public
 type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high" | (string & {});
 
-// @public
+// @public @input
 interface AssemblyAISttOptions extends ProviderCredentialOptions {
     connectTimeoutMs?: number;
     formatTurns?: boolean;
-    languages?: string[];
+    languages?: readonly string[];
     maxConnectRetries?: number;
     maxTurnSilenceMs?: number;
     minTurnSilenceMs?: number;
@@ -474,7 +474,7 @@ type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 // @public
 export function assemblyAITtsLanguageCodes(): string[];
 
-// @public (undocumented)
+// @public @input (undocumented)
 interface AssemblyAITtsOptions extends ProviderCredentialOptions {
     host?: string;
     language?: AssemblyAITtsLanguage;
@@ -489,6 +489,12 @@ export function assertProviderTriple(stt: unknown, llm: unknown, tts: unknown, s
 
 // @internal
 export function assertUploadToken(id: string): void;
+
+// @public (undocumented)
+export const BASH_TIMEOUT_MAX_MS: number;
+
+// @public
+export const BASH_TIMEOUT_MS: number;
 
 // @public
 export function buildSystemPrompt(config: AgentConfig, options: {
@@ -512,7 +518,7 @@ export const CARTESIA_API_KEY_ENV: string;
 // @public
 export const CARTESIA_KIND: "cartesia";
 
-// @public
+// @public @input
 interface CartesiaTtsOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
@@ -544,7 +550,7 @@ export const CLIENT_INBOX_UNAVAILABLE_MESSAGE: string;
 // @internal
 export const CLIENT_TRANSCRIPT_UNAVAILABLE_MESSAGE: string;
 
-// @public
+// @public @input
 interface ClientEventMap {
 }
 
@@ -556,7 +562,7 @@ export type ClientInboxDefaults = {
     sampleRate?: number | undefined;
 };
 
-// @public
+// @public @input
 type ClientNotice = {
     id: string;
     event: string;
@@ -570,14 +576,14 @@ export type ClientNotifier = (clientId: string, notice: ClientNotice, options: {
     signal?: AbortSignal | undefined;
 }) => Promise<"acked" | ClientUnreachableReason>;
 
-// @public
+// @public @sealed
 type ClientTranscript = {
     sessions: ClientTranscriptSession[];
 };
 
-// @public
+// @public @sealed
 type ClientTranscriptMessage = {
-    role: "user" | "assistant";
+    role: "user" | "assistant" | (string & {});
     text: string;
     at: number;
 };
@@ -585,7 +591,7 @@ type ClientTranscriptMessage = {
 // @internal
 export type ClientTranscriptReader = (clientId: string, options: StepClientTranscriptOptions) => Promise<ClientTranscript>;
 
-// @public
+// @public @sealed
 type ClientTranscriptSession = {
     sessionId: string;
     startedAt: number;
@@ -594,7 +600,7 @@ type ClientTranscriptSession = {
     tools: ClientTranscriptTool[];
 };
 
-// @public
+// @public @sealed
 type ClientTranscriptTool = {
     name: string | undefined;
     args: Readonly<Record<string, unknown>> | undefined;
@@ -603,7 +609,13 @@ type ClientTranscriptTool = {
 };
 
 // @public
-type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected";
+type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected" | (string & {});
+
+// @public (undocumented)
+export const CODING_TOOL_DESCRIPTIONS: Readonly<Record<CodingToolName, string>>;
+
+// @public
+type CodingToolName = "list_files" | "read_file" | "glob" | "grep" | "write_file" | "edit_file" | "delete_file" | "bash" | "todo_write";
 
 // @public
 export function constantTimeEquals(a: string, b: string): boolean;
@@ -635,7 +647,7 @@ export const DEEPGRAM_API_KEY_ENV: string;
 // @public
 export const DEEPGRAM_KIND: "deepgram";
 
-// @public
+// @public @input
 interface DeepgramSttOptions extends ProviderCredentialOptions {
     endpointing?: number;
     language?: string;
@@ -703,20 +715,20 @@ export type DelayedRung = {
     content: string;
 };
 
-// @public
+// @public @sealed
 interface DelegateAnswer {
     steps: number;
     text: string;
     toolCalls: readonly DelegateToolCall[];
 }
 
-// @public
+// @public @sealed
 type DelegateFn = {
     <T>(subagent: TypedSpeakerDef<T>, options: DelegateOptions): Promise<TypedDelegateResult<T>>;
     (subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult>;
 };
 
-// @public
+// @public @input
 interface DelegateOptions {
     context?: string;
     maxSteps?: number;
@@ -730,7 +742,7 @@ interface DelegateResult extends DelegateAnswer {
     revisions: number;
 }
 
-// @public
+// @public @sealed
 interface DelegateToolCall {
     input: unknown;
     name: string;
@@ -759,7 +771,7 @@ export const ELEVENLABS_DEFAULT_MODEL = "scribe_v2_realtime";
 // @public
 export const ELEVENLABS_KIND: "elevenlabs";
 
-// @public
+// @public @input
 interface ElevenLabsSttOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
@@ -796,7 +808,7 @@ type FetchDispatcher = RequestInit extends {
     dispatcher?: infer D;
 } ? NonNullable<D> : never;
 
-// @public
+// @public @input
 type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
@@ -804,7 +816,7 @@ type FindByKeyOptions = {
     withOutput?: boolean;
 };
 
-// @public
+// @public @input
 type FindOptions = {
     limit?: number;
 };
@@ -832,7 +844,7 @@ export type GatewayModelInfo = {
     readonly context: number;
 };
 
-// @public
+// @public @sealed
 type GenerateFn = {
     <S extends StandardSchemaV1>(options: GenerateOptions & {
         schema: S;
@@ -840,13 +852,13 @@ type GenerateFn = {
     (options: GenerateOptions): Promise<GenerateResult>;
 };
 
-// @public
+// @public @sealed
 type GenerateObjectResult<T> = {
     text: string;
     object: T;
 };
 
-// @public
+// @public @input
 type GenerateOptions = {
     prompt: string;
     system?: string;
@@ -868,6 +880,9 @@ export function getSessionLocation(ctx: {
 }): string | undefined;
 
 // @public
+export const GLOB_LIMIT: number;
+
+// @public
 type GuardrailVerdict = true | string;
 
 // @public
@@ -881,7 +896,7 @@ const hostCredentialsMarker: unique symbol;
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
 
-// @public
+// @public @input
 interface InterruptionTuning {
     backoffMs?: number;
     minDurationMs?: number;
@@ -1041,14 +1056,14 @@ export const MAX_WS_PAYLOAD_BYTES: number;
 // @public
 type McpResolvable<T> = T | ((context: McpResolveContext) => T | Promise<T>);
 
-// @public
+// @public @sealed
 type McpResolveContext = {
     readonly clientId: string | undefined;
     readonly env: Readonly<Partial<Record<string, string>>>;
     readonly signal: AbortSignal;
 };
 
-// @public
+// @public @input
 type McpServerConfig = {
     url: McpResolvable<string>;
     headers?: McpResolvable<Readonly<Record<string, string>>>;
@@ -1062,13 +1077,13 @@ type McpServers = Readonly<Record<string, McpServerConfig>>;
 
 // @public
 type Message = {
-    role: "user" | "assistant" | "tool";
+    role: "user" | "assistant" | "tool" | (string & {});
     content: string;
     toolName?: string;
     toolCallId?: string;
 };
 
-// @public
+// @public @input
 interface ModelTuning {
     maxOutputTokens?: number;
     maxRetries?: number;
@@ -1121,7 +1136,7 @@ export type PinnedRequestInit = RequestInit & {
 // @internal
 export const PIPELINE_FLUSH_TIMEOUT_MS = 10000;
 
-// @public
+// @public @input
 interface PipelineTuning {
     interruption?: InterruptionTuning | "off";
     silence?: SilenceTuning;
@@ -1137,7 +1152,7 @@ export type PollHost = {
     sleep(label: string, until: number | Date): Promise<void>;
 };
 
-// @public
+// @public @input
 type PollOptions<T> = {
     everyMs: number;
     maxMs: number;
@@ -1145,7 +1160,7 @@ type PollOptions<T> = {
     maxAttempts?: number | undefined;
 };
 
-// @public
+// @public @sealed
 type PollResult<T> = {
     value: T;
     done: boolean;
@@ -1161,7 +1176,7 @@ export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
 // @internal
 export const PROVIDER_CATALOG: readonly ProviderDefinition[];
 
-// @public
+// @public @input
 interface ProviderCredentialOptions {
     apiKeyEnv?: string;
 }
@@ -1252,6 +1267,9 @@ export function publishUploadReader(reader: UploadAccess | undefined): void;
 // @public
 type RandomSource = () => number;
 
+// @public
+export const READ_LIMIT: number;
+
 // @internal
 export function readAssemblyAILlmProviderOptions(bag: Readonly<Record<string, unknown>> | undefined): AssemblyAILlmProviderOptions;
 
@@ -1290,7 +1308,7 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
     voiceFocusThreshold: number;
     connectTimeoutMs: number;
     maxConnectRetries: number;
-    languages?: string[];
+    languages?: readonly string[];
     streamingUrl?: string;
     region?: "us" | "eu";
     formatTurns?: boolean;
@@ -1377,7 +1395,7 @@ export const RIME_DEFAULT_MODEL = "mistv2";
 // @public
 export const RIME_KIND: "rime";
 
-// @public
+// @public @input
 interface RimeTtsOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
@@ -1406,6 +1424,7 @@ export type RouteMatch<V> = {
 // @public @sealed
 interface RouteResponse {
     readonly body: unknown;
+    readonly headers?: Readonly<Record<string, string>> | undefined;
     readonly status: number;
 }
 
@@ -1462,7 +1481,7 @@ export type SayOnClientHost = {
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
 };
 
-// @public
+// @public @input
 type SayOnClientNotice = {
     id?: string | undefined;
     event: string;
@@ -1480,7 +1499,7 @@ type SayOnClientNotice = {
 // @internal
 export function sayOnClientWorkflow(host: SayOnClientHost, name: string, clientId: string, notice: SayOnClientNotice): Promise<string>;
 
-// @public
+// @public @input
 type SayOptions = {
     interrupt?: boolean | undefined;
     interruptible?: boolean | undefined;
@@ -1499,7 +1518,7 @@ export const SESSION_KEEPALIVE_INTERVAL_MS = 15000;
 // @internal
 export const SESSION_RESUME_GRACE_MS = 120000;
 
-// @public
+// @public @sealed
 type SessionCall = {
     readonly carrier: string;
     readonly callId?: string;
@@ -1540,27 +1559,29 @@ export function setSessionLocation(sessionId: string, location: string): void;
 // @internal
 export function setSessionPhone(sessionId: string, phone: string): void;
 
-// @public
+// @public @input
 interface SilenceNudge {
     afterMs: number;
     prompt?: string;
 }
 
-// @public
+// @public @input
 interface SilenceTuning {
     deadAirCoverMs?: number;
     nudge?: SilenceNudge;
 }
 
-// @public
+// @public @input
 type SleepOptions = {
     correlationId?: string;
 };
 
-// @public
+// @public @sealed
 type SlotStore = {
     read(key: string): unknown;
-    write(key: string, value: unknown, durable: boolean): void;
+    write(key: string, value: unknown, options?: {
+        durable?: boolean | undefined;
+    }): void;
 };
 
 // @public
@@ -1569,7 +1590,7 @@ export const SONIOX_API_KEY_ENV: string;
 // @public
 export const SONIOX_KIND: "soniox";
 
-// @public
+// @public @input
 interface SonioxSttOptions extends ProviderCredentialOptions {
     languages?: readonly string[];
     model?: string;
@@ -1584,7 +1605,7 @@ export type SpawnCappedResult = {
     stderr: string;
 };
 
-// @public
+// @public @input
 interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRetries"> {
     builtinTools?: readonly BuiltinTool[];
     description?: string;
@@ -1613,7 +1634,7 @@ interface SpeechHandle {
 }
 
 // @public
-type SpeechOutcome = "played" | "interrupted" | "dropped";
+type SpeechOutcome = "played" | "interrupted" | "dropped" | (string & {});
 
 // @internal
 export type SpeechSynthesizer = (request: {
@@ -1667,7 +1688,7 @@ export interface StandardSchemaV1<Input = unknown, Output = Input> {
     };
 }
 
-// @public
+// @public @input
 type StartOptions = {
     key?: string;
     dedupeKey?: string;
@@ -1693,7 +1714,7 @@ export const STEP_FETCH_PIPELINING = 1;
 // @internal
 export const STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE: string;
 
-// @public
+// @public @input
 type StepClientTranscriptOptions = {
     since?: number | undefined;
     afterEventIndex?: {
@@ -1708,7 +1729,7 @@ export type StepDelegateFn = (subagent: SpeakerDef, options: DelegateOptions) =>
 // @internal
 export type StepFetch = (url: string, init?: StepFetchInit) => Promise<Response>;
 
-// @public
+// @public @input
 type StepFetchInit = {
     method?: string | undefined;
     headers?: Record<string, string> | undefined;
@@ -1716,7 +1737,7 @@ type StepFetchInit = {
     signal?: AbortSignal | undefined;
 };
 
-// @public
+// @public @sealed
 type StepInfo = {
     readonly name: string;
     readonly key: string;
@@ -1750,7 +1771,7 @@ type StepMcpServer = {
     readonly tools: readonly string[];
 };
 
-// @public
+// @public @input
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
     schema?: S | undefined;
@@ -1762,7 +1783,7 @@ export type StepReporter = (chunk: unknown, options?: {
     log?: boolean | undefined;
 }) => void | Promise<void>;
 
-// @public
+// @public @input
 type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
     schema: S;
 };
@@ -1770,7 +1791,7 @@ type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOpti
 // @internal
 export type StepWebhookMinter = (token: string) => string;
 
-// @public
+// @public @input
 type StreamOptions = {
     namespace?: string;
     startIndex?: number;
@@ -1820,7 +1841,7 @@ type ToolChoice = "auto" | "required" | "none" | {
     toolName: string;
 };
 
-// @public
+// @public @input
 type ToolCompletionMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -1846,7 +1867,7 @@ type ToolContext = {
     random: RandomSource;
 };
 
-// @public
+// @public @input
 type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description: string;
     inputSchema?: P;
@@ -1858,7 +1879,7 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
 // @public
 export type ToolDefRecord = Record<string, ToolDef>;
 
-// @public
+// @public @input
 type ToolDelayedMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -1885,14 +1906,14 @@ export type ToolMessageBase = {
     when?: ToolMessageCondition[] | undefined;
 };
 
-// @public
+// @public @input
 type ToolMessageCondition = {
     arg: string;
     op?: ToolConditionOperator | undefined;
     value: string | number | boolean | null;
 };
 
-// @public
+// @public @sealed
 type ToolMessages = {
     start?: ToolStartMessage[] | undefined;
     delayed?: ToolDelayedMessage[] | undefined;
@@ -1900,7 +1921,7 @@ type ToolMessages = {
     failed?: ToolCompletionMessage[] | undefined;
 };
 
-// @public
+// @public @input
 type ToolMessagesInput = {
     start?: boolean | string | readonly (string | ToolStartMessage)[];
     delayed?: readonly ToolDelayedMessage[];
@@ -1909,7 +1930,7 @@ type ToolMessagesInput = {
 };
 
 // @public
-type ToolRefusalReason = "unknown_tool" | "invalid_arguments" | "cancelled" | "persona" | "dialog" | "roster";
+type ToolRefusalReason = "unknown_tool" | "invalid_arguments" | "cancelled" | "persona" | "dialog" | "roster" | (string & {});
 
 // @public
 type ToolSchema = {
@@ -1920,7 +1941,7 @@ type ToolSchema = {
     messages?: ToolMessages | undefined;
 };
 
-// @public
+// @public @input
 type ToolStartMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
@@ -1950,7 +1971,7 @@ type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
 // @public
 type TurnDetectionMode = "auto" | "manual" | (string & {});
 
-// @public
+// @public @input
 interface TurnTakingTuning {
     detection?: TurnDetectionMode;
     maxSilenceMs?: number;
@@ -1960,12 +1981,12 @@ interface TurnTakingTuning {
     userTurnLimit?: UserTurnLimit;
 }
 
-// @public
+// @public @sealed
 interface TypedDelegateResult<T> extends DelegateResult {
     object: T;
 }
 
-// @public
+// @public @input
 interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
@@ -1989,7 +2010,7 @@ export const UPLOAD_TOKEN_RE: RegExp;
 // @internal
 export type UploadAccess = UploadReader & Partial<UploadWriter>;
 
-// @public
+// @public @sealed
 type UploadInfo = {
     id: string;
     name: string;
@@ -1999,7 +2020,7 @@ type UploadInfo = {
     ranges?: readonly UploadRange[];
 };
 
-// @public
+// @public @sealed
 type UploadRange = {
     start: number;
     end: number;
@@ -2026,24 +2047,24 @@ export type UploadWriter = {
     create(meta: UploadWriteMeta, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
 };
 
-// @public
+// @public @input
 interface UserTurnLimit {
     maxDurationMs?: number | undefined;
     maxWords?: number | undefined;
 }
 
-// @public
+// @public @input
 type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     timeoutMs: number;
     schema?: S | undefined;
 };
 
-// @public
+// @public @input
 type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     schema: S;
 };
 
-// @public
+// @public @input
 type WakeUpOptions = {
     correlationIds?: string[];
 };
@@ -2051,7 +2072,7 @@ type WakeUpOptions = {
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
-// @public
+// @public @sealed
 type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
@@ -2075,7 +2096,7 @@ type WorkflowClient = {
     listing(): WorkflowSummary[];
 };
 
-// @public
+// @public @sealed
 type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
@@ -2093,7 +2114,7 @@ type WorkflowContext = {
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
-// @public
+// @public @input
 type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
@@ -2103,7 +2124,7 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
 };
 
-// @public
+// @public @sealed
 type WorkflowFailureContext<I = unknown> = {
     readonly runId: string;
     readonly workflow: string;
@@ -2119,7 +2140,7 @@ type WorkflowFailureHandler<I = unknown> = WorkflowFailureHook<I> | {
 // @public
 type WorkflowFailureHook<I = unknown> = (error: Error, context: WorkflowFailureContext<I>) => Promise<void> | void;
 
-// @public
+// @public @sealed
 type WorkflowRunBase = {
     runId: string;
     workflow: string;
@@ -2150,7 +2171,7 @@ type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 // @public
 type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
-// @public
+// @public @sealed
 type WorkflowSummary = {
     name: string;
     description?: string;

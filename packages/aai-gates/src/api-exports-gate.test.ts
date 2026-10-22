@@ -158,6 +158,7 @@ describe("API-EXPORTS.json", () => {
       "WorkflowContextRecorder",
       "createRecordingWorkflows",
       "createRunSnapshot",
+      "createSlotStore",
       "createStubWorkflows",
       "createToolContext",
       "createWorkflowContext",

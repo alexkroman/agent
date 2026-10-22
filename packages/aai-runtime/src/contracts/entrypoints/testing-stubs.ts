@@ -31,6 +31,7 @@
 
 export {
   createRunSnapshot,
+  createSlotStore,
   createStubWorkflows,
   createToolContext,
   createWorkflowContext,

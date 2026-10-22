@@ -31,7 +31,7 @@
  * must stay tiny, while an upload is read once per step execution by whichever
  * step asks for it.
  */
-export const MAX_WORKFLOW_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024;
+export const MAX_WORKFLOW_UPLOAD_BYTES: number = 2 * 1024 * 1024 * 1024;
 
 /** Env key an agent raises or lowers {@link MAX_WORKFLOW_UPLOAD_BYTES} with. */
 export const MAX_UPLOAD_BYTES_ENV = "AAI_MAX_UPLOAD_BYTES";
@@ -45,7 +45,7 @@ export const MAX_UPLOAD_BYTES_ENV = "AAI_MAX_UPLOAD_BYTES";
  * the row count of a 230 MB recording in the low hundreds while staying well
  * inside what a single `bytea` value and one round trip should carry.
  */
-export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
+export const UPLOAD_CHUNK_BYTES: number = 1024 * 1024;
 
 /**
  * How much of a file one PART of a parallel upload carries, by default.
@@ -130,7 +130,7 @@ export const UPLOAD_CHUNK_BYTES = 1024 * 1024;
  * at 4 MiB is accepted by a server that cuts at 8, and the reverse. Check that
  * before moving this; alignment on the part size would make it a wire break.
  */
-export const UPLOAD_PART_BYTES = 8 * 1024 * 1024;
+export const UPLOAD_PART_BYTES: number = 8 * 1024 * 1024;
 
 /**
  * How many parts a parallel upload keeps in flight, by default.
@@ -347,4 +347,4 @@ export const UPLOAD_ID_PREFIX = "upl_";
  *
  * 64 characters is twice a hyphenless UUID with room for a caller's own prefix.
  */
-export const UPLOAD_TOKEN_RE = /^[A-Za-z0-9_-]{1,64}$/;
+export const UPLOAD_TOKEN_RE: RegExp = /^[A-Za-z0-9_-]{1,64}$/;

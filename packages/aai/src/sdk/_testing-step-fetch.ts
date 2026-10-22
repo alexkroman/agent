@@ -28,7 +28,11 @@ async function drainBody(
   return collectBytes(body);
 }
 
-/** One request a {@link stubStepFetch} recorder captured. */
+/**
+ * One request a {@link stubStepFetch} recorder captured.
+ *
+ * @sealed
+ */
 export type StubStepRequest = {
   url: string;
   method: string;
@@ -59,7 +63,11 @@ export type StubStepAnswer =
   | Response
   | { status?: number; body?: unknown; headers?: Record<string, string> };
 
-/** What {@link stubStepFetch} returns. */
+/**
+ * What {@link stubStepFetch} returns.
+ *
+ * @sealed
+ */
 export type StubStepFetch = {
   /** Every request the step made, in order. */
   calls: StubStepRequest[];
