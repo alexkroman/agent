@@ -151,11 +151,12 @@ describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
    * Load a fresh module graph with debug logging on, so `consoleLogger.debug`
    * (bound at import time from `debugLoggingEnabled`) is live `console.debug`.
    */
-  async function withDebugModule(): Promise<{
+  async function withDebugModule(env: Record<string, string> = {}): Promise<{
     open: typeof openAssemblyAI;
     debugSpy: ReturnType<typeof vi.spyOn>;
   }> {
     vi.stubEnv("AAI_DEBUG", "1");
+    for (const [key, value] of Object.entries(env)) vi.stubEnv(key, value);
     vi.resetModules();
     const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => undefined);
     const mod = await import("./assemblyai.ts");
@@ -226,6 +227,38 @@ describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
       "AssemblyAI STT turn",
       expect.objectContaining({ transcript: "", endOfTurn: true }),
     );
+
+    await session.close();
+  });
+
+  test("in production the trace carries a character count, never the words", async () => {
+    // A contained guest (AAI_SANDBOX_CONTAINED=1, the platform's spawners) is
+    // production: AAI_DEBUG still turns the trace on — the end-of-turn flags
+    // and confidence are what an endpointing question needs — but the
+    // transcript itself is redacted to its length (logger.transcriptField).
+    const { open, debugSpy } = await withDebugModule({ AAI_SANDBOX_CONTAINED: "1" });
+    const provider = open({ model: "u3pro-rt" }, fakeTranscriber);
+    const session = (await provider.open({
+      sampleRate: 16_000,
+      apiKey: "k",
+      signal: new AbortController().signal,
+    })) as AssemblyAISession;
+    const fake = fakeOf(session);
+
+    fake._fire("turn", { transcript: "track my order T-O-999", end_of_turn: true } as TurnEvent);
+    await flush();
+
+    expect(debugSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+      "AssemblyAI STT turn",
+      {
+        transcriptChars: 22,
+        endOfTurn: true,
+        formatted: undefined,
+        endOfTurnConfidence: undefined,
+      },
+    );
+    expect(JSON.stringify(debugSpy.mock.calls)).not.toContain("T-O-999");
 
     await session.close();
   });

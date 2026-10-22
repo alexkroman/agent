@@ -13,7 +13,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { AssemblyAI, type StreamingTranscriber, type StreamingTranscriberParams } from "assemblyai";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import { createAudioSendGate } from "../../_audio-gate.ts";
-import { consoleLogger } from "../../logger.ts";
+import { consoleLogger, transcriptField } from "../../logger.ts";
 import {
   closeAfterFlush,
   closeOnAbort,
@@ -275,10 +275,11 @@ export function openAssemblyAI(
         // before the empty-text early return and with the service's own flags,
         // so a word that appears in an interim turn and is then revised out of
         // the final one is attributable to STT rather than to the transport's
-        // turn aggregation (see pipeline-user-speech.ts's matching trace).
+        // turn aggregation (see pipeline-user-speech.ts's matching trace). In
+        // production the transcript is a character count (`transcriptField`).
         const endOfTurnConfidence = readEndOfTurnConfidence(event);
         consoleLogger.debug("AssemblyAI STT turn", {
-          transcript: text,
+          ...transcriptField("transcript", text),
           endOfTurn: event.end_of_turn,
           formatted: event.turn_is_formatted,
           endOfTurnConfidence,

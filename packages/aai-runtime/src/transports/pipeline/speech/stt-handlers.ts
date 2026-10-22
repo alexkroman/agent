@@ -14,7 +14,7 @@
 
 import { DEFAULT_FALSE_INTERRUPTION_PROMPT } from "@alexkroman1/aai/host-internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { debugPartialsEnabled, type Logger } from "../../../logger.ts";
+import { debugPartialsEnabled, type Logger, transcriptField } from "../../../logger.ts";
 import type { SttTurnMeta } from "../../../providers/openers.ts";
 import type { TransportCallbacks } from "../../types.ts";
 import type { FalseInterruptionRecovery } from "../heard/index.ts";
@@ -38,10 +38,17 @@ import type { UserTurnLimiter } from "./user-turn-limit.ts";
  * carries the same text plus `end_of_turn` and the end-of-turn confidence —
  * that is the raw material for measuring an endpointing policy, and silencing
  * the redundant copy must not lose it.
+ *
+ * The text itself goes through `transcriptField`, as every line here that
+ * carries what the caller said does: in production it is a character count.
  */
 function tracePartial(log: Logger, sid: string, text: string, meta?: SttTurnMeta): void {
   if (!debugPartialsEnabled) return;
-  log.debug("Pipeline STT partial", { sid, text, eot: meta?.endOfTurnConfidence });
+  log.debug("Pipeline STT partial", {
+    sid,
+    ...transcriptField("text", text),
+    eot: meta?.endOfTurnConfidence,
+  });
 }
 
 /**
@@ -219,7 +226,12 @@ export function createSttEventHandlers(deps: {
   const callerLevel = createCallerLevel();
   let vetoLogged = false;
   function levelFields(reading: CallerLevelReading, text: string): Record<string, unknown> {
-    return { sid: deps.sid, peakDb: reading.peakDb, refDb: reading.refDb, text };
+    return {
+      sid: deps.sid,
+      peakDb: reading.peakDb,
+      refDb: reading.refDb,
+      ...transcriptField("text", text),
+    };
   }
 
   /**
@@ -351,7 +363,7 @@ export function createSttEventHandlers(deps: {
       // Debug trace (AAI_DEBUG=1): pairs with "Pipeline turn committed" below.
       // Finals that differ from the commit locate a loss in aggregation; a
       // commit that matches the finals locates it in STT instead.
-      log.debug("Pipeline STT final", { sid: deps.sid, text: trimmed });
+      log.debug("Pipeline STT final", { sid: deps.sid, ...transcriptField("text", trimmed) });
       vetoLogged = false;
       const level = callerLevel.read(meta?.inputPeakDbfs);
       if (!manualTurn.enabled && dropsQuietFinal(trimmed, level)) return;

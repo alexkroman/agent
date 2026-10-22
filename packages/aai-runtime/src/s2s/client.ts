@@ -21,7 +21,7 @@ import {
   type HeaderWebSocket,
 } from "../_ws.ts";
 import type { Logger } from "../logger.ts";
-import { consoleLogger, debugLoggingEnabled } from "../logger.ts";
+import { consoleLogger, debugLoggingEnabled, transcriptLoggingEnabled } from "../logger.ts";
 import type { S2sConfig } from "../s2s-config.ts";
 import {
   type DispatchContext,
@@ -326,8 +326,10 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     // without populating its required parameters. Without the full
     // payload we cannot tell apart "field-name mismatch" from
     // "model emitted no args." Guarded by the process-wide debug flag
-    // (AAI_DEBUG=1) so the stringify itself is skipped when debug is off.
-    if (debugLoggingEnabled && obj.type === "tool.call") {
+    // (AAI_DEBUG=1) so the stringify itself is skipped when debug is off, and
+    // by the transcript gate: the arguments are the caller's words as the model
+    // repeated them, so a production log never carries the payload.
+    if (debugLoggingEnabled && transcriptLoggingEnabled && obj.type === "tool.call") {
       log.debug("S2S << tool.call payload", { payload: JSON.stringify(obj) });
     }
     if (obj.type === "reply.audio" && typeof obj.data === "string") {
