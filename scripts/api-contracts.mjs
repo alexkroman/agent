@@ -15,19 +15,22 @@
  * by a file under `<package>/src/contracts/entrypoints/` — gets its own report,
  * and what is committed is that report's hash, export list and rollup, at
  * `<package>/src/contracts/epochs/<capability>/v<N>.json` + `v<N>.rollup.txt`.
- * When a capability's hash moves, the check FAILS (the record is stale, like a
- * stale API report) and says which command settles it:
+ * When a capability's hash moves, the new rollup is probed against the epoch's
+ * pinned one (`_api-contracts-compat.mjs`):
  *
- *   * `--update` when the change is PROVABLY backward compatible
- *     (`_api-contracts-compat.mjs` compiles the epoch's rollup against the new
- *     one): it becomes a REVISION of the same epoch — no new epoch, no example.
- *   * `--bump <capability> --drop "<reason>"` when it is not: the previous
- *     epoch no longer works, and the tree records why.
- *   * `--bump <capability> --retain` when the probe could not prove it but the
- *     author can: the previous epoch stays supported and owes a frozen example
- *     under `src/contracts/compatibility/` that must keep compiling.
+ *   * PROVABLY backward compatible: the check PASSES and writes nothing. The
+ *     record's sha is only a fast path that skips the probe.
+ *   * Not: the check FAILS and names the settling command —
+ *     `--bump <capability> --drop "<reason>"` (the previous epoch no longer
+ *     works, and the tree records why) or `--bump <capability> --retain` (the
+ *     probe could not prove it but the author can: the previous epoch stays
+ *     supported and owes a frozen example under `src/contracts/compatibility/`).
  *
- * At most one epoch and one revision per capability per BRANCH, measured
+ * A MIRROR capability (`{ "mirrors": "aai:testing" }` in the table) only
+ * re-exports another package's capability and carries no epoch of its own
+ * (`_api-contracts-mirror.mjs`).
+ *
+ * At most one epoch per capability per BRANCH, measured
  * against the merge-base (`_api-contracts-base.mjs`); every hashed declaration
  * has exactly one owner (`_api-contracts-ownership.mjs`). Old epoch metadata
  * is retained, so "when did this break, and what did we say" is in the tree.
@@ -45,9 +48,9 @@
  * ## Usage
  *
  *   node scripts/api-contracts.mjs                              # the gate
- *   node scripts/api-contracts.mjs --update                     # record compatible changes
  *   node scripts/api-contracts.mjs --bump aai:tool --drop "…"   # classify a break
  *   node scripts/api-contracts.mjs --bump aai-ui:forms --retain
+ *   node scripts/api-contracts.mjs --unbump aai:tool            # discard this branch's unneeded epoch
  *   node scripts/api-contracts.mjs --retire aai:step --epoch 3 --drop "…"
  *   node scripts/api-contracts.mjs --update-internal            # lower the ratchets
  *   node scripts/api-contracts.mjs --init                       # bootstrap epoch 1
@@ -67,7 +70,7 @@ import {
   internalSurfaceSnapshot,
   runChecks,
 } from "./_api-contracts-checks.mjs";
-import { applyUpdate, fixtureFiles, planBump, verdict } from "./_api-contracts-mint.mjs";
+import { fixtureFiles, planBump, unbump, verdict } from "./_api-contracts-mint.mjs";
 import {
   lowerOwnershipBaseline,
   ownershipBlockers,
@@ -81,6 +84,7 @@ import {
   contractPackages,
   epochRecord,
   fixturePath,
+  isMirror,
   readEpoch,
   readTable,
   recordShas,
@@ -93,7 +97,7 @@ import {
 import { parseScriptArgs } from "./_args.mjs";
 
 /**
- * Strict, because every one of these five flags decides what gets WRITTEN.
+ * Strict, because every one of these flags decides what gets WRITTEN.
  *
  * The old reader answered `""` for a value flag in final position, so
  * `--bump` with nothing after it ran `bump("")` and `--drop` with nothing after
@@ -113,7 +117,7 @@ const { values: FLAGS } = parseScriptArgs({
     init: { type: "boolean" },
     "update-internal": { type: "boolean" },
     rehash: { type: "boolean" },
-    update: { type: "boolean" },
+    unbump: { type: "string" },
     base: { type: "string" },
     because: { type: "string" },
   },
@@ -168,7 +172,17 @@ function resolveTarget(target) {
     .filter((pkg) => capabilities(pkg).includes(right))
     .map((pkg) => ({ pkg, capability: right }));
   const [only] = matches;
-  if (matches.length === 1 && only !== undefined) return only;
+  if (matches.length === 1 && only !== undefined) {
+    const mirrored = readTable(only.pkg)[right]?.mirrors;
+    if (mirrored !== undefined) {
+      console.error(
+        `api-contracts: "${capabilityId(only.pkg, right)}" mirrors ${mirrored} and has no epoch ` +
+          `of its own — classify the change on ${mirrored}.`,
+      );
+      process.exit(1);
+    }
+    return only;
+  }
   const known = packages
     .flatMap((pkg) => capabilities(pkg).map((capability) => capabilityId(pkg, capability)))
     .join(", ");
@@ -256,7 +270,7 @@ function retire(target) {
 }
 
 /**
- * `--bump`: classify a change `--update` could not prove compatible.
+ * `--bump`: classify a change the probe could not prove compatible.
  *
  * `planBump` (`_api-contracts-mint.mjs`) decides WHERE it lands: at most one
  * new epoch per branch, measured against the merge-base, and back onto a
@@ -306,10 +320,17 @@ function bump(target) {
     process.exit(1);
   }
   const outcome = verdict(pkg, capability, contract, generated);
-  if (["revision", "restore", "unmint"].includes(outcome.kind)) {
+  if (outcome.kind === "compatible") {
     console.error(
-      `api-contracts: "${id}"'s change is backward compatible with epoch ${contract.current} — ` +
-        "record it with `node scripts/api-contracts.mjs --update`, no bump needed.",
+      `api-contracts: "${id}"'s change is backward compatible with epoch ${outcome.epoch} — ` +
+        "the gate passes it as it is; there is nothing to record.",
+    );
+    process.exit(1);
+  }
+  if (outcome.kind === "unmint") {
+    console.error(
+      `api-contracts: "${id}"'s change is compatible with main's epoch ${outcome.epoch}, so ` +
+        `the epoch this branch minted is not needed: \`--unbump ${id}\`.`,
     );
     process.exit(1);
   }
@@ -337,31 +358,34 @@ function bump(target) {
 }
 
 /**
- * `--update`: re-verify every stale capability and record what needs no human
- * decision — a revision, an in-place rewrite of an epoch minted on this
- * branch, or a restore to the merge-base. Exits non-zero naming whatever is
- * left for `--bump`.
+ * `--unbump`: discard the epoch THIS BRANCH minted for one capability, when
+ * the change it was minted for turned out compatible with main's epoch after
+ * all (the check names this command when it is so). Refuses anything else —
+ * an epoch on main is a promise, and only `--retire` withdraws one.
  */
-function update() {
-  let failed = false;
-  for (const pkg of packages) {
-    const reports = generateCapabilityReports(pkg);
-    const findings = ownershipFindings(pkg, reports);
-    const { lines, unresolved } = applyUpdate(pkg, readTable(pkg), reports, (capability) =>
-      ownershipBlockers(pkg, findings, capability),
-    );
-    for (const line of lines) console.log(`api-contracts: ${line}`);
-    for (const line of unresolved) console.error(`api-contracts: ${line}`);
-    if (unresolved.length > 0) failed = true;
-  }
-  if (failed) {
+function unbumpOne(target) {
+  const { pkg, capability } = resolveTarget(target);
+  const id = capabilityId(pkg, capability);
+  const table = readTable(pkg);
+  const contract = table[capability];
+  const generated = generateCapabilityReports(pkg).get(capability);
+  const outcome =
+    contract === undefined || generated === undefined
+      ? undefined
+      : verdict(pkg, capability, contract, generated);
+  if (contract === undefined || outcome?.kind !== "unmint") {
     console.error(
-      '\napi-contracts: classify what is left with --bump <capability> --drop "<reason>", or ' +
-        "--retain with a frozen example if you can show it still compiles.",
+      `api-contracts: "${id}" has no epoch minted on this branch that main's epoch already ` +
+        "covers, so there is nothing to discard. Run the check for what it does need.",
     );
     process.exit(1);
   }
-  console.log("api-contracts: every capability is recorded.");
+  table[capability] = unbump(pkg, capability, contract, outcome);
+  writeTable(pkg, table);
+  console.log(
+    `api-contracts: "${id}": discarded epoch ${contract.current}, minted on this branch; ` +
+      `epoch ${outcome.epoch} is current again.`,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -382,8 +406,8 @@ if (FLAGS["update-internal"] === true) {
   process.exit(0);
 }
 
-if (FLAGS.update === true) {
-  update();
+if (FLAGS.unbump !== undefined) {
+  unbumpOne(FLAGS.unbump);
   process.exit(0);
 }
 
@@ -405,6 +429,7 @@ if (bumpTarget !== undefined) {
 }
 
 const issues = [];
+const notes = [];
 const summary = [];
 let checked = 0;
 
@@ -425,10 +450,15 @@ for (const pkg of packages) {
     reports: () => generateCapabilityReports(pkg, present),
   });
   issues.push(...outcome.issues);
+  notes.push(...outcome.notes);
   checked += present.length;
   summary.push(
     `${pkg.name}: ${Object.entries(table)
-      .map(([capability, { current }]) => `${capability}@${current}`)
+      .map(([capability, contract]) =>
+        isMirror(contract)
+          ? `${capability}=>${contract.mirrors}`
+          : `${capability}@${contract.current}`,
+      )
       .join(" ")}`,
   );
   for (const warning of outcome.warnings) {
@@ -449,6 +479,13 @@ if (issues.length > 0) {
   console.error(`\napi-contracts: ${issues.length} issue(s):\n`);
   for (const issue of issues) console.error(`  ${issue.replaceAll("\n", "\n  ")}\n`);
   process.exit(1);
+}
+
+if (notes.length > 0) {
+  // Not a finding: each moved, and the probe PROVED it compatible with the
+  // epoch's pinned rollup, so nothing is recorded. Printed so a changeset can
+  // name the additions.
+  console.log(`api-contracts: compatible, unrecorded:\n  ${notes.join("\n  ")}`);
 }
 
 console.log(

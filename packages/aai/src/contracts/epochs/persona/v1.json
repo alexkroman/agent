@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "persona",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "24e6f0b72ea87043e1327953f5b7d4c7a5ea4a88b45563fcd236afbe0465fde2",
+  "rule": 3,
+  "sha256": "2f282d8f7825f3aa0d94935ddf0ca8fa48b730f23bc421435beaae6aa050d185",
   "exports": [
     "DELEGATE_TOOL_NAME",
     "HANDOFF_TOOL_NAME",

@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "procedure",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "7b870d6727f3fcef14615dc90c40703a656ea944394388861df1b1a003c73e77",
+  "rule": 3,
+  "sha256": "9b630dd569622dfc137513451f6463866657b2702490c1167c81ccad581db604",
   "exports": ["Procedure", "ProcedureNotFinishedError", "ProcedureRunOptions", "procedure"],
   "rollup": "de71072ae5c2d8a1962327c5e7d5eea5fb27b0b7523f07ffe6a31de565be60a0"
 }

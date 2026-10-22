@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "spoken",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "9a5d2a437ba6c92b995ed3d5b25e75bd035634adb075b39558420be36dc50999",
+  "rule": 3,
+  "sha256": "ae042f9626386bc6b9511635a416759bcf63845438488821d1b97339fc66c1d1",
   "exports": [
     "MintCodeOptions",
     "ResolveOneOptions",

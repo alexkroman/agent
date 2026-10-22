@@ -11,18 +11,26 @@
  */
 
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 
-import { baseEpoch, branchState } from "./_api-contracts-base.mjs";
+import { omitUndefined } from "../packages/aai/src/sdk/omit-undefined.ts";
+import { parseEntrypoint } from "./_api-contracts.mjs";
+import { atBase, branchState } from "./_api-contracts-base.mjs";
 import { probeCompatibility } from "./_api-contracts-compat.mjs";
-import { branchGrowth } from "./_api-contracts-epochs.mjs";
+import { branchGrowth, isMirror } from "./_api-contracts-epochs.mjs";
 import { HASH_RULE } from "./_api-contracts-hash.mjs";
 import { verdict } from "./_api-contracts-mint.mjs";
+import { entrypointNames, mirrorProblems, parseMirrorTarget } from "./_api-contracts-mirror.mjs";
 import {
+  capabilities,
   capabilityId,
+  contractPackages,
   epochPath,
   latestEpoch,
   readEpoch,
   readRollup,
+  readTable,
+  recordShas,
   rel,
   rollupPath,
   sha256Of,
@@ -50,7 +58,7 @@ export function classify(previous, next) {
 /**
  * The current epoch is hashed under this rule and pins the rollup it was
  * minted from — the OLD side of every compatibility probe, so an edited or
- * missing one would let a revision be proven against the wrong thing.
+ * missing one would let a change be proven against the wrong thing.
  */
 function checkRollup(pkg, capability, current, committed, fail) {
   const path = rollupPath(pkg, capability, current);
@@ -65,8 +73,8 @@ function checkRollup(pkg, capability, current, committed, fail) {
   if (body === undefined || sha256Of(body) !== committed.rollup) {
     fail(
       `${rel(path)} ${body === undefined ? "is missing" : "does not match the sha its epoch pins"}. ` +
-        "It is the rollup the epoch was minted from and the baseline every revision is proven " +
-        "against; restore it from git rather than regenerating it.",
+        "It is the rollup the epoch was minted from and the baseline every later change is " +
+        "proven against; restore it from git rather than regenerating it.",
     );
     return false;
   }
@@ -80,11 +88,12 @@ function checkRollup(pkg, capability, current, committed, fail) {
  * A rollup imports its sibling packages by specifier, and those resolve to
  * their CURRENT `dist` — so when `@alexkroman1/aai/protocol` stopped exporting
  * `SessionEvent`, five `aai-runtime` rollups stopped compiling with no change
- * of their own, and nothing noticed: the hash was taken from today's report and
- * still matched. The first moved hash in any of them would have been probed
- * against a baseline full of errors and read as a break nobody made. So the
- * check asks every current epoch's rollup the probe's own question, with itself
- * as the new side, and fails loudly on the first sign of rot.
+ * of their own. The probe now re-points a workspace import at whichever
+ * subpath exports the name today (`_api-contracts-imports.mjs`), so a MOVED
+ * name re-pins itself in memory; what is left for this check is a name that
+ * left its package, or a third-party type that changed under us — the first
+ * moved hash would otherwise be probed against a baseline full of errors and
+ * read as a break nobody made.
  */
 function checkRollupCompiles(pkg, capability, current, fail) {
   const body = readRollup(pkg, capability, current);
@@ -94,29 +103,30 @@ function checkRollupCompiles(pkg, capability, current, fail) {
   fail(
     `${rel(rollupPath(pkg, capability, current))} no longer compiles against the current tree ` +
       `(it does not probe compatible with ITSELF):\n    ${probe.problems.slice(0, 6).join("\n    ")}\n` +
-      "  Something it imports moved (a sibling package's export, usually). RE-PIN it: edit the " +
-      "rollup as little as it takes to compile — the import's new source, never the declarations — " +
-      `then set \`rollup\` in ${rel(epochPath(pkg, capability, current))} to the new text's sha256 ` +
-      "(the file minus its trailing newline). The capability's `sha256` does not move: it is taken " +
-      "from today's report, not from the rollup.",
+      "  A subpath move is re-pinned automatically, so something it imports left its package " +
+      "(or a third-party type moved). RE-PIN it: edit the rollup as little as it takes to " +
+      "compile — the import's new source, never the declarations — then set `rollup` in " +
+      `${rel(epochPath(pkg, capability, current))} to the new text's sha256 (the file minus its ` +
+      "trailing newline). The capability's `sha256` does not move: it is taken from today's " +
+      "report, not from the rollup.",
   );
 }
 
-/** What a stale capability's message says to do, by verdict. */
+/** What a capability that is NOT provably compatible owes, by verdict. */
 function staleAdvice(id, current, outcome) {
-  const update = "    node scripts/api-contracts.mjs --update";
   switch (outcome.kind) {
-    case "restore":
-      return `  It matches the merge-base's record again. Restore it:\n${update}`;
     case "unmint":
-      return `  Epoch ${current} was minted on this branch, and the change is compatible with main's epoch ${outcome.epoch} after all. Discard it:\n${update}`;
-    case "refresh":
-      return `  Epoch ${current} was minted on this branch; rewrite it in place:\n${update}`;
-    case "revision":
       return (
-        "  The change is BACKWARD COMPATIBLE (checked" +
-        (outcome.added.length > 0 ? `; adds ${outcome.added.join(", ")}` : "") +
-        `), so it is a revision of epoch ${current}, not a new epoch. Record it:\n${update}`
+        `  Epoch ${current} was minted on this branch, but the change is compatible with main's ` +
+        `epoch ${outcome.epoch} after all, so it promises nothing new. Discard it:\n` +
+        `    node scripts/api-contracts.mjs --unbump ${id}`
+      );
+    case "refresh":
+      return (
+        `  Epoch ${current} was minted on this branch and the surface has moved again, past ` +
+        `what it recorded:\n    ${outcome.problems?.slice(0, 12).join("\n    ") ?? outcome.why}\n` +
+        "  Re-run the `--bump` you made; it rewrites this branch's epoch in place:\n" +
+        `    node scripts/api-contracts.mjs --bump ${id} --drop "<reason>"   (or --retain)`
       );
     default:
       return (
@@ -131,15 +141,13 @@ function staleAdvice(id, current, outcome) {
   }
 }
 
-/** The whole finding for one stale capability: what moved, and what settles it. */
-function staleMessage(pkg, capability, contract, committed, generated) {
-  const id = capabilityId(pkg, capability);
+/** The whole finding for one capability that needs a decision. */
+function staleMessage(id, contract, committed, generated, outcome) {
   const { added, removed, bump: byExports } = classify(committed.exports ?? [], generated.exports);
   const detail = [
     removed.length > 0 ? `\n  removed: ${removed.join(", ")}` : "",
     added.length > 0 ? `\n  added:   ${added.join(", ")}` : "",
   ].join("");
-  const outcome = verdict(pkg, capability, contract, generated);
   const bump = outcome.kind === "break" ? `${BREAKING_BUMP} — the probe found a break` : byExports;
   return (
     `The "${id}" capability no longer matches epoch ${contract.current}.${detail}\n` +
@@ -148,62 +156,124 @@ function staleMessage(pkg, capability, contract, committed, generated) {
 }
 
 /**
- * The generated report for each capability still matches its current epoch.
+ * Each capability's surface is still promised by its current epoch.
  *
- * A mismatch always FAILS — the committed record is stale, exactly like a
- * stale API report — but the message now says which command settles it:
- * `--update` when the change is provably compatible (a revision), `--bump`
- * only when it is not.
+ * The record's sha is a FAST PATH: equal to any hash the epoch has carried
+ * under this rule, the surface has not moved and nothing is probed. Otherwise
+ * the new rollup is probed against the epoch's pinned ORIGINAL rollup, and a
+ * compatible verdict PASSES with nothing written — it is reported in `notes`,
+ * with the export-list delta a changeset will want. Only a change the probe
+ * cannot prove compatible fails, naming the `--bump` (or `--unbump`) that
+ * settles it.
+ *
+ * @returns {{ issues: string[], notes: string[] }}
  */
 export function checkEpochs(pkg, table, reports) {
   const issues = [];
-  const fail = (message) => issues.push(message);
+  const notes = [];
   for (const [capability, contract] of Object.entries(table)) {
-    const { current } = contract;
     const generated = reports.get(capability);
-    if (generated === undefined) continue;
-    const path = epochPath(pkg, capability, current);
-    if (!existsSync(path)) continue; // checkInventory already reported it.
-    const committed = readEpoch(pkg, capability, current);
-    if (!checkRollup(pkg, capability, current, committed, fail)) continue;
-    checkRollupCompiles(pkg, capability, current, fail);
-    if (committed.sha256 === generated.sha256) continue;
+    if (isMirror(contract) || generated === undefined) continue;
+    checkOneEpoch(pkg, capability, contract, generated, { issues, notes });
+  }
+  return { issues, notes };
+}
 
-    fail(staleMessage(pkg, capability, contract, committed, generated));
+/** {@link checkEpochs} for one epoched capability. */
+function checkOneEpoch(pkg, capability, contract, generated, { issues, notes }) {
+  const fail = (message) => issues.push(message);
+  const { current } = contract;
+  if (!existsSync(epochPath(pkg, capability, current))) return; // checkInventory reported it.
+  const committed = readEpoch(pkg, capability, current);
+  if (!checkRollup(pkg, capability, current, committed, fail)) return;
+  checkRollupCompiles(pkg, capability, current, fail);
+  if (recordShas(committed).has(generated.sha256)) return;
+
+  const id = capabilityId(pkg, capability);
+  const outcome = verdict(pkg, capability, contract, generated);
+  if (outcome.kind !== "compatible") {
+    fail(staleMessage(id, contract, committed, generated, outcome));
+    return;
+  }
+  const additions = outcome.added ?? [];
+  const added = additions.length > 0 ? `; adds ${additions.join(", ")}` : "";
+  notes.push(`${id}@${current}: moved, compatible with epoch ${outcome.epoch} (checked${added})`);
+}
+
+/**
+ * At most ONE new epoch per capability per branch.
+ *
+ * `--bump` never stacks a second (it rewrites this branch's in place), so this
+ * only fires on a hand edit or an old flow — which is exactly how `aai:llm`
+ * went v4 to v7 on one PR. Silent without a merge-base.
+ */
+export function checkBranch(pkg, table) {
+  const issues = [];
+  for (const [capability, contract] of Object.entries(table)) {
+    if (isMirror(contract)) continue;
+    const state = branchState(pkg, capability);
+    if (state.base === null) continue;
+    const { minted } = branchGrowth(contract, state.base ?? undefined);
+    if (minted > 1) {
+      issues.push(
+        `"${capabilityId(pkg, capability)}" has ${minted} epochs this branch minted ` +
+          `(${state.baseLatest + 1}..${latestEpoch(contract)}). An epoch is a promise made on ` +
+          "main; supersede none of your own. Re-run the `--bump` from main's state — it now " +
+          "rewrites this branch's epoch in place.",
+      );
+    }
   }
   return issues;
 }
 
 /**
- * At most ONE new epoch, and one new revision, per capability per branch.
- *
- * `--bump` and `--update` never stack a second (they rewrite this branch's in
- * place), so this only fires on a hand edit or an old flow — which is exactly
- * how `aai:llm` went v4 to v7 on one PR. Silent without a merge-base.
+ * Every MIRROR capability is pure, carries only what its upstream contracts
+ * today, and drops nothing upstream still exports (`_api-contracts-mirror.mjs`).
  */
-export function checkBranch(pkg, table) {
+/** The epoched capability of ANOTHER package a mirror names, or `undefined`. */
+function mirrorUpstream(pkg, contract) {
+  const target = parseMirrorTarget(contract.mirrors);
+  if (target === undefined) return;
+  const upstream = contractPackages().find((candidate) => candidate.key === target.key);
+  if (upstream === undefined || upstream.key === pkg.key) return;
+  if (!capabilities(upstream).includes(target.capability)) return;
+  if (isMirror(readTable(upstream)[target.capability])) return;
+  return { upstream, capability: target.capability };
+}
+
+export function checkMirrors(pkg, table, reports) {
   const issues = [];
-  const fail = (message) => issues.push(message);
   for (const [capability, contract] of Object.entries(table)) {
-    const state = branchState(pkg, capability);
-    if (state.base === null) continue;
+    if (!isMirror(contract)) continue;
     const id = capabilityId(pkg, capability);
-    const onMain = state.epochOnMain(contract.current)
-      ? baseEpoch(epochPath(pkg, capability, contract.current))
-      : undefined;
-    const record = readEpoch(pkg, capability, contract.current);
-    const { minted, revised } = branchGrowth(contract, state.base ?? undefined, record, onMain);
-    if (revised > 1) {
-      fail(
-        `"${id}" epoch ${contract.current} gained ${revised} revisions on this branch; a branch ` +
-          "makes at most one. `--update` replaces this branch's revision rather than stacking one.",
+    const resolved = mirrorUpstream(pkg, contract);
+    if (resolved === undefined) {
+      issues.push(
+        `${rel(pkg.tablePath)}: "${capability}" mirrors "${contract.mirrors}", which is not an ` +
+          "epoched capability of ANOTHER contract package. Name it `<package>:<capability>`.",
       );
+      continue;
     }
-    if (minted > 1) {
-      fail(
-        `"${id}" has ${minted} epochs this branch minted (${state.baseLatest + 1}..${latestEpoch(contract)}). ` +
-          "An epoch is a promise made on main; supersede none of your own. Re-run the `--bump` " +
-          "from main's state — it now rewrites this branch's epoch in place.",
+    const generated = reports.get(capability);
+    if (generated === undefined) continue;
+    const entrypoint = join(pkg.entrypointRoot, `${capability}.ts`);
+    const baseText = atBase(entrypoint);
+    issues.push(
+      ...mirrorProblems({
+        id,
+        target: String(contract.mirrors),
+        body: generated.body,
+        upstreamPackage: String(resolved.upstream.name),
+        upstreamNames: parseEntrypoint(resolved.upstream, resolved.capability).names,
+        ...omitUndefined({
+          baseNames: baseText === undefined ? undefined : entrypointNames(baseText),
+        }),
+      }),
+    );
+    if (existsSync(join(pkg.epochRoot, capability))) {
+      issues.push(
+        `${rel(join(pkg.epochRoot, capability))}/ exists, but "${id}" is a mirror and carries no ` +
+          "epoch of its own. Delete the directory.",
       );
     }
   }

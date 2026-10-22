@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "inbox",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "0424b66c4b79d5583da7af12956c1fa1469160fdd7a0b3c3900d89819fa81787",
+  "rule": 3,
+  "sha256": "a0c5334c2e4b04f8a814589ed7398f6b8f5f82268803e4bdeeca64d4e2ab6fa0",
   "exports": [
     "CreateInboxOptions",
     "Inbox",

@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "html",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "8d828a02a83e7ba311f4ee245eadf3875d9e0c083fe86436564c89b4e703e721",
+  "rule": 3,
+  "sha256": "fa38c5050a0f3410cca71b8ecf797e50fcdfc9ea5f63c0982756b868e61170b1",
   "exports": ["FeedItem", "PageMetadata", "ParsedFeed", "htmlToText", "pageMetadata", "parseFeed"],
   "rollup": "35131036d3fd50014f47575e319c80062c0090770bd6dcbd3060b35880273f9d"
 }

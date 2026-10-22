@@ -2,7 +2,7 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "defaults",
   "epoch": 1,
-  "rule": 2,
+  "rule": 3,
   "sha256": "87c22f0965fbdac0bc81ba2f05cc06acebaa9195091c538f3990daef2ae647b3",
   "exports": ["DEFAULT_SYSTEM_PROMPT"],
   "rollup": "c8787abc3a13da1f67ed8ca47c4639aafee59d72e814192f196e596b434c5cdf"

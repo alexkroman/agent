@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "generate",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "2d72fca032f3f081d01bfa4c3b2d3ef2eafbd072f34b29451509543239f1034b",
+  "rule": 3,
+  "sha256": "821cd3187c35743e6afbd5ee7ebc82e6a04596a35857bcec219c44671e7936be",
   "exports": ["GenerateFn", "GenerateObjectResult", "GenerateOptions", "GenerateResult"],
   "rollup": "48cefdd40b611b6f09e5a76e174b882c42588f3a806f7b323d7d4534b560c293"
 }

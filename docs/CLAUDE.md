@@ -19,7 +19,7 @@ same published surface: the API reports (`packages/*/etc/*.api.md`, `API.md`,
 MOVE, is the move BREAKING, and what does it MEAN.
 
 **The procedure for a change to the published surface — regenerating, then
-recording a moved hash with `--update` / `--bump` — is the
+classifying a hash move the probe cannot prove compatible with `--bump` — is the
 `api-contract-epoch-bump` skill** (`.claude/skills/api-contract-epoch-bump/`).
 This guide holds the rules of the mechanism.
 
@@ -144,15 +144,21 @@ file under `<package>/src/contracts/entrypoints/` re-exporting from a published
 subpath. Its committed record is
 `packages/<pkg>/src/contracts/epochs/<capability>/v<N>.json` (hash + export
 list) beside `v<N>.rollup.txt` (pinned by sha). When a hash moves the check
-fails and names the settling command — see the `api-contract-epoch-bump` skill.
+probes it, and fails only when the probe cannot prove it compatible — see the
+`api-contract-epoch-bump` skill.
 
-### Revisions and the compatibility probe
+### Compatible changes pass unrecorded, and the compatibility probe
 
-- **A provably compatible change is a REVISION of the same epoch** (`--update`),
-  not a new epoch. `scripts/_api-contracts-compat.mjs` compiles the epoch's
-  ORIGINAL rollup and the new one as two modules with a probe, under `strict` +
-  `exactOptionalPropertyTypes`: every old name still exported; a TYPE mutually
-  assignable; a VALUE assignable new-to-old. `--bump` refuses a change the probe
+- **A provably compatible change PASSES with nothing written.** The record's sha
+  is a fast path only (equal to any sha the epoch carried under this rule,
+  nothing is probed); otherwise `scripts/_api-contracts-compat.mjs` compiles the
+  epoch's ORIGINAL rollup and the new one as two modules with a probe, under
+  `strict` + `exactOptionalPropertyTypes`: every old name still exported; a TYPE
+  mutually assignable; a VALUE assignable new-to-old. Always against the
+  ORIGINAL rollup, so compatible steps cannot drift from the promise. Records
+  change only on `--bump`, `--unbump` and `--rehash`; there is no `--update` (it
+  wrote ~90 revisions in a month against 50 epochs). Older records' `revisions`
+  still count as known-compatible shas. `--bump` refuses a change the probe
   proved compatible.
 - **Additive changes pass** (optional member, optional parameter, new export,
   widened parameter, narrowed return). **These need `--bump`**: a removed
@@ -162,14 +168,24 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
 - **Methods and constructors are compared strictly** (rewritten to
   function-typed properties), except the `label: L & Literal<L>` idiom, which
   TypeScript cannot relate strictly.
-- **A one-sided `any` is UNPROVEN** — a `--bump`, not a revision.
+- **A one-sided `any` is UNPROVEN** — a `--bump`, not a pass.
 - **`@sealed` means an author only RECEIVES the type** (a branded handle, a
   result or `ctx` object the SDK builds). A sealed type is probed new-to-old
-  only, so a new required member is a revision. **Never tag** anything an author
+  only, so a new required member is compatible. **Never tag** anything an author
   constructs, spreads, returns, passes in or implements (config and options
   objects, `ToolDef`, a provider, a callback parameter): there a new required
-  member IS the break. The tag is trusted, and adding it shows in the
-  `etc/*.api.md` diff.
+  member IS the break.
+- **`@input` is the mirror: an author CONSTRUCTS the type and the SDK only reads
+  it** (options, config). Probed old-to-new only, so a required member made
+  optional or a widened union in a property is compatible (`aai:step` v1 was
+  dropped solely for `PlaceCallOptions.agentUrl` becoming optional). Never tag a
+  type an author also receives. Both tags are trusted, read off the report's
+  `// @public @sealed|@input` line (on either side, so a pinned rollup predating
+  the tag still counts), masked to the old declaration in every other probe, and
+  show in the `etc/*.api.md` diff. `@input` is defined in the root `tsdoc.json`
+  and printed via `reportTsdocOptions` (`scripts/_api-surface.mjs`);
+  `docs/tsdoc.json` extends it for TypeDoc. Tagged both, a type is probed both
+  ways.
 - **Before compiling, the two sides are made to agree**
   (`scripts/_api-contracts-compat-rewrite.mjs`): same-named `unique symbol`
   brands are one symbol; long misuse-message literals read as one marker type; a
@@ -177,9 +193,15 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
   byte-identical, is taken once from the new rollup. Blind spot: a change to
   another capability's type that breaks only THIS capability's use of it is seen
   only by the owner's probe and the frozen examples.
+- **A workspace import is identified by its declaring PACKAGE, not its subpath**
+  (`scripts/_api-contracts-imports.mjs`): the hash prints `@alexkroman1/aai`, a
+  re-export whose source subpath moved is not a break, and before compiling the
+  probe re-points every pinned import at the subpath that exports the name today
+  (from `API-EXPORTS.json`) — so a moved name RE-PINS itself.
 - **Every current epoch's rollup must probe compatible with itself** (checked
   each run, `scripts/_api-contracts-staleness.mjs`), since rollups import
-  sibling packages' current `dist`. The fix is a RE-PIN: edit the rollup's
+  sibling packages' current `dist`. What still rots one is a name that left its
+  package (or a third-party type); the fix is a manual RE-PIN: edit the rollup's
   import source only, and set `rollup` in `v<N>.json` to the new text's sha256
   (file minus trailing newline); the capability `sha256` does not move.
 - **The checker is TypeScript 6** (`typescript-6` at the root), because TS 7
@@ -195,10 +217,19 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
 
 ### Epoch rules
 
-- **At most one epoch and one revision per capability per BRANCH**, measured
-  against the merge-base with `origin/main` (`--base <ref|none>` overrides). A
-  `--bump` whose hash equals a supported epoch points `current` back at it, so
-  `current` may be older than the newest epoch.
+- **At most one epoch per capability per BRANCH**, measured against the
+  merge-base with `origin/main` (`--base <ref|none>` overrides): a second
+  `--bump` rewrites this branch's epoch in place, and `--unbump` discards it
+  when the final change turned out compatible with main's epoch (the check names
+  it). A `--bump` whose hash equals a supported epoch points `current` back at
+  it, so `current` may be older than the newest epoch.
+- **A MIRROR capability carries no epoch**: an entry point that only re-exports
+  another package's capability is `{ "mirrors": "aai:testing" }` in
+  `contracts.json` (`aai-runtime:testing-stubs` and `:eval-stubs`, which minted
+  three epochs per SDK removal). The check holds it pure (declares nothing,
+  every name from the upstream package), a subset of the upstream capability's
+  names today, and refuses dropping a name upstream still exports
+  (`scripts/_api-contracts-mirror.mjs`). `--bump`/`--retire` refuse a mirror.
 - **Capabilities are QUALIFIED by package** — `aai`, `aai-ui` and `aai-runtime`
   carry contracts, and `workflow` exists in more than one. Anything a human
   types is `aai-ui:workflow`; a bare name works only when unambiguous, and
@@ -226,10 +257,10 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
 - **Every hashed declaration has exactly ONE owner**
   (`scripts/_api-contracts-ownership.mjs`). An UNOWNED declaration (exported but
   selected by no capability) or FORGOTTEN one (`ae-forgotten-export`) fails the
-  check, and `--bump`/`--update` refuse a capability reaching one. The remedy is
-  an owner; `src/contracts/unowned-surface.json` is a shrink-only baseline of
-  what remains, deliberate entries only (misuse/diagnostic types, the
-  `AgentConfig` family reached via `aai:testing`).
+  check, and `--bump` refuses a capability reaching one. The remedy is an owner;
+  `src/contracts/unowned-surface.json` is a shrink-only baseline of what
+  remains, deliberate entries only (misuse/diagnostic types, the `AgentConfig`
+  family reached via `aai:testing`).
 - **A retained epoch obliges a frozen, compiling example** at
   `packages/<pkg>/src/contracts/compatibility/<capability>/v<N>.ts` (`.tsx`
   where the package tsconfig sets `jsx`), written as that epoch was authored, so
@@ -249,8 +280,8 @@ fails and names the settling command — see the `api-contract-epoch-bump` skill
   reset to `0.13.0`: an epoch is a promise to a consumer, and none existed yet.
   Do it again only for that reason and only before release — once a consumer
   exists, deleting a dropped epoch's record hides a broken promise.
-- **Old epoch metadata is immutable**; only the current epoch's record moves, by
-  revision.
+- **Old epoch metadata is immutable**; the current epoch's record moves only by
+  `--rehash` or a re-pin.
 - **The export-list delta suggests the bump type** (removed name a break, added
   `minor`, unchanged `patch or minor`); a break the probe finds prints a break.
   A break is `minor` while the packages are on `0.x` (`BREAKING_BUMP`).
@@ -277,10 +308,43 @@ consumer can observe:
 - a declaration another capability of the package contracts is collapsed to its
   NAME, and the walk stops there;
 - string literal types over 80 characters read as `string`, and a `const`'s
-  literal values as their primitive.
+  literal values as their primitive;
+- (rule 3, `scripts/_api-contracts-canonical.mjs`) object members and union
+  members are sorted (call/construct signatures keep their order), `interface`
+  prints as `type` (its `extends` as an intersection), an UNEXPORTED
+  non-generic, non-recursive alias is inlined, redundant parentheses dropped,
+  methods read as function-typed properties, and workspace imports read by
+  package.
 
 `packages/aai-gates/src/api-contracts-hash.test.ts` pairs each normalization
 with the change that must still move the hash.
+
+**Explicit types keep the hash off the compiler**: `dist/*.d.ts` is emitted by
+`tsc` 7, so an INFERRED exported type is reprinted by a compiler upgrade.
+`check:api-shape` holds `tsc --isolatedDeclarations` findings per file to a
+shrink-only baseline (531 when it landed; too many to enable the flag).
+
+### Shapes that keep producing breaks: `check:api-shape`
+
+`scripts/check-api-shape.mjs` (a ratchet; the measures are
+`scripts/_api-shape.mjs`'s header) reads the COMMITTED reports and entry points
+and holds, per package, to `src/contracts/api-shape-baseline.json` (one finding
+per line; deleting the line is paying it down; `pnpm api-shape:update` lowers,
+never raises):
+
+- **G1 direction** — every exported object type a capability reaches is
+  `@sealed` or `@input`; flags types reached as input AND output (or against
+  their tag) and aliases cut from another type with `Omit`/`Pick`.
+- **G2 closed literals** — a literal-tuple `const`, a `Record` over literal
+  keys, a string-literal union without `(string & {})` in output position
+  (return, callback parameter, `@sealed` member). `exhaustiveByDesign` is the
+  permanent, reasoned allowlist.
+- **G3** — a contracted signature reaching a `NON_AUTHORING_SUBPATHS` name (the
+  hash sees only its name).
+- **G4** — per-capability budgets (40 exports / 600 own lines), third-party
+  types outside `THIRD_PARTY_ALLOWED`, and orphans (contracted types no
+  contracted function/const/class reaches).
+- **G5** — an unexported declaration hashed into more than one capability.
 
 ### Mechanics
 
@@ -289,8 +353,9 @@ with the change that must still move the hash.
 - The surface is read from the COMMITTED `etc/*.api.md`, so the report must be
   fresh first — `check.mjs` and CI order the two gates and assert it.
 - `packages/aai-gates/src/api-contracts-gate.test.ts` reads the contract tree
-  independently and asserts every selected name appears in its capability's
-  current epoch, so an empty extraction cannot pass.
+  independently and asserts each current epoch's export list is non-empty and
+  contained in its root (an unrecorded addition is legal; a dropped name is a
+  break that skipped `--bump`), so an empty extraction cannot pass.
 - `contracts/` is kept out of the tarballs (`.npmignore` in `aai`, and each
   `tsconfig.build.json` excludes it from the declaration emit), out of coverage,
   and declared as knip `entry` points — see "A new CONTRACT package owes four

@@ -10,10 +10,11 @@
  * import.
  *
  * DECLARED in `@alexkroman1/aai` (`/testing`, `/testing/vitest`), where
- * `aai:testing` versions them for a tool's or a step's own spec. This contract
- * is the promise that the ONE eval door keeps carrying them: a name dropped from
- * the re-export list breaks an eval file that never imported the SDK's testing
- * subpaths, and that is this package's change to classify, not the SDK's.
+ * `aai:testing` versions them for a tool's or a step's own spec. This is a
+ * MIRROR of that capability (`{ "mirrors": "aai:testing" }` in
+ * `contracts.json`): no epoch of its own. That the ONE eval door keeps carrying
+ * them is checked instead — dropping a name the SDK still exports is refused
+ * (`scripts/_api-contracts-mirror.mjs`).
  *
  * Its own capability rather than part of `eval`: the stubs' signatures move
  * with the SDK, and an SDK stub growing an option is not a change to the
@@ -23,8 +24,8 @@
  * testing doors (`/testing` the pure stubs, `/testing/vitest` the installers);
  * the rest of the SDK's helpers on those doors are `testing-stubs`'. This file
  * is not shipped and nothing imports it — it exists so `pnpm check:api-contracts` can
- * extract a report for this capability alone, hash it, and hold it to a
- * committed epoch. See `scripts/api-contracts.mjs`.
+ * extract its report and hold it to being a pure re-export of `aai:testing`.
+ * See `scripts/api-contracts.mjs`.
  */
 
 export {

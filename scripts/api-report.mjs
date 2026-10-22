@@ -96,11 +96,12 @@ import {
   rollupBody,
 } from "./_api-derived.mjs";
 import { capabilityOwners, INDEX_FILE, indexFile, packageDirsOf } from "./_api-index.mjs";
-import { collectExports, typedEntryPoints } from "./_api-surface.mjs";
+import { collectExports, reportTsdocOptions, typedEntryPoints } from "./_api-surface.mjs";
 import { parseCheckFlag } from "./_args.mjs";
 import { publishablePackages, readManifest, repoRoot } from "./_fs.mjs";
 
 const require = createRequire(import.meta.url);
+const TSDOC = reportTsdocOptions();
 const { Extractor, ExtractorConfig, ExtractorLogLevel } = require("@microsoft/api-extractor");
 
 const ROOT = repoRoot(import.meta.url).replace(/\/$/, "");
@@ -151,6 +152,8 @@ function runExtractor(packageDir, entry, { write }) {
         reportFolder,
         reportFileName,
         reportTempFolder: join(packageDir, "node_modules/.cache/api-extractor"),
+        // `@input` printed beside `@sealed` — see `reportTsdocOptions`.
+        tagsToReport: TSDOC.tagsToReport,
         // A type referenced by a public signature but not itself exported is
         // still part of the surface a consumer has to satisfy — they just have
         // no name to import it by. Left out of the report, changing one is
@@ -199,6 +202,7 @@ function runExtractor(packageDir, entry, { write }) {
     },
     configObjectFullPath: join(packageDir, "api-extractor.virtual.json"),
     packageJsonFullPath: join(packageDir, "package.json"),
+    tsdocConfigFile: TSDOC.tsdocConfigFile,
   });
 
   const result = Extractor.invoke(config, {

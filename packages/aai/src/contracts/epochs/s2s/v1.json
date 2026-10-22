@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "s2s",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "d614b307e150d02f78831d5d757f062f5bf6ca3455cd50cbb29daccaf9f66ae9",
+  "rule": 3,
+  "sha256": "c9a9a4f4ecd394ea6d368fa9a06ea1dddfc77d2ebffeb667b976da323b7c2da5",
   "exports": [
     "AssemblyAIS2sOptions",
     "OpenAIS2sOptions",

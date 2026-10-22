@@ -142,6 +142,7 @@ import {
   sharedModule,
 } from "./_api-contracts-compat-rewrite.mjs";
 import { referencedNames } from "./_api-contracts-hash.mjs";
+import { normalizedSpecifier, repinImports } from "./_api-contracts-imports.mjs";
 import { compareNames, declarationNames } from "./_api-surface.mjs";
 
 const require = createRequire(import.meta.url);
@@ -220,7 +221,9 @@ const originalName = (element) => (element.propertyName ?? element.name).text;
 
 function addStatement({ imports, declared, exported, reExported }, statement) {
   if (ts.isImportDeclaration(statement)) {
-    const module = statement.moduleSpecifier.text;
+    // By declaring PACKAGE: a workspace type re-exported through another
+    // subpath is the same type (`_api-contracts-imports.mjs`).
+    const module = normalizedSpecifier(statement.moduleSpecifier.text);
     for (const e of namedImports(statement))
       imports.set(e.name.text, `${module}#${originalName(e)}`);
     return;
@@ -353,7 +356,13 @@ function planProbes(oldBody, newBody, foreign) {
     if (problem !== undefined) problems.push(problem);
     else if (entry.reExport === undefined && changed(entry.name)) {
       const sealed = agreed.sealed.has(entry.name) && (entry.type || entry.klass);
-      const options = sealed ? { sealed, target: `__N.${sealedAlias(entry.name)}` } : {};
+      const options = sealed
+        ? {
+            sealed,
+            direction: agreed.direction.get(entry.name),
+            target: `__N.${sealedAlias(entry.name)}`,
+          }
+        : {};
       probes.push({ name: entry.name, text: probeFor(entry, probes.length, options) });
     }
   }
@@ -362,7 +371,11 @@ function planProbes(oldBody, newBody, foreign) {
   for (const name of agreed.masked) {
     if (oldExports.has(name) || !changed(name)) continue;
     const entry = kindOf(name, before.declared.get(name), before.sourceFile);
-    const options = { sealed: true, target: `__N.${sealedAlias(name)}` };
+    const options = {
+      sealed: true,
+      direction: agreed.direction.get(name),
+      target: `__N.${sealedAlias(name)}`,
+    };
     probes.push({ name, text: probeFor(entry, probes.length, options) });
   }
   const added = [...newExports.keys()].filter((name) => !oldExports.has(name)).sort(compareNames);
@@ -426,8 +439,10 @@ function locate(diagnostic, isOld, spans) {
  * @returns {{ compatible: boolean, problems: string[], unproven: string[], added: string[] }}
  */
 export function probeCompatibility({ oldBody, newBody, dir, foreign = new Set() }) {
-  const before = methodsAsProperties(oldBody);
-  const after = methodsAsProperties(newBody);
+  // A pinned rollup imports by the subpath that exported a name THEN; point it
+  // at today's, so a moved re-export does not rot it (`_api-contracts-imports.mjs`).
+  const before = methodsAsProperties(repinImports(oldBody));
+  const after = oldBody === newBody ? before : methodsAsProperties(repinImports(newBody));
   const { problems, probes, added, agreed } = planProbes(before, after, foreign);
   const probeDir = join(dir, ".api-contracts-probe");
   const oldPath = join(probeDir, "old.ts");

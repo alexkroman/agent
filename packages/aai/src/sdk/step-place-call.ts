@@ -111,7 +111,11 @@ export type PlaceCallCredentials = {
   readonly authToken: string;
 };
 
-/** What {@link stepPlaceCall} takes. */
+/**
+ * What {@link stepPlaceCall} takes.
+ *
+ * @input
+ */
 export type PlaceCallOptions = {
   /** The carrier that dials. `"twilio"` only, for now — see the module doc. */
   carrier: "twilio";

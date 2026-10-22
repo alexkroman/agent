@@ -279,3 +279,115 @@ describe("G5 — presentation is not contract", () => {
     expect(normalized(f("fast"))).not.toBe(normalized(f("slow")));
   });
 });
+
+describe("canonical form (rule 3) — spellings of one type hash alike", () => {
+  const iface = (members: string) => `// @public\nexport interface Options {\n${members}\n}`;
+
+  test("reordering interface members does not move the hash", () => {
+    const a = iface("    name: string;\n    retries?: number;");
+    const b = iface("    retries?: number;\n    name: string;");
+    expect(normalized(b)).toBe(normalized(a));
+  });
+
+  test("but changing a member's type still does", () => {
+    const a = iface("    name: string;\n    retries?: number;");
+    const b = iface("    name: string;\n    retries?: string;");
+    expect(normalized(b)).not.toBe(normalized(a));
+  });
+
+  test("reordering union members does not move the hash", () => {
+    const a = '// @public\nexport type Mode = "fast" | "slow";';
+    const b = '// @public\nexport type Mode = "slow" | "fast";';
+    expect(normalized(b)).toBe(normalized(a));
+  });
+
+  test("but adding a union member still does", () => {
+    const a = '// @public\nexport type Mode = "fast" | "slow";';
+    const b = '// @public\nexport type Mode = "fast" | "slow" | "turbo";';
+    expect(normalized(b)).not.toBe(normalized(a));
+  });
+
+  test("overload ORDER inside an object type is kept (it is observable)", () => {
+    const a = "// @public\nexport type On = {\n    (e: 'a'): void;\n    (e: 'b'): number;\n};";
+    const b = "// @public\nexport type On = {\n    (e: 'b'): number;\n    (e: 'a'): void;\n};";
+    expect(normalized(b)).not.toBe(normalized(a));
+  });
+
+  test("`interface` and `type` with the same shape hash alike", () => {
+    const a = iface("    name: string;");
+    const b = "// @public\nexport type Options = {\n    name: string;\n};";
+    expect(normalized(b)).toBe(normalized(a));
+  });
+
+  test("an interface's `extends` reads as the same intersection", () => {
+    const a = "// @public\nexport interface Options extends Base {\n    name: string;\n}";
+    const b = "// @public\nexport type Options = Base & {\n    name: string;\n};";
+    expect(normalized(b)).toBe(normalized(a));
+  });
+
+  test("a method and an arrow-typed property hash alike", () => {
+    const a = iface("    send(message: string): void;");
+    const b = iface("    send: (message: string) => void;");
+    expect(normalized(b)).toBe(normalized(a));
+  });
+
+  test("but making the method optional still moves it", () => {
+    const a = iface("    send(message: string): void;");
+    const b = iface("    send?(message: string): void;");
+    expect(normalized(b)).not.toBe(normalized(a));
+  });
+
+  test("inlining an UNEXPORTED alias does not move the hash", () => {
+    const a =
+      "// @public\nexport declare function f(options: Opts): void;\n\n" +
+      "// @public\ntype Opts = {\n    name: string;\n};";
+    const b = "// @public\nexport declare function f(options: {\n    name: string;\n}): void;";
+    expect(normalized(b)).toBe(normalized(a));
+  });
+
+  test("an inlined union alias is parenthesized where precedence needs it", () => {
+    const a =
+      "// @public\nexport declare function f(options: Mode[]): void;\n\n" +
+      '// @public\ntype Mode = "a" | "b";';
+    const b = '// @public\nexport declare function f(options: ("a" | "b")[]): void;';
+    expect(normalized(b)).toBe(normalized(a));
+  });
+
+  test("an EXPORTED alias stays a name: inlining it is a contract change", () => {
+    const a =
+      "// @public\nexport declare function f(options: Opts): void;\n\n" +
+      "// @public\nexport type Opts = {\n    name: string;\n};";
+    const b =
+      "// @public\nexport declare function f(options: {\n    name: string;\n}): void;\n\n" +
+      "// @public\nexport type Opts = {\n    name: string;\n};";
+    expect(normalized(b)).not.toBe(normalized(a));
+  });
+
+  test("a recursive unexported alias is not inlined (and still hashes)", () => {
+    const a =
+      "// @public\nexport declare function f(tree: Tree): void;\n\n" +
+      "// @public\ntype Tree = {\n    children: Tree[];\n};";
+    expect(normalized(a)).toContain("children: Tree[]");
+  });
+});
+
+describe("workspace imports read as their declaring PACKAGE", () => {
+  const using = (module: string) =>
+    `import { Thing } from '${module}';\n\n// @public\nexport declare function f(t: Thing): void;`;
+
+  test("a re-export that moved SUBPATH within its package does not move the hash", () => {
+    expect(normalized(using("@alexkroman1/aai"))).toBe(
+      normalized(using("@alexkroman1/aai/protocol")),
+    );
+  });
+
+  test("but one that moved PACKAGE still does", () => {
+    expect(normalized(using("@alexkroman1/aai-ui"))).not.toBe(
+      normalized(using("@alexkroman1/aai")),
+    );
+  });
+
+  test("and a third-party subpath is left as written", () => {
+    expect(normalized(using("zod/v4/core"))).not.toBe(normalized(using("zod")));
+  });
+});

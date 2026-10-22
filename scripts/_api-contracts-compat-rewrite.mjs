@@ -87,9 +87,24 @@ const isExported = (statement) =>
  * a `/** … @sealed … *\/` block is read too.
  */
 export function isSealedStatement(statement, sourceFile) {
+  return hasModifierTag(statement, sourceFile, "sealed");
+}
+
+/**
+ * Whether a statement carries `@input` — the mirror of `@sealed`: an author
+ * CONSTRUCTS the type and the SDK only reads it. API Extractor prints it on the
+ * release-tag line too (`// @public @input`), because `tsdoc.json` defines it
+ * and `reportTsdocOptions` (`_api-surface.mjs`) asks for it.
+ */
+export function isInputStatement(statement, sourceFile) {
+  return hasModifierTag(statement, sourceFile, "input");
+}
+
+function hasModifierTag(statement, sourceFile, tag) {
   const text = sourceFile.text;
+  const re = new RegExp(`@${tag}\\b`);
   return (ts.getLeadingCommentRanges(text, statement.pos) ?? []).some((range) =>
-    /@sealed\b/.test(text.slice(range.pos, range.end)),
+    re.test(text.slice(range.pos, range.end)),
   );
 }
 

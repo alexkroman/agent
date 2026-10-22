@@ -23,11 +23,17 @@ import {
   readManifest,
   rel,
 } from "./_api-contracts-tree.mjs";
-import { collectExports, reportSource, stripPackageDocumentationMarker } from "./_api-surface.mjs";
+import {
+  collectExports,
+  reportSource,
+  reportTsdocOptions,
+  stripPackageDocumentationMarker,
+} from "./_api-surface.mjs";
 
 const require = createRequire(import.meta.url);
 const { CompilerState, Extractor, ExtractorConfig, ExtractorLogLevel } =
   require("@microsoft/api-extractor");
+const TSDOC = reportTsdocOptions();
 
 /**
  * The published entry point each source module is reachable through.
@@ -151,6 +157,8 @@ function extractorConfig(pkg, capability, entryFile, reportFolder) {
         // mentions is part of the contract even when it has no name to be
         // imported by, so changing one has to move the hash.
         includeForgottenExports: true,
+        // `@input` printed beside `@sealed`: the probe reads both off the rollup.
+        tagsToReport: TSDOC.tagsToReport,
       },
       docModel: { enabled: false },
       dtsRollup: { enabled: false },
@@ -175,6 +183,7 @@ function extractorConfig(pkg, capability, entryFile, reportFolder) {
     },
     configObjectFullPath: join(pkg.dir, "api-contracts.virtual.json"),
     packageJsonFullPath: join(pkg.dir, "package.json"),
+    tsdocConfigFile: TSDOC.tsdocConfigFile,
   });
 }
 

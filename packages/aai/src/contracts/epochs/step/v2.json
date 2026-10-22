@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "step",
   "epoch": 2,
-  "rule": 2,
-  "sha256": "2bf1782e51b52146ae0d0db39e02cb543079adcf2e956b90ab515e24c567f8dc",
+  "rule": 3,
+  "sha256": "f463abbdce139a0837bfa637a4c4517525b44231418969c30edb50610e371e51",
   "exports": [
     "CALL_OVER_STATUSES",
     "CallStatusOptions",

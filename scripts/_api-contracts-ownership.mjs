@@ -20,7 +20,7 @@
  * - **forgotten** (G6): exported by NO published subpath — API Extractor's
  *   `ae-forgotten-export`, restricted to the types no consumer can import at
  *   all. A consumer must satisfy the shape and cannot name it. The remedy is
- *   to export it and give it an owner. `--bump` and `--update` REFUSE a
+ *   to export it and give it an owner. `--bump` REFUSES a
  *   capability while it reaches one that is not baselined: that state minted
  *   `aai-runtime:eval` v4 and then v5, the second to fix the first.
  *
@@ -165,7 +165,7 @@ export function checkOwnership(pkg, findings) {
 }
 
 /**
- * Why `--bump`/`--update` must refuse one capability right now, or `[]`.
+ * Why `--bump` must refuse one capability right now, or `[]`.
  *
  * Only the capability's OWN unbaselined findings block it: a sibling's are that
  * sibling's to fix, and blocking everything on one package-wide finding would

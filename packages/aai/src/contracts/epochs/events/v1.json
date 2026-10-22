@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "events",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "efe026b6262ab6e42ea5bb895a490e0168d0c4c7613f7575938ba7a035da0cdd",
+  "rule": 3,
+  "sha256": "bd9b4d14dc825e284cd0326e043cce8ee515c87b81bc09c4a20931847661d92b",
   "exports": [
     "ClientEventMap",
     "ClientEventSender",

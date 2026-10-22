@@ -9663,7 +9663,7 @@ export class PlaceCallError extends Error {
     readonly status: number | undefined;
 }
 
-// @public
+// @public @input
 export type PlaceCallOptions = {
     carrier: "twilio";
     to: string;

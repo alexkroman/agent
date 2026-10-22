@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "transcribe",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "4ac09550a818d4aa03bd9b3c477b23149925df730d80264f989f4916838ea075",
+  "rule": 3,
+  "sha256": "9b71301d5644fe41440c0b4eca12fa41bba7454101deac6ed75e17b2439d7324",
   "exports": [
     "TRANSCRIBE_API",
     "TRANSCRIBE_MODELS",

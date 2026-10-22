@@ -95,6 +95,10 @@ const checkScript: string = GATE_WIRING["scripts/check.mjs"] ?? "";
 const FIXTURE_PLACEHOLDER = "REPLACE_WITH_A_REAL_AUTHORING_EXAMPLE";
 
 type Contract = { current: number; supported: number[]; dropped: Record<string, string> };
+/** A capability that only re-exports another package's (`_api-contracts-mirror.mjs`). */
+type Mirror = { mirrors: string };
+const isMirror = (entry: Contract | Mirror | undefined): entry is Mirror =>
+  entry !== undefined && "mirrors" in entry;
 type Epoch = {
   kind: string;
   capability: string;
@@ -152,7 +156,14 @@ const parentDir = (key: string): string => key.split("/").at(-2) ?? "";
  * contract as empty.
  */
 const declaredNames = (source: string): string[] =>
-  [...source.matchAll(/export\s*(?:type\s*)?\{([^}]*)\}\s*from\s*"/g)]
+  // Comments first: one inside a clause ("`workflow({ onFailure })`") closed the
+  // `[^}]*` early and silently truncated `aai:inbox`'s name list.
+  [
+    ...source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "")
+      .matchAll(/export\s*(?:type\s*)?\{([^}]*)\}\s*from\s*"/g),
+  ]
     .flatMap((match) => (match[1] ?? "").split(","))
     .map((entry) => entry.trim().replace(/^type\s+/, ""))
     .filter((entry) => /^[A-Za-z_$][\w$]*$/.test(entry))
@@ -199,11 +210,14 @@ const importedFromSurface = (source: string): string[] =>
 const packages = Object.entries(tables)
   .map(([key, source]) => {
     const pkg = packageDirOf(key);
-    const table = JSON.parse(source) as Record<string, Contract>;
+    const table = JSON.parse(source) as Record<string, Contract | Mirror>;
     return {
       pkg,
       table,
       capabilities: Object.keys(table).sort(byCodeUnit),
+      epoched: Object.keys(table)
+        .filter((capability) => !isMirror(table[capability]))
+        .sort(byCodeUnit),
       roots: Object.entries(entrypoints)
         .filter(([path]) => packageDirOf(path) === pkg)
         .map(([path, text]) => ({
@@ -254,17 +268,28 @@ const packages = Object.entries(tables)
   })
   .sort((a, b) => byCodeUnit(a.pkg, b.pkg));
 
-/** Every (package, capability) pair, for the per-capability cases below. */
+/** Every EPOCHED (package, capability) pair, for the per-capability cases below. */
 const contracts = packages.flatMap((entry) =>
-  entry.capabilities.map((capability) => ({
+  entry.epoched.map((capability) => ({
     ...entry,
     id: `${entry.pkg}:${capability}`,
     capability,
   })),
 );
-const roots = packages.flatMap((entry) =>
+const allRoots = packages.flatMap((entry) =>
   entry.roots.map((root) => ({ ...entry, ...root, id: `${entry.pkg}:${root.capability}` })),
 );
+const roots = allRoots.filter((root) => !isMirror(root.table[root.capability]));
+/** Every MIRROR root, with the upstream root it re-exports. */
+const mirrorRoots = allRoots.flatMap((root) => {
+  const entry = root.table[root.capability];
+  if (!isMirror(entry)) return [];
+  const [upstreamPkg, upstreamCapability] = entry.mirrors.split(":");
+  const upstream = allRoots.find(
+    (candidate) => candidate.pkg === upstreamPkg && candidate.capability === upstreamCapability,
+  );
+  return [{ ...root, mirrors: entry.mirrors, upstream }];
+});
 
 /** The deny-list, minus its `_description` prose key. */
 const denials: Record<string, Record<string, string>> = Object.fromEntries(
@@ -350,7 +375,7 @@ describe("capability contracts", () => {
     for (const entry of packages) {
       expect.soft(entry.capabilities.length, `${entry.pkg} declares nothing`).toBeGreaterThan(0);
       expect.soft(entry.roots.map((root) => root.capability)).toEqual(entry.capabilities);
-      expect.soft(entry.epochs.length).toBeGreaterThanOrEqual(entry.capabilities.length);
+      expect.soft(entry.epochs.length).toBeGreaterThanOrEqual(entry.epoched.length);
     }
     // The SDK's authoring surface and the client's, spot-checked by name so a
     // capability set that silently emptied out cannot pass.
@@ -382,7 +407,7 @@ describe("capability contracts", () => {
     ]);
   });
 
-  test.each(roots)("$id selects names and declares nothing", ({ id, names, source }) => {
+  test.each(allRoots)("$id selects names and declares nothing", ({ id, names, source }) => {
     expect(names.length, `${id} selects no names`).toBeGreaterThan(0);
     // A root re-exports and does nothing else. Anything that DECLARES would
     // put the contract's shape in this file rather than in the API.
@@ -401,8 +426,8 @@ describe("capability contracts", () => {
     expect(source, `${id} re-exports from nowhere`).toMatch(/\bfrom\s+"/);
   });
 
-  test.each(roots)("$id's current epoch covers everything it selects", (root) => {
-    const contract = root.table[root.capability];
+  test.each(roots)("$id's current epoch promised nothing its root dropped", (root) => {
+    const contract = root.table[root.capability] as Contract | undefined;
     expect(contract, `${root.id} has no contract entry`).toBeDefined();
     const current = root.epochs.find(
       (entry) => entry.capability === root.capability && entry.version === contract?.current,
@@ -413,14 +438,42 @@ describe("capability contracts", () => {
         `cover 1..current. ${remedy}`,
     ).toBeDefined();
 
-    // The load-bearing assertion. An extraction that produced an empty or
-    // truncated report cannot list the names its own root selects.
-    const missing = root.names.filter((name) => !(current?.record.exports ?? []).includes(name));
+    // A compatible change is no longer RECORDED, so a name added since the
+    // epoch was minted is legitimately absent from its record. A name the
+    // record promised and the root no longer selects is a removal — a break —
+    // that reached main without the `--bump` that would have re-minted it. And
+    // an extraction that went empty cannot pass the non-empty half.
+    const record = current?.record.exports ?? [];
+    expect(record.length, `${root.id}'s epoch records no exports`).toBeGreaterThan(0);
+    const dropped = record.filter((name) => !root.names.includes(name));
     expect(
-      missing,
-      `${missing.length} name(s) selected by the ${root.id} root are absent from its epoch ` +
-        `metadata, starting with ${missing[0]}. Either the extraction went thin or the epoch ` +
-        `is stale. ${remedy}`,
+      dropped,
+      `${dropped.length} name(s) ${root.id}'s current epoch promised are no longer selected by ` +
+        `its root, starting with ${dropped[0]}. Removing a name is a break: \`--bump\`. ${remedy}`,
+    ).toEqual([]);
+  });
+
+  test("the mirror corpus is not empty", () => {
+    // `aai-runtime:testing-stubs` and `:eval-stubs` mirror `aai:testing`; a glob or
+    // parse that lost them would leave the cases below vacuous.
+    expect(mirrorRoots.map((root) => root.id)).toEqual([
+      "aai-runtime:eval-stubs",
+      "aai-runtime:testing-stubs",
+    ]);
+  });
+
+  test.each(mirrorRoots)("$id carries only what $mirrors contracts, and no epoch", (root) => {
+    expect(root.upstream, `${root.id} mirrors ${root.mirrors}, which has no root`).toBeDefined();
+    expect(
+      isMirror(root.upstream?.table[root.upstream.capability]),
+      `${root.id} mirrors ${root.mirrors}, which is itself a mirror`,
+    ).toBe(false);
+    const upstream = new Set(root.upstream?.names ?? []);
+    const extra = root.names.filter((name) => !upstream.has(name));
+    expect(extra, `${root.id} carries names ${root.mirrors} does not contract`).toEqual([]);
+    expect(
+      root.epochs.filter((epoch) => epoch.capability === root.capability),
+      `${root.id} is a mirror and must carry no epoch records`,
     ).toEqual([]);
   });
 
@@ -478,7 +531,7 @@ describe("capability contracts", () => {
     )?.record;
     const path = `../../${entry.pkg}/src/contracts/epochs/${entry.capability}/v${current}.rollup.txt`;
     const text = rollups[path];
-    expect(record?.rule, `${entry.id} v${current} is not hashed under rule 2. ${remedy}`).toBe(2);
+    expect(record?.rule, `${entry.id} v${current} is not hashed under rule 3. ${remedy}`).toBe(3);
     expect(text, `${path} is missing. ${remedy}`).toBeTypeOf("string");
     expect(text ?? "", `${path} is empty`).not.toBe("");
     expect(

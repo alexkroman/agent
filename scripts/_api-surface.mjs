@@ -31,6 +31,24 @@ const extractorRequire = createRequire(require.resolve("@microsoft/api-extractor
 const ts = extractorRequire("typescript");
 
 /**
+ * The repo's TSDoc config and the custom tags every report prints.
+ *
+ * `@input` is the mirror of `@sealed` (which API Extractor prints on its own):
+ * an author CONSTRUCTS the type and the SDK only reads it, so the contract
+ * probe compares it old-to-new only (`_api-contracts-compat-probes.mjs`). It
+ * has to reach the report's `// @public @input` line, because the probe and
+ * `check:api-shape` read the tag there, and API Extractor prints a custom tag
+ * only when it is defined in `tsdoc.json` AND listed in `tagsToReport`. Both
+ * `api-report.mjs` and `_api-contracts.mjs` pass these, so the per-subpath
+ * reports and the capability rollups cannot disagree about a tag.
+ */
+export function reportTsdocOptions() {
+  const { TSDocConfigFile } = extractorRequire("@microsoft/tsdoc-config");
+  const path = new URL("../tsdoc.json", import.meta.url).pathname;
+  return { tsdocConfigFile: TSDocConfigFile.loadFile(path), tagsToReport: { "@input": true } };
+}
+
+/**
  * The `.d.ts` rollup inside a report's single ```ts fence.
  *
  * A missing fence THROWS rather than yielding an empty string. Every consumer

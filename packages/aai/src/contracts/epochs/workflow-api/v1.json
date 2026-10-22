@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "workflow-api",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "76ff5af3af8d121f75ab092623c551c540304410e58728cd4d9a5e2efd8ff3ac",
+  "rule": 3,
+  "sha256": "7ce69fb35cb0da30b4b2436759a1254046d55495d8a0ae27170c928d28dccf35",
   "exports": [
     "AgentClient",
     "AnyWorkflowDef",

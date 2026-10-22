@@ -4,9 +4,9 @@ description: >-
   Use when `pnpm check:api-contracts`, `check:api-report` or `check:docs-md`
   fails, when a change touches a published signature, export or doc comment in
   `aai`, `aai-ui`, `aai-cli` or `aai-runtime`, or when adding a subpath export.
-  Walks through regenerating the API reports and markdown reference and
-  recording a moved capability hash with `--update`, `--bump --drop` or
-  `--bump --retain`.
+  Walks through regenerating the API reports and markdown reference, reading
+  what the probe decided about a moved capability hash, and classifying a break
+  with `--bump --drop` or `--bump --retain` (or `--unbump`).
 ---
 
 # Recording a change to the published surface
@@ -15,11 +15,11 @@ Three committed artifacts describe the published surface, and a change owes each
 one it moves. The mechanism and its rules are in `docs/CLAUDE.md`; this is the
 procedure.
 
-| Gate                       | Artifact                                                                       | Regenerate / record with                             |
-| -------------------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| `pnpm check:api-report`    | `packages/*/etc/*.api.md`, `API.md`, `API-EXPORTS.json`, `API-INDEX.md`        | `pnpm api-report`                                    |
-| `pnpm check:api-contracts` | `packages/<pkg>/src/contracts/epochs/<capability>/v<N>.json` (+ `.rollup.txt`) | `node scripts/api-contracts.mjs --update` / `--bump` |
-| `pnpm check:docs-md`       | `docs/api/**`                                                                  | `pnpm docs:md`                                       |
+| Gate                       | Artifact                                                                       | Regenerate / record with                              |
+| -------------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------- |
+| `pnpm check:api-report`    | `packages/*/etc/*.api.md`, `API.md`, `API-EXPORTS.json`, `API-INDEX.md`        | `pnpm api-report`                                     |
+| `pnpm check:api-contracts` | `packages/<pkg>/src/contracts/epochs/<capability>/v<N>.json` (+ `.rollup.txt`) | `node scripts/api-contracts.mjs --bump` (breaks only) |
+| `pnpm check:docs-md`       | `docs/api/**`                                                                  | `pnpm docs:md`                                        |
 
 Never hand-edit any of them. All three read the BUILT `dist/*.d.ts`, so build
 first.
@@ -57,35 +57,42 @@ retained epochs. One it reddens is an OLDER epoch the change breaks;
 (it also deletes that epoch's example). Never edit a frozen example to make it
 compile — the error is the finding.
 
-## 3. Read `pnpm check:api-contracts` and record the move
+## 3. Read `pnpm check:api-contracts`, and classify only a break
 
-It names each capability whose hash moved and the command that settles it.
+A moved hash is probed against the epoch's pinned rollup. **Compatible: the
+check passes and writes nothing** — it lists the capability under "compatible,
+unrecorded" (with what it added, for the changeset). There is no `--update`.
+Only a change the probe cannot prove compatible fails, naming the command.
 Capability names are qualified per package — `aai:tool`, `aai-ui:workflow`,
-`aai-runtime:eval`; a bare name works only when unambiguous, and ambiguity is
-refused.
+`aai-runtime:eval`; a bare name works only when unambiguous.
 
 ```sh
-# The probe PROVED the change compatible: record a revision of the same epoch.
-node scripts/api-contracts.mjs --update
-
 # Not provably compatible, and the old epoch really breaks: new epoch, and why.
 node scripts/api-contracts.mjs --bump aai:tool --drop "<what breaks and for whom>"
 
 # Not provable, but old authoring code still compiles: new epoch, old one retained.
 node scripts/api-contracts.mjs --bump aai:tool --retain
+
+# The epoch THIS BRANCH minted turned out unnecessary (the check says so).
+node scripts/api-contracts.mjs --unbump aai:tool
 ```
 
-- `--bump` refuses a change the probe proved compatible; `--update` is the
-  answer there.
+- Before bumping, ask whether the type has a DIRECTION: an options/config type
+  an author builds is `@input` (old-to-new only — making a member optional or
+  widening a union is then compatible); a result/handle an author only reads is
+  `@sealed`. `check:api-shape` lists the untagged ones.
+- `--bump` refuses a change the probe proved compatible, and a MIRROR capability
+  (`{ "mirrors": … }` in `contracts.json`), which follows its upstream's epoch —
+  classify the upstream instead.
 - `--retain` writes an empty frozen example scaffold at
   `src/contracts/compatibility/<capability>/v<N>.ts` (`.tsx` where the package
   sets `jsx`). Fill it the way that epoch was authored, importing from `..`, and
   make it import every name the retained epoch promised
   (`api-contracts-gate.test.ts` checks this).
 - `--drop` deletes the dropped epoch's example.
-- One epoch and one revision per capability per BRANCH: re-running on the same
-  branch rewrites the branch's epoch in place (measured against the merge-base
-  with `origin/main`; `--base <ref|none>` overrides).
+- One epoch per capability per BRANCH: re-running `--bump` on the same branch
+  rewrites the branch's epoch in place (measured against the merge-base with
+  `origin/main`; `--base <ref|none>` overrides).
 - A capability whose promise is a VALUE (e.g. `aai:defaults`' prompt text) is
   not covered by the hash — `--bump` refuses; it is a changeset-and-review
   matter.
@@ -99,6 +106,13 @@ remedy is an owner: select the name in the capability it belongs to. The
 Rarely needed: `--rehash --because "…"` recomputes every current epoch after a
 change to the hash RULE (only from a green tree, only in the commit that changes
 the rule).
+
+`pnpm check:api-shape` (a ratchet, no build) fails when a shape that keeps
+producing breaks GROWS — an untagged object type, a closed literal set in output
+position, a non-authoring import, an inferred exported type. Fix what it names,
+or (for a deliberate exhaustive set) add it to `exhaustiveByDesign` with a
+reason in the package's `src/contracts/api-shape-baseline.json`; after fixing a
+baselined entry run `pnpm api-shape:update`.
 
 ## 4. At a `--bump`, ask what should come OUT
 
