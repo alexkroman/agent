@@ -249,14 +249,16 @@ describe("a MIRROR capability is checked only for what it can get wrong itself",
     "export { a }",
     "export { b }",
   ]);
-  const input = (body: string, baseNames?: Set<string>) => ({
-    id: "aai-runtime:testing-stubs",
-    target: "aai:testing",
-    body,
-    upstreamPackage: "@alexkroman1/aai",
-    upstreamNames: new Set(["a", "b", "c"]),
-    ...(baseNames === undefined ? {} : { baseNames }),
-  });
+  const input = (body: string, baseNames?: Set<string>) => {
+    const base = {
+      id: "aai-runtime:testing-stubs",
+      target: "aai:testing",
+      body,
+      upstreamPackage: "@alexkroman1/aai",
+      upstreamNames: new Set(["a", "b", "c"]),
+    };
+    return baseNames === undefined ? base : { ...base, baseNames };
+  };
 
   test("the target is parsed as <package>:<capability>, and nothing else is", () => {
     expect(mirror.parseMirrorTarget?.("aai:testing")).toEqual({

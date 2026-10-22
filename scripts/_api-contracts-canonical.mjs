@@ -150,7 +150,7 @@ function sortedNode(node, factory, sourceFile) {
  * printed canonically, one string each, sorted — declarations inlined by rule
  * 4 omitted.
  *
- * @param {import("typescript").SourceFile} sourceFile
+ * @param sourceFile the parsed rollup (api-extractor's TypeScript)
  * @param {number[]} order
  * @param {Set<string>} exported names an author can import (never inlined)
  */

@@ -39,8 +39,8 @@ const ts = extractorRequire("typescript");
 
 /** `"aai:testing"` → `{ key: "aai", capability: "testing" }`, or `undefined`. */
 export function parseMirrorTarget(target) {
-  const match = /^([a-z0-9-]+):([a-z0-9-]+)$/.exec(target ?? "");
-  return match === null ? undefined : { key: match[1], capability: match[2] };
+  const [, key, capability] = /^([a-z0-9-]+):([a-z0-9-]+)$/.exec(target ?? "") ?? [];
+  return key === undefined || capability === undefined ? undefined : { key, capability };
 }
 
 /** The names an entry point's text selects (`export { a, type B } from "…"`). */

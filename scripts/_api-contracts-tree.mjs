@@ -263,9 +263,10 @@ export function contractPackages() {
  * can land is a compile error rather than an `undefined` that compares equal to
  * nothing and reports no violation.
  *
- * @typedef {{ current: number, supported: number[], dropped: Record<string, string>, mirrors?: undefined }} CapabilityEpochs
- * @typedef {{ mirrors: string }} MirrorEntry
- * @typedef {Record<string, CapabilityEpochs | MirrorEntry>} ContractTable
+ * @typedef {{ current: number, supported: number[], dropped: Record<string, string>, mirrors?: string }} CapabilityEpochs
+ *   A MIRROR entry (`isMirror`) carries only `mirrors`; every reader of the
+ *   epoch fields skips mirrors first, so the type keeps them required.
+ * @typedef {Record<string, CapabilityEpochs>} ContractTable
  * @typedef {{ comment?: string, total: number, surface: Record<string, string[]> }} InternalSurface
  * @typedef {{ revision: number, rule?: number, sha256: string, reason?: string }} Revision
  * @typedef {{ kind: string, capability: string, epoch: number, rule?: number, sha256: string, exports: string[], rollup?: string, revision?: number, revisions?: Revision[] }} EpochRecord

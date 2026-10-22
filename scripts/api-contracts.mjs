@@ -373,7 +373,7 @@ function unbumpOne(target) {
     contract === undefined || generated === undefined
       ? undefined
       : verdict(pkg, capability, contract, generated);
-  if (outcome?.kind !== "unmint") {
+  if (contract === undefined || outcome?.kind !== "unmint") {
     console.error(
       `api-contracts: "${id}" has no epoch minted on this branch that main's epoch already ` +
         "covers, so there is nothing to discard. Run the check for what it does need.",

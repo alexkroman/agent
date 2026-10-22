@@ -284,7 +284,7 @@ function canonicalImports(rawBindings) {
 /**
  * Walk one rollup from its exports and classify every declaration it reaches.
  *
- * @param {string} body the rollup inside the report's ```ts fence
+ * @param {string} rawBody the rollup inside the report's ```ts fence
  * @param {Set<string>} foreign names another capability of the same package
  *   contracts — always the FULL set for the package, so `--bump` (one
  *   capability) and the check (all of them) agree on every hash.

@@ -134,7 +134,11 @@ function isolatedDeclarations(pkg) {
       { cwd: pkg.dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
     );
   } catch (error) {
-    output = `${error.stdout ?? ""}${error.stderr ?? ""}`;
+    // `tsc` exits non-zero whenever it reports anything; the report is the point.
+    const { stdout = "", stderr = "" } = /** @type {{ stdout?: string, stderr?: string }} */ (
+      error
+    );
+    output = `${stdout}${stderr}`;
   }
   const counts = {};
   for (const match of output.matchAll(/^(.+?)\(\d+,\d+\): error TS9\d{3}:/gm)) {

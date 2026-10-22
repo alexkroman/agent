@@ -13,6 +13,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import { omitUndefined } from "../packages/aai/src/sdk/omit-undefined.ts";
 import { parseEntrypoint } from "./_api-contracts.mjs";
 import { atBase, branchState } from "./_api-contracts-base.mjs";
 import { probeCompatibility } from "./_api-contracts-compat.mjs";
@@ -194,7 +195,8 @@ function checkOneEpoch(pkg, capability, contract, generated, { issues, notes }) 
     fail(staleMessage(id, contract, committed, generated, outcome));
     return;
   }
-  const added = outcome.added.length > 0 ? `; adds ${outcome.added.join(", ")}` : "";
+  const additions = outcome.added ?? [];
+  const added = additions.length > 0 ? `; adds ${additions.join(", ")}` : "";
   notes.push(`${id}@${current}: moved, compatible with epoch ${outcome.epoch} (checked${added})`);
 }
 
@@ -259,11 +261,13 @@ export function checkMirrors(pkg, table, reports) {
     issues.push(
       ...mirrorProblems({
         id,
-        target: contract.mirrors,
+        target: String(contract.mirrors),
         body: generated.body,
-        upstreamPackage: resolved.upstream.name,
+        upstreamPackage: String(resolved.upstream.name),
         upstreamNames: parseEntrypoint(resolved.upstream, resolved.capability).names,
-        ...(baseText === undefined ? {} : { baseNames: entrypointNames(baseText) }),
+        ...omitUndefined({
+          baseNames: baseText === undefined ? undefined : entrypointNames(baseText),
+        }),
       }),
     );
     if (existsSync(join(pkg.epochRoot, capability))) {
