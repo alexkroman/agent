@@ -108,11 +108,12 @@ shared-helper shape is right here and wrong inside a template.
 
 ## The capability-contract gate is specced by BEHAVIOUR, in pairs
 
-Five specs hold `scripts/api-contracts.mjs`. `api-contracts-gate.test.ts` reads
-the contract tree as text and re-derives what the script believes (including
-each current epoch's pinned rollup sha, via `crypto.subtle`). The other four
-import the gate's PURE modules as real values — the one exception to "never
-import the script you guard", taken for the reason
+Five specs hold `scripts/api-contracts.mjs`, and `api-shape.test.ts` holds
+`check:api-shape`'s pure `_api-shape.mjs` the same way.
+`api-contracts-gate.test.ts` reads the contract tree as text and re-derives what
+the script believes (including each current epoch's pinned rollup sha, via
+`crypto.subtle`). The other four import the gate's PURE modules as real values —
+the one exception to "never import the script you guard", taken for the reason
 `guard-invariants-scanner- rules.test.ts` takes it: the subject is a function
 from text to text, and scraping it would test the scrape.
 `api-contracts-hash.test.ts` holds the hash normalizations,
@@ -120,15 +121,15 @@ from text to text, and scraping it would test the scrape.
 program over two in-memory rollups; it reads lib files and writes nothing),
 `api-contracts-compat-rewrite.test.ts` what the probe makes both sides agree on
 first (shared brands, `@sealed`, misuse literals), and
-`api-contracts-epochs.test.ts` the revision/one-per-branch arithmetic and the
-one-owner baseline. Every one is written in PAIRS: each change the gate lets
-through beside the neighbouring break it must still catch, because an over-eager
-normalization or probe ships a breaking change under a checkmark. What reads
-files or git (`_api-contracts-mint.mjs`, `-base.mjs`) is kept thin over those
-pure modules and has NO spec here — a unit spec may not write files or spawn git
-— so its flows (revise, collapse, restore, re-mint in place, un-mint, point
-back) were exercised by hand against an edited `dist` when it landed. That is a
-known gap, not a guarantee.
+`api-contracts-epochs.test.ts` the one-per-branch arithmetic, the mirror checks
+and the one-owner baseline. Every one is written in PAIRS: each change the gate
+lets through beside the neighbouring break it must still catch, because an
+over-eager normalization or probe ships a breaking change under a checkmark.
+What reads files or git (`_api-contracts-mint.mjs`, `-base.mjs`) is kept thin
+over those pure modules and has NO spec here — a unit spec may not write files
+or spawn git — so its flows (pass-unrecorded, re-mint in place, `--unbump`,
+point back) were exercised by hand against an edited `dist` when they landed.
+That is a known gap, not a guarantee.
 
 ## A new guard-invariants rule, and what the linter cannot do for you
 

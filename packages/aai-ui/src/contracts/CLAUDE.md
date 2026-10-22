@@ -9,9 +9,11 @@ read_when: >-
 
 # `src/contracts/` — the `aai-ui` capability contracts
 
-The mechanism (epochs, `--update` / `--bump … --retain|--drop`, why an epoch
-owes a frozen compiling example) is in `docs/CLAUDE.md`, "The authoring surface
-is versioned in epochs". Only what is local to this package is here.
+The mechanism (epochs, compatible changes passing unrecorded,
+`--bump … --retain|--drop`, `@sealed`/`@input`, why an epoch owes a frozen
+compiling example) is in `docs/CLAUDE.md`, "The authoring surface is versioned
+in epochs". Only what is local to this package is here. Shape debt
+(`check:api-shape`) is baselined per package in `api-shape-baseline.json`.
 
 `entrypoints/` declares the capabilities; between them they must name every
 `@public` export of `.` and `/client-dir`, or `pnpm check:api-contracts` fails.

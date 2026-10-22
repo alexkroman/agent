@@ -16,14 +16,14 @@ embedder writes against (read the tree for the list — never restate it). The
 mechanism is the repo's: see "The authoring surface is versioned in epochs" in
 [`docs/CLAUDE.md`](../../../../docs/CLAUDE.md), which owns the reports, the
 epochs and the renderings. Here it means a signature change on a contracted name
-is RECORDED — `node scripts/api-contracts.mjs --update` when provably
-compatible, else `--bump aai-runtime:<capability> --drop "<reason>"` or
-`--retain` — rather than discovered by whoever's build breaks.
+is CLASSIFIED — passed unrecorded when the probe proves it compatible, else
+`--bump aai-runtime:<capability> --drop "<reason>"` or `--retain` — rather than
+discovered by whoever's build breaks.
 
 - **A new feature gets its own capability**, and its own subpath when a
   different reader imports it. Adding a feature to an existing capability makes
   every change to it an epoch of that capability; that is why `auth`, `metrics`,
-  `eval-simulate`, `eval-assert`, `eval-stubs` and `testing-stubs` are separate.
+  `eval-simulate` and `eval-assert` are separate.
 - `tools` (one name, `withToolsDir`) is its own capability because it assembles
   the DEFINITION a runtime is handed, not any part of the engine.
 - **A capability is not a subpath.** The two testing doors re-export across
@@ -33,8 +33,17 @@ compatible, else `--bump aai-runtime:<capability> --drop "<reason>"` or
   `eval-stubs` — plus `testing-stubs`' installers, as `/eval/vitest` carries the
   eval ones. `eval-stubs` and `testing-stubs` are the SDK's `aai:testing` names
   re-exported here (the first the stubs an eval composes with, the second the
-  rest), owned HERE because dropping one from a door is this package's break. A
-  re-export never moves ownership; each keeps its epoch.
+  rest). **They are MIRRORS** (`{ "mirrors": "aai:testing" }` in
+  `contracts.json`): no epoch of their own, so an SDK change is classified once,
+  on `aai:testing`. The check holds each to pure re-exports of names
+  `aai:testing` contracts today, and refuses dropping a name the SDK still
+  exports — that would be this package's break with no epoch to record it
+  (`scripts/_api-contracts-mirror.mjs`). A helper added to the SDK still needs a
+  line in the door's barrel and in the mirror's entry point.
+- **Shape debt is baselined in `api-shape-baseline.json`** (`check:api-shape`,
+  `docs/CLAUDE.md`): this package's 24 non-authoring imports (`AgentEnv`,
+  `RunCodeExecutor`, `StepFetch`, `Db`… from `/host-internal` and `/internal`)
+  and the `ai` types it names are the entries to pay down first.
 - Which barrel a name goes on, and the `@internal` rules, are in the package
   guide, "The published surface: two barrels and a rule between them".
 

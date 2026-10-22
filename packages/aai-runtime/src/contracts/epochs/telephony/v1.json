@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "telephony",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "d2142ef02bf4e263a697f18b0bfe6e2eea312300ad42b0ecdf73e6fbd1aa2b09",
+  "rule": 3,
+  "sha256": "3040f6aea7bca70f55b0a1f6bf7896f4711fed62b67324248153807a9fc0bcff",
   "exports": [
     "CARRIER_CODECS",
     "CarrierCodec",

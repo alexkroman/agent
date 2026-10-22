@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "metrics",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "7d03012c10a8482a2d3d09d92eb27a65dc93379f819830a35ee1da1be1efc4e4",
+  "rule": 3,
+  "sha256": "76fd4df2b4c173045148d5fbb0399b38ac05a92a423d2473530ea493d67fcb3f",
   "exports": [
     "MetricStat",
     "MetricsCollectedEvent",

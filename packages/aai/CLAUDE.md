@@ -146,6 +146,19 @@ must be total derives it (`KnownLiterals<T>` in `sdk/is-known.ts`,
 behaviour owed a changeset, not a type an author can pin. Identifiers
 (`DELEGATE_TOOL_NAME`, `SLACK_CHANNEL_KIND`) stay literal.
 
+## Tag a type's DIRECTION, and keep a set an author receives open
+
+**An object type on the contracted surface is `@sealed` (the SDK builds it, an
+author reads it) or `@input` (an author builds it, the SDK reads it)** — e.g.
+`PlaceCallOptions`. Untagged, the probe compares it both ways, so making a
+member optional or widening a union is a break; tagged, the right one of the two
+is free. A type used both ways should be split. A closed literal set an author
+RECEIVES (a tuple `const`, a `Record` over literal keys, a union without
+`(string & {})` in a return or callback) breaks every exhaustive `switch` when
+it grows. Both are held by `check:api-shape` against
+`src/contracts/api-shape-baseline.json`, as is an exported declaration without
+an explicit type (`tsc --isolatedDeclarations`).
+
 ## One epoch classification the tool cannot make
 
 **`aai:defaults` cannot be bumped** — its hash strips doc comments, so

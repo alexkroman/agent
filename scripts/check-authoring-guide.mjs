@@ -58,13 +58,13 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { SOURCE_DIR, wholeGuide } from "./_agent-guide.mjs";
+import { parseEntrypoint } from "./_api-contracts.mjs";
 import {
   capabilities,
   capabilityId,
   contractPackages,
   exampleFacingSubpaths,
   ROOT,
-  readEpoch,
   readTable,
   rel,
 } from "./_api-contracts-tree.mjs";
@@ -213,9 +213,10 @@ function inScopeCapabilities(exportsByPath) {
     const facing = exampleFacingNames(pkg, exportsByPath);
     const table = readTable(pkg);
     for (const capability of capabilities(pkg)) {
-      const entry = table[capability];
-      if (!entry) continue;
-      const names = readEpoch(pkg, capability, entry.current).exports ?? [];
+      if (!table[capability]) continue;
+      // The entry point, not the epoch record: a compatible addition is no
+      // longer recorded, and a mirror capability has no record at all.
+      const names = [...parseEntrypoint(pkg, capability).names];
       if (!names.some((name) => facing.has(name))) continue;
       found.push({ id: capabilityId(pkg, capability), names });
     }

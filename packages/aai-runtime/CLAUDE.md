@@ -214,9 +214,10 @@ table of which import serves which FILE is "Which testing import, by FILE" in
   `/vitest` subpath. `runtime-runner-free-subpaths` refuses a `vitest` import in
   `testing-barrel.ts`.
 - **Ownership does not move with a re-export.** The SDK stubs an eval composes
-  with are owned here by `eval-stubs`, the rest of the SDK's helpers by
-  `testing-stubs` (dropping one from a door is this package's break), and every
-  runtime name keeps its capability — `src/contracts/CLAUDE.md`.
+  with are selected here by `eval-stubs`, the rest of the SDK's helpers by
+  `testing-stubs` — both MIRRORS of `aai:testing`, with no epoch of their own
+  (dropping a name the SDK still exports is refused) — and every runtime name
+  keeps its capability — `src/contracts/CLAUDE.md`.
 - **`testing-doors.test.ts` holds each door to its sources** (values by
   identity, type names by the barrels' lists), so a helper the SDK or
   `/eval/vitest` gains fails here until the door carries it.

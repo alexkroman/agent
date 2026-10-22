@@ -94,6 +94,8 @@ const capabilities = [];
 for (const pkg of packages) {
   const table = readJson(join(pkg.dir, "contracts.json"));
   for (const [capability, entry] of Object.entries(table)) {
+    // A mirror re-exports another package's capability and has no epoch.
+    if (typeof entry.mirrors === "string") continue;
     const epochDir = join(pkg.dir, "epochs", capability);
     const currentPath = join(epochDir, `v${entry.current}.json`);
     const current = existsSync(currentPath) ? readJson(currentPath) : {};

@@ -1,42 +1,39 @@
 #!/usr/bin/env node
 
 /**
- * Writing epochs: what a moved hash MEANS (`verdict`), the `--update` that
- * records a compatible change as a REVISION, and the `--bump` a breaking one
- * still owes.
+ * Writing epochs: what a moved hash MEANS (`verdict`), and the `--bump` /
+ * `--unbump` that are now the only writers of an epoch record.
  *
- * ## Revisions (G1)
+ * ## A compatible change is not recorded at all
  *
- * The gate used to demand `--bump` for ANY change to a capability's hash, and
- * 61 of 73 bumps after the reset were `--retain` — nothing broke, and each
- * still cost an epoch and a hand-written frozen example. So a moved hash is
- * first put to `_api-contracts-compat.mjs`, against the rollup the CURRENT
- * epoch was minted from. Compatible, it becomes revision `r+1` of the same
- * epoch: the record's `sha256`/`exports` move, `revisions` gains an entry with
- * an automatic reason, the epoch number and its rollup do not. Only a change
- * the probe cannot prove compatible needs `--bump`.
+ * The gate used to demand `--update` for every compatible hash move, which
+ * wrote a REVISION into the record — about 90 such writes in the month after
+ * 2026-09-23, against 50 epochs, each a commit-noise diff recording a decision
+ * the probe had already made. Now a moved hash is put to
+ * `_api-contracts-compat.mjs` against the rollup the CURRENT epoch was minted
+ * from, and a compatible verdict simply PASSES: nothing is written, and the
+ * record's sha is only a fast path that skips the probe when the surface has
+ * not moved since the epoch was minted.
  *
- * Every revision is checked against the epoch's ORIGINAL rollup, never the
- * previous revision, so a chain of individually-compatible steps cannot walk
- * away from what the epoch promised.
+ * Every probe is against the epoch's ORIGINAL rollup, never a later state, so
+ * a chain of individually-compatible steps cannot walk away from what the
+ * epoch promised — that is what makes skipping the record write sound.
  *
  * ## One per branch (G4)
  *
  * Measured against the merge-base (`_api-contracts-base.mjs`): an epoch that
- * does not exist on `main` is rewritten in place by the next `--bump`/
- * `--update` rather than superseded, a revision made on this branch is
- * replaced rather than stacked, and a hash that returns to the base's is
- * RESTORED. A `--bump` whose hash equals a supported epoch's points `current`
- * back at it instead of minting a copy.
+ * does not exist on `main` is rewritten in place by the next `--bump` rather
+ * than superseded, and one whose change turned out compatible with main's
+ * epoch after all is discarded by `--unbump`. A `--bump` whose hash equals a
+ * supported epoch's points `current` back at it instead of minting a copy.
  */
 
 import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-import { baseEpoch, branchState } from "./_api-contracts-base.mjs";
+import { branchState } from "./_api-contracts-base.mjs";
 import { probeCompatibility } from "./_api-contracts-compat.mjs";
-import { bumpedContract, bumpTarget, revisedRecord } from "./_api-contracts-epochs.mjs";
-import { HASH_RULE } from "./_api-contracts-hash.mjs";
+import { bumpedContract, bumpTarget } from "./_api-contracts-epochs.mjs";
 import {
   capabilityId,
   epochPath,
@@ -51,7 +48,6 @@ import {
   rollupPath,
   writeEpoch,
   writeRollup,
-  writeTable,
 } from "./_api-contracts-tree.mjs";
 
 export function scaffoldFixture(pkg, capability, version) {
@@ -94,12 +90,6 @@ const removeFixtures = (pkg, capability, epoch) => {
   return files;
 };
 
-/** The merge-base's record of epoch `v`, if it is comparable with this rule. */
-function mainRecord(pkg, capability, v) {
-  const record = baseEpoch(epochPath(pkg, capability, v));
-  return record !== undefined && record.rule === HASH_RULE ? record : undefined;
-}
-
 /** Probe `generated` against the rollup epoch `v` was minted from. */
 function probeAgainst(pkg, capability, v, generated) {
   const oldBody = readRollup(pkg, capability, v);
@@ -115,7 +105,7 @@ function probeAgainst(pkg, capability, v, generated) {
     dir: pkg.dir,
     foreign: generated.foreign,
   });
-  if (probe.compatible) return { kind: "revision", epoch: v, added: probe.added };
+  if (probe.compatible) return { kind: "compatible", epoch: v, added: probe.added };
   // Every finding a one-sided `any`: nothing FAILED, the probe just cannot
   // decide those positions — which a human classifies, not a "major" guess.
   return probe.problems.every((problem) => probe.unproven.includes(problem))
@@ -124,53 +114,31 @@ function probeAgainst(pkg, capability, v, generated) {
 }
 
 /**
- * What one capability's moved hash means, without writing anything.
+ * What one capability's moved hash means, without writing anything. The
+ * caller has already found the sha in none of the current epoch's records.
  *
- * - `restore`: the hash is main's again — put main's record back.
+ * - `compatible`: provably compatible with the epoch it is measured against —
+ *   the gate PASSES it, and nothing is written.
  * - `unmint`: the current epoch was minted on this branch, and the change is
- *   compatible with main's epoch after all — discard it, revise main's.
- * - `refresh`: minted on this branch and still not compatible with main's —
- *   rewrite it in place (still one epoch for the branch).
- * - `revision`: compatible with the current epoch's rollup.
+ *   compatible with main's epoch after all — `--unbump` discards it.
+ * - `refresh`: minted on this branch and compatible with neither — re-run the
+ *   `--bump`, which rewrites this branch's epoch in place.
  * - `break` / `unproven`: a human classifies it with `--bump`.
  */
 export function verdict(pkg, capability, contract, generated) {
   const epoch = contract.current;
   const state = branchState(pkg, capability);
-  if (!state.epochOnMain(epoch)) {
-    if (state.base === null) return { kind: "refresh" };
+  if (state.base !== null && !state.epochOnMain(epoch)) {
     const main = state.base.current;
     if (recordShas(readEpoch(pkg, capability, main)).has(generated.sha256)) {
-      return { kind: "unmint", restoreOnly: true, epoch: main };
+      return { kind: "unmint", epoch: main, added: [] };
     }
-    const probe = probeAgainst(pkg, capability, main, generated);
-    return probe.kind === "revision"
-      ? { ...probe, kind: "unmint", restoreOnly: false }
-      : { kind: "refresh" };
-  }
-  const onMain = mainRecord(pkg, capability, epoch);
-  if (onMain !== undefined && onMain.sha256 === generated.sha256) {
-    return { kind: "restore", record: onMain };
+    const againstMain = probeAgainst(pkg, capability, main, generated);
+    if (againstMain.kind === "compatible") return { ...againstMain, kind: "unmint" };
+    const againstOwn = probeAgainst(pkg, capability, epoch, generated);
+    return againstOwn.kind === "compatible" ? againstOwn : { ...againstOwn, kind: "refresh" };
   }
   return probeAgainst(pkg, capability, epoch, generated);
-}
-
-/**
- * Record `generated` as a revision of epoch `epoch`.
- *
- * The revision number is counted from the record ON MAIN, so a second
- * `--update` on one branch replaces this branch's revision instead of adding
- * another; without a base, from the working tree.
- */
-function writeRevision(pkg, capability, epoch, generated, added) {
-  const committed = readEpoch(pkg, capability, epoch);
-  const onMain = mainRecord(pkg, capability, epoch);
-  // The base's record is the one to count from — unless this branch re-pinned
-  // the epoch, in which case the base's record describes another rollup.
-  const from = onMain !== undefined && onMain.rollup === committed.rollup ? onMain : committed;
-  const record = revisedRecord(from, generated, added);
-  writeEpoch(pkg, capability, epoch, record);
-  return { revision: record.revision, reason: record.revisions.at(-1).reason };
 }
 
 /** Mint (or re-mint in place) epoch `version` from `generated`. */
@@ -181,9 +149,8 @@ function mintRecord(pkg, capability, version, generated) {
 
 /**
  * Put this branch's epochs for one capability back to the merge-base's: every
- * epoch minted here is deleted, main's current record is restored if this
- * branch revised it, and main's contract entry is returned — or `undefined`
- * when nothing was minted here.
+ * epoch minted here is deleted and main's contract entry is returned — or
+ * `undefined` when nothing was minted here.
  */
 function discardBranchEpochs(pkg, capability, contract) {
   const state = branchState(pkg, capability);
@@ -193,89 +160,20 @@ function discardBranchEpochs(pkg, capability, contract) {
     rmSync(rollupPath(pkg, capability, v), { force: true });
     removeFixtures(pkg, capability, v);
   }
-  const main = mainRecord(pkg, capability, state.base.current);
-  if (main !== undefined) writeEpoch(pkg, capability, state.base.current, main);
   return state.base;
 }
 
-/** A capability whose committed record is current AND pinned needs no update. */
-function isRecorded(pkg, capability, contract, generated) {
-  const record = readEpoch(pkg, capability, contract.current);
-  return (
-    record.sha256 === generated.sha256 &&
-    record.rule === HASH_RULE &&
-    readRollup(pkg, capability, contract.current) !== undefined
-  );
-}
-
 /**
- * Write one verdict that needs no human decision. Returns what was done, a
- * replacement contract entry when the table moves, or `unresolved`.
+ * `--unbump`: discard the epoch this branch minted for one capability, whose
+ * change turned out compatible with main's epoch. Returns main's contract
+ * entry for the caller to write.
  */
-function applyVerdict(pkg, capability, contract, generated, outcome) {
-  const at = `${capabilityId(pkg, capability)}@${contract.current}`;
-  switch (outcome.kind) {
-    case "restore":
-      writeEpoch(pkg, capability, contract.current, outcome.record);
-      return { line: `${at}: restored to the merge-base's record` };
-    case "unmint": {
-      const restored = discardBranchEpochs(pkg, capability, contract);
-      // Main's current epoch is current again and owes no example; one this
-      // branch scaffolded for it evidenced a promise withdrawn with the epoch.
-      removeFixtures(pkg, capability, outcome.epoch);
-      const note = outcome.restoreOnly
-        ? "matches main again"
-        : `revision ${writeRevision(pkg, capability, outcome.epoch, generated, outcome.added).revision}`;
-      return {
-        contract: restored,
-        line: `${at}: minted on this branch and discarded — epoch ${outcome.epoch} ${note}`,
-      };
-    }
-    case "refresh":
-      mintRecord(pkg, capability, contract.current, generated);
-      return { line: `${at}: minted on this branch, rewritten in place` };
-    case "revision": {
-      const done = writeRevision(pkg, capability, contract.current, generated, outcome.added);
-      return { line: `${at}: revision ${done.revision} — ${done.reason}` };
-    }
-    default: {
-      const detail = outcome.kind === "break" ? outcome.problems.join("\n    ") : outcome.why;
-      return { unresolved: `${at}: not provably compatible with its epoch:\n    ${detail}` };
-    }
-  }
-}
-
-/**
- * `--update`: apply every stale capability's verdict that needs no human
- * decision, writing the table when an epoch is un-minted. Returns what still
- * needs one, for the caller to fail on.
- */
-export function applyUpdate(pkg, table, reports, blockersOf) {
-  const lines = [];
-  const unresolved = [];
-  let tableChanged = false;
-  for (const [capability, contract] of Object.entries(table)) {
-    const generated = reports.get(capability);
-    if (generated === undefined || isRecorded(pkg, capability, contract, generated)) continue;
-    const blockers = blockersOf(capability);
-    if (blockers.length > 0) {
-      unresolved.push(
-        `${capabilityId(pkg, capability)}: reaches ownerless ${blockers.join(", ")} — run the ` +
-          "check for the remedy.",
-      );
-      continue;
-    }
-    const outcome = verdict(pkg, capability, contract, generated);
-    const done = applyVerdict(pkg, capability, contract, generated, outcome);
-    if (done.line !== undefined) lines.push(done.line);
-    if (done.unresolved !== undefined) unresolved.push(done.unresolved);
-    if (done.contract !== undefined) {
-      table[capability] = done.contract;
-      tableChanged = true;
-    }
-  }
-  if (tableChanged) writeTable(pkg, table);
-  return { lines, unresolved };
+export function unbump(pkg, capability, contract, outcome) {
+  const restored = discardBranchEpochs(pkg, capability, contract) ?? contract;
+  // Main's current epoch is current again and owes no example; one this
+  // branch scaffolded for it evidenced a promise withdrawn with the epoch.
+  removeFixtures(pkg, capability, outcome.epoch);
+  return restored;
 }
 
 /**

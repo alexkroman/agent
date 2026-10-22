@@ -35,11 +35,6 @@ type Baseline = { unowned: string[]; forgotten: string[] };
 type EpochsModule = {
   recordShas: (record: EpochRecord) => Set<string>;
   latestEpoch: (contract: Contract) => number;
-  revisedRecord: (
-    from: EpochRecord,
-    generated: { sha256: string; exports: string[] },
-    added: string[],
-  ) => EpochRecord;
   bumpTarget: (
     from: Contract,
     shasOf: (v: number) => Set<string>,
@@ -49,12 +44,8 @@ type EpochsModule = {
     from: Contract,
     options: { target: number; retain: boolean; reason?: string },
   ) => Contract;
-  branchGrowth: (
-    contract: Contract,
-    base: Contract | undefined,
-    record: EpochRecord,
-    main: EpochRecord | undefined,
-  ) => { minted: number; revised: number };
+  branchGrowth: (contract: Contract, base: Contract | undefined) => { minted: number };
+  isMirror: (contract: unknown) => boolean;
 };
 const epochs: Partial<EpochsModule> =
   sole(
@@ -97,7 +88,23 @@ const mintSource: string =
     }),
   ) ?? "";
 
-const RULE = 2;
+type MirrorModule = {
+  mirrorProblems: (input: {
+    id: string;
+    target: string;
+    body: string;
+    upstreamPackage: string;
+    upstreamNames: Set<string>;
+    baseNames?: Set<string>;
+  }) => string[];
+  parseMirrorTarget: (target: string) => { key: string; capability: string } | undefined;
+};
+const mirror: Partial<MirrorModule> =
+  sole(
+    import.meta.glob<MirrorModule>("../../../scripts/_api-contracts-mirror.mjs", { eager: true }),
+  ) ?? {};
+
+const RULE = 3;
 const record = (sha: string, extra: Partial<EpochRecord> = {}): EpochRecord => ({
   kind: "aai-authoring-capability-contract",
   capability: "tool",
@@ -112,7 +119,8 @@ const record = (sha: string, extra: Partial<EpochRecord> = {}): EpochRecord => (
 describe("the modules are importable", () => {
   test.each([
     ["recordShas", epochs.recordShas],
-    ["revisedRecord", epochs.revisedRecord],
+    ["isMirror", epochs.isMirror],
+    ["mirrorProblems", mirror.mirrorProblems],
     ["bumpTarget", epochs.bumpTarget],
     ["bumpedContract", epochs.bumpedContract],
     ["branchGrowth", epochs.branchGrowth],
@@ -125,35 +133,8 @@ describe("the modules are importable", () => {
   });
 });
 
-describe("G1 — a compatible change is a REVISION of the same epoch", () => {
-  test("the epoch number and its rollup stay; the hash, exports and history move", () => {
-    const next = epochs.revisedRecord?.(record("a"), { sha256: "b", exports: ["tool", "x"] }, [
-      "x",
-    ]);
-    expect(next?.epoch).toBe(5);
-    expect(next?.rollup).toBe("r".repeat(64));
-    expect(next?.sha256).toBe("b");
-    expect(next?.exports).toEqual(["tool", "x"]);
-    expect(next?.revision).toBe(1);
-    expect(next?.revisions?.map((r) => [r.revision, r.sha256])).toEqual([
-      [0, "a"],
-      [1, "b"],
-    ]);
-    expect(next?.revisions?.at(-1)?.reason).toBe("additive (checked): +x");
-  });
-
-  test("a second revision counted from MAIN's record replaces this branch's, not stacks", () => {
-    // `writeRevision` passes the merge-base's record as `from`; the result is
-    // revision 1 again, whatever the working tree already said.
-    const onMain = record("a");
-    const first = epochs.revisedRecord?.(onMain, { sha256: "b", exports: ["tool"] }, []);
-    const second = epochs.revisedRecord?.(onMain, { sha256: "c", exports: ["tool"] }, []);
-    expect(first?.revision).toBe(1);
-    expect(second?.revision).toBe(1);
-    expect(second?.revisions?.map((r) => r.sha256)).toEqual(["a", "c"]);
-  });
-
-  test("every revision's hash counts as the epoch's, under this rule only", () => {
+describe("a compatible change is not recorded; old revisions still count", () => {
+  test("every revision's hash an older record carries counts as the epoch's, under this rule only", () => {
     const revised = record("c", {
       revisions: [
         { revision: 0, rule: 1, sha256: "old-rule" },
@@ -163,6 +144,12 @@ describe("G1 — a compatible change is a REVISION of the same epoch", () => {
     });
     expect([...(epochs.recordShas?.(revised) ?? [])].sort()).toEqual(["b", "c"]);
     expect(epochs.recordShas?.(record("x", { rule: 1 })).size).toBe(0);
+  });
+
+  test("nothing writes a revision any more: the CLI has no --update, and --unbump instead", () => {
+    expect(cliSource).not.toMatch(/update: \{ type: "boolean" \}/);
+    expect(cliSource).toMatch(/unbump: \{ type: "string" \}/);
+    expect(mintSource).not.toMatch(/function writeRevision\(/);
   });
 });
 
@@ -189,19 +176,12 @@ describe("G4 — at most one epoch per branch, and back rather than a copy", () 
     expect(retained).toEqual({ current: 5, supported: [3, 5, 6], dropped: { 4: "gone" } });
   });
 
-  test("a second epoch or revision minted on one branch is counted", () => {
+  test("a second epoch minted on one branch is counted", () => {
     const base: Contract = { current: 5, supported: [5], dropped: {} };
     const twice: Contract = { current: 7, supported: [5, 6, 7], dropped: {} };
-    expect(epochs.branchGrowth?.(twice, base, record("x"), undefined).minted).toBe(2);
+    expect(epochs.branchGrowth?.(twice, base).minted).toBe(2);
     const once: Contract = { current: 6, supported: [5, 6], dropped: {} };
-    expect(epochs.branchGrowth?.(once, base, record("x"), undefined).minted).toBe(1);
-    const stacked = epochs.branchGrowth?.(
-      base,
-      base,
-      record("x", { revision: 3 }),
-      record("y", { revision: 1 }),
-    );
-    expect(stacked?.revised).toBe(2);
+    expect(epochs.branchGrowth?.(once, base).minted).toBe(1);
   });
 
   test("the CLI rewrites this branch's epochs in place rather than superseding them", () => {
@@ -253,13 +233,62 @@ describe("G2/G6 — every hashed declaration has exactly one owner", () => {
     expect(ownership.blockersFor?.(findings, baseline, "dialog")).toEqual([]);
   });
 
-  test("the CLI refuses --bump, and --update skips, while a capability is blocked", () => {
+  test("the CLI refuses --bump while a capability is blocked", () => {
     expect(cliSource).toMatch(
       /ownershipBlockers\(pkg, ownershipFindings\(pkg, reports\), capability\)/,
     );
     expect(cliSource).toMatch(/refusing to bump/);
-    expect(mintSource).toMatch(
-      /const blockers = blockersOf\(capability\);\s+if \(blockers\.length > 0\)/,
+  });
+});
+
+describe("a MIRROR capability is checked only for what it can get wrong itself", () => {
+  const rollup = (lines: string[]) => `${lines.join("\n")}\n`;
+  const PURE = rollup([
+    "import { a } from '@alexkroman1/aai/testing';",
+    "import { b } from '@alexkroman1/aai/testing/vitest';",
+    "export { a }",
+    "export { b }",
+  ]);
+  const input = (body: string, baseNames?: Set<string>) => ({
+    id: "aai-runtime:testing-stubs",
+    target: "aai:testing",
+    body,
+    upstreamPackage: "@alexkroman1/aai",
+    upstreamNames: new Set(["a", "b", "c"]),
+    ...(baseNames === undefined ? {} : { baseNames }),
+  });
+
+  test("the target is parsed as <package>:<capability>, and nothing else is", () => {
+    expect(mirror.parseMirrorTarget?.("aai:testing")).toEqual({
+      key: "aai",
+      capability: "testing",
+    });
+    expect(mirror.parseMirrorTarget?.("testing")).toBeUndefined();
+  });
+
+  test("a pure re-export of upstream names, from any of upstream's subpaths, passes", () => {
+    expect(mirror.mirrorProblems?.(input(PURE, new Set(["a", "b"])))).toEqual([]);
+  });
+
+  test("a declaration of its own is refused", () => {
+    const own = `${PURE}\n// @public\nexport declare function extra(): void;\n`;
+    expect(mirror.mirrorProblems?.(input(own)).join("\n")).toMatch(/DECLARES 1/);
+  });
+
+  test("a name upstream does not contract is refused", () => {
+    const body = rollup(["import { z } from '@alexkroman1/aai/testing';", "export { z }"]);
+    expect(mirror.mirrorProblems?.(input(body)).join("\n")).toMatch(/carries z/);
+  });
+
+  test("a name from another package is refused", () => {
+    const body = rollup(["import { a } from '@alexkroman1/aai-ui';", "export { a }"]);
+    expect(mirror.mirrorProblems?.(input(body)).join("\n")).toMatch(/somewhere other than/);
+  });
+
+  test("dropping a name upstream STILL exports is refused; one upstream dropped is not", () => {
+    expect(mirror.mirrorProblems?.(input(PURE, new Set(["a", "b", "c"]))).join("\n")).toMatch(
+      /no longer carries c/,
     );
+    expect(mirror.mirrorProblems?.(input(PURE, new Set(["a", "b", "gone"])))).toEqual([]);
   });
 });

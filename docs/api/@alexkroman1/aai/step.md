@@ -3358,6 +3358,8 @@ type PlaceCallOptions = {
 };
 ```
 
+**`Input`**
+
 What [stepPlaceCall](#stepplacecall) takes.
 
 #### Properties

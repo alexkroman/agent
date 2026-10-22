@@ -386,3 +386,80 @@ describe("`any` proves nothing, so a one-sided one is reported", () => {
     expect(result.compatible).toBe(true);
   });
 });
+
+/**
+ * `@input` is `@sealed`'s mirror: an author BUILDS the type and the SDK only
+ * reads it, so it is probed old-to-new only. Each acceptance sits beside the
+ * same change in an UNTAGGED type, which must still break, and beside the
+ * input-side break the tag must still catch.
+ */
+describe("`@input` — an author builds it, so only old-to-new is probed", () => {
+  const OPTIONS = (tag: string, members: string) => `// @public${tag}
+export type PlaceCallOptions = {
+${members}
+};
+
+// @public
+export function placeCall(options: PlaceCallOptions): void;
+`;
+  const BEFORE = '    carrier: "twilio";\n    agentUrl: string;';
+
+  test.each([
+    ["a required member made optional", '    carrier: "twilio";\n    agentUrl?: string;'],
+    [
+      "a union in a config property widened",
+      '    carrier: "twilio" | "telnyx";\n    agentUrl: string;',
+    ],
+  ])("accepted when tagged: %s", (_label, after) => {
+    const result = probe(OPTIONS(" @input", after), OPTIONS(" @input", BEFORE));
+    expect(result.problems).toEqual([]);
+    expect(result.compatible).toBe(true);
+  });
+
+  test("the tag counts when only the NEW side carries it (a pinned rollup predates it)", () => {
+    const after = '    carrier: "twilio";\n    agentUrl?: string;';
+    expect(probe(OPTIONS(" @input", after), OPTIONS("", BEFORE)).compatible).toBe(true);
+  });
+
+  test.each([
+    ["a required member made optional", '    carrier: "twilio";\n    agentUrl?: string;'],
+    [
+      "a union in a config property widened",
+      '    carrier: "twilio" | "telnyx";\n    agentUrl: string;',
+    ],
+  ])("still a break UNTAGGED: %s", (_label, after) => {
+    const result = probe(OPTIONS("", after), OPTIONS("", BEFORE));
+    expect(result.compatible).toBe(false);
+    expect(result.problems.some((p) => p.startsWith("PlaceCallOptions:"))).toBe(true);
+  });
+
+  test.each([
+    ["a REQUIRED member added", `${BEFORE}\n    ringTimeoutS: number;`],
+    ["a union narrowed", '    carrier: "telnyx";\n    agentUrl: string;'],
+    ["an optional member removed", '    carrier: "twilio";'],
+  ])("still a break TAGGED: %s", (_label, after) => {
+    const result = probe(OPTIONS(" @input", after), OPTIONS(" @input", BEFORE));
+    expect(result.compatible).toBe(false);
+    expect(result.problems.some((p) => p.startsWith("PlaceCallOptions:"))).toBe(true);
+  });
+
+  test("tagged both `@sealed` and `@input` declares no direction: probed both ways", () => {
+    const after = '    carrier: "twilio";\n    agentUrl?: string;';
+    const result = probe(OPTIONS(" @sealed @input", after), OPTIONS(" @sealed @input", BEFORE));
+    expect(result.compatible).toBe(false);
+  });
+});
+
+describe("a re-export is identified by its declaring PACKAGE, not its subpath", () => {
+  const from = (module: string) => `import { Thing } from '${module}';\n\nexport { Thing }\n`;
+
+  test("a workspace re-export whose source SUBPATH moved is compatible", () => {
+    const result = probe(from("@alexkroman1/aai"), from("@alexkroman1/aai/protocol"));
+    expect(result.problems.filter((p) => p.startsWith("Thing:"))).toEqual([]);
+  });
+
+  test("one whose PACKAGE moved is still a break", () => {
+    const result = probe(from("@alexkroman1/aai-ui"), from("@alexkroman1/aai"));
+    expect(result.problems.some((p) => p.startsWith("Thing:"))).toBe(true);
+  });
+});

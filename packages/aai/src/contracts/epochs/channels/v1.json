@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "channels",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "67377fd6cb114c5b2db2dafaa19b04cb8891c4afc93cb6709d12eb966b6b092e",
+  "rule": 3,
+  "sha256": "a6bdc7c3db803b3158fe317052b216d7d51162aa1be5c14a09cf26e4cc03ee6b",
   "exports": [
     "CHANNEL_POST_TIMEOUT_MS",
     "Channel",

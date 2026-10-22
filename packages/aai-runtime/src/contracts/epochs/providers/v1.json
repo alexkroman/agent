@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "providers",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "09aa9e5fa420a011b15786258eb9b3402ffc7956c4949c341782392697b78fb2",
+  "rule": 3,
+  "sha256": "39413a561a15959b1080eed9905e7edde59f2a139a28e9069762baf575d7218e",
   "exports": [
     "LlmRegistryEntry",
     "OpenerRegistryEntry",

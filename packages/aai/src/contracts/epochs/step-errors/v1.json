@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "step-errors",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "6333333c23d6b00f7f16b67b90a16e9b5a8a4b34817239baa663aab1586877e9",
+  "rule": 3,
+  "sha256": "873616ec01552cc74236237d3afb5124b106ed5d872b3a8f823afeb6aa047007",
   "exports": [
     "DEFAULT_RETRY_DELAY_MS",
     "FatalError",

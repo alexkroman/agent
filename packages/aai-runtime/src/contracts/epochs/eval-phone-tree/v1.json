@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "eval-phone-tree",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "00824fa83942dc8baaca785afee7a7fb12612d1c4ab715c6b8c0fc32ec13b6fb",
+  "rule": 3,
+  "sha256": "d632cdfe1d85948d6fc5f05999ccff11ef7ffcdb3cfa763d7abf739ce40cd048",
   "exports": [
     "PhoneMenu",
     "PhoneTree",

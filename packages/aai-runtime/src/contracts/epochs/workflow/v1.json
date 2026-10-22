@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "workflow",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "b9f8d55c56103827f3f3fd86d589cb59599769c7be2a609ca58bfe823fafb40e",
+  "rule": 3,
+  "sha256": "9969a6a3922e1a6d304de31c6ca26b45f9637cf6bff2ccabf2636a429bd96ae1",
   "exports": [
     "DEFAULT_WORKFLOW_FIND_LIMIT",
     "MAX_WORKFLOW_FIND_LIMIT",

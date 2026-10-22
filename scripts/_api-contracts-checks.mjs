@@ -19,8 +19,9 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { authoringSurface } from "./_api-contracts.mjs";
+import { isMirror } from "./_api-contracts-epochs.mjs";
 import { checkOwnership, ownershipFindings } from "./_api-contracts-ownership.mjs";
-import { checkBranch, checkEpochs } from "./_api-contracts-staleness.mjs";
+import { checkBranch, checkEpochs, checkMirrors } from "./_api-contracts-staleness.mjs";
 import {
   authoringSubpaths,
   capabilityId,
@@ -127,8 +128,17 @@ function checkTable(pkg, table, present) {
   if (!checkCapabilitySet(pkg, table, present)) return false;
   let ok = true;
   for (const [capability, contract] of Object.entries(table)) {
-    const { current, supported = [], dropped = {} } = contract;
     const where = `${rel(pkg.tablePath)}: capability "${capability}"`;
+    if (isMirror(contract)) {
+      // A mirror carries no epoch of its own; `checkMirrors` checks the rest.
+      const extra = Object.keys(contract).filter((key) => key !== "mirrors");
+      if (extra.length > 0) {
+        fail(`${where} is a mirror and may carry only \`mirrors\` (found ${extra.join(", ")}).`);
+        ok = false;
+      }
+      continue;
+    }
+    const { current, supported = [], dropped = {} } = contract;
     if (!Number.isInteger(current) || current < 1) {
       fail(`${where} must have a positive integer \`current\` epoch.`);
       ok = false;
@@ -152,6 +162,7 @@ function checkTable(pkg, table, present) {
  */
 function checkInventory(pkg, table) {
   for (const [capability, contract] of Object.entries(table)) {
+    if (isMirror(contract)) continue;
     const current = latestEpoch(contract);
     const dir = dirname(epochPath(pkg, capability, 1));
     const expected = Array.from({ length: current }, (_, index) => `v${index + 1}.json`).sort();
@@ -189,7 +200,9 @@ function checkInventory(pkg, table) {
  * moment it becomes a promise, which is when there is something to write.
  */
 function checkFixtures(pkg, table) {
-  for (const [capability, { supported = [], current }] of Object.entries(table)) {
+  for (const [capability, contract] of Object.entries(table)) {
+    if (isMirror(contract)) continue;
+    const { supported = [], current } = contract;
     for (const version of supported) {
       if (version === current) continue;
       const path = fixturePath(pkg, capability, version);
@@ -348,17 +361,21 @@ export function internalSurfaceSnapshot(internalNames) {
 export function runChecks({ pkg, table, present, entries, reports }) {
   issues = [];
   warnings = [];
+  let notes = [];
   if (checkTable(pkg, table, present)) {
     checkInventory(pkg, table);
     checkFixtures(pkg, table);
     issues.push(...checkBranch(pkg, table));
     const generated = reports();
-    issues.push(...checkEpochs(pkg, table, generated));
+    const epochs = checkEpochs(pkg, table, generated);
+    issues.push(...epochs.issues);
+    notes = epochs.notes;
+    issues.push(...checkMirrors(pkg, table, generated));
     const ownership = checkOwnership(pkg, ownershipFindings(pkg, generated));
     issues.push(...ownership.issues);
     warnings.push(...ownership.warnings);
   }
   checkAssignment(pkg, entries);
   checkInternalSurface(pkg);
-  return { issues, warnings };
+  return { issues, warnings, notes };
 }

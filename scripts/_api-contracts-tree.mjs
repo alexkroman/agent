@@ -31,7 +31,7 @@ import { readJson, readManifest, repoRoot } from "./_fs.mjs";
 
 // The epoch arithmetic is `_api-contracts-epochs.mjs`'s (pure, so the gate
 // suite exercises it directly); re-exported so the tree reads as one module.
-export { latestEpoch, recordShas } from "./_api-contracts-epochs.mjs";
+export { isMirror, latestEpoch, recordShas } from "./_api-contracts-epochs.mjs";
 // `readJson` was defined here (silently) and twice more elsewhere; it is
 // `_fs.mjs`'s now, re-exported so the ~20 call sites in this tree read as before.
 // `readManifest` rides along for the same reason: `_api-contracts.mjs` reads a
@@ -83,6 +83,12 @@ const NON_AUTHORING_SUBPATHS = {
       "the same SDK internals passed on for aai-server, aai-cli and aai-guest — the re-export half of aai's own ./host-internal exemption, which is per SUBPATH and so did not survive being re-published on this package's root barrel",
   },
 };
+
+/**
+ * The subpaths of package directory `key` that are NOT authoring surface —
+ * `check-api-shape.mjs` (G3) flags a capability reaching a name through one.
+ */
+export const nonAuthoringSubpaths = (key) => Object.keys(NON_AUTHORING_SUBPATHS[key] ?? {});
 
 /**
  * Authoring subpaths that no SHIPPED EXAMPLE is expected to exercise, and why.
@@ -224,6 +230,8 @@ function contractPackage(key) {
     tablePath: join(contractRoot, "contracts.json"),
     internalSurfacePath: join(contractRoot, "internal-surface.json"),
     unownedSurfacePath: join(contractRoot, "unowned-surface.json"),
+    /** `check-api-shape.mjs`'s shrink-only baseline — per package, so parallel PRs do not collide. */
+    shapeBaselinePath: join(contractRoot, "api-shape-baseline.json"),
     cacheRoot: join(dir, ".api-contracts-cache"),
     fixtureExtension: fixtureExtension(dir),
   };
@@ -255,8 +263,9 @@ export function contractPackages() {
  * can land is a compile error rather than an `undefined` that compares equal to
  * nothing and reports no violation.
  *
- * @typedef {{ current: number, supported: number[], dropped: Record<string, string> }} CapabilityEpochs
- * @typedef {Record<string, CapabilityEpochs>} ContractTable
+ * @typedef {{ current: number, supported: number[], dropped: Record<string, string>, mirrors?: undefined }} CapabilityEpochs
+ * @typedef {{ mirrors: string }} MirrorEntry
+ * @typedef {Record<string, CapabilityEpochs | MirrorEntry>} ContractTable
  * @typedef {{ comment?: string, total: number, surface: Record<string, string[]> }} InternalSurface
  * @typedef {{ revision: number, rule?: number, sha256: string, reason?: string }} Revision
  * @typedef {{ kind: string, capability: string, epoch: number, rule?: number, sha256: string, exports: string[], rollup?: string, revision?: number, revisions?: Revision[] }} EpochRecord

@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "auth",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "2f7f7f18b44b3988b24a70191c05396cb746e0ba013d03fc7e2ad4a18e73efef",
+  "rule": 3,
+  "sha256": "c29bde7817749aca3ac159d62dc18fb8d0162e263fd185d7c58c9795c7c7c68e",
   "exports": [
     "SESSION_AUTH_PROTOCOL_PREFIX",
     "SESSION_SECRET_ENV",

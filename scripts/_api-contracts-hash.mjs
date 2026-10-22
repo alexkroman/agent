@@ -33,6 +33,13 @@
  *    VALUES read as their primitive, so the key set and value kinds are hashed
  *    and the values are not (`aai:defaults` bumped on every prompt edit).
  *
+ * 5. **Canonical form** (rule 3, `_api-contracts-canonical.mjs`): object
+ *    members and union members sorted, `interface` printed as `type`, an
+ *    unexported non-generic alias inlined, redundant parentheses dropped, and
+ *    method signatures read as function-typed properties. Workspace imports
+ *    read as their declaring PACKAGE (`_api-contracts-imports.mjs`), so a
+ *    re-export that moved subpath moves nothing.
+ *
  * What is NOT normalized: every reached declaration's structure, every
  * foreign name reached directly, and every UNOWNED declaration's body — which
  * `_api-contracts-ownership.mjs` fails on unless it is baselined, because a
@@ -41,6 +48,9 @@
 
 import { createRequire } from "node:module";
 
+import { canonicalStatements } from "./_api-contracts-canonical.mjs";
+import { methodsAsProperties } from "./_api-contracts-compat-methods.mjs";
+import { normalizedSpecifier } from "./_api-contracts-imports.mjs";
 import { compareNames, declarationNames } from "./_api-surface.mjs";
 
 const require = createRequire(import.meta.url);
@@ -54,7 +64,7 @@ const ts = extractorRequire("typescript");
  * point-back search in `_api-contracts-mint.mjs` must not compare against it —
  * equal text under two different rules is a coincidence, not a match.
  */
-export const HASH_RULE = 2;
+export const HASH_RULE = 3;
 
 /** Longer string literal types than this read as `string` (G5). */
 export const LONG_STRING = 80;
@@ -242,7 +252,10 @@ function importBindings(statement) {
 }
 
 /** The used imports in one canonical form: `import` (never `import type`), sorted. */
-function canonicalImports(bindings) {
+function canonicalImports(rawBindings) {
+  // A workspace import reads as its declaring PACKAGE, never the subpath it
+  // came through (`_api-contracts-imports.mjs`).
+  const bindings = rawBindings.map((b) => ({ ...b, module: normalizedSpecifier(b.module) }));
   const byModule = new Map();
   for (const binding of bindings) {
     if (!byModule.has(binding.module)) byModule.set(binding.module, []);
@@ -262,7 +275,8 @@ function canonicalImports(bindings) {
       .filter((entry) => entry.kind === "named")
       .map((b) => (b.imported === b.local ? b.local : `${b.imported} as ${b.local}`))
       .sort(compareNames);
-    if (named.length > 0) lines.push(`import { ${named.join(", ")} } from "${module}";`);
+    const unique = [...new Set(named)];
+    if (unique.length > 0) lines.push(`import { ${unique.join(", ")} } from "${module}";`);
   }
   return lines;
 }
@@ -276,7 +290,10 @@ function canonicalImports(bindings) {
  *   capability) and the check (all of them) agree on every hash.
  * @returns {{ hashable: string, own: string[], unowned: string[], foreignRefs: string[] }}
  */
-export function analyzeBody(body, foreign) {
+export function analyzeBody(rawBody, foreign) {
+  // Rule 3: method signatures read as function-typed properties, the probe's
+  // own rewrite, so `m(x): R` and `m: (x) => R` hash alike.
+  const body = methodsAsProperties(rawBody);
   const sourceFile = parse(body);
   const index = indexBody(sourceFile.statements);
   const { reached, usedImports, foreignRefs } = walkFromExports(index, foreign);
@@ -285,10 +302,7 @@ export function analyzeBody(body, foreign) {
   const edits = [];
   for (const at of order) collectEdits(sourceFile.statements[at], sourceFile, edits);
   const edited = parse(applyEdits(body, edits));
-  const printer = ts.createPrinter({ removeComments: true, newLine: ts.NewLineKind.LineFeed });
-  const printed = order.map((at) =>
-    printer.printNode(ts.EmitHint.Unspecified, edited.statements[at], edited),
-  );
+  const printed = canonicalStatements(edited, order, index.own);
   const unowned = order
     .flatMap((at) => declarationNames(sourceFile.statements[at]))
     .filter((name) => !index.own.has(name));

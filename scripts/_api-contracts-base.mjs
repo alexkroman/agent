@@ -2,14 +2,14 @@
 
 /**
  * The contract tree as it stood at the MERGE-BASE with `origin/main` — what
- * this branch is measured against (G4: at most one epoch, and at most one
- * revision, per capability per branch).
+ * this branch is measured against (G4: at most one epoch per capability per
+ * branch).
  *
  * The gate used to measure against the working tree alone, so a branch that
  * moved one capability three times minted three epochs: `aai:llm` went v4 to
  * v7 on one PR and v7's hash equalled v3's. An epoch is a promise made on
  * `main`; the ones a branch mints and then supersedes were never made to
- * anybody. So `--bump` and `--update` look here first, and an epoch or revision
+ * anybody. So `--bump` and `--unbump` look here first, and an epoch
  * that does not exist at the base is REWRITTEN in place rather than stacked on.
  *
  * Falls back gracefully: `--base <ref>` names the ref (or `none`), else

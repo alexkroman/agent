@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "conversation-log",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "a0ab22e2c232eb794efedc89929ee3a7d6c2a9157d4cb51a9c85d97c3e6dad8c",
+  "rule": 3,
+  "sha256": "05ba66d3f56ffb8fe0681f5879face0279f4b1ecfedc0285fbd14c91283b3215",
   "exports": [
     "ConversationLogEntry",
     "UseConversationLogOptions",

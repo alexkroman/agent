@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "utils",
   "epoch": 1,
-  "rule": 2,
-  "sha256": "9df8b5d9022ba628a075612ef109eee12ff5fe6250ddb39b571ab617262c8b65",
+  "rule": 3,
+  "sha256": "2905731fbd781d78c9445b6d8c126f521191fd411a2c002dc4057db9b8e1e447",
   "exports": [
     "FitToolResultOptions",
     "HttpError",

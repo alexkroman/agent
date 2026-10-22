@@ -2,8 +2,8 @@
   "kind": "aai-authoring-capability-contract",
   "capability": "testing",
   "epoch": 3,
-  "rule": 2,
-  "sha256": "d6fe20d5f6fcd20248c89458125edf1dbb15bc8e2677c2e1647eacb3939ad6a8",
+  "rule": 3,
+  "sha256": "8bfd98fa2bae3ffd6677e6af7d0f97f180b420820f591803f3ca67c7cbad480c",
   "exports": [
     "DeployedConfig",
     "DeployedStage",

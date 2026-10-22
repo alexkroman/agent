@@ -65,6 +65,7 @@ and `git push --no-verify` skipped them entirely.
 | `check:migration-order`    | ratchets    | reported at the end | both | `node scripts/check-migration-order.mjs`          | —                             |
 | `check:optional-peers`     | ratchets    | reported at the end | both | `node scripts/check-optional-peers.mjs`           | —                             |
 | `check:untyped-imports`    | ratchets    | reported at the end | both | `node scripts/check-untyped-imports.mjs`          | —                             |
+| `check:api-shape`          | ratchets    | reported at the end | both | `node scripts/check-api-shape.mjs`                | `pnpm api-shape:update`       |
 | `check:migration-contract` | ratchets    | stops the run       | both | `node scripts/check-migration-contract.mjs`       | —                             |
 | `check:coverage-per-file`  | after-tests | reported at the end | both | `node scripts/check-coverage-per-file.mjs`        | —                             |
 | `check:publish-names`      | after-build | stops the run       | both | `node scripts/check-publish-names.mjs`            | —                             |
@@ -132,6 +133,17 @@ The gates with a section of their own further down (`check:hatches`,
   `catalog:`, so every catalogued bump is applied to it a second time;
   unchecked, it once wrote a literal `catalog:` into a manifest npm cannot
   resolve.
+- **`check:api-shape`** — `check:api-contracts` decides whether a change that
+  happened is breaking; this holds the SHAPES that keep producing breaks: object
+  types with no `@sealed`/`@input` direction (G1), closed literal sets an author
+  receives (G2), contracted signatures reaching non-authoring subpaths (G3),
+  capability budgets, third-party types and orphans (G4), unexported
+  declarations hashed into several capabilities (G5), and exported declarations
+  whose type `tsc --isolatedDeclarations` says is inferred. Reads the committed
+  reports, no build. Baseline PER PACKAGE
+  (`packages/<pkg>/src/contracts/api-shape-baseline.json`, one finding per line)
+  so per-package follow-ups never conflict; `exhaustiveByDesign` is the
+  permanent reasoned allowlist. Rules in `docs/CLAUDE.md`.
 - **`check:konsistent`** — structural conventions (`konsistent.json`): shapes no
   per-file tool sees because none is wrong WITHIN a file — a provider module
   exporting four of its five symbols, an import across a forbidden boundary.

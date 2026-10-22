@@ -9,7 +9,11 @@
  */
 
 import { createRequire } from "node:module";
-import { isSealedStatement, uniqueSymbolNames } from "./_api-contracts-compat-rewrite.mjs";
+import {
+  isInputStatement,
+  isSealedStatement,
+  uniqueSymbolNames,
+} from "./_api-contracts-compat-rewrite.mjs";
 import { compareNames } from "./_api-surface.mjs";
 
 const require = createRequire(import.meta.url);
@@ -42,14 +46,26 @@ export const CTOR =
  * still there. `target` names how the new side reaches it (`__N.Foo`, or
  * `__N.__sealed_Foo` for an unexported one).
  */
-export function probeFor(entry, index, { sealed = false, target = `__M.${entry.name}` } = {}) {
+export function probeFor(
+  entry,
+  index,
+  { sealed = false, direction = "sealed", target = `__M.${entry.name}` } = {},
+) {
   const lines = [];
   const params = entry.typeParameters;
   const list =
     params === undefined ? "" : `<${params.map((p) => p.getText(entry.sourceFile)).join(", ")}>`;
   const args = params === undefined ? "" : `<${params.map((p) => p.name.text).join(", ")}>`;
   const { name } = entry;
-  if (sealed) {
+  if (sealed && direction === "input") {
+    // `@input`: the author builds it and the SDK reads it, so what an author
+    // wrote against the old type must still be a valid new one — old-to-new.
+    lines.push(
+      `export function __type${index}${list}(o: ${name}${args}, n: ${target}${args}): void {`,
+      `  const a: ${target}${args} = o; void n; void a;`,
+      "}",
+    );
+  } else if (sealed) {
     lines.push(
       `export function __type${index}${list}(o: ${name}${args}, n: ${target}${args}): void {`,
       `  const b: ${name}${args} = n; void o; void b;`,
@@ -76,11 +92,11 @@ export function probeFor(entry, index, { sealed = false, target = `__M.${entry.n
   return lines.join("\n");
 }
 
-/** Names some statement in a body tags `@sealed`. */
-function sealedIn({ sourceFile, declared }) {
+/** Names some statement in a body tags with `is` (`@sealed` or `@input`). */
+function taggedIn({ sourceFile, declared }, is) {
   const found = new Set();
   for (const [name, statements] of declared) {
-    if (statements.some((statement) => isSealedStatement(statement, sourceFile))) found.add(name);
+    if (statements.some((statement) => is(statement, sourceFile))) found.add(name);
   }
   return found;
 }
@@ -110,16 +126,28 @@ export function agreements(before, after, foreign = new Set()) {
     .filter((name) => inBoth(name) && !exported(name) && !brands.has(name))
     .sort(compareNames);
   const isShared = new Set(shared);
-  const sealed = new Set(
-    [...sealedIn(before), ...sealedIn(after)].filter((name) => inBoth(name) && !isShared.has(name)),
-  );
+  const tagged = (is) =>
+    new Set(
+      [...taggedIn(before, is), ...taggedIn(after, is)].filter(
+        (name) => inBoth(name) && !isShared.has(name),
+      ),
+    );
+  const sealedNames = tagged(isSealedStatement);
+  const inputNames = tagged(isInputStatement);
+  // A name tagged BOTH ways declares no direction: it stays probed both ways.
+  const direction = new Map();
+  for (const name of sealedNames) if (!inputNames.has(name)) direction.set(name, "sealed");
+  for (const name of inputNames) if (!sealedNames.has(name)) direction.set(name, "input");
+  // `sealed` is every DIRECTIONAL name — masked in the other probes and probed
+  // one way in its own; `direction` says which way.
+  const sealed = new Set(direction.keys());
   const arity = (statements) => statements[0]?.typeParameters?.length ?? 0;
   const masked = [...sealed].filter((name) => {
     const o = before.declared.get(name);
     const n = after.declared.get(name);
     return isPureType(o) && isPureType(n) && arity(o) === arity(n);
   });
-  return { brands, sealed, masked, shared };
+  return { brands, sealed, direction, masked, shared };
 }
 
 /**

@@ -11,8 +11,10 @@ import { HASH_RULE } from "./_api-contracts-hash.mjs";
 
 /**
  * Every hash one epoch has carried UNDER THE CURRENT RULE: the minted one and
- * each revision's. A sha from an older rule is unreproducible, so comparing
- * against it would be a coincidence rather than a match.
+ * each revision's (revisions are no longer written — a compatible change now
+ * passes the gate unrecorded — but older records still carry them, and each is
+ * a known-compatible sha the gate can skip probing). A sha from an older rule
+ * is unreproducible, so comparing against it would be a coincidence.
  */
 export function recordShas(record) {
   const shas = new Set();
@@ -34,33 +36,6 @@ export const latestEpoch = (contract) =>
     ...(contract.supported ?? []),
     ...Object.keys(contract.dropped ?? {}).map(Number),
   );
-
-/**
- * `from` revised to `generated`'s hash and export list.
- *
- * `from` is the record ON MAIN when there is one, so a second revision on one
- * branch REPLACES the first instead of stacking (G4); its rollup and epoch
- * number are never touched — every revision is proven against the rollup the
- * epoch was minted from.
- */
-export function revisedRecord(from, generated, added) {
-  const history = from.revisions ?? [
-    { revision: 0, rule: from.rule ?? 1, sha256: from.sha256, reason: "minted" },
-  ];
-  const revision = (from.revision ?? 0) + 1;
-  const reason =
-    added.length > 0
-      ? `additive (checked): +${added.join(", +")}`
-      : "compatible (checked): no export added or removed; every old export still assignable";
-  return {
-    ...from,
-    rule: HASH_RULE,
-    sha256: generated.sha256,
-    exports: generated.exports,
-    revision,
-    revisions: [...history, { revision, rule: HASH_RULE, sha256: generated.sha256, reason }],
-  };
-}
 
 /**
  * Where a `--bump` from contract `from` lands: back on a SUPPORTED, non-current
@@ -87,14 +62,16 @@ export function bumpedContract(from, { target, retain, reason }) {
   };
 }
 
-/**
- * How many epochs, and how many revisions of main's current epoch, this branch
- * added — the numbers `checkBranch` holds to one each.
- */
-export function branchGrowth(contract, baseContract, record, mainRecord) {
+/** How many epochs this branch added — the number `checkBranch` holds to one. */
+export function branchGrowth(contract, baseContract) {
   const baseLatest = baseContract === undefined ? 0 : latestEpoch(baseContract);
-  return {
-    minted: latestEpoch(contract) - baseLatest,
-    revised: mainRecord === undefined ? 0 : (record.revision ?? 0) - (mainRecord.revision ?? 0),
-  };
+  return { minted: latestEpoch(contract) - baseLatest };
 }
+
+/**
+ * Whether a contract-table entry is a MIRROR: a capability whose entry point
+ * only re-exports another package's capability (`{ "mirrors": "aai:testing" }`)
+ * and so carries no hash, epoch or rollup of its own — see
+ * `_api-contracts-mirror.mjs`.
+ */
+export const isMirror = (contract) => typeof contract?.mirrors === "string";

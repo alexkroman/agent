@@ -143,6 +143,8 @@ const GATES = [
   { script: "check:migration-order", phase: "ratchets", fatal: false },
   { script: "check:optional-peers", phase: "ratchets", fatal: false },
   { script: "check:untyped-imports", phase: "ratchets", fatal: false },
+  // Reads the COMMITTED reports and entry points (no build), so it runs here.
+  { script: "check:api-shape", phase: "ratchets", fatal: false, fix: "api-shape:update" },
   // FATAL, unlike its neighbours: a contraction landing a release early breaks
   // production at release time, after the npm publish — it is not debt. LAST in
   // the phase, because a fatal row stops the run where it is printed, and every
