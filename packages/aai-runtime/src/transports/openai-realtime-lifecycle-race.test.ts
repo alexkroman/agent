@@ -649,32 +649,32 @@ describe("OpenAI Realtime lifecycle: cancel, barge-in and hang-up racing the soc
       ),
       { numRuns: 200 },
     );
-    // Coverage floors (`pnpm floors:sample --runs 150`): an all-green property
+    // Coverage floors (`pnpm floors:sample`, 250 runs): an all-green property
     // proves nothing about a state the generator never reached. Each sits at
     // about HALF the observed minimum, not just under it — these counters have
     // long left tails, and floors set just under a 20-run minimum failed ~2% of
     // runs (3 of 150; CI drew framesAfterStop 26 against a floor of 35). Half
     // still fails the case a floor exists for: a generator that stops reaching
     // a state reads zero, or near it.
-    // Measured over 150 runs: 135-168.
+    // Measured over 250 runs: 135-168.
     expect(cov.opened, "the socket never opened").toBeGreaterThan(65);
-    // Measured over 150 runs: 32-65.
+    // Measured over 250 runs: 32-65.
     expect(cov.connectFailures, "no connect ever failed").toBeGreaterThan(15);
-    // Measured over 150 runs: 151-231.
+    // Measured over 250 runs: 137-231.
     expect(cov.repliesStarted, "no reply ever started").toBeGreaterThan(75);
-    // Measured over 150 runs: 44-98.
+    // Measured over 250 runs: 44-98.
     expect(cov.repliesCompleted, "no reply ever completed").toBeGreaterThan(20);
-    // Measured over 150 runs: 47-82.
+    // Measured over 250 runs: 47-90.
     expect(cov.cancelsWhileReplying, "no cancel landed on a reply").toBeGreaterThan(20);
-    // Measured over 150 runs: 19-54.
-    expect(cov.bargeIns, "no barge-in landed on a reply").toBeGreaterThan(8);
-    // Measured over 150 runs: 256-468.
+    // Measured over 250 runs: 11-54.
+    expect(cov.bargeIns, "no barge-in landed on a reply").toBeGreaterThan(5);
+    // Measured over 250 runs: 256-496.
     expect(cov.staleFrames, "no frame of an ended reply was delivered").toBeGreaterThan(125);
-    // Measured over 150 runs: 31-146; CI drew 26.
+    // Measured over 250 runs: 31-146; CI drew 26.
     expect(cov.framesAfterStop, "no frame landed after the hang-up").toBeGreaterThan(12);
-    // Measured over 150 runs: 17-57.
+    // Measured over 250 runs: 17-57.
     expect(cov.toolCalls, "no tool was ever called").toBeGreaterThan(8);
-    // Measured over 150 runs: 27-56.
+    // Measured over 250 runs: 27-62.
     expect(cov.farCloses, "the far end never closed").toBeGreaterThan(12);
   });
 
