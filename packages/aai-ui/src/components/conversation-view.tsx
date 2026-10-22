@@ -23,6 +23,7 @@ const SPOKEN_MESSAGE_ID = -2;
 /**
  * Props of {@link ConversationView}.
  *
+ * @input
  * @public
  */
 export type ConversationViewProps = {
@@ -192,10 +193,17 @@ export function ConversationView({
   // In log mode the live items are unused, so they are not a dependency there.
   const liveItems = log ? undefined : items;
   const rows = useMemo(() => {
-    const renderItem = (item: ConversationItem, key: string): ReactNode =>
-      item.kind === "message"
-        ? renderKeyed(`${key}m${item.message.id}`, renderMessage(item.message))
-        : renderKeyed(`${key}t${item.toolCall.callId}`, renderTool(item.toolCall));
+    const renderItem = (item: ConversationItem, key: string): ReactNode => {
+      switch (item.kind) {
+        case "message":
+          return renderKeyed(`${key}m${item.message.id}`, renderMessage(item.message));
+        case "tool":
+          return renderKeyed(`${key}t${item.toolCall.callId}`, renderTool(item.toolCall));
+        default:
+          // A row this version cannot describe (a newer page's stored item).
+          return null;
+      }
+    };
     // Prefixed, so a numeric message id and a tool call whose id happens to be
     // the same digits cannot share a key.
     if (!log) return (liveItems ?? []).map((item) => renderItem(item, ""));

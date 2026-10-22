@@ -58,6 +58,7 @@ export const INBOX_RECONNECT_MAX_MS = 30_000;
 /**
  * Options for {@link createInbox}.
  *
+ * @input
  * @public
  */
 export type CreateInboxOptions = {

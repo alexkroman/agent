@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 /**
  * Props for {@link BulletList}.
  *
+ * @input
  * @public
  */
 export type BulletListProps = {

@@ -84,6 +84,7 @@ export { AGENT_STATE_LABELS } from "./agent-state-labels.ts";
 // `@alexkroman1/aai-ui/internal`.
 export {
   type ClientConfigResponse,
+  type FetchClientConfigOptions,
   fetchClientConfig,
 } from "./client-config.ts";
 // Who this browser is to an agent: the id `client: "auto"` mints and keeps,
@@ -302,6 +303,7 @@ export type {
   AgentState,
   ChatMessage,
   ClientTheme,
+  ResolvedClientTheme,
   SessionError,
   SessionErrorCode,
   ToolCallInfo,

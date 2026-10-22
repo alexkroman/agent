@@ -150,7 +150,7 @@ test("useToolCallStart carries the call through both overloads", () => {
   useToolCallStart("get_quote", (toolCall) => {
     expectTypeOf(toolCall).toExtend<ToolCallInfo>();
     expectTypeOf(toolCall.callId).toEqualTypeOf<string>();
-    expectTypeOf(toolCall.status).toEqualTypeOf<"pending" | "done">();
+    expectTypeOf(toolCall.status).toEqualTypeOf<"pending" | "done" | (string & {})>();
     expectTypeOf(toolCall.seq).toEqualTypeOf<number>();
     expectTypeOf(toolCall.afterMessageId).toEqualTypeOf<number>();
   });

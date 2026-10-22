@@ -88,14 +88,16 @@ export async function loadClientConfig(
   platformUrl: string,
   fetchFn?: typeof globalThis.fetch,
   presentedTicket?: string,
+  signal?: AbortSignal,
 ): Promise<ClientConfigResponse | null> {
   const doFetch =
     fetchFn ?? ((input: RequestInfo | URL, init?: RequestInit) => globalThis.fetch(input, init));
+  // Without the deadline a hung lookup wedges the session permanently — see
+  // CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS.
+  const deadline = AbortSignal.timeout(CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS);
   try {
     const resp = await doFetch(buildAgentUrl(platformUrl, CLIENT_CONFIG_PATH).href, {
-      // Without this a hung lookup wedges the session permanently — see
-      // CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS.
-      signal: AbortSignal.timeout(CLIENT_CONFIG_ATTEMPT_TIMEOUT_MS),
+      signal: signal === undefined ? deadline : AbortSignal.any([deadline, signal]),
       // The last ticket this server issued, so a broker binding tickets to a
       // session re-mints for THAT session — see `SESSION_TICKET_HEADER`.
       ...(presentedTicket === undefined
@@ -109,6 +111,33 @@ export async function loadClientConfig(
     return null;
   }
 }
+
+/**
+ * Options for {@link fetchClientConfig}.
+ *
+ * @input
+ * @public
+ */
+export type FetchClientConfigOptions = {
+  /**
+   * The agent's base URL. **Defaults to the page's own origin and path**, which
+   * is the agent that served the page and the only case a browser has. Pass
+   * one for a page reading a DIFFERENT agent; the endpoint is resolved
+   * relative to it.
+   */
+  platformUrl?: string | undefined;
+  /**
+   * Fetch implementation, for tests and for a caller that supplies its own
+   * credentials. Defaults to the global `fetch`.
+   */
+  fetch?: typeof globalThis.fetch | undefined;
+  /**
+   * Abandons the lookup — a component that unmounts before the answer, say.
+   * An abandoned lookup resolves to the agent default like every other one that produced no
+   * answer; the built-in 10 s deadline applies either way.
+   */
+  signal?: AbortSignal | undefined;
+};
 
 /**
  * Fetch the agent's declared `name`, `greeting` and front door; any failure
@@ -129,14 +158,7 @@ export async function loadClientConfig(
  * treat every field as optional, because an agent that declared none is a
  * normal agent.
  *
- * @param platformUrl - The agent's base URL. **Defaults to the page's own
- * origin and path** (`pageBaseUrl()`), which is the agent that served the page
- * and the only case a browser has — the argument was required while the default
- * sat one module away in this same package, so every caller wrote
- * `location.origin + location.pathname` for itself. Pass one for a page reading
- * a DIFFERENT agent. The endpoint is resolved relative to it.
- * @param fetchFn - Fetch implementation, for tests and for a caller that
- * supplies its own credentials. Defaults to the global `fetch`.
+ * @param options - Where to look and how; see {@link FetchClientConfigOptions}.
  * @returns The agent's config, or `{}` when the lookup produced no answer.
  *
  * @example
@@ -160,8 +182,8 @@ export async function loadClientConfig(
  * @public
  */
 export async function fetchClientConfig(
-  platformUrl: string = pageBaseUrl(),
-  fetchFn?: typeof globalThis.fetch,
+  options: FetchClientConfigOptions = {},
 ): Promise<ClientConfigResponse> {
-  return (await loadClientConfig(platformUrl, fetchFn)) ?? AGENT_DEFAULT;
+  const { platformUrl = pageBaseUrl(), fetch: fetchFn, signal } = options;
+  return (await loadClientConfig(platformUrl, fetchFn, undefined, signal)) ?? AGENT_DEFAULT;
 }

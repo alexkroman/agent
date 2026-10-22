@@ -45,6 +45,7 @@ import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
  * One notice from the agent — what a workflow step sent with
  * `stepNotifyClient`, e.g. a reminder coming due.
  *
+ * @sealed
  * @public
  */
 export type InboxNotice = {
@@ -66,6 +67,11 @@ export type InboxNotice = {
  * for events: every session bound to the client, this tab's own included —
  * filter on `sessionId` (`useSessionId()`) to show only the OTHER ones.
  *
+ * `"other"` is a frame this version does not know (`frameType` is the wire
+ * `type` it arrived with) — a member from the start so that a frame the server
+ * adds later reaches an existing `switch`'s `default`, not a compile error.
+ * Ignore it.
+ *
  * @public
  */
 export type InboxEvent =
@@ -75,14 +81,15 @@ export type InboxEvent =
       /** The session event as the session socket would carry it (`type`, then its fields). */
       readonly event: { readonly type: string } & Readonly<Record<string, unknown>>;
     }
-  | { readonly type: "session_ended"; readonly sessionId: string };
+  | { readonly type: "session_ended"; readonly sessionId: string }
+  | { readonly type: "other"; readonly frameType: string };
 
 /**
  * The largest notice taken: 60 s of 16 kHz PCM16, the firmware's
  * `PROTO_NOTICE_MAX_BYTES`. A header claiming more is refused rather than
  * buffered — a page holds the whole notice in memory before it plays.
  */
-export const MAX_NOTICE_BYTES = 60 * 16_000 * 2;
+export const MAX_NOTICE_BYTES: number = 60 * 16_000 * 2;
 
 /** How many acked ids are remembered to drop a repeat — the firmware's `RECENT_IDS`. */
 export const RECENT_NOTICE_IDS = 8;
@@ -121,15 +128,27 @@ export function parseNoticeHeader(json: string): NoticeHeader | undefined {
   return isRecord(data) ? { id, event, bytes, data } : { id, event, bytes };
 }
 
+/** The wire frame types this version knows; anything else is an `"other"` event. */
+const KNOWN_FRAME_TYPES: ReadonlySet<string> = new Set<InboxServerFrame["type"]>([
+  "notice",
+  "session_event",
+  "session_ended",
+]);
+
 /**
- * A live-event frame, or undefined for anything else (a notice header, say).
- * The wire's live frames are returned as the published {@link InboxEvent}, so
- * that view cannot drift from what the server sends without this failing to
- * compile.
+ * A live-event frame, or undefined for a notice header or a frame that is not
+ * one at all. The wire's live frames are returned as the published
+ * {@link InboxEvent}, so that view cannot drift from what the server sends
+ * without this failing to compile; a well-formed frame of a type this version
+ * does not know is `{ type: "other" }`.
  */
 export function parseInboxEvent(json: string): InboxEvent | undefined {
-  const frame = parseServerFrame(json);
-  return frame === undefined || frame.type === "notice" ? undefined : frame;
+  const raw = safeJsonParse(json);
+  if (isRecord(raw) && typeof raw.type === "string" && !KNOWN_FRAME_TYPES.has(raw.type)) {
+    return { type: "other", frameType: raw.type };
+  }
+  const parsed = InboxServerFrameSchema.safeParse(raw);
+  return !parsed.success || parsed.data.type === "notice" ? undefined : parsed.data;
 }
 
 /** The notice being received: its header, the chunks so far, and whether it plays. */

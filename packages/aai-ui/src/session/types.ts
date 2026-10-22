@@ -25,6 +25,7 @@ import type { AudioPath } from "./audio-state.ts";
  * Deliberately NOT the DOM `CustomEvent`: it shares nothing with that
  * interface, and the old name shadowed the global in `.tsx` files.
  *
+ * @sealed
  * @public
  */
 export type AgentCustomEvent = {
@@ -59,6 +60,7 @@ export type AgentStateFrame = Readonly<Record<string, unknown>>;
  * | `recording` | Is the microphone actually live right now? |
  * | `state` | What is the agent doing — see {@link AgentState}. |
  *
+ * @sealed
  * @public
  */
 export type SessionSnapshot = {
@@ -193,6 +195,7 @@ export declare const browserSessionBrand: unique symbol;
  * the session, so a feature one agent in many declares is not three members
  * every session carries in its autocomplete.
  *
+ * @sealed
  * @public
  */
 export type UserTurnControls = {
@@ -221,6 +224,7 @@ export type ToolCallOutcome = { result: unknown } | { error: string };
 /**
  * Options for {@link BrowserSession.sendText}.
  *
+ * @input
  * @public
  */
 export type SendTextOptions = {

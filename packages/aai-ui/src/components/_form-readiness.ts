@@ -30,7 +30,15 @@
  * unaffected and `Form` keeps working outside this package.
  */
 
-import { createContext, useCallback, useContext, useEffect, useId, useState } from "react";
+import {
+  createContext,
+  type Provider,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useState,
+} from "react";
 
 /** What a child calls to say whether its own fields are ready. */
 type Readiness = (key: string, pending: boolean) => void;
@@ -43,7 +51,7 @@ type Readiness = (key: string, pending: boolean) => void;
  */
 const FormReadinessContext = createContext<Readiness | undefined>(undefined);
 
-export const FormReadinessProvider = FormReadinessContext.Provider;
+export const FormReadinessProvider: Provider<Readiness | undefined> = FormReadinessContext.Provider;
 
 /**
  * Track which children are still waiting for their fields.

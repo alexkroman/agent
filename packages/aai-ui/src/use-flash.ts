@@ -22,6 +22,7 @@ const FLASH_MS = 1500;
  * @typeParam T - What is being flashed. A `string` for a label; a record for a
  *   flash that has to say WHICH thing it belongs to, as `useCopy` does.
  *
+ * @sealed
  * @public
  */
 export type UseFlashResult<T> = {

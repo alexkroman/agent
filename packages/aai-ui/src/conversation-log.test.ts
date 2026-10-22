@@ -40,13 +40,21 @@ const record = (log: readonly ConversationLogEntry[], items: ConversationItem[],
 const note = (log: readonly ConversationLogEntry[], text: string, at: number) =>
   appendEntry(log, { kind: "note", at, text }, MAX);
 
+/** One row as text: a message's content, a tool's name, an unknown row's kind. */
+function itemText(it: ConversationItem): string {
+  switch (it.kind) {
+    case "message":
+      return it.message.content;
+    case "tool":
+      return it.toolCall.name;
+    default:
+      return it.type;
+  }
+}
+
 /** Each entry as text: a session's rows, or a note's line. */
 const texts = (log: readonly ConversationLogEntry[]) =>
-  log.map((e) =>
-    e.kind === "session"
-      ? e.items.map((it) => (it.kind === "message" ? it.message.content : it.toolCall.name))
-      : e.text,
-  );
+  log.map((e) => (e.kind === "session" ? e.items.map(itemText) : e.text));
 
 describe("recordSession", () => {
   test("a session's conversation grows in its one entry", () => {
@@ -216,5 +224,23 @@ describe("parseLog", () => {
       { kind: "spoken", at: 2, text: "kept too" },
     ];
     expect(texts(parseLog(JSON.stringify(junk), MAX))).toEqual(["kept", "kept too"]);
+  });
+
+  test("an item kind a newer page stored is kept as `other`, and round-trips as itself", () => {
+    const stored = [
+      {
+        kind: "session",
+        sessionId: "s",
+        run: 0,
+        at: 1,
+        items: [
+          { kind: "message", message: { id: 0, role: "user", content: "hi" } },
+          { kind: "handoff", to: "billing" },
+        ],
+      },
+    ];
+    const log = parseLog(JSON.stringify(stored), MAX);
+    expect(texts(log)).toEqual([["hi", "handoff"]]);
+    expect(parseLog(JSON.stringify(log), MAX)).toEqual(log);
   });
 });

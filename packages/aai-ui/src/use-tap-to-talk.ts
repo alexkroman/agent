@@ -46,6 +46,7 @@ import type { AgentState, SessionError } from "./types.ts";
 /**
  * Options for {@link useTapToTalk}.
  *
+ * @input
  * @public
  */
 export type UseTapToTalkOptions = {
@@ -72,14 +73,16 @@ export type UseTapToTalkOptions = {
 /**
  * What {@link useTapToTalk} returns.
  *
+ * @sealed
  * @public
  */
 export type UseTapToTalkResult = {
   /**
    * The call: `"idle"` (not meant to be running), `"connecting"`, or
-   * `"active"` — up, whatever the agent is doing.
+   * `"active"` — up, whatever the agent is doing. Open (`| (string & {})`) so
+   * a phase added later is not a break.
    */
-  phase: "idle" | "connecting" | "active";
+  phase: "idle" | "connecting" | "active" | (string & {});
   /** Whether the caller is live — mic open, in a realtime conversation. The button is ON. */
   live: boolean;
   /**

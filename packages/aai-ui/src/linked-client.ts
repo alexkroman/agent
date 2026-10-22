@@ -23,6 +23,7 @@ import { browserClientId } from "./client-identity.ts";
 /**
  * Options for {@link createLinkedClient}.
  *
+ * @input
  * @public
  */
 export type LinkedClientOptions = {
@@ -38,6 +39,7 @@ export type LinkedClientOptions = {
 /**
  * Which client a page is — see {@link createLinkedClient}.
  *
+ * @sealed
  * @public
  */
 export type LinkedClient = {

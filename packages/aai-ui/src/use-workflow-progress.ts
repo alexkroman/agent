@@ -62,6 +62,11 @@ import type { WorkflowApi } from "./workflow-client.ts";
 /** The slice of the client this needs: one method. */
 export type RunProgressReader = Pick<WorkflowApi, "streamOutput">;
 
+/**
+ * What {@link useWorkflowProgress} reports.
+ *
+ * @public @sealed
+ */
 export type UseWorkflowProgressResult<T = string> = {
   /** Every chunk the run has written, oldest first. */
   progress: T[];

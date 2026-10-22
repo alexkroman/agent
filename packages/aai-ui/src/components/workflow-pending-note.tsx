@@ -9,6 +9,7 @@ import type { WorkflowRun } from "../workflow-client.ts";
 /**
  * Props for {@link WorkflowPendingNote}.
  *
+ * @input
  * @public
  */
 export type WorkflowPendingNoteProps = {

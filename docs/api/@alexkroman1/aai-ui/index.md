@@ -539,11 +539,13 @@ function Console() {
       footer={<Controls />}
     >
       <ul>
-        {items.map((item) => (
-          <li key={item.kind === "message" ? item.message.id : item.toolCall.callId}>
-            {item.kind === "message" ? item.message.content : item.toolCall.name}
-          </li>
-        ))}
+        {items.map((item) =>
+          item.kind === "message" ? (
+            <li key={item.message.id}>{item.message.content}</li>
+          ) : item.kind === "tool" ? (
+            <li key={item.toolCall.callId}>{item.toolCall.name}</li>
+          ) : null,
+        )}
       </ul>
     </ConsoleShell>
   );
@@ -980,10 +982,7 @@ function RunFacts({ words, cut }: { words: number; cut: number }) {
 ### fetchClientConfig()
 
 ```ts
-function fetchClientConfig(platformUrl?: string, fetchFn?: {
-  (input: RequestInfo | URL, init?: RequestInit): Promise<Response>;
-  (input: string | Request | URL, init?: RequestInit): Promise<Response>;
-}): Promise<ClientConfigResponse>;
+function fetchClientConfig(options?: FetchClientConfigOptions): Promise<ClientConfigResponse>;
 ```
 
 Fetch the agent's declared `name`, `greeting` and front door; any failure
@@ -1006,26 +1005,11 @@ normal agent.
 
 #### Parameters
 
-##### platformUrl?
+##### options?
 
-`string`
+[`FetchClientConfigOptions`](#fetchclientconfigoptions)
 
-The agent's base URL. **Defaults to the page's own
-origin and path** (`pageBaseUrl()`), which is the agent that served the page
-and the only case a browser has — the argument was required while the default
-sat one module away in this same package, so every caller wrote
-`location.origin + location.pathname` for itself. Pass one for a page reading
-a DIFFERENT agent. The endpoint is resolved relative to it.
-
-##### fetchFn?
-
-\{
-  (`input`: `RequestInfo` \| `URL`, `init?`: `RequestInit`): `Promise`\<`Response`\>;
-  (`input`: `string` \| `Request` \| `URL`, `init?`: `RequestInit`): `Promise`\<`Response`\>;
-\}
-
-Fetch implementation, for tests and for a caller that
-supplies its own credentials. Defaults to the global `fetch`.
+Where to look and how; see [FetchClientConfigOptions](#fetchclientconfigoptions).
 
 #### Returns
 
@@ -1901,7 +1885,7 @@ deciding which states pulse and how fast. `agent-state-labels.ts` argued
 against a dot component on the grounds that it would take the shared part
 (the words) hostage to the part that is not (the palette); this takes the
 palette as a prop precisely so it does not. What is shared is the structure
-— the exhaustive colour lookup, the label fallback, the pulse rule, the
+— the colour lookup and its theme fallback, the label fallback, the pulse rule, the
 `useSessionStatus()` subscription that keeps the rest of the header from
 re-rendering at STT-partial rate.
 
@@ -2695,15 +2679,20 @@ function Transcript() {
   const { items, streaming, transcript, thinking } = useConversation();
   return (
     <div>
-      {items.map((item) =>
-        item.kind === "message" ? (
-          <p key={item.message.id} data-role={item.message.role}>
-            {item.message.content}
-          </p>
-        ) : (
-          <code key={item.toolCall.callId}>{item.toolCall.name}</code>
-        ),
-      )}
+      {items.map((item) => {
+        switch (item.kind) {
+          case "message":
+            return (
+              <p key={item.message.id} data-role={item.message.role}>
+                {item.message.content}
+              </p>
+            );
+          case "tool":
+            return <code key={item.toolCall.callId}>{item.toolCall.name}</code>;
+          default:
+            return null;
+        }
+      })}
       {streaming !== null && <p data-role="assistant">{streaming}</p>}
       {transcript.speaking && <p data-role="user">{transcript.text}</p>}
       {thinking && <p>…</p>}
@@ -3513,7 +3502,7 @@ import { AGENT_STATE_LABELS, useSessionStatus } from "@alexkroman1/aai-ui";
 
 function StatusDot() {
   const status = useSessionStatus();
-  return <span data-state={status}>{AGENT_STATE_LABELS[status]}</span>;
+  return <span data-state={status}>{AGENT_STATE_LABELS[status] ?? status}</span>;
 }
 ```
 
@@ -3629,7 +3618,7 @@ function Speaker() {
 ### useTheme()
 
 ```ts
-function useTheme(): Required<ClientTheme>;
+function useTheme(): ResolvedClientTheme;
 ```
 
 Read the resolved theme (every [ClientTheme](#clienttheme) field filled with its
@@ -3642,9 +3631,9 @@ Tailwind class cannot see it.
 
 #### Returns
 
-`Required`\<[`ClientTheme`](#clienttheme)\>
+[`ResolvedClientTheme`](#resolvedclienttheme)
 
-Every [ClientTheme](#clienttheme) field, filled in.
+Every [ClientTheme](#clienttheme) field, filled in — a [ResolvedClientTheme](#resolvedclienttheme).
 
 #### Example
 
@@ -4793,6 +4782,8 @@ The client's runs, oldest first.
 
 ### ToolCallRowProps
 
+**`Input`**
+
 Props for [ToolCallRow](#toolcallrow).
 
 #### Properties
@@ -4859,6 +4850,8 @@ Size preset; defaults to `"default"`.
 ***
 
 ### UseUserTranscriptResult
+
+**`Sealed`**
 
 What [useUserTranscript](#useusertranscript) returns.
 
@@ -4961,6 +4954,8 @@ type AgentCustomEvent = {
 };
 ```
 
+**`Sealed`**
+
 A custom event emitted by the agent via `ctx.send(event, data)` — the
 payload the session records in `SessionSnapshot.customEvents` (`id` is a
 monotonic session-unique counter, `event` the name, `data` the payload).
@@ -5000,7 +4995,9 @@ type AgentState =
   | "listening"
   | "thinking"
   | "speaking"
-  | "error";
+  | "error"
+  | string & {
+};
 ```
 
 Current state of the voice agent session — the `state` field of
@@ -5031,6 +5028,10 @@ The seven members, in the order a call passes through them:
   until the next completed handshake, so a later frame cannot quietly paint
   over the banner explaining a dead call.
 
+The set is OPEN (`| (string & {})`): a later release may add a state, so a
+`switch` over it needs a `default`, and a lookup keyed by it needs a
+fallback for a state it has no entry for.
+
 ***
 
 ### AgentStateFrame
@@ -5054,6 +5055,8 @@ type AudioResultCaptions = {
   text: string;
 };
 ```
+
+**`Input`**
 
 A one-cue caption track for [AudioResult](#audioresult): the words the clip speaks,
 spanning its whole length.
@@ -5107,6 +5110,8 @@ type AudioResultProps = {
   label: string;
 };
 ```
+
+**`Input`**
 
 Props of [AudioResult](#audioresult).
 
@@ -5613,6 +5618,8 @@ type BulletListProps = {
 };
 ```
 
+**`Input`**
+
 Props for [BulletList](#bulletlist).
 
 #### Properties
@@ -5697,9 +5704,14 @@ rectangular, ALL-CAPS, tracked labels).
 type ChatMessage = {
   content: string;
   id: number;
-  role: "user" | "assistant";
+  role:   | "user"
+     | "assistant"
+     | string & {
+   };
 };
 ```
+
+**`Sealed`**
 
 A chat message exchanged between user and assistant.
 
@@ -5731,10 +5743,16 @@ render key.
 ##### role
 
 ```ts
-role: "user" | "assistant";
+role: 
+  | "user"
+  | "assistant"
+  | string & {
+};
 ```
 
-The sender of the message.
+The sender of the message. Open (`| (string & {})`) so a later sender is
+not a break: render anything that is not `"user"` the way you render
+`"assistant"`, or skip it.
 
 ***
 
@@ -5763,6 +5781,8 @@ type ClientConfig = Pick<VoiceSessionOptions,
   tools?: ToolDisplayConfig;
 };
 ```
+
+**`Input`**
 
 Configuration passed to [mountClient](#mountclient).
 
@@ -5919,6 +5939,8 @@ type ClientHandle = {
 };
 ```
 
+**`Sealed`**
+
 Handle returned by [mountClient](#mountclient) for cleanup.
 
 Implements `Disposable` so it can be used with `using`.
@@ -5991,6 +6013,8 @@ type ClientTheme = {
 };
 ```
 
+**`Input`**
+
 Theme color overrides for the AAI UI components.
 
 #### Properties
@@ -6050,6 +6074,8 @@ type ConsoleShellProps = {
   title?: string;
 };
 ```
+
+**`Input`**
 
 Props of [ConsoleShell](#consoleshell).
 
@@ -6147,6 +6173,10 @@ type ConversationItem =
   | {
   kind: "tool";
   toolCall: ToolCallInfo;
+}
+  | {
+  kind: "other";
+  type: string;
 };
 ```
 
@@ -6155,6 +6185,12 @@ One row of the conversation: a finalized message, or a tool invocation.
 A discriminated union rather than two arrays, because the ORDER between them
 is the thing this hook computes — handing back two lists would hand back the
 problem. `kind` is what a `switch` in a custom renderer narrows on.
+
+`"other"` is the row this version cannot describe — today, an item a newer
+page wrote into a stored conversation log (`type` is the `kind` it was
+stored under). It is a member from the start so that a row kind added
+later is a value an existing `switch` already has a branch for, not a
+compile error: render nothing for it, or a placeholder.
 
 ***
 
@@ -6299,6 +6335,8 @@ type ConversationViewProps = {
   transcriptPosition?: "inline" | "below";
 };
 ```
+
+**`Input`**
 
 Props of [ConversationView](#conversationview).
 
@@ -6538,6 +6576,8 @@ type CreateInboxOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [createInbox](#createinbox).
 
 #### Properties
@@ -6660,6 +6700,8 @@ type FactsProps = {
 };
 ```
 
+**`Input`**
+
 Props for [Facts](#facts).
 
 #### Properties
@@ -6713,6 +6755,54 @@ muting move together, because that is the pair every site had.
 
 ***
 
+### FetchClientConfigOptions
+
+```ts
+type FetchClientConfigOptions = {
+  fetch?: typeof globalThis.fetch;
+  platformUrl?: string;
+  signal?: AbortSignal;
+};
+```
+
+**`Input`**
+
+Options for [fetchClientConfig](#fetchclientconfig).
+
+#### Properties
+
+##### fetch?
+
+```ts
+optional fetch?: typeof globalThis.fetch;
+```
+
+Fetch implementation, for tests and for a caller that supplies its own
+credentials. Defaults to the global `fetch`.
+
+##### platformUrl?
+
+```ts
+optional platformUrl?: string;
+```
+
+The agent's base URL. **Defaults to the page's own origin and path**, which
+is the agent that served the page and the only case a browser has. Pass
+one for a page reading a DIFFERENT agent; the endpoint is resolved
+relative to it.
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+Abandons the lookup — a component that unmounts before the answer, say.
+An abandoned lookup resolves to the agent default like every other one that produced no
+answer; the built-in 10 s deadline applies either way.
+
+***
+
 ### FieldShell
 
 ```ts
@@ -6723,6 +6813,8 @@ type FieldShell = {
   name: string;
 };
 ```
+
+**`Input`**
 
 The props every field in `form.tsx` shares.
 
@@ -6797,7 +6889,13 @@ type FileValue = {
 };
 ```
 
+**`Sealed`**
+
 What a [FileField](#filefield) contributes to [FormValues](#formvalues).
+
+No signature names it — `FormValues` is `Record<string, unknown>` — so a
+page casts the field's value to it (`values.doc as FileValue`); it is
+published for that cast.
 
 #### Properties
 
@@ -6853,6 +6951,8 @@ type FormProps = {
   onSubmit: (values: FormValues) => void | Promise<void>;
 } & Omit<FormHTMLAttributes<HTMLFormElement>, "onSubmit" | "className">;
 ```
+
+**`Input`**
 
 Props of [Form](#form).
 
@@ -6980,12 +7080,21 @@ type InboxEvent =
   | {
   sessionId: string;
   type: "session_ended";
+}
+  | {
+  frameType: string;
+  type: "other";
 };
 ```
 
 One frame of the client's live conversation, sent to a holder that asked
 for events: every session bound to the client, this tab's own included —
 filter on `sessionId` (`useSessionId()`) to show only the OTHER ones.
+
+`"other"` is a frame this version does not know (`frameType` is the wire
+`type` it arrived with) — a member from the start so that a frame the server
+adds later reaches an existing `switch`'s `default`, not a compile error.
+Ignore it.
 
 #### Union Members
 
@@ -7044,6 +7153,17 @@ readonly type: "session_event";
 
 ***
 
+##### Type Literal
+
+```ts
+{
+  frameType: string;
+  type: "other";
+}
+```
+
+***
+
 ### InboxNotice
 
 ```ts
@@ -7054,6 +7174,8 @@ type InboxNotice = {
   pcm: Uint8Array;
 };
 ```
+
+**`Sealed`**
 
 One notice from the agent — what a workflow step sent with
 `stepNotifyClient`, e.g. a reminder coming due.
@@ -7106,6 +7228,8 @@ type LinkedClient = {
   set: void;
 };
 ```
+
+**`Sealed`**
 
 Which client a page is — see [createLinkedClient](#createlinkedclient).
 
@@ -7189,6 +7313,8 @@ type LinkedClientOptions = {
   key: string;
 };
 ```
+
+**`Input`**
 
 Options for [createLinkedClient](#createlinkedclient).
 
@@ -7311,6 +7437,8 @@ type PageConfig = {
 };
 ```
 
+**`Input`**
+
 Configuration for [mountPage](#mountpage).
 
 #### Properties
@@ -7367,6 +7495,8 @@ type PageHandle = {
 };
 ```
 
+**`Sealed`**
+
 Handle returned by [mountPage](#mountpage). `Disposable`, so `using` works.
 
 #### Methods
@@ -7405,6 +7535,8 @@ type PhoneE164Options = {
 };
 ```
 
+**`Input`**
+
 Options for [phoneE164](#phonee164).
 
 #### Properties
@@ -7426,6 +7558,72 @@ trunk `0` is dropped before the code is prepended (`020 7946 0958` with
 
 ***
 
+### ResolvedClientTheme
+
+```ts
+type ResolvedClientTheme = {
+  bg: string;
+  border: string;
+  primary: string;
+  surface: string;
+  text: string;
+};
+```
+
+**`Sealed`**
+
+The theme a component reads back from `useTheme()`: every
+[ClientTheme](#clienttheme) field, filled with its default where the client set
+none.
+
+Its own type rather than `Required<ClientTheme>`, because the two travel in
+opposite directions — an author BUILDS a `ClientTheme` and only READS this —
+so a token added later can be optional on one and present on the other.
+
+#### Properties
+
+##### bg
+
+```ts
+readonly bg: string;
+```
+
+Background color, also painted on `html`/`body`.
+
+##### border
+
+```ts
+readonly border: string;
+```
+
+Border color.
+
+##### primary
+
+```ts
+readonly primary: string;
+```
+
+Primary accent color.
+
+##### surface
+
+```ts
+readonly surface: string;
+```
+
+Surface/card color.
+
+##### text
+
+```ts
+readonly text: string;
+```
+
+Main text color.
+
+***
+
 ### RouteFetchOptions
 
 ```ts
@@ -7435,6 +7633,8 @@ type RouteFetchOptions = {
   signal?: AbortSignal;
 };
 ```
+
+**`Input`**
 
 Options for [routeFetch](#routefetch).
 
@@ -7486,6 +7686,8 @@ type RouteMutationRunOptions = {
 };
 ```
 
+**`Input`**
+
 Options for one [UseRouteMutationResult.run](#run) call.
 
 #### Properties
@@ -7509,6 +7711,8 @@ type SendTextOptions = {
   connect?: boolean;
 };
 ```
+
+**`Input`**
 
 Options for [BrowserSession.sendText](#sendtext).
 
@@ -7564,6 +7768,8 @@ type SessionActions = {
   toggle: void;
 };
 ```
+
+**`Sealed`**
 
 The session's control methods, and nothing else — what a `client.tsx` may
 legitimately CALL on a session, as against what it may read.
@@ -7740,10 +7946,18 @@ Toggle between connected and disconnected (after `start()`).
 ### SessionControlAction
 
 ```ts
-type SessionControlAction = "start" | "toggle" | "restart" | "end";
+type SessionControlAction = 
+  | "start"
+  | "toggle"
+  | "restart"
+  | "end"
+  | string & {
+};
 ```
 
-Which of the four buttons a [SessionControlButton](#sessioncontrolbutton) is.
+Which button a [SessionControlButton](#sessioncontrolbutton) is: one of the four today. Open
+(`| (string & {})`) so a button added later is not a break — a `renderButton`
+keeps a default look for an action it does not know.
 
 ***
 
@@ -7757,6 +7971,8 @@ type SessionControlButton = {
   running: boolean;
 };
 ```
+
+**`Sealed`**
 
 One button of [SessionControls](#sessioncontrols), as handed to `renderButton`.
 
@@ -7814,6 +8030,8 @@ type SessionControlsLabels = {
 };
 ```
 
+**`Input`**
+
 The five words [SessionControls](#sessioncontrols) renders, every one overridable.
 
 #### Properties
@@ -7870,6 +8088,8 @@ type SessionControlsProps = {
   renderButton?: (button: SessionControlButton) => ReactNode;
 };
 ```
+
+**`Input`**
 
 Props of [SessionControls](#sessioncontrols).
 
@@ -7932,6 +8152,8 @@ type SessionError = {
 };
 ```
 
+**`Sealed`**
+
 Error reported by the voice session.
 
 #### Properties
@@ -7980,6 +8202,8 @@ type SessionErrorBannerProps = {
   className?: string;
 };
 ```
+
+**`Input`**
 
 Props of [SessionErrorBanner](#sessionerrorbanner).
 
@@ -8135,6 +8359,8 @@ type SessionSnapshot = {
   userTranscript: string | null;
 };
 ```
+
+**`Sealed`**
 
 Immutable snapshot of the session state.
 
@@ -8327,13 +8553,15 @@ Cleared when the turn is committed to `messages`.
 ```ts
 type SessionStateDotProps = {
   className?: string;
-  colors: Readonly<Record<AgentState, string>>;
+  colors?: Partial<Readonly<Record<AgentState, string>>>;
   dotClassName?: string;
   labelClassName?: string;
   labels?: Partial<Readonly<Record<AgentState, string>>>;
   pulse?: boolean;
 };
 ```
+
+**`Input`**
 
 Props of [SessionStateDot](#sessionstatedot).
 
@@ -8347,16 +8575,16 @@ optional className?: string;
 
 Additional CSS class names for the wrapping `<span>`, appended to its own.
 
-##### colors
+##### colors?
 
 ```ts
-colors: Readonly<Record<AgentState, string>>;
+optional colors?: Partial<Readonly<Record<AgentState, string>>>;
 ```
 
-The dot's colour per [AgentState](#agentstate) — the chrome's own palette. A
-complete record, so a state added upstream is a compile error here rather
-than a silently unpainted dot; `satisfies Record<AgentState, string>` on the
-caller's literal is the shape to write it in.
+The dot's colour per [AgentState](#agentstate) — the chrome's own palette. Any
+state not named (including one a later release adds) is painted the way
+`ConsoleShell` paints it, from the theme: the primary colour while live, a
+fixed amber while thinking, red on error, a faint ink otherwise.
 
 ##### dotClassName?
 
@@ -8384,7 +8612,8 @@ optional labels?: Partial<Readonly<Record<AgentState, string>>>;
 
 The words this chrome has a better term for. Anything not named falls back
 to [AGENT\_STATE\_LABELS](#agent_state_labels), so a page overrides one member (`speaking:
-"Narrating"`) without restating the union.
+"Narrating"`) without restating the union; a state neither names is shown
+as its raw value.
 
 ##### pulse?
 
@@ -8408,6 +8637,8 @@ type StoredValue = {
   subscribe: () => void;
 };
 ```
+
+**`Sealed`**
 
 One remembered string — see [createStoredValue](#createstoredvalue).
 
@@ -8482,6 +8713,8 @@ type StoredValueOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [createStoredValue](#createstoredvalue).
 
 #### Properties
@@ -8541,9 +8774,14 @@ type ToolCallInfo = {
   name: string;
   result?: string;
   seq: number;
-  status: "pending" | "done";
+  status:   | "pending"
+     | "done"
+     | string & {
+   };
 };
 ```
+
+**`Sealed`**
 
 Info about a tool call for display in the UI.
 
@@ -8610,8 +8848,17 @@ Tool calls in a snapshot are always sorted ascending by `seq`.
 ##### status
 
 ```ts
-status: "pending" | "done";
+status: 
+  | "pending"
+  | "done"
+  | string & {
+};
 ```
+
+`"pending"` until the tool returns, then `"done"`. A tool that FAILED is
+`"done"` too: the wire reports a failure as a completion whose `result` is
+the error text the model read. Open (`| (string & {})`) so a later status
+is not a break — treat anything but `"pending"` as settled.
 
 ***
 
@@ -8665,6 +8912,8 @@ type UploadStatus = UploadProgress & {
   paused: boolean;
 };
 ```
+
+**`Sealed`**
 
 What [WorkflowSubmission.upload](#upload-1) reports while the bytes are going.
 
@@ -8723,6 +8972,8 @@ type UseClientRunsOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [useClientRuns](#useclientruns).
 
 #### Properties
@@ -8757,6 +9008,8 @@ type UseClientRunsResult = {
   runs: ClientRun[] | undefined;
 };
 ```
+
+**`Sealed`**
 
 What [useClientRuns](#useclientruns) returns.
 
@@ -8829,6 +9082,8 @@ type UseConversationLogOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [useConversationLog](#useconversationlog).
 
 #### Properties
@@ -8863,6 +9118,8 @@ type UseConversationLogResult = {
   mirror: void;
 };
 ```
+
+**`Sealed`**
 
 What [useConversationLog](#useconversationlog) returns.
 
@@ -8959,6 +9216,8 @@ type UseConversationResult = {
 };
 ```
 
+**`Sealed`**
+
 What [useConversation](#useconversation) returns.
 
 #### Properties
@@ -9025,6 +9284,8 @@ type UseCopyResult = {
   label: (text: string, idle?: string) => string;
 };
 ```
+
+**`Sealed`**
 
 What [useCopy](#usecopy) hands back — the click handler and the two readings a
 button needs off one shared flash.
@@ -9105,6 +9366,8 @@ type UseDownloadUrlOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [useDownloadUrl](#usedownloadurl).
 
 #### Properties
@@ -9128,6 +9391,8 @@ type UseDownloadUrlResult = {
   url?: string;
 };
 ```
+
+**`Sealed`**
 
 What [useDownloadUrl](#usedownloadurl) reports.
 
@@ -9173,6 +9438,8 @@ type UseFlashResult<T> = {
   value: T | null;
 };
 ```
+
+**`Sealed`**
 
 What [useFlash](#useflash) hands back.
 
@@ -9226,6 +9493,8 @@ type UseInboxOptions = {
   play?: boolean;
 };
 ```
+
+**`Input`**
 
 Options for [useInbox](#useinbox).
 
@@ -9311,6 +9580,8 @@ type UseInboxResult = {
 };
 ```
 
+**`Sealed`**
+
 What [useInbox](#useinbox) returns.
 
 #### Methods
@@ -9346,6 +9617,8 @@ type UsePushToTalkOptions = {
   holdKey?: string | false;
 };
 ```
+
+**`Input`**
 
 Options for [usePushToTalk](#usepushtotalk).
 
@@ -9397,6 +9670,8 @@ type UsePushToTalkResult = {
   talking: boolean;
 };
 ```
+
+**`Sealed`**
 
 What [usePushToTalk](#usepushtotalk) returns.
 
@@ -9557,6 +9832,8 @@ type UseRouteMutationOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [useRouteMutation](#useroutemutation).
 
 #### Properties
@@ -9597,6 +9874,8 @@ type UseRouteMutationResult = {
   run: <T>(method: RouteMethod, path: string, body?: unknown, options?: RouteMutationRunOptions) => Promise<T | undefined>;
 };
 ```
+
+**`Sealed`**
 
 What [useRouteMutation](#useroutemutation) returns.
 
@@ -9681,6 +9960,8 @@ type UseRouteOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [useRoute](#useroute).
 
 #### Properties
@@ -9715,6 +9996,8 @@ type UseRouteResult<T> = {
   reload: () => void;
 };
 ```
+
+**`Sealed`**
 
 What [useRoute](#useroute) returns.
 
@@ -9773,6 +10056,8 @@ type UserTurnControls = {
   start: void;
 };
 ```
+
+**`Sealed`**
 
 Push-to-talk's three edges on a [BrowserSession](#browsersession) — `session.userTurn`.
 
@@ -9838,6 +10123,8 @@ type UseSessionControlsResult = {
   toggle: () => void;
 };
 ```
+
+**`Sealed`**
 
 What [useSessionControls](#usesessioncontrols) returns.
 
@@ -9926,6 +10213,8 @@ type UseTapToTalkOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [useTapToTalk](#usetaptotalk).
 
 #### Properties
@@ -9987,11 +10276,17 @@ type UseTapToTalkResult = {
   failed: boolean;
   hangUp: () => void;
   live: boolean;
-  phase: "idle" | "connecting" | "active";
+  phase:   | "idle"
+     | "connecting"
+     | "active"
+     | string & {
+   };
   send: (text: string) => void;
   toggle: () => void;
 };
 ```
+
+**`Sealed`**
 
 What [useTapToTalk](#usetaptotalk) returns.
 
@@ -10079,11 +10374,17 @@ Whether the caller is live — mic open, in a realtime conversation. The button 
 ##### phase
 
 ```ts
-phase: "idle" | "connecting" | "active";
+phase: 
+  | "idle"
+  | "connecting"
+  | "active"
+  | string & {
+};
 ```
 
 The call: `"idle"` (not meant to be running), `"connecting"`, or
-`"active"` — up, whatever the agent is doing.
+`"active"` — up, whatever the agent is doing. Open (`| (string & {})`) so
+a phase added later is not a break.
 
 ##### send
 
@@ -10128,6 +10429,10 @@ type UseWorkflowProgressResult<T = string> = {
   supported: boolean;
 };
 ```
+
+**`Sealed`**
+
+What [useWorkflowProgress](#useworkflowprogress) reports.
 
 #### Type Parameters
 
@@ -10185,6 +10490,10 @@ type UseWorkflowRunResult<R = unknown> = {
 };
 ```
 
+**`Sealed`**
+
+What [useWorkflowRun](#useworkflowrun) reports.
+
 #### Type Parameters
 
 ##### R
@@ -10229,6 +10538,8 @@ type UseWorkflowRunsOptions = {
   skip?: boolean;
 };
 ```
+
+**`Input`**
 
 Options for [useWorkflowRuns](#useworkflowruns).
 
@@ -10283,6 +10594,8 @@ type UseWorkflowRunsResult<R = unknown> = {
   runs: WorkflowRun<R>[];
 };
 ```
+
+**`Sealed`**
 
 What [useWorkflowRuns](#useworkflowruns) reports.
 
@@ -10341,6 +10654,8 @@ type UseWorkflowsOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [useWorkflows](#useworkflows).
 
 #### Properties
@@ -10378,6 +10693,8 @@ type UseWorkflowsResult = {
 };
 ```
 
+**`Sealed`**
+
 What [useWorkflows](#useworkflows) reports.
 
 #### Properties
@@ -10411,8 +10728,15 @@ The agent's declared workflows, each with the JSON Schema of its input.
 ### UseWorkflowStreamOptions
 
 ```ts
-type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait" | "recover">;
+type UseWorkflowStreamOptions = {
+  api?: WorkflowApi;
+  intervalMs?: number;
+  key?: string;
+  parallel?: UploadParallelOption;
+};
 ```
+
+**`Input`**
 
 Options for [useWorkflowStream](#useworkflowstream).
 
@@ -10438,6 +10762,46 @@ the file is readable — that number is the CONTIGUOUS prefix, so a run reading
 ahead of the uplink sees the same growing file whether one connection or four
 are filling it. What changes is only how fast it grows.
 
+Declared on its own rather than `Omit`ted from the submit options, so an
+option added to one hook is a decision about the other, not a side effect.
+
+#### Properties
+
+##### api?
+
+```ts
+optional api?: WorkflowApi;
+```
+
+The client to start runs with. Defaults to one for the page's own agent.
+
+##### intervalMs?
+
+```ts
+optional intervalMs?: number;
+```
+
+How often the fallback poll re-reads a live run.
+
+##### key?
+
+```ts
+optional key?: string;
+```
+
+Correlation key recorded with the run, for finding it again without the
+id. Not defaulted here — see above.
+
+##### parallel?
+
+```ts
+optional parallel?: UploadParallelOption;
+```
+
+Send the file as concurrent parts instead of in one request — on by
+default, `false` opts out, `{ partBytes, concurrency }` tunes it. See
+`UploadOptions.parallel`.
+
 ***
 
 ### UseWorkflowSubmitOptions
@@ -10452,6 +10816,8 @@ type UseWorkflowSubmitOptions = {
   wait?: number;
 };
 ```
+
+**`Input`**
 
 Options for [useWorkflowSubmit](#useworkflowsubmit).
 
@@ -10560,6 +10926,8 @@ type VoiceSessionOptions = {
   WebSocket?: WebSocketConstructor;
 };
 ```
+
+**`Input`**
 
 Options for creating a voice session — the shared field set accepted by
 both `mountClient()` and `createBrowserSession`. The one difference: `mountClient()`
@@ -10777,11 +11145,15 @@ never reconnects on its own.
 type WebSocketConstructor = WebSocket;
 ```
 
+**`Input`**
+
 Minimal WebSocket constructor type accepted by [VoiceSessionOptions](#voicesessionoptions).
 
 ```ts
 type new WebSocketConstructor(url: string | URL, protocols?: string | string[]): WebSocket;
 ```
+
+**`Input`**
 
 Minimal WebSocket constructor type accepted by [VoiceSessionOptions](#voicesessionoptions).
 
@@ -11373,6 +11745,10 @@ type WorkflowApiOptions = {
 };
 ```
 
+**`Input`**
+
+Options for [createWorkflowApi](#createworkflowapi).
+
 #### Properties
 
 ##### baseUrl?
@@ -11402,7 +11778,15 @@ against the same client.
 ### WorkflowFieldKind
 
 ```ts
-type WorkflowFieldKind = "text" | "number" | "select" | "checkbox" | "file" | "none";
+type WorkflowFieldKind = 
+  | "text"
+  | "number"
+  | "select"
+  | "checkbox"
+  | "file"
+  | "none"
+  | string & {
+};
 ```
 
 The control a schema property renders as inside `<WorkflowFields>`.
@@ -11418,6 +11802,9 @@ composes with the generated ones inside the same `<Form>`.
 There is deliberately no `"textarea"` member. A textarea is a string like a
 text field is — the same value over the wire — so it is a hand-written swap
 rather than a shape the schema can ask for.
+
+Open (`| (string & {})`): a control added later is a new value, so read an
+unknown kind as `"none"`.
 
 ***
 
@@ -11590,6 +11977,8 @@ type WorkflowPendingNoteProps = {
 };
 ```
 
+**`Input`**
+
 Props for [WorkflowPendingNote](#workflowpendingnote).
 
 #### Properties
@@ -11698,6 +12087,8 @@ type WorkflowRunErrorProps = {
 };
 ```
 
+**`Input`**
+
 Props for [WorkflowRunError](#workflowrunerror).
 
 #### Properties
@@ -11735,6 +12126,8 @@ type WorkflowRunPanelProps<O> = {
   statusLabels?: Partial<Readonly<Record<WorkflowRunStatus, string>>>;
 };
 ```
+
+**`Input`**
 
 Props of [WorkflowRunPanel](#workflowrunpanel).
 
@@ -11884,6 +12277,8 @@ type WorkflowSubmission<R = unknown, I = unknown> = {
   wake: () => Promise<number>;
 };
 ```
+
+**`Sealed`**
 
 What [useWorkflowSubmit](#useworkflowsubmit) returns.
 
@@ -12212,6 +12607,8 @@ const AGENT_STATE_LABELS: Readonly<Record<AgentState, string>>;
 
 The default label per [AgentState](#agentstate).
 
+[AgentState](#agentstate) is open, so a lookup by a live state is `string |
+undefined`: fall back to the raw state for one this version has no word for.
 Override the ones your page has a better word for and keep the rest:
 
 ```ts
@@ -12219,8 +12616,11 @@ import type { AgentState } from "@alexkroman1/aai-ui";
 import { AGENT_STATE_LABELS } from "@alexkroman1/aai-ui";
 
 // A dispatch board that shouts, and renames one state.
-const STATE_LABEL = { ...AGENT_STATE_LABELS, thinking: "Processing" };
-const shout = (s: AgentState) => STATE_LABEL[s].toUpperCase();
+const STATE_LABEL: Readonly<Record<AgentState, string>> = {
+  ...AGENT_STATE_LABELS,
+  thinking: "Processing",
+};
+const shout = (s: AgentState) => (STATE_LABEL[s] ?? s).toUpperCase();
 ```
 
 **Sentence case, deliberately.** A template that wants caps applies its own

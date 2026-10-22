@@ -1,0 +1,18 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "workflow-files",
+  "epoch": 1,
+  "rule": 3,
+  "sha256": "adae7b88c68b92ca63fdd58950b86b712e1507db872b1cc71cd1d866fbc0ee17",
+  "exports": [
+    "AudioResult",
+    "AudioResultCaptions",
+    "AudioResultProps",
+    "UploadProgressBar",
+    "UploadStatus",
+    "UseDownloadUrlOptions",
+    "UseDownloadUrlResult",
+    "useDownloadUrl"
+  ],
+  "rollup": "040e81b0e64722fbac30be99cae6b2174b5ba31b5477c2c7ab2e3b319830bf03"
+}

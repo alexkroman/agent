@@ -35,6 +35,7 @@ const VARIANT_CLASSES: Record<
 /**
  * Props for {@link ToolCallRow}.
  *
+ * @input
  * @public
  */
 export interface ToolCallRowProps {

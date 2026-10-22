@@ -28,6 +28,7 @@
 import clsx from "clsx";
 import type {
   InputHTMLAttributes,
+  JSX,
   ReactNode,
   SelectHTMLAttributes,
   TextareaHTMLAttributes,
@@ -79,7 +80,7 @@ export function Field({
   className?: string | undefined;
   /** The control itself. */
   children: ReactNode;
-}) {
+}): JSX.Element {
   const theme = useTheme();
   return (
     <div className={clsx("flex flex-col gap-1.5", className)}>
@@ -198,7 +199,7 @@ function InputField({
  */
 export function TextField(
   props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">,
-) {
+): JSX.Element {
   return <InputField defaultType="text" {...props} />;
 }
 
@@ -216,7 +217,7 @@ export function TextField(
  */
 export function NumberField(
   props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">,
-) {
+): JSX.Element {
   return <InputField defaultType="number" {...props} />;
 }
 
@@ -237,7 +238,8 @@ export function TextAreaField({
   className,
   rows = 4,
   ...rest
-}: FieldShell & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">) {
+}: FieldShell &
+  Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): JSX.Element {
   const id = useId();
   const control = useControlProps();
   return (
@@ -274,7 +276,7 @@ export function SelectField({
   ...rest
 }: FieldShell & {
   options?: readonly (string | { value: string; label: string })[];
-} & Omit<SelectHTMLAttributes<HTMLSelectElement>, "name" | "className">) {
+} & Omit<SelectHTMLAttributes<HTMLSelectElement>, "name" | "className">): JSX.Element {
   const id = useId();
   const control = useControlProps();
   return (
@@ -312,7 +314,8 @@ export function CheckboxField({
   hint,
   className,
   ...rest
-}: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">) {
+}: FieldShell &
+  Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element {
   const id = useId();
   const theme = useTheme();
   return (
@@ -371,7 +374,7 @@ export function FileField({
   read?: FileReadMode;
   /** Shorthand for `read="upload"` — see above. */
   upload?: boolean;
-} & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">) {
+} & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element {
   const id = useId();
   const control = useFileControlProps();
   return (

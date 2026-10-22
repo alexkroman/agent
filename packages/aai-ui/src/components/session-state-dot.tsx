@@ -5,8 +5,34 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
 import { AGENT_STATE_LABELS } from "../agent-state-labels.ts";
-import { useSessionStatus } from "../context.ts";
+import { useSessionStatus, useTheme } from "../context.ts";
 import type { AgentState } from "../types.ts";
+import { ERROR_COLOR, INK_FAINT_PCT, inkTint, THINKING_COLOR } from "./_colors.ts";
+
+/**
+ * Indicator dot colour per state, from the theme — `ConsoleShell`'s dot, and
+ * {@link SessionStateDot}'s for every state its `colors` does not name.
+ *
+ * `idle` is the theme's own faint ink step rather than a fixed warm grey, so
+ * the dot stays visible on a dark ground; the thinking amber and error red
+ * are semantic and stay fixed. A state this version does not know is `idle`.
+ *
+ * @internal
+ */
+export function stateColor(state: AgentState, primary: string, idle: string): string {
+  switch (state) {
+    case "listening":
+    case "speaking":
+    case "ready":
+      return primary;
+    case "thinking":
+      return THINKING_COLOR;
+    case "error":
+      return ERROR_COLOR;
+    default:
+      return idle; // disconnected / connecting / unknown
+  }
+}
 
 /**
  * One `aai-pulse` cycle per pulsing state, in milliseconds. The two states
@@ -65,20 +91,22 @@ export function StateDot({
 /**
  * Props of {@link SessionStateDot}.
  *
+ * @input
  * @public
  */
 export type SessionStateDotProps = {
   /**
-   * The dot's colour per {@link AgentState} — the chrome's own palette. A
-   * complete record, so a state added upstream is a compile error here rather
-   * than a silently unpainted dot; `satisfies Record<AgentState, string>` on the
-   * caller's literal is the shape to write it in.
+   * The dot's colour per {@link AgentState} — the chrome's own palette. Any
+   * state not named (including one a later release adds) is painted the way
+   * `ConsoleShell` paints it, from the theme: the primary colour while live, a
+   * fixed amber while thinking, red on error, a faint ink otherwise.
    */
-  colors: Readonly<Record<AgentState, string>>;
+  colors?: Partial<Readonly<Record<AgentState, string>>> | undefined;
   /**
    * The words this chrome has a better term for. Anything not named falls back
    * to {@link AGENT_STATE_LABELS}, so a page overrides one member (`speaking:
-   * "Narrating"`) without restating the union.
+   * "Narrating"`) without restating the union; a state neither names is shown
+   * as its raw value.
    */
   labels?: Partial<Readonly<Record<AgentState, string>>> | undefined;
   /**
@@ -111,7 +139,7 @@ export type SessionStateDotProps = {
  * against a dot component on the grounds that it would take the shared part
  * (the words) hostage to the part that is not (the palette); this takes the
  * palette as a prop precisely so it does not. What is shared is the structure
- * — the exhaustive colour lookup, the label fallback, the pulse rule, the
+ * — the colour lookup and its theme fallback, the label fallback, the pulse rule, the
  * `useSessionStatus()` subscription that keeps the rest of the header from
  * re-rendering at STT-partial rate.
  *
@@ -156,16 +184,22 @@ export function SessionStateDot({
   labelClassName,
 }: SessionStateDotProps): ReactNode {
   const state = useSessionStatus();
+  const theme = useTheme();
   const pulseMs = pulse ? (PULSE_MS[state] ?? null) : null;
+  const color =
+    colors?.[state] ??
+    stateColor(state, theme.primary, inkTint(theme.text, theme.bg, INK_FAINT_PCT));
   return (
     <span className={clsx("inline-flex items-center gap-2", className)} data-state={state}>
       <StateDot
-        color={colors[state]}
+        color={color}
         pulseMs={pulseMs}
         className={dotClassName ?? "w-2 h-2"}
         title={state}
       />
-      <span className={labelClassName}>{labels?.[state] ?? AGENT_STATE_LABELS[state]}</span>
+      <span className={labelClassName}>
+        {labels?.[state] ?? AGENT_STATE_LABELS[state] ?? state}
+      </span>
     </span>
   );
 }

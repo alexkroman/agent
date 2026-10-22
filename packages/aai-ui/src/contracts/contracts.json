@@ -20,9 +20,11 @@
     "dropped": {}
   },
   "components": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "SessionControlAction is opened with (string & {}), so a renderButton written against the closed four-member union no longer narrows exhaustively"
+    }
   },
   "conversation-log": {
     "current": 1,
@@ -30,24 +32,32 @@
     "dropped": {}
   },
   "forms": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "WorkflowFieldKind, fieldKindFor's return, is opened with (string & {}); an exhaustive switch over the six kinds needs a default"
+    }
   },
   "hooks": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "ToolCallInfo.status is opened with (string & {}); a reader comparing against the closed pending|done pair needs a fallback"
+    }
   },
   "inbox": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "InboxEvent gains an explicit { type: 'other' } catch-all for frame types this version does not know; an onEvent handler switching exhaustively over two members needs a branch for it"
+    }
   },
   "page": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "fetchClientConfig takes an options object { platformUrl, fetch, signal } instead of positional (platformUrl, fetchFn)"
+    }
   },
   "push-to-talk": {
     "current": 1,
@@ -55,14 +65,18 @@
     "dropped": {}
   },
   "session": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "AgentState and ChatMessage.role are opened with (string & {}), and ConversationItem gains a { kind: 'other' } catch-all; exhaustive switches over the closed sets need a default"
+    }
   },
   "tap-to-talk": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "UseTapToTalkResult.phase is opened with (string & {})"
+    }
   },
   "theme": {
     "current": 1,
@@ -70,6 +84,13 @@
     "dropped": {}
   },
   "workflow": {
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "the upload/download names (UploadStatus, UploadProgressBar, useDownloadUrl, AudioResult and their types) move to the new aai-ui:workflow-files capability, bringing workflow under its export budget"
+    }
+  },
+  "workflow-files": {
     "current": 1,
     "supported": [1],
     "dropped": {}

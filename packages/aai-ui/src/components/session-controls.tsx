@@ -8,15 +8,18 @@ import { useSessionControls } from "../use-session-controls.ts";
 import { Button, type ButtonVariant } from "./button.tsx";
 
 /**
- * Which of the four buttons a {@link SessionControlButton} is.
+ * Which button a {@link SessionControlButton} is: one of the four today. Open
+ * (`| (string & {})`) so a button added later is not a break — a `renderButton`
+ * keeps a default look for an action it does not know.
  *
  * @public
  */
-export type SessionControlAction = "start" | "toggle" | "restart" | "end";
+export type SessionControlAction = "start" | "toggle" | "restart" | "end" | (string & {});
 
 /**
  * One button of {@link SessionControls}, as handed to `renderButton`.
  *
+ * @sealed
  * @public
  */
 export type SessionControlButton = {
@@ -37,6 +40,7 @@ export type SessionControlButton = {
 /**
  * The five words {@link SessionControls} renders, every one overridable.
  *
+ * @input
  * @public
  */
 export type SessionControlsLabels = {
@@ -63,6 +67,7 @@ const DEFAULT_LABELS: SessionControlsLabels = {
 /**
  * Props of {@link SessionControls}.
  *
+ * @input
  * @public
  */
 export type SessionControlsProps = {
@@ -90,7 +95,7 @@ const DEFAULT_VARIANT: Readonly<Record<SessionControlAction, ButtonVariant>> = {
 
 function defaultButton({ action, label, onClick }: SessionControlButton): ReactNode {
   return (
-    <Button variant={DEFAULT_VARIANT[action]} onClick={onClick}>
+    <Button variant={DEFAULT_VARIANT[action] ?? "secondary"} onClick={onClick}>
       {label}
     </Button>
   );

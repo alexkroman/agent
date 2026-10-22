@@ -94,7 +94,8 @@ gate, recall and report coalescing).
   it can grow. New methods a caller does not always need go on a sub-handle
   (`session.userTurn`), and `SessionActions` is DECLARED, not `Pick`ed.
 - **`useConversation()`** returns `{ items, streaming, transcript, thinking }`
-  (`items`: `{ kind: "message" }` | `{ kind: "tool" }`) and owns the interleave
+  (`items`: `{ kind: "message" }` | `{ kind: "tool" }` | `{ kind: "other" }`,
+  the last only from a stored log a newer page wrote) and owns the interleave
   (tool after its `afterMessageId` anchor; an orphan leads), the streaming
   bubble, the transcript row and the thinking-suppression rule. It subscribes
   per field.

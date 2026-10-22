@@ -2,7 +2,13 @@
 
 /** @jsxImportSource react */
 
-import { memo, type ReactNode, useMemo } from "react";
+import {
+  type FunctionComponent,
+  type MemoExoticComponent,
+  memo,
+  type ReactNode,
+  useMemo,
+} from "react";
 import { truncate, tryParseJSON } from "../_utils.ts";
 import { useTheme } from "../context.ts";
 import type { ToolCallInfo } from "../types.ts";
@@ -63,7 +69,9 @@ function ToolCallResult({ result }: { result: string }): ReactNode {
  *
  * @internal Not exported from the package — rendered by `MessageList`.
  */
-export const ToolCallBlock = memo(function ToolCallBlock({
+export const ToolCallBlock: MemoExoticComponent<
+  FunctionComponent<{ toolCall: ToolCallInfo; className?: string }>
+> = memo(function ToolCallBlock({
   toolCall,
   className,
 }: {

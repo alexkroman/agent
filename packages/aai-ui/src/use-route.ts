@@ -21,6 +21,7 @@ import { routeFetch } from "./route-fetch.ts";
 /**
  * Options for {@link useRoute}.
  *
+ * @input
  * @public
  */
 export type UseRouteOptions = {
@@ -37,6 +38,7 @@ export type UseRouteOptions = {
 /**
  * What {@link useRoute} returns.
  *
+ * @sealed
  * @public
  */
 export type UseRouteResult<T> = {

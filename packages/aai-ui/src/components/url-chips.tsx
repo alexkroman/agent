@@ -3,6 +3,7 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
+import type { JSX } from "react";
 import { pageBaseUrl } from "../_utils.ts";
 import { useSessionSelector, useTheme } from "../context.ts";
 import { useCopy } from "../use-copy.ts";
@@ -82,7 +83,7 @@ function UrlChip({
  *
  * @internal
  */
-export function UiUrlChip({ className }: { className?: string | undefined }) {
+export function UiUrlChip({ className }: { className?: string | undefined }): JSX.Element {
   return (
     <UrlChip
       label="UI"
@@ -100,7 +101,7 @@ export function UiUrlChip({ className }: { className?: string | undefined }) {
  *
  * @internal
  */
-export function ApiUrlChip({ className }: { className?: string | undefined }) {
+export function ApiUrlChip({ className }: { className?: string | undefined }): JSX.Element {
   const apiUrl = useSessionSelector((s) => s.apiUrl);
   return (
     <UrlChip
@@ -121,7 +122,7 @@ export function ApiUrlChip({ className }: { className?: string | undefined }) {
  *
  * @internal
  */
-export function SessionUrlChips({ className }: { className?: string | undefined }) {
+export function SessionUrlChips({ className }: { className?: string | undefined }): JSX.Element {
   return (
     <div className={clsx("flex items-center gap-1.5 min-w-0", className)}>
       <UiUrlChip className="min-w-0 flex-1" />

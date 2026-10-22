@@ -24,7 +24,7 @@
  * chrome exists to look like — a CRT's glow, a dispatch board's alert colours —
  * and a component would take the one part that is genuinely shared (the words)
  * hostage to the part that is not. It takes the palette as a PROP, so it does
- * not: what it shares is the exhaustive colour lookup, this record as the label
+ * not: what it shares is the colour lookup, this record as the label
  * fallback, and the pulse rule, and the three chromes that had each written
  * those fourteen lines around their own `satisfies Record<AgentState, string>`
  * keep the record and lose the lines.
@@ -35,6 +35,8 @@ import type { AgentState } from "./types.ts";
 /**
  * The default label per {@link AgentState}.
  *
+ * {@link AgentState} is open, so a lookup by a live state is `string |
+ * undefined`: fall back to the raw state for one this version has no word for.
  * Override the ones your page has a better word for and keep the rest:
  *
  * ```ts
@@ -42,8 +44,11 @@ import type { AgentState } from "./types.ts";
  * import { AGENT_STATE_LABELS } from "@alexkroman1/aai-ui";
  *
  * // A dispatch board that shouts, and renames one state.
- * const STATE_LABEL = { ...AGENT_STATE_LABELS, thinking: "Processing" };
- * const shout = (s: AgentState) => STATE_LABEL[s].toUpperCase();
+ * const STATE_LABEL: Readonly<Record<AgentState, string>> = {
+ *   ...AGENT_STATE_LABELS,
+ *   thinking: "Processing",
+ * };
+ * const shout = (s: AgentState) => (STATE_LABEL[s] ?? s).toUpperCase();
  * ```
  *
  * **Sentence case, deliberately.** A template that wants caps applies its own

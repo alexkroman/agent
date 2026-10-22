@@ -13,4 +13,4 @@
  * `scripts/api-contracts.mjs`.
  */
 
-export { type ClientTheme, useTheme } from "../../index.ts";
+export { type ClientTheme, type ResolvedClientTheme, useTheme } from "../../index.ts";

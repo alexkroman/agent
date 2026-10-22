@@ -29,7 +29,7 @@ const COLORS = {
   error: "#777777",
 } satisfies Record<AgentState, string>;
 
-const STATES: readonly AgentState[] = [
+const STATES: readonly (keyof typeof COLORS)[] = [
   "disconnected",
   "connecting",
   "ready",
@@ -100,6 +100,21 @@ describe("SessionStateDot", () => {
     act(() => core.update({ state: "thinking" }));
     expect(dot).toHaveStyle({ background: hex(COLORS.thinking) });
     expect(label.textContent).toBe(AGENT_STATE_LABELS.thinking);
+  });
+
+  test("a state the palette does not name is painted from the theme", () => {
+    // `#18181B` is the default theme's primary, which `ready` takes.
+    expect(mount("ready", { colors: { speaking: "#123456" } }).dot).toHaveStyle({
+      background: hex("#18181B"),
+    });
+    expect(mount("ready", { colors: undefined }).dot).toHaveStyle({ background: hex("#18181B") });
+  });
+
+  test("a state this version does not know gets a colour and its raw value as the label", () => {
+    const { dot, label } = mount("transferring", { colors: undefined });
+    expect(label.textContent).toBe("transferring");
+    expect(dot.style.background).not.toBe("");
+    expect(dot).toHaveStyle({ animation: "none" });
   });
 
   test("exposes the state on the wrapper for a chrome's own CSS", () => {

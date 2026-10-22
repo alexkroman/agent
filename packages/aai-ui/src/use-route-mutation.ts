@@ -32,6 +32,7 @@ import { type RouteMethod, routeFetch } from "./route-fetch.ts";
 /**
  * Options for {@link useRouteMutation}.
  *
+ * @input
  * @public
  */
 export type UseRouteMutationOptions = {
@@ -52,6 +53,7 @@ export type UseRouteMutationOptions = {
 /**
  * Options for one {@link UseRouteMutationResult.run} call.
  *
+ * @input
  * @public
  */
 export type RouteMutationRunOptions = {
@@ -66,6 +68,7 @@ export type RouteMutationRunOptions = {
 /**
  * What {@link useRouteMutation} returns.
  *
+ * @sealed
  * @public
  */
 export type UseRouteMutationResult = {

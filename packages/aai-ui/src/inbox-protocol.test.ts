@@ -62,6 +62,14 @@ describe("parseInboxEvent", () => {
     ).toBeUndefined();
     expect(parseInboxEvent("{")).toBeUndefined();
   });
+
+  test("a frame type this version does not know is an `other` event, not dropped", () => {
+    expect(parseInboxEvent(JSON.stringify({ type: "session_paused", sessionId: "s1" }))).toEqual({
+      type: "other",
+      frameType: "session_paused",
+    });
+    expect(parseInboxEvent(JSON.stringify({ sessionId: "s1" }))).toBeUndefined();
+  });
 });
 
 describe("createNoticeAssembler", () => {

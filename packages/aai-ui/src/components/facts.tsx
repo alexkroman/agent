@@ -11,6 +11,7 @@ const FACT_SEPARATOR = " · ";
 /**
  * Props for {@link Facts}.
  *
+ * @input
  * @public
  */
 export type FactsProps = {

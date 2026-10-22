@@ -58,6 +58,7 @@ import type { SubmitInputOf } from "./workflow-def-types.ts";
  * because a form is allowed more than one and a bar over "the upload" would
  * restart at zero partway through with nothing to say why.
  *
+ * @sealed
  * @public
  */
 export type UploadStatus = UploadProgress & {
@@ -89,6 +90,8 @@ export type UploadStatus = UploadProgress & {
  * the run is accepted, and `run` is non-`undefined` from before the bytes are
  * in, so a page can render `<WorkflowProgress>` beside the upload bar instead
  * of after it. Here the run does not exist until the last byte lands.
+ *
+ * @sealed
  */
 export type WorkflowSubmission<R = unknown, I = unknown> = {
   /**
@@ -208,7 +211,11 @@ export type WorkflowSubmission<R = unknown, I = unknown> = {
   error: string | undefined;
 };
 
-/** Options for {@link useWorkflowSubmit}. */
+/**
+ * Options for {@link useWorkflowSubmit}.
+ *
+ * @input
+ */
 export type UseWorkflowSubmitOptions = {
   /** The client to start runs with. Defaults to one for the page's own agent. */
   api?: WorkflowApi;

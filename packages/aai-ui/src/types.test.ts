@@ -41,7 +41,14 @@ describe("AgentState", () => {
     // directions, and `tsc` is what runs it (see "Type-level tests" in the root
     // guide — a mismatch is a hard compile error, not a skipped assertion).
     expectTypeOf<AgentState>().toEqualTypeOf<
-      "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error"
+      | "disconnected"
+      | "connecting"
+      | "ready"
+      | "listening"
+      | "thinking"
+      | "speaking"
+      | "error"
+      | (string & {})
     >();
 
     // The same seven as values, so the list stays readable as a list and a

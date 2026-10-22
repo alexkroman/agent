@@ -18808,7 +18808,7 @@ import type { FormHTMLAttributes } from 'react';
 import { FunctionComponent } from 'react';
 import type { InputHTMLAttributes } from 'react';
 import { isTerminal } from '@alexkroman1/aai/workflow-api';
-import { JSX } from 'react';
+import type { JSX } from 'react';
 import { MemoExoticComponent } from 'react';
 import { ReactNode } from 'react';
 import type { SelectHTMLAttributes } from 'react';
@@ -18829,7 +18829,7 @@ export const AGENT_STATE_LABELS: Readonly<Record<AgentState, string>>;
 
 export { AgentClient }
 
-// @public
+// @public @sealed
 export type AgentCustomEvent = {
     readonly id: number;
     readonly event: string;
@@ -18837,7 +18837,7 @@ export type AgentCustomEvent = {
 };
 
 // @public
-export type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
+export type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error" | (string & {});
 
 // @public
 export type AgentStateFrame = Readonly<Record<string, unknown>>;
@@ -18845,7 +18845,7 @@ export type AgentStateFrame = Readonly<Record<string, unknown>>;
 // @public
 export function AudioResult(input: AudioResultProps): ReactNode;
 
-// @public
+// @public @input
 export type AudioResultCaptions = {
     text: string;
     durationMs: number;
@@ -18853,7 +18853,7 @@ export type AudioResultCaptions = {
     srcLang?: string | undefined;
 };
 
-// @public
+// @public @input
 export type AudioResultProps = {
     download: UseDownloadUrlResult;
     filename: string;
@@ -18909,7 +18909,7 @@ export const browserSessionBrand: unique symbol;
 // @public
 export function BulletList(input: BulletListProps): ReactNode;
 
-// @public
+// @public @input
 export type BulletListProps = {
     items: readonly string[];
     title?: ReactNode | undefined;
@@ -18931,10 +18931,10 @@ export type ButtonSize = "default" | "lg";
 // @public
 export type ButtonVariant = "default" | "secondary" | "ghost";
 
-// @public
+// @public @sealed
 export type ChatMessage = {
     id: number;
-    role: "user" | "assistant";
+    role: "user" | "assistant" | (string & {});
     content: string;
 };
 
@@ -18948,7 +18948,7 @@ export function ChatView(input: {
 // @public
 export function CheckboxField(input: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
-// @public
+// @public @input
 export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "token" | "WebSocket"> & {
     target?: string | HTMLElement;
     platformUrl?: string;
@@ -18966,7 +18966,7 @@ export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSess
 
 export { ClientConfigResponse }
 
-// @public
+// @public @sealed
 export type ClientHandle = {
     session: BrowserSession;
     dispose(): void;
@@ -18979,7 +18979,7 @@ export { ClientRunsResponse }
 
 export { ClientRunStatus }
 
-// @public
+// @public @input
 export type ClientTheme = {
     bg?: string;
     primary?: string;
@@ -18991,7 +18991,7 @@ export type ClientTheme = {
 // @public
 export function ConsoleShell(input: ConsoleShellProps): ReactNode;
 
-// @public
+// @public @input
 export type ConsoleShellProps = {
     icon?: ReactNode | undefined;
     title?: string | undefined;
@@ -19017,6 +19017,9 @@ export type ConversationItem = {
 } | {
     kind: "tool";
     toolCall: ToolCallInfo;
+} | {
+    kind: "other";
+    type: string;
 };
 
 // @public
@@ -19040,7 +19043,7 @@ export type ConversationLogEntry = {
 // @public
 export function ConversationView(input: ConversationViewProps): ReactNode;
 
-// @public
+// @public @input
 export type ConversationViewProps = {
     renderMessage: (message: ChatMessage) => ReactNode;
     renderTool?: ((toolCall: ToolCallInfo) => ReactNode) | undefined;
@@ -19070,7 +19073,7 @@ export function createBrowserSession(options: VoiceSessionOptions): BrowserSessi
 // @public
 export function createInbox(options: CreateInboxOptions): Inbox;
 
-// @public
+// @public @input
 export type CreateInboxOptions = {
     platformUrl: string;
     client: string | (() => string | undefined);
@@ -19097,7 +19100,7 @@ export { errorMessage }
 // @public
 export function Facts(input: FactsProps): ReactNode;
 
-// @public
+// @public @input
 export type FactsProps = {
     items: readonly (string | number | false | null | undefined)[];
     size?: "sm" | "xs" | undefined;
@@ -19106,7 +19109,14 @@ export type FactsProps = {
 };
 
 // @public
-export function fetchClientConfig(platformUrl?: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse>;
+export function fetchClientConfig(options?: FetchClientConfigOptions): Promise<ClientConfigResponse>;
+
+// @public @input
+export type FetchClientConfigOptions = {
+    platformUrl?: string | undefined;
+    fetch?: typeof globalThis.fetch | undefined;
+    signal?: AbortSignal | undefined;
+};
 
 // @public
 export function Field(input: {
@@ -19122,7 +19132,7 @@ export function fieldKindFor(schema: unknown, options?: {
     upload?: boolean | undefined;
 }): WorkflowFieldKind;
 
-// @public
+// @public @input
 export type FieldShell = {
     name: string;
     label?: string | undefined;
@@ -19139,7 +19149,7 @@ export function FileField(input: FieldShell & {
 // @public
 export type FileReadMode = "none" | "text" | "dataUrl" | "upload";
 
-// @public
+// @public @sealed
 export type FileValue = {
     name: string;
     size: number;
@@ -19151,7 +19161,7 @@ export type FileValue = {
 // @public
 export function Form(input: FormProps): JSX.Element;
 
-// @public
+// @public @input
 export type FormProps = {
     onSubmit: (values: FormValues) => void | Promise<void>;
     error?: string | undefined;
@@ -19179,12 +19189,15 @@ export type InboxEvent = {
 } | {
     readonly type: "session_ended";
     readonly sessionId: string;
+} | {
+    readonly type: "other";
+    readonly frameType: string;
 };
 
 // @public
 export function inboxEventToItem(event: InboxEvent, id?: number): ConversationItem | undefined;
 
-// @public
+// @public @sealed
 export type InboxNotice = {
     readonly id: string;
     readonly event: string;
@@ -19194,7 +19207,7 @@ export type InboxNotice = {
 
 export { isTerminal }
 
-// @public
+// @public @sealed
 export type LinkedClient = {
     id(): string;
     linked(): string | undefined;
@@ -19203,7 +19216,7 @@ export type LinkedClient = {
     clear(): void;
 };
 
-// @public
+// @public @input
 export type LinkedClientOptions = {
     key: string;
     fallback?: (() => string) | undefined;
@@ -19239,7 +19252,7 @@ export function mountPage(config?: PageConfig): PageHandle;
 // @public
 export function NumberField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
-// @public
+// @public @input
 export type PageConfig = {
     component?: ComponentType;
     target?: string | HTMLElement;
@@ -19247,7 +19260,7 @@ export type PageConfig = {
     theme?: ClientTheme;
 };
 
-// @public
+// @public @sealed
 export type PageHandle = {
     dispose(): void;
     [Symbol.dispose](): void;
@@ -19256,15 +19269,24 @@ export type PageHandle = {
 // @public
 export function phoneE164(typed: string, options?: PhoneE164Options): string | undefined;
 
-// @public
+// @public @input
 export type PhoneE164Options = {
     countryCode?: string | undefined;
+};
+
+// @public @sealed
+export type ResolvedClientTheme = {
+    readonly bg: string;
+    readonly primary: string;
+    readonly text: string;
+    readonly surface: string;
+    readonly border: string;
 };
 
 // @public
 export function routeFetch<T = unknown>(method: RouteMethod, path: string, body?: unknown, options?: RouteFetchOptions): Promise<T>;
 
-// @public
+// @public @input
 export type RouteFetchOptions = {
     client?: string | undefined;
     baseUrl?: string | undefined;
@@ -19274,7 +19296,7 @@ export type RouteFetchOptions = {
 // @public
 export type RouteMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
-// @public
+// @public @input
 export type RouteMutationRunOptions = {
     key?: string | undefined;
 };
@@ -19290,7 +19312,7 @@ export function SelectField(input: FieldShell & {
     })[];
 } & Omit<SelectHTMLAttributes<HTMLSelectElement>, "name" | "className">): JSX.Element;
 
-// @public
+// @public @input
 export type SendTextOptions = {
     connect?: boolean | undefined;
 };
@@ -19298,7 +19320,7 @@ export type SendTextOptions = {
 // @public
 export type Session = SessionSnapshot & SessionActions;
 
-// @public
+// @public @sealed
 export type SessionActions = {
     start(): void;
     cancel(): void;
@@ -19314,9 +19336,9 @@ export type SessionActions = {
 };
 
 // @public
-export type SessionControlAction = "start" | "toggle" | "restart" | "end";
+export type SessionControlAction = "start" | "toggle" | "restart" | "end" | (string & {});
 
-// @public
+// @public @sealed
 export type SessionControlButton = {
     action: SessionControlAction;
     label: string;
@@ -19327,7 +19349,7 @@ export type SessionControlButton = {
 // @public
 export function SessionControls(input: SessionControlsProps): ReactNode;
 
-// @public
+// @public @input
 export type SessionControlsLabels = {
     start: string;
     pause: string;
@@ -19336,7 +19358,7 @@ export type SessionControlsLabels = {
     end: string;
 };
 
-// @public
+// @public @input
 export type SessionControlsProps = {
     labels?: Partial<SessionControlsLabels> | undefined;
     renderButton?: ((button: SessionControlButton) => ReactNode) | undefined;
@@ -19344,7 +19366,7 @@ export type SessionControlsProps = {
     children?: ReactNode;
 };
 
-// @public
+// @public @sealed
 export type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
@@ -19354,7 +19376,7 @@ export type SessionError = {
 // @public
 export function SessionErrorBanner(input: SessionErrorBannerProps): ReactNode;
 
-// @public
+// @public @input
 export type SessionErrorBannerProps = {
     className?: string | undefined;
 };
@@ -19370,7 +19392,7 @@ export type SessionIdentity = {
     ticket(): string | undefined | Promise<string | undefined>;
 };
 
-// @public
+// @public @sealed
 export type SessionSnapshot = {
     readonly state: AgentState;
     readonly recording: boolean;
@@ -19391,9 +19413,9 @@ export type SessionSnapshot = {
 // @public
 export function SessionStateDot(input: SessionStateDotProps): ReactNode;
 
-// @public
+// @public @input
 export type SessionStateDotProps = {
-    colors: Readonly<Record<AgentState, string>>;
+    colors?: Partial<Readonly<Record<AgentState, string>>> | undefined;
     labels?: Partial<Readonly<Record<AgentState, string>>> | undefined;
     pulse?: boolean | undefined;
     className?: string | undefined;
@@ -19420,7 +19442,7 @@ export function StartScreen(input: {
     className?: string | undefined;
 }): ReactNode;
 
-// @public
+// @public @sealed
 export type StoredValue = {
     readonly key: string;
     get(): string;
@@ -19428,7 +19450,7 @@ export type StoredValue = {
     subscribe(listener: () => void): () => void;
 };
 
-// @public
+// @public @input
 export type StoredValueOptions = {
     initial?: string | undefined;
     storage?: "local" | "session" | undefined;
@@ -19453,12 +19475,12 @@ export function TextAreaField(input: FieldShell & Omit<TextareaHTMLAttributes<HT
 // @public
 export function TextField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">): JSX.Element;
 
-// @public
+// @public @sealed
 export type ToolCallInfo = {
     callId: string;
     name: string;
     args: Record<string, DefaultToolResult>;
-    status: "pending" | "done";
+    status: "pending" | "done" | (string & {});
     result?: string | undefined;
     seq: number;
     afterMessageId: number;
@@ -19474,7 +19496,7 @@ export type ToolCallOutcome = {
 // @public
 export function ToolCallRow(input: ToolCallRowProps): ReactNode;
 
-// @public
+// @public @input
 export interface ToolCallRowProps {
     children?: ReactNode;
     className?: string | undefined;
@@ -19502,7 +19524,7 @@ export function UploadProgressBar(input: {
     className?: string | undefined;
 }): ReactNode;
 
-// @public
+// @public @sealed
 export type UploadStatus = UploadProgress & {
     name: string;
     index: number;
@@ -19528,13 +19550,13 @@ export function useClientId(): string | undefined;
 // @public
 export function useClientRuns(path?: string, options?: UseClientRunsOptions): UseClientRunsResult;
 
-// @public
+// @public @input
 export type UseClientRunsOptions = {
     pollMs?: number | undefined;
     client?: string | undefined;
 };
 
-// @public
+// @public @sealed
 export type UseClientRunsResult = {
     runs: ClientRun[] | undefined;
     error: string | undefined;
@@ -19552,13 +19574,13 @@ export function useConversation(): UseConversationResult;
 // @public
 export function useConversationLog(options?: UseConversationLogOptions): UseConversationLogResult;
 
-// @public
+// @public @input
 export type UseConversationLogOptions = {
     storageKey?: string | undefined;
     max?: number | undefined;
 };
 
-// @public
+// @public @sealed
 export type UseConversationLogResult = {
     readonly entries: readonly ConversationLogEntry[];
     addNote(text: string): void;
@@ -19567,7 +19589,7 @@ export type UseConversationLogResult = {
     clear(): void;
 };
 
-// @public
+// @public @sealed
 export type UseConversationResult = {
     items: readonly ConversationItem[];
     streaming: string | null;
@@ -19578,7 +19600,7 @@ export type UseConversationResult = {
 // @public
 export function useCopy(): UseCopyResult;
 
-// @public
+// @public @sealed
 export type UseCopyResult = {
     copy: (text: string) => void;
     label: (text: string, idle?: string) => string;
@@ -19588,12 +19610,12 @@ export type UseCopyResult = {
 // @public
 export function useDownloadUrl(uploadId: string | undefined, options?: UseDownloadUrlOptions): UseDownloadUrlResult;
 
-// @public
+// @public @input
 export type UseDownloadUrlOptions = {
     api?: WorkflowApi;
 };
 
-// @public
+// @public @sealed
 export type UseDownloadUrlResult = {
     url?: string;
     error?: string;
@@ -19606,7 +19628,7 @@ export function useEvent<T = unknown>(event: string, callback: (data: T) => void
 // @public
 export function useFlash<T>(ms?: number): UseFlashResult<T>;
 
-// @public
+// @public @sealed
 export type UseFlashResult<T> = {
     readonly value: T | null;
     readonly flash: (value: T) => void;
@@ -19615,7 +19637,7 @@ export type UseFlashResult<T> = {
 // @public
 export function useInbox(options?: UseInboxOptions): UseInboxResult;
 
-// @public
+// @public @input
 export type UseInboxOptions = {
     onNotice?: ((notice: InboxNotice) => void) | undefined;
     onEvent?: ((event: InboxEvent) => void) | undefined;
@@ -19624,7 +19646,7 @@ export type UseInboxOptions = {
     events?: boolean | undefined;
 };
 
-// @public
+// @public @sealed
 export type UseInboxResult = {
     readonly connected: boolean;
     stopPlayback(): void;
@@ -19633,12 +19655,12 @@ export type UseInboxResult = {
 // @public
 export function usePushToTalk(options?: UsePushToTalkOptions): UsePushToTalkResult;
 
-// @public
+// @public @input
 export type UsePushToTalkOptions = {
     holdKey?: string | false;
 };
 
-// @public
+// @public @sealed
 export type UsePushToTalkResult = {
     talking: boolean;
     ready: boolean;
@@ -19675,13 +19697,13 @@ export function useRoute<T = unknown>(path: string | null, options?: UseRouteOpt
 // @public
 export function useRouteMutation(options?: UseRouteMutationOptions): UseRouteMutationResult;
 
-// @public
+// @public @input
 export type UseRouteMutationOptions = {
     client?: string | undefined;
     onSettled?: (() => void) | undefined;
 };
 
-// @public
+// @public @sealed
 export type UseRouteMutationResult = {
     run: <T = unknown>(method: RouteMethod, path: string, body?: unknown, options?: RouteMutationRunOptions) => Promise<T | undefined>;
     busy: string | undefined;
@@ -19689,13 +19711,13 @@ export type UseRouteMutationResult = {
     clearError: () => void;
 };
 
-// @public
+// @public @input
 export type UseRouteOptions = {
     pollMs?: number | undefined;
     client?: string | undefined;
 };
 
-// @public
+// @public @sealed
 export type UseRouteResult<T> = {
     data: T | undefined;
     error: string | undefined;
@@ -19703,7 +19725,7 @@ export type UseRouteResult<T> = {
     reload: () => void;
 };
 
-// @public
+// @public @sealed
 export type UserTurnControls = {
     start(): void;
     commit(): void;
@@ -19724,7 +19746,7 @@ export function useSessionActions(): SessionActions;
 // @public
 export function useSessionControls(): UseSessionControlsResult;
 
-// @public
+// @public @sealed
 export type UseSessionControlsResult = {
     started: boolean;
     running: boolean;
@@ -19752,7 +19774,7 @@ export function useStoredValue(source: StoredValue | string, initial?: string): 
 // @public
 export function useTapToTalk(options?: UseTapToTalkOptions): UseTapToTalkResult;
 
-// @public
+// @public @input
 export type UseTapToTalkOptions = {
     key?: string | false | undefined;
     idleHangupMs?: number | undefined;
@@ -19760,9 +19782,9 @@ export type UseTapToTalkOptions = {
     connectTimeoutMs?: number | undefined;
 };
 
-// @public
+// @public @sealed
 export type UseTapToTalkResult = {
-    phase: "idle" | "connecting" | "active";
+    phase: "idle" | "connecting" | "active" | (string & {});
     live: boolean;
     failed: boolean;
     toggle: () => void;
@@ -19783,7 +19805,7 @@ export type UseTapToTalkResult = {
 };
 
 // @public
-export function useTheme(): Required<ClientTheme>;
+export function useTheme(): ResolvedClientTheme;
 
 // @public
 export function useToolCallStart<A = ToolCallInfo["args"]>(toolName: string, callback: (toolCall: Omit<ToolCallInfo, "args"> & {
@@ -19804,7 +19826,7 @@ export function useToolResult<R = unknown>(callback: (name: string, result: R, t
 // @public
 export function useUserTranscript(): UseUserTranscriptResult;
 
-// @public
+// @public @sealed
 export interface UseUserTranscriptResult {
     partial: string | null;
     speaking: boolean;
@@ -19819,7 +19841,7 @@ export function useWorkflowProgress<T = string>(runId: string | undefined, optio
     intervalMs?: number;
 }): UseWorkflowProgressResult<T>;
 
-// @public (undocumented)
+// @public @sealed
 export type UseWorkflowProgressResult<T = string> = {
     progress: T[];
     latest: T | undefined;
@@ -19833,7 +19855,7 @@ export function useWorkflowRun<R = unknown>(runId: string | undefined, options?:
     intervalMs?: number;
 }): UseWorkflowRunResult<R>;
 
-// @public (undocumented)
+// @public @sealed
 export type UseWorkflowRunResult<R = unknown> = {
     run: WorkflowRun<R> | undefined;
     error: string | undefined;
@@ -19843,7 +19865,7 @@ export type UseWorkflowRunResult<R = unknown> = {
 // @public
 export function useWorkflowRuns<R = unknown>(workflow: string | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
 
-// @public
+// @public @input
 export type UseWorkflowRunsOptions = {
     api?: WorkflowApi;
     limit?: number;
@@ -19851,7 +19873,7 @@ export type UseWorkflowRunsOptions = {
     skip?: boolean;
 };
 
-// @public
+// @public @sealed
 export type UseWorkflowRunsResult<R = unknown> = {
     runs: WorkflowRun<R>[];
     loading: boolean;
@@ -19862,13 +19884,13 @@ export type UseWorkflowRunsResult<R = unknown> = {
 // @public
 export function useWorkflows(options?: UseWorkflowsOptions): UseWorkflowsResult;
 
-// @public
+// @public @input
 export type UseWorkflowsOptions = {
     api?: WorkflowApi;
     skip?: boolean;
 };
 
-// @public
+// @public @sealed
 export type UseWorkflowsResult = {
     workflows: WorkflowSummary[];
     loading: boolean;
@@ -19878,13 +19900,18 @@ export type UseWorkflowsResult = {
 // @public
 export function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, options?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 
-// @public
-export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait" | "recover">;
+// @public @input
+export type UseWorkflowStreamOptions = {
+    api?: WorkflowApi;
+    key?: string;
+    intervalMs?: number;
+    parallel?: UploadParallelOption;
+};
 
 // @public
 export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, options?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 
-// @public
+// @public @input
 export type UseWorkflowSubmitOptions = {
     api?: WorkflowApi;
     key?: string;
@@ -19894,7 +19921,7 @@ export type UseWorkflowSubmitOptions = {
     parallel?: UploadParallelOption;
 };
 
-// @public
+// @public @input
 export type VoiceSessionOptions = {
     platformUrl: string;
     onSessionId?: ((sessionId: string) => void) | undefined;
@@ -19909,7 +19936,7 @@ export type VoiceSessionOptions = {
     WebSocket?: WebSocketConstructor | undefined;
 };
 
-// @public
+// @public @input
 export type WebSocketConstructor = {
     new (url: string | URL, protocols?: string | string[]): WebSocket;
     readonly OPEN: number;
@@ -19920,14 +19947,14 @@ export const WORKFLOW_STATUS_LABELS: Readonly<Record<WorkflowRunStatus, string>>
 
 export { WorkflowApi }
 
-// @public (undocumented)
+// @public @input
 export type WorkflowApiOptions = {
     baseUrl?: string;
     token?: string;
 };
 
 // @public
-export type WorkflowFieldKind = "text" | "number" | "select" | "checkbox" | "file" | "none";
+export type WorkflowFieldKind = "text" | "number" | "select" | "checkbox" | "file" | "none" | (string & {});
 
 // @public
 export function WorkflowFields(input: {
@@ -19941,7 +19968,7 @@ export { WorkflowOutputOf }
 // @public
 export function WorkflowPendingNote(input: WorkflowPendingNoteProps): ReactNode;
 
-// @public
+// @public @input
 export type WorkflowPendingNoteProps = {
     submission: {
         readonly pending: boolean;
@@ -19968,7 +19995,7 @@ export type WorkflowRun<R = unknown> = WorkflowRunSnapshot<R>;
 // @public
 export function WorkflowRunError(input: WorkflowRunErrorProps): ReactNode;
 
-// @public
+// @public @input
 export type WorkflowRunErrorProps = {
     run: WorkflowRun | undefined;
     className?: string | undefined;
@@ -19977,7 +20004,7 @@ export type WorkflowRunErrorProps = {
 // @public
 export function WorkflowRunPanel<O = unknown>(input: WorkflowRunPanelProps<O>): ReactNode;
 
-// @public
+// @public @input
 export type WorkflowRunPanelProps<O> = {
     run: WorkflowRun<O>;
     statusLabels?: Partial<Readonly<Record<WorkflowRunStatus, string>>> | undefined;
@@ -19993,7 +20020,7 @@ export { WorkflowRunStatus }
 // @public
 export type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmission<R, I>;
 
-// @public
+// @public @sealed
 export type WorkflowSubmission<R = unknown, I = unknown> = {
     submit: (input: I) => Promise<void>;
     submitForm: (values: FormValues) => Promise<void>;
@@ -20018,13 +20045,12 @@ export { WorkflowSummary }
 import { ClientConfigResponse } from '@alexkroman1/aai/protocol';
 import { Context } from 'react';
 import type { DefaultToolResult } from '@alexkroman1/aai';
-import { FunctionComponentElement } from 'react';
-import { JSX } from 'react';
-import { ProviderProps } from 'react';
+import type { JSX } from 'react';
+import { ReactElement } from 'react';
 import { ReactNode } from 'react';
 import type { SessionErrorCode } from '@alexkroman1/aai/protocol';
 
-// @public
+// @public @sealed
 type AgentCustomEvent = {
     readonly id: number;
     readonly event: string;
@@ -20032,7 +20058,7 @@ type AgentCustomEvent = {
 };
 
 // @public
-type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
+type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error" | (string & {});
 
 // @public
 type AgentStateFrame = Readonly<Record<string, unknown>>;
@@ -20073,14 +20099,14 @@ const browserSessionBrand: unique symbol;
 // @internal
 export function buildAgentUrl(platformUrl: string, endpointPath: string): URL;
 
-// @public
+// @public @sealed
 type ChatMessage = {
     id: number;
-    role: "user" | "assistant";
+    role: "user" | "assistant" | (string & {});
     content: string;
 };
 
-// @public
+// @public @input
 type ClientTheme = {
     bg?: string;
     primary?: string;
@@ -20096,17 +20122,17 @@ export const DEFAULT_PROGRESS_POLL_MS = 5000;
 export const DEFAULT_WORKFLOW_POLL_MS = 2000;
 
 // @internal
-export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch, presentedTicket?: string): Promise<ClientConfigResponse | null>;
+export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch, presentedTicket?: string, signal?: AbortSignal): Promise<ClientConfigResponse | null>;
 
 // @public
 export const MAX_MISSING_READS = 3;
 
-// @public
+// @public @input
 type SendTextOptions = {
     connect?: boolean | undefined;
 };
 
-// @public
+// @public @sealed
 type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
@@ -20126,9 +20152,9 @@ type SessionIdentity = {
 export function SessionProvider(input: {
     value: BrowserSession;
     children?: ReactNode;
-}): FunctionComponentElement<ProviderProps<BrowserSession | null>>;
+}): ReactElement;
 
-// @public
+// @public @sealed
 type SessionSnapshot = {
     readonly state: AgentState;
     readonly recording: boolean;
@@ -20155,14 +20181,14 @@ export function SessionUrlChips(input: {
 export function ThemeProvider(input: {
     value?: ClientTheme | undefined;
     children?: ReactNode;
-}): FunctionComponentElement<ProviderProps<Required<ClientTheme>>>;
+}): ReactElement;
 
-// @public
+// @public @sealed
 type ToolCallInfo = {
     callId: string;
     name: string;
     args: Record<string, DefaultToolResult>;
-    status: "pending" | "done";
+    status: "pending" | "done" | (string & {});
     result?: string | undefined;
     seq: number;
     afterMessageId: number;
@@ -20192,7 +20218,7 @@ export function UiUrlChip(input: {
     className?: string | undefined;
 }): JSX.Element;
 
-// @public
+// @public @sealed
 type UserTurnControls = {
     start(): void;
     commit(): void;

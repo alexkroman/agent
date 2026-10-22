@@ -3,7 +3,7 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, JSX, ReactNode } from "react";
 import { useTheme } from "../context.ts";
 
 /**
@@ -52,7 +52,7 @@ export function SidebarLayout({
   sidebarPosition?: "left" | "right" | undefined;
   /** Additional CSS class names for the root element, appended to its own. */
   className?: string;
-}) {
+}): JSX.Element {
   const theme = useTheme();
 
   // Below `md` the two panes stack instead of sitting side by side. Side by

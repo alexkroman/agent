@@ -34,6 +34,11 @@ export const DEFAULT_WORKFLOW_POLL_MS = 2000;
  */
 export const MAX_MISSING_READS = 3;
 
+/**
+ * What {@link useWorkflowRun} reports.
+ *
+ * @public @sealed
+ */
 export type UseWorkflowRunResult<R = unknown> = {
   /** Latest snapshot, or undefined before the first read lands. */
   run: WorkflowRun<R> | undefined;

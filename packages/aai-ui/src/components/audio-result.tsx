@@ -10,6 +10,7 @@ import type { UseDownloadUrlResult } from "../use-download-url.ts";
  * A one-cue caption track for {@link AudioResult}: the words the clip speaks,
  * spanning its whole length.
  *
+ * @input
  * @public
  */
 export type AudioResultCaptions = {
@@ -26,6 +27,7 @@ export type AudioResultCaptions = {
 /**
  * Props of {@link AudioResult}.
  *
+ * @input
  * @public
  */
 export type AudioResultProps = {

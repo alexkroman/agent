@@ -31,9 +31,16 @@ function mount(core: ReturnType<typeof createMockSessionCore>) {
 
 /** The union collapsed to something a failure message can print. */
 function shape(items: readonly ConversationItem[]): string[] {
-  return items.map((item) =>
-    item.kind === "message" ? `m:${item.message.id}` : `t:${item.toolCall.callId}`,
-  );
+  return items.map((item) => {
+    switch (item.kind) {
+      case "message":
+        return `m:${item.message.id}`;
+      case "tool":
+        return `t:${item.toolCall.callId}`;
+      default:
+        return `o:${item.type}`;
+    }
+  });
 }
 
 describe("useConversation: the interleave", () => {

@@ -27,7 +27,7 @@ rules are in the root `AGENTS.md`.
 - [`src/worklets/CLAUDE.md`](src/worklets/CLAUDE.md) — capture and playback
   processors: jitter buffer, concealment, capture rate and constraints, dead-mic
   probe.
-- [`src/contracts/CLAUDE.md`](src/contracts/CLAUDE.md) — the fifteen `aai-ui:`
+- [`src/contracts/CLAUDE.md`](src/contracts/CLAUDE.md) — the sixteen `aai-ui:`
   capabilities and the `.tsx` compatibility fixtures.
 - [`PLAYBACK-CLAUDE.md`](PLAYBACK-CLAUDE.md) (reference, read on demand) —
   playback tuning measurements against a real TTS reply.

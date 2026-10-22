@@ -129,8 +129,29 @@ import type { SubmitInputOf } from "./workflow-def-types.ts";
  * the file is readable — that number is the CONTIGUOUS prefix, so a run reading
  * ahead of the uplink sees the same growing file whether one connection or four
  * are filling it. What changes is only how fast it grows.
+ *
+ * Declared on its own rather than `Omit`ted from the submit options, so an
+ * option added to one hook is a decision about the other, not a side effect.
+ *
+ * @input
  */
-export type UseWorkflowStreamOptions = Omit<UseWorkflowSubmitOptions, "wait" | "recover">;
+export type UseWorkflowStreamOptions = {
+  /** The client to start runs with. Defaults to one for the page's own agent. */
+  api?: WorkflowApi;
+  /**
+   * Correlation key recorded with the run, for finding it again without the
+   * id. Not defaulted here — see above.
+   */
+  key?: string;
+  /** How often the fallback poll re-reads a live run. */
+  intervalMs?: number;
+  /**
+   * Send the file as concurrent parts instead of in one request — on by
+   * default, `false` opts out, `{ partBytes, concurrency }` tunes it. See
+   * `UploadOptions.parallel`.
+   */
+  parallel?: UploadParallelOption;
+};
 
 /**
  * What {@link useWorkflowStream} returns: a {@link WorkflowSubmission}, exactly.
