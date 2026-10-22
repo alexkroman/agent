@@ -19005,7 +19005,7 @@ export type ConsoleShellProps = {
 // @public
 export const Controls: MemoExoticComponent<FunctionComponent<ControlsProps>>;
 
-// @public
+// @public @input
 export type ControlsProps = {
     className?: string;
 };
@@ -19205,6 +19205,9 @@ export type InboxNotice = {
     readonly pcm: Uint8Array;
 };
 
+// @public
+export function isFileValue(value: unknown): value is FileValue;
+
 export { isTerminal }
 
 // @public @sealed
@@ -19225,7 +19228,7 @@ export type LinkedClientOptions = {
 // @public
 export const Markdown: MemoExoticComponent<FunctionComponent<MarkdownProps>>;
 
-// @public
+// @public @input
 export type MarkdownProps = {
     text: string;
     variant?: MarkdownVariant;
@@ -19237,7 +19240,7 @@ export type MarkdownVariant = "default" | "compact";
 // @public
 export const MessageList: MemoExoticComponent<FunctionComponent<MessageListProps>>;
 
-// @public
+// @public @input
 export type MessageListProps = {
     className?: string;
     log?: readonly ConversationLogEntry[] | undefined;

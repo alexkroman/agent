@@ -15,8 +15,10 @@
  *   author builds it, the SDK reads it). Untagged, the probe compares it both
  *   ways, so a new required member and a widened union are BOTH breaks — the
  *   most expensive reading, and the one an untagged type gets by default.
- *   `positions` flags a type reached as input AND output (no tag can be true of
- *   it) or one whose tag contradicts where it is reached; `derived` flags an
+ *   `positions` flags an untagged type reached as input AND output (no tag can
+ *   be true of it), an `@input` type reached as output, and a `@sealed` type
+ *   reached ONLY as input (sealed and reached both ways is a round trip — a
+ *   handle the author got from the SDK and hands back); `derived` flags an
  *   exported alias cut from another object type with `Omit`/`Pick`/`Partial`,
  *   which ties an input's shape to an output's (`MetricsSample`).
  * - **closedLiterals** (G2): a closed literal set an author RECEIVES — a
@@ -37,8 +39,9 @@
  *   name what moved.
  *
  * Polarity (input vs output position) is the textbook walk: a value's own type
- * and a function's return are OUTPUT, a parameter flips it, a property keeps
- * it, and a reached declaration is entered with the polarity it was reached
+ * and a function's return are OUTPUT, a parameter flips it — as does a React
+ * component type's props argument (`FunctionComponent<P>`) — a property and
+ * any other type argument keep it, and a reached declaration is entered with the polarity it was reached
  * at. `@sealed` types are additionally entered as OUTPUT and `@input` types as
  * INPUT, so what a tag claims is checked even when no function reaches it.
  */
@@ -61,6 +64,16 @@ export const THIRD_PARTY_ALLOWED = {
     "the vendor-neutral validator interface a tool's input schema is checked against",
   react: "aai-ui is a React component library; its props and hooks are React types",
 };
+
+/**
+ * Generic types whose type argument is a PARAMETER — React components take it
+ * as props — so it is entered flipped. Every other type argument keeps its
+ * polarity, which is right for containers (`Promise<T>`, `readonly T[]`) and
+ * for wrappers whose argument is itself a component (`MemoExoticComponent<C>`,
+ * which this deliberately does not match).
+ */
+const PARAMETER_ARGUMENT_TYPE =
+  /^(?:ComponentType|FC|FunctionComponent|(?:Named|ForwardRef)?ExoticComponent)$/;
 
 const OUT = "+";
 const IN = "-";
@@ -228,6 +241,12 @@ function makeVisitor({ onRef, onUnion }) {
 function children(node, p, path) {
   if (ts.isParameter(node)) return node.type === undefined ? [] : [[node.type, flip(p), path]];
   if (isLiteralRecord(node)) return node.typeArguments.slice(1).map((arg) => [arg, p, path]);
+  if (
+    PARAMETER_ARGUMENT_TYPE.test(referencedName(node) ?? "") &&
+    node.typeArguments !== undefined
+  ) {
+    return node.typeArguments.map((arg) => [arg, flip(p), path]);
+  }
   if (isProperty(node)) return [[node.type, p, `${path}.${node.name.getText()}`]];
   if (isMethod(node)) {
     const at = `${path}.${node.name.getText()}`;
@@ -384,11 +403,18 @@ function polarityOf(decls, owner, ownedValues) {
   return { polarity, closedAt };
 }
 
-/** G1's `positions` verdict for one object type, or `undefined`. */
+/**
+ * G1's `positions` verdict for one object type, or `undefined`. A `@sealed`
+ * type reached both ways is a ROUND TRIP — the SDK builds it, the author holds
+ * it and hands it back (`useStoredValue(handle)`, `<MessageList log>`) — and
+ * passes; one reached ONLY as input is an options bag sealed by mistake.
+ */
 function positionFinding(decl, seen) {
+  if (decl.tags.has("sealed")) {
+    return seen.has(IN) && !seen.has(OUT) ? "@sealed, but reached only as input" : undefined;
+  }
   if (seen.has(OUT) && seen.has(IN)) return "reached as input AND output";
   if (decl.tags.has("input") && seen.has(OUT)) return "@input, but reached as output";
-  if (decl.tags.has("sealed") && seen.has(IN)) return "@sealed, but reached as input";
 }
 
 /** G1's `derived` verdict for one alias: `Omit<Source>` and friends, or `undefined`. */

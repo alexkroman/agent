@@ -11,6 +11,7 @@ import { SessionUrlChips } from "./url-chips.tsx";
 /**
  * Props of {@link Controls}.
  *
+ * @input
  * @public
  */
 export type ControlsProps = {

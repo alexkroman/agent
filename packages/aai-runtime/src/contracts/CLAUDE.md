@@ -56,10 +56,11 @@ discovered by whoever's build breaks.
   (`EvalWorkflowsOptions.stepFetch`/`speech`) or dropped; `AgentEnv` and
   `ProviderEnv` stay baselined, because a copy here would not carry the SDK's
   host-credential marker and would let a `HostCredentialEnv` into `ctx.env`.
-- **A handle passed back in is reached both ways** (`Runtime`,
-  `WorkflowJournal`, `SessionEventStream`), and so is an implementer interface
-  (the opener contract, `CarrierCodec`): their `positions` entries are the cost
-  of the shape, not debt to tag away.
+- **A handle passed back in is `@sealed` and reached both ways** (`Runtime`,
+  `WorkflowJournal`, `SessionEventStream`): `check:api-shape` reads that as a
+  round trip and passes it. An implementer interface (the opener contract,
+  `CarrierCodec`) is reached both ways too, and its `positions` entry is the
+  cost of the shape, not debt to tag away.
 - Which barrel a name goes on, and the `@internal` rules, are in the package
   guide, "The published surface: two barrels and a rule between them".
 

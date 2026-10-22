@@ -80,6 +80,7 @@ const SCALE_CLASSES: Record<
 /**
  * Props of {@link Markdown}.
  *
+ * @input
  * @public
  */
 export type MarkdownProps = {

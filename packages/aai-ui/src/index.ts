@@ -139,6 +139,7 @@ export {
   Form,
   type FormProps,
   type FormValues,
+  isFileValue,
   NumberField,
   SelectField,
   SubmitButton,

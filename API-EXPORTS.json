@@ -2255,6 +2255,7 @@
     "fetchClientConfig",
     "fieldKindFor",
     "inboxEventToItem",
+    "isFileValue",
     "isTerminal",
     "mountClient",
     "mountPage",

@@ -1,26 +1,13 @@
 {
   "comment": "check:api-shape's shrink-only baseline (scripts/check-api-shape.mjs). Each list is one finding per line — delete the line when it is fixed; `pnpm api-shape:update` drops fixed entries and lowers numbers but never adds. `exhaustiveByDesign` is a permanent allowlist (entry -> reason) for closed literal sets an author is meant to switch over exhaustively.",
   "exhaustiveByDesign": {},
-  "direction": [
-    "components: ControlsProps",
-    "components: MarkdownProps",
-    "components: MessageListProps"
-  ],
-  "positions": [
-    "client-storage: StoredValue — reached as input AND output",
-    "hooks: ToolCallInfo — reached as input AND output",
-    "session: AgentCustomEvent — reached as input AND output",
-    "session: ChatMessage — reached as input AND output",
-    "session: SessionError — reached as input AND output",
-    "session: SessionSnapshot — reached as input AND output",
-    "workflow-files: UploadStatus — reached as input AND output",
-    "workflow-files: UseDownloadUrlResult — reached as input AND output"
-  ],
+  "direction": [],
+  "positions": [],
   "derived": [],
-  "closedLiterals": ["components: MarkdownVariant — closed literal union in output position"],
+  "closedLiterals": [],
   "nonAuthoringImports": [],
   "thirdPartyTypes": [],
-  "orphans": ["forms: FileValue"],
+  "orphans": [],
   "unexportedShared": [],
   "budgets": {},
   "isolatedDeclarations": {}

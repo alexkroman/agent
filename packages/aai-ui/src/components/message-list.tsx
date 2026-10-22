@@ -142,6 +142,7 @@ const MessageBubble = memo(function MessageBubble({
 /**
  * Props of {@link MessageList}.
  *
+ * @input
  * @public
  */
 export type MessageListProps = {

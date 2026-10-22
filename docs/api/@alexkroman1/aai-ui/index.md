@@ -1309,6 +1309,29 @@ A committed user or assistant turn, a tool call (pending), or `undefined`.
 
 ***
 
+### isFileValue()
+
+```ts
+function isFileValue(value: unknown): value is FileValue;
+```
+
+Whether one [FormValues](#formvalues) entry is what a [FileField](#filefield) contributed.
+
+A field with nothing chosen contributes no key at all, so the absent case is
+the ordinary one — this is `false` for `undefined`, not an error.
+
+#### Parameters
+
+##### value
+
+`unknown`
+
+#### Returns
+
+`value is FileValue`
+
+***
+
 ### isTerminal()
 
 ```ts
@@ -6147,6 +6170,8 @@ type ControlsProps = {
 };
 ```
 
+**`Input`**
+
 Props of [Controls](#controls).
 
 #### Properties
@@ -6893,9 +6918,8 @@ type FileValue = {
 
 What a [FileField](#filefield) contributes to [FormValues](#formvalues).
 
-No signature names it — `FormValues` is `Record<string, unknown>` — so a
-page casts the field's value to it (`values.doc as FileValue`); it is
-published for that cast.
+`FormValues` is `Record<string, unknown>`, so a page narrows the field's
+value with [isFileValue](#isfilevalue) rather than casting it.
 
 #### Properties
 
@@ -7352,6 +7376,8 @@ type MarkdownProps = {
 };
 ```
 
+**`Input`**
+
 Props of [Markdown](#markdown).
 
 #### Properties
@@ -7396,6 +7422,8 @@ type MessageListProps = {
   log?: readonly ConversationLogEntry[];
 };
 ```
+
+**`Input`**
 
 Props of [MessageList](#messagelist).
 
