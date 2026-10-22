@@ -1,5 +1,13 @@
 # aai-studio-client
 
+## 0.7.17
+
+### Patch Changes
+
+- Updated dependencies [06d09d5]
+  - @alexkroman1/aai@0.16.0
+  - @alexkroman1/aai-ui@0.16.0
+
 ## 0.7.16
 
 ### Patch Changes

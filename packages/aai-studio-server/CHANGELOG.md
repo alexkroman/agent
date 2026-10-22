@@ -1,5 +1,38 @@
 # aai-studio-server
 
+## 0.12.0
+
+### Minor Changes
+
+- 06d09d5: AssemblyAI streaming TTS now follows the documented API
+  (https://www.assemblyai.com/docs/tts): it dials
+  wss://tts.us.assemblyai.com/v1/ws (or tts.eu.assemblyai.com, which
+  assemblyAIPipeline({ region: "eu" }) now selects), sends voice_id instead of the
+  retired voice param, and splits Generate text at the 2000-character per-frame
+  cap, so a long stepSpeak no longer fails. Breaking: voices are voice_id slugs —
+  assemblyAITts({ voice: "aai-jane" }), not "jane" — and ASSEMBLYAI_TTS_VOICES is
+  now a tuple of the 11 library slugs, every one of which speaks all six
+  languages; ttsVoiceIds, ttsVoiceInfo and AssemblyAITtsVoiceInfo are removed (use
+  z.enum(ASSEMBLYAI_TTS_VOICES)), as is the voice/language mismatch check.
+
+### Patch Changes
+
+- f5ca0c1: Keep deployed agents reachable through a platform deploy: a shutting-down
+  replica hands its agent guests off to the fleet instead of draining them (a
+  draining guest held its sandbox name and refused every new session for up to ten
+  minutes), and a guest sandbox now stops the moment its harness exits, releasing
+  its name.
+- f5ca0c1: Studio: a replica going down in a deploy now drains its coding-agent sandboxes
+  (bounded) before terminating them, and the client regenerates a turn whose
+  sandbox dropped mid-stream instead of showing an error.
+- Updated dependencies [f5ca0c1]
+- Updated dependencies [06d09d5]
+  - aai-server@0.2.7
+  - @alexkroman1/aai@0.16.0
+  - @alexkroman1/aai-runtime@0.16.0
+  - aai-studio-client@0.7.17
+  - @alexkroman1/aai-ui@0.16.0
+
 ## 0.11.32
 
 ### Patch Changes
