@@ -61,7 +61,7 @@ type SessionEntry = Extract<ConversationLogEntry, { kind: "session" }>;
 
 /** The item as the log keeps it: a tool call's `result` dropped. */
 export function logItem(item: ConversationItem): ConversationItem {
-  if (item.kind === "message" || item.toolCall.result === undefined) return item;
+  if (item.kind !== "tool" || item.toolCall.result === undefined) return item;
   const { result: _result, ...toolCall } = item.toolCall;
   return { kind: "tool", toolCall };
 }
@@ -69,9 +69,14 @@ export function logItem(item: ConversationItem): ConversationItem {
 /** One item's identity as a turn — ignoring ids and a tool call going pending → done. */
 function turnKey(item: ConversationItem | undefined): string {
   if (!item) return "";
-  return item.kind === "message"
-    ? `m${item.message.role}:${item.message.content}`
-    : `t${item.toolCall.name}:${JSON.stringify(item.toolCall.args)}`;
+  switch (item.kind) {
+    case "message":
+      return `m${item.message.role}:${item.message.content}`;
+    case "tool":
+      return `t${item.toolCall.name}:${JSON.stringify(item.toolCall.args)}`;
+    default:
+      return `o${item.type}`;
+  }
 }
 
 /** The same turn in the same state — what makes a rewrite a no-op. */
@@ -219,13 +224,21 @@ function parseItem(raw: unknown): ConversationItem | undefined {
   if (!isRecord(raw)) return undefined;
   if (raw.kind === "message" && isRecord(raw.message)) return parseMessage(raw.message);
   if (raw.kind === "tool" && isRecord(raw.toolCall)) return parseToolCall(raw.toolCall);
+  // A kind a newer page stored: kept as a row this version cannot describe,
+  // rather than discarding the whole session entry around it.
+  if (typeof raw.kind === "string" && raw.kind !== "message" && raw.kind !== "tool") {
+    return {
+      kind: "other",
+      type: raw.kind === "other" && typeof raw.type === "string" ? raw.type : raw.kind,
+    };
+  }
   return undefined;
 }
 
 function parseMessage(raw: Record<string, unknown>): ConversationItem | undefined {
   const { id, role, content } = raw;
   if (typeof id !== "number" || typeof content !== "string") return undefined;
-  return role === "user" || role === "assistant" ? message(id, role, content) : undefined;
+  return typeof role === "string" && role !== "" ? message(id, role, content) : undefined;
 }
 
 function parseToolCall(raw: Record<string, unknown>): ConversationItem | undefined {

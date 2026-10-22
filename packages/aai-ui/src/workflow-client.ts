@@ -95,6 +95,11 @@ export type {
  */
 export { isTerminal } from "@alexkroman1/aai/workflow-api";
 
+/**
+ * Options for {@link createWorkflowApi}.
+ *
+ * @public @input
+ */
 export type WorkflowApiOptions = {
   /**
    * Base URL of the agent. Defaults to the page's own origin + path, which is

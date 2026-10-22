@@ -28,7 +28,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
 
-/** Options for {@link useWorkflowRuns}. */
+/**
+ * Options for {@link useWorkflowRuns}.
+ *
+ * @input
+ */
 export type UseWorkflowRunsOptions = {
   /** The client to read with. Defaults to one for the page's own agent. */
   api?: WorkflowApi;
@@ -47,7 +51,11 @@ export type UseWorkflowRunsOptions = {
   skip?: boolean;
 };
 
-/** What {@link useWorkflowRuns} reports. */
+/**
+ * What {@link useWorkflowRuns} reports.
+ *
+ * @sealed
+ */
 export type UseWorkflowRunsResult<R = unknown> = {
   /** The runs, newest first. Empty until the first read lands. */
   runs: WorkflowRun<R>[];

@@ -35,6 +35,7 @@ export type RouteMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 /**
  * Options for {@link routeFetch}.
  *
+ * @input
  * @public
  */
 export type RouteFetchOptions = {

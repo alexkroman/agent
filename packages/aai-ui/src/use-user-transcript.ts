@@ -39,7 +39,11 @@ import { useSessionSelector } from "./context.ts";
  */
 export const TRANSCRIBING_PLACEHOLDER = "…";
 
-/** What {@link useUserTranscript} returns. */
+/**
+ * What {@link useUserTranscript} returns.
+ *
+ * @sealed
+ */
 export interface UseUserTranscriptResult {
   /**
    * True while the caller holds the turn — from speech detection to the final

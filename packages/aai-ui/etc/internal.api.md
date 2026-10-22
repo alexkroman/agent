@@ -7,13 +7,12 @@
 import { ClientConfigResponse } from '@alexkroman1/aai/protocol';
 import { Context } from 'react';
 import type { DefaultToolResult } from '@alexkroman1/aai';
-import { FunctionComponentElement } from 'react';
-import { JSX } from 'react';
-import { ProviderProps } from 'react';
+import type { JSX } from 'react';
+import { ReactElement } from 'react';
 import { ReactNode } from 'react';
 import type { SessionErrorCode } from '@alexkroman1/aai/protocol';
 
-// @public
+// @public @sealed
 type AgentCustomEvent = {
     readonly id: number;
     readonly event: string;
@@ -21,7 +20,7 @@ type AgentCustomEvent = {
 };
 
 // @public
-type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
+type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error" | (string & {});
 
 // @public
 type AgentStateFrame = Readonly<Record<string, unknown>>;
@@ -62,14 +61,14 @@ const browserSessionBrand: unique symbol;
 // @internal
 export function buildAgentUrl(platformUrl: string, endpointPath: string): URL;
 
-// @public
+// @public @sealed
 type ChatMessage = {
     id: number;
-    role: "user" | "assistant";
+    role: "user" | "assistant" | (string & {});
     content: string;
 };
 
-// @public
+// @public @input
 type ClientTheme = {
     bg?: string;
     primary?: string;
@@ -85,17 +84,17 @@ export const DEFAULT_PROGRESS_POLL_MS = 5000;
 export const DEFAULT_WORKFLOW_POLL_MS = 2000;
 
 // @internal
-export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch, presentedTicket?: string): Promise<ClientConfigResponse | null>;
+export function loadClientConfig(platformUrl: string, fetchFn?: typeof globalThis.fetch, presentedTicket?: string, signal?: AbortSignal): Promise<ClientConfigResponse | null>;
 
 // @public
 export const MAX_MISSING_READS = 3;
 
-// @public
+// @public @input
 type SendTextOptions = {
     connect?: boolean | undefined;
 };
 
-// @public
+// @public @sealed
 type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
@@ -115,9 +114,9 @@ type SessionIdentity = {
 export function SessionProvider(input: {
     value: BrowserSession;
     children?: ReactNode;
-}): FunctionComponentElement<ProviderProps<BrowserSession | null>>;
+}): ReactElement;
 
-// @public
+// @public @sealed
 type SessionSnapshot = {
     readonly state: AgentState;
     readonly recording: boolean;
@@ -144,14 +143,14 @@ export function SessionUrlChips(input: {
 export function ThemeProvider(input: {
     value?: ClientTheme | undefined;
     children?: ReactNode;
-}): FunctionComponentElement<ProviderProps<Required<ClientTheme>>>;
+}): ReactElement;
 
-// @public
+// @public @sealed
 type ToolCallInfo = {
     callId: string;
     name: string;
     args: Record<string, DefaultToolResult>;
-    status: "pending" | "done";
+    status: "pending" | "done" | (string & {});
     result?: string | undefined;
     seq: number;
     afterMessageId: number;
@@ -181,7 +180,7 @@ export function UiUrlChip(input: {
     className?: string | undefined;
 }): JSX.Element;
 
-// @public
+// @public @sealed
 type UserTurnControls = {
     start(): void;
     commit(): void;

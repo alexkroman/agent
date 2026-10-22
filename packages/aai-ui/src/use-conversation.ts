@@ -38,15 +38,23 @@ import { type UseUserTranscriptResult, useUserTranscript } from "./use-user-tran
  * is the thing this hook computes — handing back two lists would hand back the
  * problem. `kind` is what a `switch` in a custom renderer narrows on.
  *
+ * `"other"` is the row this version cannot describe — today, an item a newer
+ * page wrote into a stored conversation log (`type` is the `kind` it was
+ * stored under). It is a member from the start so that a row kind added
+ * later is a value an existing `switch` already has a branch for, not a
+ * compile error: render nothing for it, or a placeholder.
+ *
  * @public
  */
 export type ConversationItem =
   | { kind: "message"; message: ChatMessage }
-  | { kind: "tool"; toolCall: ToolCallInfo };
+  | { kind: "tool"; toolCall: ToolCallInfo }
+  | { kind: "other"; type: string };
 
 /**
  * What {@link useConversation} returns.
  *
+ * @sealed
  * @public
  */
 export type UseConversationResult = {
@@ -149,15 +157,20 @@ function isThinking(
  *   const { items, streaming, transcript, thinking } = useConversation();
  *   return (
  *     <div>
- *       {items.map((item) =>
- *         item.kind === "message" ? (
- *           <p key={item.message.id} data-role={item.message.role}>
- *             {item.message.content}
- *           </p>
- *         ) : (
- *           <code key={item.toolCall.callId}>{item.toolCall.name}</code>
- *         ),
- *       )}
+ *       {items.map((item) => {
+ *         switch (item.kind) {
+ *           case "message":
+ *             return (
+ *               <p key={item.message.id} data-role={item.message.role}>
+ *                 {item.message.content}
+ *               </p>
+ *             );
+ *           case "tool":
+ *             return <code key={item.toolCall.callId}>{item.toolCall.name}</code>;
+ *           default:
+ *             return null;
+ *         }
+ *       })}
  *       {streaming !== null && <p data-role="assistant">{streaming}</p>}
  *       {transcript.speaking && <p data-role="user">{transcript.text}</p>}
  *       {thinking && <p>…</p>}

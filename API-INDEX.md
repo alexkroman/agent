@@ -19,7 +19,7 @@ of it — and want the import.
 ## Contents
 
 - [Agent authoring](#agent-authoring) — 569 names
-- [Browser client](#browser-client) — 183 names
+- [Browser client](#browser-client) — 185 names
 - [Testing and evals](#testing-and-evals) — 240 names
 - [Hosting and tooling](#hosting-and-tooling) — 234 names
 - [Framework internals](#framework-internals) — 489 names
@@ -563,8 +563,8 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `AgentCustomEvent` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | A custom event emitted by the agent via `ctx.send(event, data)` — the payload the session records in `SessionSnapshot.customEvents` (`id` is a monotonic … |
 | `AgentState` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | Current state of the voice agent session — the `state` field of `SessionSnapshot`, and what a chrome paints its status indicator from. |
 | `AgentStateFrame` | type | `@alexkroman1/aai-ui` | `aai-ui:hooks` | The agent's projected state as the client holds it: one entry per slot the agent's `syncState` names, keyed by that slot's name. |
-| `AudioResult`, `AudioResultProps` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow` | The player for a file a RUN produced: a heading, the fetch's pending line, its announced error, the `<audio>` with an optional caption track, the download … |
-| `AudioResultCaptions` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | A one-cue caption track for `AudioResult`: the words the clip speaks, spanning its whole length. |
+| `AudioResult`, `AudioResultProps` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow-files` | The player for a file a RUN produced: a heading, the fetch's pending line, its announced error, the `<audio>` with an optional caption track, the download … |
+| `AudioResultCaptions` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow-files` | A one-cue caption track for `AudioResult`: the words the clip speaks, spanning its whole length. |
 | `AutoScroll` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A scroll container that stays pinned to the bottom as its content grows, releases when the reader scrolls up, and re-engages once they return to the bottom. |
 | `BrowserSession` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | A framework-agnostic voice session that manages WebSocket communication, audio capture/playback, and agent state transitions. |
 | `BulletList`, `BulletListProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | A disc-bulleted list of short strings — a run's key points, findings, risks. |
@@ -600,13 +600,14 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `NumberField` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A number input. |
 | `PageConfig` | type | `@alexkroman1/aai-ui` | `aai-ui:page` | Configuration for `mountPage`. |
 | `PageHandle` | type | `@alexkroman1/aai-ui` | `aai-ui:page` | Handle returned by `mountPage`. |
+| `ResolvedClientTheme` | type | `@alexkroman1/aai-ui` | `aai-ui:theme` | The theme a component reads back from `useTheme()`: every `ClientTheme` field, filled with its default where the client set none. |
 | `RouteMethod` | type | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | The HTTP methods an `agent({ routes })` key can declare. |
 | `RouteMutationRunOptions` | type | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | Options for one `UseRouteMutationResult.run` call. |
 | `SelectField` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | A dropdown. |
 | `SendTextOptions` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | Options for `BrowserSession.sendText`. |
 | `Session` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useSession` returns: the live `SessionSnapshot` fields (`state`, `messages`, `toolCalls`, `agentState`, live transcripts, `error`, `apiUrl`, … |
 | `SessionActions` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | The session's control methods, and nothing else — what a `client.tsx` may legitimately CALL on a session, as against what it may read. |
-| `SessionControlAction` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | Which of the four buttons a `SessionControlButton` is. |
+| `SessionControlAction` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | Which button a `SessionControlButton` is: one of the four today. |
 | `SessionControlButton` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | One button of `SessionControls`, as handed to `renderButton`. |
 | `SessionControls`, `SessionControlsProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The full control row of a custom chrome: **Start** before the call, then **Pause / Resume**, **New Conversation** and **End** once it is up. |
 | `SessionControlsLabels` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | The five words `SessionControls` renders, every one overridable. |
@@ -626,13 +627,13 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `ToolCallRow`, `ToolCallRowProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The design system's console row for one tool invocation: a small outlined "TOOL" chip (or a custom `icon`), the tool title in mono, a truncated detail preview, … |
 | `ToolCallRowVariant` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | Size preset for `ToolCallRow`: `"default"` is the deployed agent UI's scale, `"compact"` the studio transcript's denser one. |
 | `ToolDisplayConfig` | type | `@alexkroman1/aai-ui` | `aai-ui:client` | Display configuration for a tool call in the UI. |
-| `UploadProgressBar` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow` | How far a form's files have got, rendered as a bar. |
-| `UploadStatus` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `WorkflowSubmission.upload` reports while the bytes are going. |
+| `UploadProgressBar` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow-files` | How far a form's files have got, rendered as a bar. |
+| `UploadStatus` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow-files` | What `WorkflowSubmission.upload` reports while the bytes are going. |
 | `UseClientRunsResult` | type | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | What `useClientRuns` returns. |
 | `UseConversationLogResult` | type | `@alexkroman1/aai-ui` | `aai-ui:conversation-log` | What `useConversationLog` returns. |
 | `UseConversationResult` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useConversation` returns. |
 | `UseCopyResult` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | What `useCopy` hands back — the click handler and the two readings a button needs off one shared flash. |
-| `UseDownloadUrlResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `useDownloadUrl` reports. |
+| `UseDownloadUrlResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow-files` | What `useDownloadUrl` reports. |
 | `UseFlashResult` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | What `useFlash` hands back. |
 | `UseInboxResult` | type | `@alexkroman1/aai-ui` | `aai-ui:inbox` | What `useInbox` returns. |
 | `UsePushToTalkResult` | type | `@alexkroman1/aai-ui` | `aai-ui:push-to-talk` | What `usePushToTalk` returns. |
@@ -641,15 +642,15 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `UseSessionControlsResult` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useSessionControls` returns. |
 | `UseTapToTalkResult` | type | `@alexkroman1/aai-ui` | `aai-ui:tap-to-talk` | What `useTapToTalk` returns. |
 | `UseUserTranscriptResult` | interface | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useUserTranscript` returns. |
-| `UseWorkflowProgressResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` |  |
-| `UseWorkflowRunResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` |  |
+| `UseWorkflowProgressResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `useWorkflowProgress` reports. |
+| `UseWorkflowRunResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `useWorkflowRun` reports. |
 | `UseWorkflowRunsResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `useWorkflowRuns` reports. |
 | `UseWorkflowsResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | What `useWorkflows` reports. |
 | `UserTurnControls` | type | `@alexkroman1/aai-ui` | `aai-ui:push-to-talk` | Push-to-talk's three edges on a `BrowserSession` — `session.userTurn`. |
 | `VoiceSessionOptions` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | Options for creating a voice session — the shared field set accepted by both `mountClient()` and `createBrowserSession`. |
 | `WORKFLOW_STATUS_LABELS` | const | `@alexkroman1/aai-ui` | `aai-ui:workflow` | The default status line per `WorkflowRunStatus`. |
 | `WebSocketConstructor` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | Minimal WebSocket constructor type accepted by `VoiceSessionOptions`. |
-| `WorkflowApiOptions` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` |  |
+| `WorkflowApiOptions` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Options for `createWorkflowApi`. |
 | `WorkflowFieldKind` | type | `@alexkroman1/aai-ui` | `aai-ui:forms` | The control a schema property renders as inside `<WorkflowFields>`. |
 | `WorkflowFields` | component | `@alexkroman1/aai-ui` | `aai-ui:forms` | Render one field per scalar property of a workflow's input schema. |
 | `WorkflowPendingNote`, `WorkflowPendingNoteProps` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow` | The one sentence a page says while a run is in flight — three situations, one line each — as a muted line under the form, and nothing otherwise. |
@@ -667,7 +668,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `createStoredValue` | function | `@alexkroman1/aai-ui` | `aai-ui:client-storage` | A string remembered in this browser under `key` — see this module's doc. |
 | `createWorkflowApi` | function | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Create a client for the agent serving this page. |
 | `defaultClientDir` | function | `@alexkroman1/aai-ui/client-dir` | `aai-ui:client-dir` | Absolute path to the prebuilt browser client's static files — pass it to `createServerForRuntime`/`createAgentServer` as `clientDir`. |
-| `fetchClientConfig` | function | `@alexkroman1/aai-ui` | `aai-ui:page` | Fetch the agent's declared `name`, `greeting` and front door; any failure yields the agent default (`{}`). |
+| `fetchClientConfig`, `FetchClientConfigOptions` | function | `@alexkroman1/aai-ui` | `aai-ui:page` | Fetch the agent's declared `name`, `greeting` and front door; any failure yields the agent default (`{}`). |
 | `fieldKindFor` | function | `@alexkroman1/aai-ui` | `aai-ui:forms` | Which control `<WorkflowFields>` renders for one property of an input schema. |
 | `inboxEventToItem` | function | `@alexkroman1/aai-ui` | `aai-ui:conversation-log` | The log item for one frame of a client's live conversation — what `useInbox({ onEvent })` delivers for another session of the same client (a device's, when the … |
 | `mountClient` | function | `@alexkroman1/aai-ui` | `aai-ui:client` | Define and mount a client UI for a voice agent. |
@@ -682,7 +683,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `useConversation` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Subscribe to the conversation: the interleaved exchange, the streaming utterance, the live transcript and the thinking rule — with no markup. |
 | `useConversationLog`, `UseConversationLogOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:conversation-log` | A transcript that outlives the session — see this module's doc. |
 | `useCopy` | hook | `@alexkroman1/aai-ui` | `aai-ui:components` | One copier for a group of copy buttons. |
-| `useDownloadUrl`, `UseDownloadUrlOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Read an upload's bytes and hand back a URL a DOM element can use. |
+| `useDownloadUrl`, `UseDownloadUrlOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow-files` | Read an upload's bytes and hand back a URL a DOM element can use. |
 | `useEvent` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | Subscribe to custom events emitted by agent tools via `ctx.send(event, data)`; the callback receives each event's `data`. |
 | `useFlash` | hook | `@alexkroman1/aai-ui` | `aai-ui:components` | A transient value: set it, and it clears itself after `ms`. |
 | `useInbox`, `UseInboxOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:inbox` | Hold this session's `WS /inbox` socket open for the life of the component, and play what arrives — see the module doc. |

@@ -1,0 +1,15 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "page",
+  "epoch": 2,
+  "rule": 3,
+  "sha256": "d48ac07b7d396ed5643eb1a2f7d5a9a38d4fbc2090810138dc8a0aac6a33a73d",
+  "exports": [
+    "FetchClientConfigOptions",
+    "PageConfig",
+    "PageHandle",
+    "fetchClientConfig",
+    "mountPage"
+  ],
+  "rollup": "6151e2656a65f231bda450a65234f48b6c3351a1c7006493de8c07684bb3824b"
+}

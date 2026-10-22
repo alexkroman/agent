@@ -16,6 +16,7 @@ import { WorkflowRunError } from "./workflow-run-error.tsx";
  * @typeParam O - The run's output type; `run.output` narrows to it in the
  * completed slot.
  *
+ * @input
  * @public
  */
 export type WorkflowRunPanelProps<O> = {

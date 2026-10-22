@@ -28,7 +28,11 @@ import { isTypingTarget } from "./_utils.ts";
 import { useSessionCore, useSessionSelector } from "./context.ts";
 import type { SessionSnapshot } from "./session/index.ts";
 
-/** Options for {@link usePushToTalk}. */
+/**
+ * Options for {@link usePushToTalk}.
+ *
+ * @input
+ */
 export type UsePushToTalkOptions = {
   /**
    * The keyboard key that holds the turn open, as a `KeyboardEvent.code` —
@@ -42,6 +46,7 @@ export type UsePushToTalkOptions = {
 /**
  * What {@link usePushToTalk} returns.
  *
+ * @sealed
  * @public
  */
 export type UsePushToTalkResult = {

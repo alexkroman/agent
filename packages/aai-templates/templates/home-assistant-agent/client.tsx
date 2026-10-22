@@ -1,6 +1,7 @@
 /// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
 import {
+  type ChatMessage,
   ConversationView,
   mountClient,
   SessionErrorBanner,
@@ -102,15 +103,7 @@ function App() {
   );
 }
 
-function Bubble({
-  from,
-  text,
-  live,
-}: {
-  from: "user" | "assistant";
-  text: string;
-  live?: boolean;
-}) {
+function Bubble({ from, text, live }: { from: ChatMessage["role"]; text: string; live?: boolean }) {
   const mine = from === "user";
   return (
     <p

@@ -24,6 +24,7 @@ type CopyState = { text: string; ok: boolean };
  * What {@link useCopy} hands back — the click handler and the two readings a
  * button needs off one shared flash.
  *
+ * @sealed
  * @public
  */
 export type UseCopyResult = {

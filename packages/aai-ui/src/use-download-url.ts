@@ -29,7 +29,11 @@ import { useEffect, useState } from "react";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import type { WorkflowApi } from "./workflow-client.ts";
 
-/** Options for {@link useDownloadUrl}. */
+/**
+ * Options for {@link useDownloadUrl}.
+ *
+ * @input
+ */
 export type UseDownloadUrlOptions = {
   /** The client to read the bytes with. Defaults to one for the page's own agent. */
   api?: WorkflowApi;
@@ -38,6 +42,7 @@ export type UseDownloadUrlOptions = {
 /**
  * What {@link useDownloadUrl} reports.
  *
+ * @sealed
  * @public
  */
 export type UseDownloadUrlResult = {

@@ -15,7 +15,11 @@ import { useEffect, useState } from "react";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import type { WorkflowApi } from "./workflow-client.ts";
 
-/** Options for {@link useWorkflows}. */
+/**
+ * Options for {@link useWorkflows}.
+ *
+ * @input
+ */
 export type UseWorkflowsOptions = {
   /** The client to read the listing with. Defaults to one for the page's own agent. */
   api?: WorkflowApi;
@@ -30,7 +34,11 @@ export type UseWorkflowsOptions = {
   skip?: boolean;
 };
 
-/** What {@link useWorkflows} reports. */
+/**
+ * What {@link useWorkflows} reports.
+ *
+ * @sealed
+ */
 export type UseWorkflowsResult = {
   /** The agent's declared workflows, each with the JSON Schema of its input. */
   workflows: WorkflowSummary[];

@@ -41,6 +41,7 @@ import { createNoticePlayer, type NoticePlayer } from "./notice-player.ts";
 /**
  * Options for {@link useInbox}.
  *
+ * @input
  * @public
  */
 export type UseInboxOptions = {
@@ -72,6 +73,7 @@ export type UseInboxOptions = {
 /**
  * What {@link useInbox} returns.
  *
+ * @sealed
  * @public
  */
 export type UseInboxResult = {

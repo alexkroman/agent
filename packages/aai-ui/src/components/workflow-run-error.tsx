@@ -9,6 +9,7 @@ import type { WorkflowRun } from "../workflow-client.ts";
 /**
  * Props for {@link WorkflowRunError}.
  *
+ * @input
  * @public
  */
 export type WorkflowRunErrorProps = {

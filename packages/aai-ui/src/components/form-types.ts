@@ -21,6 +21,11 @@ export type FormValues = Record<string, unknown>;
 /**
  * What a {@link FileField} contributes to {@link FormValues}.
  *
+ * No signature names it — `FormValues` is `Record<string, unknown>` — so a
+ * page casts the field's value to it (`values.doc as FileValue`); it is
+ * published for that cast.
+ *
+ * @sealed
  * @public
  */
 export type FileValue = {
@@ -59,6 +64,7 @@ export type FileReadMode = "none" | "text" | "dataUrl" | "upload";
  * from a documented one has to be reachable from the entry point too, which the
  * docs build enforces.
  *
+ * @input
  * @public
  */
 export type FieldShell = {

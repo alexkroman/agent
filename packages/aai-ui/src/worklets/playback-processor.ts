@@ -32,7 +32,7 @@ import {
 import { workletModuleUrl } from "./_module-url.ts";
 
 /** Raw worklet source — exported so tests can evaluate the processor directly. */
-export const playbackProcessorSource = `
+export const playbackProcessorSource: string = `
 class PlaybackProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
@@ -347,4 +347,5 @@ class PlaybackProcessor extends AudioWorkletProcessor {
 registerProcessor('playback-processor', PlaybackProcessor);
 `;
 
-export default workletModuleUrl(playbackProcessorSource);
+const playbackProcessorUrl: string = workletModuleUrl(playbackProcessorSource);
+export default playbackProcessorUrl;

@@ -35,7 +35,7 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import clsx from "clsx";
-import type { ButtonHTMLAttributes, FormHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, FormHTMLAttributes, JSX, ReactNode } from "react";
 import { useCallback, useState } from "react";
 import { useTheme } from "../context.ts";
 import { FormReadinessProvider, useFormReadiness } from "./_form-readiness.ts";
@@ -58,7 +58,11 @@ export {
 // needs, definitions and components alike.
 export type { FieldShell, FileReadMode, FileValue, FormValues } from "./form-types.ts";
 
-/** Props of {@link Form}. */
+/**
+ * Props of {@link Form}.
+ *
+ * @input
+ */
 export type FormProps = {
   /**
    * Called with the collected values. May be async — the form stays disabled
@@ -100,7 +104,7 @@ export type FormProps = {
  *
  * @public
  */
-export function Form({ onSubmit, error, children, className, ...rest }: FormProps) {
+export function Form({ onSubmit, error, children, className, ...rest }: FormProps): JSX.Element {
   const theme = useTheme();
   const [busy, setBusy] = useState(false);
   // Whether any child is still waiting for its own field declaration — see
@@ -208,7 +212,7 @@ export function SubmitButton({
   variant?: ButtonVariant | undefined;
   /** Additional CSS class names, appended to {@link Button}'s own. */
   className?: string | undefined;
-} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type" | "disabled" | "className">) {
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "type" | "disabled" | "className">): JSX.Element {
   return (
     <Button
       type="submit"

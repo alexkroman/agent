@@ -31,7 +31,18 @@ const MAX_MESSAGES = MAX_CLIENT_MESSAGES;
  * The empty arrays are safe to share: snapshot collections are never mutated
  * in place, only replaced.
  */
-export const CLEARED_SESSION_STATE = {
+export const CLEARED_SESSION_STATE: Readonly<
+  Pick<
+    SessionSnapshot,
+    | "messages"
+    | "toolCalls"
+    | "customEvents"
+    | "agentState"
+    | "userTranscript"
+    | "agentTranscript"
+    | "error"
+  >
+> = {
   messages: [],
   toolCalls: [],
   customEvents: [],
@@ -39,7 +50,7 @@ export const CLEARED_SESSION_STATE = {
   userTranscript: null,
   agentTranscript: null,
   error: null,
-} satisfies Partial<SessionSnapshot>;
+};
 
 function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
   if (list.length < cap) return [...list, item];

@@ -3,7 +3,7 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
-import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from "react";
+import type { ButtonHTMLAttributes, CSSProperties, JSX, ReactNode } from "react";
 import { useTheme } from "../context.ts";
 import type { ClientTheme } from "../types.ts";
 import { FOCUS_RING, focusRingStyle, INK_SURFACE_PCT, inkTint, primaryTint } from "./_colors.ts";
@@ -143,7 +143,7 @@ export function Button({
   className?: string;
   /** Button label / content. */
   children?: ReactNode;
-} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className">) {
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className">): JSX.Element {
   const theme = useTheme();
   const colors = variantColors(variant, theme);
 

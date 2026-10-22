@@ -24,6 +24,7 @@ import { type StorageKind, storageGet, storageRemove, storageSet } from "./_web-
 /**
  * Options for {@link createStoredValue}.
  *
+ * @input
  * @public
  */
 export type StoredValueOptions = {
@@ -36,6 +37,7 @@ export type StoredValueOptions = {
 /**
  * One remembered string — see {@link createStoredValue}.
  *
+ * @sealed
  * @public
  */
 export type StoredValue = {

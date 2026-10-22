@@ -16,6 +16,7 @@ import { ERROR_COLOR } from "./_colors.ts";
  * `createElement(SessionErrorBanner, { className })` caller unable to infer the
  * props at all, and gives the reference page nothing to link to.
  *
+ * @input
  * @public
  */
 export type SessionErrorBannerProps = {

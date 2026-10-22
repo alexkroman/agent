@@ -6,38 +6,15 @@ import clsx from "clsx";
 import type { ReactNode } from "react";
 import { useTheme } from "../context.ts";
 import type { AgentState } from "../types.ts";
-import { ERROR_COLOR, INK_FAINT_PCT, inkTint, THINKING_COLOR } from "./_colors.ts";
+import { INK_FAINT_PCT, inkTint } from "./_colors.ts";
 import { Eyebrow } from "./eyebrow.tsx";
 import { SessionErrorBanner } from "./session-error-banner.tsx";
-import { StateDot } from "./session-state-dot.tsx";
-
-/**
- * Indicator dot color per state.
- *
- * `idle` is the theme's own faint ink step rather than a fixed warm grey, so
- * the dot stays visible on a dark ground; the thinking amber and error red
- * are semantic and stay fixed.
- *
- * @internal
- */
-function stateColor(state: AgentState, primary: string, idle: string): string {
-  switch (state) {
-    case "listening":
-    case "speaking":
-    case "ready":
-      return primary;
-    case "thinking":
-      return THINKING_COLOR;
-    case "error":
-      return ERROR_COLOR;
-    default:
-      return idle; // disconnected / connecting
-  }
-}
+import { StateDot, stateColor } from "./session-state-dot.tsx";
 
 /**
  * Props of {@link ConsoleShell}.
  *
+ * @input
  * @public
  */
 export type ConsoleShellProps = {
@@ -103,11 +80,13 @@ export type ConsoleShellProps = {
  *       footer={<Controls />}
  *     >
  *       <ul>
- *         {items.map((item) => (
- *           <li key={item.kind === "message" ? item.message.id : item.toolCall.callId}>
- *             {item.kind === "message" ? item.message.content : item.toolCall.name}
- *           </li>
- *         ))}
+ *         {items.map((item) =>
+ *           item.kind === "message" ? (
+ *             <li key={item.message.id}>{item.message.content}</li>
+ *           ) : item.kind === "tool" ? (
+ *             <li key={item.toolCall.callId}>{item.toolCall.name}</li>
+ *           ) : null,
+ *         )}
  *       </ul>
  *     </ConsoleShell>
  *   );

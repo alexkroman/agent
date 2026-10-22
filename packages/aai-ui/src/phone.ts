@@ -14,6 +14,7 @@
 /**
  * Options for {@link phoneE164}.
  *
+ * @input
  * @public
  */
 export type PhoneE164Options = {

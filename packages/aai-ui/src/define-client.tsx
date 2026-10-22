@@ -41,6 +41,7 @@ import type { ClientTheme, VoiceSessionOptions } from "./types.ts";
  * `component`, which invited the identical failure for a combination
  * {@link mountClient} can simply render.
  *
+ * @input
  * @public
  */
 export type ClientConfig = Pick<
@@ -112,6 +113,7 @@ export type ClientConfig = Pick<
  *
  * Implements `Disposable` so it can be used with `using`.
  *
+ * @sealed
  * @public
  */
 export type ClientHandle = {
@@ -274,7 +276,7 @@ function DefaultRoot({ platformUrl, ...display }: { platformUrl: string } & Shel
   useEffect(() => {
     if (!needsLookup) return;
     let cancelled = false;
-    void fetchClientConfig(platformUrl).then((cfg) => {
+    void fetchClientConfig({ platformUrl }).then((cfg) => {
       if (!cancelled) setResolved(cfg);
     });
     return () => {

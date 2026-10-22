@@ -24,6 +24,7 @@
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { WorkflowSummary } from "@alexkroman1/aai/workflow-api";
+import type { JSX } from "react";
 import { useWorkflows } from "../use-workflows.ts";
 import { fieldKindFor, schemaTypeOf } from "../workflow-field-kind.ts";
 import { useDeclareFieldsPending } from "./_form-readiness.ts";
@@ -88,7 +89,7 @@ export function WorkflowFields({
    * straight through before one is made.
    */
   workflow?: WorkflowSummary | string | undefined;
-}) {
+}): JSX.Element | null {
   // Unconditional, because a hook cannot be: the listing is only REQUESTED when
   // a name was passed, which is what keeps a page that already holds its
   // summaries from fetching them twice.

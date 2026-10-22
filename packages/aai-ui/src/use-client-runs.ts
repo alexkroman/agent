@@ -24,6 +24,7 @@ const DEFAULT_CLIENT_RUNS_POLL_MS = 5000;
 /**
  * Options for {@link useClientRuns}.
  *
+ * @input
  * @public
  */
 export type UseClientRunsOptions = {
@@ -39,6 +40,7 @@ export type UseClientRunsOptions = {
 /**
  * What {@link useClientRuns} returns.
  *
+ * @sealed
  * @public
  */
 export type UseClientRunsResult = {

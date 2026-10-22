@@ -56,10 +56,11 @@ exported — typedoc drops an inferred one. Two TypeDoc traps no gate checks:
   frame. Use `ConsoleShell` when the conversation is yours and the frame is not;
   `ChatView` when both are ours. No template adopts `ConsoleShell` (it is a
   whole centred frame) — an open question for the coverage gate.
-- **`<SessionStateDot colors>`**: the palette
-  (`satisfies Record<AgentState, string>`) is the PROP; the component owns the
-  exhaustive lookup, the `AGENT_STATE_LABELS` fallback and the pulse.
-  `ConsoleShell`'s dot is the same `StateDot` coloured from the theme.
+- **`<SessionStateDot colors>`**: the palette is an optional PARTIAL prop; a
+  state it does not name (including one a later release adds — `AgentState` is
+  open) takes `stateColor()`'s theme colour, `ConsoleShell`'s, and a label
+  neither `labels` nor `AGENT_STATE_LABELS` has is the raw state. The component
+  owns those fallbacks and the pulse.
 - **`<SessionControls>`** decides which buttons exist and what each presses (New
   Conversation is `end(); start()`, not `reset()`); `renderButton` decides the
   look. `useSessionControls()` underneath is for chromes too unusual for the

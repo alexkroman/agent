@@ -36,6 +36,7 @@ import type { ClientTheme } from "./types.ts";
 /**
  * Configuration for {@link mountPage}.
  *
+ * @input
  * @public
  */
 export type PageConfig = {
@@ -65,6 +66,7 @@ export type PageConfig = {
 /**
  * Handle returned by {@link mountPage}. `Disposable`, so `using` works.
  *
+ * @sealed
  * @public
  */
 export type PageHandle = {

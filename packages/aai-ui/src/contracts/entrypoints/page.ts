@@ -18,4 +18,10 @@
  * `scripts/api-contracts.mjs`.
  */
 
-export { fetchClientConfig, mountPage, type PageConfig, type PageHandle } from "../../index.ts";
+export {
+  type FetchClientConfigOptions,
+  fetchClientConfig,
+  mountPage,
+  type PageConfig,
+  type PageHandle,
+} from "../../index.ts";

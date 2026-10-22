@@ -19,9 +19,10 @@
  * studio's SDK-subpath list: mirroring "would just move the drift somewhere
  * new".
  *
- * So a NEW control added to `<WorkflowFields>` is a new member of
- * {@link WorkflowFieldKind}, and every reader of the rule finds out from the
- * type rather than from a table somebody remembered to edit.
+ * So a NEW control added to `<WorkflowFields>` is a new value of
+ * {@link WorkflowFieldKind}. The set is open, so that addition is not a break:
+ * a reader's `switch` keeps a `default` and treats a kind it does not know the
+ * way it treats `"none"`.
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
@@ -41,9 +42,19 @@ import { isRecord } from "@alexkroman1/aai/utils";
  * text field is — the same value over the wire — so it is a hand-written swap
  * rather than a shape the schema can ask for.
  *
+ * Open (`| (string & {})`): a control added later is a new value, so read an
+ * unknown kind as `"none"`.
+ *
  * @public
  */
-export type WorkflowFieldKind = "text" | "number" | "select" | "checkbox" | "file" | "none";
+export type WorkflowFieldKind =
+  | "text"
+  | "number"
+  | "select"
+  | "checkbox"
+  | "file"
+  | "none"
+  | (string & {});
 
 /**
  * A property's declared type, taking the first non-null member of a union.

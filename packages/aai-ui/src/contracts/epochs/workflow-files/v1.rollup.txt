@@ -1,0 +1,56 @@
+import { ReactNode } from 'react';
+import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
+import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
+
+// @public
+export function AudioResult(input: AudioResultProps): ReactNode;
+
+// @public @input
+export type AudioResultCaptions = {
+    text: string;
+    durationMs: number;
+    label?: string | undefined;
+    srcLang?: string | undefined;
+};
+
+// @public @input
+export type AudioResultProps = {
+    download: UseDownloadUrlResult;
+    filename: string;
+    label: string;
+    heading?: ReactNode | undefined;
+    captions?: AudioResultCaptions | undefined;
+    className?: string | undefined;
+    children?: ReactNode;
+};
+
+// @public
+export function UploadProgressBar(input: {
+    upload?: UploadStatus | undefined;
+    onPause?: (() => void) | undefined;
+    onResume?: (() => void) | undefined;
+    className?: string | undefined;
+}): ReactNode;
+
+// @public @sealed
+export type UploadStatus = UploadProgress & {
+    name: string;
+    index: number;
+    count: number;
+    paused: boolean;
+};
+
+// @public
+export function useDownloadUrl(uploadId: string | undefined, options?: UseDownloadUrlOptions): UseDownloadUrlResult;
+
+// @public @input
+export type UseDownloadUrlOptions = {
+    api?: WorkflowApi;
+};
+
+// @public @sealed
+export type UseDownloadUrlResult = {
+    url?: string;
+    error?: string;
+    pending: boolean;
+};

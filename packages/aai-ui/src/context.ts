@@ -3,6 +3,7 @@
 import {
   createContext,
   createElement,
+  type ReactElement,
   type ReactNode,
   useContext,
   useEffect,
@@ -13,7 +14,7 @@ import {
 // (guaranteed by the React 18+ peer) instead of bundling the userland shim.
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
 import type { BrowserSession, SendTextOptions, SessionSnapshot } from "./session/index.ts";
-import type { AgentState, ClientTheme, SessionError } from "./types.ts";
+import type { AgentState, ClientTheme, ResolvedClientTheme, SessionError } from "./types.ts";
 
 // A neutral blank canvas: near-white ground, white cards, zinc borders and a
 // near-black primary. Deliberately NOT the studio's cream/indigo palette, so an
@@ -42,7 +43,7 @@ export function SessionProvider({
 }: {
   value: BrowserSession;
   children?: ReactNode;
-}) {
+}): ReactElement {
   return createElement(SessionCtx.Provider, { value }, children);
 }
 
@@ -61,6 +62,7 @@ export function SessionProvider({
  * actions every chrome is handed. `createBrowserSession` is what keeps each of
  * these assignable from the session's own methods.
  *
+ * @sealed
  * @public
  */
 export type SessionActions = {
@@ -330,7 +332,7 @@ const selectError = (s: SessionSnapshot): SessionError | null => s.error;
  *
  * function StatusDot() {
  *   const status = useSessionStatus();
- *   return <span data-state={status}>{AGENT_STATE_LABELS[status]}</span>;
+ *   return <span data-state={status}>{AGENT_STATE_LABELS[status] ?? status}</span>;
  * }
  * ```
  *
@@ -379,7 +381,7 @@ export function ThemeProvider({
 }: {
   value?: ClientTheme | undefined;
   children?: ReactNode;
-}) {
+}): ReactElement {
   // Identity-stable merge: `MessageList`'s memoized rows take the theme as a
   // dependency and `MessageBubble` is `memo()`-wrapped on it, so a fresh object
   // per render would rebuild every message row.
@@ -489,10 +491,10 @@ function useThemeStyles(theme: Required<ClientTheme>): void {
  * }
  * ```
  *
- * @returns Every {@link ClientTheme} field, filled in.
+ * @returns Every {@link ClientTheme} field, filled in — a {@link ResolvedClientTheme}.
  *
  * @public
  */
-export function useTheme(): Required<ClientTheme> {
+export function useTheme(): ResolvedClientTheme {
   return useContext(ThemeCtx);
 }

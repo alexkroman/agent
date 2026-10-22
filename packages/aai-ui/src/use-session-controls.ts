@@ -20,6 +20,7 @@ import type { SessionSnapshot } from "./session/index.ts";
 /**
  * What {@link useSessionControls} returns.
  *
+ * @sealed
  * @public
  */
 export type UseSessionControlsResult = {

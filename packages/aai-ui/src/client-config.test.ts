@@ -27,7 +27,9 @@ describe("buildAgentUrl", () => {
 describe("fetchClientConfig", () => {
   it("returns the parsed config", async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ name: "a", greeting: "hi", page: "voice" }));
-    await expect(fetchClientConfig("http://h/a/", fetchFn)).resolves.toEqual({
+    await expect(
+      fetchClientConfig({ platformUrl: "http://h/a/", fetch: fetchFn }),
+    ).resolves.toEqual({
       name: "a",
       greeting: "hi",
       page: "voice",
@@ -39,7 +41,7 @@ describe("fetchClientConfig", () => {
 
   it("ignores a field the schema does not declare", async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ kind: "agent", name: "a", page: "voice" }));
-    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({
+    await expect(fetchClientConfig({ platformUrl: "http://h/", fetch: fetchFn })).resolves.toEqual({
       name: "a",
       page: "voice",
     });
@@ -47,24 +49,32 @@ describe("fetchClientConfig", () => {
 
   it("degrades to the empty default on a 404 (older server without the endpoint)", async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ error: "Not found" }, 404));
-    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({ page: "voice" });
+    await expect(fetchClientConfig({ platformUrl: "http://h/", fetch: fetchFn })).resolves.toEqual({
+      page: "voice",
+    });
   });
 
   it("degrades to the empty default on a malformed body", async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ name: 42 }));
-    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({ page: "voice" });
+    await expect(fetchClientConfig({ platformUrl: "http://h/", fetch: fetchFn })).resolves.toEqual({
+      page: "voice",
+    });
   });
 
   it("degrades to the empty default on a network error", async () => {
     const fetchFn = vi.fn(async () => {
       throw new Error("boom");
     });
-    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({ page: "voice" });
+    await expect(fetchClientConfig({ platformUrl: "http://h/", fetch: fetchFn })).resolves.toEqual({
+      page: "voice",
+    });
   });
 
   it("degrades to the empty default on non-JSON output", async () => {
     const fetchFn = vi.fn(async () => new Response("<html>oops</html>", { status: 200 }));
-    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({ page: "voice" });
+    await expect(fetchClientConfig({ platformUrl: "http://h/", fetch: fetchFn })).resolves.toEqual({
+      page: "voice",
+    });
   });
 
   it("defaults to the page's own origin and path — no argument at all", async () => {
@@ -74,11 +84,28 @@ describe("fetchClientConfig", () => {
     // for itself.
     vi.stubGlobal("location", { origin: "https://h", pathname: "/my-agent/" });
     const fetchFn = vi.fn(async () => jsonResponse({ name: "a", page: "static" }));
-    await expect(fetchClientConfig(undefined, fetchFn)).resolves.toEqual({
+    await expect(fetchClientConfig({ fetch: fetchFn })).resolves.toEqual({
       name: "a",
       page: "static",
     });
     expect(fetchFn).toHaveBeenCalledWith("https://h/my-agent/client-config", expect.anything());
+  });
+
+  it("an aborted `signal` abandons the lookup and degrades to the agent default", async () => {
+    const controller = new AbortController();
+    const fetchFn = vi.fn(
+      (_url: RequestInfo | URL, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+        }),
+    );
+    const answer = fetchClientConfig({
+      platformUrl: "http://h/",
+      fetch: fetchFn,
+      signal: controller.signal,
+    });
+    controller.abort();
+    await expect(answer).resolves.toEqual({ page: "voice" });
   });
 });
 

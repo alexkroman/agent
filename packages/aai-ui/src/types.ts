@@ -87,6 +87,10 @@ export const VOICE_CAPTURE_CONSTRAINTS = {
  *   until the next completed handshake, so a later frame cannot quietly paint
  *   over the banner explaining a dead call.
  *
+ * The set is OPEN (`| (string & {})`): a later release may add a state, so a
+ * `switch` over it needs a `default`, and a lookup keyed by it needs a
+ * fallback for a state it has no entry for.
+ *
  * @public
  */
 export type AgentState =
@@ -96,7 +100,8 @@ export type AgentState =
   | "listening"
   | "thinking"
   | "speaking"
-  | "error";
+  | "error"
+  | (string & {});
 
 /**
  * A chat message exchanged between user and assistant.
@@ -106,6 +111,7 @@ export type AgentState =
  * surfaced via `SessionSnapshot.toolCalls` (or `useEvent` for `ctx.send`
  * events).
  *
+ * @sealed
  * @public
  */
 export type ChatMessage = {
@@ -115,8 +121,12 @@ export type ChatMessage = {
    * render key.
    */
   id: number;
-  /** The sender of the message. */
-  role: "user" | "assistant";
+  /**
+   * The sender of the message. Open (`| (string & {})`) so a later sender is
+   * not a break: render anything that is not `"user"` the way you render
+   * `"assistant"`, or skip it.
+   */
+  role: "user" | "assistant" | (string & {});
   /** The text content of the message. */
   content: string;
 };
@@ -124,6 +134,7 @@ export type ChatMessage = {
 /**
  * Info about a tool call for display in the UI.
  *
+ * @sealed
  * @public
  */
 export type ToolCallInfo = {
@@ -145,7 +156,13 @@ export type ToolCallInfo = {
    * now actually compiles.
    */
   args: Record<string, DefaultToolResult>;
-  status: "pending" | "done";
+  /**
+   * `"pending"` until the tool returns, then `"done"`. A tool that FAILED is
+   * `"done"` too: the wire reports a failure as a completion whose `result` is
+   * the error text the model read. Open (`| (string & {})`) so a later status
+   * is not a break — treat anything but `"pending"` as settled.
+   */
+  status: "pending" | "done" | (string & {});
   result?: string | undefined;
   /**
    * Monotonically increasing, session-unique insertion sequence number.
@@ -170,6 +187,7 @@ export type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 /**
  * Error reported by the voice session.
  *
+ * @sealed
  * @public
  */
 export type SessionError = {
@@ -200,6 +218,7 @@ export type SessionError = {
  * defaults `platformUrl` from `location.href`, while `createBrowserSession`
  * requires it.
  *
+ * @input
  * @public
  */
 export type VoiceSessionOptions = {
@@ -361,6 +380,7 @@ export type VoiceSessionOptions = {
 /**
  * Minimal WebSocket constructor type accepted by {@link VoiceSessionOptions}.
  *
+ * @input
  * @public
  */
 export type WebSocketConstructor = {
@@ -371,6 +391,7 @@ export type WebSocketConstructor = {
 /**
  * Theme color overrides for the AAI UI components.
  *
+ * @input
  * @public
  */
 export type ClientTheme = {
@@ -384,4 +405,29 @@ export type ClientTheme = {
   surface?: string;
   /** Border color. Default: `#E4E4E7`. */
   border?: string;
+};
+
+/**
+ * The theme a component reads back from `useTheme()`: every
+ * {@link ClientTheme} field, filled with its default where the client set
+ * none.
+ *
+ * Its own type rather than `Required<ClientTheme>`, because the two travel in
+ * opposite directions — an author BUILDS a `ClientTheme` and only READS this —
+ * so a token added later can be optional on one and present on the other.
+ *
+ * @sealed
+ * @public
+ */
+export type ResolvedClientTheme = {
+  /** Background color, also painted on `html`/`body`. */
+  readonly bg: string;
+  /** Primary accent color. */
+  readonly primary: string;
+  /** Main text color. */
+  readonly text: string;
+  /** Surface/card color. */
+  readonly surface: string;
+  /** Border color. */
+  readonly border: string;
 };

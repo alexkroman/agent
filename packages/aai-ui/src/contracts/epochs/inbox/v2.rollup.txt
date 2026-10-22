@@ -1,0 +1,84 @@
+// @public
+export function createInbox(options: CreateInboxOptions): Inbox;
+
+// @public @input
+export type CreateInboxOptions = {
+    platformUrl: string;
+    client: string | (() => string | undefined);
+    holder: string;
+    busy?: (() => boolean) | undefined;
+    onNotice?: ((notice: InboxNotice) => void) | undefined;
+    onEvent?: ((event: InboxEvent) => void) | undefined;
+    events?: boolean | undefined;
+    token?: VoiceSessionOptions["token"];
+    WebSocket?: WebSocketConstructor | undefined;
+};
+
+// @public @sealed
+export type Inbox = {
+    connected(): boolean;
+    subscribe(callback: () => void): () => void;
+    close(): void;
+};
+
+// @public
+export type InboxEvent = {
+    readonly type: "session_event";
+    readonly sessionId: string;
+    readonly event: {
+        readonly type: string;
+    } & Readonly<Record<string, unknown>>;
+} | {
+    readonly type: "session_ended";
+    readonly sessionId: string;
+} | {
+    readonly type: "other";
+    readonly frameType: string;
+};
+
+// @public @sealed
+export type InboxNotice = {
+    readonly id: string;
+    readonly event: string;
+    readonly data?: Readonly<Record<string, unknown>>;
+    readonly pcm: Uint8Array;
+};
+
+// @public
+export function useInbox(options?: UseInboxOptions): UseInboxResult;
+
+// @public @input
+export type UseInboxOptions = {
+    onNotice?: ((notice: InboxNotice) => void) | undefined;
+    onEvent?: ((event: InboxEvent) => void) | undefined;
+    busy?: (() => boolean) | undefined;
+    play?: boolean | undefined;
+    events?: boolean | undefined;
+};
+
+// @public @sealed
+export type UseInboxResult = {
+    readonly connected: boolean;
+    stopPlayback(): void;
+};
+
+// @public @input
+type VoiceSessionOptions = {
+    platformUrl: string;
+    onSessionId?: ((sessionId: string) => void) | undefined;
+    resumeSessionId?: string | undefined;
+    location?: string | (() => string | undefined) | undefined;
+    phone?: string | (() => string | undefined) | undefined;
+    client?: string | (() => string | undefined) | undefined;
+    preConnectAudio?: boolean | undefined;
+    token?: string | ((attempt: {
+        readonly sessionId: string | undefined;
+    }) => string | undefined | Promise<string | undefined>) | undefined;
+    WebSocket?: WebSocketConstructor | undefined;
+};
+
+// @public @input
+type WebSocketConstructor = {
+    new (url: string | URL, protocols?: string | string[]): WebSocket;
+    readonly OPEN: number;
+};

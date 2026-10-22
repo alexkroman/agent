@@ -39,6 +39,7 @@ import { useSessionId } from "./use-session-id.ts";
 /**
  * Options for {@link useConversationLog}.
  *
+ * @input
  * @public
  */
 export type UseConversationLogOptions = {
@@ -54,6 +55,7 @@ export type UseConversationLogOptions = {
 /**
  * What {@link useConversationLog} returns.
  *
+ * @sealed
  * @public
  */
 export type UseConversationLogResult = {
@@ -140,7 +142,8 @@ export function useConversationLog(
   const mirrored = useRef(new Map<string, ConversationItem[]>());
   const mirror = useCallback(
     (event: InboxEvent): void => {
-      if (event.sessionId === own.current) return;
+      // A frame this version does not know carries nothing the log can show.
+      if (event.type === "other" || event.sessionId === own.current) return;
       if (event.type === "session_ended") {
         mirrored.current.delete(event.sessionId);
         return;
