@@ -125,7 +125,7 @@ trust a prose default (currently `gpt-5.6-luna`).
 (`RIME_API_KEY`), `assemblyAITts({ voice, language? })` (`ASSEMBLYAI_API_KEY` —
 one key for an all-AssemblyAI pipeline).
 
-**The wire is https://www.assemblyai.com/docs/tts** (`tts.us`/`tts.eu`
+**The wire is <https://www.assemblyai.com/docs/tts>** (`tts.us`/`tts.eu`
 `.assemblyai.com/v1/ws`, `voice_id=<slug>`; the retired `voice` param is a
 3006). `aai-runtime`'s `providers/tts/assemblyai-wire.ts` builds the URL and the
 `Generate` frames (≤2000 chars each — longer is a fatal 3006) for both the
