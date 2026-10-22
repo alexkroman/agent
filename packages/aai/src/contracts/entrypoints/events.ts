@@ -33,18 +33,14 @@
  * `scripts/api-contracts.mjs`.
  */
 
-export {
-  type ClientEventMap,
-  type ClientEventSender,
-  type EventMapOf,
-  SESSION_SOURCED_EVENT_TYPES,
-  type SessionEvent,
-  type SessionEventBody,
-  type SessionEventHandler,
-  type SessionEventHandlers,
-  type SessionEventMap,
-  SessionEventSchema,
-  type SessionEventType,
-  type SessionEventTypeList,
-  type SessionSourcedEventType,
+export type {
+  AnySessionEvent,
+  ClientEventMap,
+  ClientEventSender,
+  SessionEvent,
+  SessionEventBody,
+  SessionEventHandler,
+  SessionEventHandlers,
+  SessionEventMap,
+  SessionEventType,
 } from "../../index.ts";

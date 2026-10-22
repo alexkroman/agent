@@ -10,7 +10,7 @@ import { describe, expect, test } from "vitest";
 import { MAX_TOOL_RESULT_CHARS, TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
 import type { SessionCommand } from "./protocol.ts";
 import { EVENT_ID_PREFIX, SessionCommandSchema } from "./protocol.ts";
-import { SessionEventSchema } from "./protocol-events.ts";
+import { SESSION_EVENT_UNION, SessionEventSchema } from "./protocol-events.ts";
 import {
   type InboxClientFrame,
   InboxClientFrameSchema,
@@ -128,7 +128,7 @@ describe("server→client event wire format", () => {
     // The list is hand-written, so nothing otherwise notices a new event going
     // unpinned — and a new event is exactly when the wire format is changing.
     expect(new Set(valid.map((body) => body.type))).toEqual(
-      new Set(SessionEventSchema.options.map((option) => option.shape.type.value)),
+      new Set(SESSION_EVENT_UNION.options.map((option) => option.shape.type.value)),
     );
   });
 
@@ -225,7 +225,7 @@ describe("client→server command wire format", () => {
     // is a FACT, and one union with one shape let `cancel` sit beside
     // `reply.completed` with nothing but the name to tell them apart.
     const commands: string[] = SessionCommandSchema.options.map((o) => o.shape.type.value);
-    const events: string[] = SessionEventSchema.options.map((o) => o.shape.type.value);
+    const events: string[] = SESSION_EVENT_UNION.options.map((o) => o.shape.type.value);
     expect(commands.filter((type) => events.includes(type))).toEqual([]);
   });
 });

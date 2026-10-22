@@ -274,9 +274,13 @@ export function clientHistoryFrame(
   messages: { role: "user" | "assistant"; content: string }[];
   toolCalls: RestoredToolCall[];
 } {
-  const visible = messages.flatMap((m) =>
-    m.role === "tool" ? [] : [{ role: m.role, content: m.content }],
-  );
+  // The two dialogue roles only: a `tool` turn (or any role this client cannot
+  // render) is not part of the restored transcript.
+  const visible = messages.flatMap((m): { role: "user" | "assistant"; content: string }[] => {
+    if (m.role === "user") return [{ role: "user", content: m.content }];
+    if (m.role === "assistant") return [{ role: "assistant", content: m.content }];
+    return [];
+  });
   const dropped = Math.max(0, visible.length - MAX_CLIENT_MESSAGES);
   return {
     messages: visible.slice(dropped),

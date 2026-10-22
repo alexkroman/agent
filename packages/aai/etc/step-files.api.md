@@ -7,7 +7,7 @@
 // @public
 export function readUploadToFile(uploadId: string, path: string, options?: ReadUploadToFileOptions): Promise<number>;
 
-// @public
+// @public @input
 export type ReadUploadToFileOptions = {
     size?: number | undefined;
     windowBytes?: number | undefined;
@@ -20,7 +20,7 @@ export const STEP_FILE_READ_CONCURRENCY: number;
 // @public
 export const STEP_FILE_WINDOW_BYTES: number;
 
-// @public
+// @public @sealed
 type UploadInfo = {
     id: string;
     name: string;
@@ -30,7 +30,7 @@ type UploadInfo = {
     ranges?: readonly UploadRange[];
 };
 
-// @public
+// @public @sealed
 type UploadRange = {
     start: number;
     end: number;
@@ -39,7 +39,7 @@ type UploadRange = {
 // @public
 export function withTempDir<T>(work: (dir: string) => Promise<T>, options?: WithTempDirOptions): Promise<T>;
 
-// @public
+// @public @input
 export type WithTempDirOptions = {
     prefix?: string | undefined;
 };
@@ -47,12 +47,12 @@ export type WithTempDirOptions = {
 // @public
 export function writeUploadFromFile(path: string, options?: WriteUploadFromFileOptions): Promise<UploadInfo>;
 
-// @public
+// @public @input
 export type WriteUploadFromFileOptions = WriteUploadOptions & {
     windowBytes?: number | undefined;
 };
 
-// @public
+// @public @input
 type WriteUploadOptions = {
     name?: string | undefined;
     type?: string | undefined;

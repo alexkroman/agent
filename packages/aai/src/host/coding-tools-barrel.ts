@@ -25,12 +25,5 @@
  * @module coding-tools
  */
 
-export {
-  BASH_TIMEOUT_MAX_MS,
-  BASH_TIMEOUT_MS,
-  CODING_TOOL_DESCRIPTIONS,
-  type CodingToolName,
-  GLOB_LIMIT,
-  READ_LIMIT,
-} from "./coding-tool-descriptions.ts";
+export type { CodingToolName } from "./coding-tool-descriptions.ts";
 export { type CodingToolsOptions, createCodingTools } from "./coding-tools.ts";

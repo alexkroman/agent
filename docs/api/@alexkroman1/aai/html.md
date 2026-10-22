@@ -175,6 +175,8 @@ type FeedItem = {
 };
 ```
 
+**`Sealed`**
+
 One entry of a feed, with the fields a digest actually reads.
 
 #### Properties
@@ -256,6 +258,8 @@ type PageMetadata = {
 };
 ```
 
+**`Sealed`**
+
 The three things a scraper reads off a page's `<head>`.
 
 #### Properties
@@ -299,6 +303,8 @@ type ParsedFeed = {
   title: string | undefined;
 };
 ```
+
+**`Sealed`**
 
 A parsed RSS/Atom/RDF feed.
 

@@ -10,11 +10,11 @@ export const ASSEMBLYAI_STT_EU_URL: string;
 // @public
 export function assemblyAIStt(options?: AssemblyAISttOptions): SttProvider;
 
-// @public
+// @public @input
 export interface AssemblyAISttOptions extends ProviderCredentialOptions {
     connectTimeoutMs?: number;
     formatTurns?: boolean;
-    languages?: string[];
+    languages?: readonly string[];
     maxConnectRetries?: number;
     maxTurnSilenceMs?: number;
     minTurnSilenceMs?: number;
@@ -26,12 +26,9 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
 }
 
 // @public
-export const DEEPGRAM_DEFAULT_ENDPOINTING_MS: number;
-
-// @public
 export function deepgramStt(options?: DeepgramSttOptions): SttProvider;
 
-// @public
+// @public @input
 export interface DeepgramSttOptions extends ProviderCredentialOptions {
     endpointing?: number;
     language?: string;
@@ -41,7 +38,7 @@ export interface DeepgramSttOptions extends ProviderCredentialOptions {
 // @public
 export function elevenLabsStt(options?: ElevenLabsSttOptions): SttProvider;
 
-// @public
+// @public @input
 export interface ElevenLabsSttOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
@@ -69,7 +66,7 @@ type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 
-// @public
+// @public @input
 export interface ProviderCredentialOptions {
     apiKeyEnv?: string;
 }
@@ -85,7 +82,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 // @public
 export function sonioxStt(options?: SonioxSttOptions): SttProvider;
 
-// @public
+// @public @input
 export interface SonioxSttOptions extends ProviderCredentialOptions {
     languages?: readonly string[];
     model?: string;

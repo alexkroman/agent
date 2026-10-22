@@ -221,6 +221,8 @@ type StubWorkflowsOptions = {
 };
 ```
 
+**`Input`**
+
 What [installStubWorkflows](#installstubworkflows) answers each read with.
 
 Every field has a default, so `installStubWorkflows()` is a client whose reads all

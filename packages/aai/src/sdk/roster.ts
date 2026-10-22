@@ -75,7 +75,12 @@ export const HANDOFF_TOOL_NAME = "handoff";
 /** The name the model hands a TASK off by. @public */
 export const DELEGATE_TOOL_NAME = "delegate";
 
-/** Per-call options for {@link Roster.handoff}. @public */
+/**
+ * Per-call options for {@link Roster.handoff}.
+ *
+ * @input
+ * @public
+ */
 export interface HandoffOptions {
   /**
    * What the next speaker should know that the transcript does not say — "the

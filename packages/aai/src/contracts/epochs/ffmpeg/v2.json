@@ -1,0 +1,27 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "ffmpeg",
+  "epoch": 2,
+  "rule": 3,
+  "sha256": "b5a0d9aa46cc0a08bb70e5e3ac73ef97593b4e08c63bf13a835d1d3b4aec1503",
+  "exports": [
+    "FfmpegError",
+    "FfmpegFailureKind",
+    "FfmpegRunOptions",
+    "FfmpegRunResult",
+    "FfmpegSource",
+    "MediaInfo",
+    "MediaStreamInfo",
+    "ProbeOptions",
+    "TranscodeToWavOptions",
+    "WavEncodeOptions",
+    "describeMedia",
+    "ffmpegBaseArgs",
+    "isFfmpegError",
+    "probeMedia",
+    "runFfmpeg",
+    "transcodeToWav",
+    "wavEncodeArgs"
+  ],
+  "rollup": "c240fcdc2b44a7db6f9e7c683fab1bb22f69d34797fb6acbdf176059f91b96a8"
+}

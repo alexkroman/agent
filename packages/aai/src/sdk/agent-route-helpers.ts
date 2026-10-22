@@ -101,14 +101,13 @@ export function readRouteError(err: unknown): { status: number; message: string 
  *
  * @public
  */
-export type ValidatedRouteRequest<Body, Client extends boolean> = Omit<
-  RouteRequest,
-  "body" | "clientId"
-> & { body: Body } & (Client extends true ? { clientId: string } : { clientId?: string });
+export type ValidatedRouteRequest<Body, Client extends boolean> = RouteRequest<Body> &
+  (Client extends true ? { clientId: string } : unknown);
 
 /**
  * What {@link route} takes.
  *
+ * @input
  * @public
  */
 export interface RouteDef<

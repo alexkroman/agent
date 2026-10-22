@@ -184,7 +184,11 @@ function matchWords(text: string): string[] {
   return (text.toLowerCase().match(MATCH_WORD_RE) ?? []).filter((word) => !MATCH_FILLER.has(word));
 }
 
-/** Options for {@link resolveOne}. */
+/**
+ * Options for {@link resolveOne}.
+ *
+ * @input
+ */
 export interface ResolveOneOptions<T> {
   /**
    * One candidate as the model should hear it read back — this is what a

@@ -417,6 +417,8 @@ auto-detects — which is not the same as English.
 
 ### AssemblyAISttOptions
 
+**`Input`**
+
 Options for [assemblyAIStt](#assemblyaistt).
 
 #### Extends
@@ -480,7 +482,7 @@ it is load-bearing rather than tidy-up.
 ##### languages?
 
 ```ts
-optional languages?: string[];
+optional languages?: readonly string[];
 ```
 
 Languages to bias the model toward, sent as the `language_codes` connection
@@ -629,6 +631,8 @@ Ignored when [voiceFocus](#voicefocus) is off — it tunes that filter.
 
 ### DeepgramSttOptions
 
+**`Input`**
+
 Options for [deepgramStt](#deepgramstt).
 
 #### Extends
@@ -657,7 +661,7 @@ optional endpointing?: number;
 ```
 
 Deepgram endpointing window (ms of trailing silence before a `final` is
-emitted). Defaults to [DEEPGRAM\_DEFAULT\_ENDPOINTING\_MS](#deepgram_default_endpointing_ms). Endpointing
+emitted). Defaults to `DEEPGRAM_DEFAULT_ENDPOINTING_MS`. Endpointing
 is the provider's job — the pipeline transport commits a turn on every
 final — so this window is what keeps a mid-utterance pause from splitting
 one request across turns.
@@ -699,6 +703,8 @@ to the SDK unchanged, which allows opt-in to future models.
 ***
 
 ### ElevenLabsSttOptions
+
+**`Input`**
 
 Options for [elevenLabsStt](#elevenlabsstt).
 
@@ -749,6 +755,8 @@ future models without an SDK release.
 ***
 
 ### SonioxSttOptions
+
+**`Input`**
 
 Options for [sonioxStt](#sonioxstt).
 
@@ -804,34 +812,6 @@ const ASSEMBLYAI_STT_EU_URL: string;
 ```
 
 EU data-residency streaming endpoint.
-
-***
-
-### DEEPGRAM\_DEFAULT\_ENDPOINTING\_MS
-
-```ts
-const DEEPGRAM_DEFAULT_ENDPOINTING_MS: number;
-```
-
-Default Deepgram `endpointing` (ms) — **the same knob as
-`DEFAULT_MIN_TURN_SILENCE_MS`, seen from a different vendor.** The transport
-commits a turn on every STT final, so end-of-turn detection is owned
-entirely by the provider and a short window would commit a turn at every
-mid-utterance pause.
-
-#### See
-
- - `DEFAULT_MIN_TURN_SILENCE_MS` on `@alexkroman1/aai` — the AssemblyAI
-opener's `min_turn_silence`, 1600 ms, the value this 1500 ms window is
-matched to. Its doc carries the sweep that puts the knee there, and is the
-one to read before moving either number.
- - `DEFAULT_MAX_TURN_SILENCE_MS` on `@alexkroman1/aai` — the AssemblyAI
-opener's pause-tolerance ceiling. Deepgram exposes no counterpart: its
-`endpointing` is a silence window with no completeness check, so there is
-nothing here for a maximum to bound.
-
-`konsistent.json` does not check the name: the shared template only covers
-the `*_DEFAULT_MODEL` and `*_DEFAULT_VOICE` shapes.
 
 ## References
 

@@ -45,9 +45,9 @@ export type FfmpegFailureKind =
 /** The binary is not installed, or `AAI_FFMPEG_PATH` points at nothing. */
 | "missing-binary"
 /** Piped output passed `maxOutputBytes`; the child was killed. */
-| "output-too-large";
+| "output-too-large" | (string & {});
 
-// @public (undocumented)
+// @public @input (undocumented)
 export type FfmpegRunOptions = {
     binary?: string;
     cwd?: string;
@@ -57,7 +57,7 @@ export type FfmpegRunOptions = {
     maxOutputBytes?: number;
 };
 
-// @public (undocumented)
+// @public @sealed (undocumented)
 export type FfmpegRunResult = {
     stdout: Uint8Array;
     stderr: string;
@@ -70,7 +70,7 @@ export type FfmpegSource = string | Uint8Array;
 // @public
 export function isFfmpegError(value: unknown): value is FfmpegError;
 
-// @public
+// @public @sealed
 export type MediaInfo = {
     durationSec?: number;
     format?: string;
@@ -82,7 +82,7 @@ export type MediaInfo = {
     raw: unknown;
 };
 
-// @public
+// @public @sealed
 export type MediaStreamInfo = {
     index: number;
     kind: string;
@@ -98,7 +98,7 @@ export type MediaStreamInfo = {
 // @public
 export function probeMedia(source: FfmpegSource, options?: ProbeOptions): Promise<MediaInfo>;
 
-// @public (undocumented)
+// @public @input (undocumented)
 export type ProbeOptions = Omit<FfmpegRunOptions, "stdin" | "binary"> & {
     binary?: string;
 };
@@ -115,7 +115,7 @@ export type TranscodeToWavOptions = WavEncodeOptions & Omit<FfmpegRunOptions, "s
 // @public
 export function wavEncodeArgs(options?: WavEncodeOptions): string[];
 
-// @public (undocumented)
+// @public @input (undocumented)
 export type WavEncodeOptions = {
     sampleRate?: number;
     channels?: number;

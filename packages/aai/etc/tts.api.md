@@ -18,7 +18,7 @@ export const ASSEMBLYAI_TTS_LANGUAGES: {
 };
 
 // @public
-export const ASSEMBLYAI_TTS_VOICES: readonly ["aai-alba", "aai-anna", "aai-charles", "aai-eve", "aai-george", "aai-jane", "aai-jean", "aai-mary", "aai-michael", "aai-paul", "aai-vera"];
+export const ASSEMBLYAI_TTS_VOICES: readonly AssemblyAITtsVoice[];
 
 // @public
 export function assemblyAITts(options?: AssemblyAITtsOptions): TtsProvider;
@@ -26,7 +26,7 @@ export function assemblyAITts(options?: AssemblyAITtsOptions): TtsProvider;
 // @public
 export type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
 
-// @public (undocumented)
+// @public @input (undocumented)
 export interface AssemblyAITtsOptions extends ProviderCredentialOptions {
     host?: string;
     language?: AssemblyAITtsLanguage;
@@ -42,7 +42,7 @@ export const CARTESIA_DEFAULT_VOICE: string;
 // @public
 export function cartesiaTts(options?: CartesiaTtsOptions): TtsProvider;
 
-// @public
+// @public @input
 export interface CartesiaTtsOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;
@@ -71,7 +71,7 @@ type LlmProvider = ProviderDescriptor<string, LlmDescriptorOptions> & {
     readonly __stage?: "llm";
 };
 
-// @public
+// @public @input
 export interface ProviderCredentialOptions {
     apiKeyEnv?: string;
 }
@@ -90,7 +90,7 @@ export const RIME_DEFAULT_VOICE: string;
 // @public
 export function rimeTts(options?: RimeTtsOptions): TtsProvider;
 
-// @public
+// @public @input
 export interface RimeTtsOptions extends ProviderCredentialOptions {
     language?: string;
     model?: string;

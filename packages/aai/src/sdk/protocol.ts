@@ -102,6 +102,7 @@ export function lenientParse<T>(
  * an ordinary event now, and the sink orders it behind held audio by type. That
  * is what let it join the retained stream: a method on the sink was a frame no
  * event log could see.
+ * @input
  */
 export interface ClientSink {
   /** True when the underlying connection is open and will accept calls. */

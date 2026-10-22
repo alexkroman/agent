@@ -12,7 +12,7 @@ export type AgentClient = WorkflowApi & {
     readonly baseUrl: string;
 };
 
-// @public
+// @public @input
 export type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
@@ -21,20 +21,17 @@ export type AnyWorkflowDef<R = unknown> = {
     run: WorkflowBody<never, R>;
 };
 
-// @public
-export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
+// @public @sealed
+export interface ClientConfigResponse {
+    greeting?: string | undefined;
+    name?: string | undefined;
+    page: "voice" | "static";
+    sessionToken?: string | undefined;
+    sessionUrl?: string | undefined;
+}
 
 // @public
-export const ClientConfigResponseSchema: z.ZodObject<{
-    name: z.ZodOptional<z.ZodString>;
-    greeting: z.ZodOptional<z.ZodString>;
-    sessionUrl: z.ZodOptional<z.ZodString>;
-    page: z.ZodEnum<{
-        static: "static";
-        voice: "voice";
-    }>;
-    sessionToken: z.ZodOptional<z.ZodString>;
-}, z.core.$strip>;
+export const ClientConfigResponseSchema: z.ZodType<ClientConfigResponse>;
 
 // @public
 export function createAgentClient(options: WorkflowApiClientOptions): AgentClient;
@@ -42,13 +39,13 @@ export function createAgentClient(options: WorkflowApiClientOptions): AgentClien
 // @public
 export function createWorkflowApiClient(options: WorkflowApiClientOptions): WorkflowApi;
 
-// @public
+// @public @sealed
 export type EventStreamFrame = {
     event: string;
     data: unknown;
 };
 
-// @public
+// @public @input
 export type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
@@ -56,7 +53,7 @@ export type FindByKeyOptions = {
     withOutput?: boolean;
 };
 
-// @public
+// @public @input
 export type FindOptions = {
     limit?: number;
 };
@@ -70,7 +67,7 @@ export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is T
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
-// @public
+// @public @input
 export type PollOptions<T> = {
     everyMs: number;
     maxMs: number;
@@ -78,7 +75,7 @@ export type PollOptions<T> = {
     maxAttempts?: number | undefined;
 };
 
-// @public
+// @public @sealed
 export type PollResult<T> = {
     value: T;
     done: boolean;
@@ -88,7 +85,7 @@ export type PollResult<T> = {
 // @public
 export function readEventStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
 
-// @public
+// @public @input
 type SayOnClientNotice = {
     id?: string | undefined;
     event: string;
@@ -103,7 +100,7 @@ type SayOnClientNotice = {
     maxAttempts?: number | undefined;
 };
 
-// @public
+// @public @input
 export type SleepOptions = {
     correlationId?: string;
 };
@@ -141,7 +138,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
     };
 }
 
-// @public
+// @public @input
 export type StartOptions = {
     key?: string;
     dedupeKey?: string;
@@ -149,18 +146,18 @@ export type StartOptions = {
     notify?: boolean | string;
 };
 
-// @public
+// @public @input
 export type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
     schema?: S | undefined;
 };
 
-// @public
+// @public @input
 export type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
     schema: S;
 };
 
-// @public
+// @public @input
 export type StreamOptions = {
     namespace?: string;
     startIndex?: number;
@@ -177,7 +174,7 @@ type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 // @public
 export type UploadBody = Blob | ArrayBuffer | ArrayBufferView | string;
 
-// @public
+// @public @sealed
 export type UploadInfo = {
     id: string;
     name: string;
@@ -187,7 +184,7 @@ export type UploadInfo = {
     ranges?: readonly UploadRange[];
 };
 
-// @public
+// @public @input
 export type UploadOptions = {
     name?: string | undefined;
     type?: string | undefined;
@@ -200,26 +197,26 @@ export type UploadOptions = {
 // @public
 export type UploadParallelOption = boolean | UploadPartsOptions;
 
-// @public
+// @public @input
 export type UploadPartsOptions = {
     partBytes?: number | undefined;
     concurrency?: number | undefined;
 };
 
-// @public
+// @public @sealed
 export type UploadProgress = {
     loaded: number;
     total: number | undefined;
     fraction: number | undefined;
 };
 
-// @public
+// @public @sealed
 export type UploadRange = {
     start: number;
     end: number;
 };
 
-// @public
+// @public @sealed
 export type UploadRef = {
     id: string;
     name: string;
@@ -229,18 +226,18 @@ export type UploadRef = {
     url: string;
 };
 
-// @public
+// @public @input
 export type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     timeoutMs: number;
     schema?: S | undefined;
 };
 
-// @public
+// @public @input
 export type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     schema: S;
 };
 
-// @public
+// @public @input
 export type WakeUpOptions = {
     correlationIds?: string[];
 };
@@ -265,12 +262,12 @@ export type WorkflowApi = {
     download(id: string, options?: WorkflowApiCallOptions): Promise<Blob>;
 };
 
-// @public
+// @public @input
 export type WorkflowApiCallOptions = {
     signal?: AbortSignal;
 };
 
-// @public
+// @public @input
 export type WorkflowApiClientOptions = {
     baseUrl: string;
     token?: string | undefined;
@@ -280,7 +277,7 @@ export type WorkflowApiClientOptions = {
 // @public
 export type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
-// @public
+// @public @sealed
 export type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
@@ -304,7 +301,7 @@ export type WorkflowClient = {
     listing(): WorkflowSummary[];
 };
 
-// @public
+// @public @sealed
 export type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
@@ -322,7 +319,7 @@ export type WorkflowContext = {
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
-// @public
+// @public @input
 export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
@@ -332,7 +329,7 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
     onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
 };
 
-// @public
+// @public @sealed
 export type WorkflowFailureContext<I = unknown> = {
     readonly runId: string;
     readonly workflow: string;
@@ -348,14 +345,14 @@ export type WorkflowFailureHandler<I = unknown> = WorkflowFailureHook<I> | {
 // @public
 export type WorkflowFailureHook<I = unknown> = (error: Error, context: WorkflowFailureContext<I>) => Promise<void> | void;
 
-// @public
+// @public @input
 export type WorkflowFollowOutputOptions = {
     namespace?: string;
     fromIndex?: number;
     signal?: AbortSignal;
 };
 
-// @public
+// @public @input
 export type WorkflowGetOptions = {
     wait?: number;
     signal?: AbortSignal;
@@ -372,7 +369,7 @@ export type WorkflowOutputOf<D> = D extends {
     readonly output?: StandardSchemaV1<unknown, infer O> | undefined;
 } ? Awaited<unknown extends O ? R : O> : never;
 
-// @public
+// @public @sealed
 export type WorkflowRunBase = {
     runId: string;
     workflow: string;
@@ -381,7 +378,7 @@ export type WorkflowRunBase = {
     label?: string;
 };
 
-// @public
+// @public @input
 export type WorkflowRunListOptions = {
     limit?: number;
     signal?: AbortSignal;
@@ -412,27 +409,27 @@ export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 // @public
 export type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
-// @public
+// @public @input
 export type WorkflowStartAndWaitOptions = {
     key?: string;
     wait?: number;
     signal?: AbortSignal;
 };
 
-// @public
+// @public @input
 export type WorkflowStartOptions = {
     key?: string;
     signal?: AbortSignal;
 };
 
-// @public
+// @public @input
 export type WorkflowStreamOutputOptions = {
     namespace?: string;
     startIndex?: number;
     signal?: AbortSignal;
 };
 
-// @public
+// @public @sealed
 export type WorkflowSummary = {
     name: string;
     description?: string;

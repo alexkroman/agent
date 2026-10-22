@@ -181,6 +181,8 @@ type CallOptions = {
 };
 ```
 
+**`Input`**
+
 #### Properties
 
 ##### fetch?
@@ -225,6 +227,8 @@ type FetchJsonOptions = {
   method?: string;
 } & CallOptions;
 ```
+
+**`Input`**
 
 What [fetchJson](#fetchjson) takes beside the URL.
 

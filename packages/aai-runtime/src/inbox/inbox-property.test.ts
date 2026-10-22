@@ -165,7 +165,10 @@ type Notice = {
   expected?: Set<Sock>;
   parts: Part[];
   abort?: "in-flight" | "before-turn" | "decided";
-  result: { k: "pending" } | { k: "resolved"; value: Outcome } | { k: "rejected"; reason: unknown };
+  result:
+    | { k: "pending" }
+    | { k: "resolved"; value: Outcome | (string & {}) }
+    | { k: "rejected"; reason: unknown };
 };
 
 /** The module doc's rule, restated so the model does not import it. */

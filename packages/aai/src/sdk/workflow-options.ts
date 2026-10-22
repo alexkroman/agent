@@ -15,6 +15,7 @@ import type { WorkflowRunStatus } from "./workflow-run.ts";
  * `WorkflowApi.start`, whose options are `WorkflowStartOptions`: the same
  * `key`, and a `signal` where this carries `notify`, which needs a session to
  * speak into.
+ * @input
  */
 export type StartOptions = {
   /**
@@ -98,7 +99,11 @@ export type StartOptions = {
   notify?: boolean | string;
 };
 
-/** Options for `WorkflowClient.find`. */
+/**
+ * Options for `WorkflowClient.find`.
+ *
+ * @input
+ */
 export type FindOptions = {
   /**
    * Most runs to return, newest first. Defaults to
@@ -108,7 +113,11 @@ export type FindOptions = {
   limit?: number;
 };
 
-/** Options for `WorkflowClient.findByKey`. */
+/**
+ * Options for `WorkflowClient.findByKey`.
+ *
+ * @input
+ */
 export type FindByKeyOptions = {
   /**
    * Only runs created at or after this instant (epoch milliseconds or a `Date`).
@@ -133,7 +142,11 @@ export type FindByKeyOptions = {
   withOutput?: boolean;
 };
 
-/** Options for `WorkflowClient.wakeUp`. */
+/**
+ * Options for `WorkflowClient.wakeUp`.
+ *
+ * @input
+ */
 export type WakeUpOptions = {
   /**
    * Interrupt only the `sleep()` calls carrying these correlation ids. Omitted,
@@ -143,7 +156,11 @@ export type WakeUpOptions = {
   correlationIds?: string[];
 };
 
-/** Options for `WorkflowClient.stream`. */
+/**
+ * Options for `WorkflowClient.stream`.
+ *
+ * @input
+ */
 export type StreamOptions = {
   /**
    * Which of the run's streams to read. A run may keep several — `getWritable`

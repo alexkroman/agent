@@ -716,11 +716,13 @@ daysBetween("2026-06-11", "2026-06-08"); // -3
 #### Call Signature
 
 ```ts
-function dialog<M extends AnyStateMachine>(
+function dialog<E extends {
+  type: string;
+}>(
    key: string, 
-   machine: M, 
+   machine: DialogMachine<E>, 
    options?: DialogOptions
-): Dialog<M>;
+): Dialog<E>;
 ```
 
 Declare a dialog statechart for an agent's conversation.
@@ -731,9 +733,11 @@ dialog test cases, and the machine is serializable for a visualizer.
 
 ##### Type Parameters
 
-###### M
+###### E
 
-`M` *extends* `AnyStateMachine`
+`E` *extends* \{
+  `type`: `string`;
+\}
 
 ##### Parameters
 
@@ -746,7 +750,7 @@ The store key to occupy, like a [sessionSlot](#sessionslot-1)'s. Two flows
 
 ###### machine
 
-`M`
+[`DialogMachine`](#dialogmachine)\<`E`\>
 
 The machine. Give a state a `meta.instruction` and it becomes
   [DialogPosition.instruction](#instruction) while that state is active — which is what
@@ -758,7 +762,7 @@ The machine. Give a state a `meta.instruction` and it becomes
 
 ##### Returns
 
-[`Dialog`](#dialog)\<`M`\>
+[`Dialog`](#dialog)\<`E`\>
 
 ##### Examples
 
@@ -839,7 +843,7 @@ function dialog<S extends DialogSpec>(
    key: string, 
    spec: S, 
    options?: DialogOptions
-): Dialog<AnyStateMachine, DialogEvent<S>>;
+): Dialog<DialogEvent<S>>;
 ```
 
 Declare a dialog from a plain state map — see [DialogSpec](#dialogspec).
@@ -879,7 +883,7 @@ switch — see `machineFromSpec`.
 
 ##### Returns
 
-[`Dialog`](#dialog)\<`AnyStateMachine`, [`DialogEvent`](#dialogevent)\<`S`\>\>
+[`Dialog`](#dialog)\<[`DialogEvent`](#dialogevent)\<`S`\>\>
 
 ***
 
@@ -1373,7 +1377,7 @@ lowercased and every character a provider would reject becomes `_`, because
 an MCP server's names are its own (`getWeather`, `search-docs`) and refusing
 them would make whole servers unusable for a spelling.
 
-Truncation at [MCP\_TOOL\_NAME\_MAX](#mcp_tool_name_max) is the one lossy step, and it is why
+Truncation at `MCP_TOOL_NAME_MAX` is the one lossy step, and it is why
 the caller must still dedupe: two long remote names can land on one truncated
 name. `registerTools` resolves that the same way it resolves every other
 collision — first wins in a sorted order, the loser is dropped and logged —
@@ -2224,12 +2228,16 @@ function appSlug(req: RouteRequest): string {
 ### routeResponse()
 
 ```ts
-function routeResponse(status: number, body?: unknown): RouteResponse;
+function routeResponse(
+   status: number, 
+   body?: unknown, 
+   options?: RouteResponseOptions
+): RouteResponse;
 ```
 
 Answer a route with `status` and `body` instead of a plain 200:
 `return routeResponse(404, { error: "No such memory" })`,
-`return routeResponse(201, created)`.
+`return routeResponse(201, created, { headers: { Location: "/memories/42" } })`.
 
 Throws a `RangeError` for a status that is not 2xx, 4xx or 5xx: a 1xx or a
 redirect is not a JSON answer, and a typo there should fail where it was made.
@@ -2243,6 +2251,10 @@ redirect is not a JSON answer, and a typo there should fail where it was made.
 ##### body?
 
 `unknown`
+
+##### options?
+
+[`RouteResponseOptions`](#routeresponseoptions)
 
 #### Returns
 
@@ -3573,6 +3585,8 @@ The HTTP status the route answers: 4xx or 5xx.
 
 ### AgentClientInbox
 
+**`Input`**
+
 The device-inbox half of an agent declaration — see this module's header.
 
 #### Extended by
@@ -3601,6 +3615,8 @@ export default agent({ name: "Speaker", clientInbox: { sampleRate: 16_000 } });
 
 ### AgentDeclaration
 
+**`Input`**
+
 What an author may WRITE in `agent({ … })` — and THE reference for what every
 field means.
 
@@ -3610,8 +3626,8 @@ fields with the defaulted ones optional, cut down to the ones that mode has
 no prose of their own; a field's documentation lives here once.
 
 `agent()` returns the RESOLVED shape, [AgentDef](#agentdef): these fields with the
-defaults applied and the conveniences normalized away, plus the two tables
-no author writes (`tools`, `toolsets`).
+defaults applied and the conveniences normalized away, plus the one table
+no author writes (`tools`).
 
 The field groups live on interfaces this extends, each sharing ONE rule:
 [PipelineTuning](#pipelinetuning) and [PipelinePhrases](#pipelinephrases) (pipeline transport or
@@ -4113,7 +4129,7 @@ optional roster?: Roster<string>;
 
 The [SpeakerDef](#speakerdef)s the MODEL routes to: `handoff` puts a `speaks: true`
 entry on the line, `delegate` hands the rest a task. Mints both tools (and
-each speaking entry's gated tools) into `toolsets`, so a `tools/handoff.ts`
+each speaking entry's gated tools) onto the resolved agent, so a `tools/handoff.ts`
 or `tools/delegate.ts` beside it is a collision. Host-only. See `sdk/roster.ts`.
 
 ##### routes?
@@ -4506,6 +4522,8 @@ served by the GUEST from its own live agent definition, the same way
 ***
 
 ### AgentDef
+
+**`Sealed`**
 
 The RESOLVED agent definition — what `agent()` returns and what a host runs.
 
@@ -5049,7 +5067,7 @@ optional roster?: Roster<string>;
 
 The [SpeakerDef](#speakerdef)s the MODEL routes to: `handoff` puts a `speaks: true`
 entry on the line, `delegate` hands the rest a task. Mints both tools (and
-each speaking entry's gated tools) into `toolsets`, so a `tools/handoff.ts`
+each speaking entry's gated tools) onto the resolved agent, so a `tools/handoff.ts`
 or `tools/delegate.ts` beside it is a collision. Host-only. See `sdk/roster.ts`.
 
 ###### Inherited from
@@ -5353,16 +5371,6 @@ ready-made: `import agentDef from "virtual:aai/agent"` under vitest, or
 So a tool's name is its FILE name and nothing else records it. It carries
 no state type: a tool reaches session state through [sessionSlot](#sessionslot-1).
 
-##### toolsets?
-
-```ts
-optional toolsets?: readonly Toolset[];
-```
-
-Every toolset beyond the `tools/` files — RESOLVED, never authored: `agent()`
-puts the roster's here and `withMcpTools` an MCP server's. Read the whole
-table through `agentToolsets` (`/manifest`). Host-only. See `sdk/toolset.ts`.
-
 ##### tts?
 
 ```ts
@@ -5472,6 +5480,8 @@ served by the GUEST from its own live agent definition, the same way
 
 ### AgentGuardrails
 
+**`Input`**
+
 The two guardrail fields on [AgentDef](#agentdef) — see this module's header for
 what each can actually prevent.
 
@@ -5552,6 +5562,8 @@ agent opts into rather than a hook every agent pays for.
 ***
 
 ### AgentModelTuning
+
+**`Input`**
 
 [ModelTuning](#modeltuning) plus the two knobs only the agent's OWN loop has: a
 per-step tool-choice policy and a session token budget. Every field here is
@@ -5687,6 +5699,8 @@ session emits nothing rather than spending a durable event per model step.
 
 ### AgentObservation
 
+**`Input`**
+
 The observe-only half of an agent declaration — see this module's header.
 
 #### Extended by
@@ -5790,6 +5804,8 @@ agent({ name: "Cart", syncState: [cartSlot.projected, prefsSlot.projected] });
 
 ### AgentRoutes
 
+**`Input`**
+
 The `routes` field of an agent declaration — see this module's header.
 
 #### Extended by
@@ -5863,6 +5879,8 @@ writes is writing several times a turn.
 ***
 
 ### AgentSessionLifecycle
+
+**`Input`**
 
 The session-bracketing half of an agent declaration — see this module's
 header.
@@ -5945,6 +5963,8 @@ answering.
 
 ### AgentVoicePresets
 
+**`Input`**
+
 The opt-in prompt presets, extended by `AgentDef`.
 
 Its own interface for the reason `PipelineTuning` and the three other
@@ -5993,7 +6013,33 @@ prompt's shape.
 
 ***
 
+### AnySessionEvent
+
+**`Sealed`**
+
+What a `"*"` handler receives: ANY event, by its envelope alone. Open on
+purpose — a new event reaches a wildcard handler without a type change, and
+a handler that wants a member's fields declares the per-name handler.
+
+#### Properties
+
+##### meta
+
+```ts
+readonly meta: SessionEventMeta;
+```
+
+##### type
+
+```ts
+readonly type: string;
+```
+
+***
+
 ### AssemblyAIPipelineOptions
+
+**`Input`**
 
 #### Properties
 
@@ -6049,6 +6095,8 @@ without the preset.)
 ***
 
 ### AssemblyAIS2sOptions
+
+**`Input`**
 
 Options for [assemblyAIS2s](#assemblyais2s).
 
@@ -6129,6 +6177,8 @@ speaks.
 
 ### ClientEventMap
 
+**`Input`**
+
 The agent's OWN custom events — what `ctx.send(event, data)` pushes to the
 browser — keyed by event name, and EMPTY until the agent declares some.
 
@@ -6165,6 +6215,8 @@ The payload is typed on the SENDING side only: on the wire it is still a
 ***
 
 ### ClientRun
+
+**`Sealed`**
 
 One row of the list [clientRunsRoutes](#clientrunsroutes) answers — plain JSON, what a
 page renders a run from.
@@ -6226,6 +6278,8 @@ The workflow's key in `agent({ workflows })`.
 
 ### ClientRunsResponse
 
+**`Sealed`**
+
 The body the list route answers.
 
 #### Properties
@@ -6241,6 +6295,8 @@ The client's runs, oldest first.
 ***
 
 ### ClientRunsRoutesOptions
+
+**`Input`**
 
 Options for [clientRunsRoutes](#clientrunsroutes).
 
@@ -6338,6 +6394,8 @@ listed. Default 10 minutes.
 
 ### DelegateAnswer
 
+**`Sealed`**
+
 ONE attempt at an answer — what a [SpeakerGuardrail](#speakerguardrail) judges.
 
 `text` is the answer; `steps` and `toolCalls` are what the attempt COST,
@@ -6384,6 +6442,8 @@ Every tool call this attempt made, in order.
 ***
 
 ### DelegateOptions
+
+**`Input`**
 
 Per-call options for [DelegateFn](#delegatefn).
 
@@ -6514,6 +6574,8 @@ Every tool call this attempt made, in order.
 
 ### DelegateToolCall
 
+**`Sealed`**
+
 One tool call a subagent made, as reported back to the caller.
 
 #### Properties
@@ -6544,20 +6606,15 @@ A dialog statechart bound to a session, created by [dialog](#dialog-1).
 
 #### Type Parameters
 
-##### M
-
-`M` *extends* `AnyStateMachine`
-
-The XState machine this dialog runs.
-
 ##### E
 
-`E` = `EventFromLogic`\<`M`\>
+`E` = \{
+  `type`: `string`;
+\}
 
 The event union [Dialog.send](#send) and a gated tool's
-  `send`/`sendFrom` accept. Defaults to the machine's own — a dialog declared
-  from a [DialogSpec](#dialogspec) supplies it directly instead, because the machine
-  it builds is an implementation detail and its type carries no events.
+  `send`/`sendFrom` accept: the machine's own events for the machine form,
+  or the names a [DialogSpec](#dialogspec)'s `on` maps spell.
 
 #### Methods
 
@@ -6829,14 +6886,18 @@ The store key this dialog's snapshot occupies. Two flows must not share one.
 ##### machine
 
 ```ts
-readonly machine: M;
+readonly machine: unknown;
 ```
 
-The machine itself, for a caller that wants to inspect or visualize it.
+The machine itself, for a caller that wants to inspect or visualize it —
+an XState machine, typed `unknown` so XState's types stay off the contract:
+`dialog.machine as AnyStateMachine`.
 
 ***
 
 ### DialogGate
+
+**`Input`**
 
 What makes a tool part of a dialog: where it may run, and what it advances.
 
@@ -6944,7 +7005,73 @@ for it, moving the dialog out of a state this tool was never allowed in.
 
 ***
 
+### DialogMachine
+
+**`Input`**
+
+The machine behind a dialog, as the SDK names it: an XState machine handed to
+`dialog(key, machine)`, or the one a [DialogSpec](#dialogspec) compiles to.
+
+The SDK's own STRUCTURAL type rather than XState's `AnyStateMachine`, so
+XState's types stay out of the published contract — an XState upgrade is not
+an SDK break. Any XState machine satisfies it, and `E` is inferred from the
+machine's own events.
+
+#### Type Parameters
+
+##### E
+
+`E` *extends* \{
+  `type`: `string`;
+\} = \{
+  `type`: `string`;
+\}
+
+The events the machine accepts.
+
+#### Methods
+
+##### transition()
+
+```ts
+transition(
+   snapshot: never, 
+   event: E, 
+   actorScope: never
+): unknown;
+```
+
+###### Parameters
+
+###### snapshot
+
+`never`
+
+###### event
+
+`E`
+
+###### actorScope
+
+`never`
+
+###### Returns
+
+`unknown`
+
+#### Properties
+
+##### id
+
+```ts
+readonly id: string;
+```
+
+***
+
 ### DialogOptions
+
+**`Input`**
 
 Options for [dialog](#dialog-1).
 
@@ -7016,6 +7143,8 @@ a nested one. Parallel regions are joined with `","`.
 
 ### DialogSpec
 
+**`Input`**
+
 A dialog's shape as a plain state map — the argument to the [dialog](#dialog-1)
 overload that takes no XState machine. See [DialogStateSpec](#dialogstatespec).
 
@@ -7040,6 +7169,8 @@ The states, keyed by the name `when` and [DialogPosition.state](#state) use.
 ***
 
 ### DialogStateSpec
+
+**`Input`**
 
 One state of a [DialogSpec](#dialogspec) — the plain-object form of a dialog's shape.
 
@@ -7200,6 +7331,8 @@ disclosure than for the chat, say. See [DialogVoiceConfig](#dialogvoiceconfig).
 
 ### DialogTimeout
 
+**`Input`**
+
 A deadline as [Dialog.timeout](#timeout) reports it: how long, and the event to
 send.
 
@@ -7237,6 +7370,8 @@ readonly type: string;
 
 ### DialogTimeoutSpec
 
+**`Input`**
+
 A per-state deadline: how long the dialog may stay here, and what to send
 when it has been that long. See [DialogStateSpec.timeout](#timeout-1).
 
@@ -7265,6 +7400,8 @@ and leaves the conversation exactly where it was.
 ***
 
 ### DialogToolDef
+
+**`Input`**
 
 The authoring shape of a gated tool — [ToolDef](#tooldef) plus the
 [DialogGate](#dialoggate) that makes it part of a dialog.
@@ -7687,6 +7824,8 @@ a nested one. Parallel regions are joined with `","`.
 
 ### DialogVoiceConfig
 
+**`Input`**
+
 The per-state voice settings a dialog declares — what [Dialog.voiceConfig](#voiceconfig)
 answers with, from the deepest active state that declares any of them.
 
@@ -7733,6 +7872,8 @@ The TTS voice for this phase of the call.
 ***
 
 ### HandoffOptions
+
+**`Input`**
 
 Per-call options for [Roster.handoff](#handoff-1).
 
@@ -7802,6 +7943,8 @@ The speaker on the line now.
 ***
 
 ### InterruptionTuning
+
+**`Input`**
 
 When the caller's speech may cut the agent off, and what happens after.
 
@@ -7891,16 +8034,159 @@ A running summary of `metrics.collected` frames — see
 ##### collect()
 
 ```ts
-collect(sample: MetricsSample): void;
+collect(sample: 
+  | MetricsSample
+  | {
+  interrupted: boolean;
+  latencyMs?: number;
+  llm?: {
+     durationMs: number;
+     inputTokens?: number;
+     outputTokens?: number;
+     steps: number;
+     ttftMs?: number;
+  };
+  meta: SessionEventMeta;
+  stt?: {
+     endpointingMs?: number;
+  };
+  tts?: {
+     characters: number;
+     ttfbMs?: number;
+  };
+  type: "metrics.collected";
+}): void;
 ```
 
-Fold in one reply's metrics.
+Fold in one reply's metrics — the `metrics.collected` event itself, or a sample built by hand.
 
 ###### Parameters
 
 ###### sample
 
+  \| [`MetricsSample`](#metricssample)
+  \| \{
+  `interrupted`: `boolean`;
+  `latencyMs?`: `number`;
+  `llm?`: \{
+     `durationMs`: `number`;
+     `inputTokens?`: `number`;
+     `outputTokens?`: `number`;
+     `steps`: `number`;
+     `ttftMs?`: `number`;
+  \};
+  `meta`: [`SessionEventMeta`](#sessioneventmeta);
+  `stt?`: \{
+     `endpointingMs?`: `number`;
+  \};
+  `tts?`: \{
+     `characters`: `number`;
+     `ttfbMs?`: `number`;
+  \};
+  `type`: `"metrics.collected"`;
+\}
+
 [`MetricsSample`](#metricssample)
+
+***
+
+###### Type Literal
+
+\{
+  `interrupted`: `boolean`;
+  `latencyMs?`: `number`;
+  `llm?`: \{
+     `durationMs`: `number`;
+     `inputTokens?`: `number`;
+     `outputTokens?`: `number`;
+     `steps`: `number`;
+     `ttftMs?`: `number`;
+  \};
+  `meta`: [`SessionEventMeta`](#sessioneventmeta);
+  `stt?`: \{
+     `endpointingMs?`: `number`;
+  \};
+  `tts?`: \{
+     `characters`: `number`;
+     `ttfbMs?`: `number`;
+  \};
+  `type`: `"metrics.collected"`;
+\}
+
+###### interrupted
+
+`boolean`
+
+The reply was cut short; its stages are still reported.
+
+###### latencyMs?
+
+`number`
+
+From the caller's committed turn to the reply's first audio.
+
+###### llm?
+
+\{
+  `durationMs`: `number`;
+  `inputTokens?`: `number`;
+  `outputTokens?`: `number`;
+  `steps`: `number`;
+  `ttftMs?`: `number`;
+\}
+
+###### llm.durationMs
+
+`number`
+
+###### llm.inputTokens?
+
+`number`
+
+###### llm.outputTokens?
+
+`number`
+
+###### llm.steps
+
+`number`
+
+###### llm.ttftMs?
+
+`number`
+
+###### meta
+
+[`SessionEventMeta`](#sessioneventmeta)
+
+###### stt?
+
+\{
+  `endpointingMs?`: `number`;
+\}
+
+###### stt.endpointingMs?
+
+`number`
+
+###### tts?
+
+\{
+  `characters`: `number`;
+  `ttfbMs?`: `number`;
+\}
+
+###### tts.characters
+
+`number`
+
+###### tts.ttfbMs?
+
+`number`
+
+###### type
+
+`"metrics.collected"`
 
 ###### Returns
 
@@ -7934,6 +8220,8 @@ The summary so far. A fresh object each call; safe to keep.
 
 ### MetricsCollectorOptions
 
+**`Input`**
+
 Options for [createMetricsCollector](#createmetricscollector).
 
 #### Properties
@@ -7946,6 +8234,116 @@ optional maxSamples?: number;
 
 How many recent samples per measurement the percentiles are computed
 over. Default 1000.
+
+***
+
+### MetricsSample
+
+**`Input`**
+
+What [MetricsCollector.collect](#collect) reads off one frame — the measurements
+without the envelope, so a hook's event and a transport's body both fit.
+
+Declared on its own rather than cut from [MetricsCollectedEvent](#metricscollectedevent) with
+`Omit`: an author BUILDS one (or hands the event in), so it is an input, and
+the event is a sealed output. Tying the two would make a field the session
+adds to the event a required field every hand-built sample suddenly lacks.
+`metrics-collector.test.ts` holds the event assignable to it.
+
+#### Properties
+
+##### interrupted
+
+```ts
+interrupted: boolean;
+```
+
+The reply was cut short.
+
+##### latencyMs?
+
+```ts
+optional latencyMs?: number;
+```
+
+From the caller's committed turn to the reply's first audio.
+
+##### llm?
+
+```ts
+optional llm?: {
+  durationMs: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  steps: number;
+  ttftMs?: number;
+};
+```
+
+###### durationMs
+
+```ts
+durationMs: number;
+```
+
+###### inputTokens?
+
+```ts
+optional inputTokens?: number;
+```
+
+###### outputTokens?
+
+```ts
+optional outputTokens?: number;
+```
+
+###### steps
+
+```ts
+steps: number;
+```
+
+###### ttftMs?
+
+```ts
+optional ttftMs?: number;
+```
+
+##### stt?
+
+```ts
+optional stt?: {
+  endpointingMs?: number;
+};
+```
+
+###### endpointingMs?
+
+```ts
+optional endpointingMs?: number;
+```
+
+##### tts?
+
+```ts
+optional tts?: {
+  characters: number;
+  ttfbMs?: number;
+};
+```
+
+###### characters
+
+```ts
+characters: number;
+```
+
+###### ttfbMs?
+
+```ts
+optional ttfbMs?: number;
+```
 
 ***
 
@@ -8044,6 +8442,8 @@ First text into TTS → its first audio.
 
 ### MetricStat
 
+**`Sealed`**
+
 One measurement's distribution. Durations are milliseconds.
 
 #### Properties
@@ -8094,6 +8494,8 @@ p95: number;
 
 ### MintCodeOptions
 
+**`Input`**
+
 Options for [mintCode](#mintcode).
 
 #### Properties
@@ -8134,6 +8536,8 @@ another drawn, so the caller does not have to loop.
 ***
 
 ### ModelTuning
+
+**`Input`**
 
 The per-REQUEST knobs every model loop this runtime runs takes — the agent's
 own conversational loop and a [SpeakerDef](#speakerdef)'s delegated one alike.
@@ -8213,6 +8617,8 @@ researcher subagent and the voice that relays what it found.
 
 ### PipelinePhrases
 
+**`Input`**
+
 What the pipeline SAYS when a stage fails, so a provider outage hands the
 conversation back instead of going silent. Pipeline-only, like
 [PipelineTuning](#pipelinetuning); extended by [AgentDef](#agentdef).
@@ -8256,6 +8662,8 @@ cannot hear you. Please hang up and call back."`
 ***
 
 ### PipelineTuning
+
+**`Input`**
 
 The pipeline's turn-taking tuning: three optional groups, extended by
 [AgentDef](#agentdef) and present only on the pipeline member of `agent()`.
@@ -8363,6 +8771,8 @@ The machine itself, for a caller that wants to inspect or visualize it.
 
 ### ProcedureRunOptions
 
+**`Input`**
+
 Options for one [Procedure.run](#run).
 
 #### Properties
@@ -8385,6 +8795,8 @@ further, and `run` then throws rather than returning a half-built output.
 ***
 
 ### ProviderCredentialOptions
+
+**`Input`**
 
 The credential override every provider descriptor accepts.
 
@@ -8471,6 +8883,8 @@ readonly options: Options;
 ***
 
 ### ResolveOneOptions
+
+**`Input`**
 
 Options for [resolveOne](#resolveone).
 
@@ -8615,6 +9029,57 @@ callers wrote this by hand to get.
 ###### Returns
 
 `number`
+
+***
+
+### RestoredToolCall
+
+**`Sealed`**
+
+One tool call a resumed conversation carries back — `history.restored`'s
+`toolCalls`.
+
+#### Properties
+
+##### afterMessageIndex
+
+```ts
+afterMessageIndex: number;
+```
+
+Index into `messages` the call follows; `-1` means before any message.
+
+##### args
+
+```ts
+args: Record<string, unknown>;
+```
+
+##### callId
+
+```ts
+callId: string;
+```
+
+##### name
+
+```ts
+name: string;
+```
+
+##### result?
+
+```ts
+optional result?: string;
+```
+
+##### status
+
+```ts
+status: "pending" | "done";
+```
+
+`"pending"` when no completion was recorded — it may have been in flight.
 
 ***
 
@@ -8834,6 +9299,8 @@ The same client a tool's `ctx.workflows` is: start runs, and read them back
 
 ### RouteDef
 
+**`Input`**
+
 What [route](#route) takes.
 
 #### Type Parameters
@@ -8895,12 +9362,18 @@ optional requireClient?: Client;
 
 One request to an `agent({ routes })` handler, already parsed.
 
+#### Type Parameters
+
+##### Body
+
+`Body` = `unknown`
+
 #### Properties
 
 ##### body
 
 ```ts
-body: unknown;
+body: Body;
 ```
 
 The request body parsed as JSON — for `POST`, `PUT`, `PATCH` and `DELETE`;
@@ -8993,6 +9466,14 @@ readonly body: unknown;
 
 Sent as JSON; `undefined` sends no body at all (a 204, say).
 
+##### headers?
+
+```ts
+readonly optional headers?: Readonly<Record<string, string>>;
+```
+
+Extra response headers, when the route set any (`routeResponse`'s `headers`).
+
 ##### status
 
 ```ts
@@ -9000,6 +9481,26 @@ readonly status: number;
 ```
 
 The HTTP status: 2xx, 4xx or 5xx.
+
+***
+
+### RouteResponseOptions
+
+**`Input`**
+
+The optional half of [routeResponse](#routeresponse-1).
+
+#### Properties
+
+##### headers?
+
+```ts
+optional headers?: Readonly<Record<string, string>>;
+```
+
+Response headers to send beside the JSON body — a `Location` for a 201, a
+`Retry-After` for a 429, a `Cache-Control`. The body is always JSON, so a
+`Content-Type` here is ignored in favour of the runtime's own.
 
 ***
 
@@ -9125,15 +9626,13 @@ no-op: `{ key: \`${sessionId}:${lastEventIndex}\` }`.
 
 ### SessionEventMap
 
-Every session event, keyed by its `type` — derived from `SessionEventSchema`.
+**`Sealed`**
+
+Every session event, keyed by its `type`.
 
 Read one member with `SessionEvent<"tool.called">`, never with
 `Extract<SessionEvent, { type: … }>`: the lookup fails to compile on a
 misspelled name, where the `Extract` silently resolves to `never`.
-
-#### Extends
-
-- [`EventMapOf`](#eventmapof)\<`z.infer`\<*typeof* [`SessionEventSchema`](#sessioneventschema)\>\>
 
 #### Properties
 
@@ -9141,24 +9640,22 @@ misspelled name, where the `Extract` silently resolves to `never`.
 
 ```ts
 agentTranscript.committed: {
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   recorded?: false;
-  recovery?: "session-failed" | "turn-failed";
+  recovery?: AgentTranscriptRecovery;
   text: string;
   type: "agentTranscript.committed";
 };
 ```
 
+The reply's final text as the RECORD keeps it. Fires once per recorded
+reply, never for an interrupted one — except when `recovery` or
+`recorded: false` says otherwise.
+
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### recorded?
@@ -9170,7 +9667,7 @@ optional recorded?: false;
 ###### recovery?
 
 ```ts
-optional recovery?: "session-failed" | "turn-failed";
+optional recovery?: AgentTranscriptRecovery;
 ```
 
 ###### text
@@ -9185,32 +9682,23 @@ text: string;
 type: "agentTranscript.committed";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.agentTranscript.committed
-```
-
 ##### agentTranscript.updated
 
 ```ts
 agentTranscript.updated: {
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   text: string;
   type: "agentTranscript.updated";
 };
 ```
 
+The current reply's transcript so far — a FULL-REPLACEMENT snapshot, which
+may be shorter than the one before it. Replace the text; never diff or append.
+
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### text
@@ -9225,31 +9713,21 @@ text: string;
 type: "agentTranscript.updated";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.agentTranscript.updated
-```
-
 ##### audio.completed
 
 ```ts
 audio.completed: {
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   type: "audio.completed";
 };
 ```
 
+All of this turn's TTS audio has been sent — a turn BOUNDARY.
+
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### type
@@ -9258,25 +9736,18 @@ audio.completed: {
 type: "audio.completed";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.audio.completed
-```
-
 ##### custom.emitted
 
 ```ts
 custom.emitted: {
   data: unknown;
   event: string;
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   type: "custom.emitted";
 };
 ```
+
+An event the AGENT named, via `ctx.send`.
 
 ###### data
 
@@ -9293,10 +9764,7 @@ event: string;
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### type
@@ -9305,30 +9773,14 @@ event: string;
 type: "custom.emitted";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.custom.emitted
-```
-
 ##### error.reported
 
 ```ts
 error.reported: {
-  code:   | "stt"
-     | "llm"
-     | "tts"
-     | "audio"
-     | "connection"
-     | "internal"
-     | "protocol"
-     | "tool";
+  code: SessionErrorCode;
   fatal: boolean;
   message: string;
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   type: "error.reported";
 };
 ```
@@ -9336,15 +9788,7 @@ error.reported: {
 ###### code
 
 ```ts
-code: 
-  | "stt"
-  | "llm"
-  | "tts"
-  | "audio"
-  | "connection"
-  | "internal"
-  | "protocol"
-  | "tool";
+code: SessionErrorCode;
 ```
 
 ###### fatal
@@ -9352,6 +9796,8 @@ code:
 ```ts
 fatal: boolean;
 ```
+
+Whether the session is over. False for a turn-level error it survives.
 
 ###### message
 
@@ -9362,10 +9808,7 @@ message: string;
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### type
@@ -9374,39 +9817,36 @@ message: string;
 type: "error.reported";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.error.reported
-```
-
 ##### guardrail.blocked
 
 ```ts
 guardrail.blocked: {
-  direction: "output" | "input";
-  meta: {
-     at: number;
-     id: string;
-  };
+  direction:   | string & {
+   }
+     | "input"
+     | "output";
+  meta: SessionEventMeta;
   replacement: string;
   type: "guardrail.blocked";
 };
 ```
 
+A guardrail stopped a turn and `replacement` was said instead.
+
 ###### direction
 
 ```ts
-direction: "output" | "input";
+direction: 
+  | string & {
+}
+  | "input"
+  | "output";
 ```
 
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### replacement
@@ -9421,77 +9861,47 @@ replacement: string;
 type: "guardrail.blocked";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.guardrail.blocked
-```
-
 ##### history.restored
 
 ```ts
 history.restored: {
   messages: {
      content: string;
-     role: "assistant" | "user";
+     role: "user" | "assistant";
   }[];
-  meta: {
-     at: number;
-     id: string;
-  };
-  toolCalls: {
-     afterMessageIndex: number;
-     args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-     callId: string;
-     name: string;
-     result?: string;
-     status: "done" | "pending";
-  }[];
+  meta: SessionEventMeta;
+  toolCalls: RestoredToolCall[];
   type: "history.restored";
 };
 ```
+
+The conversation a RESUME restored; the client REPLACES its list from it.
 
 ###### messages
 
 ```ts
 messages: {
   content: string;
-  role: "assistant" | "user";
+  role: "user" | "assistant";
 }[];
 ```
 
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### toolCalls
 
 ```ts
-toolCalls: {
-  afterMessageIndex: number;
-  args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  callId: string;
-  name: string;
-  result?: string;
-  status: "done" | "pending";
-}[];
+toolCalls: RestoredToolCall[];
 ```
 
 ###### type
 
 ```ts
 type: "history.restored";
-```
-
-###### Inherited from
-
-```ts
-EventMapOf.history.restored
 ```
 
 ##### metrics.collected
@@ -9507,10 +9917,7 @@ metrics.collected: {
      steps: number;
      ttftMs?: number;
   };
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   stt?: {
      endpointingMs?: number;
   };
@@ -9522,17 +9929,23 @@ metrics.collected: {
 };
 ```
 
+What one reply cost, stage by stage. Durations are milliseconds.
+
 ###### interrupted
 
 ```ts
 interrupted: boolean;
 ```
 
+The reply was cut short; its stages are still reported.
+
 ###### latencyMs?
 
 ```ts
 optional latencyMs?: number;
 ```
+
+From the caller's committed turn to the reply's first audio.
 
 ###### llm?
 
@@ -9549,10 +9962,7 @@ optional latencyMs?: number;
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### stt?
@@ -9578,27 +9988,24 @@ optional latencyMs?: number;
 type: "metrics.collected";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.metrics.collected
-```
-
 ##### provider.failedOver
 
 ```ts
 provider.failedOver: {
   from: string;
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   reason: string;
-  stage: "stt" | "llm" | "tts";
+  stage:   | string & {
+   }
+     | "stt"
+     | "llm"
+     | "tts";
   to: string;
   type: "provider.failedOver";
 };
 ```
+
+A `fallback([...])` stage switched provider.
 
 ###### from
 
@@ -9609,10 +10016,7 @@ from: string;
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### reason
@@ -9624,7 +10028,12 @@ reason: string;
 ###### stage
 
 ```ts
-stage: "stt" | "llm" | "tts";
+stage: 
+  | string & {
+}
+  | "stt"
+  | "llm"
+  | "tts";
 ```
 
 ###### to
@@ -9639,31 +10048,21 @@ to: string;
 type: "provider.failedOver";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.provider.failedOver
-```
-
 ##### reply.cancelled
 
 ```ts
 reply.cancelled: {
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   type: "reply.cancelled";
 };
 ```
 
+The reply was abandoned — a barge-in, a client cancel, or a reset.
+
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### type
@@ -9672,31 +10071,21 @@ reply.cancelled: {
 type: "reply.cancelled";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.reply.cancelled
-```
-
 ##### reply.completed
 
 ```ts
 reply.completed: {
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   type: "reply.completed";
 };
 ```
 
+The reply finished on its own terms.
+
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### type
@@ -9705,27 +10094,21 @@ reply.completed: {
 type: "reply.completed";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.reply.completed
-```
-
 ##### session.configured
 
 ```ts
 session.configured: {
   audioFormat: string;
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   sampleRate: number;
   sessionId: string;
   ttsSampleRate: number;
   type: "session.configured";
 };
 ```
+
+The handshake: audio negotiation plus the session's own id. First on every
+connection and sent at zero RTT.
 
 ###### audioFormat
 
@@ -9736,10 +10119,7 @@ audioFormat: string;
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### sampleRate
@@ -9754,6 +10134,8 @@ sampleRate: number;
 sessionId: string;
 ```
 
+Reconnect with `?sessionId=<id>` to resume; the retained stream is read by it too.
+
 ###### ttsSampleRate
 
 ```ts
@@ -9766,31 +10148,21 @@ ttsSampleRate: number;
 type: "session.configured";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.session.configured
-```
-
 ##### session.reset
 
 ```ts
 session.reset: {
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   type: "session.reset";
 };
 ```
 
+The conversation was discarded and a new one begins (the transports greet on it).
+
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### type
@@ -9799,31 +10171,21 @@ session.reset: {
 type: "session.reset";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.session.reset
-```
-
 ##### session.timedOut
 
 ```ts
 session.timedOut: {
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   type: "session.timedOut";
 };
 ```
 
+Silence outlasted `idleTimeoutMs`. Informational: the server closes the socket.
+
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### type
@@ -9832,31 +10194,21 @@ session.timedOut: {
 type: "session.timedOut";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.session.timedOut
-```
-
 ##### speech.started
 
 ```ts
 speech.started: {
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   type: "speech.started";
 };
 ```
 
+The agent is YIELDING the floor (held back in pipeline mode until it really is).
+
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### type
@@ -9865,20 +10217,11 @@ speech.started: {
 type: "speech.started";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.speech.started
-```
-
 ##### speech.stopped
 
 ```ts
 speech.stopped: {
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   type: "speech.stopped";
 };
 ```
@@ -9886,10 +10229,7 @@ speech.stopped: {
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### type
@@ -9898,38 +10238,28 @@ speech.stopped: {
 type: "speech.stopped";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.speech.stopped
-```
-
 ##### state.updated
 
 ```ts
 state.updated: {
-  meta: {
-     at: number;
-     id: string;
-  };
-  state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+  meta: SessionEventMeta;
+  state: Record<string, unknown>;
   type: "state.updated";
 };
 ```
 
+The agent's projected session state (see `AgentDef.syncState`); keep the LATEST.
+
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### state
 
 ```ts
-state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+state: Record<string, unknown>;
 ```
 
 ###### type
@@ -9938,21 +10268,12 @@ state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
 type: "state.updated";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.state.updated
-```
-
 ##### tool.called
 
 ```ts
 tool.called: {
-  args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  meta: {
-     at: number;
-     id: string;
-  };
+  args: Record<string, unknown>;
+  meta: SessionEventMeta;
   toolCallId: string;
   toolName: string;
   type: "tool.called";
@@ -9962,16 +10283,13 @@ tool.called: {
 ###### args
 
 ```ts
-args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+args: Record<string, unknown>;
 ```
 
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### toolCallId
@@ -9992,20 +10310,11 @@ toolName: string;
 type: "tool.called";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.tool.called
-```
-
 ##### tool.completed
 
 ```ts
 tool.completed: {
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   result: string;
   toolCallId: string;
   type: "tool.completed";
@@ -10015,10 +10324,7 @@ tool.completed: {
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### result
@@ -10039,27 +10345,20 @@ toolCallId: string;
 type: "tool.completed";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.tool.completed
-```
-
 ##### usage.updated
 
 ```ts
 usage.updated: {
   inputTokens: number;
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   outputTokens: number;
   steps: number;
   totalTokens: number;
   type: "usage.updated";
 };
 ```
+
+Cumulative model token usage for the session.
 
 ###### inputTokens
 
@@ -10070,10 +10369,7 @@ inputTokens: number;
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### outputTokens
@@ -10100,32 +10396,22 @@ totalTokens: number;
 type: "usage.updated";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.usage.updated
-```
-
 ##### userTranscript.committed
 
 ```ts
 userTranscript.committed: {
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   text: string;
   type: "userTranscript.committed";
 };
 ```
 
+The caller's committed turn — the one that enters history.
+
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### text
@@ -10140,25 +10426,18 @@ text: string;
 type: "userTranscript.committed";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.userTranscript.committed
-```
-
 ##### userTranscript.updated
 
 ```ts
 userTranscript.updated: {
   eotConfidence?: number;
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   text: string;
   type: "userTranscript.updated";
 };
 ```
+
+Interim user transcript — live captions while the user is still speaking.
 
 ###### eotConfidence?
 
@@ -10166,13 +10445,13 @@ userTranscript.updated: {
 optional eotConfidence?: number;
 ```
 
+The STT service's confidence, 0..1, that the user's turn has ENDED as of
+this interim, when the provider reports one. Absent means "no opinion".
+
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### text
@@ -10187,26 +10466,22 @@ text: string;
 type: "userTranscript.updated";
 ```
 
-###### Inherited from
-
-```ts
-EventMapOf.userTranscript.updated
-```
-
 ##### userTurn.exceeded
 
 ```ts
 userTurn.exceeded: {
   durationMs: number;
-  limit: "words" | "duration";
-  meta: {
-     at: number;
-     id: string;
-  };
+  limit:   | string & {
+   }
+     | "words"
+     | "duration";
+  meta: SessionEventMeta;
   type: "userTurn.exceeded";
   words: number;
 };
 ```
+
+The caller's turn passed a `userTurnLimit`.
 
 ###### durationMs
 
@@ -10217,16 +10492,17 @@ durationMs: number;
 ###### limit
 
 ```ts
-limit: "words" | "duration";
+limit: 
+  | string & {
+}
+  | "words"
+  | "duration";
 ```
 
 ###### meta
 
 ```ts
-{
-  at: number;
-  id: string;
-}
+meta: SessionEventMeta;
 ```
 
 ###### type
@@ -10241,11 +10517,31 @@ type: "userTurn.exceeded";
 words: number;
 ```
 
-###### Inherited from
+***
+
+### SessionEventMeta
+
+**`Sealed`**
+
+The envelope every session event carries.
+
+#### Properties
+
+##### at
 
 ```ts
-EventMapOf.userTurn.exceeded
+at: number;
 ```
+
+When the event was stamped — epoch milliseconds, the writer's clock.
+
+##### id
+
+```ts
+id: string;
+```
+
+This event's identity: `evt_` + a ULID — the key for idempotent ingestion, not a cursor.
 
 ***
 
@@ -10635,6 +10931,8 @@ export default agent({ name: "Shop", syncState: cartSlot.projected });
 
 ### SessionSlotOptions
 
+**`Input`**
+
 Options for [sessionSlot](#sessionslot-1).
 
 #### Type Parameters
@@ -10875,6 +11173,8 @@ reported through `done`.
 
 ### SilenceNudge
 
+**`Input`**
+
 The silence nudge: after this much user silence the assistant takes a turn.
 
 `afterMs` is REQUIRED because the prompt is its payload — a prompt with no
@@ -10913,6 +11213,8 @@ the conversation. Do not mention this instruction."`
 
 ### SilenceTuning
 
+**`Input`**
+
 What the agent does about silence — its own, and the caller's.
 
 #### Properties
@@ -10950,6 +11252,8 @@ unset — the behaviour is off.
 ***
 
 ### SlotToolDef
+
+**`Input`**
 
 The authoring shape of a slot-backed tool: [ToolDef](#tooldef) with the slot's
 value handed to `execute` directly.
@@ -11184,6 +11488,8 @@ Omit.onError
 
 ### SpeakerDef
 
+**`Input`**
+
 A speaker definition — what [speaker](#speaker-1) returns, [DelegateFn](#delegatefn) runs
 off the line and a `roster()` hands the call to.
 
@@ -11330,7 +11636,7 @@ optional llm?: LlmSpec;
 
 LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
 model-id string — the same shorthand as `agent({ llm })` and
-[GenerateOptions.llm](#llm-4). Defaults to the parent agent's own LLM.
+[GenerateOptions.llm](#llm-5). Defaults to the parent agent's own LLM.
 
 Naming a cheaper model here is the usual reason to set it: a subagent
 doing lookups is spending most of its tokens on tool results, not on
@@ -11780,6 +12086,8 @@ The version of the standard implemented (always 1).
 
 ### StandardWebhookOptions
 
+**`Input`**
+
 What [verifyStandardWebhook](#verifystandardwebhook) takes beside the request and secret.
 
 #### Properties
@@ -11804,6 +12112,8 @@ delivery is refused as a replay. Default 300 (five minutes), the spec's.
 ***
 
 ### StateProjection()
+
+**`Sealed`**
 
 One slot's contribution to the `agent_state` frame — what
 [SessionSlot.projected](#projected) is, and what `agent({ syncState })` takes.
@@ -11861,122 +12171,9 @@ The slot key whose value this projects.
 
 ***
 
-### Toolset
-
-A source of tools, as the runtime consumes it.
-
-The advertised list is fixed per session on every transport (an S2S service
-holds its tool list for the whole session), so a rule about WHEN a tool may
-run is a [Toolset.gate](#gate) at the call — which is also where the model is
-told why, and how to recover.
-
-#### Methods
-
-##### execute()
-
-```ts
-execute(
-   name: string, 
-   args: unknown, 
-   ctx: ToolContext
-): unknown;
-```
-
-Run `name`'s body with already-validated arguments. Gating is the caller's.
-
-###### Parameters
-
-###### name
-
-`string`
-
-###### args
-
-`unknown`
-
-###### ctx
-
-[`ToolContext`](#toolcontext)
-
-###### Returns
-
-`unknown`
-
-##### gate()
-
-```ts
-gate(name: string, ctx: ToolContext): ToolRefusal | undefined;
-```
-
-`undefined` when `name` may run now; otherwise the refusal the model reads.
-
-###### Parameters
-
-###### name
-
-`string`
-
-###### ctx
-
-[`ToolContext`](#toolcontext)
-
-###### Returns
-
-[`ToolRefusal`](#toolrefusal) \| `undefined`
-
-##### list()
-
-```ts
-list(): Readonly<Record<string, ToolsetEntry>>;
-```
-
-Every tool this set advertises, by the name the model calls.
-
-###### Returns
-
-`Readonly`\<`Record`\<`string`, [`ToolsetEntry`](#toolsetentry)\>\>
-
-#### Properties
-
-##### source
-
-```ts
-readonly source: ToolSource;
-```
-
-***
-
-### ToolsetEntry
-
-One advertised tool: the def the model reads, and who executes it.
-
-#### Properties
-
-##### def
-
-```ts
-readonly def: ToolDef;
-```
-
-Description, schema, `messages` and `onError` — what the model and the executor read.
-
-##### executor
-
-```ts
-readonly executor: ToolExecutor;
-```
-
-##### timeoutMs?
-
-```ts
-readonly optional timeoutMs?: number;
-```
-
-A per-call deadline the entry carries (a `clientTool`'s `timeoutMs`).
-
-***
-
 ### TurnTakingTuning
+
+**`Input`**
 
 WHEN the caller's turn ends and the agent's begins.
 
@@ -12081,6 +12278,8 @@ unset — no cap on a single user turn's length.
 ***
 
 ### TypedDelegateResult
+
+**`Sealed`**
 
 Run a subagent to completion — the signature of `ctx.delegate`.
 
@@ -12212,6 +12411,8 @@ Every tool call this attempt made, in order.
 ***
 
 ### TypedSpeakerDef
+
+**`Input`**
 
 A [SpeakerDef](#speakerdef) that declares a [SpeakerDef.schema](#schema) — what
 [speaker](#speaker-1) returns for one, so `ctx.delegate` types `object`.
@@ -12369,7 +12570,7 @@ optional llm?: LlmSpec;
 
 LLM for this subagent: a descriptor from `@alexkroman1/aai/llm`, or a
 model-id string — the same shorthand as `agent({ llm })` and
-[GenerateOptions.llm](#llm-4). Defaults to the parent agent's own LLM.
+[GenerateOptions.llm](#llm-5). Defaults to the parent agent's own LLM.
 
 Naming a cheaper model here is the usual reason to set it: a subagent
 doing lookups is spending most of its tokens on tool results, not on
@@ -12377,7 +12578,7 @@ reasoning.
 
 ###### Inherited from
 
-[`SpeakerDef`](#speakerdef).[`llm`](#llm-2)
+[`SpeakerDef`](#speakerdef).[`llm`](#llm-3)
 
 ##### maxOutputTokens?
 
@@ -12475,7 +12676,7 @@ argument, the id on its own requests, and what a log line names.
 
 ###### Inherited from
 
-[`SpeakerDef`](#speakerdef).[`name`](#name-3)
+[`SpeakerDef`](#speakerdef).[`name`](#name-4)
 
 ##### schema
 
@@ -12611,6 +12812,8 @@ pass.
 
 ### UsageLimits
 
+**`Input`**
+
 The token budget a session may spend before the runtime stops it.
 
 **Host-side accounting only.** The numbers come from what the provider
@@ -12681,6 +12884,8 @@ that wants a softer landing watches `usage.updated` through
 
 ### UserTurnLimit
 
+**`Input`**
+
 A cap on ONE user turn — see [TurnTakingTuning.userTurnLimit](#userturnlimit).
 
 End-of-turn detection is the STT provider's, and it is driven by SILENCE: a
@@ -12731,6 +12936,8 @@ is what the transcriber HEARD, exactly as `interruption.minWords` is.
 ***
 
 ### WebhookRouteOptions
+
+**`Input`**
 
 What [webhookRoute](#webhookroute) takes.
 
@@ -12877,10 +13084,26 @@ the file is not passed to the resolver as a second argument.
 
 ***
 
+### AgentTranscriptRecovery
+
+```ts
+type AgentTranscriptRecovery = 
+  | "turn-failed"
+  | "session-failed"
+  | string & {
+};
+```
+
+Why the transport spoke a reply ITSELF — `agentTranscript.committed`'s
+`recovery`: `"turn-failed"` (one turn failed and the session lives on) or
+`"session-failed"` (the last thing said before the session ends).
+
+***
+
 ### AnyDialog
 
 ```ts
-type AnyDialog = Dialog<AnyStateMachine, unknown>;
+type AnyDialog = Dialog<unknown>;
 ```
 
 Any dialog, whatever its machine and event union — what
@@ -12888,11 +13111,10 @@ Any dialog, whatever its machine and event union — what
 
 The erasure is on `E` and it is what makes the array possible at all: two
 dialogs in one agent have different event unions by construction (the names
-come from their own `on` maps), so `readonly Dialog<AnyStateMachine>[]` would
-be a list nothing but a machine-form dialog with the default parameter could
-join. `unknown` rather than `any` because every member that takes an `E` is
+come from their own `on` maps), so `readonly Dialog[]` would be a list nothing
+but a dialog with the default parameter could join. `unknown` rather than `any` because every member that takes an `E` is
 declared with METHOD syntax, whose parameters are compared bivariantly — so a
-`Dialog<M, { type: "VERIFIED" }>` is assignable here without spending an
+`Dialog<{ type: "VERIFIED" }>` is assignable here without spending an
 escape hatch on it, and the runtime, which only ever calls the members that
 take no event (`receive`, `timeout`, `voiceConfig`, `position`), never has an
 `any` to hand something.
@@ -13073,6 +13295,8 @@ type ClientInboxOptions = {
 };
 ```
 
+**`Input`**
+
 What an agent declares about the audio it pushes to devices over `WS /inbox`.
 
 #### Properties
@@ -13096,7 +13320,14 @@ speaker playing at 16 kHz declares `16_000`).
 ### ClientRunStatus
 
 ```ts
-type ClientRunStatus = "waiting" | "running" | "completed" | "failed" | "cancelled";
+type ClientRunStatus = 
+  | "waiting"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | string & {
+};
 ```
 
 A [ClientRun](#clientrun)'s status: a run's own, with `pending` said as
@@ -13111,6 +13342,8 @@ type ClientToolDef<P extends ToolInputSchema = ToolInputSchema> = Omit<ToolDef<P
   timeoutMs?: number;
 };
 ```
+
+**`Input`**
 
 What [clientTool](#clienttool) takes: a [ToolDef](#tooldef) without `execute`, because the
 page is the execute.
@@ -13203,6 +13436,8 @@ type DelegateFn = {
   (subagent: SpeakerDef, options: DelegateOptions): Promise<DelegateResult>;
 };
 ```
+
+**`Sealed`**
 
 Run a subagent to completion — the signature of `ctx.delegate`.
 
@@ -13361,6 +13596,8 @@ type EndSessionOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [endSession](#endsession).
 
 #### Properties
@@ -13380,29 +13617,6 @@ connection open (`aai-runtime`'s `END_SESSION_REPLY_TIMEOUT_MS`).
 
 ***
 
-### EventMapOf
-
-```ts
-type EventMapOf<U extends {
-  type: string;
-}> = { [E in U as E["type"]]: E };
-```
-
-Key a union of `{ type }` members by their `type`.
-
-What [SessionEventMap](#sessioneventmap) is derived through, and exported so a host with
-a vocabulary of its own can build the same shape for it.
-
-#### Type Parameters
-
-##### U
-
-`U` *extends* \{
-  `type`: `string`;
-\}
-
-***
-
 ### GenerateFn
 
 ```ts
@@ -13413,6 +13627,8 @@ type GenerateFn = {
   (options: GenerateOptions): Promise<GenerateResult>;
 };
 ```
+
+**`Sealed`**
 
 One-shot LLM generation — the signature of `ctx.generate`. A call with a
 Standard Schema `schema` returns a result whose `object` is typed by that
@@ -13472,6 +13688,8 @@ type GenerateObjectResult<T> = {
 };
 ```
 
+**`Sealed`**
+
 Result of a generation call that passed a Standard Schema — `object` is
 REQUIRED, matching what the host guarantees.
 
@@ -13520,6 +13738,8 @@ type GenerateOptions = {
   temperature?: number;
 };
 ```
+
+**`Input`**
 
 Options for one LLM generation call.
 
@@ -13712,25 +13932,7 @@ type KeyedLock = (key: string, options?: KeyedLockOptions) => Promise<() => void
 };
 ```
 
-The utilities written INSIDE a tool body — all fifteen of them, which is
-`@alexkroman1/aai/utils` minus the five whose reader is not a tool body:
-`decodeHtmlEntities` and the four narration formatters (`formatBytes`,
-`formatDuration`, `countWords`, `plural`), which a step and a `client.tsx`
-both reach for and which are therefore reachable ONLY on that subpath.
-
-**The rule is that the two lists agree for everything else**, because the
-split they used to describe was not one anybody could apply: `safeJsonParse` was here and
-`isRecord` — the guard you call on what it returns — was not, so a tool body
-needing both wrote two import lines for one line of helpers, and templates
-routed around it by taking the root's own names off `/utils` instead. That
-subpath's membership is a BUILD property (zero-zod, so the CLI can import it
-on every invocation), which is a fact about its graph rather than a statement
-about who reads it; nothing on it fails this barrel's own membership test.
-
-The narrower subpath stays, because it is what the CLI and the platform
-import — and because a tool body reaching for one helper should not have to
-name the root. Neither the slug contract nor the framework's wire helpers are
-involved either way: those left `sdk/utils.ts` for `@alexkroman1/aai/internal`.
+**`Sealed`**
 
 #### Type Declaration
 
@@ -13752,25 +13954,7 @@ type KeyedLockOptions = {
 };
 ```
 
-The utilities written INSIDE a tool body — all fifteen of them, which is
-`@alexkroman1/aai/utils` minus the five whose reader is not a tool body:
-`decodeHtmlEntities` and the four narration formatters (`formatBytes`,
-`formatDuration`, `countWords`, `plural`), which a step and a `client.tsx`
-both reach for and which are therefore reachable ONLY on that subpath.
-
-**The rule is that the two lists agree for everything else**, because the
-split they used to describe was not one anybody could apply: `safeJsonParse` was here and
-`isRecord` — the guard you call on what it returns — was not, so a tool body
-needing both wrote two import lines for one line of helpers, and templates
-routed around it by taking the root's own names off `/utils` instead. That
-subpath's membership is a BUILD property (zero-zod, so the CLI can import it
-on every invocation), which is a fact about its graph rather than a statement
-about who reads it; nothing on it fails this barrel's own membership test.
-
-The narrower subpath stays, because it is what the CLI and the platform
-import — and because a tool body reaching for one helper should not have to
-name the root. Neither the slug contract nor the framework's wire helpers are
-involved either way: those left `sdk/utils.ts` for `@alexkroman1/aai/internal`.
+**`Input`**
 
 #### Properties
 
@@ -13864,6 +14048,8 @@ type McpResolveContext = {
 };
 ```
 
+**`Sealed`**
+
 What a RESOLVER is handed when a server's `url` or `headers` is a function.
 
 A resolver runs on the host, once per CONNECTION — once when a host connects
@@ -13916,6 +14102,8 @@ type McpServerConfig = {
   url: McpResolvable<string>;
 };
 ```
+
+**`Input`**
 
 One MCP server an agent may take tools from.
 
@@ -14033,7 +14221,11 @@ the name the model sees.
 ```ts
 type Message = {
   content: string;
-  role: "user" | "assistant" | "tool";
+  role:   | "user"
+     | "assistant"
+     | "tool"
+     | string & {
+   };
   toolCallId?: string;
   toolName?: string;
 };
@@ -14075,7 +14267,12 @@ which rebuilds this from that frame.
 ##### role
 
 ```ts
-role: "user" | "assistant" | "tool";
+role: 
+  | "user"
+  | "assistant"
+  | "tool"
+  | string & {
+};
 ```
 
 The role of the message sender.
@@ -14120,17 +14317,6 @@ name an author annotates a handler with.
 
 ***
 
-### MetricsSample
-
-```ts
-type MetricsSample = Omit<MetricsCollectedEvent, "type" | "meta">;
-```
-
-What [MetricsCollector.collect](#collect) reads off one frame — the event
-without its envelope, so a hook's event and a transport's body both fit.
-
-***
-
 ### ModeAgentDef
 
 ```ts
@@ -14138,6 +14324,8 @@ type ModeAgentDef<M extends AgentMode> = AgentDef & {
   mode: M;
 };
 ```
+
+**`Sealed`**
 
 What `agent()` returns for a declaration in mode `M`: the one definition
 type, with `mode` known. Each overload returns its own, so a reader of the
@@ -14183,6 +14371,8 @@ type PipelineAgentParams = SharedAgentParams & Pick<AgentDeclaration,
   stt?: undefined;
 };
 ```
+
+**`Input`**
 
 The PIPELINE member — `mode: "pipeline"`, or no `mode` at all (the default).
 
@@ -14239,6 +14429,8 @@ type PollOptions<T> = {
   maxMs: number;
 };
 ```
+
+**`Input`**
 
 Options for `ctx.poll` — check something, and wait between checks, until it
 is done or the budget runs out.
@@ -14339,6 +14531,8 @@ type PollResult<T> = {
 };
 ```
 
+**`Sealed`**
+
 What `ctx.poll` (and `stepPollUntil`) resolve with.
 
 #### Type Parameters
@@ -14427,6 +14621,8 @@ type S2sAgentParams = SharedAgentParams & {
 };
 ```
 
+**`Input`**
+
 The S2S member — `mode: "s2s"` and the `s2s` descriptor, and nothing
 pipeline-shaped: the service runs STT, the model loop and TTS, so the
 pipeline stages, their tuning and the model-request knobs are all absent.
@@ -14491,6 +14687,8 @@ type SayOnClientNotice = {
   voice?: string;
 };
 ```
+
+**`Input`**
 
 What `ctx.sayOnClient` says: `stepSayOnClient`'s options (from
 `@alexkroman1/aai/step`) with the delivery `id` optional — it defaults to the
@@ -14605,6 +14803,8 @@ type SayOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [SessionSpeech.say](#say).
 
 #### Properties
@@ -14659,6 +14859,8 @@ type SessionCall = {
 };
 ```
 
+**`Sealed`**
+
 A phone session's call identity, as the carrier's `start` frame reported it.
 
 #### Properties
@@ -14705,6 +14907,8 @@ type SessionContext = {
   refuse?: string;
 };
 ```
+
+**`Sealed`**
 
 What [AgentSessionLifecycle.sessionContext](#sessioncontext) may answer.
 
@@ -14820,6 +15024,27 @@ A throw or a timeout is NOT a refusal — the session starts without context,
 as it always has — so an app that must refuse on doubt catches its own
 failures and returns `refuse`. Trimmed and capped at 200 characters; an
 empty string is ignored.
+
+***
+
+### SessionErrorCode
+
+```ts
+type SessionErrorCode = 
+  | "stt"
+  | "llm"
+  | "tts"
+  | "tool"
+  | "protocol"
+  | "connection"
+  | "audio"
+  | "internal"
+  | string & {
+};
+```
+
+What a session reports when a SUBSYSTEM fails — the `code` of an
+`error.reported` event. Open: a new subsystem's code is not a break.
 
 ***
 
@@ -14970,7 +15195,7 @@ check the event first: see "A handler that speaks can hear itself" in
 ### SessionEventHandler
 
 ```ts
-type SessionEventHandler<E extends SessionEvent = SessionEvent> = (event: E, ctx: SessionEventContext) => unknown;
+type SessionEventHandler<E extends AnySessionEvent = SessionEvent> = (event: E, ctx: SessionEventContext) => unknown;
 ```
 
 One handler: an event of the type it was declared under, plus the context.
@@ -14992,7 +15217,7 @@ handler.
 
 ##### E
 
-`E` *extends* [`SessionEvent`](#sessionevent) = [`SessionEvent`](#sessionevent)
+`E` *extends* [`AnySessionEvent`](#anysessionevent) = [`SessionEvent`](#sessionevent)
 
 #### Parameters
 
@@ -15014,24 +15239,28 @@ handler.
 
 ```ts
 type SessionEventHandlers = { [K in SessionEventType]?: SessionEventHandler<SessionEvent<K>> } & {
-  *?: SessionEventHandler;
+  *?: SessionEventHandler<AnySessionEvent>;
 };
 ```
+
+**`Input`**
 
 The `events` map an agent declares — keyed by event type, plus `"*"`.
 
 The mapped half is what makes a handler's parameter TYPED: declaring
 `"tool.called"` hands the handler an event that has `toolName` and `args`,
-with no narrowing at the call site. `"*"` receives the whole union, which is
-the right shape for the handlers that motivate it (a log line, a metrics
-counter) and the reason it cannot be typed more narrowly.
+with no narrowing at the call site. `"*"` receives any event by its ENVELOPE
+([AnySessionEvent](#anysessionevent): `type` and `meta`) — the right shape for the
+handlers that motivate it (a log line, a metrics counter), and open, so a new
+event reaching a wildcard handler is not a type change. Read a member's
+fields from its own per-name handler.
 
 #### Type Declaration
 
 ##### \*?
 
 ```ts
-optional *?: SessionEventHandler;
+optional *?: SessionEventHandler<AnySessionEvent>;
 ```
 
 Runs for every event, AFTER the typed handler for that event.
@@ -15056,32 +15285,6 @@ const AUDITED: readonly SessionEventType[] = ["tool.called", "error.reported"];
 
 ***
 
-### SessionEventTypeList
-
-```ts
-type SessionEventTypeList = readonly ["session.configured", "audio.completed", "speech.started", "speech.stopped", "userTranscript.updated", "userTranscript.committed", "agentTranscript.updated", "agentTranscript.committed", "tool.called", "tool.completed", "reply.completed", "reply.cancelled", "session.reset", "session.timedOut", "error.reported", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "userTurn.exceeded", "provider.failedOver", "metrics.collected", "history.restored"];
-```
-
-Every built-in session event name, spelled out in schema order — the same
-set as [SessionEventType](#sessioneventtype) before any augmentation.
-
-Written out because a rename must move the `aai:events` contract hash, and
-the hash cannot see a name that only reaches it through `SessionEventSchema`
-(a `const`, whose literals it reads as `string`). `session-event-names.test.ts`
-fails if this and the schema disagree.
-
-***
-
-### SessionSourcedEventType
-
-```ts
-type SessionSourcedEventType = typeof SESSION_SOURCED_EVENT_TYPES[number];
-```
-
-One of [SESSION\_SOURCED\_EVENT\_TYPES](#session_sourced_event_types).
-
-***
-
 ### SharedAgentParams
 
 ```ts
@@ -15094,6 +15297,8 @@ type SharedAgentParams = Omit<AgentDeclaration,
   tools?: InlineToolsMisuse;
 };
 ```
+
+**`Input`**
 
 What every SESSION member shares — pipeline, S2S and text: everything on
 [AgentDeclaration](#agentdeclaration) minus the mode-owned fields, with the defaulted
@@ -15122,6 +15327,8 @@ type SleepOptions = {
   correlationId?: string;
 };
 ```
+
+**`Input`**
 
 Per-sleep options.
 
@@ -15173,6 +15380,8 @@ type SlotHolder = {
 };
 ```
 
+**`Sealed`**
+
 Anything that can reach one session's slots.
 
 Every [SessionSlot](#sessionslot) and [Dialog](#dialog) method takes this rather than a
@@ -15217,6 +15426,8 @@ type SlotStore = {
 };
 ```
 
+**`Sealed`**
+
 One session's slot storage, as a tool's context carries it.
 
 Two methods and no index signature, which is the point: it replaced
@@ -15258,13 +15469,15 @@ The returned object is FROZEN — see `freezeStorable` in this module.
 write(
    key: string, 
    value: unknown, 
-   durable: boolean
+   options?: {
+  durable?: boolean;
+}
 ): void;
 ```
 
 Store this session's value for `key`.
 
-`durable` is the slot's own declaration. A durable value is checked and
+`options.durable` is the slot's own declaration (default `true`). A durable value is checked and
 frozen here and committed to the backend at the end of the tool call; a
 virtual one is neither, because the things a virtual slot exists to hold
 (a provider handle, an open socket) can be neither serialized nor frozen.
@@ -15279,7 +15492,9 @@ virtual one is neither, because the things a virtual slot exists to hold
 
 `unknown`
 
-###### durable
+###### options?
+
+###### durable?
 
 `boolean`
 
@@ -15315,7 +15530,12 @@ Judge one attempt — see [SpeakerDef.guardrail](#guardrail).
 ### SpeechOutcome
 
 ```ts
-type SpeechOutcome = "played" | "interrupted" | "dropped";
+type SpeechOutcome = 
+  | "played"
+  | "interrupted"
+  | "dropped"
+  | string & {
+};
 ```
 
 How one [SessionSpeech.say](#say) ended.
@@ -15363,6 +15583,8 @@ type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
   schema?: S;
 };
 ```
+
+**`Input`**
 
 Per-step overrides. Everything here has a default that is right for most
 steps; passing nothing is the common case.
@@ -15437,6 +15659,8 @@ type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOpti
   schema: S;
 };
 ```
+
+**`Input`**
 
 [StepOptions](#stepoptions) with the schema PRESENT — what selects the validating
 overload of `ctx.step`, whose result is the schema's output rather than
@@ -15549,6 +15773,8 @@ type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony"> & Pick
 };
 ```
 
+**`Input`**
+
 The TEXT member — `mode: "text"`, optionally an `llm`, and nothing from the
 audio half of the agent shape.
 
@@ -15649,6 +15875,8 @@ type ToolCompletionMessage = {
   when?: ToolMessageCondition[];
 };
 ```
+
+**`Input`**
 
 The role switch, and the reason this feature is worth having.
 
@@ -16079,6 +16307,8 @@ type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
 };
 ```
 
+**`Input`**
+
 Definition of a custom tool that the agent can invoke.
 
 Tools are the primary way to extend agent capabilities. Each tool has a
@@ -16300,6 +16530,8 @@ type ToolDelayedMessage = {
 };
 ```
 
+**`Input`**
+
 Spoken when the tool has been running for [ToolDelayedMessage.afterMs](#afterms-3).
 
 **Same timing means VARIANTS; different timings mean STAGED updates.** Two
@@ -16381,17 +16613,6 @@ the runtime refuses a thenable return and treats it as fatal, the same rule
 
 ***
 
-### ToolExecutor
-
-```ts
-type ToolExecutor = "host" | "client";
-```
-
-Who runs a tool's body: this process (`"host"`), or the connected browser page
-(`"client"`, a `clientTool` — the call waits for the page's `tool_result`).
-
-***
-
 ### ToolFailure
 
 ```ts
@@ -16461,6 +16682,8 @@ type ToolMessageCondition = {
 };
 ```
 
+**`Input`**
+
 One test a tool call's ARGUMENTS must pass for the message carrying it to be
 eligible.
 
@@ -16514,6 +16737,8 @@ type ToolMessages = {
   start?: ToolStartMessage[];
 };
 ```
+
+**`Sealed`**
 
 A tool's messages in NORMALIZED form — what a `ToolSchema` carries and
 what the runtime reads. Authors write [ToolMessagesInput](#toolmessagesinput), which
@@ -16572,6 +16797,8 @@ type ToolMessagesInput = {
      | readonly (string | ToolStartMessage)[];
 };
 ```
+
+**`Input`**
 
 What an author writes for `tool({ messages })` — every kind also accepts the
 shorthands, because the common declaration is one string.
@@ -16647,6 +16874,8 @@ type ToolRefusal = ToolFailure & {
 };
 ```
 
+**`Sealed`**
+
 A [ToolFailure](#toolfailure) the RUNTIME or a gate answered before the body ran, its
 `reason` saying which. Still a `ToolFailure` (`isToolFailure` is `true`); the
 field is not on `ToolFailure` itself, so an author's own `{ error }` literal
@@ -16671,7 +16900,9 @@ type ToolRefusalReason =
   | "cancelled"
   | "persona"
   | "dialog"
-  | "roster";
+  | "roster"
+  | string & {
+};
 ```
 
 Why a call was REFUSED rather than run — the one discriminant every gate and
@@ -16688,17 +16919,6 @@ of matching four sentences.
 
 ***
 
-### ToolSource
-
-```ts
-type ToolSource = "files" | "builtin" | "mcp" | "roster" | "subagent";
-```
-
-Where a [Toolset](#toolset)'s tools come from — for a log line, a collision
-message, and a spec. It decides nothing about execution; the entry does.
-
-***
-
 ### ToolStartMessage
 
 ```ts
@@ -16708,6 +16928,8 @@ type ToolStartMessage = {
   when?: ToolMessageCondition[];
 };
 ```
+
+**`Input`**
 
 Spoken as the tool call BEGINS.
 
@@ -16801,25 +17023,13 @@ closed union that grows is not assignable back to the one it grew from.
 ### ValidatedRouteRequest
 
 ```ts
-type ValidatedRouteRequest<Body, Client extends boolean> = Omit<RouteRequest, "body" | "clientId"> & {
-  body: Body;
-} & Client extends true ? {
+type ValidatedRouteRequest<Body, Client extends boolean> = RouteRequest<Body> & Client extends true ? {
   clientId: string;
-} : {
-  clientId?: string;
-};
+} : unknown;
 ```
 
 The request a [route](#route) handler receives: `body` already validated (the
 schema's OUTPUT), and `clientId` a `string` when `requireClient` is set.
-
-#### Type Declaration
-
-##### body
-
-```ts
-body: Body;
-```
 
 #### Type Parameters
 
@@ -16873,6 +17083,8 @@ type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
   timeoutMs: number;
 };
 ```
+
+**`Input`**
 
 Per-wait options, for a wait that carries a DEADLINE.
 
@@ -16974,6 +17186,8 @@ type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
 };
 ```
 
+**`Input`**
+
 A wait that carries a schema and NO deadline — `ctx.waitFor(token, { schema })`.
 
 Its own type rather than an optional `timeoutMs` on [WaitForOptions](#waitforoptions),
@@ -17006,6 +17220,8 @@ type WorkflowAppAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony" 
   workflows: NonNullable<AgentDeclaration["workflows"]>;
 };
 ```
+
+**`Input`**
 
 The WORKFLOW-APP member — `mode: "workflow-app"`, the workflows that ARE the
 product, and nothing from the session half of the agent shape.
@@ -17056,6 +17272,8 @@ type WorkflowClient = {
   wakeUp: Promise<number>;
 };
 ```
+
+**`Sealed`**
 
 Start and inspect workflow runs. Reaches tool code as `ctx.workflows`.
 
@@ -17734,6 +17952,8 @@ type WorkflowContext = {
 };
 ```
 
+**`Sealed`**
+
 The handle a workflow body receives as its second argument.
 
 ```ts no-check
@@ -18356,6 +18576,8 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
 };
 ```
 
+**`Input`**
+
 Definition of one durable workflow: its schema, its description, and the
 function that is its body.
 
@@ -18513,6 +18735,8 @@ type WorkflowFailureContext<I = unknown> = {
   workflow: string;
 };
 ```
+
+**`Sealed`**
 
 What an `onFailure` hook is told about the run that failed.
 
@@ -18956,23 +19180,9 @@ first segment of every tool name it contributes.
 The same shape a tool file name must have (`tool-registry.ts`), for the same
 reason: it becomes part of what the MODEL calls, and providers reject a tool
 name outside `[a-zA-Z0-9_-]`. Capped at 24 so that a key plus the `mcp_`
-prefix plus a realistic remote name still clears [MCP\_TOOL\_NAME\_MAX](#mcp_tool_name_max)
+prefix plus a realistic remote name still clears `MCP_TOOL_NAME_MAX`
 without truncation, which is the case where two remote tools can collapse
 onto one name.
-
-***
-
-### MCP\_TOOL\_NAME\_MAX
-
-```ts
-const MCP_TOOL_NAME_MAX: number;
-```
-
-Longest tool name a provider accepts — OpenAI's `^[a-zA-Z0-9_-]{1,64}$`, the
-strictest this SDK routes to, and therefore the one that decides. Same
-constant and same reason as `tool-registry.ts`'s cap; a name over it is
-refused when the tool list is sent, by a vendor, in a message that names
-neither the server nor the tool.
 
 ***
 
@@ -18991,266 +19201,6 @@ stood — the model would call it and nothing would say so. With the prefix,
 shadowing a native tool takes an author writing a `tools/mcp_*.ts` file
 themselves, and even that loses: the native tool wins and the drop is logged
 (`registerTools`, in `@alexkroman1/aai-runtime`'s `aai-runtime/src/mcp/tools.ts`).
-
-***
-
-### SESSION\_SOURCED\_EVENT\_TYPES
-
-```ts
-const SESSION_SOURCED_EVENT_TYPES: readonly ["session.configured", "session.reset", "session.timedOut", "custom.emitted", "state.updated", "usage.updated", "guardrail.blocked", "history.restored"];
-```
-
-The events only the SESSION itself can be the source of — never a transport.
-
-The complement of what `aai-runtime`'s `TransportEventBody` accepts, and the
-one place that decision is written down, so a new event is REPORTABLE by
-default — the session publishes a report it has no `case` for — and needs
-no edit to a list in another package. Each is here for a reason:
-`session.configured` is the handshake, `session.reset` and
-`session.timedOut` come from the client and the idle watchdog,
-`custom.emitted` is `ctx.send`, `state.updated` is a `syncState` projection,
-`usage.updated` and `guardrail.blocked` are the session's own accounting and
-refusals, and `history.restored` is a resume.
-
-***
-
-### SessionEventSchema
-
-```ts
-const SessionEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
-  audioFormat: z.ZodString;
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  sampleRate: z.ZodNumber;
-  sessionId: z.ZodString;
-  ttsSampleRate: z.ZodNumber;
-  type: z.ZodLiteral<"session.configured">;
-}, z.core.$strip>, z.ZodObject<{
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  type: z.ZodLiteral<"audio.completed">;
-}, z.core.$strip>, z.ZodObject<{
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  type: z.ZodLiteral<"speech.started">;
-}, z.core.$strip>, z.ZodObject<{
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  type: z.ZodLiteral<"speech.stopped">;
-}, z.core.$strip>, z.ZodObject<{
-  eotConfidence: z.ZodOptional<z.ZodNumber>;
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  text: z.ZodString;
-  type: z.ZodLiteral<"userTranscript.updated">;
-}, z.core.$strip>, z.ZodObject<{
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  text: z.ZodString;
-  type: z.ZodLiteral<"userTranscript.committed">;
-}, z.core.$strip>, z.ZodObject<{
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  text: z.ZodString;
-  type: z.ZodLiteral<"agentTranscript.updated">;
-}, z.core.$strip>, z.ZodObject<{
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  recorded: z.ZodOptional<z.ZodLiteral<false>>;
-  recovery: z.ZodOptional<z.ZodEnum<{
-     session-failed: "session-failed";
-     turn-failed: "turn-failed";
-  }>>;
-  text: z.ZodString;
-  type: z.ZodLiteral<"agentTranscript.committed">;
-}, z.core.$strip>, z.ZodObject<{
-  args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  toolCallId: z.ZodString;
-  toolName: z.ZodString;
-  type: z.ZodLiteral<"tool.called">;
-}, z.core.$strip>, z.ZodObject<{
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  result: z.ZodString;
-  toolCallId: z.ZodString;
-  type: z.ZodLiteral<"tool.completed">;
-}, z.core.$strip>, z.ZodObject<{
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  type: z.ZodLiteral<"reply.completed">;
-}, z.core.$strip>, z.ZodObject<{
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  type: z.ZodLiteral<"reply.cancelled">;
-}, z.core.$strip>, z.ZodObject<{
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  type: z.ZodLiteral<"session.reset">;
-}, z.core.$strip>, z.ZodObject<{
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  type: z.ZodLiteral<"session.timedOut">;
-}, z.core.$strip>, z.ZodObject<{
-  code: z.ZodEnum<{
-     audio: "audio";
-     connection: "connection";
-     internal: "internal";
-     llm: "llm";
-     protocol: "protocol";
-     stt: "stt";
-     tool: "tool";
-     tts: "tts";
-  }>;
-  fatal: z.ZodBoolean;
-  message: z.ZodString;
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  type: z.ZodLiteral<"error.reported">;
-}, z.core.$strip>, z.ZodObject<{
-  data: z.ZodUnknown;
-  event: z.ZodString;
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  type: z.ZodLiteral<"custom.emitted">;
-}, z.core.$strip>, z.ZodObject<{
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  state: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  type: z.ZodLiteral<"state.updated">;
-}, z.core.$strip>, z.ZodObject<{
-  inputTokens: z.ZodNumber;
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  outputTokens: z.ZodNumber;
-  steps: z.ZodNumber;
-  totalTokens: z.ZodNumber;
-  type: z.ZodLiteral<"usage.updated">;
-}, z.core.$strip>, z.ZodObject<{
-  direction: z.ZodEnum<{
-     input: "input";
-     output: "output";
-  }>;
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  replacement: z.ZodString;
-  type: z.ZodLiteral<"guardrail.blocked">;
-}, z.core.$strip>, z.ZodObject<{
-  durationMs: z.ZodNumber;
-  limit: z.ZodEnum<{
-     duration: "duration";
-     words: "words";
-  }>;
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  type: z.ZodLiteral<"userTurn.exceeded">;
-  words: z.ZodNumber;
-}, z.core.$strip>, z.ZodObject<{
-  from: z.ZodString;
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  reason: z.ZodString;
-  stage: z.ZodEnum<{
-     llm: "llm";
-     stt: "stt";
-     tts: "tts";
-  }>;
-  to: z.ZodString;
-  type: z.ZodLiteral<"provider.failedOver">;
-}, z.core.$strip>, z.ZodObject<{
-  interrupted: z.ZodBoolean;
-  latencyMs: z.ZodOptional<z.ZodNumber>;
-  llm: z.ZodOptional<z.ZodObject<{
-     durationMs: z.ZodNumber;
-     inputTokens: z.ZodOptional<z.ZodNumber>;
-     outputTokens: z.ZodOptional<z.ZodNumber>;
-     steps: z.ZodNumber;
-     ttftMs: z.ZodOptional<z.ZodNumber>;
-  }, z.core.$strip>>;
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  stt: z.ZodOptional<z.ZodObject<{
-     endpointingMs: z.ZodOptional<z.ZodNumber>;
-  }, z.core.$strip>>;
-  tts: z.ZodOptional<z.ZodObject<{
-     characters: z.ZodNumber;
-     ttfbMs: z.ZodOptional<z.ZodNumber>;
-  }, z.core.$strip>>;
-  type: z.ZodLiteral<"metrics.collected">;
-}, z.core.$strip>, z.ZodObject<{
-  messages: z.ZodArray<z.ZodObject<{
-     content: z.ZodString;
-     role: z.ZodEnum<{
-        assistant: "assistant";
-        user: "user";
-     }>;
-  }, z.core.$strip>>;
-  meta: z.ZodObject<{
-     at: z.ZodNumber;
-     id: z.ZodString;
-  }, z.core.$strip>;
-  toolCalls: z.ZodArray<z.ZodObject<{
-     afterMessageIndex: z.ZodNumber;
-     args: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-     callId: z.ZodString;
-     name: z.ZodString;
-     result: z.ZodOptional<z.ZodString>;
-     status: z.ZodEnum<{
-        done: "done";
-        pending: "pending";
-     }>;
-  }, z.core.$strip>>;
-  type: z.ZodLiteral<"history.restored">;
-}, z.core.$strip>], "type">;
-```
-
-The session event vocabulary — the ONE source of truth. `SessionEventMap`,
-`SessionEvent` and `SessionEventType` are all derived from it.
 
 ***
 

@@ -32,12 +32,7 @@
  */
 
 export {
-  BASH_TIMEOUT_MAX_MS,
-  BASH_TIMEOUT_MS,
-  CODING_TOOL_DESCRIPTIONS,
   type CodingToolName,
   type CodingToolsOptions,
   createCodingTools,
-  GLOB_LIMIT,
-  READ_LIMIT,
 } from "../../host/coding-tools-barrel.ts";

@@ -43,7 +43,11 @@
 /** The three fields a `fmt ` chunk carries, before the samples are located. */
 type PcmFields = Pick<WavFormat, "sampleRate" | "channels" | "bitsPerSample">;
 
-/** A WAV's `fmt ` chunk plus where its samples actually live. */
+/**
+ * A WAV's `fmt ` chunk plus where its samples actually live.
+ *
+ * @sealed
+ */
 export type WavFormat = {
   /** Samples per second, as the file declares it. */
   sampleRate: number;

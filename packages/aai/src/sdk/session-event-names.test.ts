@@ -5,9 +5,9 @@
 // (`userTurn.exceeded`) with plain nouns (`tool.called`), so an author could
 // not predict a name from the one beside it; this pins the grammar at the
 // schema, the single source every other name is derived from.
-import { describe, expect, expectTypeOf, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import { SESSION_EVENT_TYPES } from "./protocol-events.ts";
-import type { SessionEventType, SessionEventTypeList } from "./session-event-map.ts";
+import type { SessionEventMap } from "./session-event-map.ts";
 
 const EVENT_NAME = /^[a-z][a-zA-Z]*\.[a-z][a-zA-Z]*$/;
 
@@ -20,12 +20,34 @@ describe("session event names", () => {
     expect(name).toMatch(EVENT_NAME);
   });
 
-  // The spelled-out list is what the `aai:events` contract hash reads the names
-  // from, so it must be exactly the schema's set: no name missing, none extra.
-  test("SessionEventTypeList is exactly the schema's names", () => {
-    expectTypeOf<SessionEventTypeList[number]>().toEqualTypeOf<SessionEventType>();
-    // Same length as the schema's set, so the list repeats no name.
-    expectTypeOf<SessionEventTypeList["length"]>().toEqualTypeOf<23>();
-    expect(SESSION_EVENT_TYPES.size).toBe(23);
+  // The hand-declared map and the schema name the same events: none missing
+  // from either side.
+  test("SessionEventMap names exactly the schema's events", () => {
+    const declared: Record<keyof SessionEventMap, true> = {
+      "session.configured": true,
+      "audio.completed": true,
+      "speech.started": true,
+      "speech.stopped": true,
+      "userTranscript.updated": true,
+      "userTranscript.committed": true,
+      "agentTranscript.updated": true,
+      "agentTranscript.committed": true,
+      "tool.called": true,
+      "tool.completed": true,
+      "reply.completed": true,
+      "reply.cancelled": true,
+      "session.reset": true,
+      "session.timedOut": true,
+      "error.reported": true,
+      "custom.emitted": true,
+      "state.updated": true,
+      "usage.updated": true,
+      "guardrail.blocked": true,
+      "userTurn.exceeded": true,
+      "provider.failedOver": true,
+      "metrics.collected": true,
+      "history.restored": true,
+    };
+    expect(new Set(Object.keys(declared))).toEqual(SESSION_EVENT_TYPES);
   });
 });

@@ -26,7 +26,11 @@ export const ELEVENLABS_KIND = ELEVENLABS_STT_PROVIDER.kind;
 /** Agent-env variable holding the ElevenLabs API key. */
 export const ELEVENLABS_API_KEY_ENV: string = ELEVENLABS_STT_PROVIDER.envVar;
 
-/** Options for {@link elevenLabsStt}. */
+/**
+ * Options for {@link elevenLabsStt}.
+ *
+ * @input
+ */
 export interface ElevenLabsSttOptions extends ProviderCredentialOptions {
   /**
    * Streaming speech model. Defaults to `"scribe_v2_realtime"`. Any

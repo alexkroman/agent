@@ -1,0 +1,30 @@
+// @public
+export const MCP_SERVER_KEY_RE: RegExp;
+
+// @public
+export const MCP_TOOL_PREFIX = "mcp_";
+
+// @public
+export type McpResolvable<T> = T | ((context: McpResolveContext) => T | Promise<T>);
+
+// @public @sealed
+export type McpResolveContext = {
+    readonly clientId: string | undefined;
+    readonly env: Readonly<Partial<Record<string, string>>>;
+    readonly signal: AbortSignal;
+};
+
+// @public @input
+export type McpServerConfig = {
+    url: McpResolvable<string>;
+    headers?: McpResolvable<Readonly<Record<string, string>>>;
+    tokenEnv?: string;
+    allowedTools?: readonly string[];
+    pinnedTools?: Readonly<Record<string, string>>;
+};
+
+// @public
+export type McpServers = Readonly<Record<string, McpServerConfig>>;
+
+// @public
+export function mcpToolName(serverKey: string, remoteName: string): string;

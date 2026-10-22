@@ -248,7 +248,7 @@ describe("openSessionWiring", () => {
     expect(seen[0]).toMatchObject({ sessionId: SID, env });
     // And it is THIS session's storage, not a detached one: a write through the
     // author's view is visible to the runtime's own reader.
-    seen[0]?.slots?.write("strikes", 2, true);
+    seen[0]?.slots?.write("strikes", 2, { durable: true });
     expect(state.store.viewFor(SID).read("strikes")).toBe(2);
   });
 

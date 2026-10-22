@@ -86,11 +86,12 @@
  *
  * @public
  */
-export type SpeechOutcome = "played" | "interrupted" | "dropped";
+export type SpeechOutcome = "played" | "interrupted" | "dropped" | (string & {});
 
 /**
  * Options for {@link SessionSpeech.say}.
  *
+ * @input
  * @public
  */
 export type SayOptions = {

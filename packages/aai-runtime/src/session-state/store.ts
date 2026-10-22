@@ -427,7 +427,8 @@ export function createSessionStateStore(options: {
     viewFor(sessionId) {
       return {
         read: (key) => sessions.get(sessionId)?.values.get(key),
-        write: (key, value, durable) => {
+        write: (key, value, options) => {
+          const durable = options?.durable ?? true;
           const entry = entryFor(sessionId);
           // A VIRTUAL slot's value is cached and nothing else: not checked, not
           // frozen, and never marked dirty — which is the whole of "never

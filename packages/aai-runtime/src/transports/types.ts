@@ -32,12 +32,8 @@
  *   change with a client on the other end of it, not a callback cleanup.
  */
 
-import type {
-  Message,
-  SessionEventBody,
-  SessionEventType,
-  SessionSourcedEventType,
-} from "@alexkroman1/aai";
+import type { Message, SessionEventBody, SessionEventType } from "@alexkroman1/aai";
+import type { SessionSourcedEventType } from "@alexkroman1/aai/internal";
 import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 import type { ModelMessage } from "ai";
 import type { TransportCapabilities } from "./capabilities.ts";
@@ -50,7 +46,7 @@ import type { TransportCapabilities } from "./capabilities.ts";
  * hand, so every new event was an edit here AND a new epoch of this package's
  * `session` capability — `userTurn.exceeded` and `metrics.collected` each cost
  * one — for a change this package did not make. The exclusions are declared once,
- * beside the vocabulary, as `SESSION_SOURCED_EVENT_TYPES` in `@alexkroman1/aai`
+ * beside the vocabulary, as `SESSION_SOURCED_EVENT_TYPES` in `@alexkroman1/aai/internal`
  * (with the reason each is there), so a new event is reportable by default — and
  * `handleReport` in `../session/core.ts` then fails to COMPILE until it is
  * classified: every name here has its own `case`, either acted on or listed as

@@ -225,8 +225,8 @@ export function openSessionDialogs(
   let writes = 0;
   const watched: SlotStore = {
     read: (key) => deps.slots.read(key),
-    write: (key, value, durable) => {
-      deps.slots.write(key, value, durable);
+    write: (key, value, options) => {
+      deps.slots.write(key, value, options);
       writes += 1;
     },
   };

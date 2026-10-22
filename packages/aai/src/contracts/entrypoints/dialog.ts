@@ -51,6 +51,7 @@ export {
   type DialogEvent,
   type DialogEventNames,
   type DialogGate,
+  type DialogMachine,
   type DialogOptions,
   type DialogPosition,
   type DialogSessionEventName,

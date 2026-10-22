@@ -72,7 +72,7 @@
  */
 
 /** Bytes of WAV header {@link encodeWav} writes — `RIFF`, `fmt `, and `data`. */
-export const WAV_HEADER_BYTES = 44;
+export const WAV_HEADER_BYTES: number = 44;
 
 /**
  * How to read the samples handed to {@link encodeWav}.
@@ -82,6 +82,7 @@ export const WAV_HEADER_BYTES = 44;
  * caller repeating `channels: 1, bitsPerSample: 16` at every site is a caller
  * who will one day repeat it beside samples that are neither.
  *
+ * @input
  * @public
  */
 export type PcmFormat = {

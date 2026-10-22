@@ -72,7 +72,11 @@ export const TRANSCRIBE_SYNC_MODEL: string = "universal-3-5-pro";
  */
 export const TRANSCRIBE_SYNC_TIMEOUT_MS: number = 60_000;
 
-/** What {@link stepTranscribeSync} accepts. */
+/**
+ * What {@link stepTranscribeSync} accepts.
+ *
+ * @input
+ */
 export type TranscribeSyncOptions = TranscribeRequestOptions & {
   /**
    * Model to route to. Defaults to {@link TRANSCRIBE_SYNC_MODEL}.

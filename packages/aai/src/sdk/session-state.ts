@@ -36,6 +36,7 @@
  * because a slot lives in a module that has no other way to find the session,
  * not because a tool body should call it.
  *
+ * @sealed
  * @public
  */
 export type SlotStore = {
@@ -49,12 +50,12 @@ export type SlotStore = {
   /**
    * Store this session's value for `key`.
    *
-   * `durable` is the slot's own declaration. A durable value is checked and
+   * `options.durable` is the slot's own declaration (default `true`). A durable value is checked and
    * frozen here and committed to the backend at the end of the tool call; a
    * virtual one is neither, because the things a virtual slot exists to hold
    * (a provider handle, an open socket) can be neither serialized nor frozen.
    */
-  write(key: string, value: unknown, durable: boolean): void;
+  write(key: string, value: unknown, options?: { durable?: boolean | undefined }): void;
 };
 
 /**
@@ -70,6 +71,7 @@ export type SlotStore = {
  * Both a `ToolContext` and a {@link SessionEventContext} satisfy it
  * structurally, so no existing call site changed.
  *
+ * @sealed
  * @public
  */
 export type SlotHolder = {
@@ -95,6 +97,7 @@ export type SlotHolder = {
  * function — so a field added to the projection reaches the first render
  * instead of being missing until something changes.
  *
+ * @sealed
  * @public
  */
 export interface StateProjection<V = unknown> {
@@ -265,7 +268,8 @@ export function createDetachedSlotStore(): SlotStore {
   const values = new Map<string, unknown>();
   return {
     read: (key) => values.get(key),
-    write: (key, value, durable) => {
+    write: (key, value, options) => {
+      const durable = options?.durable ?? true;
       values.set(key, durable ? freezeStorable(value, key) : value);
     },
   };

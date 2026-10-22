@@ -16,11 +16,24 @@
  * (`userTurn.exceeded`, `metrics.collected`) bumped `aai:agent`, `aai:dialog`,
  * `aai:testing` and `aai-runtime:session` at once.
  *
- * Now the zod schema is the one source of truth, {@link SessionEventMap} is
- * derived from it here, and every other name is a lookup into the map:
- * `SessionEvent<"tool.called">` is one member, `SessionEventType` the key set,
- * `SessionEventBody<K>` a member without its envelope. The whole family is
- * owned by the `aai:events` capability, so a new event is ONE classification.
+ * Now {@link SessionEventMap} is declared here once, and every other name is a
+ * lookup into the map: `SessionEvent<"tool.called">` is one member,
+ * `SessionEventType` the key set, `SessionEventBody<K>` a member without its
+ * envelope. The whole family is owned by the `aai:events` capability, so a new
+ * event is ONE classification.
+ *
+ * ## Written out, not inferred from the schema
+ *
+ * The map used to be `z.infer` over `SessionEventSchema`, which put zod's
+ * internals (`z.ZodObject<…, z.core.$strip>`) into the published contract: a
+ * zod upgrade moved the hash, and nothing an author reads changed. The map is
+ * the SDK's own declaration now; the schema (`/protocol`) is typed against it,
+ * and `session-event-map.test.ts` holds the schema's output assignable to it
+ * and the two key sets equal, so neither can drift.
+ *
+ * Every closed set an author RECEIVES here is open (`| (string & {})`): a new
+ * error code, failover stage or recovery reason is a new event FIELD VALUE, and
+ * a reader's exhaustive `switch` should not stop compiling because of one.
  *
  * ## The map is an interface, so it can be augmented
  *
@@ -33,29 +46,235 @@
  * @module
  */
 
-import type { z } from "zod";
-import type { SessionEventSchema } from "./protocol-events.ts";
+import type { SessionEventMeta } from "./protocol-event-meta.ts";
 
 /**
- * Key a union of `{ type }` members by their `type`.
- *
- * What {@link SessionEventMap} is derived through, and exported so a host with
- * a vocabulary of its own can build the same shape for it.
+ * What a session reports when a SUBSYSTEM fails — the `code` of an
+ * `error.reported` event. Open: a new subsystem's code is not a break.
  *
  * @public
  */
-export type EventMapOf<U extends { type: string }> = { [E in U as E["type"]]: E };
+export type SessionErrorCode =
+  | "stt"
+  | "llm"
+  | "tts"
+  | "tool"
+  | "protocol"
+  | "connection"
+  | "audio"
+  | "internal"
+  | (string & {});
 
 /**
- * Every session event, keyed by its `type` — derived from `SessionEventSchema`.
+ * Why the transport spoke a reply ITSELF — `agentTranscript.committed`'s
+ * `recovery`: `"turn-failed"` (one turn failed and the session lives on) or
+ * `"session-failed"` (the last thing said before the session ends).
+ *
+ * @public
+ */
+export type AgentTranscriptRecovery = "turn-failed" | "session-failed" | (string & {});
+
+/**
+ * One tool call a resumed conversation carries back — `history.restored`'s
+ * `toolCalls`.
+ *
+ * @sealed
+ * @public
+ */
+export interface RestoredToolCall {
+  callId: string;
+  name: string;
+  args: Record<string, unknown>;
+  /** `"pending"` when no completion was recorded — it may have been in flight. */
+  status: "pending" | "done";
+  result?: string | undefined;
+  /** Index into `messages` the call follows; `-1` means before any message. */
+  afterMessageIndex: number;
+}
+
+/**
+ * Every session event, keyed by its `type`.
  *
  * Read one member with `SessionEvent<"tool.called">`, never with
  * `Extract<SessionEvent, { type: … }>`: the lookup fails to compile on a
  * misspelled name, where the `Extract` silently resolves to `never`.
  *
+ * @sealed
  * @public
  */
-export interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventSchema>> {}
+export interface SessionEventMap {
+  /**
+   * The handshake: audio negotiation plus the session's own id. First on every
+   * connection and sent at zero RTT.
+   */
+  "session.configured": {
+    type: "session.configured";
+    meta: SessionEventMeta;
+    audioFormat: string;
+    sampleRate: number;
+    ttsSampleRate: number;
+    /** Reconnect with `?sessionId=<id>` to resume; the retained stream is read by it too. */
+    sessionId: string;
+  };
+  /** All of this turn's TTS audio has been sent — a turn BOUNDARY. */
+  "audio.completed": { type: "audio.completed"; meta: SessionEventMeta };
+  /** The agent is YIELDING the floor (held back in pipeline mode until it really is). */
+  "speech.started": { type: "speech.started"; meta: SessionEventMeta };
+  "speech.stopped": { type: "speech.stopped"; meta: SessionEventMeta };
+  /** Interim user transcript — live captions while the user is still speaking. */
+  "userTranscript.updated": {
+    type: "userTranscript.updated";
+    meta: SessionEventMeta;
+    text: string;
+    /**
+     * The STT service's confidence, 0..1, that the user's turn has ENDED as of
+     * this interim, when the provider reports one. Absent means "no opinion".
+     */
+    eotConfidence?: number | undefined;
+  };
+  /** The caller's committed turn — the one that enters history. */
+  "userTranscript.committed": {
+    type: "userTranscript.committed";
+    meta: SessionEventMeta;
+    text: string;
+  };
+  /**
+   * The current reply's transcript so far — a FULL-REPLACEMENT snapshot, which
+   * may be shorter than the one before it. Replace the text; never diff or append.
+   */
+  "agentTranscript.updated": {
+    type: "agentTranscript.updated";
+    meta: SessionEventMeta;
+    text: string;
+  };
+  /**
+   * The reply's final text as the RECORD keeps it. Fires once per recorded
+   * reply, never for an interrupted one — except when `recovery` or
+   * `recorded: false` says otherwise.
+   */
+  "agentTranscript.committed": {
+    type: "agentTranscript.committed";
+    meta: SessionEventMeta;
+    text: string;
+    recovery?: AgentTranscriptRecovery | undefined;
+    recorded?: false | undefined;
+  };
+  "tool.called": {
+    type: "tool.called";
+    meta: SessionEventMeta;
+    toolCallId: string;
+    toolName: string;
+    args: Record<string, unknown>;
+  };
+  "tool.completed": {
+    type: "tool.completed";
+    meta: SessionEventMeta;
+    toolCallId: string;
+    result: string;
+  };
+  /** The reply finished on its own terms. */
+  "reply.completed": { type: "reply.completed"; meta: SessionEventMeta };
+  /** The reply was abandoned — a barge-in, a client cancel, or a reset. */
+  "reply.cancelled": { type: "reply.cancelled"; meta: SessionEventMeta };
+  /** The conversation was discarded and a new one begins (the transports greet on it). */
+  "session.reset": { type: "session.reset"; meta: SessionEventMeta };
+  /** Silence outlasted `idleTimeoutMs`. Informational: the server closes the socket. */
+  "session.timedOut": { type: "session.timedOut"; meta: SessionEventMeta };
+  "error.reported": {
+    type: "error.reported";
+    meta: SessionEventMeta;
+    code: SessionErrorCode;
+    message: string;
+    /** Whether the session is over. False for a turn-level error it survives. */
+    fatal: boolean;
+  };
+  /** An event the AGENT named, via `ctx.send`. */
+  "custom.emitted": {
+    type: "custom.emitted";
+    meta: SessionEventMeta;
+    event: string;
+    data: unknown;
+  };
+  /** The agent's projected session state (see `AgentDef.syncState`); keep the LATEST. */
+  "state.updated": {
+    type: "state.updated";
+    meta: SessionEventMeta;
+    state: Record<string, unknown>;
+  };
+  /** Cumulative model token usage for the session. */
+  "usage.updated": {
+    type: "usage.updated";
+    meta: SessionEventMeta;
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    steps: number;
+  };
+  /** A guardrail stopped a turn and `replacement` was said instead. */
+  "guardrail.blocked": {
+    type: "guardrail.blocked";
+    meta: SessionEventMeta;
+    direction: "input" | "output" | (string & {});
+    replacement: string;
+  };
+  /** The caller's turn passed a `userTurnLimit`. */
+  "userTurn.exceeded": {
+    type: "userTurn.exceeded";
+    meta: SessionEventMeta;
+    limit: "words" | "duration" | (string & {});
+    words: number;
+    durationMs: number;
+  };
+  /** A `fallback([...])` stage switched provider. */
+  "provider.failedOver": {
+    type: "provider.failedOver";
+    meta: SessionEventMeta;
+    stage: "stt" | "llm" | "tts" | (string & {});
+    from: string;
+    to: string;
+    reason: string;
+  };
+  /** What one reply cost, stage by stage. Durations are milliseconds. */
+  "metrics.collected": {
+    type: "metrics.collected";
+    meta: SessionEventMeta;
+    /** The reply was cut short; its stages are still reported. */
+    interrupted: boolean;
+    /** From the caller's committed turn to the reply's first audio. */
+    latencyMs?: number | undefined;
+    stt?: { endpointingMs?: number | undefined } | undefined;
+    llm?:
+      | {
+          ttftMs?: number | undefined;
+          durationMs: number;
+          steps: number;
+          inputTokens?: number | undefined;
+          outputTokens?: number | undefined;
+        }
+      | undefined;
+    tts?: { ttfbMs?: number | undefined; characters: number } | undefined;
+  };
+  /** The conversation a RESUME restored; the client REPLACES its list from it. */
+  "history.restored": {
+    type: "history.restored";
+    meta: SessionEventMeta;
+    messages: { role: "user" | "assistant"; content: string }[];
+    toolCalls: RestoredToolCall[];
+  };
+}
+
+/**
+ * What a `"*"` handler receives: ANY event, by its envelope alone. Open on
+ * purpose — a new event reaches a wildcard handler without a type change, and
+ * a handler that wants a member's fields declares the per-name handler.
+ *
+ * @sealed
+ * @public
+ */
+export interface AnySessionEvent {
+  readonly type: string;
+  readonly meta: SessionEventMeta;
+}
 
 /**
  * The agent's OWN custom events — what `ctx.send(event, data)` pushes to the
@@ -91,6 +310,7 @@ export interface SessionEventMap extends EventMapOf<z.infer<typeof SessionEventS
  * The payload is typed on the SENDING side only: on the wire it is still a
  * `custom.emitted` frame whose `data` the schema admits as any JSON value.
  *
+ * @input
  * @public
  */
 // biome-ignore lint/suspicious/noEmptyInterface: empty on purpose — the declaration authors augment.
@@ -129,43 +349,6 @@ export type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>
  * @public
  */
 export type SessionEventType = Extract<keyof SessionEventMap, string>;
-
-/**
- * Every built-in session event name, spelled out in schema order — the same
- * set as {@link SessionEventType} before any augmentation.
- *
- * Written out because a rename must move the `aai:events` contract hash, and
- * the hash cannot see a name that only reaches it through `SessionEventSchema`
- * (a `const`, whose literals it reads as `string`). `session-event-names.test.ts`
- * fails if this and the schema disagree.
- *
- * @public
- */
-export type SessionEventTypeList = readonly [
-  "session.configured",
-  "audio.completed",
-  "speech.started",
-  "speech.stopped",
-  "userTranscript.updated",
-  "userTranscript.committed",
-  "agentTranscript.updated",
-  "agentTranscript.committed",
-  "tool.called",
-  "tool.completed",
-  "reply.completed",
-  "reply.cancelled",
-  "session.reset",
-  "session.timedOut",
-  "error.reported",
-  "custom.emitted",
-  "state.updated",
-  "usage.updated",
-  "guardrail.blocked",
-  "userTurn.exceeded",
-  "provider.failedOver",
-  "metrics.collected",
-  "history.restored",
-];
 
 /**
  * One **server→client** session event, envelope included: a fact the session
@@ -218,7 +401,7 @@ export const SESSION_SOURCED_EVENT_TYPES = [
 ] as const satisfies readonly SessionEventType[];
 
 /**
- * One of {@link SESSION_SOURCED_EVENT_TYPES}.
+ * One of `SESSION_SOURCED_EVENT_TYPES`.
  *
  * @public
  */

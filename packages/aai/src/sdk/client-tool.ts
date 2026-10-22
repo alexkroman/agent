@@ -49,6 +49,7 @@ export type ClientToolCall = (signal: AbortSignal) => Promise<unknown>;
  *
  * @typeParam P - The tool's input schema — what the page's handler receives.
  *
+ * @input
  * @public
  */
 export type ClientToolDef<P extends ToolInputSchema = ToolInputSchema> = Omit<

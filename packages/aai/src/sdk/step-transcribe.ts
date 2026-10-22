@@ -109,7 +109,7 @@ export const TRANSCRIBE_API: string = "https://api.assemblyai.com";
  * default; naming it is what stops a default change silently moving a
  * workflow's output.
  */
-export const TRANSCRIBE_MODELS: readonly [string] = ["universal-3-5-pro"];
+export const TRANSCRIBE_MODELS: readonly string[] = ["universal-3-5-pro"];
 
 /**
  * How much of a stored upload one outbound window carries.
@@ -164,7 +164,11 @@ export type TranscribeProgress =
   | { done: false; status: "queued" | "processing" | (string & {}) }
   | { done: true; status: "completed" | (string & {}); transcript: Transcript };
 
-/** What {@link stepTranscribeSubmit} accepts. */
+/**
+ * What {@link stepTranscribeSubmit} accepts.
+ *
+ * @input
+ */
 export type TranscribeSubmitOptions = TranscribeRequestOptions & {
   /** Models to ask for. Defaults to {@link TRANSCRIBE_MODELS}. */
   models?: readonly string[] | undefined;

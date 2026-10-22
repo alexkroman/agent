@@ -56,14 +56,39 @@ import type { SessionEvent } from "./session-event-map.ts";
 export type MetricsCollectedEvent = SessionEvent<"metrics.collected">;
 
 /**
- * What {@link MetricsCollector.collect} reads off one frame — the event
- * without its envelope, so a hook's event and a transport's body both fit.
+ * What {@link MetricsCollector.collect} reads off one frame — the measurements
+ * without the envelope, so a hook's event and a transport's body both fit.
+ *
+ * Declared on its own rather than cut from {@link MetricsCollectedEvent} with
+ * `Omit`: an author BUILDS one (or hands the event in), so it is an input, and
+ * the event is a sealed output. Tying the two would make a field the session
+ * adds to the event a required field every hand-built sample suddenly lacks.
+ * `metrics-collector.test.ts` holds the event assignable to it.
+ *
+ * @input
  * @public
  */
-export type MetricsSample = Omit<MetricsCollectedEvent, "type" | "meta">;
+export interface MetricsSample {
+  /** The reply was cut short. */
+  interrupted: boolean;
+  /** From the caller's committed turn to the reply's first audio. */
+  latencyMs?: number | undefined;
+  stt?: { endpointingMs?: number | undefined } | undefined;
+  llm?:
+    | {
+        ttftMs?: number | undefined;
+        durationMs: number;
+        steps: number;
+        inputTokens?: number | undefined;
+        outputTokens?: number | undefined;
+      }
+    | undefined;
+  tts?: { ttfbMs?: number | undefined; characters: number } | undefined;
+}
 
 /**
  * One measurement's distribution. Durations are milliseconds.
+ * @sealed
  * @public
  */
 export interface MetricStat {
@@ -113,15 +138,20 @@ export interface MetricsSummary {
  * @public
  */
 export interface MetricsCollector {
-  /** Fold in one reply's metrics. */
-  collect(sample: MetricsSample): void;
+  /** Fold in one reply's metrics — the `metrics.collected` event itself, or a sample built by hand. */
+  collect(sample: MetricsCollectedEvent | MetricsSample): void;
   /** The summary so far. A fresh object each call; safe to keep. */
   summary(): MetricsSummary;
   /** Forget everything collected. */
   reset(): void;
 }
 
-/** Options for {@link createMetricsCollector}. @public */
+/**
+ * Options for {@link createMetricsCollector}.
+ *
+ * @input
+ * @public
+ */
 export interface MetricsCollectorOptions {
   /**
    * How many recent samples per measurement the percentiles are computed

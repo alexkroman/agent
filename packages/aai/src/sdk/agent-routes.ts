@@ -97,6 +97,7 @@
 
 import { readBrand, setBrand } from "./_boundary.ts";
 import { isRecord } from "./is-record.ts";
+import { omitUndefined } from "./omit-undefined.ts";
 import type { SessionSpeech } from "./session-speech.ts";
 import type { ClientTranscript, StepClientTranscriptOptions } from "./step-client-transcript.ts";
 import type { WorkflowClient } from "./workflow.ts";
@@ -107,7 +108,7 @@ import type { WorkflowClient } from "./workflow.ts";
  * @sealed
  * @public
  */
-export interface RouteRequest {
+export interface RouteRequest<Body = unknown> {
   /** The HTTP method, upper-case: `"GET"`, `"POST"`, `"PUT"`, `"PATCH"` or `"DELETE"`. */
   method: string;
   /** The path the route matched, WITHOUT the `/api` prefix: `"/memories/42"`. */
@@ -129,7 +130,7 @@ export interface RouteRequest {
    * `undefined` for a `GET`, or for any request that sent no body. A body that
    * is not JSON is refused with a 400 before the handler runs.
    */
-  body: unknown;
+  body: Body;
   /**
    * The request body exactly as received, as UTF-8 text — present whenever
    * `body` is, under the same cap and the same JSON-only rule.
@@ -209,6 +210,7 @@ export type RouteHandler = (req: RouteRequest, ctx: RouteContext) => unknown;
 /**
  * The `routes` field of an agent declaration — see this module's header.
  *
+ * @input
  * @public
  */
 export interface AgentRoutes {
@@ -234,6 +236,14 @@ function isRouteStatus(status: unknown): status is number {
   return (status >= 200 && status <= 299) || (status >= 400 && status <= 599);
 }
 
+/** `value` when it is a record of strings — a header map read back across the bundle boundary. */
+function stringRecord(value: unknown): Readonly<Record<string, string>> | undefined {
+  if (!isRecord(value)) return undefined;
+  return Object.values(value).every((v) => typeof v === "string")
+    ? (value as Record<string, string>)
+    : undefined;
+}
+
 /**
  * A route's answer with a status of its own — what {@link routeResponse} makes.
  *
@@ -245,23 +255,44 @@ export interface RouteResponse {
   readonly status: number;
   /** Sent as JSON; `undefined` sends no body at all (a 204, say). */
   readonly body: unknown;
+  /** Extra response headers, when the route set any (`routeResponse`'s `headers`). */
+  readonly headers?: Readonly<Record<string, string>> | undefined;
+}
+
+/**
+ * The optional half of {@link routeResponse}.
+ *
+ * @input
+ * @public
+ */
+export interface RouteResponseOptions {
+  /**
+   * Response headers to send beside the JSON body — a `Location` for a 201, a
+   * `Retry-After` for a 429, a `Cache-Control`. The body is always JSON, so a
+   * `Content-Type` here is ignored in favour of the runtime's own.
+   */
+  headers?: Readonly<Record<string, string>> | undefined;
 }
 
 /**
  * Answer a route with `status` and `body` instead of a plain 200:
  * `return routeResponse(404, { error: "No such memory" })`,
- * `return routeResponse(201, created)`.
+ * `return routeResponse(201, created, { headers: { Location: "/memories/42" } })`.
  *
  * Throws a `RangeError` for a status that is not 2xx, 4xx or 5xx: a 1xx or a
  * redirect is not a JSON answer, and a typo there should fail where it was made.
  *
  * @public
  */
-export function routeResponse(status: number, body?: unknown): RouteResponse {
+export function routeResponse(
+  status: number,
+  body?: unknown,
+  options: RouteResponseOptions = {},
+): RouteResponse {
   if (!isRouteStatus(status)) {
     throw new RangeError(`routeResponse: status must be a 2xx, 4xx or 5xx code, got ${status}`);
   }
-  const response = { status, body };
+  const response: RouteResponse = { status, body, ...omitUndefined({ headers: options.headers }) };
   // The registered `routeResponse` brand, so every copy of this module reads
   // it; non-enumerable, so it never reaches a JSON body or a log line.
   setBrand(response, "routeResponse", true);
@@ -279,6 +310,7 @@ export function routeResponse(status: number, body?: unknown): RouteResponse {
  */
 export function readRouteResponse(value: unknown): RouteResponse | undefined {
   if (!isRecord(value) || readBrand(value, "routeResponse") !== true) return undefined;
-  const { status } = value;
-  return isRouteStatus(status) ? { status, body: value.body } : undefined;
+  const { status, headers } = value;
+  if (!isRouteStatus(status)) return undefined;
+  return { status, body: value.body, ...omitUndefined({ headers: stringRecord(headers) }) };
 }

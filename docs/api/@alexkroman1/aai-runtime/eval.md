@@ -384,20 +384,10 @@ export function stagedOn(turn: EvalTurn): void {
 
 ```ts
 function errorsIn(events: readonly SessionEvent[]): readonly {
-  code:   | "audio"
-     | "connection"
-     | "internal"
-     | "llm"
-     | "protocol"
-     | "stt"
-     | "tool"
-     | "tts";
+  code: SessionErrorCode;
   fatal: boolean;
   message: string;
-  meta: {
-     at: number;
-     id: string;
-  };
+  meta: SessionEventMeta;
   type: "error.reported";
 }[];
 ```
@@ -427,20 +417,10 @@ readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
 #### Returns
 
 readonly \{
-  `code`:   \| `"audio"`
-     \| `"connection"`
-     \| `"internal"`
-     \| `"llm"`
-     \| `"protocol"`
-     \| `"stt"`
-     \| `"tool"`
-     \| `"tts"`;
+  `code`: [`SessionErrorCode`](../aai/index.md#sessionerrorcode);
   `fatal`: `boolean`;
   `message`: `string`;
-  `meta`: \{
-     `at`: `number`;
-     `id`: `string`;
-  \};
+  `meta`: [`SessionEventMeta`](../aai/index.md#sessioneventmeta);
   `type`: `"error.reported"`;
 \}[]
 

@@ -33,7 +33,6 @@
 export { sessionClientPhone } from "../../index.ts";
 export {
   allowedSmsRecipient,
-  CHANNEL_POST_TIMEOUT_MS,
   type Channel,
   ChannelDeliveryError,
   type ChannelDescriptor,

@@ -79,7 +79,6 @@
 // anyway, so an export missing from this list fails a gate rather than
 // silently leaving the subpath.
 export {
-  TRANSCRIBE_TIMEOUT_MS,
   TranscribeError,
   type TranscribeRequestOptions,
 } from "./_transcribe-shared.ts";
@@ -120,8 +119,6 @@ export {
   type ClientNotice,
   ClientUnreachableError,
   type ClientUnreachableReason,
-  DEFAULT_CLIENT_ACK_TIMEOUT_MS,
-  DEFAULT_CLIENT_RETRY_MS,
   type StepNotifyClientOptions,
   stepNotifyClient,
 } from "./step-notify-client.ts";
@@ -129,8 +126,6 @@ export {
 export {
   CALL_OVER_STATUSES,
   type CallStatusOptions,
-  DEFAULT_CALL_RING_TIMEOUT_S,
-  DEFAULT_CALL_TIME_LIMIT_S,
   isCallOver,
   type PlaceCallCredentials,
   PlaceCallError,
@@ -154,7 +149,6 @@ export {
   type SpeakOptions,
   type SpokenAudio,
   STEP_SPEAK_SAMPLE_RATE,
-  STEP_SPEAK_TIMEOUT_MS,
   stepSpeak,
 } from "./step-speak.ts";
 // The `text_me` builtin's rule, from a step: which number, and which refusals are answers.
@@ -169,17 +163,13 @@ export {
   stepTranscribeUpload,
   TRANSCRIBE_API,
   TRANSCRIBE_MODELS,
-  TRANSCRIBE_UPLOAD_TIMEOUT_MS,
-  TRANSCRIBE_WINDOW_BYTES,
   type TranscribeProgress,
   type TranscribeSubmitOptions,
   type Transcript,
 } from "./step-transcribe.ts";
 export {
   stepTranscribeSync,
-  TRANSCRIBE_SYNC_ENDPOINT,
   TRANSCRIBE_SYNC_MODEL,
-  TRANSCRIBE_SYNC_TIMEOUT_MS,
   type TranscribeSyncOptions,
 } from "./step-transcribe-sync.ts";
 export {

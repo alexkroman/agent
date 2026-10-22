@@ -36,12 +36,19 @@ import type { WorkflowRunSnapshot } from "./workflow-run.ts";
  *
  * @public
  */
-export type ClientRunStatus = "waiting" | "running" | "completed" | "failed" | "cancelled";
+export type ClientRunStatus =
+  | "waiting"
+  | "running"
+  | "completed"
+  | "failed"
+  | "cancelled"
+  | (string & {});
 
 /**
  * One row of the list {@link clientRunsRoutes} answers — plain JSON, what a
  * page renders a run from.
  *
+ * @sealed
  * @public
  */
 export interface ClientRun {
@@ -67,6 +74,7 @@ export interface ClientRun {
 /**
  * The body the list route answers.
  *
+ * @sealed
  * @public
  */
 export interface ClientRunsResponse {
@@ -77,6 +85,7 @@ export interface ClientRunsResponse {
 /**
  * Options for {@link clientRunsRoutes}.
  *
+ * @input
  * @public
  */
 export interface ClientRunsRoutesOptions {

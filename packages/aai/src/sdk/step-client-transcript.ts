@@ -36,15 +36,23 @@ import { CLIENT_ID_RE } from "./step-notify-client.ts";
 
 const CLIENT_TRANSCRIPT_SLOT = globalSlot<ClientTranscriptReader>("clientTranscriptReader");
 
-/** One committed line of a client's conversation. */
+/**
+ * One committed line of a client's conversation.
+ *
+ * @sealed
+ */
 export type ClientTranscriptMessage = {
-  role: "user" | "assistant";
+  role: "user" | "assistant" | (string & {});
   text: string;
   /** Epoch ms the line was recorded. */
   at: number;
 };
 
-/** One settled tool call in a client's conversation. */
+/**
+ * One settled tool call in a client's conversation.
+ *
+ * @sealed
+ */
 export type ClientTranscriptTool = {
   /** The tool's name, or `undefined` when the log's front no longer holds the call. */
   name: string | undefined;
@@ -56,7 +64,11 @@ export type ClientTranscriptTool = {
   at: number;
 };
 
-/** One of a client's sessions, as {@link stepClientTranscript} reads it. */
+/**
+ * One of a client's sessions, as {@link stepClientTranscript} reads it.
+ *
+ * @sealed
+ */
 export type ClientTranscriptSession = {
   sessionId: string;
   /** Epoch ms the session was first bound to the client. */
@@ -70,13 +82,21 @@ export type ClientTranscriptSession = {
   tools: ClientTranscriptTool[];
 };
 
-/** What {@link stepClientTranscript} returns. */
+/**
+ * What {@link stepClientTranscript} returns.
+ *
+ * @sealed
+ */
 export type ClientTranscript = {
   /** Oldest session first. */
   sessions: ClientTranscriptSession[];
 };
 
-/** Options for {@link stepClientTranscript}. */
+/**
+ * Options for {@link stepClientTranscript}.
+ *
+ * @input
+ */
 export type StepClientTranscriptOptions = {
   /** Epoch ms: only sessions active, and events recorded, at or after it. */
   since?: number | undefined;
@@ -104,7 +124,7 @@ export type ClientTranscriptReader = (
  *
  * @internal
  */
-export const CLIENT_TRANSCRIPT_UNAVAILABLE_MESSAGE =
+export const CLIENT_TRANSCRIPT_UNAVAILABLE_MESSAGE: string =
   "This process has no session log to read, so a step cannot read a client's transcript. " +
   "It is published by createRuntime (aai dev, aai start, a self-hosted server). " +
   "In a test, use `stubClientTranscript` from @alexkroman1/aai/testing.";

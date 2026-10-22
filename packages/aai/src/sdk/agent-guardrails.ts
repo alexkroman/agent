@@ -91,6 +91,7 @@ export type AgentGuardrail = (
  * The two guardrail fields on {@link AgentDef} — see this module's header for
  * what each can actually prevent.
  *
+ * @input
  * @public
  */
 export interface AgentGuardrails {

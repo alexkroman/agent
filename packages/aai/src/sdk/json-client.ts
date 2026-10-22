@@ -57,6 +57,7 @@ export class HttpError extends Error {
 /**
  * What {@link jsonClient} takes.
  *
+ * @input
  * @public
  */
 export interface JsonClientOptions {
@@ -93,6 +94,7 @@ export interface JsonClientOptions {
  * The context a {@link JsonClient} call reads: a tool's `ctx`, a route's
  * `ctx`, or `{ env: … }` built from `stepEnv` in a workflow step.
  *
+ * @input
  * @public
  */
 export interface JsonClientContext {
@@ -105,6 +107,7 @@ export interface JsonClientContext {
 /**
  * Per-call extras for a {@link JsonClient} request.
  *
+ * @input
  * @public
  */
 export interface JsonRequestInit {

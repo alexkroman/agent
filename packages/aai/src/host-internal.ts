@@ -50,6 +50,15 @@ export {
   runCapped,
   type SpawnCappedResult,
 } from "./host/coding-spawn.ts";
+// `createCodingTools`' budgets and default descriptions: the studio's coding
+// agent quotes and extends them; an author overrides through `descriptions`.
+export {
+  BASH_TIMEOUT_MAX_MS,
+  BASH_TIMEOUT_MS,
+  CODING_TOOL_DESCRIPTIONS,
+  GLOB_LIMIT,
+  READ_LIMIT,
+} from "./host/coding-tool-descriptions.ts";
 export {
   createLogBuffer,
   DEFAULT_LOG_BUFFER_LINES,

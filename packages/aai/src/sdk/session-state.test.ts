@@ -49,23 +49,23 @@ describe("freezeStorable", () => {
 describe("createDetachedSlotStore", () => {
   test("reads back what was written, and nothing for an unwritten key", () => {
     const store = createDetachedSlotStore();
-    store.write("cart", { items: 1 }, true);
+    store.write("cart", { items: 1 }, { durable: true });
     expect(store.read("cart")).toEqual({ items: 1 });
     expect(store.read("other")).toBeUndefined();
   });
 
   test("checks and freezes a durable write, and leaves an ephemeral one alone", () => {
     const store = createDetachedSlotStore();
-    expect(() => store.write("d", { at: new Date(0) }, true)).toThrow(SlotValueError);
+    expect(() => store.write("d", { at: new Date(0) }, { durable: true })).toThrow(SlotValueError);
     const ephemeral = { at: new Date(0) };
-    store.write("e", ephemeral, false);
+    store.write("e", ephemeral, { durable: false });
     expect(store.read("e")).toBe(ephemeral);
     expect(Object.isFrozen(ephemeral)).toBe(false);
   });
 
   test("two stores share nothing", () => {
     const a = createDetachedSlotStore();
-    a.write("k", 1, true);
+    a.write("k", 1, { durable: true });
     expect(createDetachedSlotStore().read("k")).toBeUndefined();
   });
 });

@@ -26,7 +26,11 @@ export const DEEPGRAM_KIND = DEEPGRAM_PROVIDER.kind;
 /** Agent-env variable holding the Deepgram API key. */
 export const DEEPGRAM_API_KEY_ENV: string = DEEPGRAM_PROVIDER.envVar;
 
-/** Options for {@link deepgramStt}. */
+/**
+ * Options for {@link deepgramStt}.
+ *
+ * @input
+ */
 export interface DeepgramSttOptions extends ProviderCredentialOptions {
   /**
    * Streaming speech model. Defaults to `"nova-3"`. Any string is forwarded
@@ -52,7 +56,7 @@ export interface DeepgramSttOptions extends ProviderCredentialOptions {
   language?: string;
   /**
    * Deepgram endpointing window (ms of trailing silence before a `final` is
-   * emitted). Defaults to {@link DEEPGRAM_DEFAULT_ENDPOINTING_MS}. Endpointing
+   * emitted). Defaults to `DEEPGRAM_DEFAULT_ENDPOINTING_MS`. Endpointing
    * is the provider's job — the pipeline transport commits a turn on every
    * final — so this window is what keeps a mid-utterance pause from splitting
    * one request across turns.

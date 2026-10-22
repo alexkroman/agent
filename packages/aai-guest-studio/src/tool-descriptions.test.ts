@@ -27,7 +27,7 @@
  * before anything is dispatched — no filesystem, no subprocess, no network.
  */
 
-import { CODING_TOOL_DESCRIPTIONS } from "@alexkroman1/aai/coding-tools";
+import { CODING_TOOL_DESCRIPTIONS } from "@alexkroman1/aai/host-internal";
 import { runTool } from "aai-guest-core/test-utils";
 import { describe, expect, test } from "vitest";
 import { createStudioAgent } from "./agent.ts";

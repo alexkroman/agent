@@ -38,12 +38,13 @@
  * said, whatever the caller asked the agent to forget in the moment.
  */
 
-import { type SessionEvent, SessionEventSchema } from "@alexkroman1/aai";
+import type { SessionEvent } from "@alexkroman1/aai";
 import type { ClientTranscriptReader } from "@alexkroman1/aai/host-internal";
 import {
   publishClientTranscriptReader,
   publishedClientTranscriptReader,
 } from "@alexkroman1/aai/host-internal";
+import { SessionEventSchema } from "@alexkroman1/aai/protocol";
 import {
   type ClientTranscript,
   type ClientTranscriptSession,

@@ -78,7 +78,7 @@ export const FFPROBE_PATH_ENV = "AAI_FFPROBE_PATH";
  * that will never finish, not a service-level target — a caller with a tighter
  * one passes `timeoutMs`, and a workflow step has its own budget above this.
  */
-export const DEFAULT_FFMPEG_TIMEOUT_MS = 10 * 60_000;
+export const DEFAULT_FFMPEG_TIMEOUT_MS: number = 10 * 60_000;
 
 /**
  * How much of ffmpeg's log is kept, from the END.
@@ -115,7 +115,7 @@ export const FFMPEG_KILL_GRACE_MS = 5000;
  * deliberately for a big in-memory conversion, or write to a file and capture
  * nothing.
  */
-export const DEFAULT_MAX_FFMPEG_OUTPUT_BYTES = 64 * 1024 * 1024;
+export const DEFAULT_MAX_FFMPEG_OUTPUT_BYTES: number = 64 * 1024 * 1024;
 
 /** Which way a run failed — see {@link FfmpegError}. */
 export type FfmpegFailureKind =
@@ -128,7 +128,10 @@ export type FfmpegFailureKind =
   /** The binary is not installed, or `AAI_FFMPEG_PATH` points at nothing. */
   | "missing-binary"
   /** Piped output passed `maxOutputBytes`; the child was killed. */
-  | "output-too-large";
+  | "output-too-large"
+  // Open: a new failure kind is not a break for a reader that branches on the
+  // ones it knows (and treats the rest as the default).
+  | (string & {});
 
 /**
  * A failed ffmpeg run, with the diagnosis attached.
@@ -177,6 +180,7 @@ export function isFfmpegError(value: unknown): value is FfmpegError {
   return value instanceof FfmpegError;
 }
 
+/** @input */
 export type FfmpegRunOptions = {
   /** The binary to spawn. Defaults to `AAI_FFMPEG_PATH`, `FFMPEG_PATH`, then `ffmpeg`. */
   binary?: string;
@@ -192,6 +196,7 @@ export type FfmpegRunOptions = {
   maxOutputBytes?: number;
 };
 
+/** @sealed */
 export type FfmpegRunResult = {
   /** Whatever the child wrote to stdout — empty for a run that wrote to a file. */
   stdout: Uint8Array;

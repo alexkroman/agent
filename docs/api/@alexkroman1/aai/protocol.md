@@ -24,13 +24,7 @@ function buildClientConfig(source: {
   page?: "voice" | "static";
   sessionToken?: string;
   sessionUrl?: string;
-}): {
-  greeting?: string;
-  name?: string;
-  page: "voice" | "static";
-  sessionToken?: string;
-  sessionUrl?: string;
-};
+}): ClientConfigResponse;
 ```
 
 Build the `GET /client-config` response body from an agent-shaped config.
@@ -65,45 +59,7 @@ surface rule can't drift between them.
 
 #### Returns
 
-```ts
-{
-  greeting?: string;
-  name?: string;
-  page: "voice" | "static";
-  sessionToken?: string;
-  sessionUrl?: string;
-}
-```
-
-##### greeting?
-
-```ts
-optional greeting?: string;
-```
-
-##### name?
-
-```ts
-optional name?: string;
-```
-
-##### page
-
-```ts
-page: "voice" | "static";
-```
-
-##### sessionToken?
-
-```ts
-optional sessionToken?: string;
-```
-
-##### sessionUrl?
-
-```ts
-optional sessionUrl?: string;
-```
+[`ClientConfigResponse`](workflow-api.md#clientconfigresponse)
 
 ***
 
@@ -239,6 +195,8 @@ parsing client→server messages, pass [SESSION\_COMMAND\_TYPES](#session_comman
 
 ### ClientSink
 
+**`Input`**
+
 Typed interface for pushing session events to a connected client.
 
 Events send JSON text frames; audio chunks (`playAudioChunk`) send raw PCM16
@@ -366,21 +324,6 @@ Protocol-level session config returned to the client on connect.
 
 ***
 
-### RestoredToolCall
-
-```ts
-type RestoredToolCall = z.infer<typeof RestoredToolCallSchema>;
-```
-
-One tool call as a resume reports it.
-
-Public for the reason its schema is: it rides the wire inside
-`history.restored`, so a custom client reads exactly this shape. It was tagged
-`@internal` while the schema it is inferred from was not, which went unseen
-until `/protocol` joined the contract system.
-
-***
-
 ### SessionCommand
 
 ```ts
@@ -393,51 +336,6 @@ Note there is no `history` command any more. A reconnecting client used to
 push its own `messages` back because the server kept no record; the server is
 authoritative now and a resume reads the retained event stream by index. See
 "One durable session event stream" in the SDK guide.
-
-***
-
-### SessionErrorCode
-
-```ts
-type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
-```
-
-Error codes for categorizing session errors on the wire.
-
-#### Remarks
-
-The field a client renders its error banner from (`error.reported.code`, and
-`SessionError.code` in `@alexkroman1/aai-ui`). Eight values, by where the
-failure came from:
-
-- `stt` — speech-to-text: the provider refused the connection, or its stream
-  failed mid-utterance.
-- `llm` — the model call for a reply failed. In pipeline mode the caller also
-  hears `errorPhrase`, so the turn is handed back rather than going silent.
-- `tts` — synthesis failed, which is the one the caller cannot hear.
-- `tool` — a tool threw and the failure could not be given to the model.
-- `protocol` — a frame that does not parse, or one sent in a state that has
-  no answer for it.
-- `connection` — the session's own link, or a provider's, went away.
-- `audio` — the audio path: a rate the transport cannot honour, a decode.
-- `internal` — anything the runtime could not classify.
-
-**Severity is `fatal`, not the code**, and the two are independent: any of
-these can arrive on a session that continues. `fatal: false` means surface
-the message and keep the session interactive. It is REQUIRED: a fatal frame
-is not a banner — `aai-ui` answers one by releasing the microphone and ending
-the call — so every emitter states which it means rather than inheriting a
-default that takes the whole session down.
-
-***
-
-### SessionEventMeta
-
-```ts
-type SessionEventMeta = z.infer<typeof SessionEventMetaSchema>;
-```
-
-The envelope every session event carries.
 
 ## Variables
 
@@ -477,7 +375,7 @@ const EVENT_ID_PREFIX: "evt_" = "evt_";
 
 The prefix every session-event id carries, so an id names its own kind.
 
-`evt_` then a ULID — see [SessionEventMeta](#sessioneventmeta) and its `id` field for what
+`evt_` then a ULID — see [SessionEventMeta](index.md#sessioneventmeta) and its `id` field for what
 the id is and is not good for. The link names the TYPE rather than the field
 because the type is `z.infer`red, so TypeDoc documents it as an anonymous
 object and has no anchor to point a member link at.
@@ -763,15 +661,33 @@ Zod schema for session error codes.
 ### SessionEventMetaSchema
 
 ```ts
-const SessionEventMetaSchema: z.ZodObject<{
-  at: z.ZodNumber;
-  id: z.ZodString;
-}, z.core.$strip>;
+const SessionEventMetaSchema: z.ZodType<SessionEventMeta>;
 ```
 
-Zod schema for [SessionEventMeta](#sessioneventmeta).
+Zod schema for [SessionEventMeta](index.md#sessioneventmeta).
+
+***
+
+### SessionEventSchema
+
+```ts
+const SessionEventSchema: z.ZodType<SessionEvent>;
+```
+
+The session event schema — what a client parsing frames validates with.
+
+Typed as `z.ZodType<SessionEvent>` rather than as the union zod infers, so
+zod's internals stay out of the published contract: the TYPE is the SDK's
+own `SessionEventMap` (`session-event-map.ts`, where the vocabulary is
+declared), and `session-event-map.test.ts` holds this schema's output to it.
 
 ## References
+
+### AgentTranscriptRecovery
+
+Re-exports [AgentTranscriptRecovery](index.md#agenttranscriptrecovery)
+
+***
 
 ### ClientConfigResponse
 
@@ -782,3 +698,21 @@ Re-exports [ClientConfigResponse](workflow-api.md#clientconfigresponse)
 ### ClientConfigResponseSchema
 
 Re-exports [ClientConfigResponseSchema](workflow-api.md#clientconfigresponseschema)
+
+***
+
+### RestoredToolCall
+
+Re-exports [RestoredToolCall](index.md#restoredtoolcall)
+
+***
+
+### SessionErrorCode
+
+Re-exports [SessionErrorCode](index.md#sessionerrorcode)
+
+***
+
+### SessionEventMeta
+
+Re-exports [SessionEventMeta](index.md#sessioneventmeta)

@@ -598,6 +598,8 @@ The HTTP status the service answered.
 
 ### FitToolResultOptions
 
+**`Input`**
+
 What [fitToolResult](#fittoolresult) takes.
 
 #### Properties
@@ -631,6 +633,8 @@ Longest any one string may be; longer ones are clipped with `…`. Default: no c
 
 ### JsonClientContext
 
+**`Input`**
+
 The context a [JsonClient](#jsonclient) call reads: a tool's `ctx`, a route's
 `ctx`, or `{ env: … }` built from `stepEnv` in a workflow step.
 
@@ -655,6 +659,8 @@ Cancels the request: pass the tool's or route's own signal.
 ***
 
 ### JsonClientOptions
+
+**`Input`**
 
 What [jsonClient](#jsonclient-1) takes.
 
@@ -774,6 +780,8 @@ Names the service in every failure message: `"mem0"` → `"mem0 404: …"`.
 
 ### JsonRequestInit
 
+**`Input`**
+
 Per-call extras for a [JsonClient](#jsonclient) request.
 
 #### Properties
@@ -789,6 +797,8 @@ Headers for this request only, merged over the client's.
 ***
 
 ### NormalizePhoneOptions
+
+**`Input`**
 
 What [normalizePhone](#normalizephone) takes.
 
@@ -857,6 +867,8 @@ type SpokenErrorReasonOptions = {
   max?: number;
 };
 ```
+
+**`Input`**
 
 Options for [spokenErrorReason](#spokenerrorreason).
 

@@ -110,6 +110,8 @@ is `llm({ provider: "assemblyai", model: "some-model" })`, and
 
 ### LlmOptions
 
+**`Input`**
+
 Options for [llm](#llm).
 
 `P` is inferred from `provider`, which is what narrows `model` to the
@@ -200,6 +202,8 @@ type AssemblyAILlmProviderOptions = {
   region?: "us" | "eu";
 };
 ```
+
+**`Input`**
 
 `providerOptions` for `provider: "assemblyai"`.
 

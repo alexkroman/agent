@@ -10,9 +10,9 @@
  * exclusively through the injected `getSnapshot`/`updateState` deps.
  */
 
-import { type SessionEvent, SessionEventSchema, safeJsonParse } from "@alexkroman1/aai";
+import { type SessionEvent, safeJsonParse } from "@alexkroman1/aai";
 import { MAX_CLIENT_MESSAGES, toArgsRecord } from "@alexkroman1/aai/internal";
-import { lenientParse } from "@alexkroman1/aai/protocol";
+import { lenientParse, SessionEventSchema } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { SessionError } from "../types.ts";
 import type { AudioPath } from "./audio-state.ts";

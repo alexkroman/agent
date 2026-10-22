@@ -159,6 +159,15 @@ it grows. Both are held by `check:api-shape` against
 `src/contracts/api-shape-baseline.json`, as is an exported declaration without
 an explicit type (`tsc --isolatedDeclarations`).
 
+**The session event vocabulary is DECLARED, not inferred**: `SessionEventMap`
+(`sdk/session-event-map.ts`) is written out, and `SessionEventSchema` (on
+`/protocol`) is typed `z.ZodType<SessionEvent>` against it, so zod's internals
+stay off the contract; `session-event-map.test.ts` holds the schema's output to
+the map. A `"*"` handler receives the open `AnySessionEvent` envelope. Third
+party types reach a contract only where the SDK is an adapter by design
+(`procedure()` over an XState machine; `dialog()`'s machine is the SDK-owned
+structural `DialogMachine`).
+
 ## One epoch classification the tool cannot make
 
 **`aai:defaults` cannot be bumped** — its hash strips doc comments, so

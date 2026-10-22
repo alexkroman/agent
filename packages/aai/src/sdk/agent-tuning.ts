@@ -74,6 +74,7 @@ export const KNOWN_TURN_DETECTION_MODES = ["auto", "manual"] as const;
  * is inert — the same treatment a provider that cannot move its endpointing
  * window gets.
  *
+ * @input
  * @public
  */
 export interface UserTurnLimit {
@@ -97,6 +98,7 @@ export interface UserTurnLimit {
 /**
  * WHEN the caller's turn ends and the agent's begins.
  *
+ * @input
  * @public
  */
 export interface TurnTakingTuning {
@@ -172,6 +174,7 @@ export interface TurnTakingTuning {
  * The one group a dialog state and a persona ({@link SpeakerDef.interruption})
  * may override, field by field, while they are active.
  *
+ * @input
  * @public
  */
 export interface InterruptionTuning {
@@ -221,6 +224,7 @@ export interface InterruptionTuning {
  * timeout is a declaration nothing ever reads, which used to be a run-time
  * guard and is now the shape.
  *
+ * @input
  * @public
  */
 export interface SilenceNudge {
@@ -245,6 +249,7 @@ export interface SilenceNudge {
 /**
  * What the agent does about silence — its own, and the caller's.
  *
+ * @input
  * @public
  */
 export interface SilenceTuning {
@@ -281,6 +286,7 @@ export interface SilenceTuning {
  * });
  * ```
  *
+ * @input
  * @public
  */
 export interface PipelineTuning {
@@ -300,6 +306,7 @@ export interface PipelineTuning {
  * conversation back instead of going silent. Pipeline-only, like
  * {@link PipelineTuning}; extended by {@link AgentDef}.
  *
+ * @input
  * @public
  */
 export interface PipelinePhrases {

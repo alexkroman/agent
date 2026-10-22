@@ -53,9 +53,13 @@ import { TRANSCRIBE_SYNC_ENDPOINT } from "./step-transcribe-sync.ts";
  *
  * @public
  */
-export type StubTranscribeLeg = "upload" | "submit" | "poll" | "sync" | "other";
+export type StubTranscribeLeg = "upload" | "submit" | "poll" | "sync" | "other" | (string & {});
 
-/** One request {@link stubTranscribe} answered, with the leg it belonged to. */
+/**
+ * One request {@link stubTranscribe} answered, with the leg it belonged to.
+ *
+ * @sealed
+ */
 export type StubTranscribeCall = StubStepRequest & {
   /** Which of the four calls this was, or `"other"`. */
   leg: StubTranscribeLeg;
@@ -71,6 +75,7 @@ export type StubTranscribeCall = StubStepRequest & {
  * `408` counts, and everything else is terminal — see `isTransientStatus` on
  * `@alexkroman1/aai/step`.
  *
+ * @input
  * @public
  */
 export type StubTranscribeFailure = {
@@ -100,7 +105,11 @@ export type StubTranscribeFailure = {
   retryAfterSeconds?: number | undefined;
 };
 
-/** What {@link stubTranscribe} may be told. */
+/**
+ * What {@link stubTranscribe} may be told.
+ *
+ * @input
+ */
 export type StubTranscribeOptions = {
   /**
    * The words a completed job or a sync request comes back with.
@@ -167,7 +176,11 @@ export type StubTranscribeOptions = {
     | undefined;
 };
 
-/** What {@link stubTranscribe} returns. */
+/**
+ * What {@link stubTranscribe} returns.
+ *
+ * @sealed
+ */
 export type StubTranscribe = {
   /** Every request that reached the fake, in order, each tagged with its leg. */
   calls: StubTranscribeCall[];

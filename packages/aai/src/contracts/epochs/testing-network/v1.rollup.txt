@@ -1,0 +1,103 @@
+// @public
+export type FetchRouteHandler = (request: FetchRouteRequest) => StubStepAnswer | undefined | Promise<StubStepAnswer | undefined>;
+
+// @public @sealed
+export type FetchRouteHit = FetchRouteRequest & {
+    readonly outcome: "routed" | "passthrough" | "unmatched" | (string & {});
+    readonly route?: string | undefined;
+    readonly via: "fetch" | "stepFetch" | (string & {});
+    readonly status?: number | undefined;
+};
+
+// @public @sealed
+export type FetchRouteRequest = StubStepRequest & {
+    readonly host: string;
+    readonly pathname: string;
+    readonly searchParams: URLSearchParams;
+    readonly json: unknown;
+};
+
+// @public @input
+export type FetchRoutesOptions = {
+    unmatched?: "throw" | "notFound" | "passthrough" | undefined;
+    passThrough?: RegExp | undefined;
+    stepFetch?: boolean | undefined;
+    globalFetch?: boolean | undefined;
+};
+
+// @public
+export type FetchRouteTable = Readonly<Record<string, FetchRouteHandler | StubStepAnswer>>;
+
+// @public
+export function installStubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGatewayCall[];
+
+// @public
+export function installStubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
+
+// @public @sealed
+export type StubFetchRoutes = {
+    readonly hits: FetchRouteHit[];
+    to(filter: string | RegExp): FetchRouteHit[];
+    readonly fetch: typeof globalThis.fetch;
+    restore(): void;
+};
+
+// @public
+export function stubFetchRoutes(routes: FetchRouteTable | readonly FetchRouteHandler[], options?: FetchRoutesOptions): StubFetchRoutes;
+
+// @public @sealed
+export interface StubGateway {
+    calls: StubGatewayCall[];
+    fetch: (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+}
+
+// @public
+export function stubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGateway;
+
+// @public @sealed
+export interface StubGatewayCall {
+    body: Record<string, unknown>;
+    headers: Record<string, string>;
+    prompt: string;
+    system: string | undefined;
+    url: string;
+}
+
+// @public @input
+export interface StubGatewayOptions {
+    headers?: Record<string, string>;
+    status?: number;
+}
+
+// @public @sealed
+export interface StubGatewayRoute {
+    calls: StubGatewayCall[];
+    route: (request: StubStepRequest) => StubStepAnswer | undefined;
+}
+
+// @public
+export function stubGatewayRoute(replies: string | readonly string[], options?: StubGatewayOptions): StubGatewayRoute;
+
+// @public
+export type StubStepAnswer = Response | {
+    status?: number;
+    body?: unknown;
+    headers?: Record<string, string>;
+};
+
+// @public @sealed
+export type StubStepFetch = {
+    calls: StubStepRequest[];
+    restore: () => void;
+};
+
+// @public
+export function stubStepFetch(answer?: (request: StubStepRequest) => StubStepAnswer | Promise<StubStepAnswer>): StubStepFetch;
+
+// @public @sealed
+export type StubStepRequest = {
+    url: string;
+    method: string;
+    headers: Record<string, string>;
+    body: Uint8Array | string | undefined;
+};

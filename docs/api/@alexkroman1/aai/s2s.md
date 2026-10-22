@@ -93,6 +93,8 @@ Setting `s2s` replaces the whole `stt`/`llm`/`tts` pipeline.
 
 ### OpenAIS2sOptions
 
+**`Input`**
+
 Options for [openAIS2s](#openais2s).
 
 #### Extends

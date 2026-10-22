@@ -29,6 +29,7 @@ import type { WorkflowFailureHook } from "./workflow-failure.ts";
  * Options for {@link sayFailureOnClient}.
  *
  * @typeParam I - The workflow's parsed input.
+ * @input
  * @public
  */
 export type SayFailureOnClientOptions<I> = Pick<

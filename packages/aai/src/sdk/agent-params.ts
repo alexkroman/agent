@@ -81,6 +81,7 @@ export type PipelineOnlyField =
  * re-added by the two members whose runtime assembles the model request; S2S
  * runs the model inside the provider's service, so it never has them.
  *
+ * @input
  * @public
  */
 export type SharedAgentParams = Omit<
@@ -104,6 +105,7 @@ export type SharedAgentParams = Omit<
  * default all-AssemblyAI pipeline. The only member with the
  * {@link PipelineTuning} groups, the phrases and the guardrails.
  *
+ * @input
  * @public
  */
 export type PipelineAgentParams = SharedAgentParams &
@@ -148,6 +150,7 @@ export type PipelineAgentParams = SharedAgentParams &
  * pipeline-shaped: the service runs STT, the model loop and TTS, so the
  * pipeline stages, their tuning and the model-request knobs are all absent.
  *
+ * @input
  * @public
  */
 export type S2sAgentParams = SharedAgentParams & {
@@ -161,6 +164,7 @@ export type S2sAgentParams = SharedAgentParams & {
  * The TEXT member — `mode: "text"`, optionally an `llm`, and nothing from the
  * audio half of the agent shape.
  *
+ * @input
  * @public
  */
 // The fields a text agent drops beyond the pipeline-only ones: `sttPrompt`
@@ -214,6 +218,7 @@ export type WorkflowAppOnlyField =
  * `workflows` is REQUIRED here, unlike on {@link AgentDeclaration}: a workflow
  * app that declares none serves a form whose every submit is a 400.
  *
+ * @input
  * @public
  */
 // The text member's two drops (`sttPrompt`, `telephony`) are spelled as it
@@ -234,6 +239,7 @@ export type WorkflowAppAgentParams = Omit<
  * type, with `mode` known. Each overload returns its own, so a reader of the
  * result can narrow on the mode it declared without re-deriving it.
  *
+ * @sealed
  * @public
  */
 export type ModeAgentDef<M extends AgentMode> = AgentDef & { readonly mode: M };

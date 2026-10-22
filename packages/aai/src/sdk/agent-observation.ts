@@ -32,6 +32,7 @@ export type SyncStateDeclaration = StateProjection | readonly StateProjection[];
 /**
  * The observe-only half of an agent declaration — see this module's header.
  *
+ * @input
  * @public
  */
 export interface AgentObservation {

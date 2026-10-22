@@ -4,7 +4,7 @@
 
 ```ts
 
-// @public
+// @public @sealed
 export type FeedItem = {
     id: string | undefined;
     title: string | undefined;
@@ -20,7 +20,7 @@ export function htmlToText(html: string, options?: {
     maxChars?: number;
 }): string;
 
-// @public
+// @public @sealed
 export type PageMetadata = {
     title: string | undefined;
     description: string | undefined;
@@ -30,7 +30,7 @@ export type PageMetadata = {
 // @public
 export function pageMetadata(html: string): PageMetadata;
 
-// @public
+// @public @sealed
 export type ParsedFeed = {
     title: string | undefined;
     items: FeedItem[];

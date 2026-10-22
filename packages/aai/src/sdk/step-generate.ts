@@ -48,7 +48,11 @@ import { errorMessage } from "./utils.ts";
 /** A model call's deadline. `fetch` has none, and a hung step never ends. */
 const DEFAULT_TIMEOUT_MS = 60_000;
 
-/** Options for {@link stepGenerate}. */
+/**
+ * Options for {@link stepGenerate}.
+ *
+ * @input
+ */
 export type StepGenerateOptions = {
   /**
    * The system instruction. Omitted entirely when unset, rather than sent

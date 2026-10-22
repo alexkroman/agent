@@ -38,7 +38,11 @@
 
 import { type AnyStateMachine, createActor, type InputFrom, type OutputFrom } from "xstate";
 
-/** Options for one {@link Procedure.run}. */
+/**
+ * Options for one {@link Procedure.run}.
+ *
+ * @input
+ */
 export interface ProcedureRunOptions {
   /**
    * Abort the run — pass `ctx.signal` and a barge-in stops the procedure.

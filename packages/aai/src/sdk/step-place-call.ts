@@ -103,6 +103,7 @@ export const DEFAULT_CALL_RING_TIMEOUT_S: number = 30;
  * they are read from the step env as {@link TWILIO_ACCOUNT_SID_ENV} and
  * {@link TWILIO_AUTH_TOKEN_ENV}. Never put them in a run's INPUT, which is
  * journaled: read them inside the step.
+ * @input
  */
 export type PlaceCallCredentials = {
   /** The account SID, `AC…`. */
@@ -142,19 +143,27 @@ export type PlaceCallOptions = {
    * in `sessionContext`.
    */
   parameters?: Readonly<Record<string, string>>;
-  /** Hard cap on the connected call, in seconds. Default {@link DEFAULT_CALL_TIME_LIMIT_S}. */
+  /** Hard cap on the connected call, in seconds. Default `DEFAULT_CALL_TIME_LIMIT_S`. */
   timeLimitS?: number;
-  /** How long it rings before `no-answer`, in seconds. Default {@link DEFAULT_CALL_RING_TIMEOUT_S}. */
+  /** How long it rings before `no-answer`, in seconds. Default `DEFAULT_CALL_RING_TIMEOUT_S`. */
   ringTimeoutS?: number;
   /** Explicit credentials; the step env otherwise. */
   credentials?: PlaceCallCredentials;
   signal?: AbortSignal;
 };
 
-/** What {@link stepPlaceCall} resolves: the carrier's id for the call (Twilio's `CA…` SID). */
+/**
+ * What {@link stepPlaceCall} resolves: the carrier's id for the call (Twilio's `CA…` SID).
+ *
+ * @sealed
+ */
 export type PlacedCall = { callId: string };
 
-/** What {@link stepCallStatus} takes. */
+/**
+ * What {@link stepCallStatus} takes.
+ *
+ * @input
+ */
 export type CallStatusOptions = {
   /** The carrier the call was placed through. */
   carrier: "twilio";
@@ -179,7 +188,8 @@ export type PlacedCallStatus =
   | "busy"
   | "no-answer"
   | "failed"
-  | "canceled";
+  | "canceled"
+  | (string & {});
 
 /**
  * The {@link PlacedCallStatus} values nothing moves off — `completed`, `busy`,

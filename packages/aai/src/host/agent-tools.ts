@@ -98,6 +98,7 @@ type BuiltinArgs = Record<string, unknown>;
  */
 export type UntypedJsonBody = Record<string, DefaultToolResult>;
 
+/** @input */
 export type CallOptions = {
   /**
    * For TESTS, and callers must leave it unset — same rule as `safeFetch`'s.
@@ -189,6 +190,7 @@ async function callBuiltin(
 /**
  * What {@link fetchJson} takes beside the URL.
  *
+ * @input
  * @public
  */
 export type FetchJsonOptions = {

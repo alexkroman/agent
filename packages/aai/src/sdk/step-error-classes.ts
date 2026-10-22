@@ -102,7 +102,11 @@ export class FatalError extends Error {
   }
 }
 
-/** What {@link RetryableError} accepts for its delay. */
+/**
+ * What {@link RetryableError} accepts for its delay.
+ *
+ * @input
+ */
 export type RetryableErrorOptions = {
   /**
    * When the next attempt may run: a delay in MILLISECONDS, or the absolute

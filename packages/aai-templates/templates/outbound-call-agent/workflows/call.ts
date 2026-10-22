@@ -142,10 +142,14 @@ function connected(status: PlacedCallStatus): boolean {
 /** The carrier's word for a call that never reached a session. */
 function unansweredOutcome(status: PlacedCallStatus): CallOutcome {
   switch (status) {
+    // Spelled per case: `PlacedCallStatus` is OPEN (a carrier may report a status
+    // this SDK has not named yet), so a matched case does not narrow `status`.
     case "busy":
+      return "busy";
     case "failed":
+      return "failed";
     case "canceled":
-      return status;
+      return "canceled";
     default:
       // Still `queued`/`ringing` after every poll reads as nobody picking up.
       return "no-answer";

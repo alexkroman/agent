@@ -62,7 +62,11 @@ export type OpenAIS2sVoice =
   | "verse"
   | (string & {});
 
-/** Options for {@link openAIS2s}. */
+/**
+ * Options for {@link openAIS2s}.
+ *
+ * @input
+ */
 export interface OpenAIS2sOptions extends ProviderCredentialOptions {
   /**
    * Realtime model identifier. Default applied by the host (currently

@@ -1052,7 +1052,9 @@ export default agent({
                                              // name: { cart: cartSlot.projected } (read it
                                              // with useAgentState; see UI.md)
   events?: SessionEventHandlers;             // observe the session; "metrics.collected" is each
-                                             // reply's latency/tokens: createMetricsCollector()
+                                             // reply's latency/tokens: createMetricsCollector();
+                                             // "error.reported" carries a SessionErrorCode (open:
+                                             // switch with a default); "*" gets AnySessionEvent
   sessionContext?: (args) => SessionContext; // fetched once per connect, before the first model
                                              // call: extra instructions, history cut-off, refusal
   onSessionEnd?: (ctx) => unknown;           // after every hang-up / disconnect / idle close
@@ -1122,8 +1124,9 @@ export default agent({
 `sessionContext` is bounded (1.5 s) and a throw, a timeout or `undefined` starts
 the session without it; `onSessionEnd` is fire-and-forget and at-least-once, so
 key any run it starts. A `routes` handler's return value is the JSON body;
-`routeResponse(status, body)` picks another status and a thrown
-`routeError(status, message)` answers `{ error: message }`.
+`routeResponse(status, body, { headers })` picks another status (and any headers
+— a `Location`, a `Retry-After`) and a thrown `routeError(status, message)`
+answers `{ error: message }`.
 
 ## Composing a system prompt
 

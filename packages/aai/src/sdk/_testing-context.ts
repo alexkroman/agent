@@ -21,7 +21,7 @@ import { createSeededRandom } from "./random.ts";
 import type { SessionCall } from "./session-call.ts";
 import { claimDtmfSender } from "./session-dtmf.ts";
 import { claimSessionEnder } from "./session-end.ts";
-import { createDetachedSlotStore } from "./session-state.ts";
+import { createDetachedSlotStore, type SlotStore } from "./session-state.ts";
 import { type StubDelegate, type StubDelegateScript, stubDelegate } from "./testing-delegate.ts";
 import { type StubGenerate, type StubGenerateScript, stubGenerate } from "./testing-generate.ts";
 import type { ToolContext } from "./types.ts";
@@ -30,6 +30,7 @@ import { rejectingWorkflows } from "./workflow-unavailable.ts";
 /**
  * One `ctx.send(event, data)` call that would REACH the client, as recorded by
  * {@link createToolContext} — see the `send` default for what is left out.
+ * @sealed
  */
 export interface SentEvent {
   event: string;
@@ -152,6 +153,29 @@ export function sentDtmfCalls(ctx: Pick<ToolContext, "sessionId">): readonly str
 }
 
 /**
+ * A fresh, empty, REAL slot store — one session's, with no backend: a durable
+ * write is checked and frozen exactly as a deployed session's is.
+ *
+ * What `createToolContext()` puts on `ctx.slots` by default; named so a spec
+ * can hand ONE store to two contexts (a tool and an event handler sharing a
+ * session), or build a `SlotHolder` without a whole context.
+ *
+ * @example
+ * ```ts
+ * import { createSlotStore, createToolContext } from "@alexkroman1/aai/testing";
+ *
+ * const slots = createSlotStore();
+ * const first = createToolContext({ slots });
+ * const second = createToolContext({ slots, sessionId: first.sessionId });
+ * ```
+ *
+ * @public
+ */
+export function createSlotStore(): SlotStore {
+  return createDetachedSlotStore();
+}
+
+/**
  * What {@link createToolContext} accepts: a field per {@link ToolContext} field,
  * each also taking `undefined` for one the caller does not have.
  *
@@ -183,6 +207,7 @@ export function sentDtmfCalls(ctx: Pick<ToolContext, "sessionId">): readonly str
  * The two MODEL seams also accept the SCRIPT their fake is built from — see
  * their own docs below.
  *
+ * @input
  * @public
  */
 export type ToolContextOverrides = {

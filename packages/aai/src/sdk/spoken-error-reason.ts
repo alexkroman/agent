@@ -46,6 +46,7 @@ const URL_RE = /\b(?:https?|wss?):\/\/[^\s<>"')\]]+/gi;
 /**
  * Options for {@link spokenErrorReason}.
  *
+ * @input
  * @public
  */
 export type SpokenErrorReasonOptions = {

@@ -1,0 +1,28 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "inbox",
+  "epoch": 2,
+  "rule": 3,
+  "sha256": "fe64583967ca122807487d6c10f08079b5fe779412331042c33e9baf96f90081",
+  "exports": [
+    "ClientNotice",
+    "ClientTranscript",
+    "ClientTranscriptMessage",
+    "ClientTranscriptSession",
+    "ClientTranscriptTool",
+    "ClientUnreachableError",
+    "ClientUnreachableReason",
+    "DEFAULT_CLIENT_DELIVERY_ATTEMPTS",
+    "SayFailureOnClientOptions",
+    "StepClientTranscriptOptions",
+    "StepNotifyClientOptions",
+    "StepSayOnClientOptions",
+    "requireSessionClient",
+    "sayFailureOnClient",
+    "sessionClientId",
+    "stepClientTranscript",
+    "stepNotifyClient",
+    "stepSayOnClient"
+  ],
+  "rollup": "52261a7a90f8eff68228819eaef1742415cce4204eff306de7a345a9301d4c25"
+}

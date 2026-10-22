@@ -24,6 +24,7 @@ import type { UploadBody, UploadOptions, UploadRef } from "./workflow-upload-cli
  * What a client needs to know: which agent, on whose authority, and for how
  * long.
  *
+ * @input
  * @public
  */
 export type WorkflowApiClientOptions = {
@@ -72,6 +73,7 @@ export type WorkflowApiClientOptions = {
 /**
  * What every {@link WorkflowApi} call takes: an abort signal, and nothing else.
  *
+ * @input
  * @public
  */
 export type WorkflowApiCallOptions = { signal?: AbortSignal };
@@ -85,6 +87,7 @@ export type WorkflowApiCallOptions = { signal?: AbortSignal };
  * one carries `signal` where that one carries `notify`; the two share only
  * `key`, and its meaning.
  *
+ * @input
  * @public
  */
 export type WorkflowStartOptions = { key?: string; signal?: AbortSignal };
@@ -93,6 +96,7 @@ export type WorkflowStartOptions = { key?: string; signal?: AbortSignal };
  * {@link WorkflowApi.startAndWait}'s options: {@link WorkflowStartOptions} plus
  * the `wait` budget, clamped to `MAX_WORKFLOW_WAIT_MS` at both ends.
  *
+ * @input
  * @public
  */
 export type WorkflowStartAndWaitOptions = { key?: string; wait?: number; signal?: AbortSignal };
@@ -100,6 +104,7 @@ export type WorkflowStartAndWaitOptions = { key?: string; wait?: number; signal?
 /**
  * {@link WorkflowApi.get}'s options: an optional `wait` for the run to settle.
  *
+ * @input
  * @public
  */
 export type WorkflowGetOptions = { wait?: number; signal?: AbortSignal };
@@ -108,6 +113,7 @@ export type WorkflowGetOptions = { wait?: number; signal?: AbortSignal };
  * {@link WorkflowApi.find} and {@link WorkflowApi.recent}'s options: how many
  * runs to answer.
  *
+ * @input
  * @public
  */
 export type WorkflowRunListOptions = { limit?: number; signal?: AbortSignal };
@@ -115,6 +121,7 @@ export type WorkflowRunListOptions = { limit?: number; signal?: AbortSignal };
 /**
  * {@link WorkflowApi.streamOutput}'s options: which channel, from which chunk.
  *
+ * @input
  * @public
  */
 export type WorkflowStreamOutputOptions = {
@@ -126,6 +133,7 @@ export type WorkflowStreamOutputOptions = {
 /**
  * {@link WorkflowApi.followOutput}'s options: which channel, from which chunk.
  *
+ * @input
  * @public
  */
 export type WorkflowFollowOutputOptions = {

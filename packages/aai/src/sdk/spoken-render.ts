@@ -190,7 +190,11 @@ export function spokenTime(hhmm: string): string {
   return m === 0 ? `${hour} ${suffix}` : `${hour}:${match[2]} ${suffix}`;
 }
 
-/** Options for {@link mintCode}. */
+/**
+ * Options for {@link mintCode}.
+ *
+ * @input
+ */
 export interface MintCodeOptions {
   /**
    * Codes already issued. A generated code that collides is discarded and

@@ -316,7 +316,7 @@ my connection and cannot hear you. Please hang up and call back.`;
 export const DEFAULT_ERROR_PHRASE = "Sorry, I had a problem just then. Could you say that again?";
 
 /** @internal */
-export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
+export const MAX_WS_PAYLOAD_BYTES: number = 1 * 1024 * 1024;
 /** @internal */
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
 
@@ -421,7 +421,7 @@ export const MAX_AUDIO_SAMPLE_RATE = 192_000;
  *
  * @internal
  */
-export const MAX_CLIENT_WS_BUFFERED_BYTES = 4 * 1024 * 1024;
+export const MAX_CLIENT_WS_BUFFERED_BYTES: number = 4 * 1024 * 1024;
 
 /**
  * Cap on unsent bytes buffered in a provider-facing WebSocket (S2S, OpenAI
@@ -437,7 +437,7 @@ export const MAX_CLIENT_WS_BUFFERED_BYTES = 4 * 1024 * 1024;
  *
  * @internal
  */
-export const MAX_PROVIDER_WS_BUFFERED_BYTES = 1024 * 1024;
+export const MAX_PROVIDER_WS_BUFFERED_BYTES: number = 1024 * 1024;
 
 /**
  * Default streaming STT `prompt` — deliberately empty: transcription is

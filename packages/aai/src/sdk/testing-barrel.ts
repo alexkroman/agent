@@ -24,6 +24,7 @@
 export {
   createRecordingWorkflows,
   createRunSnapshot,
+  createSlotStore,
   createStubWorkflows,
   createToolContext,
   createWorkflowContext,

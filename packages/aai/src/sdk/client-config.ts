@@ -24,7 +24,7 @@ export { CLIENT_CONFIG_METHODS, CLIENT_CONFIG_PATH } from "./client-config-path.
  * Body of `GET /client-config`. Unknown fields are stripped, so a response
  * from an older server still parses.
  */
-export const ClientConfigResponseSchema = z.object({
+export const ClientConfigResponseSchema: z.ZodType<ClientConfigResponse> = z.object({
   /** Agent display name, for the default client's header/start screen. */
   name: z.string().optional(),
   /** The agent's greeting, shown by the default shell's start screen. */
@@ -69,8 +69,25 @@ export const ClientConfigResponseSchema = z.object({
   sessionToken: z.string().optional(),
 });
 
-/** Parsed body of `GET /client-config`. */
-export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
+/**
+ * Parsed body of `GET /client-config` — the fields documented on
+ * {@link ClientConfigResponseSchema}. Declared rather than inferred from the
+ * schema, so zod's types stay off the contract; the schema is typed against it.
+ *
+ * @sealed
+ */
+export interface ClientConfigResponse {
+  /** Agent display name. */
+  name?: string | undefined;
+  /** The agent's greeting. */
+  greeting?: string | undefined;
+  /** Absolute WebSocket URL of the live session endpoint, when the server brokers one. */
+  sessionUrl?: string | undefined;
+  /** The front door: a voice page, or a static workflow-app page with no socket. */
+  page: "voice" | "static";
+  /** A ticket the session socket presents, when the server mints one. */
+  sessionToken?: string | undefined;
+}
 
 /**
  * Build the `GET /client-config` response body from an agent-shaped config.

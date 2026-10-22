@@ -31,7 +31,11 @@
 import { recordingSlot } from "./_testing-slot.ts";
 import { keylessSynthesizer, publishSpeechSynthesizer } from "./step-speak.ts";
 
-/** One `stepSpeak` call, as {@link stubSpeech} records it. */
+/**
+ * One `stepSpeak` call, as {@link stubSpeech} records it.
+ *
+ * @sealed
+ */
 export type StubSpeechCall = {
   /** The text handed to the synthesizer, trimmed the way `stepSpeak` trims it. */
   text: string;
@@ -49,7 +53,11 @@ export type StubSpeechCall = {
   sampleRate: number;
 };
 
-/** What {@link stubSpeech} may be told. */
+/**
+ * What {@link stubSpeech} may be told.
+ *
+ * @input
+ */
 export type StubSpeechOptions = {
   /**
    * Bytes of PCM to answer with, per call.
@@ -80,9 +88,13 @@ export type StubSpeechOptions = {
 };
 
 /** PCM bytes {@link stubSpeech} answers with when no size is named — ~0.25s at 24 kHz. */
-export const STUB_SPEECH_PCM_BYTES = 12_000;
+export const STUB_SPEECH_PCM_BYTES: number = 12_000;
 
-/** What {@link stubSpeech} returns: the call log, and how to put the slot back. */
+/**
+ * What {@link stubSpeech} returns: the call log, and how to put the slot back.
+ *
+ * @sealed
+ */
 export type StubSpeech = {
   /** Every call, in order. */
   calls: StubSpeechCall[];

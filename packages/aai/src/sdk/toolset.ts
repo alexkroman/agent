@@ -31,6 +31,7 @@
 import { clientToolBrand } from "./client-tool.ts";
 import type { ToolContext } from "./tool-context.ts";
 import type { ToolDef, ToolMap } from "./tool-def.ts";
+import type { AgentDef } from "./types.ts";
 import type { ToolRefusal } from "./utils.ts";
 
 /**
@@ -179,6 +180,17 @@ export function composeToolsets(
 }
 
 /** What {@link agentToolsets} reads off a definition. @public */
+/**
+ * An {@link AgentDef} as the RUNTIME holds it: plus every toolset beyond the
+ * `tools/` files — RESOLVED, never authored. `agent()` attaches the roster's
+ * and `withMcpTools` an MCP server's; read the whole table through
+ * {@link agentToolsets}. Not on the authoring surface: an author never names a
+ * toolset, so the public `AgentDef` does not carry the field's type.
+ *
+ * @public
+ */
+export type ResolvedAgentDef = AgentDef & { readonly toolsets?: readonly Toolset[] | undefined };
+
 export interface ToolBearingDef {
   readonly tools: ToolMap;
   readonly toolsets?: readonly Toolset[] | undefined;

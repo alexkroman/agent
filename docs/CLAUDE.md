@@ -229,7 +229,10 @@ probes it, and fails only when the probe cannot prove it compatible — see the
   three epochs per SDK removal). The check holds it pure (declares nothing,
   every name from the upstream package), a subset of the upstream capability's
   names today, and refuses dropping a name upstream still exports
-  (`scripts/_api-contracts-mirror.mjs`). `--bump`/`--retire` refuse a mirror.
+  (`scripts/_api-contracts-mirror.mjs`). `--bump`/`--retire` refuse a mirror. A
+  mirror target is a FAMILY: the capability plus every `<capability>-*` of its
+  package, so splitting an upstream for size (`aai:testing` → `testing-steps`,
+  …) needs no edit in the package that mirrors it.
 - **Capabilities are QUALIFIED by package** — `aai`, `aai-ui` and `aai-runtime`
   carry contracts, and `workflow` exists in more than one. Anything a human
   types is `aai-ui:workflow`; a bare name works only when unambiguous, and

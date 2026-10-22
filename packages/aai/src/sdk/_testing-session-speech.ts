@@ -13,6 +13,7 @@ import type { SayOptions, SessionSpeech, SpeechHandle } from "./session-speech.t
 /**
  * One `ctx.speech.say` a {@link createToolContext} context recorded.
  *
+ * @sealed
  * @public
  */
 export interface SaidLine {

@@ -41,6 +41,7 @@ import type { ToolContext } from "./tool-context.ts";
 /**
  * A phone session's call identity, as the carrier's `start` frame reported it.
  *
+ * @sealed
  * @public
  */
 export type SessionCall = {

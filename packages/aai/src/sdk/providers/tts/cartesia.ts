@@ -34,7 +34,11 @@ export const CARTESIA_API_KEY_ENV: string = CARTESIA_PROVIDER.envVar;
  */
 export const CARTESIA_DEFAULT_VOICE: string = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
 
-/** Options for {@link cartesiaTts}. */
+/**
+ * Options for {@link cartesiaTts}.
+ *
+ * @input
+ */
 export interface CartesiaTtsOptions extends ProviderCredentialOptions {
   /** Cartesia voice ID. Defaults to {@link CARTESIA_DEFAULT_VOICE}. */
   voice?: string;

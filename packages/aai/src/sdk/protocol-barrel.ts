@@ -42,6 +42,10 @@ export {
   type SessionEventMeta,
   SessionEventMetaSchema,
 } from "./protocol.ts";
+// The event schema itself: typed as `z.ZodType<SessionEvent>`, the vocabulary
+// declared on the root. Here because it is a VALIDATOR a client parsing frames
+// calls — the root keeps the types an `agent.ts` names, zod-free.
+export { type AgentTranscriptRecovery, SessionEventSchema } from "./protocol-events.ts";
 // The `WS /inbox` frames — the other socket on the same server. From their own
 // module, since `protocol.ts` is at the file-length cap.
 export {

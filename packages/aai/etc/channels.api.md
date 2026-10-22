@@ -13,9 +13,6 @@ export type Channel = ChannelDescriptor<string, Record<string, unknown>> & {
 };
 
 // @public
-export const CHANNEL_POST_TIMEOUT_MS: number;
-
-// @public
 export class ChannelDeliveryError extends Error {
     constructor(message: string, init: {
         readonly channelKind: string;
@@ -40,14 +37,14 @@ export interface ChannelDescriptor<Kind extends string, Options> {
     readonly options: Options;
 }
 
-// @public
+// @public @input
 export interface ChannelHandler<O = Record<string, unknown>> {
     readonly advice: (options: O, detail: string) => string;
     readonly kind: string;
     readonly render: (message: ChannelMessage, options: O) => ChannelPayload;
 }
 
-// @public
+// @public @input
 export interface ChannelMessage {
     readonly heading?: string;
     readonly sections?: readonly ChannelSection[];
@@ -55,20 +52,20 @@ export interface ChannelMessage {
     readonly text: string;
 }
 
-// @public
+// @public @input
 export interface ChannelPayload {
     readonly body: Record<string, unknown>;
     readonly headers?: Readonly<Record<string, string>>;
     readonly url: string;
 }
 
-// @public
+// @public @input
 export interface ChannelRegistration {
     readonly credentialFields?: readonly string[];
     readonly refusal?: (body: string) => string | undefined;
 }
 
-// @public
+// @public @input
 export interface ChannelSection {
     readonly body?: string;
     readonly bullets?: readonly string[];
@@ -125,7 +122,7 @@ export const SLACK_CHANNEL_HANDLER: ChannelHandler;
 // @public
 export const SLACK_CHANNEL_KIND = "slack";
 
-// @public
+// @public @sealed
 export type SlackChannel = Channel & {
     readonly kind: typeof SLACK_CHANNEL_KIND;
     readonly options: SlackChannelOptions & Record<string, unknown>;
@@ -134,13 +131,13 @@ export type SlackChannel = Channel & {
 // @public
 export function slackChannel(options: SlackChannelOptions): SlackChannel;
 
-// @public
+// @public @input
 export interface SlackChannelOptions {
     readonly textParam?: string;
     readonly webhookUrl: string;
 }
 
-// @public
+// @public @input
 export interface SmsRecipientEnv {
     readonly SMS_ALLOWED_PHONES?: string | undefined;
     readonly SMS_TO_PHONE?: string | undefined;
@@ -153,9 +150,9 @@ export const TEXTBELT_CHANNEL_HANDLER: ChannelHandler<TextbeltChannelOptions>;
 export const TEXTBELT_CHANNEL_KIND = "textbelt";
 
 // @public
-export const TEXTBELT_MAX_MESSAGE_CHARS = 1000;
+export const TEXTBELT_MAX_MESSAGE_CHARS: number;
 
-// @public
+// @public @sealed
 export type TextbeltChannel = Channel & {
     readonly kind: typeof TEXTBELT_CHANNEL_KIND;
     readonly options: TextbeltChannelOptions & Record<string, unknown>;
@@ -164,7 +161,7 @@ export type TextbeltChannel = Channel & {
 // @public
 export function textbeltChannel(options: TextbeltChannelOptions): TextbeltChannel;
 
-// @public
+// @public @input
 export interface TextbeltChannelOptions {
     readonly key: string;
     readonly links?: "keep" | "strip";

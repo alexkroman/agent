@@ -1,5 +1,22 @@
 {
   "agent": {
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Split for the 40-name budget: routes, MCP and session shapes moved to aai:agent-routes, aai:agent-mcp and aai:agent-session; MCP_TOOL_NAME_MAX moved to /internal. No users yet."
+    }
+  },
+  "agent-mcp": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "agent-routes": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "agent-session": {
     "current": 1,
     "supported": [1],
     "dropped": {}
@@ -15,14 +32,18 @@
     "dropped": {}
   },
   "channels": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "CHANNEL_POST_TIMEOUT_MS moved to /internal (an implementation budget); TEXTBELT_MAX_MESSAGE_CHARS typed number. No users yet."
+    }
   },
   "coding": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "The coding-tool budgets and default descriptions moved to /host-internal; an author overrides via descriptions. No users yet."
+    }
   },
   "defaults": {
     "current": 1,
@@ -30,19 +51,25 @@
     "dropped": {}
   },
   "dialog": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "XState types left the contract: Dialog is generic over its events only, machine is unknown, and the machine overload takes the SDK-owned DialogMachine. No users yet."
+    }
   },
   "events": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "SessionEventMap is declared rather than zod-inferred, with open error codes/stages/reasons; '*' receives AnySessionEvent; SessionEventSchema moved to /protocol; the sourced-event list to /internal; EventMapOf and SessionEventTypeList removed. No users yet."
+    }
   },
   "ffmpeg": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "FfmpegFailureKind is open (| string & {}): a reader's exhaustive switch over it no longer compiles. No users yet."
+    }
   },
   "generate": {
     "current": 1,
@@ -55,9 +82,11 @@
     "dropped": {}
   },
   "inbox": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Client delivery budgets moved to /internal; ClientUnreachableReason and ClientTranscriptMessage.role are open. No users yet."
+    }
   },
   "llm": {
     "current": 1,
@@ -80,9 +109,11 @@
     "dropped": {}
   },
   "protocol": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "SessionErrorCode is open; SessionEventMeta, RestoredToolCall and AgentTranscriptRecovery are declared types and their schemas are typed z.ZodType<T>; SessionEventSchema joins. No users yet."
+    }
   },
   "random": {
     "current": 1,
@@ -105,15 +136,18 @@
     "dropped": {}
   },
   "state": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
-  },
-  "step": {
     "current": 2,
     "supported": [2],
     "dropped": {
-      "1": "PlaceCallOptions.agentUrl is optional (defaults to the agent's own public URL), so code reading it as a string no longer typechecks"
+      "1": "SlotStore.write takes { durable } options (default durable) instead of a positional boolean; SlotStore is sealed. No users yet."
+    }
+  },
+  "step": {
+    "current": 3,
+    "supported": [3],
+    "dropped": {
+      "1": "PlaceCallOptions.agentUrl is optional (defaults to the agent's own public URL), so code reading it as a string no longer typechecks",
+      "2": "Implementation budgets (STEP_SPEAK_TIMEOUT_MS, DEFAULT_CALL_*) moved to /internal; PlacedCallStatus is open; WAV_HEADER_BYTES typed number. No users yet."
     }
   },
   "step-errors": {
@@ -127,9 +161,11 @@
     "dropped": {}
   },
   "stt": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "DEEPGRAM_DEFAULT_ENDPOINTING_MS moved to /internal (the host applies it); AssemblyAISttOptions.languages is readonly. No users yet."
+    }
   },
   "subagent": {
     "current": 1,
@@ -137,28 +173,59 @@
     "dropped": {}
   },
   "testing": {
-    "current": 3,
-    "supported": [3],
+    "current": 4,
+    "supported": [4],
     "dropped": {
       "1": "routeStepFetch/StepRoute/StepUnmatched folded into stubFetchRoutes (a list of handlers composes step legs; globalFetch: false keeps it step-only); installFetchRoutes removed for stubFetchRoutes + onTestFinished; createProgressStream removed for ReadableStream.from; commandedBuiltins no longer exported (expectPromptBuiltinsDeclared returns the same list). A spec importing any of these no longer compiles.",
-      "2": "StubPlacedCall.streamUrl is renamed webhookUrl: stepPlaceCall dials a webhook, not an inline stream"
+      "2": "StubPlacedCall.streamUrl is renamed webhookUrl: stepPlaceCall dials a webhook, not an inline stream",
+      "3": "Split for the 40-name budget into the testing family (testing-steps, -network, -workflow, -client, -deploy); createSlotStore added. Runtime doors mirror the whole family. No users yet."
     }
   },
+  "testing-client": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "testing-deploy": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "testing-network": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "testing-steps": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "testing-workflow": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
   "tool": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
-  },
-  "transcribe": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
-  },
-  "tts": {
     "current": 2,
     "supported": [2],
     "dropped": {
-      "1": "Streaming TTS moved to the documented API: voices are voice_id slugs (aai-jane), not bare names, and every library voice speaks every language, so the per-voice language/accent map (ASSEMBLYAI_TTS_VOICES as a record, AssemblyAITtsVoiceInfo, ttsVoiceInfo, ttsVoiceIds(language)) is gone; ASSEMBLYAI_TTS_VOICES is now a tuple of slugs."
+      "1": "Toolset/ToolsetEntry/ToolExecutor/ToolSource are plumbing, moved to /manifest and off AgentDef; ToolRefusalReason and Message.role are open. No users yet."
+    }
+  },
+  "transcribe": {
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Transcription budgets and the sync endpoint moved to /internal; TRANSCRIBE_MODELS is readonly string[]. No users yet."
+    }
+  },
+  "tts": {
+    "current": 3,
+    "supported": [3],
+    "dropped": {
+      "1": "Streaming TTS moved to the documented API: voices are voice_id slugs (aai-jane), not bare names, and every library voice speaks every language, so the per-voice language/accent map (ASSEMBLYAI_TTS_VOICES as a record, AssemblyAITtsVoiceInfo, ttsVoiceInfo, ttsVoiceIds(language)) is gone; ASSEMBLYAI_TTS_VOICES is now a tuple of slugs.",
+      "2": "ASSEMBLYAI_TTS_VOICES is readonly AssemblyAITtsVoice[], not a literal tuple. No users yet."
     }
   },
   "turn-taking": {
@@ -182,8 +249,10 @@
     "dropped": {}
   },
   "workflow-api": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "ClientConfigResponse is declared; its schema is typed z.ZodType<ClientConfigResponse>, so zod's object members left the contract. No users yet."
+    }
   }
 }

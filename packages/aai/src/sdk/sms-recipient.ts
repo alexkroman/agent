@@ -18,6 +18,7 @@ const SMS_ALLOW_ANY = "*";
  * The env this rule reads. Both optional so a `ctx.env` or a `stepEnv()` record
  * can be passed as is.
  *
+ * @input
  * @public
  */
 export interface SmsRecipientEnv {

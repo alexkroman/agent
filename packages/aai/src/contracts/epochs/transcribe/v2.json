@@ -1,0 +1,23 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "transcribe",
+  "epoch": 2,
+  "rule": 3,
+  "sha256": "1c47f922251b116e781b492a10299a285e8bdc10c8a77eb64f7ef09b444d02c6",
+  "exports": [
+    "TRANSCRIBE_API",
+    "TRANSCRIBE_MODELS",
+    "TRANSCRIBE_SYNC_MODEL",
+    "TranscribeError",
+    "TranscribeProgress",
+    "TranscribeRequestOptions",
+    "TranscribeSubmitOptions",
+    "TranscribeSyncOptions",
+    "Transcript",
+    "stepTranscribePoll",
+    "stepTranscribeSubmit",
+    "stepTranscribeSync",
+    "stepTranscribeUpload"
+  ],
+  "rollup": "610ba3030f2104a005af4cbd05eb758d48f367f6951c2801ca5fcabfc392e928"
+}

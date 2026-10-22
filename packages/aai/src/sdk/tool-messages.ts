@@ -99,6 +99,7 @@ const TOOL_CONDITION_OPERATORS = [
  * asks to order a string against a number does not match rather than throwing —
  * the model chooses these values, so a comparison it makes nonsense of must not
  * be able to fail a call).
+ * @input
  */
 export type ToolMessageCondition = {
   /** The argument's key, as the model sends it. */
@@ -132,6 +133,7 @@ export type ToolMessageBase = {
  * Several entries are VARIANTS: one is drawn at random per invocation. Never
  * fires for a call the model made and then abandoned, and never while the
  * caller is talking — see the runner.
+ * @input
  */
 export type ToolStartMessage = {
   /** What is spoken. */
@@ -159,6 +161,7 @@ export type ToolStartMessage = {
  * entry at 3000 and another at 8000 are a ladder — "still checking", then
  * "almost there". That is Vapi's rule verbatim, and it is the whole reason the
  * timing is on the message rather than on the list.
+ * @input
  */
 export type ToolDelayedMessage = {
   /** What is spoken. */
@@ -186,6 +189,7 @@ export type ToolDelayedMessage = {
  *
  * Defaults to `"assistant"`, because a message worth writing out in full is
  * usually one worth saying.
+ * @input
  */
 export type ToolCompletionMessage = {
   /** Spoken verbatim under `role: "assistant"`; told to the model under `"system"`. */
@@ -200,6 +204,7 @@ export type ToolCompletionMessage = {
  * A tool's messages in NORMALIZED form — what a `ToolSchema` carries and
  * what the runtime reads. Authors write {@link ToolMessagesInput}, which
  * `agentToolsToSchemas` normalizes into this.
+ * @sealed
  */
 export type ToolMessages = {
   /** Spoken as the call begins — see {@link ToolStartMessage}. */
@@ -240,6 +245,7 @@ export type ToolMessages = {
  *   execute: async ({ orderId }) => ({ orderId, status: "shipped" }),
  * });
  * ```
+ * @input
  */
 export type ToolMessagesInput = {
   /** `true` draws one of the five default hold lines per invocation. */

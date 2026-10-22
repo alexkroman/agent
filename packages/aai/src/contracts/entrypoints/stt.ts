@@ -21,7 +21,6 @@ export {
   ASSEMBLYAI_STT_EU_URL,
   type AssemblyAISttOptions,
   assemblyAIStt,
-  DEEPGRAM_DEFAULT_ENDPOINTING_MS,
   type DeepgramSttOptions,
   deepgramStt,
   type ElevenLabsSttOptions,

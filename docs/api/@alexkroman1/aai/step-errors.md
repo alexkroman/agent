@@ -417,6 +417,8 @@ type RetryableErrorOptions = {
 };
 ```
 
+**`Input`**
+
 What [RetryableError](#retryableerror) accepts for its delay.
 
 #### Properties

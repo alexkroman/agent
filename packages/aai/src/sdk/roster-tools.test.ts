@@ -16,7 +16,7 @@ import { createToolContext } from "./testing.ts";
 import { stubDelegate } from "./testing-delegate.ts";
 import { runTool, toolOf } from "./testing-tools.ts";
 import { withTools } from "./tool-registry.ts";
-import type { Toolset } from "./toolset.ts";
+import type { ResolvedAgentDef, Toolset } from "./toolset.ts";
 import type { ToolDef } from "./types.ts";
 import { isToolFailure } from "./utils.ts";
 
@@ -59,7 +59,7 @@ const frontDesk = agent({ name: "Front Desk", roster: desk });
 
 /** The one toolset `agent()` minted. */
 function rosterSet(): Toolset {
-  const [set] = frontDesk.toolsets ?? [];
+  const [set] = (frontDesk as ResolvedAgentDef).toolsets ?? [];
   if (!set) throw new Error("agent() minted no toolset");
   return set;
 }
@@ -88,17 +88,19 @@ describe("rosterToolset()", () => {
   });
 
   it("mints only the routing tool a roster needs", () => {
-    const speaking = agent({ name: "x", roster: roster([triage, billing]) }).toolsets?.[0];
+    const speaking = (agent({ name: "x", roster: roster([triage, billing]) }) as ResolvedAgentDef)
+      .toolsets?.[0];
     expect(Object.keys(speaking?.list() ?? {}).sort()).toEqual([
       HANDOFF_TOOL_NAME,
       "lookup_invoice",
     ]);
-    const offLine = agent({ name: "y", roster: roster([refunds, tech]) }).toolsets?.[0];
+    const offLine = (agent({ name: "y", roster: roster([refunds, tech]) }) as ResolvedAgentDef)
+      .toolsets?.[0];
     expect(Object.keys(offLine?.list() ?? {})).toEqual([DELEGATE_TOOL_NAME]);
   });
 
   it("declares no toolset when there is no roster", () => {
-    expect(agent({ name: "Plain" }).toolsets).toEqual([]);
+    expect((agent({ name: "Plain" }) as ResolvedAgentDef).toolsets).toEqual([]);
   });
 
   it("is host-only: `toAgentConfig` strips the roster and its toolset", () => {

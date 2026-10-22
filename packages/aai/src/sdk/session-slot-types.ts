@@ -113,6 +113,7 @@ type IsAny<T> = 0 extends 1 & T ? true : false;
  *   {@link DeepReadonly}`<T>` from {@link SessionSlot.tool}, a mutable draft
  *   from {@link SessionSlot.updateTool}.
  *
+ * @input
  * @public
  */
 export interface SlotToolDef<P extends ToolInputSchema, V, R>
@@ -148,6 +149,7 @@ export type SlotCaps<T> = T extends object
  *   the view itself. Defaults to the whole value, which is what
  *   {@link SessionSlot.projected} projects when no view is declared.
  *
+ * @input
  * @public
  */
 export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {

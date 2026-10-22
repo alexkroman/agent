@@ -16,7 +16,6 @@
  * @module dialog-handle
  */
 
-import type { AnyStateMachine, EventFromLogic } from "xstate";
 import type {
   DialogPosition,
   DialogTimeout,
@@ -31,22 +30,43 @@ import type { ToolDef } from "./types.ts";
 import type { ToolFailure } from "./utils.ts";
 
 /**
+ * The machine behind a dialog, as the SDK names it: an XState machine handed to
+ * `dialog(key, machine)`, or the one a {@link DialogSpec} compiles to.
+ *
+ * The SDK's own STRUCTURAL type rather than XState's `AnyStateMachine`, so
+ * XState's types stay out of the published contract — an XState upgrade is not
+ * an SDK break. Any XState machine satisfies it, and `E` is inferred from the
+ * machine's own events.
+ *
+ * @typeParam E - The events the machine accepts.
+ *
+ * @input
+ * @public
+ */
+export interface DialogMachine<E extends { type: string } = { type: string }> {
+  readonly id: string;
+  transition(snapshot: never, event: E, actorScope: never): unknown;
+}
+
+/**
  * A dialog statechart bound to a session, created by {@link dialog}.
  *
- * @typeParam M - The XState machine this dialog runs.
  * @typeParam E - The event union {@link Dialog.send} and a gated tool's
- *   `send`/`sendFrom` accept. Defaults to the machine's own — a dialog declared
- *   from a {@link DialogSpec} supplies it directly instead, because the machine
- *   it builds is an implementation detail and its type carries no events.
+ *   `send`/`sendFrom` accept: the machine's own events for the machine form,
+ *   or the names a {@link DialogSpec}'s `on` maps spell.
  *
  * @sealed
  * @public
  */
-export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
+export interface Dialog<E = { type: string }> {
   /** The store key this dialog's snapshot occupies. Two flows must not share one. */
   readonly key: string;
-  /** The machine itself, for a caller that wants to inspect or visualize it. */
-  readonly machine: M;
+  /**
+   * The machine itself, for a caller that wants to inspect or visualize it —
+   * an XState machine, typed `unknown` so XState's types stay off the contract:
+   * `dialog.machine as AnyStateMachine`.
+   */
+  readonly machine: unknown;
   /** Where this session's conversation currently is. */
   position(ctx: SlotHolder): DialogPosition;
   /** Whether the active state matches `state`, as `when` spells it. */
@@ -148,20 +168,23 @@ export interface Dialog<M extends AnyStateMachine, E = EventFromLogic<M>> {
  *
  * The erasure is on `E` and it is what makes the array possible at all: two
  * dialogs in one agent have different event unions by construction (the names
- * come from their own `on` maps), so `readonly Dialog<AnyStateMachine>[]` would
- * be a list nothing but a machine-form dialog with the default parameter could
- * join. `unknown` rather than `any` because every member that takes an `E` is
+ * come from their own `on` maps), so `readonly Dialog[]` would be a list nothing
+ * but a dialog with the default parameter could join. `unknown` rather than `any` because every member that takes an `E` is
  * declared with METHOD syntax, whose parameters are compared bivariantly — so a
- * `Dialog<M, { type: "VERIFIED" }>` is assignable here without spending an
+ * `Dialog<{ type: "VERIFIED" }>` is assignable here without spending an
  * escape hatch on it, and the runtime, which only ever calls the members that
  * take no event (`receive`, `timeout`, `voiceConfig`, `position`), never has an
  * `any` to hand something.
  *
  * @public
  */
-export type AnyDialog = Dialog<AnyStateMachine, unknown>;
+export type AnyDialog = Dialog<unknown>;
 
-/** Options for {@link dialog}. */
+/**
+ * Options for {@link dialog}.
+ *
+ * @input
+ */
 export interface DialogOptions {
   /**
    * Whether this dialog's position is stored durably. Defaults to `true` — see

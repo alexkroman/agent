@@ -44,6 +44,7 @@ export type StubUpload =
 /**
  * What {@link stubUploads} may be told beyond the files themselves.
  *
+ * @input
  * @public
  */
 export type StubUploadsOptions = {
@@ -65,7 +66,11 @@ export type StubUploadsOptions = {
   idPrefix?: string | undefined;
 };
 
-/** One file a step WROTE into a {@link stubUploads} store. */
+/**
+ * One file a step WROTE into a {@link stubUploads} store.
+ *
+ * @sealed
+ */
 export type StubUploadWrite = {
   /** The minted id the step was handed back — `upl_stub_1`, unless renamed. */
   id: string;
@@ -87,6 +92,7 @@ export type StubUploadWrite = {
  * the published slot, read back through the same seam the step wrote it through,
  * to answer "did it write anything at all".
  *
+ * @sealed
  * @public
  */
 export type StubUploads = {

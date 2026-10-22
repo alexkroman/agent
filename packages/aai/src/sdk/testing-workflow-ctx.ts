@@ -100,14 +100,22 @@ async function checkedAgainst(
   );
 }
 
-/** One step the body reached, as the recorder saw it. */
+/**
+ * One step the body reached, as the recorder saw it.
+ *
+ * @sealed
+ */
 export type RecordedStep = {
   name: string;
   /** What the body asked for, or `undefined` when it passed no options. */
   maxAttempts?: number | undefined;
 };
 
-/** One wait the body asked for — and did NOT take. */
+/**
+ * One wait the body asked for — and did NOT take.
+ *
+ * @sealed
+ */
 export type RecordedSleep = {
   /**
    * The wait's `label` — its identity in a real run's journal, and the field a
@@ -120,7 +128,11 @@ export type RecordedSleep = {
   correlationId?: string | undefined;
 };
 
-/** What {@link createWorkflowContext} answers: a real `WorkflowContext` plus its log. */
+/**
+ * What {@link createWorkflowContext} answers: a real `WorkflowContext` plus its log.
+ *
+ * @sealed
+ */
 export type WorkflowContextRecorder = WorkflowContext & {
   /** Every step reached, in the order the body reached them. */
   readonly steps: RecordedStep[];
@@ -130,7 +142,11 @@ export type WorkflowContextRecorder = WorkflowContext & {
   readonly waited: string[];
 };
 
-/** What {@link createWorkflowContext} takes. */
+/**
+ * What {@link createWorkflowContext} takes.
+ *
+ * @input
+ */
 export type WorkflowContextOptions = {
   /** Defaults to `"wrun_test"`. */
   runId?: string;
@@ -196,7 +212,7 @@ export type WorkflowContextOptions = {
  * `2026-01-01T00:00:00.000Z`. Exported so a spec computes an expected duration
  * from it rather than copying the number.
  */
-export const WORKFLOW_CONTEXT_NOW = 1_767_225_600_000;
+export const WORKFLOW_CONTEXT_NOW: number = 1_767_225_600_000;
 
 /**
  * Build a `WorkflowContext` that runs a body and records what it asked for.

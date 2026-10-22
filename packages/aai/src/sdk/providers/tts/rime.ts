@@ -37,7 +37,11 @@ export const RIME_API_KEY_ENV: string = RIME_PROVIDER.envVar;
  */
 export const RIME_DEFAULT_VOICE: string = "cove";
 
-/** Options for {@link rimeTts}. */
+/**
+ * Options for {@link rimeTts}.
+ *
+ * @input
+ */
 export interface RimeTtsOptions extends ProviderCredentialOptions {
   /** Rime speaker ID. Defaults to {@link RIME_DEFAULT_VOICE}. */
   voice?: string;

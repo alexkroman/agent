@@ -42,7 +42,6 @@ import {
   ASSEMBLYAI_STT_EU_URL,
   type AssemblyAISttOptions,
   assemblyAIStt,
-  DEEPGRAM_DEFAULT_ENDPOINTING_MS,
   type DeepgramSttOptions,
   deepgramStt,
   type ElevenLabsSttOptions,
@@ -223,16 +222,13 @@ describe("the STT stage", () => {
     }
   });
 
-  test("Deepgram's endpointing window is a published default, not a hidden one", () => {
-    // The descriptor carries only what you set — the host fills the rest — so
-    // the number is published rather than buried in the opener. It is worth
-    // knowing before you move it: 1500ms is matched to the AssemblyAI opener's
+  test("Deepgram's endpointing window is the host's default unless you set one", () => {
+    // The descriptor carries only what you set — the host fills the rest. It is
+    // worth knowing before you move it: the host default, 1500ms, is matched to the AssemblyAI opener's
     // 1600ms `min_turn_silence`, and Deepgram exposes no pause-tolerance
     // counterpart, so this one window is the whole end-of-turn policy there.
     expect(deepgramStt().options.endpointing).toBeUndefined();
-    expect(deepgramStt({ endpointing: DEEPGRAM_DEFAULT_ENDPOINTING_MS }).options.endpointing).toBe(
-      DEEPGRAM_DEFAULT_ENDPOINTING_MS,
-    );
+    expect(deepgramStt({ endpointing: 1500 }).options.endpointing).toBe(1500);
     // Deepgram is also the one STT here that does NOT auto-detect: it defaults
     // to English, so an agent moved to it silently loses non-English
     // transcription unless it names a code.

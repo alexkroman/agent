@@ -32,7 +32,7 @@ import type { GuestHost } from "@alexkroman1/aai-runtime/internal";
  * test, never bundled, so it may import the SDK this module may not.
  */
 export type Message = {
-  role: "user" | "assistant" | "tool";
+  role: "user" | "assistant" | "tool" | (string & {});
   content: string;
 };
 

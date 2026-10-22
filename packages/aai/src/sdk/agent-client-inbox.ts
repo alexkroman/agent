@@ -20,6 +20,7 @@
 /**
  * What an agent declares about the audio it pushes to devices over `WS /inbox`.
  *
+ * @input
  * @public
  */
 export type ClientInboxOptions = {
@@ -38,6 +39,7 @@ export type ClientInboxOptions = {
 /**
  * The device-inbox half of an agent declaration — see this module's header.
  *
+ * @input
  * @public
  */
 export interface AgentClientInbox {

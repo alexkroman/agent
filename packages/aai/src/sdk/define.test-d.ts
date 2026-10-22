@@ -37,12 +37,12 @@ type KeysOf<T> = T extends unknown ? keyof T : never;
  * `agent({ tools })` fail with the file to create instead of with a bare excess
  * property. The test below pins that it really is the message.
  *
- * `toolsets` is the one field that is NOT a parameter: it is RESOLVED —
- * `agent()` mints the roster's, `withMcpTools` appends an MCP server's.
+ * The resolved toolsets are not on the public `AgentDef` at all (`ResolvedAgentDef`,
+ * `/manifest`), so every field it does carry is a parameter.
  */
-test("agent() accepts every AgentDef field but the resolved `toolsets`", () => {
+test("agent() accepts every AgentDef field", () => {
   type MissingFromParam = Exclude<keyof AgentDef, KeysOf<AgentParams>>;
-  expectTypeOf<MissingFromParam>().toEqualTypeOf<"toolsets">();
+  expectTypeOf<MissingFromParam>().toEqualTypeOf<never>();
 });
 
 test("agent() takes no state factory, and AgentDef holds none", () => {

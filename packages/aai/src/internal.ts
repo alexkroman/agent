@@ -274,6 +274,7 @@ export {
   MAX_WORKFLOW_WAIT_MS,
   TERMINAL_WORKFLOW_STATUSES,
 } from "./sdk/workflow-run.ts";
+
 // There is no suspend BRAND here any more, and its absence records a design
 // that is gone rather than a name that moved. The engine's suspend signal was
 // branded with a `Symbol.for` because it travelled OUT through a workflow body
@@ -282,11 +283,38 @@ export {
 // channel the body has no reference to and recognised by identity within one
 // `replayRun` call. See `aai-runtime/workflow-replay-suspend.ts`.
 
+// Implementation budgets and endpoints the step helpers, the channels, the
+// Deepgram descriptor and the MCP name rule apply ON THEIR OWN. An author never
+// passes one (each helper takes its own option where a knob is real), so they
+// are off the contracted subpaths: a value is a behaviour owed a changeset, not
+// a type an author writes against. The runtime, the guest and the specs that
+// pin them read them here.
+export { TRANSCRIBE_TIMEOUT_MS } from "./sdk/_transcribe-shared.ts";
+export { CHANNEL_POST_TIMEOUT_MS } from "./sdk/channels/shared/send.ts";
+export { MCP_TOOL_NAME_MAX } from "./sdk/mcp-config.ts";
+export { DEEPGRAM_DEFAULT_ENDPOINTING_MS } from "./sdk/providers/stt/deepgram.ts";
+// Which events only the SESSION may source — the runtime's transport/session
+// split reads it; an author never does. Type-only module, so still zod-free.
+export {
+  SESSION_SOURCED_EVENT_TYPES,
+  type SessionSourcedEventType,
+} from "./sdk/session-event-map.ts";
 // The client-id rule, for the BROWSER half of `WS /inbox` (`aai-ui`'s
 // `createInbox` and the id `mountClient({ client: "auto" })` mints). The server
 // half reads it from `./host-internal`; one declaration, so an id the browser
 // mints can never be one the inbox or `?client=` refuses.
-export { CLIENT_ID_RE } from "./sdk/step-notify-client.ts";
+export {
+  CLIENT_ID_RE,
+  DEFAULT_CLIENT_ACK_TIMEOUT_MS,
+  DEFAULT_CLIENT_RETRY_MS,
+} from "./sdk/step-notify-client.ts";
+export { DEFAULT_CALL_RING_TIMEOUT_S, DEFAULT_CALL_TIME_LIMIT_S } from "./sdk/step-place-call.ts";
+export { STEP_SPEAK_TIMEOUT_MS } from "./sdk/step-speak.ts";
+export { TRANSCRIBE_UPLOAD_TIMEOUT_MS, TRANSCRIBE_WINDOW_BYTES } from "./sdk/step-transcribe.ts";
+export {
+  TRANSCRIBE_SYNC_ENDPOINT,
+  TRANSCRIBE_SYNC_TIMEOUT_MS,
+} from "./sdk/step-transcribe-sync.ts";
 // The unavailable-workflows trio. Here rather than on the root barrel because all
 // three are `@internal`: their readers are the tool executor, the two
 // test-context builders, and the guest harness. Keeping them off the root also

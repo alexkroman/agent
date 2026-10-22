@@ -2,7 +2,7 @@
 import { describe, expect, test } from "vitest";
 import { AgentConfigSchema, ToolSchemaSchema } from "./_internal-types.ts";
 import { ReadyConfigSchema, SessionCommandSchema } from "./protocol.ts";
-import { SessionEventSchema } from "./protocol-events.ts";
+import { SESSION_EVENT_UNION } from "./protocol-events.ts";
 
 type ZodObjectLike = { shape: Record<string, unknown> };
 
@@ -34,7 +34,7 @@ function discriminatedUnionShapes(schema: {
 // aliases reading as load-bearing.
 describe("protocol schema shapes", () => {
   test("SessionEventSchema option shapes", () => {
-    expect(discriminatedUnionShapes(SessionEventSchema)).toMatchSnapshot();
+    expect(discriminatedUnionShapes(SESSION_EVENT_UNION)).toMatchSnapshot();
   });
 
   test("SessionCommandSchema option shapes", () => {

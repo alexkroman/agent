@@ -191,6 +191,58 @@ shorter than the request's.
 
 `AsyncGenerator`\<[`EventStreamFrame`](#eventstreamframe)\>
 
+## Interfaces
+
+### ClientConfigResponse
+
+**`Sealed`**
+
+Parsed body of `GET /client-config` — the fields documented on
+[ClientConfigResponseSchema](#clientconfigresponseschema). Declared rather than inferred from the
+schema, so zod's types stay off the contract; the schema is typed against it.
+
+#### Properties
+
+##### greeting?
+
+```ts
+optional greeting?: string;
+```
+
+The agent's greeting.
+
+##### name?
+
+```ts
+optional name?: string;
+```
+
+Agent display name.
+
+##### page
+
+```ts
+page: "voice" | "static";
+```
+
+The front door: a voice page, or a static workflow-app page with no socket.
+
+##### sessionToken?
+
+```ts
+optional sessionToken?: string;
+```
+
+A ticket the session socket presents, when the server mints one.
+
+##### sessionUrl?
+
+```ts
+optional sessionUrl?: string;
+```
+
+Absolute WebSocket URL of the live session endpoint, when the server brokers one.
+
 ## Type Aliases
 
 ### AgentClient
@@ -198,16 +250,7 @@ shorter than the request's.
 ```ts
 type AgentClient = WorkflowApi & {
   baseUrl: string;
-  config: Promise<{
-     greeting?: z.ZodOptional<z.ZodString>;
-     name?: z.ZodOptional<z.ZodString>;
-     page: z.ZodEnum<{
-        static: "static";
-        voice: "voice";
-     }>;
-     sessionToken?: z.ZodOptional<z.ZodString>;
-     sessionUrl?: z.ZodOptional<z.ZodString>;
-  }>;
+  config: Promise<ClientConfigResponse>;
 };
 ```
 
@@ -237,16 +280,7 @@ trailing-slash `//workflows` 404 this normalizes away.
 ##### config()
 
 ```ts
-config(): Promise<{
-  greeting?: z.ZodOptional<z.ZodString>;
-  name?: z.ZodOptional<z.ZodString>;
-  page: z.ZodEnum<{
-     static: "static";
-     voice: "voice";
-  }>;
-  sessionToken?: z.ZodOptional<z.ZodString>;
-  sessionUrl?: z.ZodOptional<z.ZodString>;
-}>;
+config(): Promise<ClientConfigResponse>;
 ```
 
 What the agent says it IS: `{ name?, greeting?, page?, sessionUrl? }`.
@@ -264,16 +298,7 @@ this call works with no `token`, and a workflow API closed by
 
 ###### Returns
 
-`Promise`\<\{
-  `greeting?`: `z.ZodOptional`\<`z.ZodString`\>;
-  `name?`: `z.ZodOptional`\<`z.ZodString`\>;
-  `page`: `z.ZodEnum`\<\{
-     `static`: `"static"`;
-     `voice`: `"voice"`;
-  \}\>;
-  `sessionToken?`: `z.ZodOptional`\<`z.ZodString`\>;
-  `sessionUrl?`: `z.ZodOptional`\<`z.ZodString`\>;
-\}\>
+`Promise`\<[`ClientConfigResponse`](#clientconfigresponse)\>
 
 ***
 
@@ -288,6 +313,8 @@ type AnyWorkflowDef<R = unknown> = {
   uploads?: readonly string[];
 };
 ```
+
+**`Input`**
 
 Any workflow definition, for a signature that only needs its OUTPUT type.
 
@@ -339,16 +366,6 @@ optional uploads?: readonly string[];
 
 ***
 
-### ClientConfigResponse
-
-```ts
-type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
-```
-
-Parsed body of `GET /client-config`.
-
-***
-
 ### EventStreamFrame
 
 ```ts
@@ -357,6 +374,8 @@ type EventStreamFrame = {
   event: string;
 };
 ```
+
+**`Sealed`**
 
 One parsed frame. Comment frames (the heartbeats an idle stream sends) are
 skipped rather than yielded, and so is a frame with no `event:` name — the
@@ -397,6 +416,8 @@ type FindByKeyOptions = {
   withOutput?: boolean;
 };
 ```
+
+**`Input`**
 
 Options for `WorkflowClient.findByKey`.
 
@@ -451,6 +472,8 @@ type FindOptions = {
 };
 ```
 
+**`Input`**
+
 Options for `WorkflowClient.find`.
 
 #### Properties
@@ -477,6 +500,8 @@ type StartOptions = {
   notify?: boolean | string;
 };
 ```
+
+**`Input`**
 
 Per-run options for `WorkflowClient.start` — `ctx.workflows.start`, from a
 TOOL. A caller OUTSIDE the agent (a page, a script) starts a run through
@@ -592,6 +617,8 @@ type StreamOptions = {
 };
 ```
 
+**`Input`**
+
 Options for `WorkflowClient.stream`.
 
 #### Properties
@@ -673,6 +700,8 @@ type UploadOptions = {
   type?: string;
 };
 ```
+
+**`Input`**
 
 Options for an upload.
 
@@ -812,6 +841,8 @@ type UploadPartsOptions = {
 };
 ```
 
+**`Input`**
+
 How a caller tunes the fan-out.
 
 Both fields have defaults sized on the constants' own reasoning, and a caller
@@ -850,6 +881,8 @@ type UploadProgress = {
   total: number | undefined;
 };
 ```
+
+**`Sealed`**
 
 How far an upload has got, as [UploadOptions.onProgress](#onprogress) reports it.
 
@@ -899,6 +932,8 @@ type UploadRef = {
   url: string;
 };
 ```
+
+**`Sealed`**
 
 A stored upload, as `WorkflowApi.upload` resolves it.
 
@@ -961,6 +996,8 @@ type WakeUpOptions = {
   correlationIds?: string[];
 };
 ```
+
+**`Input`**
 
 Options for `WorkflowClient.wakeUp`.
 
@@ -1535,6 +1572,8 @@ type WorkflowApiCallOptions = {
 };
 ```
 
+**`Input`**
+
 What every [WorkflowApi](#workflowapi) call takes: an abort signal, and nothing else.
 
 #### Properties
@@ -1556,6 +1595,8 @@ type WorkflowApiClientOptions = {
   token?: string;
 };
 ```
+
+**`Input`**
 
 What a client needs to know: which agent, on whose authority, and for how
 long.
@@ -1676,6 +1717,8 @@ type WorkflowFollowOutputOptions = {
 };
 ```
 
+**`Input`**
+
 [WorkflowApi.followOutput](#followoutput)'s options: which channel, from which chunk.
 
 #### Properties
@@ -1709,6 +1752,8 @@ type WorkflowGetOptions = {
 };
 ```
 
+**`Input`**
+
 [WorkflowApi.get](#get)'s options: an optional `wait` for the run to settle.
 
 #### Properties
@@ -1738,6 +1783,8 @@ type WorkflowRunBase = {
   workflow: string;
 };
 ```
+
+**`Sealed`**
 
 Fields every [WorkflowRunSnapshot](#workflowrunsnapshot) member carries, whatever its status.
 
@@ -1799,6 +1846,8 @@ type WorkflowRunListOptions = {
   signal?: AbortSignal;
 };
 ```
+
+**`Input`**
 
 [WorkflowApi.find](#find) and [WorkflowApi.recent](#recent)'s options: how many
 runs to answer.
@@ -1883,6 +1932,8 @@ type WorkflowStartAndWaitOptions = {
 };
 ```
 
+**`Input`**
+
 [WorkflowApi.startAndWait](#startandwait)'s options: [WorkflowStartOptions](#workflowstartoptions) plus
 the `wait` budget, clamped to `MAX_WORKFLOW_WAIT_MS` at both ends.
 
@@ -1917,6 +1968,8 @@ type WorkflowStartOptions = {
 };
 ```
 
+**`Input`**
+
 [WorkflowApi.start](#start)'s options — a correlation `key` and a signal.
 
 **Not `StartOptions`**, which is the same verb one side over:
@@ -1950,6 +2003,8 @@ type WorkflowStreamOutputOptions = {
   startIndex?: number;
 };
 ```
+
+**`Input`**
 
 [WorkflowApi.streamOutput](#streamoutput)'s options: which channel, from which chunk.
 
@@ -1986,6 +2041,8 @@ type WorkflowSummary = {
   uploads?: readonly string[];
 };
 ```
+
+**`Sealed`**
 
 One declared workflow, as `GET /workflows` lists it.
 
@@ -2057,16 +2114,7 @@ has to upload first.
 ### ClientConfigResponseSchema
 
 ```ts
-const ClientConfigResponseSchema: z.ZodObject<{
-  greeting: z.ZodOptional<z.ZodString>;
-  name: z.ZodOptional<z.ZodString>;
-  page: z.ZodEnum<{
-     static: "static";
-     voice: "voice";
-  }>;
-  sessionToken: z.ZodOptional<z.ZodString>;
-  sessionUrl: z.ZodOptional<z.ZodString>;
-}, z.core.$strip>;
+const ClientConfigResponseSchema: z.ZodType<ClientConfigResponse>;
 ```
 
 Body of `GET /client-config`. Unknown fields are stripped, so a response

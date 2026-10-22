@@ -271,7 +271,7 @@ describe("attachSessionState — reclamation", () => {
       emitter: makeEmitter(makeClientSink(), { sessionId: SID }).emitter,
       release: () => false,
     });
-    state.store.viewFor(SID).write("cart", { items: ["apple"] }, true);
+    state.store.viewFor(SID).write("cart", { items: ["apple"] }, { durable: true });
 
     await core.stop();
 

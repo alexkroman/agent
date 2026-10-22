@@ -114,6 +114,7 @@ export {
   type RouteHandler,
   type RouteRequest,
   type RouteResponse,
+  type RouteResponseOptions,
   routeResponse,
 } from "./sdk/agent-routes.ts";
 /**
@@ -150,7 +151,6 @@ export * from "./sdk/generate.ts";
 // Exported here rather than through `sdk/types.ts`, which is at its length cap.
 export {
   MCP_SERVER_KEY_RE,
-  MCP_TOOL_NAME_MAX,
   MCP_TOOL_PREFIX,
   type McpResolvable,
   type McpResolveContext,
@@ -166,19 +166,9 @@ export { codeMatches, hashCode, mintDigitCode } from "./sdk/one-time-code.ts";
  * needs to see the other to pick correctly.
  */
 export * from "./sdk/procedure.ts";
-/**
- * The session event vocabulary, and the types an `agent({ events })` handler is
- * written against.
- *
- * On the root by the barrel's own membership test — an `agent.ts` NAMES these the
- * moment a handler is extracted from the literal into a function of its own, which
- * is the first thing an author does once one grows past a line — and `SessionEvent`
- * and its schema came with them, off `/protocol`, so the vocabulary has exactly one
- * owner: the `aai:events` capability. On `/protocol` it was contracted by NOTHING,
- * so its body was hashed in every capability that reached it and one new event
- * minted four epochs. A client parsing frames imports the schema from here too.
- */
-export { SessionEventSchema } from "./sdk/protocol-events.ts";
+// The envelope and the field types the event map is spelled in ride the root for
+// the map's sake; `/protocol` owns them (a name on both belongs to the narrower).
+export type { SessionEventMeta } from "./sdk/protocol-event-meta.ts";
 // The one preset that belongs next to `agent()` rather than behind a provider
 // subpath: it IS the recommended configuration, and requiring three more
 // imports to reach it is what made the wrong mode the easy one.
@@ -333,17 +323,17 @@ export { type SessionCall, sessionCall } from "./sdk/session-call.ts";
 export { requireSessionClient, sessionClientId } from "./sdk/session-client.ts";
 /** End this session from a tool, after the current reply is spoken — `end_call`. */
 export { type EndSessionOptions, endSession } from "./sdk/session-end.ts";
-export {
-  type ClientEventMap,
-  type ClientEventSender,
-  type EventMapOf,
-  SESSION_SOURCED_EVENT_TYPES,
-  type SessionEvent,
-  type SessionEventBody,
-  type SessionEventMap,
-  type SessionEventType,
-  type SessionEventTypeList,
-  type SessionSourcedEventType,
+export type {
+  AgentTranscriptRecovery,
+  AnySessionEvent,
+  ClientEventMap,
+  ClientEventSender,
+  RestoredToolCall,
+  SessionErrorCode,
+  SessionEvent,
+  SessionEventBody,
+  SessionEventMap,
+  SessionEventType,
 } from "./sdk/session-event-map.ts";
 export type {
   SessionEventContext,
@@ -407,8 +397,6 @@ export { failable, orFail } from "./sdk/tool-failure-flow.ts";
  * rather than discovered by being refused after it has already committed.
  */
 export * from "./sdk/tool-fields.ts";
-// What `AgentDef.toolsets` holds; the functions over it are on `/manifest`.
-export type { ToolExecutor, ToolSource, Toolset, ToolsetEntry } from "./sdk/toolset.ts";
 export * from "./sdk/types.ts";
 /**
  * The utilities written INSIDE a tool body — all fifteen of them, which is

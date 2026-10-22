@@ -96,7 +96,11 @@ export type KnownLlmProvider = KnownLiterals<LlmProviderName>;
  */
 export type LlmSpec = LlmProvider | AssemblyAIGatewayModel | `${string}/${string}` | (string & {});
 
-/** `providerOptions` for `provider: "assemblyai"`. */
+/**
+ * `providerOptions` for `provider: "assemblyai"`.
+ *
+ * @input
+ */
 export type AssemblyAILlmProviderOptions = {
   /**
    * Gateway region. `"eu"` routes through the EU endpoint for data
@@ -129,6 +133,7 @@ export type AssemblyAILlmProviderOptions = {
  * `baseUrl` provider) it is the vendor's own wire fields, merged verbatim into
  * the JSON request body — a field the SDK writes itself (`model`, `messages`,
  * `tools`, `stream`, a call setting such as `temperature`) wins a collision.
+ * @input
  */
 export interface LlmOptions<P extends LlmProviderName = LlmProviderName>
   extends ProviderCredentialOptions {

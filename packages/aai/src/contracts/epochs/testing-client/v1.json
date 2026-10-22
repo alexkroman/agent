@@ -1,0 +1,19 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "testing-client",
+  "epoch": 1,
+  "rule": 3,
+  "sha256": "83af56a21fe297aa6a263110627e804f238460f04c584cf1d297866414f73170",
+  "exports": [
+    "StubClientInbox",
+    "StubClientInboxCall",
+    "StubClientInboxOptions",
+    "StubClientTranscript",
+    "StubClientTranscriptAnswer",
+    "StubClientTranscriptCall",
+    "installStubClientInbox",
+    "stubClientInbox",
+    "stubClientTranscript"
+  ],
+  "rollup": "2daf6c58247c4eecf8294daa3fcb63dcda433937c350e470032841add4c4a56b"
+}

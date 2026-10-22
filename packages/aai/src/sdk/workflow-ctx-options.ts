@@ -48,6 +48,7 @@ import type { StandardSchemaV1 } from "./standard-schema.ts";
  * @typeParam S - The schema {@link StepOptions.schema} carries, when one is
  *   given. Defaulted, so `StepOptions` is still spellable without an argument —
  *   every caller that predates the schema still means what it meant.
+ * @input
  * @public
  */
 export type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -99,6 +100,7 @@ export type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
  * overload of `ctx.step`, whose result is the schema's output rather than
  * whatever the body happened to return.
  *
+ * @input
  * @public
  */
 export type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
@@ -127,6 +129,7 @@ export const DEFAULT_STEP_MAX_ATTEMPTS: number = 3;
  * halves optional would put `| undefined` on the result of a wait that has no
  * way to end unanswered.
  *
+ * @input
  * @public
  */
 export type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -205,6 +208,7 @@ export type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
  * for the reason stated there: an unbounded wait has no unanswered branch, so
  * its result must not carry `| undefined`.
  *
+ * @input
  * @public
  */
 export type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -215,6 +219,7 @@ export type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> 
 /**
  * Per-sleep options.
  *
+ * @input
  * @public
  */
 export type SleepOptions = {
@@ -263,6 +268,7 @@ export type SleepOptions = {
  * }
  * ```
  *
+ * @input
  * @public
  */
 export type PollOptions<T> = {
@@ -287,6 +293,7 @@ export type PollOptions<T> = {
 /**
  * What `ctx.poll` (and `stepPollUntil`) resolve with.
  *
+ * @sealed
  * @public
  */
 export type PollResult<T> = {

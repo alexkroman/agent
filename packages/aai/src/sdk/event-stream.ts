@@ -43,6 +43,7 @@ import { safeJsonParse } from "./safe-json-parse.ts";
  * routes here name every frame they send, and an unnamed one cannot be
  * classified by any caller.
  *
+ * @sealed
  * @public
  */
 export type EventStreamFrame = {

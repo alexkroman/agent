@@ -288,7 +288,17 @@ const mirrorRoots = allRoots.flatMap((root) => {
   const upstream = allRoots.find(
     (candidate) => candidate.pkg === upstreamPkg && candidate.capability === upstreamCapability,
   );
-  return [{ ...root, mirrors: entry.mirrors, upstream }];
+  // A mirror target is a FAMILY: the capability plus every `<capability>-*` of its
+  // package (`aai:testing` and the `testing-steps`, … it was split into), as
+  // `_api-contracts-staleness.mjs` reads it.
+  const family = allRoots.filter(
+    (candidate) =>
+      candidate.pkg === upstreamPkg &&
+      (candidate.capability === upstreamCapability ||
+        candidate.capability.startsWith(`${upstreamCapability}-`)),
+  );
+  const familyNames = family.flatMap((member) => member.names);
+  return [{ ...root, mirrors: entry.mirrors, upstream, familyNames }];
 });
 
 /** The deny-list, minus its `_description` prose key. */
@@ -468,7 +478,7 @@ describe("capability contracts", () => {
       isMirror(root.upstream?.table[root.upstream.capability]),
       `${root.id} mirrors ${root.mirrors}, which is itself a mirror`,
     ).toBe(false);
-    const upstream = new Set(root.upstream?.names ?? []);
+    const upstream = new Set(root.familyNames);
     const extra = root.names.filter((name) => !upstream.has(name));
     expect(extra, `${root.id} carries names ${root.mirrors} does not contract`).toEqual([]);
     expect(

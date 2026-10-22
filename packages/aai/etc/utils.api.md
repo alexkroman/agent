@@ -28,7 +28,7 @@ export function failable<A extends readonly unknown[], R>(fn: (...args: A) => R)
 // @public
 export function fitToolResult(value: unknown, options?: FitToolResultOptions): unknown;
 
-// @public
+// @public @input
 export interface FitToolResultOptions {
     hint?: string;
     maxChars?: number;
@@ -63,13 +63,13 @@ export type JsonClient = <T = unknown>(ctx: JsonClientContext, method: string, p
 // @public
 export function jsonClient(options: JsonClientOptions): JsonClient;
 
-// @public
+// @public @input
 export interface JsonClientContext {
     env: Readonly<Partial<Record<string, string>>>;
     signal?: AbortSignal | undefined;
 }
 
-// @public
+// @public @input
 export interface JsonClientOptions {
     baseUrl: string | ((env: Readonly<Partial<Record<string, string>>>) => string);
     errorMessage?: (body: unknown) => string | undefined;
@@ -78,17 +78,17 @@ export interface JsonClientOptions {
     label: string;
 }
 
-// @public
+// @public @input
 export interface JsonRequestInit {
     headers?: Record<string, string>;
 }
 
-// @public (undocumented)
+// @public @sealed (undocumented)
 export type KeyedLock = ((key: string, options?: KeyedLockOptions) => Promise<() => void>) & {
     readonly size: number;
 };
 
-// @public (undocumented)
+// @public @input (undocumented)
 export type KeyedLockOptions = {
     timeoutMs?: number | undefined;
 };
@@ -103,7 +103,7 @@ export class KeyedLockTimeoutError extends Error {
 // @public
 export function normalizePhone(raw: string, options?: NormalizePhoneOptions): string | undefined;
 
-// @public
+// @public @input
 export interface NormalizePhoneOptions {
     defaultCountry?: "US" | "CA";
 }
@@ -137,7 +137,7 @@ export function safeJsonParse(text: string): unknown;
 // @public
 export function spokenErrorReason(err: unknown, options?: SpokenErrorReasonOptions): string;
 
-// @public
+// @public @input
 export type SpokenErrorReasonOptions = {
     max?: number;
 };
@@ -150,7 +150,7 @@ export type ToolFailure = {
 // @public
 export function toolFailure(message: string): ToolFailure;
 
-// @public
+// @public @sealed
 export type ToolRefusal = ToolFailure & {
     reason: ToolRefusalReason;
 };
@@ -159,7 +159,7 @@ export type ToolRefusal = ToolFailure & {
 export function toolRefusal(reason: ToolRefusalReason, message: string): ToolRefusal;
 
 // @public
-export type ToolRefusalReason = "unknown_tool" | "invalid_arguments" | "cancelled" | "persona" | "dialog" | "roster";
+export type ToolRefusalReason = "unknown_tool" | "invalid_arguments" | "cancelled" | "persona" | "dialog" | "roster" | (string & {});
 
 // @public
 export const withLock: <T>(lock: (key: string, options?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, options?: KeyedLockOptions) => Promise<T>;

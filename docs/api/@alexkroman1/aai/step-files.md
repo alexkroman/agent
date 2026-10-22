@@ -208,6 +208,8 @@ type ReadUploadToFileOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [readUploadToFile](#readuploadtofile).
 
 #### Properties
@@ -265,6 +267,8 @@ type WithTempDirOptions = {
 };
 ```
 
+**`Input`**
+
 Options for [withTempDir](#withtempdir).
 
 #### Properties
@@ -291,6 +295,8 @@ type WriteUploadFromFileOptions = WriteUploadOptions & {
   windowBytes?: number;
 };
 ```
+
+**`Input`**
 
 Options for [writeUploadFromFile](#writeuploadfromfile) — [WriteUploadOptions](step.md#writeuploadoptions), plus the window.
 

@@ -1,0 +1,9 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "coding",
+  "epoch": 2,
+  "rule": 3,
+  "sha256": "f41dd30d0966529b0fbac4b4bfe4b1d11b8d9726629b18d6b9858654a34ee1b2",
+  "exports": ["CodingToolName", "CodingToolsOptions", "createCodingTools"],
+  "rollup": "55caf1bbb04c92470e706836caadf5d9ada579ff63d59f2114eb8102169e6f54"
+}

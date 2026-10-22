@@ -83,6 +83,7 @@ export function withDiscoveredTools<D extends ToolBearingAgent>(def: D, modules:
  * Both fields are optional and at least one must be present: an empty object is
  * a call that does nothing, which is the shape of a forgotten argument rather
  * than of a project with no files.
+ * @input
  */
 export type ProjectFiles = {
   /**

@@ -57,6 +57,7 @@ export const CHANNEL_POST_TIMEOUT_MS: number = 30_000;
  * would have to INVENT to render at all. They ride on the registration, and
  * the registry stores them with the handler for that kind.
  *
+ * @input
  * @public
  */
 export interface ChannelRegistration {

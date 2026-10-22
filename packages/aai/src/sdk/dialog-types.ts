@@ -79,6 +79,7 @@ export interface DialogToolResult<R> extends DialogPosition {
  * @typeParam R - What the tool's `execute` returns, as `sendFrom` reads it.
  * @typeParam E - The machine's event union.
  *
+ * @input
  * @public
  */
 export interface DialogGate<R, E> {
@@ -171,6 +172,7 @@ export interface DialogGate<R, E> {
  * @typeParam R - What `execute` returns.
  * @typeParam E - The machine's event union.
  *
+ * @input
  * @public
  */
 export interface DialogToolDef<P extends ToolInputSchema, R, E>
@@ -215,6 +217,7 @@ export type DialogSessionEventName = `@${SessionEventType}`;
  * A per-state deadline: how long the dialog may stay here, and what to send
  * when it has been that long. See {@link DialogStateSpec.timeout}.
  *
+ * @input
  * @public
  */
 export interface DialogTimeoutSpec {
@@ -238,6 +241,7 @@ export interface DialogTimeoutSpec {
  * arming this deadline hands the result straight back to {@link Dialog.send}
  * and never has to know how `timeout.send` is spelled.
  *
+ * @input
  * @public
  */
 export interface DialogTimeout {
@@ -255,6 +259,7 @@ export interface DialogTimeout {
  * these ride in the state node's `meta`, and a dialog's snapshot is persisted
  * through `structuredClone` for a `durable` session.
  *
+ * @input
  * @public
  */
 export interface DialogVoiceConfig {
@@ -311,6 +316,7 @@ export interface DialogVoiceConfig {
  * {@link dialog} overload taking one is not going away, and `procedure()` is
  * where full XState lives.
  *
+ * @input
  * @public
  */
 export interface DialogStateSpec {
@@ -381,6 +387,7 @@ export interface DialogStateSpec {
  * A dialog's shape as a plain state map — the argument to the {@link dialog}
  * overload that takes no XState machine. See {@link DialogStateSpec}.
  *
+ * @input
  * @public
  */
 export interface DialogSpec {

@@ -71,9 +71,14 @@
  * same way — the provided tool wins and the drop is logged.
  */
 
-import type { McpServerConfig, McpServers, ToolDef, Toolset } from "@alexkroman1/aai";
+import type { McpServerConfig, McpServers, ToolDef } from "@alexkroman1/aai";
 import { mcpToolName } from "@alexkroman1/aai";
-import { agentToolsets, type ToolBearingDef, toolset } from "@alexkroman1/aai/manifest";
+import {
+  agentToolsets,
+  type ToolBearingDef,
+  type Toolset,
+  toolset,
+} from "@alexkroman1/aai/manifest";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import type { Logger } from "../logger.ts";

@@ -37,7 +37,7 @@
  */
 export type Message = {
   /** The role of the message sender. */
-  role: "user" | "assistant" | "tool";
+  role: "user" | "assistant" | "tool" | (string & {});
   /**
    * The text content of the message.
    *

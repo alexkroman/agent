@@ -97,7 +97,11 @@ export function htmlToText(html: string, options?: { maxChars?: number }): strin
   return cap !== undefined && text.length > cap ? text.slice(0, cap) : text;
 }
 
-/** One entry of a feed, with the fields a digest actually reads. */
+/**
+ * One entry of a feed, with the fields a digest actually reads.
+ *
+ * @sealed
+ */
 export type FeedItem = {
   /**
    * The feed's own identifier for this entry — `<guid>` or Atom `<id>` —
@@ -128,7 +132,11 @@ export type FeedItem = {
   enclosureType: string | undefined;
 };
 
-/** A parsed RSS/Atom/RDF feed. */
+/**
+ * A parsed RSS/Atom/RDF feed.
+ *
+ * @sealed
+ */
 export type ParsedFeed = {
   /** The channel title, as text — never an entry's, which is a real hazard. */
   title: string | undefined;
@@ -259,7 +267,11 @@ function asText(value: string | undefined): string | undefined {
   return htmlToText(value) || undefined;
 }
 
-/** The three things a scraper reads off a page's `<head>`. */
+/**
+ * The three things a scraper reads off a page's `<head>`.
+ *
+ * @sealed
+ */
 export type PageMetadata = {
   /** `og:title` if the page declares one, else the `<title>` element. */
   title: string | undefined;

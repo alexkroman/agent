@@ -1,0 +1,17 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "agent-mcp",
+  "epoch": 1,
+  "rule": 3,
+  "sha256": "a112fc38a944d89017cbc72e9df3454c81f0201ee4f1f4c7d4ca40e6a5f02eaf",
+  "exports": [
+    "MCP_SERVER_KEY_RE",
+    "MCP_TOOL_PREFIX",
+    "McpResolvable",
+    "McpResolveContext",
+    "McpServerConfig",
+    "McpServers",
+    "mcpToolName"
+  ],
+  "rollup": "0635bdb77660b626aa7b2824ede8adb63ab69d95811fe40f3f1188815e3a977a"
+}

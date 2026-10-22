@@ -7,7 +7,7 @@
 // @public
 export function assemblyAIS2s(options?: AssemblyAIS2sOptions): S2sProvider;
 
-// @public
+// @public @input
 export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
     keyterms?: readonly string[];
     languages?: readonly string[];
@@ -17,7 +17,7 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
 // @public
 export function openAIS2s(options?: OpenAIS2sOptions): S2sProvider;
 
-// @public
+// @public @input
 export interface OpenAIS2sOptions extends ProviderCredentialOptions {
     model?: "gpt-realtime-2" | "gpt-realtime" | (string & {});
     url?: string;
@@ -27,7 +27,7 @@ export interface OpenAIS2sOptions extends ProviderCredentialOptions {
 // @public
 export type OpenAIS2sVoice = "alloy" | "ash" | "ballad" | "cedar" | "coral" | "echo" | "marin" | "sage" | "shimmer" | "verse" | (string & {});
 
-// @public
+// @public @input
 export interface ProviderCredentialOptions {
     apiKeyEnv?: string;
 }

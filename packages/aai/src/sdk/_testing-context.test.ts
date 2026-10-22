@@ -270,13 +270,13 @@ describe("createToolContext", () => {
     // NOT a stub: a template holding a `Map` in a slot has to fail in its own
     // spec rather than on the first deployment that has a database.
     const ctx = createToolContext();
-    expect(() => ctx.slots.write("held", new Map(), true)).toThrow(/a Map/);
+    expect(() => ctx.slots.write("held", new Map(), { durable: true })).toThrow(/a Map/);
   });
 
   test("two contexts are two sessions, so their slots are independent", () => {
     const a = createToolContext();
     const b = createToolContext();
-    a.slots.write("cart", { items: ["apple"] }, true);
+    a.slots.write("cart", { items: ["apple"] }, { durable: true });
     expect(b.slots.read("cart")).toBeUndefined();
     expect(a.sessionId).not.toBe(b.sessionId);
   });
