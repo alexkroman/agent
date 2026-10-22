@@ -19,7 +19,11 @@ import type {
 } from "@alexkroman1/aai/workflow-api";
 import type { WdkAdapter } from "../workflow/wdk-types.ts";
 
-/** One chunk `stepEmit()` wrote during a run, and the stream it named. */
+/**
+ * One chunk `stepEmit()` wrote during a run, and the stream it named.
+ *
+ * @sealed
+ */
 export type EvalEmitted = {
   /** The stream the step named. */
   readonly namespace: string;
@@ -35,6 +39,8 @@ export type EvalEmitted = {
  * nothing extra: `link-digest-workflow`'s ten seconds and the six hours its own comment
  * says the mechanism is identical at differ by nothing that runs here. What a
  * case CAN assert is that the body asked, and for how long.
+ *
+ * @sealed
  */
 export type EvalSleep = {
   /**
@@ -97,9 +103,8 @@ export type EvalBody = (
 /**
  * How the in-process engine behind `openEvalWorkflows` is configured.
  *
- * Public because {@link EvalWorkflowsOptions} indexes into it for its `speech`
- * and `stepFetch` fields — the engine factory itself stays internal, so this
- * describes the shape rather than naming it.
+ * Internal: `EvalWorkflowsOptions` spells its two public fields (`stepFetch`,
+ * `speech`) out rather than indexing this.
  */
 export type EvalWorkflowEngineOptions = {
   /** The agent's declared workflows, keyed as `agent({ workflows })` keys them. */

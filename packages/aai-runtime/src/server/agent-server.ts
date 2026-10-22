@@ -49,20 +49,21 @@
 
 import type http from "node:http";
 import type { AgentDef } from "@alexkroman1/aai";
-import type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
+import type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
 import {
   publishClientInboxDefaults,
   publishStepEnv,
   publishStepPublicUrl,
 } from "@alexkroman1/aai/host-internal";
-import type { Db } from "@alexkroman1/aai/internal";
 import { frontDoorOf } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { RunCodeExecutor } from "../host-agent-options.ts";
 import { consoleLogger } from "../logger.ts";
+import type { Db } from "../postgres-db.ts";
 import { createRuntime } from "../runtime/index.ts";
 import type { CarrierName } from "../telephony/carriers.ts";
 import { enabledCarriers } from "../telephony/telephony-server.ts";
-import type { JournalStore } from "../workflow/journal/types.ts";
+import type { WorkflowJournal } from "../workflow/journal/handle.ts";
 import { handleWorkflowRequest } from "../workflow/serve.ts";
 import { ensureOwnedSchemas, ownedSchemaUrl } from "./agent-server-schemas.ts";
 import { agentServerEnv } from "./env.ts";
@@ -97,6 +98,7 @@ const HEALTH_HEAD_ROUTE = {
 // An interface rather than an intersection: TypeDoc documents inherited
 // members of an interface, and cannot resolve a `{@link X.member}` into one
 // side of an `A & B` alias — which is how the `providerEnv` link below broke.
+/** @input */
 export interface AgentServerOptions extends SharedServerOptions {
   /**
    * The agent to serve. Its `name` and `greeting` feed `GET /client-config`.
@@ -153,7 +155,7 @@ export interface AgentServerOptions extends SharedServerOptions {
    * went wherever the runtime guessed. Each was found by somebody needing the
    * option, which is the wrong detector. {@link ForwardingGap} is the right one.
    */
-  journal?: JournalStore | undefined;
+  journal?: WorkflowJournal | undefined;
   /**
    * Where this server is reachable from outside — see `RuntimeOptions.publicUrl`.
    * `ctx.workflows.publicWebhookUrl()` is the only reader; without it, it throws.

@@ -45,7 +45,7 @@ import {
   type ToolSet,
 } from "ai";
 import { jsonrepair } from "jsonrepair";
-import type { Logger } from "../logger.ts";
+import { type Logger, silentLogger } from "../logger.ts";
 
 /** What {@link parseToolInput} returns for an object with no fields. */
 const EMPTY_ARGS = "{}";
@@ -131,19 +131,32 @@ function isUnparsable(input: string): boolean {
 }
 
 /**
- * Build a `ToolCallRepairFunction` bound to `model`. `null` return means
- * "not repairable" — the SDK then surfaces the original error.
+ * What {@link createToolCallRepair} takes.
  *
- * `getAbortSignal` supplies the in-flight turn's abort signal so the tier-2
- * `generateText` call is cancelled on barge-in / cancel / disconnect.
- * Without it, a repair kicked off mid-turn keeps running (a billed background
- * LLM call) after the turn that needed it has already been aborted.
+ * @input
+ */
+export type ToolCallRepairOptions = {
+  /** The model the tier-2 repair asks to re-emit the call — the turn's own. */
+  model: LanguageModel;
+  /** Where a repair that failed is reported. Defaults to silence. */
+  logger?: Logger | undefined;
+  /**
+   * The in-flight turn's abort signal, read when a repair starts, so the tier-2
+   * `generateText` call is cancelled on barge-in / cancel / disconnect. Without
+   * it, a repair kicked off mid-turn keeps running (a billed background LLM
+   * call) after the turn that needed it has already been aborted.
+   */
+  abortSignal?: (() => AbortSignal | undefined) | undefined;
+};
+
+/**
+ * Build a `ToolCallRepairFunction` bound to a model. `null` return means
+ * "not repairable" — the SDK then surfaces the original error.
  */
 export function createToolCallRepair(
-  model: LanguageModel,
-  log: Logger,
-  getAbortSignal?: () => AbortSignal | undefined,
+  options: ToolCallRepairOptions,
 ): ToolCallRepairFunction<ToolSet> {
+  const { model, logger: log = silentLogger, abortSignal: getAbortSignal } = options;
   return async ({ toolCall, error, inputSchema }) => {
     // An unknown tool can't be repaired by fixing arguments.
     if (NoSuchToolError.isInstance(error)) return null;

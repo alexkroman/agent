@@ -63,23 +63,28 @@
 // the authoring subpaths — those are what a FACTORY returns, which is an
 // author's concern. DECLARED in this package (`providers/openers.ts`), so the
 // `providers` capability that publishes them also owns them.
-export type { AgentEnv, ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
+// The SDK's credential-provenance brands: `ProviderEnv` may carry host
+// credentials, `AgentEnv` (what becomes `ctx.env`) may not, and the marker that
+// tells them apart is the SDK's own — a copy declared here would let the SDK's
+// `HostCredentialEnv` through `AgentEnv`. So they stay re-exported from
+// `/host-internal`, baselined in `api-shape-baseline.json` until the SDK
+// contracts them.
+export type { AgentEnv, ProviderEnv } from "@alexkroman1/aai/host-internal";
 // What every way of RUNNING an agent definition takes — `RuntimeOptions`,
 // `TextAgentOptions` and the two eval option bags all extend it.
-export type { HostAgentOptions } from "./host-agent-options.ts";
+export type { HostAgentOptions, RunCodeExecutor } from "./host-agent-options.ts";
 // The logger a host passes in, and the S2S tuning bag a config can override.
 // The two shipped `Logger` VALUES (`consoleLogger`, `createConsoleLogger`) and
 // the debug-env predicates are infrastructure — see
 // `@alexkroman1/aai-runtime/internal`.
 export type { LogContext, LogFn, Logger, LogLevel } from "./logger.ts";
-export type { McpDrift, McpInputSchema, McpTrust } from "./mcp/index.ts";
+export type { McpDrift } from "./mcp/index.ts";
 // MCP tool discovery — the other source of tools a host assembles before it
 // builds a runtime, and the only one that reaches a third party. HTTP only; the
 // modules' docs carry why stdio is refused rather than discouraged, and why a
 // server that is down costs its own tools and never the session.
 export {
   MCP_CONNECT_TIMEOUT_MS,
-  type McpCallResult,
   type McpConnectOptions,
   type McpServerStatus,
   type McpSession,
@@ -93,6 +98,7 @@ export {
   type CloseableDb,
   type CreatePostgresDbOptions,
   createPostgresDb,
+  type Db,
   type ReservedDb,
 } from "./postgres-db.ts";
 export type {
@@ -149,7 +155,6 @@ export {
   type RuntimeOptions,
   type SessionStartOptions,
 } from "./runtime/index.ts";
-export type { S2sConfig } from "./s2s-config.ts";
 // The bearer variable that CLOSES the event-stream read route, beside the types a
 // reader of it names. On the barrel for the same reason `WORKFLOW_API_TOKEN_ENV` is:
 // a host closing a surface has to be able to spell the variable that closes it, and
@@ -175,7 +180,12 @@ export {
 // Authenticating `WS /websocket` — `createSessionAuth`, the ticket helpers and
 // their types — is `@alexkroman1/aai-runtime/auth` (`auth-barrel.ts`), its own
 // subpath and capability. A server option names only the opaque `SessionAuth`.
-export type { SessionEventPage, SessionEventStream, SessionWebSocket } from "./session/index.ts";
+export type {
+  SessionEventPage,
+  SessionEventStream,
+  SessionWebSocket,
+  sessionEventStreamBrand,
+} from "./session/index.ts";
 // Applying the session-state DDL to a database this deployment OWNS. The tables
 // come with the database and the owner applies them; a self-hosted server is that
 // owner, so it needs a way to say so at boot. See the function's own doc.
@@ -185,6 +195,7 @@ export {
   type CarrierCodec,
   type CarrierInbound,
   type CarrierName,
+  type CarrierOutbound,
   carrierByName,
   telnyxCodec,
   twilioCodec,
@@ -205,7 +216,6 @@ export {
   type TextTurnOptions,
   type TextTurnResult,
 } from "./text-agent/index.ts";
-export type { ExecuteTool, ExecuteToolOptions } from "./tools/index.ts";
 // The repair both `streamText` loops share. Exported for a caller assembling
 // its own request against the same model (and because `salvageJson` is the
 // half that costs no tokens).
@@ -214,39 +224,38 @@ export type { ExecuteTool, ExecuteToolOptions } from "./tools/index.ts";
 // CLI's generated worker entry, a spec's `import.meta.glob`) already has its
 // modules; a plain `server.mjs` has neither, and without this the only way to
 // give a self-hosted agent a tool was the hand-written map `agent()` refuses.
-export { createToolCallRepair, salvageJson, withToolsDir } from "./tools/index.ts";
-// `PipelineTransportOptions.skipGreeting` names this, and a caller passing the
-// THUNK form — which is how a resume that recovered nothing gets greeted —
-// would otherwise have a type to satisfy and no way to name it.
-export type { SkipGreetingOption } from "./transports/types.ts";
+export {
+  createToolCallRepair,
+  salvageJson,
+  type ToolCallRepairOptions,
+  withToolsDir,
+} from "./tools/index.ts";
 // The workflow HTTP API's ADDRESSING. `createServerForRuntime` mounts the route itself,
 // so nothing outside this package has to wire one — what is exported is the
 // token's env var (the guest's deploy path reads it to decide whether a
-// deployed app's API is closed) and the prefix, so the platform's proxy and
-// this server cannot name different paths. The handler and its engine seam are
-// on `@alexkroman1/aai-runtime/internal`.
+// deployed app's API is closed). The PREFIX is the SDK's `WORKFLOW_API_PREFIX`
+// (`@alexkroman1/aai/internal`), which the platform's proxy imports from there;
+// re-exporting it here promised an epoch on an SDK internal. The handler and
+// its engine seam are on `@alexkroman1/aai-runtime/internal`.
+export { MAX_WORKFLOW_INPUT_BYTES, WORKFLOW_API_TOKEN_ENV } from "./workflow/api.ts";
+// What `RuntimeOptions.journal`, `AgentServerOptions.journal` and `runWorkflow`
+// take: an opaque, sealed handle, and the one factory a host calls for one. The
+// store's sixteen-method shape is internal — every backend is this package's.
 export {
-  MAX_WORKFLOW_INPUT_BYTES,
-  WORKFLOW_API_PREFIX,
-  WORKFLOW_API_TOKEN_ENV,
-} from "./workflow/api.ts";
+  createMemoryJournal,
+  type WorkflowJournal,
+  type workflowJournalBrand,
+} from "./workflow/journal/handle.ts";
 // The journal's tables, for the same reason and the same operator: a self-hosted
 // deployment owns its database and `server.mjs` may import only this surface.
 export { ensureWorkflowJournalSchema } from "./workflow/journal/schema.ts";
-export {
-  createMemoryKeyStore,
-  createPostgresKeyStore,
-  DEFAULT_WORKFLOW_FIND_LIMIT,
-  MAX_WORKFLOW_FIND_LIMIT,
-  type WorkflowKeyStore,
-} from "./workflow/keys.ts";
-// An embedder's choice between the two LOCAL key stores — Postgres when it holds
-// a `Db`, memory otherwise. A DEPLOYED guest does not come through it: the
-// platform's own index is selected by `selectKeyStore` (`workflow/runtime.ts`)
-// out of the environment, beside `selectJournal`.
-export { resolveKeyStore } from "./workflow/keys-select.ts";
-// What an OPERATOR configures an upload bucket with, the record shapes a step
-// reads back, and the two failures a caller has to tell apart. The store, its
+// The find limits a `WorkflowClient.find` call is clamped to. The key STORES
+// themselves are internal: no published signature takes or returns one (the
+// runtime selects its own from `RuntimeOptions.db`), so the `keys` capability
+// that published them promised epochs on plumbing.
+export { DEFAULT_WORKFLOW_FIND_LIMIT, MAX_WORKFLOW_FIND_LIMIT } from "./workflow/keys.ts";
+// What an OPERATOR configures an upload bucket with, and the two failures a
+// caller has to tell apart. The store, its
 // two blob backends, the part addressing and the table name are the PLATFORM's
 // wiring and are on `@alexkroman1/aai-runtime/internal` — no public signature
 // takes or returns one, so a contract over them promised epochs on plumbing.
@@ -255,8 +264,6 @@ export {
   UPLOAD_STORAGE_BUCKET_ENV,
   UPLOAD_STORAGE_KEY_ENV,
   UPLOAD_STORAGE_URL_ENV,
-  type UploadMeta,
-  type UploadPart,
   UploadsUnavailableError,
   UploadTooLargeError,
 } from "./workflow/uploads.ts";

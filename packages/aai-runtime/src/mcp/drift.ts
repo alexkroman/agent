@@ -47,7 +47,11 @@
 
 import { detectToolDrift, fingerprintTools, type ToolSet } from "ai";
 
-/** `detectToolDrift`'s answer, kept as its own name so a status can carry it. */
+/**
+ * `detectToolDrift`'s answer, kept as its own name so a status can carry it.
+ *
+ * @sealed
+ */
 export type McpDrift = {
   /** Tools the server publishes that the pin does not name. */
   added: readonly string[];

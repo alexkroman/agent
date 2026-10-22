@@ -15,7 +15,7 @@ import {
   type ServerSession,
   type SessionEmitter,
   type SessionEventHookDeps,
-  type SessionEventStream,
+  type SessionEventLog,
 } from "./session/index.ts";
 import { createMemoryStateBackend } from "./session-state/store.ts";
 
@@ -54,7 +54,7 @@ export function makeMockCore(overrides?: Partial<ServerSession>): ServerSession 
 export function makeEmitter(
   client: ClientSink,
   options?: { sessionId?: string; hooks?: SessionEventHookDeps },
-): { emitter: SessionEmitter; stream: SessionEventStream; sessionId: string } {
+): { emitter: SessionEmitter; stream: SessionEventLog; sessionId: string } {
   const sessionId = options?.sessionId ?? "test-session";
   const stream = createSessionEventStream({ backend: createMemoryStateBackend() });
   return {

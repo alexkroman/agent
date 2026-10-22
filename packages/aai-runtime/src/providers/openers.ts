@@ -29,7 +29,7 @@ export type Unsubscribe = () => void;
  * failure phase: connecting, authenticating, or mid-stream.
  */
 export interface SttError extends Error {
-  readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
+  readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error" | (string & {});
 }
 
 /** Build an {@link SttError} with a typed `code`. Zero-dep helper so both sdk/ and host/ can use it. */
@@ -178,7 +178,7 @@ export interface SttOpener {
  * failure phase: connecting, authenticating, or mid-stream.
  */
 export interface TtsError extends Error {
-  readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
+  readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error" | (string & {});
 }
 
 /** Build a {@link TtsError} with a typed `code`. Mirror of {@link createSttError}. */

@@ -8,5 +8,12 @@
  * not re-exported here is private to it (guard-invariants rule 37).
  */
 
-export { createTextAgent, textAgentHasNoSession } from "./agent.ts";
-export type { TextAgent, TextAgentOptions, TextTurnOptions, TextTurnResult } from "./types.ts";
+export { createHostTextAgent, createTextAgent, textAgentHasNoSession } from "./agent.ts";
+export type {
+  FullTextTurnResult,
+  HostTextAgent,
+  TextAgent,
+  TextAgentOptions,
+  TextTurnOptions,
+  TextTurnResult,
+} from "./types.ts";

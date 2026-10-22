@@ -103,6 +103,12 @@ const UNDOCUMENTED_CAPABILITIES = {
     "satisfies the interface, and never names these types; they are exported so a library " +
     "author can type a validator that is not zod. The guide's tool examples are the " +
     "documentation of the part an author does write.",
+  "aai-runtime:db":
+    "the HOST's Postgres handle — `createPostgresDb` and the `Db` the runtime's own stores " +
+    "take (`RuntimeOptions.db`). It reaches the example-facing set through one name, `Db`, " +
+    "which `@alexkroman1/aai-runtime/testing` re-publishes because `TextAgentOptions.db` " +
+    "takes one. There is no `ctx.db`: an `agent.ts` never opens or receives this handle, and " +
+    "its own documentation is `packages/aai-runtime/CLAUDE.md`.",
   "aai-runtime:eval-simulate":
     "the simulated caller and the model-graded judge (`simulateCall`, `judgeCall`, " +
     "`evalSimulation`). Each adds a SECOND and THIRD live model to a case, so a keyless " +
@@ -118,6 +124,14 @@ const UNDOCUMENTED_CAPABILITIES = {
     "case can collect lines and assert on them. Nothing else in it is written from an " +
     "`agent.ts` — an agent author never sizes a log buffer — and its own documentation is " +
     "`packages/aai-runtime/CLAUDE.md`.",
+  "aai-runtime:workflow":
+    "the HOST side of durable runs — the journal schema an operator applies, the find limits, " +
+    "the workflow API's token variable, and the opaque `WorkflowJournal` a host hands a " +
+    "runtime. It reaches the example-facing set because `@alexkroman1/aai-runtime/testing` " +
+    "re-publishes `WorkflowJournal` and `createMemoryJournal` (what `runWorkflow`'s `journal` " +
+    "option takes). A spec needs neither — `runWorkflow` defaults to a fresh memory journal, " +
+    "and the guide's durable-run section teaches that driver — so the guide documents the " +
+    "part an author writes, and `packages/aai-runtime/CLAUDE.md` the rest.",
   "aai-runtime:providers":
     "the HOST provider-registry surface — `registerSttKind`/`registerTtsKind`/`registerLlmKind`, " +
     "`resolveLlm` and the opener contracts a custom speech provider is written against. It " +

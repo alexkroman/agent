@@ -81,7 +81,11 @@ export type SimulationTarget =
       said(): readonly string[];
     };
 
-/** What {@link simulateCall} takes. */
+/**
+ * What {@link simulateCall} takes.
+ *
+ * @input
+ */
 export type SimulateCallOptions = {
   /** Who is calling. */
   readonly caller: SimulatedCaller;
@@ -103,7 +107,11 @@ export type SimulateCallOptions = {
   readonly maxTurns?: number;
 };
 
-/** One exchange: what the caller said and the turn it produced. */
+/**
+ * One exchange: what the caller said and the turn it produced.
+ *
+ * @sealed
+ */
 export type SimulatedTurn = {
   /** The caller's line. */
   readonly caller: string;
@@ -116,7 +124,11 @@ export type SimulatedTurn = {
   readonly latencyMs: number | undefined;
 };
 
-/** What was measured over the whole call. */
+/**
+ * What was measured over the whole call.
+ *
+ * @sealed
+ */
 export type SimulationMetrics = {
   /** Caller turns taken. */
   readonly turns: number;
@@ -134,7 +146,11 @@ export type SimulationMetrics = {
   };
 };
 
-/** A finished simulated call. */
+/**
+ * A finished simulated call.
+ *
+ * @sealed
+ */
 export type SimulatedCall = {
   readonly caller: SimulatedCaller;
   /** The agent's opening line(s) before the caller spoke — empty for a text agent. */
@@ -148,7 +164,7 @@ export type SimulatedCall = {
    * {@link SimulateCallOptions.maxTurns}, which usually means the goal was
    * never met.
    */
-  readonly endedBy: "caller" | "agent" | "max-turns";
+  readonly endedBy: "caller" | "agent" | "max-turns" | (string & {});
   /** The reason the caller gave to `end_call`, when it gave one — never set when the agent hung up. */
   readonly endReason: string | undefined;
   readonly metrics: SimulationMetrics;

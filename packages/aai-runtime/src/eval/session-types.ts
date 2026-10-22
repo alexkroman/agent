@@ -206,6 +206,8 @@ export type EvalSession = {
  *   durable — no journal, no replay, no retry. See `eval/workflow-engine.ts`
  *   before writing a claim about a run.
  * - `logger` defaults to silent. Pass `consoleLogger` when diagnosing a case.
+ *
+ * @input
  */
 export interface EvalSessionOptions extends HostAgentOptions {
   /**

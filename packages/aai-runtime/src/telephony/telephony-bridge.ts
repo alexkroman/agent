@@ -35,7 +35,7 @@
  * "Host-mode audio pacing" in `packages/aai-cli/CLAUDE.md`): the backlog builds
  * on the far side, where `PacedAudioSink.clear()` cannot reach it. Paced, the
  * backlog stays here and a barge-in drops it. The carrier's own buffer is
- * emptied by the `clear` frame — see {@link CarrierCodec.clear}.
+ * emptied by the `clear` frame — see `CarrierOutbound`.
  */
 
 import { WS_OPEN } from "@alexkroman1/aai/internal";
@@ -59,7 +59,7 @@ import { createResampler, type Resampler } from "./resample.ts";
  * before. Kept beside the branches it mirrors — a name added there needs adding
  * here, and the spec asserts the pair.
  */
-export const ACTED_ON_EVENTS =
+export const ACTED_ON_EVENTS: RegExp =
   /"(?:session\.configured|reply\.cancelled|session\.reset|error\.reported)"/;
 
 const AUDIO_READY_FRAME = JSON.stringify({ type: "audio_ready" });
@@ -80,7 +80,11 @@ const MAX_PRE_CONFIG_FRAMES = 50;
 /** Close code sent when the carrier ends the stream (the caller hung up). */
 const WS_CLOSE_NORMAL = 1000;
 
-/** Options for {@link createTelephonyBridge}. */
+/**
+ * Options for {@link createTelephonyBridge}.
+ *
+ * @input
+ */
 export type TelephonyBridgeOptions = {
   /** Framing for the carrier on the other end — see `carriers.ts`. */
   carrier: CarrierCodec;
@@ -173,7 +177,8 @@ export function createTelephonyBridge(
   }
 
   function sendToCarrier(frame: unknown): void {
-    if (carrierSocket.readyState !== WS_OPEN) return;
+    // `undefined` is a codec saying this carrier has no such frame.
+    if (frame === undefined || carrierSocket.readyState !== WS_OPEN) return;
     try {
       carrierSocket.send(JSON.stringify(frame));
     } catch (err) {
@@ -253,13 +258,13 @@ export function createTelephonyBridge(
       return;
     }
     // The caller interrupted, or the conversation was reset. Both mean the
-    // audio the carrier is still holding is dead — see CarrierCodec.clear.
+    // audio the carrier is still holding is dead — see CarrierOutbound's `clear`.
     // The reset event is `session.reset` on the wire, not `reset`: this branch
     // spent its life testing a type no runtime emits, so a `reset` command left
     // the carrier playing out a conversation the session had already discarded.
     // `../session/ws-client-sink.ts` clears the pacer on exactly this pair.
     if (type === "reply.cancelled" || type === "session.reset") {
-      sendToCarrier(carrier.clear(streamId));
+      sendToCarrier(carrier.encode({ kind: "clear", streamId }));
       return;
     }
     // A FATAL error ends the call, and a phone having no screen is exactly why.
@@ -295,7 +300,13 @@ export function createTelephonyBridge(
     }
     const eightKhz = toCarrier.process(bytesToPcm16(bytes));
     if (eightKhz.length === 0) return;
-    sendToCarrier(carrier.media(uint8ToBase64(pcm16ToMulaw(eightKhz)), streamId));
+    sendToCarrier(
+      carrier.encode({
+        kind: "media",
+        payload: uint8ToBase64(pcm16ToMulaw(eightKhz)),
+        streamId,
+      }),
+    );
   }
 
   /** Whether the carrier's `start` has been seen; a repeat is ignored. */
@@ -352,22 +363,35 @@ export function createTelephonyBridge(
     const text = frameText(data);
     if (text === null) return;
     const frame = carrier.decode(safeJsonParse(text));
-    if (frame.kind === "start") {
-      handleCarrierStart(frame);
+    switch (frame.kind) {
+      case "start":
+        handleCarrierStart(frame);
+        return;
+      case "stop":
+        handleCarrierStop();
+        return;
+      case "dtmf":
+        // No session input takes a key press yet. The digit is not logged: a
+        // caller keying a PIN is the ordinary case.
+        log.debug("telephony: caller pressed a key", { carrier: carrier.name });
+        return;
+      case "media":
+        handleCallerAudio(frame.payload);
+        return;
+      default:
+        return;
+    }
+  }
+
+  /** One caller payload: forwarded, or held until the session's config arrives. */
+  function handleCallerAudio(payload: string): void {
+    if (toSession !== null) {
+      forwardCallerAudio(payload);
       return;
     }
-    if (frame.kind === "stop") {
-      handleCarrierStop();
-      return;
+    if (preConfigAudio !== null && preConfigAudio.length < MAX_PRE_CONFIG_FRAMES) {
+      preConfigAudio.push(payload);
     }
-    if (frame.kind !== "media") return;
-    if (toSession === null) {
-      if (preConfigAudio !== null && preConfigAudio.length < MAX_PRE_CONFIG_FRAMES) {
-        preConfigAudio.push(frame.payload);
-      }
-      return;
-    }
-    forwardCallerAudio(frame.payload);
   }
 
   /** One caller payload, decoded and resampled to the session's input rate. */

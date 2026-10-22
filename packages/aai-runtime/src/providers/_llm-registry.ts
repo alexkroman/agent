@@ -61,7 +61,11 @@ import { type FetchLike, mergeRequestBody } from "./_request-body-extras.ts";
 import { pickEndpoint } from "./_utils.ts";
 import { bind } from "./registry.ts";
 
-/** One registry entry per LLM provider — adding a provider is one entry here. */
+/**
+ * One registry entry per LLM provider — adding a provider is one entry here.
+ *
+ * @input
+ */
 export type LlmRegistryEntry = {
   readonly envVar: string;
   readonly label: string;

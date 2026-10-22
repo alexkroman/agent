@@ -52,6 +52,7 @@ import { createFakeLanguageModel, type ScriptedPart } from "../_fake-llm.ts";
 /**
  * One tool call in a {@link ScriptedTextStep}.
  *
+ * @input
  * @public
  */
 export type ScriptedToolCall = {
@@ -85,6 +86,7 @@ export type ScriptedToolCall = {
  * tool-calling turn the obvious two-entry script — the call, then the answer —
  * and a plain reply a one-entry one.
  *
+ * @input
  * @public
  */
 export type ScriptedTextStep = {

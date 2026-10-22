@@ -153,9 +153,10 @@ if one seems needed, the bridge is the wrong shape.
   (`telephony/resample.ts`; `telephony/mulaw.ts` keeps G.711 sample-exact).
 - This is consistent with "the host does not resample": the bridge IS the edge.
 - **Adding a carrier is one `CarrierCodec`** in `telephony/carriers.ts`; its doc
-  lists what every codec owes (decode never throws; non-`inbound` media
-  dropped).
+  lists what every codec owes (decode never throws; non-`inbound` media dropped;
+  `encode` answers `undefined` for a request kind it lacks).
 - Known gaps, deliberate: no `mark` frames (pipeline uses its open-loop
-  estimate); inbound DTMF ignored. OUTBOUND keys (`sendDtmf`, on
+  estimate); inbound DTMF is decoded (`kind: "dtmf"`) and dropped at the bridge,
+  since no session input takes a key yet. OUTBOUND keys (`sendDtmf`, on
   `/experimental`) are in-band tones the session plays as agent audio
   (`aai-runtime/src/session/dtmf.ts`), so the bridge carries them unchanged.

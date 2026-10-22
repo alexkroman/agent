@@ -2,21 +2,53 @@
 /**
  * Capability contract: `eval-assert`.
  *
- * The two newest per-turn CLAIMS over an eval turn: `expectCalled` (the agent
- * acted at all — it called the tool before it spoke, naming the sentence it
- * said instead) and `lastToolResultIn` (the most recent result a named tool
- * returned, throwing on none).
+ * The assertion VOCABULARY over what an eval drove: every pure reader and
+ * claim over a turn, a call list, an event stream or a finished workflow run
+ * (`saidIn`, `toolCallsInEvents`, `toolArgsIn`, `toolResultIn`,
+ * `lastStateIn`, `turnCalling`, `expectCalled`, `expectToolBeforeSpeech`,
+ * `describeTurn`, `transcriptOf`, `completedOutput`, …), and the two records
+ * they read — `EvalTurn` and `EvalToolCall`.
  *
- * Its own capability over `/eval` rather than part of `eval`: they are the
- * young half of the assertion vocabulary and still moving, and a claim's
- * message or overload changing is not a change to the harness that runs the
- * case. The readers `eval` has carried since its first epoch stay there.
+ * Its own capability, and the STABLE one of the family: a reader is a pure
+ * function of a record, so it moves when the record does and not when the
+ * harness that produced it does. The drivers and their options are `eval`'s;
+ * the simulated caller and judge `eval-simulate`'s; the fake network
+ * `eval-network`'s; the phone menu `eval-phone-tree`'s.
+ *
+ * `EvalTurn` and `EvalToolCall` are owned here rather than by `eval`, although
+ * the session hands them out, because a caller-implemented `SimulationTarget`
+ * RETURNS one — they are records both sides build, which is why neither is
+ * tagged `@sealed` or `@input`.
  *
  * Re-exported from `@alexkroman1/aai-runtime/eval` and `/eval/vitest`. This
- * file is not shipped
- * and nothing imports it — it exists so `pnpm check:api-contracts` can extract
- * a report for this capability alone, hash it, and hold it to a committed
- * epoch. See `scripts/api-contracts.mjs`.
+ * file is not shipped and nothing imports it — it exists so
+ * `pnpm check:api-contracts` can extract a report for this capability alone,
+ * hash it, and hold it to a committed epoch. See `scripts/api-contracts.mjs`.
  */
 
-export { expectCalled, lastToolResultIn } from "../../eval-barrel.ts";
+export {
+  completedOutput,
+  customEventsIn,
+  describeToolCalls,
+  describeTurn,
+  type EvalToolCall,
+  type EvalTurn,
+  errorsIn,
+  expectCalled,
+  expectToolBeforeSpeech,
+  lastStateIn,
+  lastToolResultIn,
+  runCodeIn,
+  runCodeOutput,
+  saidIn,
+  statesIn,
+  TURN_ENDS,
+  toolArgsIn,
+  toolCallsInEvents,
+  toolCallsInTurns,
+  toolNames,
+  toolResultIn,
+  toolResultsIn,
+  transcriptOf,
+  turnCalling,
+} from "../../eval-barrel.ts";

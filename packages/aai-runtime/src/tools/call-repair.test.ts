@@ -163,7 +163,7 @@ describe("what the SDK already covers", () => {
  * abort-signal specs below are the only ones that file uniquely covered.
  */
 describe("createToolCallRepair over a real model", () => {
-  const model = {} as Parameters<typeof createToolCallRepair>[0];
+  const model = {} as Parameters<typeof createToolCallRepair>[0]["model"];
   const inputSchema = async () => ({ type: "object" as const });
   /**
    * The rest of the SDK's repair bag, spelled out rather than cast away: the
@@ -213,7 +213,7 @@ describe("createToolCallRepair over a real model", () => {
 
   test("leaves an unknown tool name alone", async () => {
     // Guessing which tool was meant risks turning a delete into a write.
-    const repair = createToolCallRepair(model, silentLogger);
+    const repair = createToolCallRepair({ model, logger: silentLogger });
     const result = await repair({
       toolCall: { type: "tool-call", toolCallId: "t0", toolName: "nope", input: "{}" },
       error: new NoSuchToolError({ toolName: "nope", availableTools: ["write_file"] }),
@@ -225,7 +225,7 @@ describe("createToolCallRepair over a real model", () => {
 
   test("tier 1 salvages malformed input without spending any tokens", async () => {
     const { model: fixer, calls } = fixerModel('{"never":"used"}');
-    const repair = createToolCallRepair(fixer, silentLogger);
+    const repair = createToolCallRepair({ model: fixer, logger: silentLogger });
     const broken = '{"path":"a.ts","content":"line one\nline two"}';
 
     const result = await repair({
@@ -245,7 +245,7 @@ describe("createToolCallRepair over a real model", () => {
 
   test("tier 2 asks the model to rewrite input that cannot be salvaged", async () => {
     const { model: fixer, calls } = fixerModel('{"path":"a.ts","content":"x"}');
-    const repair = createToolCallRepair(fixer, silentLogger);
+    const repair = createToolCallRepair({ model: fixer, logger: silentLogger });
     const hopeless = "write a.ts with content x please";
 
     const result = await repair({
@@ -272,7 +272,7 @@ describe("createToolCallRepair over a real model", () => {
     // implementation of a plain `vi.fn()`, so a shared logger would let an
     // earlier test's warning satisfy this one.
     const log = makeLogger();
-    const repair = createToolCallRepair(failing, log);
+    const repair = createToolCallRepair({ model: failing, logger: log });
     const hopeless = "not json";
 
     const result = await repair({
@@ -298,7 +298,11 @@ describe("createToolCallRepair over a real model", () => {
   test("threads the turn's abort signal into the tier-2 request", async () => {
     const { model: fixer, signals } = fixerModel('{"path":"a.ts","content":"x"}');
     const ctl = new AbortController();
-    const repair = createToolCallRepair(fixer, silentLogger, () => ctl.signal);
+    const repair = createToolCallRepair({
+      model: fixer,
+      logger: silentLogger,
+      abortSignal: () => ctl.signal,
+    });
     const hopeless = "write a.ts with content x please";
 
     await repair({
@@ -313,7 +317,11 @@ describe("createToolCallRepair over a real model", () => {
 
   test("omits abortSignal when the getter returns undefined", async () => {
     const { model: fixer, signals } = fixerModel('{"path":"a.ts","content":"x"}');
-    const repair = createToolCallRepair(fixer, silentLogger, () => undefined);
+    const repair = createToolCallRepair({
+      model: fixer,
+      logger: silentLogger,
+      abortSignal: () => undefined,
+    });
     const hopeless = "write a.ts with content x please";
 
     await repair({

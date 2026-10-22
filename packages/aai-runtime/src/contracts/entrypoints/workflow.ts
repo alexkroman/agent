@@ -2,9 +2,10 @@
 /**
  * Capability contract: `workflow`.
  *
- * Serving the workflow HTTP API from a host: its prefix, the token that closes
- * it, the journal schema a self-hosted operator applies, and the limits a
- * request is held to.
+ * Serving the workflow HTTP API from a host: the token that closes
+ * it, the journal schema a self-hosted operator applies, the limits a request
+ * is held to, and the opaque journal handle a host hands a runtime (with the
+ * memory factory that mints one).
  *
  * The engine adapter (`WdkAdapter`, its run record and stream options) and the
  * client's options bag are no longer here: `createWorkflowClient`, the one
@@ -18,10 +19,12 @@
  */
 
 export {
+  createMemoryJournal,
   DEFAULT_WORKFLOW_FIND_LIMIT,
   ensureWorkflowJournalSchema,
   MAX_WORKFLOW_FIND_LIMIT,
   MAX_WORKFLOW_INPUT_BYTES,
-  WORKFLOW_API_PREFIX,
   WORKFLOW_API_TOKEN_ENV,
+  type WorkflowJournal,
+  type workflowJournalBrand,
 } from "../../runtime-barrel.ts";

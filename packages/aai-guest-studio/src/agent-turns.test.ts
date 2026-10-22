@@ -151,7 +151,7 @@ describe("one turn of the studio coding agent", () => {
       ],
     });
 
-    expect(run.steps).toHaveLength(2);
+    expect(run.texts).toHaveLength(2);
     expect(run.toolCalls.map((call) => call.name)).toEqual(["todo_write"]);
     expect(run.texts.at(-1)).toBe("Stopping here — the plan is written.");
     // The reserved step is the one that answers, so the turn never ends on a

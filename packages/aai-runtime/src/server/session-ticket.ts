@@ -41,7 +41,11 @@ export type SessionIdentity = {
   claims?: Record<string, unknown>;
 };
 
-/** Input to {@link createSessionToken}. */
+/**
+ * Input to {@link createSessionToken}.
+ *
+ * @input
+ */
 export type SessionTokenInput = SessionIdentity & {
   /** The same secret the server verifies with — `AAI_SESSION_SECRET`. */
   secret: string;
@@ -101,7 +105,11 @@ export function createSessionToken(input: SessionTokenInput): string {
   return `${body}.${sign(body, input.secret)}`;
 }
 
-/** Options for {@link verifySessionToken}. */
+/**
+ * Options for {@link verifySessionToken}.
+ *
+ * @input
+ */
 export type VerifySessionTokenOptions = {
   secret: string;
   /** Clock override for tests, in ms since the epoch. */
@@ -187,7 +195,7 @@ const PLATFORM_TICKET_KEY_LABEL = "aai.platform-session-ticket.v1";
  *
  * @internal
  */
-export const PLATFORM_TICKET_RESUME_GRACE_SECONDS = 12 * 60 * 60;
+export const PLATFORM_TICKET_RESUME_GRACE_SECONDS: number = 12 * 60 * 60;
 
 /**
  * The key a deployed guest verifies platform tickets with, derived from its

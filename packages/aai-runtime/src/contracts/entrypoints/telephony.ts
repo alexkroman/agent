@@ -16,6 +16,7 @@ export {
   type CarrierCodec,
   type CarrierInbound,
   type CarrierName,
+  type CarrierOutbound,
   carrierByName,
   createTelephonyBridge,
   startTelephonySession,

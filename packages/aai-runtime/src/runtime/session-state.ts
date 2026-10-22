@@ -16,7 +16,7 @@ import {
   type ClientHistoryDeps,
   createSessionEventStream,
   publishClientTranscripts,
-  type SessionEventStream,
+  type SessionEventLog,
 } from "../session/index.ts";
 import {
   createPlatformStateBackend,
@@ -42,7 +42,7 @@ export type RuntimeSessionState = {
    * agent is durable, and two `discard`s would reclaim half a session each. See
    * `session-state-store.ts` on the two consumers.
    */
-  stream: SessionEventStream;
+  stream: SessionEventLog;
   sweeps: StateSweeps;
   /**
    * The backend and stream a CLIENT's log is read through — bound, loaded into

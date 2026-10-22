@@ -69,6 +69,8 @@ import type { SttOpener, TtsOpener } from "./openers.ts";
  * HOST to add a vendor this SDK does not ship ("Your own provider" on the docs
  * site's Voices and models page). A registered kind resolves exactly like a
  * catalog one, its credential variable included.
+ *
+ * @input
  */
 export type OpenerRegistryEntry<Opener, O extends object = Record<string, unknown>> = {
   readonly envVar: string;

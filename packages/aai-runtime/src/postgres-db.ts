@@ -9,7 +9,6 @@
  * PgBouncer), which the platform fronts every app schema with.
  */
 
-import type { Db } from "@alexkroman1/aai/internal";
 import { MAX_DB_RESULT_ROWS } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
@@ -123,7 +122,28 @@ function logNotice(notice: unknown): void {
  */
 const POOL_IDLE_TIMEOUT_SECONDS = 30;
 
-/** Options for {@link createPostgresDb}. */
+/**
+ * The one-method SQL handle the runtime's own stores take — session slots, the
+ * workflow journal and its key index (`RuntimeOptions.db`).
+ *
+ * DECLARED here rather than re-exported from the SDK: the SDK's identical
+ * `Db` is on its non-semver `/internal` subpath, and a contracted signature
+ * naming it would hash only the name. Structurally the same type, so either is
+ * assignable to the other.
+ *
+ * @input
+ * @public
+ */
+export type Db = {
+  /** Run one parameterized statement and answer its rows. */
+  query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+};
+
+/**
+ * Options for {@link createPostgresDb}.
+ *
+ * @input
+ */
 export type CreatePostgresDbOptions = {
   /** Postgres connection URL (e.g. the app's `DATABASE_URL`). */
   url: string;
@@ -224,15 +244,24 @@ export type CreatePostgresDbOptions = {
  * One connection held out of the pool for the caller's exclusive use, so
  * SESSION-scoped state — advisory locks, `SET` — survives across statements.
  *
+ * @sealed
  * @public
  */
-export type ReservedDb = Db & {
+export type ReservedDb = {
+  /** Run one statement on the held connection. */
+  query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
   /** Return the connection to the pool. Idempotent; the handle dies with it. */
   release(): void;
 };
 
-/** A {@link Db} whose underlying connection pool the caller owns and must close. */
-export type CloseableDb = Db & {
+/**
+ * A {@link Db} whose underlying connection pool the caller owns and must close.
+ *
+ * @sealed
+ */
+export type CloseableDb = {
+  /** Run one statement on a pooled connection. */
+  query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
   /**
    * Hold one connection out of the pool until `release()`.
    *

@@ -49,7 +49,7 @@ import type {
   SpeakerDef,
 } from "@alexkroman1/aai";
 import { DEFAULT_GUARDRAIL_MAX_REVISIONS } from "@alexkroman1/aai";
-import type { ProviderEnv, RunCodeExecutor } from "@alexkroman1/aai/host-internal";
+import type { ProviderEnv } from "@alexkroman1/aai/host-internal";
 import { normalizeLlm, resolveAllBuiltins } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_MAX_STEPS, formatSchemaIssues } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
@@ -59,6 +59,7 @@ import { omitUndefined, safeJsonParse } from "@alexkroman1/aai/utils";
 import { type LanguageModel, type ModelMessage, stepCountIs, ToolLoopAgent } from "ai";
 import { createLlmModelCache, isLlmDescriptor } from "./_llm-model-cache.ts";
 import { composePreparers, forceFinalAnswer } from "./_prepare-step.ts";
+import type { RunCodeExecutor } from "./host-agent-options.ts";
 import { consoleLogger, type Logger } from "./logger.ts";
 import {
   createToolDispatcher,

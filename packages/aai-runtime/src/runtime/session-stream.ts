@@ -45,7 +45,7 @@ import type { ResumeFindings, ServerSession } from "../session/index.ts";
 import {
   historyFromEvents,
   SESSION_EVENT_READ_LIMIT,
-  type SessionEventStream,
+  type SessionEventLog,
   SessionRefusedError,
 } from "../session/index.ts";
 import type { SessionMemory } from "./session-memory.ts";
@@ -60,7 +60,7 @@ import type { SessionMemory } from "./session-memory.ts";
  * @internal
  */
 export async function readAllEvents(
-  stream: SessionEventStream,
+  stream: SessionEventLog,
   sessionId: string,
 ): Promise<SessionEvent[]> {
   const all: SessionEvent[] = [];
@@ -92,7 +92,7 @@ function holdsConversation(events: readonly SessionEvent[]): boolean {
 export function attachSessionStream(
   core: ServerSession,
   opts: {
-    stream: SessionEventStream;
+    stream: SessionEventLog;
     sessionId: string;
     resumed: boolean;
     /**

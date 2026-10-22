@@ -2,10 +2,12 @@
 /**
  * Capability contract: `eval`.
  *
- * Driving an agent from TEXT to measure what it did — the session with its two
- * speech stages faked, the readers over its event stream, the credential gate,
- * the scripted model a keyless run falls back to, and the vitest suite that
- * chooses between them.
+ * DRIVING an agent from text to measure what it did: the session with its two
+ * speech stages faked, the text-agent and workflow harnesses, the credential
+ * gate, their option bags and records, the runtime's own stubs a harness
+ * composes with (the scripted model a keyless run falls back to, the fake
+ * speech openers, the `node:vm` `run_code` executor), and the vitest suites
+ * that choose between live and scripted.
  *
  * ONE capability over two subpaths (`/eval` and `/eval/vitest`) rather than two,
  * for the reason `aai`'s `testing` capability spans `/testing` and
@@ -13,9 +15,11 @@
  * not which promise is being made. A case moving from a hand-rolled `test()` to
  * `describeEval` crosses that line without the promise changing.
  *
- * A simulated caller and a judge are `eval-simulate`'s (`/eval/simulate`), and
- * the two newest per-turn claims (`expectCalled`, `lastToolResultIn`) are
- * `eval-assert`'s — each moves apart from the harness.
+ * What a case ASSERTS with — every reader and claim, and the `EvalTurn` /
+ * `EvalToolCall` records they read — is `eval-assert`'s, which moves only when
+ * a record does. The SDK's stubs an eval composes with are `eval-stubs`, a
+ * mirror of `aai:testing`; the runtime's OWN stubs stay here, because a mirror
+ * may hold nothing but the SDK's names.
  *
  * Re-exported from `@alexkroman1/aai-runtime/eval` and
  * `@alexkroman1/aai-runtime/eval/vitest`. This file is not shipped and nothing
@@ -24,35 +28,15 @@
  * `scripts/api-contracts.mjs`.
  */
 
-// `StepFetch` only. Both types are re-exported by the eval barrel so a case
-// imports from one subpath, but `RunCodeExecutor` is already the `runtime`
-// capability's — it is on the root barrel, and a name belongs to exactly one
-// contract or a change to it bumps two epochs. Claiming it here would also read
-// as MOVING it, which on the runtime's export list is a removal.
-// `EvalWorkflowEngineOptions` is what `EvalWorkflowsOptions` indexes for `speech`
-// and `stepFetch`. `HostGenerateFn` was `EvalSessionOptions.generate`, a field
-// that is host-only now; the name stays because a retained epoch's frozen case
-// imports it. (`HostAgentOptions`, which both option bags extend, is the
-// `runtime` capability's — see `RunCodeExecutor` above for why a name is owned
-// once.)
-export type {
-  EvalWorkflowEngineOptions,
-  HostGenerateFn,
-  StepFetch,
-  // The parameter of `HostGenerateFn`'s `onUsage`, so it travels with it: an
-  // eval supplying a `generate` double writes this type or cannot type the
-  // callback at all.
-  StepUsage,
-} from "../../eval-barrel.ts";
+// `RunCodeExecutor` (what `createVmRunCode` returns) and `HostAgentOptions`
+// (what both session option bags extend) are re-exported by the eval barrel so
+// a case imports from one subpath, but they are the `runtime` capability's — a
+// name belongs to exactly one contract, or a change to it bumps two epochs.
 export {
-  completedOutput,
   createStubSttOpener,
   createStubTtsOpener,
   createVmRunCode,
-  customEventsIn,
   DEFAULT_RUN_TIMEOUT_MS,
-  describeToolCalls,
-  describeTurn,
   type EvalCredentials,
   type EvalEmitted,
   type EvalRunOptions,
@@ -61,24 +45,17 @@ export {
   type EvalSleep,
   type EvalTextAgent,
   type EvalTextAgentOptions,
-  type EvalToolCall,
-  type EvalTurn,
   type EvalWorkflowRun,
   type EvalWorkflows,
   type EvalWorkflowsOptions,
-  errorsIn,
   evalCredentials,
   evalTextCredentials,
   evalWorkflowCredentials,
-  expectToolBeforeSpeech,
   installStubLlm,
   installStubSpeechProviders,
-  lastStateIn,
   openEvalSession,
   openEvalTextAgent,
   openEvalWorkflows,
-  runCodeIn,
-  runCodeOutput,
   STUB_LLM_API_KEY_ENV,
   STUB_SPEECH_API_KEY_ENV,
   type StubLlm,
@@ -87,17 +64,6 @@ export {
   type StubStep,
   type StubSttSession,
   type StubTtsSession,
-  saidIn,
-  statesIn,
-  TURN_ENDS,
-  toolArgsIn,
-  toolCallsInEvents,
-  toolCallsInTurns,
-  toolNames,
-  toolResultIn,
-  toolResultsIn,
-  transcriptOf,
-  turnCalling,
   type VmRunCodeOptions,
 } from "../../eval-barrel.ts";
 export {

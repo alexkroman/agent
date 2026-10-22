@@ -146,7 +146,7 @@ import type { HostAgentOptions } from "../host-agent-options.ts";
 import { silentLogger } from "../logger.ts";
 import { llmProviderEnvVar } from "../providers/_provider-env-var.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
-import { createTextAgent } from "../text-agent/index.ts";
+import { createHostTextAgent } from "../text-agent/index.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { measuredToolCalls, measuredTurn } from "./_turn-faults.ts";
 import { type EvalToolCall, saidIn, TURN_ENDS } from "./events.ts";
@@ -199,6 +199,8 @@ export function evalTextCredentials(
  * `toolTimeoutMs` defaults to the executor's 30s voice-turn budget — which a
  * text agent whose tools type-check a workspace or install packages will
  * outrun — and `logger` defaults to silent.
+ *
+ * @input
  */
 export interface EvalTextAgentOptions extends HostAgentOptions {
   /**
@@ -331,7 +333,7 @@ export async function openEvalTextAgent(options: EvalTextAgentOptions): Promise<
   const providerEnv = options.providerEnv ?? withHostCredentialFallback({ ...options.env });
   const id = `eval-text-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-  const chat = createTextAgent({
+  const chat = createHostTextAgent({
     // The override rides on the DEFINITION, which is what carries it to
     // `ctx.generate` and `ctx.delegate` as well as to the turn's model. One
     // `omitUndefined` rather than a conditional spread: `guard-invariants` rule 2.

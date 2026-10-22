@@ -19,7 +19,7 @@
  *
  * Decoding NEVER throws. A carrier is free to add frame types (Twilio has
  * added several), and an unrecognized or malformed frame must degrade to
- * "ignore" — throwing here would take down a live call over a field we had no
+ * `{ kind: "other" }` — throwing here would take down a live call over a field we had no
  * reason to read.
  */
 
@@ -47,21 +47,29 @@ export type CarrierInbound =
     }
   /** One 20 ms chunk of caller audio, base64 μ-law. */
   | { kind: "media"; payload: string }
+  /** The caller pressed a key: `0`-`9`, `*`, `#` (or `A`-`D` on carriers that send them). */
+  | { kind: "dtmf"; digit: string }
   /** The carrier is ending the stream (the caller hung up). */
   | { kind: "stop" }
-  /** Anything we do not act on: keepalives, marks, DTMF, unknown frame types. */
-  | { kind: "ignore" };
-
-/** Translates between a carrier's JSON frames and the two things a session needs. */
-export type CarrierCodec = {
-  /** Vendor name, for logs and for the `?carrier=` query value. */
-  readonly name: string;
-  /** Reduce one parsed inbound frame. Never throws. */
-  decode(frame: unknown): CarrierInbound;
-  /** An outbound frame carrying one chunk of base64 μ-law agent speech. */
-  media(payload: string, streamId: string | null): unknown;
   /**
-   * The frame that discards agent audio the carrier has already buffered.
+   * Everything else — keepalives, marks, the other leg's audio, frame types
+   * this codec does not know. `type` is the carrier's own name for the frame
+   * (`""` when it carried none), for a log line; a session acts on none of them.
+   */
+  | { kind: "other"; type: string };
+
+/**
+ * One thing a session asks a carrier to do, for {@link CarrierCodec.encode}.
+ *
+ * OPEN: a session may ask for something a codec written today has never heard
+ * of, which is why `encode` answers `undefined` for a kind it does not support
+ * rather than being a method per kind.
+ */
+export type CarrierOutbound =
+  /** One chunk of base64 μ-law agent speech. */
+  | { kind: "media"; payload: string; streamId: string | null }
+  /**
+   * Discard agent audio the carrier has already buffered.
    *
    * This is what makes barge-in audible on a phone call. The carrier accepts
    * audio far faster than it plays it, so at the moment the caller interrupts
@@ -70,7 +78,28 @@ export type CarrierCodec = {
    * on `cancelled`/`reset`; without it the caller talks over an agent that
    * keeps speaking for several seconds after being interrupted.
    */
-  clear(streamId: string | null): unknown;
+  | { kind: "clear"; streamId: string | null };
+
+/**
+ * Translates between a carrier's JSON frames and what a session needs.
+ *
+ * Implemented once per carrier — the two shipped ones are {@link twilioCodec}
+ * and {@link telnyxCodec}.
+ *
+ * @input
+ */
+export type CarrierCodec = {
+  /** Vendor name, for logs and for the `?carrier=` query value. */
+  readonly name: string;
+  /** Reduce one parsed inbound frame. Never throws. */
+  decode(frame: unknown): CarrierInbound;
+  /**
+   * The carrier's frame for one outbound request, or `undefined` when this
+   * carrier has no such frame — which is also the answer for a `kind` the codec
+   * does not know, so a session asking for something new degrades rather than
+   * sending garbage.
+   */
+  encode(out: CarrierOutbound): unknown;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -153,6 +182,21 @@ function callIdAt(record: Record<string, unknown> | null, key: string): string |
   return id === null || id === "" || id.length > MAX_CALL_ID_CHARS ? null : id;
 }
 
+/** A `media` frame: the caller's audio, or (another track, no payload) `other`. */
+function decodeMedia(record: Record<string, unknown> | null): CarrierInbound {
+  const media = asRecord(record?.media);
+  const payload = stringAt(media, "payload");
+  if (payload === null || !isCallerTrack(media)) return { kind: "other", type: "media" };
+  return { kind: "media", payload };
+}
+
+/** A `dtmf` frame. Both shipped carriers put the key at `dtmf.digit`; Twilio adds a track. */
+function decodeDtmf(record: Record<string, unknown> | null): CarrierInbound {
+  const digit = stringAt(asRecord(record?.dtmf), "digit");
+  if (digit !== null && digit !== "") return { kind: "dtmf", digit };
+  return { kind: "other", type: "dtmf" };
+}
+
 /** The field names a carrier's `start` frame uses — see {@link decodeWith}. */
 type StartKeys = {
   streamId: string;
@@ -181,12 +225,8 @@ type StartKeys = {
 function decodeWith(frame: unknown, keys: StartKeys): CarrierInbound {
   const record = asRecord(frame);
   const event = stringAt(record, "event");
-  if (event === "media") {
-    const media = asRecord(record?.media);
-    const payload = stringAt(media, "payload");
-    if (payload === null || !isCallerTrack(media)) return { kind: "ignore" };
-    return { kind: "media", payload };
-  }
+  if (event === "media") return decodeMedia(record);
+  if (event === "dtmf") return decodeDtmf(record);
   if (event === "start") {
     const start = asRecord(record?.start);
     const format = asRecord(start?.[keys.mediaFormat]);
@@ -208,7 +248,7 @@ function decodeWith(frame: unknown, keys: StartKeys): CarrierInbound {
     };
   }
   if (event === "stop") return { kind: "stop" };
-  return { kind: "ignore" };
+  return { kind: "other", type: event ?? "" };
 }
 
 /**
@@ -231,13 +271,20 @@ export const twilioCodec: CarrierCodec = {
   // `omitUndefined` rather than a conditional spread of an object literal, which
   // is what `guard-invariants` rule 2 asks for wherever the guard IS the value:
   // a carrier that puts no id on the wire simply has no `streamSid` key.
-  media: (payload, streamId) =>
-    omitUndefined({
-      event: "media",
-      streamSid: streamId ?? undefined,
-      media: { payload },
-    }),
-  clear: (streamId) => omitUndefined({ event: "clear", streamSid: streamId ?? undefined }),
+  encode: (out) => {
+    switch (out.kind) {
+      case "media":
+        return omitUndefined({
+          event: "media",
+          streamSid: out.streamId ?? undefined,
+          media: { payload: out.payload },
+        });
+      case "clear":
+        return omitUndefined({ event: "clear", streamSid: out.streamId ?? undefined });
+      default:
+        return;
+    }
+  },
 };
 
 /**
@@ -267,8 +314,16 @@ export const telnyxCodec: CarrierCodec = {
       parameters: "custom_parameters",
       stateParameter: "client_state",
     }),
-  media: (payload) => ({ event: "media", media: { payload } }),
-  clear: () => ({ event: "clear" }),
+  encode: (out) => {
+    switch (out.kind) {
+      case "media":
+        return { event: "media", media: { payload: out.payload } };
+      case "clear":
+        return { event: "clear" };
+      default:
+        return;
+    }
+  },
 };
 
 /**
@@ -281,7 +336,7 @@ export const telnyxCodec: CarrierCodec = {
  * `TELEPHONY_CARRIERS` with no codec here fails this package's build instead of
  * shipping a carrier an author can enable and nothing can answer.
  */
-export const CARRIER_CODECS = {
+export const CARRIER_CODECS: { readonly twilio: CarrierCodec; readonly telnyx: CarrierCodec } = {
   // Literal keys rather than `[twilioCodec.name]`: a computed key is `string`
   // (a `CarrierCodec`'s `name` is deliberately wide, so an embedder can write
   // a codec for a carrier this build has never heard of), which widens the

@@ -18,6 +18,7 @@ import { type WorkflowContext, workflow } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryJournal } from "../workflow/journal/backends/memory.ts";
+import { workflowJournal } from "../workflow/journal/handle.ts";
 import { runWorkflow } from "./run-workflow.ts";
 
 /** A day, which is the point: no spec may wait one and none has to. */
@@ -84,6 +85,19 @@ describe("a run that SLEEPS", () => {
     expect(run.wakeAt).toBeGreaterThanOrEqual(started + A_DAY);
     // And the work BEFORE the wait is already durable.
     expect(run.steps.map((step) => step.name)).toEqual(["write"]);
+  });
+
+  test("lists the journaled wait, and only an unsettled run is owed a sweep", async () => {
+    const run = await runWorkflow(review, {});
+
+    expect(run.waits).toEqual([
+      expect.objectContaining({ kind: "sleep", woken: false, correlationId: undefined }),
+    ]);
+    expect(run.waits[0]?.wakeAt).toBe(run.wakeAt);
+    // Unsettled, so a boot sweep re-arms it; once it settles, nothing is owed.
+    expect(run.resumable).toBe(true);
+    await run.advanceSleep();
+    expect(run.resumable).toBe(false);
   });
 
   test("resumes past the wait, on a SECOND delivery, without redoing the first half", async () => {
@@ -161,6 +175,8 @@ describe("a wait whose WINDOW closes unanswered", () => {
     // A hook's deadline is scheduled, unlike a bare `waitFor` — an unanswered
     // window still has to end.
     expect(run.wakeAt).toBeGreaterThan(Date.now());
+    // And the journal says WHICH kind of wait it is.
+    expect(run.waits.map((wait) => wait.kind)).toEqual(["hookTimeout"]);
   });
 
   test("takes the TIMEOUT branch once it is expired, which is the safe default", async () => {
@@ -261,8 +277,14 @@ describe("a worker that DIES mid-run", () => {
     });
 
     const journal = createMemoryJournal();
-    const run = await runWorkflow(pipeline, {}, { crashAt: "only", journal });
+    const run = await runWorkflow(
+      pipeline,
+      {},
+      { crashAt: "only", journal: workflowJournal(journal) },
+    );
     expect(run.crashed).toBe(true);
+    // A dead worker leaves the run for a boot sweep to find.
+    expect(run.resumable).toBe(true);
     await run.restart();
 
     expect(run.status).toBe("completed");
@@ -391,8 +413,16 @@ describe("the driver's own limits", () => {
       run: (input: Record<string, unknown>) => input.n,
     });
 
-    const one = await runWorkflow(counter, { n: 1 }, { name: "counter", journal });
-    const two = await runWorkflow(counter, { n: 2 }, { name: "counter", journal });
+    const one = await runWorkflow(
+      counter,
+      { n: 1 },
+      { name: "counter", journal: workflowJournal(journal) },
+    );
+    const two = await runWorkflow(
+      counter,
+      { n: 2 },
+      { name: "counter", journal: workflowJournal(journal) },
+    );
     expect(one.runId).not.toBe(two.runId);
     // As a SET: `listRuns` orders by `createdAt` with the id breaking a tie, and
     // two runs started in the same millisecond carry ids minted from a uuid.

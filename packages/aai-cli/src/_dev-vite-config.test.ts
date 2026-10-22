@@ -30,7 +30,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
 import path from "node:path";
-import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai-runtime";
+import { WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
 import type { ProxyOptions } from "vite";
 import { describe, expect, test } from "vitest";
 import { viteDevConfig } from "./_dev-vite-config.ts";

@@ -1,0 +1,181 @@
+import type { AgentDef } from '@alexkroman1/aai';
+import type { AgentEnv } from '@alexkroman1/aai/host-internal';
+import type { ClientSink } from '@alexkroman1/aai/protocol';
+import type { LlmProvider } from '@alexkroman1/aai/llm';
+import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import type { ReadyConfig } from '@alexkroman1/aai/protocol';
+import type { SessionCall } from '@alexkroman1/aai';
+import type { SessionCommand } from '@alexkroman1/aai/protocol';
+import { SessionEvent } from '@alexkroman1/aai';
+import type { SttProvider } from '@alexkroman1/aai/stt';
+import type { TtsProvider } from '@alexkroman1/aai/tts';
+import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
+
+// @public
+export type AgentRuntime = {
+    startSession(ws: SessionWebSocket, options?: SessionStartOptions): void;
+    shutdown(): Promise<void>;
+    readonly readyConfig: ReadyConfig;
+    readonly workflows?: WorkflowClient | undefined;
+    readonly deliverWorkflow?: ((runId: string) => Promise<unknown>) | undefined;
+    readonly sessionEvents?: SessionEventStream | undefined;
+    readonly serveRoute?: ((call: {
+        method: string;
+        path: string;
+        query: Readonly<Record<string, string>>;
+        headers?: Readonly<Record<string, string>> | undefined;
+        body: unknown;
+        rawBody?: string | undefined;
+        clientId?: string | undefined;
+        signal: AbortSignal;
+    }) => Promise<{
+        status: number;
+        body: unknown;
+        headers?: Readonly<Record<string, string>> | undefined;
+    }>) | undefined;
+};
+
+// @public
+export function connectSession(runtime: Runtime, sink: ClientSink, options?: SessionConnectOptions): SessionConnection;
+
+// @public
+export function createRuntime(options: RuntimeOptions): Runtime;
+
+// @public @input
+type Db = {
+    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+};
+
+// @public @input
+export interface HostAgentOptions {
+    agent: AgentDef;
+    fetch?: typeof globalThis.fetch;
+    logger?: Logger;
+    providerEnv?: ProviderEnv;
+    runCode?: RunCodeExecutor;
+    toolTimeoutMs?: number;
+    workflows?: WorkflowClient | undefined;
+}
+
+// @public
+type LogContext = Record<string, unknown>;
+
+// @public
+type LogFn = (message: string, ctx?: LogContext) => void;
+
+// @public @input
+interface Logger {
+    // (undocumented)
+    debug: LogFn;
+    // (undocumented)
+    error: LogFn;
+    // (undocumented)
+    info: LogFn;
+    // (undocumented)
+    warn: LogFn;
+}
+
+// @public
+export function rejectingRuntime(message: string, logger?: Logger): SessionRuntime;
+
+// @public
+export type RunCodeExecutor = (code: string) => Promise<string | {
+    error: string;
+}>;
+
+// @public @sealed
+export type Runtime = AgentRuntime & {
+    readonly [runtimeBrand]: true;
+};
+
+// @public
+export const runtimeBrand: unique symbol;
+
+// @public @input
+export interface RuntimeOptions extends HostAgentOptions {
+    db?: Db | undefined;
+    env: AgentEnv;
+    journal?: WorkflowJournal | undefined;
+    llm?: LlmProvider | undefined;
+    publicUrl?: string | undefined;
+    shutdownTimeoutMs?: number | undefined;
+    stt?: SttProvider | undefined;
+    tts?: TtsProvider | undefined;
+}
+
+// @public @sealed
+export type SessionConnection = {
+    readonly id: string;
+    readonly readyConfig: ReadyConfig;
+    sendAudio(pcm16: Uint8Array): void;
+    sendCommand(command: SessionCommand): void;
+    close(): void;
+    readonly ended: Promise<void>;
+};
+
+// @public
+export type SessionConnectOptions = Pick<SessionStartOptions, "skipGreeting" | "resumeFrom" | "logContext" | "onSessionEnd" | "audioLeadMs">;
+
+// @public @sealed
+type SessionEventPage = {
+    events: readonly SessionEvent[];
+    tail: number;
+};
+
+// @public @sealed
+type SessionEventStream = {
+    readonly [sessionEventStreamBrand]: true;
+    tail(sessionId: string): number;
+    read(sessionId: string, startIndex: number, limit?: number): Promise<SessionEventPage>;
+    readonly durable: boolean;
+};
+
+// @public
+const sessionEventStreamBrand: unique symbol;
+
+// @public
+export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown" | "workflows" | "sessionEvents" | "deliverWorkflow" | "serveRoute">;
+
+// @public
+export type SessionStartOptions = {
+    skipGreeting?: boolean;
+    resumeFrom?: string;
+    clientLocation?: string;
+    clientId?: string;
+    clientPhone?: string;
+    call?: SessionCall;
+    logContext?: Record<string, string>;
+    onOpen?: () => void;
+    onClose?: () => void;
+    onSessionEnd?: (sessionId: string, sink?: ClientSink) => void;
+    onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
+    audioLeadMs?: number;
+};
+
+// @public
+type SessionWebSocket = {
+    readonly readyState: number;
+    readonly bufferedAmount?: number | undefined;
+    send(data: string | ArrayBuffer | Uint8Array): void;
+    close?(code?: number, reason?: string): void;
+    ping?(): void;
+    addEventListener(type: "open", listener: () => void): void;
+    addEventListener(type: "close", listener: (event: {
+        code?: number;
+        reason?: string;
+    }) => void): void;
+    addEventListener(type: "message", listener: (event: {
+        data: unknown;
+    }) => void): void;
+    addEventListener(type: "error", listener: (event: {
+        message?: string;
+    }) => void): void;
+};
+
+// @public @sealed
+type WorkflowJournal = {
+    readonly [workflowJournalBrand]: true;
+};
+
+// @public
+const workflowJournalBrand: unique symbol;

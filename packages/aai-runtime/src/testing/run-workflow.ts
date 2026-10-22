@@ -75,7 +75,8 @@ import {
   type InProcessWorkflowEngine,
 } from "../workflow/in-process.ts";
 import { createMemoryJournal } from "../workflow/journal/backends/memory.ts";
-import { isTerminalStatus, type JournalStore } from "../workflow/journal/types.ts";
+import { journalStoreOf, workflowJournal } from "../workflow/journal/handle.ts";
+import { isTerminalStatus, type JournalStore, type SleepEntry } from "../workflow/journal/types.ts";
 import { type DeterminismKind, isDeterminismKey } from "../workflow/replay/determinism.ts";
 import type {
   RunWorkflowOptions,
@@ -83,6 +84,7 @@ import type {
   WorkflowTestRead,
   WorkflowTestRun,
   WorkflowTestStep,
+  WorkflowTestWait,
 } from "./run-workflow-types.ts";
 
 /**
@@ -173,7 +175,7 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
   // nothing public can end a `waitFor` window and why this answers the READ
   // rather than rewriting the record.
   let expiring = false;
-  const store = options.journal ?? createMemoryJournal();
+  const store = journalStoreOf(options.journal) ?? createMemoryJournal();
   const journal: JournalStore = {
     ...store,
     claimAttempt: async (runId, key, holder, leaseMs) => {
@@ -203,6 +205,8 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
     error: undefined,
     steps: [] as readonly WorkflowTestStep[],
     reads: [] as readonly WorkflowTestRead[],
+    waits: [] as readonly WorkflowTestWait[],
+    resumable: false,
     wakeAt: undefined,
     deliveries: 0,
     crashed: false,
@@ -213,7 +217,9 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
 
   const handle: WorkflowTestHandle<R> = {
     runId,
-    journal,
+    // The UNWRAPPED store: a second run handed this must not inherit this
+    // run's crash arming or its window expiry.
+    journal: workflowJournal(store),
     get status() {
       return state.status;
     },
@@ -228,6 +234,12 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
     },
     get reads() {
       return state.reads;
+    },
+    get waits() {
+      return state.waits;
+    },
+    get resumable() {
+      return state.resumable;
     },
     get wakeAt() {
       return state.wakeAt;
@@ -341,6 +353,9 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
       .map(toRead)
       .sort(byCallSite);
     if (record && isTerminalStatus(record.status)) state.wakeAt = undefined;
+    state.waits = (await store.readSleeps(runId)).map(toWait).sort(byKey);
+    const owed = (await store.resumableRuns?.(RESUMABLE_SCAN_LIMIT)) ?? [];
+    state.resumable = owed.some((one) => one.runId === runId);
   }
 
   await drain();
@@ -410,6 +425,29 @@ function toRead(entry: { key: string; name: string; output?: unknown }): Workflo
     kind: entry.name as DeterminismKind,
     value: entry.output,
   };
+}
+
+/**
+ * How far `refresh` reads the boot sweep's query to answer
+ * {@link WorkflowTestRun.resumable}. A spec's journal holds a handful of runs.
+ */
+const RESUMABLE_SCAN_LIMIT = 1000;
+
+/** A journaled wait, projected — see {@link WorkflowTestWait}. */
+function toWait(entry: SleepEntry): WorkflowTestWait {
+  return {
+    key: entry.key,
+    kind: entry.kind,
+    wakeAt: entry.wakeAt,
+    woken: entry.woken,
+    correlationId: entry.correlationId,
+  };
+}
+
+/** By journal key — a wait list's order must not depend on the backend's. */
+function byKey(a: { key: string }, b: { key: string }): number {
+  if (a.key === b.key) return 0;
+  return a.key < b.key ? -1 : 1;
 }
 
 /** A journal entry, projected — see {@link WorkflowTestStep} for why. */

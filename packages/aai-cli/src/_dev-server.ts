@@ -17,6 +17,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 // below, so a dynamic import inside startDevServer would defer nothing.
 import {
   type AgentServer,
+  createMemoryJournal,
   createRuntime,
   createServerForRuntime,
   ensureSessionStateSchema,
@@ -27,7 +28,6 @@ import {
   type RuntimeServerOptions,
 } from "@alexkroman1/aai-runtime";
 import {
-  createMemoryJournal,
   handleWorkflowRequest,
   publishClientInboxDefaults,
   publishStepEnv,

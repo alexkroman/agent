@@ -12,7 +12,6 @@ import { createSlotStore } from '@alexkroman1/aai/testing';
 import { createStubWorkflows } from '@alexkroman1/aai/testing';
 import { createToolContext } from '@alexkroman1/aai/testing';
 import { createWorkflowContext } from '@alexkroman1/aai/testing';
-import type { Db } from '@alexkroman1/aai/internal';
 import { deployedAgent } from '@alexkroman1/aai/testing';
 import { DeployedConfig } from '@alexkroman1/aai/testing';
 import { DeployedStage } from '@alexkroman1/aai/testing';
@@ -43,7 +42,6 @@ import { RecordedStart } from '@alexkroman1/aai/testing';
 import { RecordedStep } from '@alexkroman1/aai/testing';
 import { RecordingWorkflows } from '@alexkroman1/aai/testing';
 import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
-import type { RunCodeExecutor } from '@alexkroman1/aai/host-internal';
 import { runGuardrail } from '@alexkroman1/aai/testing';
 import { RunSnapshotOverrides } from '@alexkroman1/aai/testing';
 import { runTool } from '@alexkroman1/aai/testing';
@@ -128,6 +126,9 @@ import { WorkflowContextRecorder } from '@alexkroman1/aai/testing';
 import type { WorkflowDef } from '@alexkroman1/aai';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
+// @public
+export function createMemoryJournal(): WorkflowJournal;
+
 export { createRecordingWorkflows }
 
 export { createRunSnapshot }
@@ -140,6 +141,11 @@ export { createToolContext }
 
 export { createWorkflowContext }
 
+// @public @input
+export type Db = {
+    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+};
+
 // @public
 export const DEFAULT_MAX_DELIVERIES = 50;
 
@@ -148,9 +154,6 @@ export { deployedAgent }
 export { DeployedConfig }
 
 export { DeployedStage }
-
-// @public
-export type DeterminismKind = "now" | "random" | "uuid";
 
 export { dialogRefusalPattern }
 
@@ -180,15 +183,7 @@ export { FetchRoutesOptions }
 
 export { FetchRouteTable }
 
-// @public
-export type HookRecord = {
-    token: string;
-    delivered: boolean;
-    payload?: unknown;
-    closed?: boolean;
-};
-
-// @public
+// @public @input
 export interface HostAgentOptions {
     agent: AgentDef;
     fetch?: typeof globalThis.fetch;
@@ -202,43 +197,12 @@ export interface HostAgentOptions {
 export { isEvent }
 
 // @public
-export class JournalConflictError extends Error {
-    constructor(message: string);
-    static is(value: unknown): value is JournalConflictError;
-}
-
-// @public
-export type JournalStore = {
-    createRun(record: RunRecord): Promise<void>;
-    getRun(runId: string): Promise<RunRecord | undefined>;
-    listRuns(workflow: string, limit: number): Promise<RunRecord[]>;
-    setStatus(runId: string, next: RunStatus, patch?: {
-        output?: unknown;
-        error?: {
-            message: string;
-        };
-    }, expect?: readonly RunStatus[]): Promise<boolean>;
-    readSteps(runId: string): Promise<StepEntry[]>;
-    readStep(runId: string, key: string): Promise<StepEntry | undefined>;
-    claimAttempt(runId: string, key: string, holder: string, leaseMs: number): Promise<number>;
-    releaseAttempt(runId: string, key: string, holder: string): Promise<void>;
-    readSleeps(runId: string): Promise<SleepEntry[]>;
-    claimSleep(runId: string, key: string, wakeAt: number, correlationId: string | undefined, kind?: SleepRecord["kind"]): Promise<SleepRecord>;
-    wakeSleeps(runId: string, correlationIds: readonly string[] | undefined): Promise<number>;
-    claimHook(runId: string, key: string, token: string): Promise<HookRecord>;
-    closeHook(runId: string, key: string): Promise<boolean>;
-    deliverHook(token: string, payload: unknown): Promise<string | undefined>;
-    resumableRuns?: ((limit: number) => Promise<ResumableRun[]>) | undefined;
-    appendStep(runId: string, entry: StepEntry): Promise<StepEntry>;
-};
-
-// @public
 type LogContext = Record<string, unknown>;
 
 // @public
 type LogFn = (message: string, ctx?: LogContext) => void;
 
-// @public
+// @public @input
 interface Logger {
     // (undocumented)
     debug: LogFn;
@@ -267,37 +231,18 @@ export { RecordingWorkflows }
 export { RecordingWorkflowsOptions }
 
 // @public
-export type ResumableRun = {
-    runId: string;
-    wakeAt?: number | undefined;
-};
+type RunCodeExecutor = (code: string) => Promise<string | {
+    error: string;
+}>;
 
 export { runGuardrail }
-
-// @public
-export type RunRecord = {
-    runId: string;
-    workflow: string;
-    status: RunStatus;
-    createdAt: number;
-    input: unknown;
-    output?: unknown;
-    error?: {
-        message: string;
-    } | undefined;
-    codeVersion?: string | undefined;
-    label?: string | undefined;
-};
 
 export { RunSnapshotOverrides }
 
 // @public
-export type RunStatus = WorkflowRunStatus;
-
-// @public
 export function runTextAgent(def: AgentDef, input: string | readonly ModelMessage[], options: RunTextAgentOptions): Promise<TextAgentTestRun>;
 
-// @public
+// @public @input
 export type RunTextAgentOptions = Omit<TextAgentOptions, "agent" | "model"> & Pick<TextTurnOptions, "signal" | "systemPrompt" | "maxSteps" | "temperature" | "toolChoice"> & {
     readonly script: readonly ScriptedTextStep[];
 };
@@ -307,10 +252,10 @@ export { runTool }
 // @public
 export function runWorkflow<P extends ToolInputSchema, R>(def: WorkflowDef<P, R>, input: Record<string, unknown>, options?: RunWorkflowOptions): Promise<WorkflowTestHandle<R>>;
 
-// @public
+// @public @input
 export type RunWorkflowOptions = {
     name?: string;
-    journal?: JournalStore;
+    journal?: WorkflowJournal;
     logger?: Logger;
     crashAt?: string;
     maxDeliveries?: number;
@@ -323,13 +268,13 @@ export { schemaInputIssues }
 // @public
 export function scriptedTextModel(steps: readonly ScriptedTextStep[]): LanguageModel;
 
-// @public
+// @public @input
 export type ScriptedTextStep = {
     readonly text?: string;
     readonly toolCalls?: readonly ScriptedToolCall[];
 };
 
-// @public
+// @public @input
 export type ScriptedToolCall = {
     readonly name: string;
     readonly input?: Record<string, unknown>;
@@ -337,33 +282,6 @@ export type ScriptedToolCall = {
 };
 
 export { SentEvent }
-
-// @public
-export type SleepEntry = SleepRecord & {
-    key: string;
-};
-
-// @public
-export type SleepRecord = {
-    wakeAt: number;
-    woken: boolean;
-    correlationId?: string | undefined;
-    kind: "sleep" | "hookTimeout";
-};
-
-// @public
-export type StepEntry = {
-    key: string;
-    name: string;
-    status: "ok" | "failed";
-    output?: unknown;
-    error?: {
-        message: string;
-    } | undefined;
-    attempts: number;
-    startedAt: number;
-    finishedAt: number;
-};
 
 export { STUB_SPEECH_PCM_BYTES }
 
@@ -485,7 +403,7 @@ export { StubUploadWrite }
 
 export { TestToolContext }
 
-// @public
+// @public @input
 export interface TextAgentOptions extends HostAgentOptions {
     db?: Db | undefined;
     env?: AgentEnv;
@@ -494,17 +412,16 @@ export interface TextAgentOptions extends HostAgentOptions {
     sessionId?: string;
 }
 
-// @public
+// @public @sealed
 export type TextAgentTestRun = {
     readonly text: string;
     readonly texts: readonly string[];
     readonly toolCalls: readonly TextAgentTestToolCall[];
-    readonly steps: readonly StepResult<ToolSet>[];
     readonly messages: readonly ModelMessage[];
     readonly events: readonly SessionEvent[];
 };
 
-// @public
+// @public @sealed
 export type TextAgentTestToolCall = {
     readonly name: string;
     readonly id: string;
@@ -512,7 +429,7 @@ export type TextAgentTestToolCall = {
     readonly result: unknown;
 };
 
-// @public
+// @public @input
 export interface TextTurnOptions {
     maxSteps?: number;
     messages: ModelMessage[];
@@ -545,25 +462,33 @@ export { WorkflowContextOptions }
 
 export { WorkflowContextRecorder }
 
+// @public @sealed
+export type WorkflowJournal = {
+    readonly [workflowJournalBrand]: true;
+};
+
 // @public
+export const workflowJournalBrand: unique symbol;
+
+// @public @sealed
 export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
     advanceSleep(correlationIds?: readonly string[]): Promise<WorkflowTestHandle<R>>;
     signal(token: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
     readonly signalled: boolean;
     expireWaits(): Promise<WorkflowTestHandle<R>>;
     restart(): Promise<WorkflowTestHandle<R>>;
-    readonly journal: JournalStore;
+    readonly journal: WorkflowJournal;
     close(): Promise<void>;
 };
 
-// @public
+// @public @sealed
 export type WorkflowTestRead = {
     readonly key: string;
-    readonly kind: DeterminismKind;
+    readonly kind: "now" | "random" | "uuid" | (string & {});
     readonly value: unknown;
 };
 
-// @public
+// @public @sealed
 export type WorkflowTestRun<R> = {
     readonly runId: string;
     readonly status: WorkflowRunStatus;
@@ -574,16 +499,27 @@ export type WorkflowTestRun<R> = {
     readonly wakeAt: number | undefined;
     readonly deliveries: number;
     readonly crashed: boolean;
+    readonly waits: readonly WorkflowTestWait[];
+    readonly resumable: boolean;
 };
 
-// @public
+// @public @sealed
 export type WorkflowTestStep = {
     readonly key: string;
     readonly name: string;
-    readonly status: "ok" | "failed";
+    readonly status: "ok" | "failed" | (string & {});
     readonly output?: unknown;
     readonly error?: string | undefined;
     readonly attempts: number;
+};
+
+// @public @sealed
+export type WorkflowTestWait = {
+    readonly key: string;
+    readonly kind: "sleep" | "hookTimeout" | (string & {});
+    readonly wakeAt: number;
+    readonly woken: boolean;
+    readonly correlationId: string | undefined;
 };
 
 // (No @packageDocumentation comment for this package)

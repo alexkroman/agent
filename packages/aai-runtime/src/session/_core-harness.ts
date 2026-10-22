@@ -16,7 +16,7 @@ import { ASSEMBLYAI_S2S_CAPABILITIES } from "../transports/capabilities.ts";
 import type { Transport } from "../transports/types.ts";
 import { createSessionCore } from "./core.ts";
 import type { ServerSession, ServerSessionOptions } from "./core-types.ts";
-import type { SessionEventStream } from "./event-stream.ts";
+import type { SessionEventLog } from "./event-stream.ts";
 
 // `playAudioDone` / `start` / `stop` are plain `vi.fn()`s like every other
 // member here: a spy already records its own call count, so the hand-rolled
@@ -65,7 +65,7 @@ export function makeCore(overrides: Partial<ServerSessionOptions> = {}): {
   core: ServerSession;
   sink: ReturnType<typeof makeSink>;
   transport: ReturnType<typeof makeTransport>;
-  stream: SessionEventStream;
+  stream: SessionEventLog;
 } {
   const sink = makeSink();
   const transport = makeTransport();

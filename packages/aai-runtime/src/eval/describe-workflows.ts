@@ -56,7 +56,11 @@ import { stubbedEnv } from "./_stubbed-env.ts";
 import { resolveWorkflowEvalMode } from "./eval-mode.ts";
 import { type EvalWorkflows, type EvalWorkflowsOptions, openEvalWorkflows } from "./workflows.ts";
 
-/** What a workflow case gets to say about how it should be run. */
+/**
+ * What a workflow case gets to say about how it should be run.
+ *
+ * @input
+ */
 export type EvalWorkflowCaseOptions = {
   /**
    * This case only means something against real providers — it is SKIPPED in

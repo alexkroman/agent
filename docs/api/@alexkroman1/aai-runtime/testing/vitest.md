@@ -572,12 +572,6 @@ Re-exports [evalWorkflowCredentials](../eval.md#evalworkflowcredentials)
 
 ***
 
-### EvalWorkflowEngineOptions
-
-Re-exports [EvalWorkflowEngineOptions](../eval.md#evalworkflowengineoptions)
-
-***
-
 ### EvalWorkflowRun
 
 Re-exports [EvalWorkflowRun](../eval.md#evalworkflowrun)
@@ -629,12 +623,6 @@ Re-exports [expectToolBeforeSpeech](../eval.md#expecttoolbeforespeech)
 ### HostAgentOptions
 
 Re-exports [HostAgentOptions](../eval.md#hostagentoptions)
-
-***
-
-### HostGenerateFn
-
-Re-exports [HostGenerateFn](../eval.md#hostgeneratefn)
 
 ***
 
@@ -881,12 +869,6 @@ Re-exports [SimulationTarget](../eval.md#simulationtarget)
 ### statesIn
 
 Re-exports [statesIn](../eval.md#statesin)
-
-***
-
-### StepUsage
-
-Re-exports [StepUsage](../eval.md#stepusage)
 
 ***
 

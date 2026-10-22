@@ -93,7 +93,11 @@ import {
 import { assessTools, driftMessages, type McpDrift, type McpTrust } from "./drift.ts";
 import { allowTools, displayUrl, resolveServer } from "./resolve.ts";
 
-/** What one declared server ended up contributing, and why when the answer is nothing. */
+/**
+ * What one declared server ended up contributing, and why when the answer is nothing.
+ *
+ * @sealed
+ */
 export type McpServerStatus = {
   /** The author's key for the server. */
   key: string;
@@ -137,7 +141,11 @@ export type McpToolSurface<D> = {
   close(): Promise<void>;
 };
 
-/** Options {@link withMcpTools} takes. */
+/**
+ * Options {@link withMcpTools} takes.
+ *
+ * @input
+ */
 export type McpToolsOptions = McpConnectOptions & {
   /**
    * The agent's environment — where a server's `tokenEnv` is read from.

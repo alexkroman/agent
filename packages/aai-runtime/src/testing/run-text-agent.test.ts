@@ -45,7 +45,7 @@ describe("runTextAgent", () => {
 
     expect(run.texts).toEqual(["Let me check.", "It shipped yesterday."]);
     expect(run.text).toBe("Let me check.It shipped yesterday.");
-    expect(run.steps).toHaveLength(2);
+    expect(run.texts).toHaveLength(2);
   });
 
   test("takes a conversation as well as a bare prompt", async () => {
@@ -110,7 +110,7 @@ describe("runTextAgent", () => {
     expect(run.toolCalls.map((call) => call.result)).toEqual(["noted first", "noted second"]);
     // Flattened across steps: the projection is about the ORDER the turn called
     // in, not about how the loop was cut.
-    expect(run.steps).toHaveLength(3);
+    expect(run.texts).toHaveLength(3);
   });
 
   test("honours an id the script names", async () => {
@@ -197,7 +197,7 @@ describe("runTextAgent", () => {
       },
     );
 
-    expect(run.steps).toHaveLength(2);
+    expect(run.texts).toHaveLength(2);
     expect(run.text).not.toContain("That is all I can do.");
   });
 

@@ -47,7 +47,11 @@ import { registerSttKind, registerTtsKind } from "../providers/resolve.ts";
 /** The env var the fake stages resolve their (unused) credential from. */
 export const STUB_SPEECH_API_KEY_ENV = "AAI_EVAL_FAKE_SPEECH_KEY";
 
-/** One open fake STT stream, plus the two edges a case drives. */
+/**
+ * One open fake STT stream, plus the two edges a case drives.
+ *
+ * @sealed
+ */
 export type StubSttSession = SttSession & {
   /** Emit an interim transcript. */
   partial(text: string): void;
@@ -55,7 +59,11 @@ export type StubSttSession = SttSession & {
   commit(text: string): void;
 };
 
-/** One open fake TTS stream, plus what it captured. */
+/**
+ * One open fake TTS stream, plus what it captured.
+ *
+ * @sealed
+ */
 export type StubTtsSession = TtsSession & {
   /** Every text chunk the pipeline handed to TTS, in order. */
   readonly spoken: readonly string[];
@@ -67,6 +75,8 @@ export type StubTtsSession = TtsSession & {
  * `release()` unregisters the kinds. Kinds are UNIQUE per install (the registry
  * is process-global and a session may outlive the case that opened it), so two
  * concurrent eval sessions cannot serve each other's transcripts.
+ *
+ * @sealed
  */
 export type StubSpeechProviders = {
   readonly stt: SttProvider;

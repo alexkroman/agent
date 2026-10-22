@@ -1,0 +1,16 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "eval-network",
+  "epoch": 2,
+  "rule": 3,
+  "sha256": "1a1e790f0500bf7049d59b9e63a1fc6c21e5f877f0d0ef0d8838e94210b7e7d2",
+  "exports": [
+    "EvalNetwork",
+    "EvalNetworkOptions",
+    "EvalRequest",
+    "EvalRequestFilter",
+    "EvalRoute",
+    "evalNetwork"
+  ],
+  "rollup": "8886683cb901fe83a1975d8de319d373ea6ed73b7aa842b5d233927ada0c00b7"
+}

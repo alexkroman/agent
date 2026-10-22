@@ -19,16 +19,13 @@
 
 export {
   MCP_CONNECT_TIMEOUT_MS,
-  type McpCallResult,
   type McpConnectOptions,
   type McpDrift,
-  type McpInputSchema,
   type McpServerStatus,
   type McpSession,
   type McpSessionOpener,
   type McpToolSurface,
   type McpToolsOptions,
-  type McpTrust,
   type ResolvedMcpServer,
   withMcpTools,
   withToolsDir,

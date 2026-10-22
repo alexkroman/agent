@@ -157,10 +157,11 @@ barrel a name goes on.
 
 ### The handles a caller RECEIVES are sealed
 
-`Runtime` carries `[runtimeBrand]: true` and `SessionAuth` `[sessionAuthBrand]`
-— each a type-only `unique symbol`, so only `createRuntime` /
-`createSessionAuth` can mint one and a received handle can grow a member in a
-minor. Rules that follow:
+`Runtime` carries `[runtimeBrand]: true`, `SessionAuth` `[sessionAuthBrand]`,
+`WorkflowJournal` `[workflowJournalBrand]` and `SessionEventStream`
+`[sessionEventStreamBrand]` — each a type-only `unique symbol`, so only this
+package can mint one (cast once, `satisfies Omit<T, typeof brand>`) and a
+received handle can grow a member in a minor. Rules that follow:
 
 - A test DOUBLE implements the unsealed slice a consumer takes (`SessionRuntime`
   for `createServerForRuntime`), never the sealed handle.
@@ -169,6 +170,10 @@ minor. Rules that follow:
 - A handle that is only ever received (`AgentServer`, `TextAgent`,
   `EvalSession`, …) is tagged `@sealed` in TSDoc so a new member is a revision.
   `EvalTurn` is not — a caller-implemented `SimulationTarget` returns one.
+- **A store whose every backend is ours is published as a handle, its interface
+  stays internal**: `RuntimeOptions.journal` / `runWorkflow` take
+  `WorkflowJournal` (`workflow/journal/handle.ts`; `journalStoreOf` unwraps),
+  and a spec reads a run's journal off `WorkflowTestRun.steps`/`reads`/`waits`.
 - **Test seams are not public types.** They live on `HostRuntimeOptions` /
   `HostRuntime` via `createRuntimeWithSeams` (`runtime.ts`) and on
   `HostEvalSessionOptions` via `openEvalSessionWithSeams`, reached by relative

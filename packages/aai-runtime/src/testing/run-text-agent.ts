@@ -68,7 +68,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { ModelMessage, StepResult, ToolSet } from "ai";
 import { silentLogger } from "../logger.ts";
 import {
-  createTextAgent,
+  createHostTextAgent,
   type TextAgentOptions,
   type TextTurnOptions,
 } from "../text-agent/index.ts";
@@ -83,6 +83,7 @@ import { type ScriptedTextStep, scriptedTextModel } from "./scripted-text-model.
  * the same way: a `toolResults` walk alone silently omits a call that never came
  * back, which is exactly the case a spec about a failing tool is asserting.
  *
+ * @sealed
  * @public
  */
 export type TextAgentTestToolCall = {
@@ -119,6 +120,7 @@ export type TextAgentTestToolCall = {
 /**
  * What one scripted turn produced.
  *
+ * @sealed
  * @public
  */
 export type TextAgentTestRun = {
@@ -144,15 +146,6 @@ export type TextAgentTestRun = {
    * cancelled it" is the property a spec is about.
    */
   readonly toolCalls: readonly TextAgentTestToolCall[];
-  /**
-   * The AI SDK's own step results, for an assertion this projection does not
-   * cover — usage, warnings, the per-step finish reason.
-   *
-   * The same escape hatch `WorkflowTestHandle.journal` is one surface over, and
-   * for the same reason: a projection that has to grow a field for every
-   * question is a projection nobody can rely on.
-   */
-  readonly steps: readonly StepResult<ToolSet>[];
   /**
    * The messages the turn APPENDED — every step's assistant reply and every
    * tool exchange, as the SDK reconstructs them.
@@ -193,9 +186,8 @@ export type TextAgentTestRun = {
    *
    * The three projections above it are not made redundant by it and are not a
    * second copy of it either: {@link TextAgentTestRun.toolCalls} carries the
-   * SDK's own parsed `input` where an event carries the wire's record, and
-   * {@link TextAgentTestRun.steps} is the escape hatch for a question neither
-   * vocabulary answers. What this adds is the vocabulary the eval tier already
+   * SDK's own parsed `input` where an event carries the wire's record. What
+   * this adds is the vocabulary the eval tier already
    * speaks — including the turn TERMINATOR, which is what lets a harness wait
    * for a reply to end rather than for a timer.
    *
@@ -222,6 +214,7 @@ export type TextAgentTestRun = {
  * caller that wants one is past the point where a one-call convenience helps —
  * it builds the agent with `createTextAgent` and streams the turn itself.
  *
+ * @input
  * @public
  */
 export type RunTextAgentOptions = Omit<TextAgentOptions, "agent" | "model"> &
@@ -301,7 +294,7 @@ export async function runTextAgent(
   const { script, signal, systemPrompt, maxSteps, temperature, toolChoice, ...agentOptions } =
     options;
   const events: SessionEvent[] = [];
-  const agent = createTextAgent({
+  const agent = createHostTextAgent({
     ...agentOptions,
     agent: def,
     model: scriptedTextModel(script),
@@ -341,7 +334,6 @@ export async function runTextAgent(
     text: texts.join(""),
     texts,
     toolCalls: steps.flatMap(toolCallsOf),
-    steps,
     messages: await result.responseMessages,
     events,
   };

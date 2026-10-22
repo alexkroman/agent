@@ -16,10 +16,12 @@ import { consoleLogger } from "../logger.ts";
 import { DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "../s2s-config.ts";
 import {
   createSessionDirectory,
+  type SessionEventStream,
   type SessionWebSocket,
   wireSessionSocket,
 } from "../session/index.ts";
 import { createClientToolBroker } from "../tools/index.ts";
+import { journalStoreOf } from "../workflow/journal/handle.ts";
 import { platformGuestOptions } from "../workflow/platform-world.ts";
 import { buildRunNotifier, buildWorkflowClient } from "../workflow/runtime.ts";
 import { compileAgentRoutes } from "./agent-routes.ts";
@@ -185,7 +187,13 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
   // runtime rebuilt per save must not rebuild the runs under it.
   const builtWorkflows = options.workflows
     ? undefined
-    : buildWorkflowClient(agent, resolvedDb, options.publicUrl, logger, options.journal);
+    : buildWorkflowClient(
+        agent,
+        resolvedDb,
+        options.publicUrl,
+        logger,
+        journalStoreOf(options.journal),
+      );
   const workflows = options.workflows ?? builtWorkflows?.client;
 
   // Watches runs a tool asked to be told about (`start(…, { notify })`) and
@@ -344,6 +352,8 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     releaseResources();
   }
 
+  // The reader half only: what `AgentRuntime.sessionEvents` promises.
+  const sessionEvents: SessionEventStream = sessionState.stream;
   // Built WITHOUT the seal and cast once: the brand is type-only (see
   // `runtimeBrand`), which is what makes this the one place a `Runtime` exists.
   const runtime = {
@@ -356,7 +366,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     // The event log, exposed for the reason `workflows` below is: a surface outside
     // the runtime serves reads of it (`GET /session-events/:id`), and one stream per
     // runtime is what makes an index mean the same thing to every reader.
-    sessionEvents: sessionState.stream,
+    sessionEvents,
     // Exposed rather than kept private because tool code is not the only caller:
     // `createServerForRuntime` serves the workflow HTTP API from exactly this client, so a
     // page and a `curl` reach the same runs a tool does. One client per runtime,

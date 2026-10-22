@@ -1,0 +1,16 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "uploads",
+  "epoch": 2,
+  "rule": 3,
+  "sha256": "d6f8883aebae4822bcb668cea0f654cf1c3f5175a4f247a626ef7db393743e42",
+  "exports": [
+    "UPLOAD_KEY_PREFIX",
+    "UPLOAD_STORAGE_BUCKET_ENV",
+    "UPLOAD_STORAGE_KEY_ENV",
+    "UPLOAD_STORAGE_URL_ENV",
+    "UploadTooLargeError",
+    "UploadsUnavailableError"
+  ],
+  "rollup": "f8b428375efed8e9f69c80bdfa3db72bde69facd0dfa9786585966770e149179"
+}

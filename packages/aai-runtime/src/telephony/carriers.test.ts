@@ -2,6 +2,7 @@
 import { describe, expect, test } from "vitest";
 import {
   CARRIER_CODECS,
+  type CarrierOutbound,
   carrierByName,
   isMulawFormat,
   MAX_CALL_ID_CHARS,
@@ -107,7 +108,16 @@ describe("twilioCodec", () => {
       streamSid: "MZ0",
       media: { track: "outbound", payload: "f39/fw==" },
     };
-    expect(twilioCodec.decode(frame)).toEqual({ kind: "ignore" });
+    expect(twilioCodec.decode(frame)).toEqual({ kind: "other", type: "media" });
+  });
+
+  test("decodes a key press, and degrades one with no digit", () => {
+    const frame = { event: "dtmf", streamSid: "MZ0", dtmf: { track: "inbound_track", digit: "1" } };
+    expect(twilioCodec.decode(frame)).toEqual({ kind: "dtmf", digit: "1" });
+    expect(twilioCodec.decode({ event: "dtmf", dtmf: {} })).toEqual({
+      kind: "other",
+      type: "dtmf",
+    });
   });
 
   test("decodes a stop frame", () => {
@@ -119,10 +129,9 @@ describe("twilioCodec", () => {
   test.each([
     ["connected", { event: "connected", protocol: "Call", version: "1.0.0" }],
     ["mark", { event: "mark", streamSid: "MZ0", mark: { name: "x" } }],
-    ["dtmf", { event: "dtmf", streamSid: "MZ0", dtmf: { track: "inbound_track", digit: "1" } }],
     ["an unknown future frame", { event: "somethingNew", streamSid: "MZ0" }],
-  ])("ignores a %s frame", (_label, frame) => {
-    expect(twilioCodec.decode(frame)).toEqual({ kind: "ignore" });
+  ])("reports a %s frame as other, by its own name", (_label, frame) => {
+    expect(twilioCodec.decode(frame)).toEqual({ kind: "other", type: frame.event });
   });
 
   test.each([
@@ -132,11 +141,11 @@ describe("twilioCodec", () => {
     ["a media frame with no payload", { event: "media", media: {} }],
     ["a media frame with a non-string payload", { event: "media", media: { payload: 7 } }],
     ["an event-less object", { streamSid: "MZ0" }],
-  ])("degrades %s to ignore rather than throwing", (_label, frame) => {
+  ])("degrades %s to other rather than throwing", (_label, frame) => {
     // A carrier is free to add frame types, and a throw off a socket event
     // would take the host down mid-call over a field we never read.
     expect(() => twilioCodec.decode(frame)).not.toThrow();
-    expect(twilioCodec.decode(frame)).toEqual({ kind: "ignore" });
+    expect(twilioCodec.decode(frame)).toMatchObject({ kind: "other" });
   });
 
   test("tolerates a start frame missing its media format", () => {
@@ -153,17 +162,34 @@ describe("twilioCodec", () => {
   test("echoes streamSid on outbound frames", () => {
     // Twilio silently DROPS frames without it, which presents as an agent
     // that hears the caller and never speaks.
-    expect(twilioCodec.media("AAAA", "MZ0")).toEqual({
+    expect(twilioCodec.encode({ kind: "media", payload: "AAAA", streamId: "MZ0" })).toEqual({
       event: "media",
       streamSid: "MZ0",
       media: { payload: "AAAA" },
     });
-    expect(twilioCodec.clear("MZ0")).toEqual({ event: "clear", streamSid: "MZ0" });
+    expect(twilioCodec.encode({ kind: "clear", streamId: "MZ0" })).toEqual({
+      event: "clear",
+      streamSid: "MZ0",
+    });
   });
 
   test("omits streamSid entirely when it is unknown", () => {
-    expect(twilioCodec.media("AAAA", null)).toEqual({ event: "media", media: { payload: "AAAA" } });
-    expect(twilioCodec.clear(null)).toEqual({ event: "clear" });
+    expect(twilioCodec.encode({ kind: "media", payload: "AAAA", streamId: null })).toEqual({
+      event: "media",
+      media: { payload: "AAAA" },
+    });
+    expect(twilioCodec.encode({ kind: "clear", streamId: null })).toEqual({ event: "clear" });
+  });
+
+  test("answers undefined for a request it has no frame for", () => {
+    // A session asking a codec written today for something added later.
+    const unknown: { kind: string; streamId: string | null } = {
+      kind: "somethingNew",
+      streamId: null,
+    };
+    const future = unknown as CarrierOutbound;
+    expect(twilioCodec.encode(future)).toBeUndefined();
+    expect(telnyxCodec.encode(future)).toBeUndefined();
   });
 });
 
@@ -198,8 +224,11 @@ describe("telnyxCodec", () => {
 
   test("sends outbound frames with no stream id", () => {
     // Telnyx's documented outbound shape: the socket is the stream.
-    expect(telnyxCodec.media("AAAA", "s")).toEqual({ event: "media", media: { payload: "AAAA" } });
-    expect(telnyxCodec.clear("s")).toEqual({ event: "clear" });
+    expect(telnyxCodec.encode({ kind: "media", payload: "AAAA", streamId: "s" })).toEqual({
+      event: "media",
+      media: { payload: "AAAA" },
+    });
+    expect(telnyxCodec.encode({ kind: "clear", streamId: "s" })).toEqual({ event: "clear" });
   });
 
   test("does not read Twilio's camel-cased media format as its own", () => {

@@ -3,8 +3,9 @@
  * Capability contract: `uploads`.
  *
  * A run's file storage as an operator and a caller see it: the bucket
- * configuration an operator sets, the record shapes a step reads back, and the
- * two failures a caller has to tell apart.
+ * configuration an operator sets and the two failures a caller has to tell
+ * apart. The upload record shapes are internal: no public signature reaches
+ * them.
  *
  * The store, its two blob backends, the part addressing and the table name are
  * `@alexkroman1/aai-runtime/internal`'s: `createServerForRuntime` builds the store
@@ -21,8 +22,6 @@ export {
   UPLOAD_STORAGE_BUCKET_ENV,
   UPLOAD_STORAGE_KEY_ENV,
   UPLOAD_STORAGE_URL_ENV,
-  type UploadMeta,
-  type UploadPart,
   UploadsUnavailableError,
   UploadTooLargeError,
 } from "../../runtime-barrel.ts";

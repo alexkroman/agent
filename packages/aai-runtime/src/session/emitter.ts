@@ -68,7 +68,7 @@ import { DETACHED_SESSION_SPEECH } from "@alexkroman1/aai/host-internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Logger } from "../logger.ts";
-import type { SessionEventStream } from "./event-stream.ts";
+import type { SessionEventLog } from "./event-stream.ts";
 
 /** The one way to publish a session event. */
 export type SessionEmitter = {
@@ -229,7 +229,7 @@ export function hookDepsFor(opts: {
 export function createSessionEmitter(opts: {
   sessionId: string;
   client: ClientSink;
-  stream: SessionEventStream;
+  stream: SessionEventLog;
   hooks?: SessionEventHookDeps | undefined;
   /**
    * Publish and store what a hook wrote — the `syncState` push plus the store
