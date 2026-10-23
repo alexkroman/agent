@@ -253,12 +253,13 @@ describe("assemblyAIStt STT adapter — region (EU data residency)", () => {
     await us.close();
   });
 
-  test("languages sets language_codes, and is absent unless asked for", async () => {
-    // Universal-3.5 Pro code-switches across 18 languages when this is unset,
-    // so the absent case must stay absent — sending a default would silently
-    // disable multilingual transcription for every agent.
+  test("languages sets language_codes; unset pins English and an empty list detects per turn", async () => {
+    // Unset means English: `DEFAULT_STT_LANGUAGES` goes on the wire, so an
+    // agent that says nothing about language is not left to the service's
+    // per-turn detection (which transliterated English into Devanagari on
+    // tau2-bench — see the option's doc).
     const unset = await openSession({ model: "universal-3-5-pro" });
-    expect("languageCodes" in fakeOf(unset).params).toBe(false);
+    expect(fakeOf(unset).params.languageCodes).toEqual(["en"]);
     await unset.close();
 
     const pinned = await openSession({ model: "universal-3-5-pro", languages: ["en"] });
@@ -272,7 +273,8 @@ describe("assemblyAIStt STT adapter — region (EU data residency)", () => {
     expect(fakeOf(several).params.languageCodes).toEqual(["en", "es"]);
     await several.close();
 
-    // An empty list is a no-op, not "pin zero languages".
+    // An empty list is the OPT-OUT: no `language_codes` at all, so the service
+    // detects per turn and code-switches — not "pin zero languages".
     const empty = await openSession({ model: "universal-3-5-pro", languages: [] });
     expect("languageCodes" in fakeOf(empty).params).toBe(false);
     await empty.close();

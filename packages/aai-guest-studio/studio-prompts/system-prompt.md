@@ -2874,8 +2874,9 @@ providers you actually use.
 All STT factories accept `{ model?: string, ... }`. Bare calls (`deepgramStt()`,
 `sonioxStt()`, etc.) use the default model. Language is spelled `language` where
 the vendor takes one code (`deepgramStt`, `elevenLabsStt`) and `languages` where
-it takes a list (`assemblyAIStt`, `sonioxStt`) — and only `deepgramStt`'s unset
-value means English; the other three auto-detect.
+it takes a list (`assemblyAIStt`, `sonioxStt`). Unset means English for
+`assemblyAIStt` (`["en"]` is sent; pass `languages: []` to detect per turn) and
+`deepgramStt`; `elevenLabsStt` and `sonioxStt` auto-detect when unset.
 
 `elevenLabsStt` carries the stage in its name because ElevenLabs is better known
 for TTS: when that stage arrives, `elevenLabs` is the name it should get.

@@ -74,7 +74,8 @@ stage-suffixed so the bare name is free for TTS),
   `DEFAULT_SESSION_START_TIMEOUT_MS` (asserted in `assemblyai.test.ts`) —
   re-check it before raising any.
 - `AssemblyAISttOptions` (`stt/assemblyai.ts`): **`streamingUrl` WINS over
-  `region`**, and **unset `languages` means "detect per turn", NOT "English"**.
+  `region`**, and **unset `languages` means ENGLISH (`DEFAULT_STT_LANGUAGES`);
+  the opt-out back to per-turn detection is an explicit `languages: []`**.
 
 ## LLM
 

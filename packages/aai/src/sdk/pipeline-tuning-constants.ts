@@ -158,6 +158,33 @@ export const DEFAULT_VOICE_FOCUS_THRESHOLD = 0.9;
 export const DEFAULT_VOICE_FOCUS = "near-field";
 
 /**
+ * Languages the default AssemblyAI STT stage pins when `assemblyAIStt()` names
+ * none — sent as `language_codes`, so an agent that says nothing about language
+ * transcribes English and the model's per-turn detection is OFF.
+ *
+ * The service default is the other way round: unset `language_codes` detects
+ * per turn and code-switches across every supported language. Measured against
+ * tau2-bench that default sent English utterances back transliterated into
+ * Devanagari and Hebrew script (`Hello? Any update?` → `हेलो एनी अपडेट`),
+ * including an authentication turn, so the tool call built from it was garbage
+ * — and nothing in the transcript says "wrong language"; it reads as a
+ * mis-hearing. Pinning is the safer default for a line that is almost always
+ * monolingual, which is what a deployed agent almost always is.
+ *
+ * The opt-out is explicit: `assemblyAIStt({ languages: [] })` sends no
+ * `language_codes` at all and restores per-turn detection for a genuinely
+ * multilingual line. One element pins a language; several bias toward a known
+ * subset while keeping code-switching among them.
+ *
+ * Pipeline only: `assemblyAIS2s({ languages })` is still forwarded on presence
+ * (see `AssemblyAIS2sOptions.languages`), so an S2S agent detects per turn
+ * unless it pins.
+ *
+ * @internal
+ */
+export const DEFAULT_STT_LANGUAGES: readonly string[] = ["en"];
+
+/**
  * Deadline for the TTS replacement socket opened after a mid-turn cancel
  * (barge-in drops the whole connection — see the AssemblyAI TTS module doc).
  *

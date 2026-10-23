@@ -41,15 +41,16 @@ from the per-symbol docs. The row that surprises people is Deepgram's:
 
 | factory | field | unset means |
 | --- | --- | --- |
-| [assemblyAIStt](#assemblyaistt) | `languages` | detect per turn (code-switches across 18) |
+| [assemblyAIStt](#assemblyaistt) | `languages` | **English** — `["en"]` is sent for you; `[]` detects per turn |
 | [deepgramStt](#deepgramstt) | `language` | **English** — `"en"` is sent for you |
 | [elevenLabsStt](#elevenlabsstt) | `language` | auto-detect (the field is omitted) |
 | [sonioxStt](#sonioxstt) | `languages` | auto-detect (the field is omitted) |
 
-So moving an agent from [assemblyAIStt](#assemblyaistt) to [deepgramStt](#deepgramstt) silently
-drops multilingual transcription, and moving the other way silently gains
-code-switching — read [AssemblyAISttOptions.languages](#languages) before you do,
-because that default has a measured failure mode with no obvious symptom.
+So moving an agent from [elevenLabsStt](#elevenlabsstt) or [sonioxStt](#sonioxstt) to either
+of the first two silently drops multilingual transcription, and moving the
+other way silently gains code-switching — read
+[AssemblyAISttOptions.languages](#languages) before you do, because per-turn
+detection has a measured failure mode with no obvious symptom.
 
 Each vendor's own wire spelling (`language_codes`, `languageCode`,
 `language_hints`) is applied by the host opener, not written here.
@@ -107,12 +108,12 @@ import { assemblyAIStt } from "@alexkroman1/aai/stt";
 export default agent({
   name: "Support",
   systemPrompt: "You are a support agent. Be brief.",
-  stt: assemblyAIStt({ languages: ["en"] }),
+  stt: assemblyAIStt({ languages: ["en", "es"] }),
 });
 ```
 
-Pinning `languages` to one code turns code-switching OFF. Unset means
-"detect per turn", which is not "English" — see
+Unset `languages` pins English (`DEFAULT_STT_LANGUAGES`); `languages: []`
+turns per-turn detection back on — see
 [AssemblyAISttOptions.languages](#languages).
 
 ***
@@ -488,21 +489,22 @@ optional languages?: readonly string[];
 Languages to bias the model toward, sent as the `language_codes` connection
 parameter (e.g. `["en"]`, `["en", "es"]`).
 
-**Unset means DETECT PER TURN, not English** — the same default
-`elevenlabs` and `sonioxStt` have, and the opposite of `deepgramStt`, whose
-unset `language` is `"en"`.
+**Unset means ENGLISH** — `DEFAULT_STT_LANGUAGES` (`["en"]`) is sent, the
+same default `deepgramStt` has and the opposite of `elevenLabsStt` and
+`sonioxStt`, whose unset value auto-detects. **An EMPTY list (`[]`) is the
+opt-out**: nothing is sent and the service detects per turn.
 
-Universal-3.5 Pro **code-switches across 18 languages by default**, so an
-unset value costs accuracy on a monolingual line in a way that is easy to
-misread as an audio problem: measured against tau2-bench, English
-utterances came back
-transliterated into Devanagari and Hebrew script
+Universal-3.5 Pro code-switches across 18 languages when nothing is sent,
+which costs accuracy on a monolingual line in a way that is easy to misread
+as an audio problem: measured against tau2-bench, English utterances came
+back transliterated into Devanagari and Hebrew script
 (`Hello? Any update?` → `हेलो एनी अपडेट`), including an authentication turn,
 so the tool call built from it was garbage. Nothing in the transcript says
-"wrong language" — it reads as a mis-hearing.
+"wrong language" — it reads as a mis-hearing. That is why the default pins.
 
-A single-element list pins one language and keeps code-switching off; omit
-for a genuinely multilingual line.
+A single-element list pins one language and keeps code-switching off; a
+multi-element list biases toward a known subset while keeping
+code-switching among them; `[]` for a genuinely multilingual line.
 
 ##### maxConnectRetries?
 

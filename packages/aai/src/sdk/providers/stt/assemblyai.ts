@@ -23,6 +23,7 @@ import {
 } from "../../endpointing-constants.ts";
 import { omitUndefined } from "../../omit-undefined.ts";
 import {
+  DEFAULT_STT_LANGUAGES,
   DEFAULT_VOICE_FOCUS,
   DEFAULT_VOICE_FOCUS_THRESHOLD,
   STT_CONNECT_MAX_RETRIES,
@@ -88,21 +89,22 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
    * Languages to bias the model toward, sent as the `language_codes` connection
    * parameter (e.g. `["en"]`, `["en", "es"]`).
    *
-   * **Unset means DETECT PER TURN, not English** — the same default
-   * `elevenlabs` and `sonioxStt` have, and the opposite of `deepgramStt`, whose
-   * unset `language` is `"en"`.
+   * **Unset means ENGLISH** — `DEFAULT_STT_LANGUAGES` (`["en"]`) is sent, the
+   * same default `deepgramStt` has and the opposite of `elevenLabsStt` and
+   * `sonioxStt`, whose unset value auto-detects. **An EMPTY list (`[]`) is the
+   * opt-out**: nothing is sent and the service detects per turn.
    *
-   * Universal-3.5 Pro **code-switches across 18 languages by default**, so an
-   * unset value costs accuracy on a monolingual line in a way that is easy to
-   * misread as an audio problem: measured against tau2-bench, English
-   * utterances came back
-   * transliterated into Devanagari and Hebrew script
+   * Universal-3.5 Pro code-switches across 18 languages when nothing is sent,
+   * which costs accuracy on a monolingual line in a way that is easy to misread
+   * as an audio problem: measured against tau2-bench, English utterances came
+   * back transliterated into Devanagari and Hebrew script
    * (`Hello? Any update?` → `हेलो एनी अपडेट`), including an authentication turn,
    * so the tool call built from it was garbage. Nothing in the transcript says
-   * "wrong language" — it reads as a mis-hearing.
+   * "wrong language" — it reads as a mis-hearing. That is why the default pins.
    *
-   * A single-element list pins one language and keeps code-switching off; omit
-   * for a genuinely multilingual line.
+   * A single-element list pins one language and keeps code-switching off; a
+   * multi-element list biases toward a known subset while keeping
+   * code-switching among them; `[]` for a genuinely multilingual line.
    */
   languages?: readonly string[];
   /**
@@ -215,12 +217,12 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
  * export default agent({
  *   name: "Support",
  *   systemPrompt: "You are a support agent. Be brief.",
- *   stt: assemblyAIStt({ languages: ["en"] }),
+ *   stt: assemblyAIStt({ languages: ["en", "es"] }),
  * });
  * ```
  *
- * Pinning `languages` to one code turns code-switching OFF. Unset means
- * "detect per turn", which is not "English" — see
+ * Unset `languages` pins English (`DEFAULT_STT_LANGUAGES`); `languages: []`
+ * turns per-turn detection back on — see
  * {@link AssemblyAISttOptions.languages}.
  */
 export function assemblyAIStt(options: AssemblyAISttOptions = {}): SttProvider {
@@ -262,11 +264,12 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
     voiceFocusThreshold: options.voiceFocusThreshold ?? DEFAULT_VOICE_FOCUS_THRESHOLD,
     connectTimeoutMs: options.connectTimeoutMs ?? STT_CONNECT_TIMEOUT_MS,
     maxConnectRetries: options.maxConnectRetries ?? STT_CONNECT_MAX_RETRIES,
-    // Absent means "detect per turn" — a defaulted ["en"] here would silently
-    // disable multilingual transcription for every agent, so it stays unset.
-    ...(options.languages !== undefined && options.languages.length > 0
-      ? { languages: options.languages }
-      : {}),
+    // Unset pins English (`DEFAULT_STT_LANGUAGES`); an EMPTY list is the
+    // explicit opt-out and resolves to no key at all, which the opener sends as
+    // no `language_codes` — the service then detects per turn. The two cases
+    // are deliberately distinct: "said nothing" and "asked for detection" must
+    // not collapse into one, or the opt-out disappears.
+    ...resolveLanguages(options.languages),
     // An empty `streamingUrl` means "use the default endpoint", same as absent.
     ...(options.streamingUrl !== undefined && options.streamingUrl !== ""
       ? { streamingUrl: options.streamingUrl }
@@ -274,6 +277,13 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
     ...omitUndefined({ region: options.region }),
     ...omitUndefined({ formatTurns: options.formatTurns }),
   };
+}
+
+function resolveLanguages(languages: readonly string[] | undefined): {
+  languages?: readonly string[];
+} {
+  if (languages === undefined) return { languages: DEFAULT_STT_LANGUAGES };
+  return languages.length > 0 ? { languages } : {};
 }
 
 /**

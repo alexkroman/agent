@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 186 names
 - [Testing and evals](#testing-and-evals) — 240 names
 - [Hosting and tooling](#hosting-and-tooling) — 234 names
-- [Framework internals](#framework-internals) — 489 names
+- [Framework internals](#framework-internals) — 490 names
 
 ## Agent authoring
 
@@ -1265,6 +1265,7 @@ trace or a type error can be traced back to something.
 | `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEFAULT_START_FAILURE_PHRASE` | const | `@alexkroman1/aai/internal` |  | Spoken when the session cannot start at all — a provider failed to open, so there is no conversation to have (pipeline mode). |
 | `DEFAULT_START_SPEAKING_FLOOR_MS` | const | `@alexkroman1/aai/internal` |  | Minimum delay between a reply starting and its first audio reaching the caller, in ms. |
+| `DEFAULT_STT_LANGUAGES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEFAULT_STT_PROMPT` | const | `@alexkroman1/aai/internal` |  | Default streaming STT `prompt` — deliberately empty: transcription is unbiased in BOTH session modes unless an agent sets `sttPrompt` (the pipeline sends it as … |
 | `DEFAULT_STT_SAMPLE_RATE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEFAULT_TOOL_CHOICE` | const | `@alexkroman1/aai/internal` |  | Default `toolChoice`: the LLM decides when to call tools vs respond directly. |

@@ -684,6 +684,9 @@ export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30000;
 // @internal
 export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 4000;
 
+// @internal
+export const DEFAULT_STT_LANGUAGES: readonly string[];
+
 // @internal (undocumented)
 export const DEFAULT_STT_SAMPLE_RATE = 16000;
 

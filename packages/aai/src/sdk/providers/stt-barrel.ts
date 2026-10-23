@@ -38,15 +38,16 @@
  *
  * | factory | field | unset means |
  * | --- | --- | --- |
- * | {@link assemblyAIStt} | `languages` | detect per turn (code-switches across 18) |
+ * | {@link assemblyAIStt} | `languages` | **English** — `["en"]` is sent for you; `[]` detects per turn |
  * | {@link deepgramStt} | `language` | **English** — `"en"` is sent for you |
  * | {@link elevenLabsStt} | `language` | auto-detect (the field is omitted) |
  * | {@link sonioxStt} | `languages` | auto-detect (the field is omitted) |
  *
- * So moving an agent from {@link assemblyAIStt} to {@link deepgramStt} silently
- * drops multilingual transcription, and moving the other way silently gains
- * code-switching — read {@link AssemblyAISttOptions.languages} before you do,
- * because that default has a measured failure mode with no obvious symptom.
+ * So moving an agent from {@link elevenLabsStt} or {@link sonioxStt} to either
+ * of the first two silently drops multilingual transcription, and moving the
+ * other way silently gains code-switching — read
+ * {@link AssemblyAISttOptions.languages} before you do, because per-turn
+ * detection has a measured failure mode with no obvious symptom.
  *
  * Each vendor's own wire spelling (`language_codes`, `languageCode`,
  * `language_hints`) is applied by the host opener, not written here.

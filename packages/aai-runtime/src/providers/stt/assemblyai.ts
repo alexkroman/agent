@@ -171,10 +171,11 @@ function buildTranscriberParams(
   };
   const streamingUrl = resolveStreamingUrl(opts);
   if (streamingUrl) params.websocketBaseUrl = streamingUrl;
-  // Language biasing. Sent only when the agent asked for it: an absent
-  // `language_codes` keeps the model's native code-switching, which is the
-  // right default for a multilingual line and the wrong one for a monolingual
-  // one (see the option's doc).
+  // Language biasing. The resolver has already filled `DEFAULT_STT_LANGUAGES`
+  // (`["en"]`) for an agent that said nothing, and dropped the key for the
+  // explicit `languages: []` opt-out — so "absent here" means the agent ASKED
+  // for per-turn detection, and no `language_codes` is sent to keep the
+  // model's native code-switching (see the option's doc).
   if (settings.languages) {
     params.languageCodes = settings.languages;
   }

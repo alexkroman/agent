@@ -5,6 +5,7 @@ import {
   DEFAULT_MIN_TURN_SILENCE_MS,
 } from "../../endpointing-constants.ts";
 import {
+  DEFAULT_STT_LANGUAGES,
   DEFAULT_VOICE_FOCUS,
   DEFAULT_VOICE_FOCUS_THRESHOLD,
   STT_CONNECT_MAX_RETRIES,
@@ -38,16 +39,21 @@ describe("resolveAssemblyAISttSettings", () => {
       voiceFocusThreshold: DEFAULT_VOICE_FOCUS_THRESHOLD,
       connectTimeoutMs: STT_CONNECT_TIMEOUT_MS,
       maxConnectRetries: STT_CONNECT_MAX_RETRIES,
+      // The one optional key a bare descriptor DOES carry: unset `languages`
+      // pins English rather than leaving the service to detect per turn.
+      languages: DEFAULT_STT_LANGUAGES,
     });
+    expect(DEFAULT_STT_LANGUAGES).toEqual(["en"]);
   });
 
   test('`voiceFocus: "off"` sends no focus at all', () => {
     expect(resolveAssemblyAISttSettings({ voiceFocus: "off" }).voiceFocus).toBe("");
   });
 
-  test("drops an empty language list and an empty streaming URL rather than sending them", () => {
+  test("an empty language list is the opt-out: no key, so nothing is sent and the service detects per turn", () => {
     const settings = resolveAssemblyAISttSettings({ languages: [], streamingUrl: "" });
     expect("languages" in settings).toBe(false);
+    // An empty streaming URL, by contrast, is the same as absent.
     expect("streamingUrl" in settings).toBe(false);
   });
 
