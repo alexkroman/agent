@@ -336,8 +336,11 @@ per line; deleting the line is paying it down; `pnpm api-shape:update` lowers,
 never raises):
 
 - **G1 direction** — every exported object type a capability reaches is
-  `@sealed` or `@input`; flags types reached as input AND output (or against
-  their tag) and aliases cut from another type with `Omit`/`Pick`.
+  `@sealed` or `@input`; flags an untagged type reached as input AND output, a
+  tag its positions contradict (a `@sealed` type reached ONLY as input; one
+  reached both ways is a handle round trip and passes), and aliases cut from
+  another type with `Omit`/`Pick`. A React component type's props argument
+  (`FunctionComponent<P>`) is input.
 - **G2 closed literals** — a literal-tuple `const`, a `Record` over literal
   keys, a string-literal union without `(string & {})` in output position
   (return, callback parameter, `@sealed` member). `exhaustiveByDesign` is the

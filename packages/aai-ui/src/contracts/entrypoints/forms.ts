@@ -27,6 +27,7 @@ export {
   type FormProps,
   type FormValues,
   fieldKindFor,
+  isFileValue,
   NumberField,
   SelectField,
   SubmitButton,

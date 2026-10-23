@@ -15,7 +15,7 @@
 
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
-import type { FileValue, FormValues } from "@alexkroman1/aai-ui";
+import { type FormValues, isFileValue } from "@alexkroman1/aai-ui";
 import type { redline } from "./agent.ts";
 
 /** What the desk is asked for, derived from the declaration rather than restated. */
@@ -54,7 +54,7 @@ export function toInput(values: FormValues): RedlineFormInput {
 /**
  * The chosen file as the schema's `source`, or nothing at all.
  *
- * `<FileField read="text">` contributes a {@link FileValue} — the file's
+ * `<FileField read="text">` contributes a `FileValue` — the file's
  * metadata plus its text, read in the BROWSER — and contributes no key at all
  * when nothing was chosen, which is why this takes `unknown` and why the absent
  * case is the ordinary one rather than an error. Nothing is uploaded: a draft is
@@ -63,12 +63,11 @@ export function toInput(values: FormValues): RedlineFormInput {
  * and `transcription-workflow` is where it is answered.
  */
 export function attachedDraft(value: unknown): { name: string; text: string } | undefined {
-  const file = value as FileValue | undefined;
-  if (file === undefined || typeof file.content !== "string") return undefined;
+  if (!isFileValue(value) || value.content === undefined) return undefined;
   // Passed through UNTRIMMED, deliberately: a file somebody chose is a file they
   // meant to redline, so an empty one has to come back as the schema refusing it
   // by name rather than as a draft written from scratch that they did not ask
   // for. It is the same layering as `brief` — the schema counts CHARACTERS, and
   // `acceptDraft` catches the whitespace that gets past it.
-  return { name: file.name, text: file.content };
+  return { name: value.name, text: value.content };
 }

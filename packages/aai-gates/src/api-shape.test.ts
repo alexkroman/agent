@@ -85,6 +85,38 @@ export function make(options: Options): void;
     ]);
   });
 
+  test("a `@sealed` type handed out and passed back is a round trip; one only taken in is not", () => {
+    const sealed =
+      "// @public @sealed\nexport type Handle = {\n    id: string;\n};\n\n// @public\nexport function open(): Handle;\n";
+    const roundTrip = `${sealed}\n// @public\nexport function close(handle: Handle): void;\n`;
+    expect(findings(roundTrip, { store: ["Handle", "open", "close"] }).positions).toEqual([]);
+    const inOnly =
+      "// @public @sealed\nexport type Handle = {\n    id: string;\n};\n\n// @public\nexport function close(handle: Handle): void;\n";
+    expect(findings(inOnly, { store: ["Handle", "close"] }).positions).toEqual([
+      "store: Handle — @sealed, but reached only as input",
+    ]);
+  });
+
+  test("a component type's props argument is INPUT; a plain generic's argument keeps polarity", () => {
+    const component = (wrapper: string) => `// @public @input
+export type ButtonProps = {
+    variant: "a" | "b";
+};
+
+// @public
+export const Button: ${wrapper};
+`;
+    const memo = findings(component("MemoExoticComponent<FunctionComponent<ButtonProps>>"), {
+      components: ["ButtonProps", "Button"],
+    });
+    expect(memo.positions).toEqual([]);
+    expect(memo.closedLiterals).toEqual([]);
+    const promised = findings(component("Promise<ButtonProps>"), {
+      components: ["ButtonProps", "Button"],
+    });
+    expect(promised.positions).toEqual(["components: ButtonProps — @input, but reached as output"]);
+  });
+
   test("an alias cut from another object type with Omit is flagged; a fresh type is not", () => {
     const derived = `// @public @sealed
 export type Event = {

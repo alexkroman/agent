@@ -1,12 +1,14 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * What a form's controls CONTRIBUTE — the three types both halves of the form
- * code share.
+ * What a form's controls CONTRIBUTE — the types both halves of the form code
+ * share, and {@link isFileValue}, the guard that reads one back.
  *
  * Their own module because `form.tsx` (the components) and `_form-values.ts`
  * (the DOM read) both need them, and a type living in one of those would make
  * the pair import each other.
  */
+
+import { isRecord } from "@alexkroman1/aai/utils";
 
 /**
  * One submitted form, as a plain object keyed by field name.
@@ -21,9 +23,8 @@ export type FormValues = Record<string, unknown>;
 /**
  * What a {@link FileField} contributes to {@link FormValues}.
  *
- * No signature names it — `FormValues` is `Record<string, unknown>` — so a
- * page casts the field's value to it (`values.doc as FileValue`); it is
- * published for that cast.
+ * `FormValues` is `Record<string, unknown>`, so a page narrows the field's
+ * value with {@link isFileValue} rather than casting it.
  *
  * @sealed
  * @public
@@ -43,6 +44,25 @@ export type FileValue = {
    */
   content?: string;
 };
+
+/**
+ * Whether one {@link FormValues} entry is what a {@link FileField} contributed.
+ *
+ * A field with nothing chosen contributes no key at all, so the absent case is
+ * the ordinary one — this is `false` for `undefined`, not an error.
+ *
+ * @public
+ */
+export function isFileValue(value: unknown): value is FileValue {
+  return (
+    isRecord(value) &&
+    typeof value.name === "string" &&
+    typeof value.size === "number" &&
+    typeof value.type === "string" &&
+    typeof value.lastModified === "number" &&
+    (value.content === undefined || typeof value.content === "string")
+  );
+}
 
 /**
  * How much of a chosen file a {@link FileField} reads.

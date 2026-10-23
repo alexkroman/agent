@@ -19,7 +19,7 @@ of it — and want the import.
 ## Contents
 
 - [Agent authoring](#agent-authoring) — 569 names
-- [Browser client](#browser-client) — 185 names
+- [Browser client](#browser-client) — 186 names
 - [Testing and evals](#testing-and-evals) — 240 names
 - [Hosting and tooling](#hosting-and-tooling) — 234 names
 - [Framework internals](#framework-internals) — 489 names
@@ -671,6 +671,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `fetchClientConfig`, `FetchClientConfigOptions` | function | `@alexkroman1/aai-ui` | `aai-ui:page` | Fetch the agent's declared `name`, `greeting` and front door; any failure yields the agent default (`{}`). |
 | `fieldKindFor` | function | `@alexkroman1/aai-ui` | `aai-ui:forms` | Which control `<WorkflowFields>` renders for one property of an input schema. |
 | `inboxEventToItem` | function | `@alexkroman1/aai-ui` | `aai-ui:conversation-log` | The log item for one frame of a client's live conversation — what `useInbox({ onEvent })` delivers for another session of the same client (a device's, when the … |
+| `isFileValue` | function | `@alexkroman1/aai-ui` | `aai-ui:forms` | Whether one `FormValues` entry is what a `FileField` contributed. |
 | `mountClient` | function | `@alexkroman1/aai-ui` | `aai-ui:client` | Define and mount a client UI for a voice agent. |
 | `mountPage` | function | `@alexkroman1/aai-ui` | `aai-ui:page` | Mount a page for an agent whose work happens in workflows. |
 | `phoneE164`, `PhoneE164Options` | function | `@alexkroman1/aai-ui` | `aai-ui:client-storage` | The phone number `typed` in E.164 form (`"+15035550123"`), or `undefined` when it cannot be one — see `PhoneE164Options` for how a number without a country … |

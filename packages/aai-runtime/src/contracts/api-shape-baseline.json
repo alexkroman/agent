@@ -27,20 +27,10 @@
     "session: SessionWebSocket"
   ],
   "positions": [
-    "auth: SessionAuth — reached as input AND output",
     "auth: SessionIdentity — reached as input AND output",
     "eval-assert: EvalToolCall — reached as input AND output",
     "eval-assert: EvalTurn — reached as input AND output",
-    "eval-network: EvalNetwork — reached as input AND output",
-    "eval-network: EvalRequest — reached as input AND output",
-    "eval-simulate: SimulatedCall — reached as input AND output",
     "eval-simulate: SimulatedCaller — reached as input AND output",
-    "eval-simulate: SimulatedTurn — reached as input AND output",
-    "eval-simulate: SimulationMetrics — reached as input AND output",
-    "eval: EvalEmitted — reached as input AND output",
-    "eval: EvalSession — reached as input AND output",
-    "eval: EvalSleep — reached as input AND output",
-    "eval: EvalWorkflowRun — reached as input AND output",
     "metrics: MetricsContext — reached as input AND output",
     "metrics: MetricsSink — reached as input AND output",
     "providers: SttError — reached as input AND output",
@@ -56,13 +46,9 @@
     "providers: TtsSession — reached as input AND output",
     "providers: TtsWordTiming — reached as input AND output",
     "runtime: AgentRuntime — reached as input AND output",
-    "runtime: Runtime — reached as input AND output",
     "runtime: SessionStartOptions — reached as input AND output",
-    "session: SessionEventPage — reached as input AND output",
-    "session: SessionEventStream — reached as input AND output",
     "session: SessionWebSocket — reached as input AND output",
-    "telephony: CarrierCodec — reached as input AND output",
-    "workflow: WorkflowJournal — reached as input AND output"
+    "telephony: CarrierCodec — reached as input AND output"
   ],
   "derived": [
     "eval: DescribeTextEvalOptions = Omit<EvalTextAgentOptions>",
