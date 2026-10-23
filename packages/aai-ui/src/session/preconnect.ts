@@ -46,7 +46,7 @@ export type PreConnectAudio = {
    */
   begin(): void;
   /** Hand the held capture to a bring-up, or `null` when none is held. */
-  take(): Promise<PreConnectCapture | null> | null;
+  take(signal?: AbortSignal): Promise<PreConnectCapture | null> | null;
   /** Release a held capture: the session is over or starting afresh. */
   release(): void;
 };
@@ -83,10 +83,21 @@ export function createPreConnectAudio(enabled: boolean): PreConnectAudio {
         // path the ordinary way and reports its own.
         .catch(() => null);
     },
-    take() {
+    take(signal) {
       const taken = held;
+      const current = attempt;
       held = null;
       attempt = null;
+      if (taken && current && signal) {
+        // Ownership moves to the bring-up, including cancellation BEFORE the
+        // lazy modules finish. An abandoned bring-up must never ask for a mic.
+        const release = () => {
+          current.released = true;
+        };
+        if (signal.aborted) release();
+        else signal.addEventListener("abort", release, { once: true });
+        return taken.finally(() => signal.removeEventListener("abort", release));
+      }
       return taken;
     },
     release() {

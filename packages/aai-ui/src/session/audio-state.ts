@@ -33,14 +33,14 @@
  *   anywhere; as context of `down`/`starting` they are cleared by entering
  *   `down` rather than by three call sites remembering to.
  *
- * ## What cancellation does NOT do, and the one guard that had to survive
+ * ## Cancellation follows the microphone's ownership
  *
  * Stopping the `bringUp` actor hides its resolution; it does not close a
  * microphone the browser has already granted. So `bringUp` checks its own
- * `signal` after `openAudioPath` settles and releases what it built. That is
- * the single remaining "is this still wanted?" test, and it lives in the
- * producer — which owns the value nobody adopted — rather than at the four
- * consumer sites that used to re-ask.
+ * `signal` after `openAudioPath` settles and releases what it built. The same
+ * signal reaches the opening path and the transferred pre-connect capture,
+ * so cancellation before the lazy modules load prevents a permission request
+ * in the first place. Both checks live with the producer that owns the device.
  *
  * ## Effects stay in the session core
  *
@@ -86,7 +86,11 @@ export type AudioPathEffects = {
    * hand it a promise they resolve by hand, which is the only way to hold a
    * bring-up open across the events that abandon it.
    */
-  open(config: AudioPathConfig, callbacks: AudioPathCallbacks): Promise<VoiceIO>;
+  open(
+    config: AudioPathConfig,
+    callbacks: AudioPathCallbacks,
+    signal: AbortSignal,
+  ): Promise<VoiceIO>;
   /** Relay captured microphone audio to the server. */
   sendMicAudio(pcm16: ArrayBuffer): void;
   /**
@@ -197,7 +201,7 @@ const audioPathMachine = setup({
             if (mine) input.send({ type: "IO_FAILED", io: mine, message });
           },
         };
-        const io = await input.effects.open(input.config, callbacks);
+        const io = await input.effects.open(input.config, callbacks, signal);
         // Stopped while the browser was deciding. XState will drop this
         // resolution, which is exactly the problem: nothing else knows a
         // microphone was opened, so the release has to happen here.

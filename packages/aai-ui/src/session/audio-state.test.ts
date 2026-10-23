@@ -68,7 +68,7 @@ describe("createAudioPath", () => {
 
     audio.start(CONFIG);
     expect(audio.phase()).toBe("starting");
-    expect(effects.open).toHaveBeenCalledWith(CONFIG, expect.anything());
+    expect(effects.open).toHaveBeenCalledWith(CONFIG, expect.anything(), expect.any(AbortSignal));
 
     opens[0]?.resolve(makeIO());
     await tick();

@@ -168,4 +168,24 @@ describe("BrowserSession pre-connect audio", () => {
     expect(getUserMedia).toHaveBeenCalledTimes(2);
     expect(core.getSnapshot().error).toBeNull();
   });
+
+  it.each([true, false])(
+    "a hang-up after config cancels a pending mic open (preConnectAudio: %s)",
+    async (preConnectAudio) => {
+      const abandoned = session(preConnectAudio);
+      abandoned.connect();
+      lastSocket?.simulateOpen();
+      lastSocket?.simulateMessage(makeConfig());
+      // Config transfers the pre-connect promise to the audio actor. End it
+      // before either the module load or its resolved-promise continuation can
+      // ask permission, then let a successor reach that same opening boundary.
+      abandoned.disconnect();
+
+      session(preConnectAudio).connect();
+      await configured();
+      expect(getUserMedia).toHaveBeenCalledOnce();
+      expect(abandoned.getSnapshot().recording).toBe(false);
+      expect(abandoned.getSnapshot().state).toBe("disconnected");
+    },
+  );
 });

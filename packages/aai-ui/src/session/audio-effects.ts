@@ -64,8 +64,8 @@ export function createAudioEffects(deps: AudioEffectsDeps): AudioPathEffects {
   }
 
   return {
-    open: (config, callbacks) =>
-      (deps.openAudioPath ?? openAudioPath)(config, callbacks, preConnect.take()),
+    open: (config, callbacks, signal) =>
+      (deps.openAudioPath ?? openAudioPath)(config, callbacks, preConnect.take(signal), signal),
     sendMicAudio: (pcm16) => {
       try {
         mic.sendAudio(pcm16);
