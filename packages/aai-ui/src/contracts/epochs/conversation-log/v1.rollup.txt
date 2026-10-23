@@ -1,9 +1,9 @@
 import type { DefaultToolResult } from '@alexkroman1/aai';
 
-// @public
+// @public @sealed
 type ChatMessage = {
     id: number;
-    role: "user" | "assistant";
+    role: "user" | "assistant" | (string & {});
     content: string;
 };
 
@@ -14,6 +14,9 @@ type ConversationItem = {
 } | {
     kind: "tool";
     toolCall: ToolCallInfo;
+} | {
+    kind: "other";
+    type: string;
 };
 
 // @public
@@ -44,17 +47,20 @@ type InboxEvent = {
 } | {
     readonly type: "session_ended";
     readonly sessionId: string;
+} | {
+    readonly type: "other";
+    readonly frameType: string;
 };
 
 // @public
 export function inboxEventToItem(event: InboxEvent, id?: number): ConversationItem | undefined;
 
-// @public
+// @public @sealed
 type ToolCallInfo = {
     callId: string;
     name: string;
     args: Record<string, DefaultToolResult>;
-    status: "pending" | "done";
+    status: "pending" | "done" | (string & {});
     result?: string | undefined;
     seq: number;
     afterMessageId: number;
@@ -63,13 +69,13 @@ type ToolCallInfo = {
 // @public
 export function useConversationLog(options?: UseConversationLogOptions): UseConversationLogResult;
 
-// @public
+// @public @input
 export type UseConversationLogOptions = {
     storageKey?: string | undefined;
     max?: number | undefined;
 };
 
-// @public
+// @public @sealed
 export type UseConversationLogResult = {
     readonly entries: readonly ConversationLogEntry[];
     addNote(text: string): void;

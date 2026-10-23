@@ -3,7 +3,7 @@
   "capability": "eval-simulate",
   "epoch": 1,
   "rule": 3,
-  "sha256": "03dce555e6a70ce9d85bbab85a2a6ebd6d64a79c298e1de002340a3fc003bdca",
+  "sha256": "2661d3a9311b5907d259c09f6ec890f45f462748a7215194164dce807978ce0e",
   "exports": [
     "CallVerdict",
     "CriterionVerdict",
@@ -23,5 +23,5 @@
     "judgeCall",
     "simulateCall"
   ],
-  "rollup": "b381fe7aeaf63c9b977c33c87162411d8b52f58829c009a526ffad93c252b073"
+  "rollup": "d619b7b3a9df5824be6ed781544fcc4e54972ef9ca026641db1684bcfa0ab9fc"
 }

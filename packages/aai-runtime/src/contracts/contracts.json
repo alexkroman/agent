@@ -10,11 +10,9 @@
     "dropped": {}
   },
   "eval": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "The assertion readers and the EvalTurn/EvalToolCall records moved to eval-assert; HostGenerateFn, StepUsage, StepFetch and EvalWorkflowEngineOptions left the surface (EvalWorkflowsOptions spells stepFetch/speech out)."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "eval-assert": {
     "current": 1,
@@ -22,25 +20,19 @@
     "dropped": {}
   },
   "eval-network": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "EvalRequest.outcome is open (| (string & {})), so an exhaustive switch over the three outcomes no longer compiles."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "eval-phone-tree": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "PhoneTreeWalk.stopped is open (| (string & {})), so an exhaustive switch over hung-up/max-prompts no longer compiles."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "eval-simulate": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "SimulatedCall.endedBy is open (| (string & {})), so an exhaustive switch over caller/agent/max-turns no longer compiles."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "eval-stubs": {
     "mirrors": "aai:testing"
@@ -56,32 +48,24 @@
     "dropped": {}
   },
   "providers": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "createToolCallRepair takes one ToolCallRepairOptions bag instead of (model, log, getAbortSignal); SttError/TtsError.code are open; the orphaned S2sConfig is gone."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "runtime": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "RuntimeOptions.journal takes the opaque WorkflowJournal, not a JournalStore; ExecuteTool, ExecuteToolOptions and SkipGreetingOption left the surface; RunCodeExecutor is declared here."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "server": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "AgentServerOptions.journal takes the opaque WorkflowJournal, not a JournalStore."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "session": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "SessionEventStream is a sealed reader (tail, read, durable); the writing half (append, flush, hydrate, discard, clear) is internal."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "session-state": {
     "current": 1,
@@ -89,35 +73,27 @@
     "dropped": {}
   },
   "telephony": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "CarrierCodec's media/clear methods became one encode(out: CarrierOutbound); CarrierInbound's ignore variant became other { type } and gained dtmf { digit }."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "testing": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "The journal store and its records (JournalStore, RunRecord, StepEntry, SleepRecord, ...), JournalConflictError and DeterminismKind left testing; RunWorkflowOptions.journal takes WorkflowJournal; the handle reads waits/resumable; TextAgentTestRun.steps (ai StepResult) is gone."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "testing-stubs": {
     "mirrors": "aai:testing"
   },
   "text": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "TextTurnResult is a declared sealed slice (textStream, text, response, consumeStream) instead of the whole ReturnType<typeof streamText>."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "tools": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "The orphaned McpCallResult, McpInputSchema and McpTrust left the surface; no published signature reached them."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "tracing": {
     "current": 1,
@@ -125,17 +101,13 @@
     "dropped": {}
   },
   "uploads": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "The orphaned UploadMeta and UploadPart left the surface; no published signature reached them."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   },
   "workflow": {
-    "current": 2,
-    "supported": [2],
-    "dropped": {
-      "1": "WORKFLOW_API_PREFIX is no longer re-exported (it is the SDK's, on @alexkroman1/aai/internal)."
-    }
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   }
 }

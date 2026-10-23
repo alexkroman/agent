@@ -3,17 +3,10 @@
   "capability": "workflow",
   "epoch": 1,
   "rule": 3,
-  "sha256": "279cbb50ba9cf70ec54804ce501f40571383764d9711da6464e9ec14ddcf9b8d",
+  "sha256": "b6c0662eb1a597a67a44b534a8ac976faa8268a26cade4682fa18f1bf4293896",
   "exports": [
     "AgentClient",
-    "AudioResult",
-    "AudioResultCaptions",
-    "AudioResultProps",
     "SubmitInputOf",
-    "UploadProgressBar",
-    "UploadStatus",
-    "UseDownloadUrlOptions",
-    "UseDownloadUrlResult",
     "UseWorkflowProgressResult",
     "UseWorkflowRunResult",
     "UseWorkflowRunsOptions",
@@ -41,7 +34,6 @@
     "WorkflowSummary",
     "createWorkflowApi",
     "isTerminal",
-    "useDownloadUrl",
     "useRunKey",
     "useWorkflowProgress",
     "useWorkflowRun",
@@ -50,5 +42,5 @@
     "useWorkflowSubmit",
     "useWorkflows"
   ],
-  "rollup": "a160cb2e3c6cc100d89f266fd46f015021432086eacd14e064a4dd98ec7bf5e6"
+  "rollup": "0143df11284b7817c35a87f74b619cb3e2cd01f0b325a22f805ee5e5440e5f12"
 }

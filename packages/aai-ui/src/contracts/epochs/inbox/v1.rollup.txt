@@ -1,7 +1,7 @@
 // @public
 export function createInbox(options: CreateInboxOptions): Inbox;
 
-// @public
+// @public @input
 export type CreateInboxOptions = {
     platformUrl: string;
     client: string | (() => string | undefined);
@@ -31,9 +31,12 @@ export type InboxEvent = {
 } | {
     readonly type: "session_ended";
     readonly sessionId: string;
+} | {
+    readonly type: "other";
+    readonly frameType: string;
 };
 
-// @public
+// @public @sealed
 export type InboxNotice = {
     readonly id: string;
     readonly event: string;
@@ -44,7 +47,7 @@ export type InboxNotice = {
 // @public
 export function useInbox(options?: UseInboxOptions): UseInboxResult;
 
-// @public
+// @public @input
 export type UseInboxOptions = {
     onNotice?: ((notice: InboxNotice) => void) | undefined;
     onEvent?: ((event: InboxEvent) => void) | undefined;
@@ -53,13 +56,13 @@ export type UseInboxOptions = {
     events?: boolean | undefined;
 };
 
-// @public
+// @public @sealed
 export type UseInboxResult = {
     readonly connected: boolean;
     stopPlayback(): void;
 };
 
-// @public
+// @public @input
 type VoiceSessionOptions = {
     platformUrl: string;
     onSessionId?: ((sessionId: string) => void) | undefined;
@@ -74,7 +77,7 @@ type VoiceSessionOptions = {
     WebSocket?: WebSocketConstructor | undefined;
 };
 
-// @public
+// @public @input
 type WebSocketConstructor = {
     new (url: string | URL, protocols?: string | string[]): WebSocket;
     readonly OPEN: number;

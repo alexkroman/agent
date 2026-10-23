@@ -3,8 +3,9 @@
   "capability": "protocol",
   "epoch": 1,
   "rule": 3,
-  "sha256": "f6294e7788f31301a4f8a47f5b4d9e8ca8a0d6cd44a2f31ee526ca1e07214bf6",
+  "sha256": "e2779fe62e3d3b33ecf6b401bf24b38dcbf442d58883bfa2b084354d2b83a641",
   "exports": [
+    "AgentTranscriptRecovery",
     "CLIENT_CONFIG_METHODS",
     "CLIENT_CONFIG_PATH",
     "ClientSink",
@@ -31,9 +32,10 @@
     "SessionErrorCodeSchema",
     "SessionEventMeta",
     "SessionEventMetaSchema",
+    "SessionEventSchema",
     "buildClientConfig",
     "buildReadyConfig",
     "lenientParse"
   ],
-  "rollup": "8cca7be8d045975490c3429e48ec6b803d79c5aef6dad3f8a38318b9d249e8e5"
+  "rollup": "05d178b6ce16f73703c4d68002be0c7e51d02b980131b29891ece5cdf79c302a"
 }

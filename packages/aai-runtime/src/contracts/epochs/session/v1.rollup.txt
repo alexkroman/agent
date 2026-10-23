@@ -1,28 +1,24 @@
-import { SessionEvent } from '@alexkroman1/aai';
-import { SessionEventBody } from '@alexkroman1/aai';
+import type { SessionEvent } from '@alexkroman1/aai';
 
 // @public
 export const SESSION_EVENTS_TOKEN_ENV = "AAI_SESSION_EVENTS_TOKEN";
 
-// @public
+// @public @sealed
 export type SessionEventPage = {
     events: readonly SessionEvent[];
     tail: number;
 };
 
-// @public
+// @public @sealed
 export type SessionEventStream = {
-    append(sessionId: string, body: SessionEventBody): SessionEvent;
+    readonly [sessionEventStreamBrand]: true;
     tail(sessionId: string): number;
     read(sessionId: string, startIndex: number, limit?: number): Promise<SessionEventPage>;
-    flush(sessionId: string, options?: {
-        final?: boolean;
-    }): Promise<void>;
-    hydrate(sessionId: string): Promise<void>;
-    discard(sessionId: string): void;
-    clear(): void;
     readonly durable: boolean;
 };
+
+// @public
+export const sessionEventStreamBrand: unique symbol;
 
 // @public
 export type SessionWebSocket = {

@@ -4,7 +4,7 @@ import { SessionErrorCode } from '@alexkroman1/aai/protocol';
 // @public
 export const AGENT_STATE_LABELS: Readonly<Record<AgentState, string>>;
 
-// @public
+// @public @sealed
 export type AgentCustomEvent = {
     readonly id: number;
     readonly event: string;
@@ -12,7 +12,7 @@ export type AgentCustomEvent = {
 };
 
 // @public
-export type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
+export type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error" | (string & {});
 
 // @public
 type AgentStateFrame = Readonly<Record<string, unknown>>;
@@ -48,10 +48,10 @@ export type BrowserSession = {
 // @public
 export const browserSessionBrand: unique symbol;
 
-// @public
+// @public @sealed
 export type ChatMessage = {
     id: number;
-    role: "user" | "assistant";
+    role: "user" | "assistant" | (string & {});
     content: string;
 };
 
@@ -62,12 +62,15 @@ export type ConversationItem = {
 } | {
     kind: "tool";
     toolCall: ToolCallInfo;
+} | {
+    kind: "other";
+    type: string;
 };
 
 // @public
 export function createBrowserSession(options: VoiceSessionOptions): BrowserSession;
 
-// @public
+// @public @input
 export type SendTextOptions = {
     connect?: boolean | undefined;
 };
@@ -75,7 +78,7 @@ export type SendTextOptions = {
 // @public
 export type Session = SessionSnapshot & SessionActions;
 
-// @public
+// @public @sealed
 export type SessionActions = {
     start(): void;
     cancel(): void;
@@ -90,7 +93,7 @@ export type SessionActions = {
     end(): void;
 };
 
-// @public
+// @public @sealed
 export type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
@@ -108,7 +111,7 @@ export type SessionIdentity = {
     ticket(): string | undefined | Promise<string | undefined>;
 };
 
-// @public
+// @public @sealed
 export type SessionSnapshot = {
     readonly state: AgentState;
     readonly recording: boolean;
@@ -126,12 +129,12 @@ export type SessionSnapshot = {
     readonly running: boolean;
 };
 
-// @public
+// @public @sealed
 type ToolCallInfo = {
     callId: string;
     name: string;
     args: Record<string, DefaultToolResult>;
-    status: "pending" | "done";
+    status: "pending" | "done" | (string & {});
     result?: string | undefined;
     seq: number;
     afterMessageId: number;
@@ -150,7 +153,7 @@ export function useClientId(): string | undefined;
 // @public
 export function useConversation(): UseConversationResult;
 
-// @public
+// @public @sealed
 export type UseConversationResult = {
     items: readonly ConversationItem[];
     streaming: string | null;
@@ -158,7 +161,7 @@ export type UseConversationResult = {
     thinking: boolean;
 };
 
-// @public
+// @public @sealed
 type UserTurnControls = {
     start(): void;
     commit(): void;
@@ -174,7 +177,7 @@ export function useSessionActions(): SessionActions;
 // @public
 export function useSessionControls(): UseSessionControlsResult;
 
-// @public
+// @public @sealed
 export type UseSessionControlsResult = {
     started: boolean;
     running: boolean;
@@ -199,14 +202,14 @@ export function useSessionStatus(): AgentState;
 // @public
 export function useUserTranscript(): UseUserTranscriptResult;
 
-// @public
+// @public @sealed
 export interface UseUserTranscriptResult {
     partial: string | null;
     speaking: boolean;
     text: string;
 }
 
-// @public
+// @public @input
 export type VoiceSessionOptions = {
     platformUrl: string;
     onSessionId?: ((sessionId: string) => void) | undefined;
@@ -221,7 +224,7 @@ export type VoiceSessionOptions = {
     WebSocket?: WebSocketConstructor | undefined;
 };
 
-// @public
+// @public @input
 export type WebSocketConstructor = {
     new (url: string | URL, protocols?: string | string[]): WebSocket;
     readonly OPEN: number;

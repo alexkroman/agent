@@ -3,17 +3,17 @@
   "capability": "providers",
   "epoch": 1,
   "rule": 3,
-  "sha256": "39413a561a15959b1080eed9905e7edde59f2a139a28e9069762baf575d7218e",
+  "sha256": "1bd829abd3e1e3141e16939b3059c9725ac8459ca63a190079838ecfb8dd9076",
   "exports": [
     "LlmRegistryEntry",
     "OpenerRegistryEntry",
-    "S2sConfig",
     "SttError",
     "SttEvents",
     "SttOpenOptions",
     "SttOpener",
     "SttSession",
     "SttTurnMeta",
+    "ToolCallRepairOptions",
     "TtsError",
     "TtsEvents",
     "TtsOpenOptions",
@@ -28,5 +28,5 @@
     "resolveLlm",
     "salvageJson"
   ],
-  "rollup": "90c7057b08839914a9956cff48e477edda0a49734ac1da31601019881714f4b0"
+  "rollup": "6c2a12af24c3153b1f11894c24a1d12eb2eed5c4c5a7b1889b73d987480cdcb6"
 }

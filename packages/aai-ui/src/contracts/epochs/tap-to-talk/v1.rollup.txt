@@ -1,7 +1,7 @@
 // @public
 export function useTapToTalk(options?: UseTapToTalkOptions): UseTapToTalkResult;
 
-// @public
+// @public @input
 export type UseTapToTalkOptions = {
     key?: string | false | undefined;
     idleHangupMs?: number | undefined;
@@ -9,9 +9,9 @@ export type UseTapToTalkOptions = {
     connectTimeoutMs?: number | undefined;
 };
 
-// @public
+// @public @sealed
 export type UseTapToTalkResult = {
-    phase: "idle" | "connecting" | "active";
+    phase: "idle" | "connecting" | "active" | (string & {});
     live: boolean;
     failed: boolean;
     toggle: () => void;

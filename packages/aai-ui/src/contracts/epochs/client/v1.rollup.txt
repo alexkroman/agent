@@ -4,7 +4,7 @@ import type { DefaultToolResult } from '@alexkroman1/aai';
 import { ReactNode } from 'react';
 import type { SessionErrorCode } from '@alexkroman1/aai/protocol';
 
-// @public
+// @public @sealed
 type AgentCustomEvent = {
     readonly id: number;
     readonly event: string;
@@ -12,7 +12,7 @@ type AgentCustomEvent = {
 };
 
 // @public
-type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
+type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error" | (string & {});
 
 // @public
 type AgentStateFrame = Readonly<Record<string, unknown>>;
@@ -45,14 +45,14 @@ type BrowserSession = {
 // @public
 const browserSessionBrand: unique symbol;
 
-// @public
+// @public @sealed
 type ChatMessage = {
     id: number;
-    role: "user" | "assistant";
+    role: "user" | "assistant" | (string & {});
     content: string;
 };
 
-// @public
+// @public @input
 export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "token" | "WebSocket"> & {
     target?: string | HTMLElement;
     platformUrl?: string;
@@ -70,14 +70,14 @@ export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSess
 
 export { ClientConfigResponse }
 
-// @public
+// @public @sealed
 export type ClientHandle = {
     session: BrowserSession;
     dispose(): void;
     [Symbol.dispose](): void;
 };
 
-// @public
+// @public @input
 type ClientTheme = {
     bg?: string;
     primary?: string;
@@ -89,12 +89,12 @@ type ClientTheme = {
 // @public
 export function mountClient(config: ClientConfig): ClientHandle;
 
-// @public
+// @public @input
 type SendTextOptions = {
     connect?: boolean | undefined;
 };
 
-// @public
+// @public @sealed
 type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
@@ -110,7 +110,7 @@ type SessionIdentity = {
     ticket(): string | undefined | Promise<string | undefined>;
 };
 
-// @public
+// @public @sealed
 type SessionSnapshot = {
     readonly state: AgentState;
     readonly recording: boolean;
@@ -128,12 +128,12 @@ type SessionSnapshot = {
     readonly running: boolean;
 };
 
-// @public
+// @public @sealed
 type ToolCallInfo = {
     callId: string;
     name: string;
     args: Record<string, DefaultToolResult>;
-    status: "pending" | "done";
+    status: "pending" | "done" | (string & {});
     result?: string | undefined;
     seq: number;
     afterMessageId: number;
@@ -152,14 +152,14 @@ export type ToolDisplayConfig = Record<string, {
     label?: string;
 }>;
 
-// @public
+// @public @sealed
 type UserTurnControls = {
     start(): void;
     commit(): void;
     clear(): void;
 };
 
-// @public
+// @public @input
 type VoiceSessionOptions = {
     platformUrl: string;
     onSessionId?: ((sessionId: string) => void) | undefined;
@@ -174,7 +174,7 @@ type VoiceSessionOptions = {
     WebSocket?: WebSocketConstructor | undefined;
 };
 
-// @public
+// @public @input
 type WebSocketConstructor = {
     new (url: string | URL, protocols?: string | string[]): WebSocket;
     readonly OPEN: number;

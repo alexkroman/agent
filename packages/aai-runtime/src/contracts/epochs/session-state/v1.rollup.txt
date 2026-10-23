@@ -10,7 +10,7 @@ type LogContext = Record<string, unknown>;
 // @public
 type LogFn = (message: string, ctx?: LogContext) => void;
 
-// @public
+// @public @input
 interface Logger {
     // (undocumented)
     debug: LogFn;

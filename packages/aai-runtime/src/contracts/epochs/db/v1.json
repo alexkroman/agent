@@ -3,7 +3,7 @@
   "capability": "db",
   "epoch": 1,
   "rule": 3,
-  "sha256": "1a8974eb08a7c13c2238cc34246c4e02f1f00d45d26d9ce0078ffda876a0bdda",
-  "exports": ["CloseableDb", "CreatePostgresDbOptions", "ReservedDb", "createPostgresDb"],
-  "rollup": "ce42e510bdde5b0703be6090c3b452bfc0c0242de2080decc423e8829e3bba03"
+  "sha256": "0386668cbb4e0839ec6a44362b7ce80ffb4408f12fcf9d8a5471060b1ce9547e",
+  "exports": ["CloseableDb", "CreatePostgresDbOptions", "Db", "ReservedDb", "createPostgresDb"],
+  "rollup": "7ca6065c14160477b7bbbf94b131bff8844398524fc5aa1e6288764e95244008"
 }

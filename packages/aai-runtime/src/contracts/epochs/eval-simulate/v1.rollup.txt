@@ -3,7 +3,7 @@ import { LlmProvider } from '@alexkroman1/aai/llm';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { SessionEvent } from '@alexkroman1/aai';
 
-// @public
+// @public @sealed
 export type CallVerdict = {
     readonly pass: boolean;
     readonly criteria: readonly CriterionVerdict[];
@@ -12,7 +12,7 @@ export type CallVerdict = {
     explain(): string;
 };
 
-// @public
+// @public @sealed
 export type CriterionVerdict = {
     readonly criterion: string;
     readonly pass: boolean;
@@ -44,7 +44,7 @@ type EvalSession = {
 // @public
 export function evalSimulation(settings: EvalSimulationOptions): EvalSimulationContext;
 
-// @public
+// @public @sealed
 export type EvalSimulationContext = {
     simulate(caller: SimulatedCaller, options?: {
         readonly maxTurns?: number;
@@ -54,7 +54,7 @@ export type EvalSimulationContext = {
     }): Promise<CallVerdict>;
 };
 
-// @public
+// @public @input
 export type EvalSimulationOptions = {
     readonly agent: AgentDef;
     readonly mode: EvalMode;
@@ -84,12 +84,13 @@ type EvalTurn = {
     readonly completed: boolean;
     readonly errors: readonly SessionEvent<"error.reported">[];
     readonly endedSession?: boolean;
+    readonly dtmf?: readonly string[];
 };
 
 // @public
 export function judgeCall(input: JudgeInput, options: JudgeCallOptions): Promise<CallVerdict>;
 
-// @public
+// @public @input
 export type JudgeCallOptions = {
     readonly criteria: readonly string[];
     readonly llm: LlmProvider;
@@ -103,7 +104,7 @@ export type JudgeInput = SimulatedCall | readonly EvalTurn[] | Pick<EvalSession,
 // @public
 export function simulateCall(target: SimulationTarget, options: SimulateCallOptions): Promise<SimulatedCall>;
 
-// @public
+// @public @input
 export type SimulateCallOptions = {
     readonly caller: SimulatedCaller;
     readonly llm: LlmProvider;
@@ -111,12 +112,12 @@ export type SimulateCallOptions = {
     readonly maxTurns?: number;
 };
 
-// @public
+// @public @sealed
 export type SimulatedCall = {
     readonly caller: SimulatedCaller;
     readonly greeting: readonly string[];
     readonly turns: readonly SimulatedTurn[];
-    readonly endedBy: "caller" | "agent" | "max-turns";
+    readonly endedBy: "caller" | "agent" | "max-turns" | (string & {});
     readonly endReason: string | undefined;
     readonly metrics: SimulationMetrics;
     transcript(): string;
@@ -129,14 +130,14 @@ export type SimulatedCaller = {
     readonly opening?: string;
 };
 
-// @public
+// @public @sealed
 export type SimulatedTurn = {
     readonly caller: string;
     readonly turn: EvalTurn;
     readonly latencyMs: number | undefined;
 };
 
-// @public
+// @public @sealed
 export type SimulationMetrics = {
     readonly turns: number;
     readonly durationMs: number;

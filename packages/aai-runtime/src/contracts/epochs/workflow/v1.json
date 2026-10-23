@@ -3,14 +3,16 @@
   "capability": "workflow",
   "epoch": 1,
   "rule": 3,
-  "sha256": "9969a6a3922e1a6d304de31c6ca26b45f9637cf6bff2ccabf2636a429bd96ae1",
+  "sha256": "0ac1088180618c2dd83489017cd0a73167677cecc70e3cd841c8cfc8a4045491",
   "exports": [
     "DEFAULT_WORKFLOW_FIND_LIMIT",
     "MAX_WORKFLOW_FIND_LIMIT",
     "MAX_WORKFLOW_INPUT_BYTES",
-    "WORKFLOW_API_PREFIX",
     "WORKFLOW_API_TOKEN_ENV",
-    "ensureWorkflowJournalSchema"
+    "WorkflowJournal",
+    "createMemoryJournal",
+    "ensureWorkflowJournalSchema",
+    "workflowJournalBrand"
   ],
-  "rollup": "46d29572780cc6c1a27014399f334dc18ca58a38769c216a8baf8c068ba8509a"
+  "rollup": "e6d62fd4427da1a630f247da27c40a9815c3fee283672e31ddcdf123cf53b914"
 }

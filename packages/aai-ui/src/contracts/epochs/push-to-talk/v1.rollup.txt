@@ -1,12 +1,12 @@
 // @public
 export function usePushToTalk(options?: UsePushToTalkOptions): UsePushToTalkResult;
 
-// @public
+// @public @input
 export type UsePushToTalkOptions = {
     holdKey?: string | false;
 };
 
-// @public
+// @public @sealed
 export type UsePushToTalkResult = {
     talking: boolean;
     ready: boolean;
@@ -37,7 +37,7 @@ export type UsePushToTalkResult = {
     };
 };
 
-// @public
+// @public @sealed
 export type UserTurnControls = {
     start(): void;
     commit(): void;

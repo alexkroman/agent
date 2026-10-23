@@ -4,7 +4,7 @@ export function createLinkedClient(options: LinkedClientOptions): LinkedClient;
 // @public
 export function createStoredValue(key: string, options?: StoredValueOptions): StoredValue;
 
-// @public
+// @public @sealed
 export type LinkedClient = {
     id(): string;
     linked(): string | undefined;
@@ -13,7 +13,7 @@ export type LinkedClient = {
     clear(): void;
 };
 
-// @public
+// @public @input
 export type LinkedClientOptions = {
     key: string;
     fallback?: (() => string) | undefined;
@@ -22,12 +22,12 @@ export type LinkedClientOptions = {
 // @public
 export function phoneE164(typed: string, options?: PhoneE164Options): string | undefined;
 
-// @public
+// @public @input
 export type PhoneE164Options = {
     countryCode?: string | undefined;
 };
 
-// @public
+// @public @sealed
 export type StoredValue = {
     readonly key: string;
     get(): string;
@@ -35,7 +35,7 @@ export type StoredValue = {
     subscribe(listener: () => void): () => void;
 };
 
-// @public
+// @public @input
 export type StoredValueOptions = {
     initial?: string | undefined;
     storage?: "local" | "session" | undefined;

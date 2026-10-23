@@ -3,7 +3,7 @@
   "capability": "inbox",
   "epoch": 1,
   "rule": 3,
-  "sha256": "a0c5334c2e4b04f8a814589ed7398f6b8f5f82268803e4bdeeca64d4e2ab6fa0",
+  "sha256": "0cdb3f57c552cf719c67e354f7466cebcedd9ee4cba08c20199fe4c886ee047f",
   "exports": [
     "CreateInboxOptions",
     "Inbox",
@@ -14,5 +14,5 @@
     "createInbox",
     "useInbox"
   ],
-  "rollup": "5743b4ee26bbae0f7dfc4929d1c37e9a2168377b5b3c7a1cb78cfcf3f7a2f3dd"
+  "rollup": "3bf577f4823b55107d47b29adaebebad59ba2785d56b32ef693d43c2decd949e"
 }

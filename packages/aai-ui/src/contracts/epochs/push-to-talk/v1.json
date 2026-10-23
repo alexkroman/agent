@@ -5,5 +5,5 @@
   "rule": 3,
   "sha256": "49778b6949ad402d9b7625c1f9ef50b5a3aba9ba3b971b569d274fe15adfcd99",
   "exports": ["UsePushToTalkOptions", "UsePushToTalkResult", "UserTurnControls", "usePushToTalk"],
-  "rollup": "898801ad1bc3221c8b5e5133490eacd28af85cd4028da189cbce4f0387d60adc"
+  "rollup": "fb469761917ec195edcb6bd6785f442345f2c26fa8a69ec0bce93611e4efce68"
 }

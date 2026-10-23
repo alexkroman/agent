@@ -3,7 +3,7 @@
   "capability": "ffmpeg",
   "epoch": 1,
   "rule": 3,
-  "sha256": "264493de802e7c4ce0efd9273f869102efbc05353877da052b635a1bb13e95d8",
+  "sha256": "b5a0d9aa46cc0a08bb70e5e3ac73ef97593b4e08c63bf13a835d1d3b4aec1503",
   "exports": [
     "FfmpegError",
     "FfmpegFailureKind",
@@ -23,5 +23,5 @@
     "transcodeToWav",
     "wavEncodeArgs"
   ],
-  "rollup": "fc44e3dbd885dd57d155a6b1a81cf3826a2e4769bdb98d5d410c67c8d852d284"
+  "rollup": "c240fcdc2b44a7db6f9e7c683fab1bb22f69d34797fb6acbdf176059f91b96a8"
 }

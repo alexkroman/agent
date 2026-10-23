@@ -3,7 +3,7 @@
   "capability": "hooks",
   "epoch": 1,
   "rule": 3,
-  "sha256": "bf55e0a605db2d82938941607c50255b3eabb8dcd5f5c3625b1e2c537c04c890",
+  "sha256": "1afefa9d5c1e814b23e917249dba5f99730320582842d49e7f198ffaee110c64",
   "exports": [
     "AgentStateFrame",
     "ToolCallInfo",
@@ -14,5 +14,5 @@
     "useToolCallStart",
     "useToolResult"
   ],
-  "rollup": "b3fa1b6af5f1d82ce24c0a8566e5fafc43fb41c76d2f61d4fb9e977ba1e53583"
+  "rollup": "4fdb9abc930a7aa29beb9598a5a26c8908a4a45f3b2c2dd42ed4651eae3797b6"
 }

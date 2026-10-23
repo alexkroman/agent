@@ -5,5 +5,5 @@
   "rule": 3,
   "sha256": "15e64b8a159d75212ae3b7c5d6d7b177ad82074746997aae0c86056aa23a546a",
   "exports": ["ensureSessionStateSchema"],
-  "rollup": "29d3eae95c6dbc2602b9da27aad9efee46501b6dc8a4bd33436fa127cefe4fbc"
+  "rollup": "4d6fe934ede4c4ae49dd381aaf64f4b0ace5fb5b191204c0949cd4a66fe7d528"
 }

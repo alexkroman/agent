@@ -3,7 +3,7 @@
   "capability": "metrics",
   "epoch": 1,
   "rule": 3,
-  "sha256": "76fd4df2b4c173045148d5fbb0399b38ac05a92a423d2473530ea493d67fcb3f",
+  "sha256": "98995aebf8a7ac62a548e69e317c20999bbf89c481c6b2a5c9274c577a430a72",
   "exports": [
     "MetricStat",
     "MetricsCollectedEvent",
@@ -13,5 +13,5 @@
     "MetricsSummary",
     "createMetricsCollector"
   ],
-  "rollup": "2abaea55c6e2d10d5b0c4d834ab501373ded4747c9e773517941c4718f8f6147"
+  "rollup": "54f12c401cc99d2ae3ce22ca4b53cc1620e2dbacbf86992587e04f48d7591b4f"
 }

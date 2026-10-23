@@ -1,4 +1,4 @@
-// @public
+// @public @input
 export interface InterruptionTuning {
     backoffMs?: number;
     minDurationMs?: number;
@@ -6,26 +6,26 @@ export interface InterruptionTuning {
     resumeFalseInterruption?: boolean;
 }
 
-// @public
+// @public @input
 export interface PipelinePhrases {
     errorPhrase?: string;
     startFailurePhrase?: string;
 }
 
-// @public
+// @public @input
 export interface PipelineTuning {
     interruption?: InterruptionTuning | "off";
     silence?: SilenceTuning;
     turnTaking?: TurnTakingTuning;
 }
 
-// @public
+// @public @input
 export interface SilenceNudge {
     afterMs: number;
     prompt?: string;
 }
 
-// @public
+// @public @input
 export interface SilenceTuning {
     deadAirCoverMs?: number;
     nudge?: SilenceNudge;
@@ -34,7 +34,7 @@ export interface SilenceTuning {
 // @public
 type TurnDetectionMode = "auto" | "manual" | (string & {});
 
-// @public
+// @public @input
 export interface TurnTakingTuning {
     detection?: TurnDetectionMode;
     maxSilenceMs?: number;
@@ -44,7 +44,7 @@ export interface TurnTakingTuning {
     userTurnLimit?: UserTurnLimit;
 }
 
-// @public
+// @public @input
 export interface UserTurnLimit {
     maxDurationMs?: number | undefined;
     maxWords?: number | undefined;

@@ -7,7 +7,7 @@ export function hashCode(code: string): Promise<string>;
 // @public
 export function mintCode(prefix: string, options?: MintCodeOptions): string;
 
-// @public
+// @public @input
 export interface MintCodeOptions {
     length?: number;
     random?: () => number;
@@ -20,7 +20,7 @@ export function mintDigitCode(digits?: number): string;
 // @public
 export function resolveOne<T>(candidates: readonly T[], spoken: string, options: ResolveOneOptions<T>): T | ToolFailure;
 
-// @public
+// @public @input
 export interface ResolveOneOptions<T> {
     code?: (candidate: T) => string;
     describe: (candidate: T) => string;

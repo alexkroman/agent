@@ -3,7 +3,7 @@
   "capability": "state",
   "epoch": 1,
   "rule": 3,
-  "sha256": "97f7c66ee30e92273a8cf111a2f83dfb3f13f467eb8a40f231b044e6f42862e5",
+  "sha256": "c8172af74c01ac531ef471bafcd454d13b224837e89165bf5c59bf8398bd08d5",
   "exports": [
     "DeepReadonly",
     "SessionSlot",
@@ -15,5 +15,5 @@
     "StateProjection",
     "sessionSlot"
   ],
-  "rollup": "c9969d8baab9819f588da06fea8a89a438bcd79bec9baa21f4db7f023fb12588"
+  "rollup": "fa045c79c2287c309d03f1f0304753f50217972b8549ceb1aa3e3473693c361c"
 }

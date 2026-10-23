@@ -18,7 +18,7 @@ export class ProcedureNotFinishedError extends Error {
     readonly procedure: string;
 }
 
-// @public
+// @public @input
 export interface ProcedureRunOptions {
     signal?: AbortSignal;
 }

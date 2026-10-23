@@ -1,4 +1,4 @@
-// @public
+// @public @input
 export type ClientTheme = {
     bg?: string;
     primary?: string;
@@ -7,5 +7,14 @@ export type ClientTheme = {
     border?: string;
 };
 
+// @public @sealed
+export type ResolvedClientTheme = {
+    readonly bg: string;
+    readonly primary: string;
+    readonly text: string;
+    readonly surface: string;
+    readonly border: string;
+};
+
 // @public
-export function useTheme(): Required<ClientTheme>;
+export function useTheme(): ResolvedClientTheme;
