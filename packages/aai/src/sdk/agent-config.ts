@@ -27,6 +27,7 @@ import {
 } from "./config-rules.ts";
 import { MCP_SERVER_KEY_RE, type McpServers } from "./mcp-config.ts";
 import { defaultProviders } from "./providers/_default-providers.ts";
+import { stageMembers } from "./providers/fallback.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
@@ -405,7 +406,7 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   assertGuardrailScope(mode, src);
   // Runs inside the generated bundle entry too, so the studio's test_agent
   // surfaces a bad TTS language as a load error rather than shipping a mute agent.
-  assertAssemblyAITtsLanguage(src.tts);
+  for (const member of stageMembers(src.tts)) assertAssemblyAITtsLanguage(member);
 
   // Deny-list copy: everything defined flows through unless it is host-only.
   // The allow-list mapper this replaces is how fields went missing silently —

@@ -78,6 +78,21 @@ import { stepReadUpload, type UploadInfo } from "../sdk/step-uploads.ts";
 import { stepRequireCompleteUpload } from "../sdk/step-uploads-complete.ts";
 import { stepWriteUpload, type WriteUploadOptions } from "../sdk/step-uploads-write.ts";
 
+type StepFileHandle = Pick<FileHandle, "close" | "truncate"> & {
+  read(
+    buffer: Uint8Array,
+    offset: number,
+    length: number,
+    position: null,
+  ): Promise<{ bytesRead: number }>;
+  write(
+    buffer: Uint8Array,
+    offset: number,
+    length: number,
+    position: number,
+  ): Promise<{ bytesWritten: number }>;
+};
+
 /**
  * The filesystem call this module opens its files through — a mutable object so
  * a spec can hand back a handle whose writes fail (`ENOSPC`, which no fixture
@@ -85,7 +100,9 @@ import { stepWriteUpload, type WriteUploadOptions } from "../sdk/step-uploads-wr
  *
  * @internal
  */
-export const stepFilesFs = { open };
+export const stepFilesFs: {
+  open(...args: Parameters<typeof open>): Promise<StepFileHandle>;
+} = { open };
 
 /**
  * Bytes moved per store round trip, in either direction.
@@ -310,7 +327,7 @@ export async function readUploadToFile(
  */
 async function walkWindows(
   uploadId: string,
-  handle: FileHandle,
+  handle: StepFileHandle,
   path: string,
   size: number,
   windowBytes: number,
@@ -327,7 +344,7 @@ async function walkWindows(
     if (slice.bytes.length === 0 || slice.end <= at) break;
     // `at` and `size` are only knowable here, and the capacity only from the
     // path — see `outOfSpace`.
-    await handle.write(slice.bytes).catch(outOfSpace(path, at, size));
+    await writeAll(handle, slice.bytes, at).catch(outOfSpace(path, at, size));
     at = slice.end;
   }
   return at;
@@ -350,7 +367,7 @@ async function walkWindows(
  */
 async function fanOutWindows(
   uploadId: string,
-  handle: FileHandle,
+  handle: StepFileHandle,
   path: string,
   size: number,
   windowBytes: number,
@@ -373,9 +390,9 @@ async function fanOutWindows(
     // `window.start` rather than a running total: windows land out of order, so
     // there is no "how far the walk got" to report, and where this one sits is
     // the honest figure — see `outOfSpace`.
-    await handle
-      .write(slice.bytes, 0, reached - window.start, window.start)
-      .catch(outOfSpace(path, window.start, size));
+    await writeAll(handle, slice.bytes.subarray(0, reached - window.start), window.start).catch(
+      outOfSpace(path, window.start, size),
+    );
     return { ...window, reached };
   });
 
@@ -395,6 +412,25 @@ async function fanOutWindows(
   // was answered for, which is what the serial walk produces by construction.
   if (at < size) await handle.truncate(at);
   return at;
+}
+
+/** A filesystem write may consume only a prefix; finish it before advancing the upload. */
+async function writeAll(
+  handle: StepFileHandle,
+  bytes: Uint8Array,
+  position: number,
+): Promise<void> {
+  let offset = 0;
+  while (offset < bytes.length) {
+    const { bytesWritten } = await handle.write(
+      bytes,
+      offset,
+      bytes.length - offset,
+      position + offset,
+    );
+    if (bytesWritten <= 0) throw new Error("File write made no progress");
+    offset += bytesWritten;
+  }
 }
 
 /**

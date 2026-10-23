@@ -26,6 +26,19 @@ describe("isConvertibleSchema", () => {
     expect(isConvertibleSchema(fakeArk())).toBe(true);
   });
 
+  test("accepts and converts callable schemas, preserving the converter receiver", () => {
+    const schema = Object.assign((value: unknown) => value, fakeArk(), {
+      toJsonSchema() {
+        expect(this).toBe(schema);
+        return { $schema: "x", type: "object" };
+      },
+    });
+    expect(isConvertibleSchema(schema)).toBe(true);
+    expect(toToolJsonSchema(schema, "input")).toEqual({ type: "object" });
+    expect(toToolJsonSchema(schema, "output")).toEqual({ type: "object" });
+    expect(isConvertibleSchema((value: unknown) => value)).toBe(false);
+  });
+
   test("rejects zod's own toJSONSchema() OUTPUT", () => {
     // zod 4.4 stamps `~standard` (vendor "zod") onto its plain JSON Schema
     // output too — converting that would crash. The `_zod` instance marker

@@ -30,6 +30,33 @@ describe("createOwnedMap", () => {
     expect(release()).toBe(false);
   });
 
+  test.each(["same primitive", { session: "same object" }, Number.NaN, undefined])(
+    "a repeated value has a fresh claim: %j",
+    (value) => {
+      const map = createOwnedMap<string, typeof value>();
+      const releaseOld = map.claim("session", value);
+      const releaseNew = map.claim("session", value);
+      expect(releaseOld()).toBe(false);
+      expect(map.has("session")).toBe(true);
+      expect(map.owns("session", value)).toBe(true);
+      expect(releaseNew()).toBe(true);
+      expect(map.owns("session", value)).toBe(false);
+    },
+  );
+
+  test.each(["delete", "clear"] as const)(
+    "a claim removed by %s cannot release a later identical value",
+    (remove) => {
+      const map = createOwnedMap<string, string>();
+      const releaseOld = map.claim("session", "same");
+      if (remove === "delete") map.delete("session");
+      else map.clear();
+      map.claim("session", "same");
+      expect(releaseOld()).toBe(false);
+      expect(map.get("session")).toBe("same");
+    },
+  );
+
   test("owns reports whether a value still holds its key", () => {
     const map = createOwnedMap<string, string>();
     map.claim("k", "a");

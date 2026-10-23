@@ -103,10 +103,14 @@ export async function* readEventStream(
       batch.push({ event, data: safeJsonParse(data) });
     },
   });
+  const cancel = () => {
+    reader.cancel().catch(() => undefined);
+  };
+  signal?.addEventListener("abort", cancel, { once: true });
   try {
     while (!signal?.aborted) {
       const { done, value } = await reader.read();
-      if (done) return;
+      if (done || signal?.aborted) return;
       parser.feed(decoder.decode(value, { stream: true }));
       if (batch.length === 0) continue;
       const frames = batch;
@@ -114,9 +118,14 @@ export async function* readEventStream(
       // An explicit loop, not `yield*`: async delegation awaits the array's
       // iterator per element, which adds turns of the microtask queue for no
       // reason and puts the frame count into this module's timing.
-      for (const frame of frames) yield frame;
+      for (const frame of frames) {
+        if (signal?.aborted) return;
+        yield frame;
+      }
     }
   } finally {
-    reader.cancel().catch(() => undefined);
+    signal?.removeEventListener("abort", cancel);
+    cancel();
+    reader.releaseLock();
   }
 }

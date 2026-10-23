@@ -10,7 +10,7 @@
  * trailing lone `\r` is held back, so that stream dispatches one frame late.
  */
 import fc from "fast-check";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 
 import { type EventStreamFrame, readEventStream } from "./event-stream.ts";
 
@@ -92,6 +92,44 @@ function classifyCuts(bytes: Uint8Array, cuts: readonly number[], into: CutCount
 }
 
 describe("readEventStream", () => {
+  test("aborting a separate reader signal cancels an idle read and releases its lock", async () => {
+    const cancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({ cancel });
+    const controller = new AbortController();
+    const remove = vi.spyOn(controller.signal, "removeEventListener");
+    const iterator = readEventStream(body, controller.signal);
+    const pending = iterator.next();
+    controller.abort();
+    await expect(pending).resolves.toEqual({ done: true, value: undefined });
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(body.locked).toBe(false);
+    expect(remove).toHaveBeenCalledWith("abort", expect.any(Function));
+  });
+
+  test("abort stops already buffered frames", async () => {
+    const body = streamOf(
+      new TextEncoder().encode("event: chunk\ndata: 1\n\nevent: chunk\ndata: 2\n\n"),
+      [],
+    );
+    const controller = new AbortController();
+    const iterator = readEventStream(body, controller.signal);
+    expect((await iterator.next()).value).toEqual({ event: "chunk", data: 1 });
+    controller.abort();
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined });
+    expect(body.locked).toBe(false);
+  });
+
+  test("a pre-aborted signal cancels without reading", async () => {
+    const cancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({ cancel });
+    await expect(readEventStream(body, AbortSignal.abort()).next()).resolves.toEqual({
+      done: true,
+      value: undefined,
+    });
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(body.locked).toBe(false);
+  });
+
   test("the same bytes read as the same frames, however they are chunked", async () => {
     // The cuts the property is ABOUT: one landing on a UTF-8 continuation byte
     // (mid-character), one between a CRLF's `\r` and `\n`, and one between the

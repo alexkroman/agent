@@ -288,9 +288,9 @@ crash, redeploy or reconnect. **`session-slot.ts` carries each rule on the
 member it governs**:
 
 - **`update` is SYNCHRONOUS over a mutable DRAFT**, stored when it returns — an
-  atomic read-modify-write with no lock. Await BEFORE the mutation;
-  `slot.updateTool` refuses a thenable body; a nested `update`/`set`/`reset` on
-  the same slot THROWS; a throwing mutator stores nothing and does not wedge.
+  atomic read-modify-write with no lock. Await BEFORE the mutation; `update` and
+  `updateTool` refuse a thenable body; a nested `update`/`set`/`reset` on the
+  same slot THROWS; a throwing mutator stores nothing and does not wedge.
 - **`slot.get()` returns a frozen `DeepReadonly<T>`** — mutating it is a compile
   error at every depth and a `TypeError` at runtime. A helper that will not take
   `DeepReadonly<T>` is one that mutates.

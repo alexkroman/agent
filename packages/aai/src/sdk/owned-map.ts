@@ -46,21 +46,24 @@ export interface OwnedMap<K, V> {
  * @internal
  */
 export function createOwnedMap<K, V>(): OwnedMap<K, V> {
-  const map = new Map<K, V>();
+  const map = new Map<K, { value: V }>();
   return {
     claim(key: K, value: V): () => boolean {
-      map.set(key, value);
+      const claim = { value };
+      map.set(key, claim);
       return () => {
-        if (map.get(key) !== value) return false;
+        if (map.get(key) !== claim) return false;
         return map.delete(key);
       };
     },
-    get: (key) => map.get(key),
+    get: (key) => map.get(key)?.value,
     has: (key) => map.has(key),
-    owns: (key, value) => map.get(key) === value,
+    owns: (key, value) => map.has(key) && Object.is(map.get(key)?.value, value),
     delete: (key) => map.delete(key),
     keys: () => map.keys(),
-    values: () => map.values(),
+    *values() {
+      for (const entry of map.values()) yield entry.value;
+    },
     get size(): number {
       return map.size;
     },

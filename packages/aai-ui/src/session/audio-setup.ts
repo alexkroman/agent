@@ -77,12 +77,14 @@ export async function openAudioPath(
   config: AudioPathConfig,
   callbacks: AudioPathCallbacks,
   preConnect?: Promise<PreConnectCapture | null> | null,
+  signal?: AbortSignal,
 ): Promise<VoiceIO> {
   // Owned from here until it becomes the VoiceIO the caller closes, so every
   // way this rejects first releases it (`close()` is idempotent).
   const pre = (await preConnect) ?? undefined;
   try {
-    return await openVoiceIO(config, callbacks, pre);
+    signal?.throwIfAborted();
+    return await openVoiceIO(config, callbacks, pre, signal);
   } catch (err: unknown) {
     void pre?.close();
     throw err;
@@ -93,8 +95,10 @@ async function openVoiceIO(
   config: AudioPathConfig,
   callbacks: AudioPathCallbacks,
   pre: PreConnectCapture | undefined,
+  signal: AbortSignal | undefined,
 ): Promise<VoiceIO> {
   const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await loadAudioModules();
+  signal?.throwIfAborted();
   return createVoiceIO({
     preConnect: pre,
     onPreConnectAudio: callbacks.onPreConnectAudio,

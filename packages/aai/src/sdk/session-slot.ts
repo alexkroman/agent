@@ -57,10 +57,17 @@ function isThenable(value: unknown): value is PromiseLike<unknown> {
  *
  * @param how - What the caller did, appended to "must be synchronous".
  */
-function mustBeSync(key: string, how: string): Error {
+function mustBeSync(key: string, how: string, method = "updateTool"): Error {
   return new Error(
-    `The body of ${key}.updateTool must be synchronous${how} — its mutations are committed when it returns, so an await inside it writes to a value that has already been stored. Do the awaiting in an ordinary tool() and call the slot's update() afterwards.`,
+    `The body of ${key}.${method} must be synchronous${how} — its mutations are committed when it returns, so an await inside it writes to a value that has already been stored. Do the awaiting in an ordinary tool() and call the slot's update() afterwards.`,
   );
+}
+
+/** Refuse asynchronous mutations without leaving their eventual rejection unhandled. */
+function assertSynchronous(key: string, result: unknown, method: string): void {
+  if (!isThenable(result)) return;
+  void Promise.resolve(result).catch(() => undefined);
+  throw mustBeSync(key, "", method);
 }
 
 /**
@@ -242,6 +249,7 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
     let result: R;
     try {
       result = mutate(draft);
+      assertSynchronous(key, result, "update");
       options.after?.(draft);
     } finally {
       // In `finally` so a throwing mutator does not wedge the slot for the rest
@@ -309,9 +317,7 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
             // would be committed at the end of the synchronous part and it
             // would then mutate a frozen draft — a `TypeError` from somewhere
             // unrelated. Named here instead.
-            if (isThenable(result)) {
-              throw mustBeSync(key, "");
-            }
+            assertSynchronous(key, result, "updateTool");
             return result;
           }),
       };

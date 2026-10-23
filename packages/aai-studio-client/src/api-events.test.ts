@@ -107,14 +107,10 @@ describe("watchEventStream", () => {
   });
 
   test("the caller's own abort reports nothing, and aborts the request", async () => {
-    // A stream the test ends by hand, so the subscription really reaches its
-    // `finally` AFTER the abort — the case that must not call `onDown`.
-    let end: () => void = () => undefined;
-    const body = new ReadableStream<Uint8Array>({
-      start(controller) {
-        end = () => controller.close();
-      },
-    });
+    // Aborting the subscription must cancel an idle reader without reporting
+    // a transport failure or waiting for the server to close the body.
+    const cancel = vi.fn();
+    const body = new ReadableStream<Uint8Array>({ cancel });
     const mock = stubFetch(
       () => new Response(body, { headers: { "Content-Type": "text/event-stream" } }),
     );
@@ -122,9 +118,9 @@ describe("watchEventStream", () => {
     const stop = watchEventStream("k", "/e", rec.handlers);
     await vi.waitFor(() => expect(rec.onOpen).toHaveBeenCalledOnce());
     stop();
-    end();
     // The claim is that NO report comes, so there is nothing to wait on: one settle.
     await drain();
+    expect(cancel).toHaveBeenCalledOnce();
     expect(fetchCall(mock).init.signal?.aborted).toBe(true);
     expect(rec.downs).toEqual([]);
   });

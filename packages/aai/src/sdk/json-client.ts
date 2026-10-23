@@ -174,7 +174,7 @@ export function jsonClient(options: JsonClientOptions): JsonClient {
         signal: ctx.signal,
       }),
     });
-    const text = await res.text().catch(() => "");
+    const text = res.ok ? await res.text() : await res.text().catch(() => "");
     const parsed = text === "" ? undefined : safeJsonParse(text);
     if (!res.ok) throw refusal(options, res.status, text, parsed);
     if (text === "") return {} as T;

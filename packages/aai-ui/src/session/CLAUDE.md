@@ -64,10 +64,11 @@ fatal frame STOPS it. `PROGRESS`/`IO_FAILED` carry the instance that fired them
 down its replacement). `preInitAudio`/`preInitDone` are context cleared by
 entering `down`.
 
-- **Cancellation does not close a mic the browser already granted**: `bringUp`
-  checks its own `signal` after `open` settles and releases what it built. That
-  is the only "still wanted?" check — do not add generation counters or flags
-  back on `ConnState`.
+- **Cancellation follows the opening path and transferred pre-connect capture**:
+  before the lazy modules finish it prevents a microphone request; `bringUp`
+  also checks its `signal` after `open` settles and releases a grant received
+  after cancellation (`preconnect.test.ts`, `audio-state.test.ts`). Do not add
+  generation counters or flags back on `ConnState`.
 - The machine touches no socket or snapshot; effects are `audio-effects.ts`,
   setup is `audio-setup.ts`, so `audio-state.test.ts` specs it without a
   browser.
