@@ -1,5 +1,17 @@
 # aai-guest-core
 
+## 0.6.21
+
+### Patch Changes
+
+- Updated dependencies [a8a37ac]
+- Updated dependencies [eb14ffe]
+- Updated dependencies [b1d73be]
+- Updated dependencies [8f93cca]
+- Updated dependencies [130bc0c]
+  - @alexkroman1/aai@0.17.0
+  - @alexkroman1/aai-runtime@0.17.0
+
 ## 0.6.20
 
 ### Patch Changes
