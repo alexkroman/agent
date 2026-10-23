@@ -227,7 +227,25 @@ const turnStateMachine = setup({
 /** Create a {@link TurnMachine}; the gate starts open for the greeting. */
 export function createTurnMachine(): TurnMachine {
   const actor = createActor(turnStateMachine).start();
-  const inFlight = (): boolean => actor.getSnapshot().matches({ turn: "running" });
+  // `audioGateOpen` runs twice per TTS frame and `inFlight` on hot paths too;
+  // `snapshot.matches()` is costly at that rate. A snapshot is immutable and
+  // replaced only on a transition, so memoizing on its identity answers exactly
+  // what a fresh `matches()` would (see the same memo in `../lifecycle.ts`).
+  const onSnapshot = (pick: (s: ReturnType<typeof actor.getSnapshot>) => boolean) => {
+    let seen: unknown;
+    let answer = false;
+    return (): boolean => {
+      const snapshot = actor.getSnapshot();
+      if (snapshot !== seen) {
+        seen = snapshot;
+        answer = pick(snapshot);
+      }
+      return answer;
+    };
+  };
+  const inFlight = onSnapshot((s) => s.matches({ turn: "running" }));
+  const gateOpen = onSnapshot((s) => s.matches({ gate: "open" }));
+  const spoke = onSnapshot((s) => s.matches({ voice: "spoken" }));
 
   function abortCurrent(): void {
     const snapshot = actor.getSnapshot();
@@ -243,8 +261,8 @@ export function createTurnMachine(): TurnMachine {
 
   return {
     inFlight,
-    spoke: () => actor.getSnapshot().matches({ voice: "spoken" }),
-    audioGateOpen: () => actor.getSnapshot().matches({ gate: "open" }),
+    spoke,
+    audioGateOpen: gateOpen,
     // Unrepresentable outside `running` now: `draining` is its substate.
     draining: () => actor.getSnapshot().matches({ turn: { running: "draining" } }),
     resumeInFlight: () => {
@@ -262,8 +280,15 @@ export function createTurnMachine(): TurnMachine {
       if (snapshot.matches({ turn: "running" })) snapshot.context.ctl?.abort();
       actor.send({ type: "INTERRUPT" });
     },
-    markSpoke: () => actor.send({ type: "MARK_SPOKE" }),
-    openAudioGate: () => actor.send({ type: "OPEN_GATE" }),
+    // Both run per TTS frame / per text delta, and each event is handled in ONE
+    // state only (`voice.unspoken`, `gate.closed`). Elsewhere it is a no-op
+    // that still costs a full macrostep, so skip the send when already there.
+    markSpoke: () => {
+      if (!spoke()) actor.send({ type: "MARK_SPOKE" });
+    },
+    openAudioGate: () => {
+      if (!gateOpen()) actor.send({ type: "OPEN_GATE" });
+    },
     setDraining: (draining: boolean) =>
       actor.send({ type: draining ? "DRAIN_START" : "DRAIN_END" }),
     setResumeScope: (resume: boolean) =>

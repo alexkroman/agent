@@ -207,8 +207,21 @@ export type WsSessionLifecycle = {
 /** Create the lifecycle for one client socket. */
 export function createWsSessionLifecycle(effects: WsSessionLifecycleEffects): WsSessionLifecycle {
   const actor = createActor(wsSessionLifecycleMachine, { input: effects }).start();
+  // `buffering`/`dispatches` run for EVERY inbound frame, and each `phase()`
+  // was up to three `snapshot.matches()` calls. A snapshot is immutable and
+  // replaced only on a transition, so the phase is memoized on its identity —
+  // the same answer, derived a handful of times per session instead of 100x/s.
+  let seen: unknown;
+  let seenPhase: WsSessionPhase = "connecting";
   const phase = (): WsSessionPhase => {
     const at = actor.getSnapshot();
+    if (at !== seen) {
+      seen = at;
+      seenPhase = phaseOf(at);
+    }
+    return seenPhase;
+  };
+  const phaseOf = (at: ReturnType<typeof actor.getSnapshot>): WsSessionPhase => {
     if (at.matches("connecting")) return "connecting";
     if (at.matches("starting")) return "starting";
     if (at.matches("ready")) return "ready";

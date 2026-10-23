@@ -83,11 +83,14 @@ function closeReason(reason: string): string {
 }
 
 /** Route one socket frame into the attached session: binary is audio, text is a command. */
-function dispatchFrame(data: unknown, attached: AttachedSession, log: Logger, sid: string): void {
+function dispatchFrame(data: unknown, attached: AttachedSession, log: Logger): void {
   if (data instanceof Uint8Array) {
     attached.sendAudio(data);
     return;
   }
+  // Derived here, off the audio path: a per-frame `slice` was an allocation
+  // for every inbound audio frame, used only by these two warnings.
+  const sid = attached.id.slice(0, 8);
   if (typeof data !== "string") {
     log.warn("ws: non-string, non-binary frame received; dropping", { sid });
     return;
@@ -217,7 +220,7 @@ export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOption
     // Before open there is no session to buffer for; the attached session
     // decides for itself whether a frame is buffered, dispatched or dropped.
     if (attached === null) return;
-    dispatchFrame(event.data, attached, log, attached.id.slice(0, 8));
+    dispatchFrame(event.data, attached, log);
   });
 
   ws.addEventListener("close", (ev) => {
