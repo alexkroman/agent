@@ -32,6 +32,7 @@ import { assertModeFields, resolveAgentMode } from "./_agent-modes.ts";
 import { assertTurnSilenceWindow, ENDPOINTING_KEYS } from "./config-rules.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
+import { stageMembers } from "./providers/fallback.ts";
 import { normalizeLlm } from "./providers/llm/shared/from-string.ts";
 import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
 
@@ -52,7 +53,7 @@ export function normalizeAgentParams(input: unknown): unknown {
   // shorthands: the same contradiction is expressible on an explicit
   // `assemblyAIStt({ … })` descriptor, and by the time the shorthand has been
   // lowered onto one there is a single shape to check.
-  assertTurnSilenceWindow(rest.stt);
+  for (const member of stageMembers(rest.stt)) assertTurnSilenceWindow(member);
   return rest;
 }
 

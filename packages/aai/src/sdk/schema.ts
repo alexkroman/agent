@@ -53,7 +53,9 @@ function jsonSchemaConverterFor(
   value: unknown,
   io: "input" | "output",
 ): (() => unknown) | undefined {
-  if (!isRecord(value)) return;
+  // Some Standard Schema vendors expose callable schemas (ArkType), whose
+  // named properties are just as readable as an object's.
+  if (!isRecord(value) && typeof value !== "function") return;
   // Kept as `unknown` for the cast below. Narrowing to a record says the value
   // has fields, not that it is a zod schema — the `_zod` marker is what says
   // that — so the cast is against the original value rather than against the
@@ -64,7 +66,9 @@ function jsonSchemaConverterFor(
   // A vendor converter takes no direction — `toJsonSchema()` IS the vendor's
   // whole contract — so `io` reaches zod only. Both directions of an ArkType
   // schema are therefore the same document.
-  const convert = value.toJsonSchema ?? value.toJSONSchema;
+  const convert =
+    ("toJsonSchema" in value ? value.toJsonSchema : undefined) ??
+    ("toJSONSchema" in value ? value.toJSONSchema : undefined);
   return typeof convert === "function" ? () => convert.call(value) : undefined;
 }
 

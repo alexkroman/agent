@@ -52,6 +52,26 @@ describe("jsonClient", () => {
     expect(fetch.mock.calls[0]?.[1]?.signal).toBeUndefined();
   });
 
+  test.each([new Error("connection lost"), new DOMException("Aborted", "AbortError")])(
+    "preserves a successful response's body-read failure: %s",
+    async (failure) => {
+      const call = jsonClient({
+        baseUrl: "https://s",
+        label: "svc",
+        fetch: async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.enqueue(new TextEncoder().encode('{"partial":'));
+                controller.error(failure);
+              },
+            }),
+          ),
+      });
+      await expect(call({ env }, "GET", "/")).rejects.toBe(failure);
+    },
+  );
+
   test("a refusal throws HttpError with the status, the service's sentence and the body", async () => {
     const body = { error: { message: "Validation error", request_id: "r-9" } };
     const call = jsonClient({

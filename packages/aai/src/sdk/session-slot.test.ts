@@ -229,6 +229,46 @@ describe("sessionSlot", () => {
       ).toThrow(/already open/);
     });
 
+    test("refuses an async mutation before storing or running after, and recovers", async () => {
+      const after = vi.fn<(draft: { n: number }) => void>();
+      const slot = sessionSlot("async-update", () => ({ n: 0 }), { after });
+      const ctx = createToolContext();
+      const before = slot.get(ctx);
+      const resumed = Promise.withResolvers<void>();
+      const continued = vi.fn();
+      expect(() => {
+        slot.update(ctx, async (draft) => {
+          draft.n = 1;
+          await resumed.promise;
+          draft.n = 2;
+          continued();
+          throw new Error("late mutation failure");
+        });
+      }).toThrow(/async-update.update must be synchronous/);
+      expect(slot.get(ctx)).toBe(before);
+      expect(after).not.toHaveBeenCalled();
+      resumed.resolve();
+      await vi.waitFor(() => expect(continued).toHaveBeenCalledOnce());
+      expect(slot.get(ctx).n).toBe(0);
+      slot.update(ctx, (draft) => {
+        draft.n = 3;
+      });
+      expect(slot.get(ctx).n).toBe(3);
+      expect(after).toHaveBeenCalledOnce();
+    });
+
+    test("refuses a synchronous mutation returning a thenable without installing a default", () => {
+      const slot = sessionSlot("thenable-update", () => ({ n: 0 }));
+      const ctx = createToolContext();
+      expect(() => {
+        slot.update(ctx, (draft) => {
+          draft.n = 1;
+          return Promise.resolve(2);
+        });
+      }).toThrow(/thenable-update.update must be synchronous/);
+      expect(ctx.slots.read(slot.key)).toBeUndefined();
+    });
+
     test("refuses set and reset from inside the window", () => {
       const ctx = createToolContext();
       expect(() =>

@@ -9,9 +9,11 @@ import { rawConfig } from "./_test-utils.ts";
 import { agentConfigWarnings, assertProviderTriple } from "./config-rules.ts";
 import type { AgentConfig } from "./manifest-barrel.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
+import { fallback } from "./providers/fallback.ts";
 import { llm } from "./providers/llm/llm.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
+import { deepgramStt } from "./providers/stt/deepgram.ts";
 import { assemblyAITts } from "./providers/tts/assemblyai.ts";
 import { cartesiaTts } from "./providers/tts/cartesia.ts";
 import { rimeTts } from "./providers/tts/rime.ts";
@@ -25,6 +27,42 @@ const pipelineFields = {
 function config(fields: Record<string, unknown>): AgentConfig {
   return rawConfig({ name: "x", systemPrompt: "p", greeting: "g", ...fields });
 }
+
+describe("fallback provider validation", () => {
+  test.each(["primary", "secondary", "nested"] as const)(
+    "rejects an invalid STT silence window in the %s member",
+    (position) => {
+      const bad = assemblyAIStt({ minTurnSilenceMs: 5000, maxTurnSilenceMs: 1000 });
+      const good = deepgramStt();
+      const stt = {
+        primary: fallback([bad, good]),
+        secondary: fallback([good, bad]),
+        nested: fallback([good, fallback([good, bad])]),
+      }[position];
+      expect(() => config({ stt })).toThrow(/`minTurnSilenceMs` is 5000/);
+    },
+  );
+
+  test.each(["primary", "secondary", "nested"] as const)(
+    "rejects an unsupported TTS language in the %s member",
+    (position) => {
+      const bad = { kind: "assemblyai", options: { language: "xx" } };
+      const good = cartesiaTts();
+      const tts = {
+        primary: fallback([bad, good]),
+        secondary: fallback([good, bad]),
+        nested: fallback([good, fallback([good, bad])]),
+      }[position];
+      expect(() => config({ tts })).toThrow(/unsupported language "xx"/);
+    },
+  );
+
+  test("preserves valid mixed-provider fallback descriptors", () => {
+    const stt = fallback([deepgramStt(), assemblyAIStt({ minTurnSilenceMs: 1000 })]);
+    const tts = fallback([assemblyAITts({ language: "es" }), cartesiaTts()]);
+    expect(config({ stt, tts })).toMatchObject({ stt, tts });
+  });
+});
 
 describe("toAgentConfig — mode classification", () => {
   test("no providers ⇒ default AssemblyAI pipeline", () => {

@@ -145,7 +145,6 @@
     "packages/aai/src/host/google-places.ts": 5,
     "packages/aai/src/host/open-meteo.ts": 5,
     "packages/aai/src/host/page-design.ts": 2,
-    "packages/aai/src/host/step-files.ts": 1,
     "packages/aai/src/host/text-me.ts": 3,
     "packages/aai/src/host/web-search.ts": 4,
     "packages/aai/src/sdk/_internal-types.ts": 1,
