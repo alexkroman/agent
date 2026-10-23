@@ -37,6 +37,13 @@ Secrets work the same as everywhere else: `ctx.env` holds the keys declared in
 `.env` (or `.env.example`), and a real environment variable of that name wins —
 so `docker run -e MY_API_KEY=…` needs no `.env` in the image.
 
+One process uses one CPU core. `aai start --workers <n|auto>` (or `AAI_WORKERS`)
+serves the build from several processes on one port, dealt round-robin; more
+than one needs a `DATABASE_URL`, so a reconnect landing on another process can
+resume the call, and it refuses to start without one. An `/api` route's
+`ctx.speech` and `/inbox` sockets still reach only the calls held by the process
+that took the request.
+
 One thing to know: it binds **loopback by default**, because this server has no
 request authentication of its own; set `HOST=0.0.0.0` only behind your own proxy
 or auth.

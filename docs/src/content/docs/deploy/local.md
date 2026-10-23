@@ -38,6 +38,37 @@ auth. :::
 There is no server file in your project. When you need to own the startup — your
 own routes, your own auth — see [Self-hosting](/agent/more/self-hosting/).
 
+## Using every core: `--workers`
+
+One `aai start` process runs every call on a single thread, so it uses one CPU
+core however many the machine has. `--workers` serves the same build from
+several processes that share one port:
+
+```sh
+aai start --workers 4               # four processes
+aai start --workers auto            # one per CPU core
+AAI_WORKERS=auto npm start          # the same, for a container
+```
+
+Connections are dealt round-robin, so a browser that reconnects may reach a
+different process than the one it started on. That only works when every process
+shares the same state, so **more than one worker needs a `DATABASE_URL`**, and
+`aai start` refuses to start without one. With it, a reconnect resumes the call
+on whichever process it reaches, and durable runs and their `notify` work across
+all of them. The tables are created once, before the workers start.
+
+Two things still belong to one process: an `/api` route that speaks into a live
+call (`ctx.speech`), and `/inbox` sockets. Each reaches only the calls held by
+the process that took the request.
+
+A worker that crashes is replaced, and only the calls it held are lost. A worker
+that fails while starting — a port already in use, an unreachable database —
+stops the whole server rather than restarting forever.
+
+As a rough guide, one process holds on the order of a thousand concurrent
+browser calls on a modern core before latency rises. Measure your own agent:
+tools, long replies and big histories all cost more.
+
 ## Watching and restarts
 
 Watching is on when you run `aai dev` at a terminal. `--watch=false` (or

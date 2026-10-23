@@ -83,6 +83,11 @@ You do not have to migrate it. `createAgentServer()` creates the tables it owns
 tables come with whoever owns the database and a self-hosted deployment has no
 migration step to hang them off.
 
+It is also what lets one machine use every core: `aai start --workers` refuses
+more than one process without a `DATABASE_URL`, because round-robin has no
+affinity and a reconnect could land on a process that never saw the call. See
+[Using every core](/agent/deploy/local/#using-every-core---workers).
+
 That creation is best-effort by design. A role that may not `CREATE`, because
 your own migration already made them, gets one warning and keeps serving.
 `ensureSessionStateSchema` and `ensureWorkflowJournalSchema` are exported from

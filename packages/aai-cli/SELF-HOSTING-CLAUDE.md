@@ -22,6 +22,16 @@ a command, not a scaffolded file, so improvements reach existing projects. The
 custom-server opt-out is `createProjectServer` on `@alexkroman1/aai-cli/start` —
 builds the `AgentServer`, binds nothing (also what a serverless host wants).
 
+**`aai start --workers <n|auto>` (or `AAI_WORKERS`) is `node:cluster`**
+(`_start-workers.ts`, whose module doc has the measurement): the primary applies
+the schema once, forks, and supervises; each worker re-runs `aai start` and
+lands in the single-process path, skipping DDL via `AAI_START_SCHEMA_READY`.
+**More than one worker without `DATABASE_URL` is REFUSED**, not warned:
+round-robin has no affinity, so split memory state breaks resume and run reads.
+A worker dying inside `BOOT_GRACE_MS` ends the server (exit 1) instead of a
+respawn loop; a later death is respawned. The supervisor takes `cluster` as a
+seam (`ClusterLike`), so `_start-workers.test.ts` forks nothing.
+
 **`--target` is Nitro's preset shape** (`_build-target.ts`): an entry file is
 EMITTED into build output, never committed. Per-host modules:
 `_vercel-target.ts`, `_deno-target.ts`, `_modal-target.ts`; `_target-entry.ts`

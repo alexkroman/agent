@@ -29,7 +29,7 @@ for; `--help` has the rest.
 | `aai test`       | Run every spec in the project except the evals. `--only` narrows it to `agent.test.ts`.                                                                                               |
 | `aai eval`       | Run `agent.eval.test.ts`. Each suite runs against a live model when a provider key resolves, and against the scripted model when none does — see [Evals](/agent/build/evals/).        |
 | `aai build`      | Bundle the project without deploying it. `--target node\|vercel\|deno\|modal` (detected when you omit it), `--skip-tests`, `--skip-typecheck`.                                        |
-| `aai start`      | Serve a build. `--port`, `--host` (loopback by default).                                                                                                                              |
+| `aai start`      | Serve a build. `--port`, `--host` (loopback by default), `--workers <n\|auto>` (one process per core; [needs `DATABASE_URL`](/agent/deploy/local/#using-every-core---workers)).       |
 
 ## Shipping
 

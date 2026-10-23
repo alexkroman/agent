@@ -42,6 +42,7 @@
  * and it is why the scaffold moves this package to `dependencies`.
  */
 
+import cluster from "node:cluster";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -59,6 +60,12 @@ import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import { resolveDenoRunCode } from "./_run-code-deno.ts";
 import { DEPLOY_ENV_FILES, resolveServerEnv } from "./_server-common.ts";
+import {
+  assertWorkersSupported,
+  type ClusterLike,
+  SCHEMA_READY_ENV,
+  superviseWorkers,
+} from "./_start-workers.ts";
 import { stopProjectServer } from "./_stop-server.ts";
 import { defaultUi } from "./_ui.ts";
 
@@ -81,6 +88,11 @@ export interface ProjectServerOptions {
    * container says so. An EMPTY `HOST` means unset, not "every interface".
    */
   host?: string | undefined;
+  /**
+   * Processes to serve from (see `_start-workers.ts`). Defaults to 1; more than
+   * one needs `DATABASE_URL`. Only {@link executeStart} reads it.
+   */
+  workers?: number | undefined;
 }
 
 /**
@@ -149,7 +161,10 @@ export async function createProjectServer(options: ProjectServerOptions): Promis
   // environment variables.
   const env = await resolveServerEnv(cwd, undefined, DEPLOY_ENV_FILES);
 
-  if (env.DATABASE_URL) {
+  if (env.DATABASE_URL && process.env[SCHEMA_READY_ENV] === "1") {
+    // An `aai start --workers` worker: its primary applied the schema before
+    // forking, so N siblings do not race the same DDL (`_start-workers.ts`).
+  } else if (env.DATABASE_URL) {
     // A project with a `DATABASE_URL` puts session state and durable runs in
     // Postgres, and those tables come with whoever OWNS the database — which
     // for a self-hosted agent is the operator, with no migration step anywhere
@@ -200,7 +215,7 @@ export async function createProjectServer(options: ProjectServerOptions): Promis
 /** What {@link executeStart} answers, for `--json` and for tests. */
 export interface StartResult {
   ok: true;
-  data: { name: string; port: number | undefined };
+  data: { name: string; port: number | undefined; workers: number };
 }
 
 /**
@@ -213,6 +228,8 @@ export interface StartResult {
  * trace on Ctrl-C, instead of the non-zero exit a failed shutdown should be.
  */
 export async function executeStart(options: ProjectServerOptions): Promise<StartResult> {
+  const workers = options.workers ?? 1;
+  if (workers > 1 && cluster.isPrimary) return startPrimary(options, workers);
   // Before the server, so the first model call a request causes is already
   // reported. Awaited rather than detached (the guest harness's trade): this
   // boot has no sandbox cold-start budget to protect, and awaiting is what
@@ -226,7 +243,10 @@ export async function executeStart(options: ProjectServerOptions): Promise<Start
   const host = options.host ?? (process.env.HOST?.trim() || undefined);
 
   await server.listen(port, host);
-  defaultUi.log.info(`${agent.name} listening on http://${host ?? "127.0.0.1"}:${server.port}`);
+  // A `--workers` worker stays quiet: its primary announces the server once.
+  if (cluster.isPrimary) {
+    defaultUi.log.info(`${agent.name} listening on http://${host ?? "127.0.0.1"}:${server.port}`);
+  }
 
   for (const signal of ["SIGINT", "SIGTERM"] as const) {
     process.once(signal, () => {
@@ -243,5 +263,49 @@ export async function executeStart(options: ProjectServerOptions): Promise<Start
     });
   }
 
-  return { ok: true, data: { name: agent.name, port: server.port } };
+  return { ok: true, data: { name: agent.name, port: server.port, workers: 1 } };
+}
+
+/**
+ * The `--workers` primary: check everything a worker would fail on, apply the
+ * schema once, then fork and supervise. It owns no sessions and binds nothing —
+ * `node:cluster` shares the workers' listening socket and deals connections
+ * round-robin. Each forked worker re-runs this same command and lands in
+ * {@link executeStart}'s single-process path.
+ */
+async function startPrimary(options: ProjectServerOptions, workers: number): Promise<StartResult> {
+  const agent = await loadBuiltAgent(options.cwd);
+  const env = await resolveServerEnv(options.cwd, undefined, DEPLOY_ENV_FILES);
+  assertWorkersSupported(workers, env.DATABASE_URL);
+  if (env.DATABASE_URL) {
+    await ensureSessionStateSchema({ url: env.DATABASE_URL, logger: console });
+    await ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger: console });
+  }
+  const port = options.port ?? Number(process.env.PORT ?? DEFAULT_START_PORT);
+  const host = options.host ?? (process.env.HOST?.trim() || undefined);
+
+  // Round-robin is already the default everywhere but Windows; say it anyway,
+  // since leaving it to the OS concentrates connections on a few workers.
+  cluster.schedulingPolicy = cluster.SCHED_RR;
+  const supervisor = superviseWorkers({
+    count: workers,
+    cluster: cluster as unknown as ClusterLike,
+    log: (message) => defaultUi.notify("warn", message),
+    exit: (code) => process.exit(code),
+  });
+  defaultUi.log.info(
+    `${agent.name} listening on http://${host ?? "127.0.0.1"}:${port} with ${workers} workers`,
+  );
+
+  for (const signal of ["SIGINT", "SIGTERM"] as const) {
+    process.once(signal, () => {
+      supervisor.stop();
+      // A terminal's Ctrl-C reaches the whole process group; a SIGTERM from a
+      // supervisor reaches only this pid, so pass it on. Each worker shuts its
+      // own server down (the single-process path's handler).
+      for (const worker of Object.values(cluster.workers ?? {})) worker?.process.kill(signal);
+    });
+  }
+
+  return { ok: true, data: { name: agent.name, port, workers } };
 }

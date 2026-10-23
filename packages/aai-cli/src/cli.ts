@@ -149,6 +149,10 @@ const start = defineExec({
   args: {
     port: { type: "string", alias: "p", description: "Port to listen on" },
     host: { type: "string", description: "Address to bind (default: loopback)" },
+    workers: {
+      type: "string",
+      description: "Processes to serve from: a number or `auto` (default: 1, or AAI_WORKERS)",
+    },
     json: sharedArgs.json,
   },
   // Like dev/build/publish: a directory with no `agent.ts` is not a project to
@@ -157,6 +161,7 @@ const start = defineExec({
   cwd: "agent",
   async run({ args, cwd }) {
     const { executeStart } = await import("./start.ts");
+    const { resolveWorkers } = await import("./_start-workers.ts");
     // Parsed here rather than in the executor, so a non-numeric value fails as
     // a CLI error naming the flag — the same rule `aai workflow --limit` follows.
     return executeStart({
@@ -168,6 +173,7 @@ const start = defineExec({
         port: args.port === undefined ? undefined : parsePort(args.port),
         host: args.host?.trim() || undefined,
       }),
+      workers: resolveWorkers(args.workers),
     });
   },
 });
