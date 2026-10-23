@@ -57,6 +57,7 @@
  */
 
 import { assign, createActor, setup } from "xstate";
+import { memoOnSnapshot } from "../../../_snapshot-memo.ts";
 
 /** Everything that happens to a turn. */
 type TurnEvent =
@@ -227,25 +228,10 @@ const turnStateMachine = setup({
 /** Create a {@link TurnMachine}; the gate starts open for the greeting. */
 export function createTurnMachine(): TurnMachine {
   const actor = createActor(turnStateMachine).start();
-  // `audioGateOpen` runs twice per TTS frame and `inFlight` on hot paths too;
-  // `snapshot.matches()` is costly at that rate. A snapshot is immutable and
-  // replaced only on a transition, so memoizing on its identity answers exactly
-  // what a fresh `matches()` would (see the same memo in `../lifecycle.ts`).
-  const onSnapshot = (pick: (s: ReturnType<typeof actor.getSnapshot>) => boolean) => {
-    let seen: unknown;
-    let answer = false;
-    return (): boolean => {
-      const snapshot = actor.getSnapshot();
-      if (snapshot !== seen) {
-        seen = snapshot;
-        answer = pick(snapshot);
-      }
-      return answer;
-    };
-  };
-  const inFlight = onSnapshot((s) => s.matches({ turn: "running" }));
-  const gateOpen = onSnapshot((s) => s.matches({ gate: "open" }));
-  const spoke = onSnapshot((s) => s.matches({ voice: "spoken" }));
+  // `audioGateOpen` and `spoke` run per TTS frame — see `_snapshot-memo.ts`.
+  const inFlight = memoOnSnapshot(actor, (s) => s.matches({ turn: "running" }));
+  const gateOpen = memoOnSnapshot(actor, (s) => s.matches({ gate: "open" }));
+  const spoke = memoOnSnapshot(actor, (s) => s.matches({ voice: "spoken" }));
 
   function abortCurrent(): void {
     const snapshot = actor.getSnapshot();

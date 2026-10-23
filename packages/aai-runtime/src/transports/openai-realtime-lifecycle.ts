@@ -44,6 +44,7 @@
  */
 
 import { assign, createActor, setup } from "xstate";
+import { memoOnSnapshot } from "../_snapshot-memo.ts";
 
 /** Where the connection is. `live` carries the reply substate. */
 export type OpenaiRealtimePhase = "connecting" | "live" | "ended" | "closed";
@@ -286,6 +287,8 @@ export function createOpenaiRealtimeLifecycle(
   effects: OpenaiRealtimeLifecycleEffects,
 ): OpenaiRealtimeLifecycle {
   const actor = createActor(openaiRealtimeLifecycleMachine, { input: effects }).start();
+  const over = memoOnSnapshot(actor, (at) => at.matches("ended") || at.matches("closed"));
+  const replying = memoOnSnapshot(actor, (at) => at.matches({ live: "replying" }));
   // Asked state by state rather than read off `value`, which is a bare string
   // for an atomic state and `{ live: "idle" }` for the compound one — narrowing
   // that union by hand would be a cast, and `matches` already knows the shape.
@@ -298,17 +301,17 @@ export function createOpenaiRealtimeLifecycle(
   };
   return {
     phase,
-    replying: () => actor.getSnapshot().matches({ live: "replying" }),
+    replying,
     reportsErrors: () => {
       const at = phase();
       return at !== "ended" && at !== "closed";
     },
+    // Asked of every provider frame, audio deltas included — see `_snapshot-memo.ts`.
     owns: (frame) => {
-      const at = actor.getSnapshot();
-      if (at.matches("ended") || at.matches("closed")) return false;
+      if (over()) return false;
       if (!RESPONSE_CONTENT.has(frame.type)) return true;
-      if (!at.matches({ live: "replying" })) return false;
-      const live = at.context.replyId;
+      if (!replying()) return false;
+      const live = actor.getSnapshot().context.replyId;
       const named = frame.response_id;
       return typeof named !== "string" || !live || named === live;
     },

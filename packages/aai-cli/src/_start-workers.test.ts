@@ -1,19 +1,19 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * `aai start --workers` — the count, the `DATABASE_URL` rule, and the
- * supervisor's respawn policy, driven through a fake cluster so nothing forks.
+ * supervisor's readiness and respawn policy, driven through a fake cluster so
+ * nothing forks.
  */
 
 import { describe, expect, test } from "vitest";
 import {
   assertWorkersSupported,
-  BOOT_GRACE_MS,
   type ClusterLike,
   parseWorkers,
   resolveWorkers,
-  SCHEMA_READY_ENV,
   superviseWorkers,
   WORKERS_ENV,
+  type WorkerLike,
 } from "./_start-workers.ts";
 
 describe("parseWorkers / resolveWorkers", () => {
@@ -49,82 +49,109 @@ describe("assertWorkersSupported", () => {
   });
 });
 
-/** A cluster that records forks and lets a test kill a worker at a chosen time. */
+type ExitListener = (worker: WorkerLike, code: number | null, signal: string | null) => void;
+type MessageListener = (worker: WorkerLike, message: unknown) => void;
+
+/** A cluster that records forks and lets a test drive each worker's messages and exit. */
 function fakeCluster() {
   let nextPid = 100;
-  const forks: Record<string, string>[] = [];
-  let onExit: Parameters<ClusterLike["on"]>[1] = () => undefined;
+  const workers: (WorkerLike & { killed: string[] })[] = [];
+  let onExit: ExitListener = () => undefined;
+  let onMessage: MessageListener = () => undefined;
   const cluster: ClusterLike = {
-    fork(env = {}) {
-      forks.push(env);
-      return { process: { pid: nextPid++ } };
+    fork() {
+      const killed: string[] = [];
+      const worker = {
+        process: { pid: nextPid++ },
+        killed,
+        kill: (s = "SIGTERM") => void killed.push(s),
+      };
+      workers.push(worker);
+      return worker;
     },
-    on(_event, listener) {
-      onExit = listener;
+    on(event: "exit" | "message", listener: ExitListener | MessageListener) {
+      if (event === "exit") onExit = listener as ExitListener;
+      else onMessage = listener as MessageListener;
     },
+  } as ClusterLike;
+  const byPid = (pid: number) => {
+    const w = workers.find((x) => x.process.pid === pid);
+    if (!w) throw new Error(`no worker ${pid}`);
+    return w;
   };
   return {
     cluster,
-    forks,
-    exit: (pid: number, code = 1) => onExit({ process: { pid } }, code, null),
+    workers,
+    listen: (pid: number, port = 3000) =>
+      onMessage(byPid(pid), { type: "aai-start:listening", name: "Agent", port }),
+    exit: (pid: number, code: number | null = 1, signal: string | null = null) =>
+      onExit(byPid(pid), code, signal),
   };
 }
 
 function supervise(count: number) {
-  let clock = 0;
   const fake = fakeCluster();
   const logs: string[] = [];
-  const exits: number[] = [];
-  const supervisor = superviseWorkers({
-    count,
-    cluster: fake.cluster,
-    log: (m) => logs.push(m),
-    exit: (code) => exits.push(code),
-    now: () => clock,
-  });
-  const advance = (ms: number): void => {
-    clock += ms;
-  };
-  return { ...fake, supervisor, logs, exits, advance };
+  const supervisor = superviseWorkers({ count, cluster: fake.cluster, log: (m) => logs.push(m) });
+  return { ...fake, supervisor, logs };
 }
 
 describe("superviseWorkers", () => {
-  test("forks the count, telling each worker the schema is applied", () => {
-    const run = supervise(3);
-    expect(run.forks).toEqual([
-      { [SCHEMA_READY_ENV]: "1" },
-      { [SCHEMA_READY_ENV]: "1" },
-      { [SCHEMA_READY_ENV]: "1" },
-    ]);
+  test("is ready only once EVERY worker reports listening, with the reported name and port", async () => {
+    const run = supervise(2);
+    let ready: unknown;
+    void run.supervisor.ready.then((r) => {
+      ready = r;
+    });
+    run.listen(100, 4321);
+    await Promise.resolve();
+    expect(ready).toBeUndefined();
+    run.listen(101, 4321);
+    await expect(run.supervisor.ready).resolves.toEqual({ name: "Agent", port: 4321 });
   });
 
-  test("a worker that dies after booting is replaced", () => {
+  test("a worker that dies after listening is replaced", () => {
     const run = supervise(2);
-    run.advance(BOOT_GRACE_MS + 1);
+    run.listen(100);
+    run.listen(101);
     run.exit(100);
-    expect(run.forks).toHaveLength(3);
-    expect(run.exits).toEqual([]);
+    expect(run.workers).toHaveLength(3);
     expect(run.logs[0]).toMatch(/worker 100 exited with code 1; starting a replacement/);
   });
 
-  test("a worker that dies while starting stops the server instead of looping", () => {
-    const run = supervise(2);
+  test("a worker that dies before listening stops every worker, then fails ready", async () => {
+    const run = supervise(3);
+    run.listen(101);
     run.exit(100);
-    expect(run.forks).toHaveLength(2);
     expect(run.logs[0]).toMatch(/while starting; stopping the server/);
-    expect(run.exits).toEqual([]); // its sibling is still up
-    run.exit(101);
-    expect(run.exits).toEqual([1]);
+    expect(run.workers.map((w) => w.killed)).toEqual([[], ["SIGTERM"], ["SIGTERM"]]);
+    expect(run.workers).toHaveLength(3); // no respawn
+    run.exit(101, 0);
+    run.exit(102, 0);
+    await expect(run.supervisor.ready).rejects.toThrow(/before it was listening/);
+    await expect(run.supervisor.exited).resolves.toBe(1);
   });
 
-  test("after stop() nothing respawns, and the primary exits 0 with the last worker", () => {
+  test("stop() passes the signal on, respawns nothing, and exits 0 when all stop cleanly", async () => {
     const run = supervise(2);
-    run.advance(BOOT_GRACE_MS + 1);
-    run.supervisor.stop();
+    run.listen(100);
+    run.listen(101);
+    run.supervisor.stop("SIGINT");
+    run.supervisor.stop("SIGINT"); // idempotent for the exit code
+    expect(run.workers[0]?.killed).toContain("SIGINT");
     run.exit(100, 0);
-    expect(run.exits).toEqual([]);
     run.exit(101, 0);
-    expect(run.forks).toHaveLength(2);
-    expect(run.exits).toEqual([0]);
+    expect(run.workers).toHaveLength(2);
+    await expect(run.supervisor.exited).resolves.toBe(0);
+  });
+
+  test("a worker whose shutdown fails makes the whole stop exit 1", async () => {
+    const run = supervise(2);
+    run.listen(100);
+    run.listen(101);
+    run.supervisor.stop();
+    run.exit(100, 1);
+    run.exit(101, 0);
+    await expect(run.supervisor.exited).resolves.toBe(1);
   });
 });

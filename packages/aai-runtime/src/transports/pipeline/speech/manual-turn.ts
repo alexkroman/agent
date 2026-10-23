@@ -52,6 +52,7 @@
 
 import type { TurnDetectionMode } from "@alexkroman1/aai";
 import { assign, createActor, enqueueActions, raise, setup, stateIn } from "xstate";
+import { memoOnSnapshot } from "../../../_snapshot-memo.ts";
 import type { Logger } from "../../../logger.ts";
 
 /**
@@ -324,7 +325,8 @@ export function createManualTurn(
   const actor = createActor(manualTurnMachine, { input: deps }).start();
   return {
     enabled: true,
-    isOpen: () => actor.getSnapshot().matches({ turn: "open" }),
+    // Read for every inbound mic frame (`silenced()`) — see `_snapshot-memo.ts`.
+    isOpen: memoOnSnapshot(actor, (at) => at.matches({ turn: "open" })),
     start: () => actor.send({ type: "PRESS" }),
     commit: () => actor.send({ type: "RELEASE" }),
     clear: () => actor.send({ type: "CLEAR" }),

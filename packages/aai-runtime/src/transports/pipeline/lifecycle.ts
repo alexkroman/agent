@@ -59,6 +59,7 @@
  */
 
 import { createActor, fromPromise, setup, stateIn, waitFor } from "xstate";
+import { memoOnSnapshot } from "../../_snapshot-memo.ts";
 import type { Logger } from "../../logger.ts";
 import type { SttError, TtsError } from "../../providers/openers.ts";
 import {
@@ -227,21 +228,6 @@ export interface PipelinePhaseHandle {
 /** Create the phase machine for one pipeline session. */
 export function createPipelinePhase(effects: PipelinePhaseEffects): PipelinePhaseHandle {
   const actor = createActor(pipelinePhaseMachine, { input: effects }).start();
-  // `audible` and `isTerminated` run for EVERY audio frame in both directions,
-  // and `snapshot.matches()` is not cheap — it was ~10% of the main thread at
-  // 1200 sessions. A snapshot is immutable and replaced only on a transition,
-  // so both answers are memoized on its identity: exactly what a fresh
-  // `matches()` would say, recomputed a few times per call instead of 50x/s.
-  let memoOf: unknown;
-  let memoAudible = false;
-  let memoTerminated = false;
-  const memo = (): void => {
-    const at = actor.getSnapshot();
-    if (at === memoOf) return;
-    memoOf = at;
-    memoAudible = at.matches("ready") || at.matches({ opening: "audible" });
-    memoTerminated = at.matches("terminated");
-  };
   const phase = (): PipelinePhase => {
     const at = actor.getSnapshot();
     if (at.matches("idle")) return "idle";
@@ -252,14 +238,12 @@ export function createPipelinePhase(effects: PipelinePhaseEffects): PipelinePhas
   };
   return {
     phase,
-    audible: () => {
-      memo();
-      return memoAudible;
-    },
-    isTerminated: () => {
-      memo();
-      return memoTerminated;
-    },
+    // Both run for every audio frame in each direction — see `_snapshot-memo.ts`.
+    audible: memoOnSnapshot(
+      actor,
+      (at) => at.matches("ready") || at.matches({ opening: "audible" }),
+    ),
+    isTerminated: memoOnSnapshot(actor, (at) => at.matches("terminated")),
     send: (event) => actor.send(event),
     settled: async () => {
       await waitFor(actor, (at) => at.matches("ready") || at.matches("terminated"));

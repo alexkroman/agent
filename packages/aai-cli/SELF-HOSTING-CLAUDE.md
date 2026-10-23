@@ -23,14 +23,18 @@ custom-server opt-out is `createProjectServer` on `@alexkroman1/aai-cli/start` â
 builds the `AgentServer`, binds nothing (also what a serverless host wants).
 
 **`aai start --workers <n|auto>` (or `AAI_WORKERS`) is `node:cluster`**
-(`_start-workers.ts`, whose module doc has the measurement): the primary applies
-the schema once, forks, and supervises; each worker re-runs `aai start` and
-lands in the single-process path, skipping DDL via `AAI_START_SCHEMA_READY`.
-**More than one worker without `DATABASE_URL` is REFUSED**, not warned:
-round-robin has no affinity, so split memory state breaks resume and run reads.
-A worker dying inside `BOOT_GRACE_MS` ends the server (exit 1) instead of a
-respawn loop; a later death is respawned. The supervisor takes `cluster` as a
-seam (`ClusterLike`), so `_start-workers.test.ts` forks nothing.
+(`_start-workers.ts`, whose module doc has the measurement): the primary never
+imports the agent; it applies the schema once, forks, and announces only when
+every worker has reported LISTENING over IPC (that report, not a timer, is what
+"booted" means, and it carries the bound port and agent name). Each worker
+re-runs `aai start`, passes `applySchema: false`, prints no CLI result (`--json`
+owes one line) and ignores a repeated signal (Ctrl-C reaches it twice). **More
+than one worker without `DATABASE_URL` is REFUSED**, not warned: round-robin has
+no affinity, so split memory state breaks resume and run reads. A worker dying
+before it listens stops every worker and fails the command; a later death is
+respawned; a non-zero exit during shutdown makes the primary exit 1. The
+supervisor takes `cluster` as a seam (`ClusterLike`), so
+`_start-workers.test.ts` forks nothing.
 
 **`--target` is Nitro's preset shape** (`_build-target.ts`): an entry file is
 EMITTED into build output, never committed. Per-host modules:

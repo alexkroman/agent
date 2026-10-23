@@ -13811,9 +13811,11 @@ export function loadBuiltAgent(cwd: string): Promise<AgentDef>;
 
 // @public
 export interface ProjectServerOptions {
+    applySchema?: boolean | undefined;
     cwd: string;
     host?: string | undefined;
     port?: number | undefined;
+    workers?: number | undefined;
 }
 
 // @public
@@ -13822,6 +13824,7 @@ export interface StartResult {
     data: {
         name: string;
         port: number | undefined;
+        workers: number;
     };
     // (undocumented)
     ok: true;
