@@ -1,7 +1,7 @@
 import type { ButtonHTMLAttributes } from 'react';
 import type { FormHTMLAttributes } from 'react';
 import type { InputHTMLAttributes } from 'react';
-import { JSX } from 'react';
+import type { JSX } from 'react';
 import type { ReactNode } from 'react';
 import type { SelectHTMLAttributes } from 'react';
 import type { TextareaHTMLAttributes } from 'react';
@@ -30,7 +30,7 @@ export function fieldKindFor(schema: unknown, options?: {
     upload?: boolean | undefined;
 }): WorkflowFieldKind;
 
-// @public
+// @public @input
 export type FieldShell = {
     name: string;
     label?: string | undefined;
@@ -47,7 +47,7 @@ export function FileField(input: FieldShell & {
 // @public
 export type FileReadMode = "none" | "text" | "dataUrl" | "upload";
 
-// @public
+// @public @sealed
 export type FileValue = {
     name: string;
     size: number;
@@ -59,7 +59,7 @@ export type FileValue = {
 // @public
 export function Form(input: FormProps): JSX.Element;
 
-// @public
+// @public @input
 export type FormProps = {
     onSubmit: (values: FormValues) => void | Promise<void>;
     error?: string | undefined;
@@ -98,7 +98,7 @@ export function TextAreaField(input: FieldShell & Omit<TextareaHTMLAttributes<HT
 export function TextField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">): JSX.Element;
 
 // @public
-export type WorkflowFieldKind = "text" | "number" | "select" | "checkbox" | "file" | "none";
+export type WorkflowFieldKind = "text" | "number" | "select" | "checkbox" | "file" | "none" | (string & {});
 
 // @public
 export function WorkflowFields(input: {

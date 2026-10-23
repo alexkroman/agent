@@ -13,7 +13,7 @@ export type EvalNetwork<State = unknown> = {
 // @public
 export function evalNetwork<State = undefined>(options?: EvalNetworkOptions<State>): EvalNetwork<State>;
 
-// @public
+// @public @input
 export type EvalNetworkOptions<State = undefined> = {
     readonly state?: () => State;
     readonly routes?: Readonly<Record<string, EvalRoute<State>>>;
@@ -29,7 +29,7 @@ export type EvalRequest = {
     readonly headers: Readonly<Record<string, string>>;
     readonly text: string;
     readonly body: unknown;
-    readonly outcome: "routed" | "passthrough" | "refused";
+    readonly outcome: "routed" | "passthrough" | "refused" | (string & {});
     readonly route?: string;
     readonly status?: number;
 };

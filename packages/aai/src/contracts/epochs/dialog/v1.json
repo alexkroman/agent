@@ -3,13 +3,14 @@
   "capability": "dialog",
   "epoch": 1,
   "rule": 3,
-  "sha256": "8467eb8075623c1336a1654a8a0f2942f84300fb4cbd26e1e845d8b5821afc81",
+  "sha256": "fecfe06d69b481038b789064d0051700afa56f53e9ebc7f261e35548a4f37f3d",
   "exports": [
     "AnyDialog",
     "Dialog",
     "DialogEvent",
     "DialogEventNames",
     "DialogGate",
+    "DialogMachine",
     "DialogOptions",
     "DialogPosition",
     "DialogSessionEventName",
@@ -22,5 +23,5 @@
     "DialogVoiceConfig",
     "dialog"
   ],
-  "rollup": "8c6c76068a992cb39f1e489ee52b33438fb556e730452c73a19882fa3af72baa"
+  "rollup": "8a79c3d74b8041ce8537438bd45e307c0c1030f2d0089bb8cbfabc2854cead4e"
 }

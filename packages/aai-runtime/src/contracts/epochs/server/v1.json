@@ -3,7 +3,7 @@
   "capability": "server",
   "epoch": 1,
   "rule": 3,
-  "sha256": "fd7ad14de64e059d30f2c0d0cd445d4024f56803dceff88e1083b5d704463eab",
+  "sha256": "05d558b787f5a210f58e8adf060a90a16f1426b0efbad883a4da811172c2fc72",
   "exports": [
     "AgentEnv",
     "AgentServer",
@@ -20,5 +20,5 @@
     "createHostServer",
     "createServerForRuntime"
   ],
-  "rollup": "70c81b115e3dd7a0955b1c0982db3888f366a2e459e3c09487e396bf34c6cc07"
+  "rollup": "800db896db0458f217644ea7cb1754b4fb3af2828f08cf02168d454a3418e111"
 }

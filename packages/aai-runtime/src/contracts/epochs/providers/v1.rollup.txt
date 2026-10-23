@@ -4,9 +4,9 @@ import { ToolCallRepairFunction } from 'ai';
 import { ToolSet } from 'ai';
 
 // @public
-export function createToolCallRepair(model: LanguageModel, log: Logger, getAbortSignal?: () => AbortSignal | undefined): ToolCallRepairFunction<ToolSet>;
+export function createToolCallRepair(options: ToolCallRepairOptions): ToolCallRepairFunction<ToolSet>;
 
-// @public
+// @public @input
 export type LlmRegistryEntry = {
     readonly envVar: string;
     readonly label: string;
@@ -19,7 +19,7 @@ type LogContext = Record<string, unknown>;
 // @public
 type LogFn = (message: string, ctx?: LogContext) => void;
 
-// @public
+// @public @input
 interface Logger {
     // (undocumented)
     debug: LogFn;
@@ -31,7 +31,7 @@ interface Logger {
     warn: LogFn;
 }
 
-// @public
+// @public @input
 export type OpenerRegistryEntry<Opener, O extends object = Record<string, unknown>> = {
     readonly envVar: string;
     readonly open: (descriptor: {
@@ -52,19 +52,12 @@ export function registerTtsKind<O extends object = Record<string, unknown>>(kind
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel;
 
 // @public
-export type S2sConfig = {
-    wssUrl: string;
-    inputSampleRate: number;
-    outputSampleRate: number;
-};
-
-// @public
 export function salvageJson(input: string): Promise<string | null>;
 
 // @public
 export interface SttError extends Error {
     // (undocumented)
-    readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
+    readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error" | (string & {});
 }
 
 // @public (undocumented)
@@ -109,10 +102,17 @@ export type SttTurnMeta = {
     inputPeakDbfs?: number;
 };
 
+// @public @input
+export type ToolCallRepairOptions = {
+    model: LanguageModel;
+    logger?: Logger | undefined;
+    abortSignal?: (() => AbortSignal | undefined) | undefined;
+};
+
 // @public
 export interface TtsError extends Error {
     // (undocumented)
-    readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
+    readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error" | (string & {});
 }
 
 // @public

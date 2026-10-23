@@ -3,7 +3,7 @@
   "capability": "components",
   "epoch": 1,
   "rule": 3,
-  "sha256": "38887906d7184ab5bb99f4ef35830b8b1097c07a98c82661e93cd152a10067cf",
+  "sha256": "8d1402ada80751e79021ef69bd37ad9800cc3d513484dcc15383e5249534dbca",
   "exports": [
     "AutoScroll",
     "BulletList",
@@ -44,5 +44,5 @@
     "useCopy",
     "useFlash"
   ],
-  "rollup": "8201602f0587590138b862ac232992b13e2d00674a2449ac8d6c9fec946a5931"
+  "rollup": "49b743116d61500cf27464e4052b23e432862438ec9af22f4a4060355cec57ba"
 }

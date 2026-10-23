@@ -3,21 +3,17 @@
   "capability": "events",
   "epoch": 1,
   "rule": 3,
-  "sha256": "bd9b4d14dc825e284cd0326e043cce8ee515c87b81bc09c4a20931847661d92b",
+  "sha256": "840c4f9bc1c20c831cce80a8d3c0fd6a2d58cfd4700c7c90f7aa95aa9b9597eb",
   "exports": [
+    "AnySessionEvent",
     "ClientEventMap",
     "ClientEventSender",
-    "EventMapOf",
-    "SESSION_SOURCED_EVENT_TYPES",
     "SessionEvent",
     "SessionEventBody",
     "SessionEventHandler",
     "SessionEventHandlers",
     "SessionEventMap",
-    "SessionEventSchema",
-    "SessionEventType",
-    "SessionEventTypeList",
-    "SessionSourcedEventType"
+    "SessionEventType"
   ],
-  "rollup": "73789540457c7445c248ba77a9fd40a3b777b822064c4688503ca3999efc2113"
+  "rollup": "c9aa5d73ab960bcaf9214324e98c514a68d9b4d56b9d3a65d3719b3911e731b1"
 }

@@ -1,4 +1,4 @@
-// @public
+// @public @input
 export type ReadUploadOptions = {
     start?: number | undefined;
     end?: number | undefined;
@@ -23,7 +23,7 @@ export class UploadIncompleteError extends Error {
     readonly stored: number;
 }
 
-// @public
+// @public @sealed
 export type UploadInfo = {
     id: string;
     name: string;
@@ -33,13 +33,13 @@ export type UploadInfo = {
     ranges?: readonly UploadRange[];
 };
 
-// @public
+// @public @sealed
 export type UploadRange = {
     start: number;
     end: number;
 };
 
-// @public
+// @public @sealed
 export type UploadSlice = {
     info: UploadInfo;
     bytes: Uint8Array;
@@ -47,7 +47,7 @@ export type UploadSlice = {
     end: number;
 };
 
-// @public
+// @public @input
 export type WriteUploadOptions = {
     name?: string | undefined;
     type?: string | undefined;

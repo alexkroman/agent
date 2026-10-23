@@ -3,7 +3,7 @@
   "capability": "auth",
   "epoch": 1,
   "rule": 3,
-  "sha256": "c29bde7817749aca3ac159d62dc18fb8d0162e263fd185d7c58c9795c7c7c68e",
+  "sha256": "b102ad69ee3b1583a57dc2205dac8ef4a028181d09423a0352bf6cc68ccf51b2",
   "exports": [
     "SESSION_AUTH_PROTOCOL_PREFIX",
     "SESSION_SECRET_ENV",
@@ -19,5 +19,5 @@
     "sessionAuthBrand",
     "verifySessionToken"
   ],
-  "rollup": "56b89aa6dfff2a90d461265cc7971f50bfdcc7276bd9aea9d9865836cd5a78ae"
+  "rollup": "fbdbbff155837f0ccf6481916c959852e8d046cfb69b71a8d2828c365486550d"
 }

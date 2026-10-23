@@ -3,11 +3,9 @@
   "capability": "runtime",
   "epoch": 1,
   "rule": 3,
-  "sha256": "3c0773985b331a2faea19f3ec5001cfba78edab19683d863fb28bf315ce15cff",
+  "sha256": "93ca7625e1e49250493dd76c54a0272c155151d208d00d646ed0416143cdb3ea",
   "exports": [
     "AgentRuntime",
-    "ExecuteTool",
-    "ExecuteToolOptions",
     "HostAgentOptions",
     "RunCodeExecutor",
     "Runtime",
@@ -16,11 +14,10 @@
     "SessionConnection",
     "SessionRuntime",
     "SessionStartOptions",
-    "SkipGreetingOption",
     "connectSession",
     "createRuntime",
     "rejectingRuntime",
     "runtimeBrand"
   ],
-  "rollup": "51d90757890b18cef819df862a10afc76cd9502ad354e38115d15f58c838cbfe"
+  "rollup": "03b9bee1a61fd5cee89dd00b1729193d1d7a9dbff013611160b3c0360e3c2d6e"
 }

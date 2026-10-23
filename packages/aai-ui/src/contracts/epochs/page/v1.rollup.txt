@@ -1,7 +1,7 @@
 import { ClientConfigResponse } from '@alexkroman1/aai/protocol';
 import { ComponentType } from 'react';
 
-// @public
+// @public @input
 type ClientTheme = {
     bg?: string;
     primary?: string;
@@ -11,12 +11,19 @@ type ClientTheme = {
 };
 
 // @public
-export function fetchClientConfig(platformUrl?: string, fetchFn?: typeof globalThis.fetch): Promise<ClientConfigResponse>;
+export function fetchClientConfig(options?: FetchClientConfigOptions): Promise<ClientConfigResponse>;
+
+// @public @input
+export type FetchClientConfigOptions = {
+    platformUrl?: string | undefined;
+    fetch?: typeof globalThis.fetch | undefined;
+    signal?: AbortSignal | undefined;
+};
 
 // @public
 export function mountPage(config?: PageConfig): PageHandle;
 
-// @public
+// @public @input
 export type PageConfig = {
     component?: ComponentType;
     target?: string | HTMLElement;
@@ -24,7 +31,7 @@ export type PageConfig = {
     theme?: ClientTheme;
 };
 
-// @public
+// @public @sealed
 export type PageHandle = {
     dispose(): void;
     [Symbol.dispose](): void;

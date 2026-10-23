@@ -3,7 +3,7 @@
   "capability": "forms",
   "epoch": 1,
   "rule": 3,
-  "sha256": "0b8b0243da722ce30fa48b9ee9730cf09fd6de12dcfd43e1267c24dfd27ac3b0",
+  "sha256": "1b44ec81d3f18b8d3f369ac82cbc6d1dbcb616b0306b6f111fb13fdbbd276a09",
   "exports": [
     "CheckboxField",
     "Field",
@@ -23,5 +23,5 @@
     "WorkflowFields",
     "fieldKindFor"
   ],
-  "rollup": "ff4b507104721db7c0c0422a1fdf401bf7d91d7ade486ba5557c91cc52e2dc21"
+  "rollup": "749d73cefc6a90ea7e9d63521db0d0a6d28fc812ba04d0fd4cc68f3720282e59"
 }

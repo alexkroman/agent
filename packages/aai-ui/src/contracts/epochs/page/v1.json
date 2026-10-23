@@ -3,7 +3,13 @@
   "capability": "page",
   "epoch": 1,
   "rule": 3,
-  "sha256": "ed5de266924007101009336eb2afe0c9fb741bda86bd344e3b1b6033a612102b",
-  "exports": ["PageConfig", "PageHandle", "fetchClientConfig", "mountPage"],
-  "rollup": "e5cbb655a45cb862571e6229305aa45e83d8e4c8a3604ca6c5c63e91297b9b11"
+  "sha256": "d48ac07b7d396ed5643eb1a2f7d5a9a38d4fbc2090810138dc8a0aac6a33a73d",
+  "exports": [
+    "FetchClientConfigOptions",
+    "PageConfig",
+    "PageHandle",
+    "fetchClientConfig",
+    "mountPage"
+  ],
+  "rollup": "6151e2656a65f231bda450a65234f48b6c3351a1c7006493de8c07684bb3824b"
 }

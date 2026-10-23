@@ -5,5 +5,5 @@
   "rule": 3,
   "sha256": "a02678e0ebe771a180c1ec14769797ce15d2ad972f1f8096f11c6107805acf7c",
   "exports": ["LogContext", "LogFn", "LogLevel", "Logger"],
-  "rollup": "045f87aee047178bf3fdf39c37c33bc76f047ec04818738dacf881103eb9160c"
+  "rollup": "6722b4d1ab0a919c8fe192632802435d29e186075af09bf19c03befe8d524028"
 }

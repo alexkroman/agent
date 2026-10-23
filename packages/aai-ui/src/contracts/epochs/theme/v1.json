@@ -3,7 +3,7 @@
   "capability": "theme",
   "epoch": 1,
   "rule": 3,
-  "sha256": "c397ab1e6e2e5f75cbd82e2bfe905def3c786afcd4f2f01d2fc5329af463f456",
-  "exports": ["ClientTheme", "useTheme"],
-  "rollup": "6c82859e23a19480c475ff906e4556c0f187a5934cfebac08ed6fbaad2e6428b"
+  "sha256": "3f468bb025865d18691b596a6329f142e64010bd07a8575de8576c22c5936dfe",
+  "exports": ["ClientTheme", "ResolvedClientTheme", "useTheme"],
+  "rollup": "885785c33278a6b32ef6f11785e829d0714d05fa77557b23a00c93912134bfbe"
 }

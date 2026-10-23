@@ -4,7 +4,7 @@ export type LogContext = Record<string, unknown>;
 // @public
 export type LogFn = (message: string, ctx?: LogContext) => void;
 
-// @public
+// @public @input
 export interface Logger {
     // (undocumented)
     debug: LogFn;

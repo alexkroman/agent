@@ -3,9 +3,8 @@
   "capability": "channels",
   "epoch": 1,
   "rule": 3,
-  "sha256": "a6bdc7c3db803b3158fe317052b216d7d51162aa1be5c14a09cf26e4cc03ee6b",
+  "sha256": "6da3ab6258937824e087fa06f69547464c56aa4f73630a2aa4919648f1de4717",
   "exports": [
-    "CHANNEL_POST_TIMEOUT_MS",
     "Channel",
     "ChannelDeliveryError",
     "ChannelDescriptor",
@@ -45,5 +44,5 @@
     "stepTextOwner",
     "textbeltChannel"
   ],
-  "rollup": "32fe884c2a2180e9d362ab1badeed2a97a3436e631070d6e15e5585dd256aaa5"
+  "rollup": "55f3af6388a246219aad79f2430c1616e57e1148612f52d31ae2c6eaf2a8a07a"
 }

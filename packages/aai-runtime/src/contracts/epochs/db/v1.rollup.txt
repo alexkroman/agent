@@ -1,7 +1,6 @@
-import type { Db } from '@alexkroman1/aai/internal';
-
-// @public
-export type CloseableDb = Db & {
+// @public @sealed
+export type CloseableDb = {
+    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
     reserve(): Promise<ReservedDb>;
     listen(channel: string, onNotify: () => void): Promise<() => void>;
     close(): Promise<void>;
@@ -10,7 +9,7 @@ export type CloseableDb = Db & {
 // @public
 export function createPostgresDb(options: CreatePostgresDbOptions): CloseableDb;
 
-// @public
+// @public @input
 export type CreatePostgresDbOptions = {
     url: string;
     max?: number;
@@ -22,7 +21,13 @@ export type CreatePostgresDbOptions = {
     reserveTimeoutMs?: number;
 };
 
-// @public
-export type ReservedDb = Db & {
+// @public @input
+export type Db = {
+    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
+};
+
+// @public @sealed
+export type ReservedDb = {
+    query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
     release(): void;
 };

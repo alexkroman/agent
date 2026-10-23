@@ -3,12 +3,13 @@
   "capability": "session",
   "epoch": 1,
   "rule": 3,
-  "sha256": "cf2aea0cd189494939cecf10c83c1936e1fef9f873d49d5cc1026b6521f70acb",
+  "sha256": "b69a3017c3d45ba7a985616d63606e0a01236edd9399aa35d9ed27a6249c600c",
   "exports": [
     "SESSION_EVENTS_TOKEN_ENV",
     "SessionEventPage",
     "SessionEventStream",
-    "SessionWebSocket"
+    "SessionWebSocket",
+    "sessionEventStreamBrand"
   ],
-  "rollup": "42aabb71ac81ea639b022470beb1fc21ecfebc0a88e43dae9c96173474cde3aa"
+  "rollup": "21cf98a19329db3aecbb588d105c18f7c8b934bfe79f8d0300573920f5e22613"
 }

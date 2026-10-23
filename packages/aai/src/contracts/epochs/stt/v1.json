@@ -3,11 +3,10 @@
   "capability": "stt",
   "epoch": 1,
   "rule": 3,
-  "sha256": "297df0074790bfd87bb5e9274274329e26358364a852a8bccf60b2023ca3ac4f",
+  "sha256": "73b7bcbdd49e3418ecae9b5626527d3ed8ed2d317b0a1b9c379d5d022c2bd04e",
   "exports": [
     "ASSEMBLYAI_STT_EU_URL",
     "AssemblyAISttOptions",
-    "DEEPGRAM_DEFAULT_ENDPOINTING_MS",
     "DeepgramSttOptions",
     "ElevenLabsSttOptions",
     "SonioxSttOptions",
@@ -18,5 +17,5 @@
     "fallback",
     "sonioxStt"
   ],
-  "rollup": "a000249e2aa7a0de5b795752f38f2f3886c16d5dbf20946bdd78085e5a30d5a2"
+  "rollup": "a82a41145fac03ceccc19c5de600c5a7f13a52f8a512e33920a51e95e9d25968"
 }

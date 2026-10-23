@@ -17,7 +17,7 @@ export class RetryableError extends Error {
     readonly retryAfter: Date;
 }
 
-// @public
+// @public @input
 export type RetryableErrorOptions = {
     retryAfter?: number | Date;
     cause?: unknown;

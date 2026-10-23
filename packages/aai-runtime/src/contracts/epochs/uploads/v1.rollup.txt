@@ -11,18 +11,6 @@ export const UPLOAD_STORAGE_KEY_ENV = "AAI_UPLOAD_STORAGE_KEY";
 export const UPLOAD_STORAGE_URL_ENV = "AAI_UPLOAD_STORAGE_URL";
 
 // @public
-export type UploadMeta = {
-    name?: string | undefined;
-    type?: string | undefined;
-};
-
-// @public
-export type UploadPart = {
-    at: number;
-    bytes: number;
-};
-
-// @public
 export class UploadsUnavailableError extends Error {
     constructor(message: string);
 }

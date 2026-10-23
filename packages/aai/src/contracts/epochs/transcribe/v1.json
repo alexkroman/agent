@@ -3,16 +3,11 @@
   "capability": "transcribe",
   "epoch": 1,
   "rule": 3,
-  "sha256": "9b71301d5644fe41440c0b4eca12fa41bba7454101deac6ed75e17b2439d7324",
+  "sha256": "1c47f922251b116e781b492a10299a285e8bdc10c8a77eb64f7ef09b444d02c6",
   "exports": [
     "TRANSCRIBE_API",
     "TRANSCRIBE_MODELS",
-    "TRANSCRIBE_SYNC_ENDPOINT",
     "TRANSCRIBE_SYNC_MODEL",
-    "TRANSCRIBE_SYNC_TIMEOUT_MS",
-    "TRANSCRIBE_TIMEOUT_MS",
-    "TRANSCRIBE_UPLOAD_TIMEOUT_MS",
-    "TRANSCRIBE_WINDOW_BYTES",
     "TranscribeError",
     "TranscribeProgress",
     "TranscribeRequestOptions",
@@ -24,5 +19,5 @@
     "stepTranscribeSync",
     "stepTranscribeUpload"
   ],
-  "rollup": "1e0e800842224f5b796f21f6c87b092aeb56805229496a026219434beb99ee5a"
+  "rollup": "610ba3030f2104a005af4cbd05eb758d48f367f6951c2801ca5fcabfc392e928"
 }

@@ -5,5 +5,5 @@
   "rule": 3,
   "sha256": "fa38c5050a0f3410cca71b8ecf797e50fcdfc9ea5f63c0982756b868e61170b1",
   "exports": ["FeedItem", "PageMetadata", "ParsedFeed", "htmlToText", "pageMetadata", "parseFeed"],
-  "rollup": "35131036d3fd50014f47575e319c80062c0090770bd6dcbd3060b35880273f9d"
+  "rollup": "8923f8a7d13585dbb6755260377eb2e3eee2bee77fabba9fecc87e6118cbbc08"
 }

@@ -20,25 +20,10 @@ export function stepTranscribeUpload(uploadId: string, options?: TranscribeReque
 export const TRANSCRIBE_API: string;
 
 // @public
-export const TRANSCRIBE_MODELS: readonly [string];
-
-// @public
-export const TRANSCRIBE_SYNC_ENDPOINT: string;
+export const TRANSCRIBE_MODELS: readonly string[];
 
 // @public
 export const TRANSCRIBE_SYNC_MODEL: string;
-
-// @public
-export const TRANSCRIBE_SYNC_TIMEOUT_MS: number;
-
-// @public
-export const TRANSCRIBE_TIMEOUT_MS: number;
-
-// @public
-export const TRANSCRIBE_UPLOAD_TIMEOUT_MS: number;
-
-// @public
-export const TRANSCRIBE_WINDOW_BYTES: number;
 
 // @public
 export class TranscribeError extends Error {
@@ -62,20 +47,20 @@ export type TranscribeProgress = {
     transcript: Transcript;
 };
 
-// @public
+// @public @input
 export type TranscribeRequestOptions = {
     apiKeyEnv?: string | undefined;
     timeoutMs?: number | undefined;
     signal?: AbortSignal | undefined;
 };
 
-// @public
+// @public @input
 export type TranscribeSubmitOptions = TranscribeRequestOptions & {
     models?: readonly string[] | undefined;
     params?: Record<string, unknown> | undefined;
 };
 
-// @public
+// @public @input
 export type TranscribeSyncOptions = TranscribeRequestOptions & {
     model?: string | undefined;
     filename?: string | undefined;

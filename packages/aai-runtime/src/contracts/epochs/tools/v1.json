@@ -3,22 +3,19 @@
   "capability": "tools",
   "epoch": 1,
   "rule": 3,
-  "sha256": "cc3b58eff8c834a219b1915a2a2240a4b3df03dfb622d979ae9e67647653bcfb",
+  "sha256": "3a5822e98bf8b302c8796e1d0ebed290de621819d36753bf30a8b939d04f7d10",
   "exports": [
     "MCP_CONNECT_TIMEOUT_MS",
-    "McpCallResult",
     "McpConnectOptions",
     "McpDrift",
-    "McpInputSchema",
     "McpServerStatus",
     "McpSession",
     "McpSessionOpener",
     "McpToolSurface",
     "McpToolsOptions",
-    "McpTrust",
     "ResolvedMcpServer",
     "withMcpTools",
     "withToolsDir"
   ],
-  "rollup": "9c391cb0c0936e794faeffc2dd459e25b7a4fe5aeed3fb56e6119dbb77411d84"
+  "rollup": "4f01fa4f67a94a2956c38f572c8f8203016b551697701f7bb52077f679403cbd"
 }

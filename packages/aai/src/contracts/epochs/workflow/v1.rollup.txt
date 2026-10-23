@@ -1,4 +1,4 @@
-// @public
+// @public @input
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
     input?: ToolInputSchema;
@@ -10,7 +10,7 @@ type AnyWorkflowDef<R = unknown> = {
 // @public
 export const DEFAULT_STEP_MAX_ATTEMPTS: number;
 
-// @public
+// @public @input
 type FindByKeyOptions = {
     since?: number | Date;
     statuses?: readonly WorkflowRunStatus[];
@@ -18,7 +18,7 @@ type FindByKeyOptions = {
     withOutput?: boolean;
 };
 
-// @public
+// @public @input
 type FindOptions = {
     limit?: number;
 };
@@ -29,7 +29,7 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : n
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
-// @public
+// @public @input
 export type PollOptions<T> = {
     everyMs: number;
     maxMs: number;
@@ -37,14 +37,14 @@ export type PollOptions<T> = {
     maxAttempts?: number | undefined;
 };
 
-// @public
+// @public @sealed
 export type PollResult<T> = {
     value: T;
     done: boolean;
     checks: number;
 };
 
-// @public
+// @public @input
 export type SayOnClientNotice = {
     id?: string | undefined;
     event: string;
@@ -59,7 +59,7 @@ export type SayOnClientNotice = {
     maxAttempts?: number | undefined;
 };
 
-// @public
+// @public @input
 export type SleepOptions = {
     correlationId?: string;
 };
@@ -97,7 +97,7 @@ interface StandardSchemaV1<Input = unknown, Output = Input> {
     };
 }
 
-// @public
+// @public @input
 type StartOptions = {
     key?: string;
     dedupeKey?: string;
@@ -105,18 +105,18 @@ type StartOptions = {
     notify?: boolean | string;
 };
 
-// @public
+// @public @input
 export type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
     schema?: S | undefined;
 };
 
-// @public
+// @public @input
 export type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
     schema: S;
 };
 
-// @public
+// @public @input
 type StreamOptions = {
     namespace?: string;
     startIndex?: number;
@@ -125,18 +125,18 @@ type StreamOptions = {
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
-// @public
+// @public @input
 export type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     timeoutMs: number;
     schema?: S | undefined;
 };
 
-// @public
+// @public @input
 export type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     schema: S;
 };
 
-// @public
+// @public @input
 type WakeUpOptions = {
     correlationIds?: string[];
 };
@@ -152,7 +152,7 @@ export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknow
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
-// @public
+// @public @sealed
 export type WorkflowClient = {
     start<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>,
     input: InferSchemaOutput<P>, options?: StartOptions): Promise<string>;
@@ -176,7 +176,7 @@ export type WorkflowClient = {
     listing(): WorkflowSummary[];
 };
 
-// @public
+// @public @sealed
 export type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
@@ -194,7 +194,7 @@ export type WorkflowContext = {
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
-// @public
+// @public @input
 export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     description?: string;
     input?: P;
@@ -204,7 +204,7 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
     onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
 };
 
-// @public
+// @public @sealed
 export type WorkflowFailureContext<I = unknown> = {
     readonly runId: string;
     readonly workflow: string;
@@ -220,7 +220,7 @@ export type WorkflowFailureHandler<I = unknown> = WorkflowFailureHook<I> | {
 // @public
 export type WorkflowFailureHook<I = unknown> = (error: Error, context: WorkflowFailureContext<I>) => Promise<void> | void;
 
-// @public
+// @public @sealed
 type WorkflowRunBase = {
     runId: string;
     workflow: string;
@@ -251,7 +251,7 @@ type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 // @public
 type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
 
-// @public
+// @public @sealed
 type WorkflowSummary = {
     name: string;
     description?: string;

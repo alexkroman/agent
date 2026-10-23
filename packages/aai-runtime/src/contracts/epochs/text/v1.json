@@ -3,7 +3,7 @@
   "capability": "text",
   "epoch": 1,
   "rule": 3,
-  "sha256": "db4b06e26516571fcc49217d4433e0c196ba6b80b3bbdc31ed776c30a9910a2b",
+  "sha256": "9ec60dd877c309011200116ac688d2eea86cd4092c8d57f41097337d5b5e2e4e",
   "exports": [
     "TextAgent",
     "TextAgentOptions",
@@ -11,5 +11,5 @@
     "TextTurnResult",
     "createTextAgent"
   ],
-  "rollup": "7cfcf8be1969a8b59e659a5b3685be50b09de9f44b959acedf04a780c01dbe8f"
+  "rollup": "2ee878875eb720179ad82260d6d9b285435488eb0236a0a7c760aa1995d51ad2"
 }

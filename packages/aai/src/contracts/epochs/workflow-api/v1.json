@@ -3,7 +3,7 @@
   "capability": "workflow-api",
   "epoch": 1,
   "rule": 3,
-  "sha256": "7ce69fb35cb0da30b4b2436759a1254046d55495d8a0ae27170c928d28dccf35",
+  "sha256": "0bac37e1b33e3b1394656ecda9dc4c984919cb9fc7e718c3af16a413fd3233c4",
   "exports": [
     "AgentClient",
     "AnyWorkflowDef",
@@ -44,5 +44,5 @@
     "isTerminal",
     "readEventStream"
   ],
-  "rollup": "63cd2c07489f0958c17eabe9eb544b265882f2c096996fc24bb3b13d9970a617"
+  "rollup": "0a88e505049c979f6e5dad6e36d09a61c81736cb470038e5ec6e80b0e4ebf8f1"
 }

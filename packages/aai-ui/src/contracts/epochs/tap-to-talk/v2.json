@@ -1,9 +1,0 @@
-{
-  "kind": "aai-authoring-capability-contract",
-  "capability": "tap-to-talk",
-  "epoch": 2,
-  "rule": 3,
-  "sha256": "eb61a6df61cd418a3d9b668eaac8b38f3a133966350164611acc5f3e6f6c5968",
-  "exports": ["UseTapToTalkOptions", "UseTapToTalkResult", "useTapToTalk"],
-  "rollup": "6206b88568301fdff76648f2aa5acb734a48a59ab5033104c1b83016de9ee709"
-}

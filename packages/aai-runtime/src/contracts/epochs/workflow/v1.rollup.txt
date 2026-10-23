@@ -1,4 +1,5 @@
-import { WORKFLOW_API_PREFIX } from '@alexkroman1/aai/internal';
+// @public
+export function createMemoryJournal(): WorkflowJournal;
 
 // @public
 export const DEFAULT_WORKFLOW_FIND_LIMIT = 20;
@@ -15,7 +16,7 @@ type LogContext = Record<string, unknown>;
 // @public
 type LogFn = (message: string, ctx?: LogContext) => void;
 
-// @public
+// @public @input
 interface Logger {
     // (undocumented)
     debug: LogFn;
@@ -33,7 +34,13 @@ export const MAX_WORKFLOW_FIND_LIMIT = 100;
 // @public
 export const MAX_WORKFLOW_INPUT_BYTES: number;
 
-export { WORKFLOW_API_PREFIX }
-
 // @public
 export const WORKFLOW_API_TOKEN_ENV = "AAI_WORKFLOW_API_TOKEN";
+
+// @public @sealed
+export type WorkflowJournal = {
+    readonly [workflowJournalBrand]: true;
+};
+
+// @public
+export const workflowJournalBrand: unique symbol;

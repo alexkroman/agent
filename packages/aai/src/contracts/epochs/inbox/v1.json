@@ -3,7 +3,7 @@
   "capability": "inbox",
   "epoch": 1,
   "rule": 3,
-  "sha256": "d9d1e1b0f88f0053d7c7899afb8bc6efe08fff3aae2504b156a7ae92d2aabc9e",
+  "sha256": "fe64583967ca122807487d6c10f08079b5fe779412331042c33e9baf96f90081",
   "exports": [
     "ClientNotice",
     "ClientTranscript",
@@ -12,9 +12,7 @@
     "ClientTranscriptTool",
     "ClientUnreachableError",
     "ClientUnreachableReason",
-    "DEFAULT_CLIENT_ACK_TIMEOUT_MS",
     "DEFAULT_CLIENT_DELIVERY_ATTEMPTS",
-    "DEFAULT_CLIENT_RETRY_MS",
     "SayFailureOnClientOptions",
     "StepClientTranscriptOptions",
     "StepNotifyClientOptions",
@@ -26,5 +24,5 @@
     "stepNotifyClient",
     "stepSayOnClient"
   ],
-  "rollup": "5aa3d8317676eb84d77aed79c6cd64d74b75fe6843a9de1c518c988b21130dfb"
+  "rollup": "52261a7a90f8eff68228819eaef1742415cce4204eff306de7a345a9301d4c25"
 }

@@ -2,7 +2,7 @@ import type { DefaultToolResult } from '@alexkroman1/aai';
 import type { SessionErrorCode } from '@alexkroman1/aai/protocol';
 import type { StateProjection } from '@alexkroman1/aai';
 
-// @public
+// @public @sealed
 type AgentCustomEvent = {
     readonly id: number;
     readonly event: string;
@@ -10,29 +10,29 @@ type AgentCustomEvent = {
 };
 
 // @public
-type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error";
+type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error" | (string & {});
 
 // @public
 export type AgentStateFrame = Readonly<Record<string, unknown>>;
 
-// @public
+// @public @sealed
 type ChatMessage = {
     id: number;
-    role: "user" | "assistant";
+    role: "user" | "assistant" | (string & {});
     content: string;
 };
 
 // @public
 export function selectAgentState<V = DefaultToolResult>(slot: string): (snapshot: SessionSnapshot) => V | undefined;
 
-// @public
+// @public @sealed
 type SessionError = {
     readonly code: SessionErrorCode;
     readonly message: string;
     readonly fatal: boolean;
 };
 
-// @public
+// @public @sealed
 type SessionSnapshot = {
     readonly state: AgentState;
     readonly recording: boolean;
@@ -50,12 +50,12 @@ type SessionSnapshot = {
     readonly running: boolean;
 };
 
-// @public
+// @public @sealed
 export type ToolCallInfo = {
     callId: string;
     name: string;
     args: Record<string, DefaultToolResult>;
-    status: "pending" | "done";
+    status: "pending" | "done" | (string & {});
     result?: string | undefined;
     seq: number;
     afterMessageId: number;
