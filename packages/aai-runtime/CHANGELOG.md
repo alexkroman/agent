@@ -1,5 +1,57 @@
 # @alexkroman1/aai-runtime
 
+## 0.17.0
+
+### Minor Changes
+
+- eb14ffe: Reshape `@alexkroman1/aai-runtime`'s published surface so it stops producing
+  breaking changes. Breaking (0.x minor):
+  
+  - `RuntimeOptions.journal`, `AgentServerOptions.journal` and
+    `RunWorkflowOptions.journal` take an opaque `WorkflowJournal`; build one with
+    the new `createMemoryJournal()`. `JournalStore`, its records,
+    `JournalConflictError` and `DeterminismKind` are no longer published. A
+    `runWorkflow` handle now reports its journaled waits (`waits`) and whether a
+    boot sweep would pick it up (`resumable`).
+  - `CarrierCodec` implements one `encode(out: CarrierOutbound)` (answer
+    `undefined` for a kind it has no frame for) in place of `media`/`clear`.
+    `CarrierInbound`'s `ignore` became `other { type }`, and a key press decodes
+    as `dtmf { digit }`.
+  - `TextTurnResult` is a declared slice (`textStream`, `text`, `response`,
+    `consumeStream`) instead of the whole AI SDK `streamText` result, and
+    `TextAgentTestRun.steps` is gone.
+  - `SessionEventStream` is a sealed reader (`tail`, `read`, `durable`).
+  - `createToolCallRepair` takes one `ToolCallRepairOptions` bag.
+  - `SimulatedCall.endedBy`, `PhoneTreeWalk.stopped`, `EvalRequest.outcome`,
+    `WorkflowTestStep.status` and `SttError`/`TtsError.code` are open string
+    unions.
+  - Removed: the `keys` capability (`createMemoryKeyStore`,
+    `createPostgresKeyStore`, `resolveKeyStore`, `WorkflowKeyStore`),
+    `WORKFLOW_API_PREFIX`, `ExecuteTool`, `ExecuteToolOptions`,
+    `SkipGreetingOption`, `S2sConfig`, `McpCallResult`, `McpInputSchema`,
+    `McpTrust`, `UploadMeta`, `UploadPart`, `HostGenerateFn`, `StepUsage`,
+    `StepFetch` and `EvalWorkflowEngineOptions`.
+  
+  `Db` and `RunCodeExecutor` are now declared by this package, options and result
+  types carry `@input`/`@sealed`, and the eval readers and the
+  `EvalTurn`/`EvalToolCall` records moved to the `eval-assert` capability. The
+  studio's coding agent takes the full AI SDK turn from the internal
+  `createHostTextAgent`.
+
+### Patch Changes
+
+- 130bc0c: Transcript logging is off in production. A contained guest
+  (`AAI_SANDBOX_CONTAINED=1`) or a process under `NODE_ENV=production` no longer
+  writes what was said to its log, whatever `AAI_DEBUG` says: the STT turn trace,
+  the committed-turn trace, the quiet-final and barge-in-veto lines, a tool's
+  spoken line and the S2S `tool.call` payload carry a character count
+  (`textChars`, `transcriptChars`) in place of the text. Under `aai dev` and in
+  tests the verbatim trace is unchanged.
+- Updated dependencies [a8a37ac]
+- Updated dependencies [b1d73be]
+- Updated dependencies [8f93cca]
+  - @alexkroman1/aai@0.17.0
+
 ## 0.16.0
 
 ### Patch Changes
