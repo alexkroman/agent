@@ -202,6 +202,24 @@ error naming the mode. `assemblyAIPipeline()` is the explicit spelling of the
 default pipeline (spread it for `region: "eu"`). Pipeline knobs and S2S are in
 `agent-guide/PIPELINE-TUNING.md`; vendors in `agent-guide/PROVIDERS.md`.
 
+## Turn-taking: when a pause ends a turn
+
+```ts
+import { agent } from "@alexkroman1/aai";
+
+agent({ name: "My Agent", turnTaking: { minSilenceMs: 1600, maxSilenceMs: 3500 } });
+```
+
+The default pipeline lowers the pair onto its STT stage; beside an explicit
+`stt` the shorthand is refused — set
+`assemblyAIStt({ minTurnSilenceMs, maxTurnSilenceMs })` instead. Defaults 1600 /
+3500 ms. **`maxSilenceMs` is the pause-tolerance knob** (raise it for hesitant
+or dictating callers; only turns that never read as complete pay it);
+`minSilenceMs` taxes every finished turn — the doc comments on
+`DEFAULT_MIN_TURN_SILENCE_MS`/`DEFAULT_MAX_TURN_SILENCE_MS` say why. Min must be
+<= max. S2S has no such knob on purpose: its end-of-turn detection is adaptive
+and entity-aware, and a silence window disables it (`AssemblyAIS2sOptions`).
+
 ## `tool()` basics
 
 ```ts
