@@ -73,8 +73,11 @@ export async function runPrimary(
   const router = createRouter({
     slots: opts.workers,
     target: supervisor.target,
-    admitCall: (slot) => {
-      if (!supervisor.accepting()) return "draining";
+    // The cap covers every call socket; only the drain lets a reconnect
+    // through, so live calls survive a deploy. A client can CLAIM to resume
+    // (any well-formed id), which is why that claim never buys past the cap.
+    admitCall: (slot, resume) => {
+      if (!(supervisor.accepting() || resume)) return "draining";
       return supervisor.calls(slot) >= opts.maxCallsPerWorker ? "full" : "ok";
     },
     reserveCall: supervisor.reserve,

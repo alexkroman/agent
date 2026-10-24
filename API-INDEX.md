@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 186 names
 - [Testing and evals](#testing-and-evals) — 240 names
 - [Hosting and tooling](#hosting-and-tooling) — 234 names
-- [Framework internals](#framework-internals) — 493 names
+- [Framework internals](#framework-internals) — 494 names
 
 ## Agent authoring
 
@@ -1642,6 +1642,7 @@ trace or a type error can be traced back to something.
 | `resolveSonioxSttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
 | `routeKeyMatches` | function | `@alexkroman1/aai/host-internal` |  | Does `key` (parsed or as written) answer a `method` request for `url`? |
 | `routeKeySpecificity` | function | `@alexkroman1/aai/host-internal` |  | How specific a key is — among matching keys, higher answers first. |
+| `routeMatches` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `routeTable` | function | `@alexkroman1/aai/host-internal` |  | Parse a table's keys once, for repeated matching. |
 | `runAgentGuardrails` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `runCapped`, `RunCappedOptions` | function | `@alexkroman1/aai/host-internal` |  | Run one child process, capturing capped output tails. |

@@ -93,10 +93,17 @@ describe("isResume / isCallPath", () => {
     ).toBe(false);
   });
 
-  test("only the voice-session paths are calls", () => {
+  test("calls are matched the way the server routes them: by PREFIX, query ignored", () => {
     expect(isCallPath("/websocket")).toBe(true);
-    expect(isCallPath("/phone")).toBe(true);
-    expect(isCallPath("/inbox")).toBe(false);
+    expect(isCallPath("/websocket?client=c")).toBe(true);
+    expect(isCallPath("/websocket/x")).toBe(true);
+    expect(isCallPath("/phone?carrier=twilio")).toBe(true);
+    expect(isCallPath("/inbox?client=c")).toBe(false);
     expect(isCallPath("/api/x")).toBe(false);
+  });
+
+  test("a malformed ?sessionId= is no resume (the runtime's own reading)", () => {
+    expect(isResume("/websocket?sessionId=", {})).toBe(false);
+    expect(isResume(`/websocket?sessionId=${"x".repeat(500)}`, {})).toBe(false);
   });
 });

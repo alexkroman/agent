@@ -16,7 +16,7 @@ import { clientKey, sessionKey, slotOf } from "./_start-affinity.ts";
 import {
   joinCluster,
   type PrimaryLink,
-  requestPath,
+  requestTarget,
   type WorkerRuntime,
   workflowsNeedDatabase,
 } from "./_start-worker.ts";
@@ -270,6 +270,15 @@ describe("joinCluster call counting and commands", () => {
       inbox,
     );
     expect(run.joined.activeCalls()).toBe(1);
+    // The server routes /websocket by PREFIX, so this is a call too — a drain must wait for it.
+    const prefixed = new Socket();
+    run.deliver(
+      { type: "aai-start:upgrade", bytes: Buffer.from("GET /websocket/x HTTP/1.1\r\n\r\n") },
+      prefixed,
+    );
+    expect(run.joined.activeCalls()).toBe(2);
+    prefixed.destroy();
+    await vi.waitFor(() => expect(run.joined.activeCalls()).toBe(1));
     run.deliver({ type: "aai-start:ping" });
     expect(run.sent.at(-1)).toMatchObject({ type: "aai-start:pong", calls: 1 });
     call.destroy();
@@ -286,11 +295,12 @@ describe("joinCluster call counting and commands", () => {
   });
 });
 
-describe("requestPath", () => {
-  test("reads the path from a request head, without its query", () => {
-    expect(requestPath(Buffer.from("GET /websocket?client=a HTTP/1.1\r\n"))).toBe("/websocket");
-    expect(requestPath(Buffer.from("GET /phone HTTP/1.1\r\n"))).toBe("/phone");
-    expect(requestPath(Buffer.from("garbage"))).toBe("");
+describe("requestTarget", () => {
+  test("reads the request target from a request head", () => {
+    expect(requestTarget(Buffer.from("GET /websocket?client=a HTTP/1.1\r\n"))).toBe(
+      "/websocket?client=a",
+    );
+    expect(requestTarget(Buffer.from("garbage"))).toBe("");
   });
 });
 

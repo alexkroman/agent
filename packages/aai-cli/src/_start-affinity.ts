@@ -23,6 +23,8 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { parseWsUpgradeParams, requestPath } from "@alexkroman1/aai/internal";
+import { routeMatches, SERVER_ROUTES } from "@alexkroman1/aai-runtime/internal";
 
 /** The `Sec-WebSocket-Protocol` entry a session ticket rides in (`session-protocol.ts` in the SDK). */
 const TICKET_PROTOCOL_PREFIX = "aai.auth.";
@@ -118,22 +120,35 @@ export function affinityKey(
   return sessionId ? sessionKey(sessionId) : undefined;
 }
 
-/** A call is a voice session's socket — what admission and a drain count. `/inbox` holders are not. */
-export function isCallPath(path: string): boolean {
-  return path === "/websocket" || path === "/phone";
+/**
+ * Is this upgrade a CALL — a voice session or a phone call — as opposed to an
+ * `/inbox` socket? Decided with the server's own route table and matcher
+ * (`routeMatches`, a PREFIX match for both) over the same `requestPath` it
+ * routes by. Matching here any other way would be a parser differential: a
+ * spelling the server treats as a session (`/websocket/x`) that admission and
+ * the drain's call count would not see.
+ */
+export function isCallPath(rawUrl: string | undefined): boolean {
+  const path = requestPath(rawUrl ?? "/");
+  return routeMatches(SERVER_ROUTES.session, path) || routeMatches(SERVER_ROUTES.phone, path);
 }
 
 /**
  * Does this request continue a session that already exists (a reconnect), as
- * opposed to starting one? A resume is never refused by admission control: the
- * call it continues is already counted.
+ * opposed to starting one? The runtime's own reading: `parseWsUpgradeParams`'s
+ * `resumeFrom` (a malformed id is no resume), or a ticket that names a session.
+ *
+ * This is a CLAIM the client makes, not a fact — the runtime starts a fresh
+ * session under an id it has never seen. So it only ever exempts a request from
+ * the DRAIN (whose worst case is a call that ends at the drain timeout, like
+ * every other), never from the per-worker cap.
  */
 export function isResume(
   rawUrl: string | undefined,
   headers: { "sec-websocket-protocol"?: string | string[] | undefined },
 ): boolean {
+  if (parseWsUpgradeParams(rawUrl ?? "/").resumeFrom !== undefined) return true;
   const url = new URL(rawUrl ?? "/", "http://route.invalid");
-  if (url.searchParams.get("sessionId")?.trim()) return true;
   const ticket = presentedTicket(url, headers["sec-websocket-protocol"]);
   return ticket !== undefined && ticketSessionId(ticket) !== undefined;
 }

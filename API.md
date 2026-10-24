@@ -16748,6 +16748,9 @@ export type ResumableRun = {
     wakeAt?: number | undefined;
 };
 
+// @internal
+export function routeMatches(route: ServerRoute, url: string, method?: string): boolean;
+
 // @public
 type RunCodeExecutor = (code: string) => Promise<string | {
     error: string;

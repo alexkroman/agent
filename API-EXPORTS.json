@@ -1786,6 +1786,7 @@
     "queueNameKind",
     "requiredProviderEnvVars",
     "resolveAllBuiltins",
+    "routeMatches",
     "safeFetch",
     "sessionStateDdl",
     "setClientNotifyRelay",

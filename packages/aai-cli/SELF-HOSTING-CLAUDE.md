@@ -62,10 +62,15 @@ shape):
   orphan timeout: a `node:cluster` worker exits when its primary's IPC channel
   closes.
 - **Load and admission:** each pong carries `{calls, elu}`; the router reserves
-  a slot per admitted NEW call until the next report (LiveKit's reserved slots)
-  and refuses past `--max-calls-per-worker`. It never spills to another worker:
-  that would split a client's call from its `/inbox` and `/api` traffic.
-  `GET /workers` (loopback only) reports per-worker state.
+  each call socket until the next report (LiveKit's reserved slots). Calls and
+  resumes are classified with the RUNTIME's own parsers — `routeMatches` over
+  `SERVER_ROUTES.session`/`phone` (a PREFIX match) and `parseWsUpgradeParams` —
+  because any other matcher is a parser differential (a security review found
+  `/websocket/x` skipping admission and the drain count). The cap covers EVERY
+  call socket: a resume is only a client's claim (the runtime starts a fresh
+  session under an unknown id), so it exempts a call from the drain only. It
+  never spills to another worker, which would split a client's call from its
+  `/inbox` and `/api` traffic. `GET /workers` (loopback only) reports state.
 - **Seams:** `ClusterLike` (`nodeCluster()` is the typed adapter),
   `PrimaryLink`, and `WorkerRuntime` keep the unit tier fork-free;
   `_start-router.scenario.test.ts` drives the router over real sockets.

@@ -71,9 +71,12 @@ export interface RouterOptions {
   target(slot: number): ReadyWorker | undefined;
   /** How a request reaches a worker — `http.request` unless a spec says otherwise. */
   request?: UpstreamRequest;
-  /** May a NEW call go to this slot's worker now? Unset: always. */
-  admitCall?: (slot: number) => "ok" | "draining" | "full";
-  /** Count a call handed to the slot's worker before its next load report. */
+  /**
+   * May this call go to the slot's worker now? `resume` is the client's claim
+   * that it continues a live call (see `isResume`). Unset: always.
+   */
+  admitCall?: (slot: number, resume: boolean) => "ok" | "draining" | "full";
+  /** Count a call socket handed to the slot's worker before its next load report. */
   reserveCall?: (slot: number) => void;
   /** Per-worker state for `GET /workers` (loopback only). Unset: no such route. */
   status?: () => WorkerStatus[];
@@ -184,17 +187,17 @@ export function createRouter(opts: RouterOptions): http.Server {
     const slot = pick(affinityKey(req.url, req.headers));
     const worker = slot === undefined ? undefined : opts.target(slot);
     if (slot === undefined || !worker) return refuseUpgrade(socket);
-    const path = new URL(req.url ?? "/", "http://route.invalid").pathname;
-    // Admission applies to a NEW call only: a reconnect continues a call that
-    // is already counted, and an `/inbox` socket is not a call.
-    const newCall = isCallPath(path) && !isResume(req.url, req.headers);
-    if (newCall) {
-      const verdict = opts.admitCall?.(slot) ?? "ok";
+    // Admission applies to CALL sockets only — an `/inbox` socket is not one.
+    const call = isCallPath(req.url);
+    if (call) {
+      const verdict = opts.admitCall?.(slot, isResume(req.url, req.headers)) ?? "ok";
       if (verdict !== "ok") return refuseUpgrade(socket, REFUSAL[verdict]);
     }
     const bytes = Buffer.concat([serializeRequestHead(req), head]);
     worker.worker.send({ type: "aai-start:upgrade", bytes }, socket);
-    if (newCall) opts.reserveCall?.(slot);
+    // Every call socket counts against the worker until its next report —
+    // a reconnect is a new live socket too.
+    if (call) opts.reserveCall?.(slot);
   });
   return server;
 }

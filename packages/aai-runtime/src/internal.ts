@@ -202,6 +202,10 @@ export {
   PLATFORM_TICKET_RESUME_GRACE_SECONDS,
   type PlatformTicketInput,
   platformSessionSecret,
+  // The router in front of `aai start --workers` classifies a request with the
+  // SAME matcher the server routes with, so the two cannot disagree on what a
+  // call is.
+  routeMatches,
   SERVER_ROUTES,
   type ServerRoute,
   type ServerRouteMatch,

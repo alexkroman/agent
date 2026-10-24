@@ -87,9 +87,9 @@ The process in front owns every worker's lifecycle:
   one starts, takes that worker's new calls, and the old one finishes its calls
   before exiting. Live calls are not interrupted. A call that reconnects
   mid-rollover resumes only with a `DATABASE_URL`.
-- **`--max-calls-per-worker <n>`** (or `AAI_MAX_CALLS_PER_WORKER`) refuses new
-  calls with `503` once a worker holds that many. Load is refreshed every couple
-  of seconds, so the limit can briefly lag a hang-up.
+- **`--max-calls-per-worker <n>`** (or `AAI_MAX_CALLS_PER_WORKER`) refuses calls
+  with `503`, reconnects included, once a worker holds that many. Load is
+  refreshed every couple of seconds, so the limit can briefly lag a hang-up.
 
 `curl localhost:3000/workers`, from the machine itself, shows each worker's
 state, live calls and event-loop load.

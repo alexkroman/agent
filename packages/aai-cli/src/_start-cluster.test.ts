@@ -6,11 +6,13 @@
  */
 
 import { EventEmitter } from "node:events";
+import { IncomingMessage } from "node:http";
+import { Socket } from "node:net";
 import { agent, workflow } from "@alexkroman1/aai";
 import type { AgentServer } from "@alexkroman1/aai-runtime";
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, type Mock, test, vi } from "vitest";
 import { z } from "zod";
-import { runPrimary, runWorker } from "./_start-cluster.ts";
+import { type PrimaryDeps, runPrimary, runWorker } from "./_start-cluster.ts";
 import type { PrimaryLink, WorkerRuntime } from "./_start-worker.ts";
 import type { ClusterLike, WorkerLike, WorkerMessage } from "./_start-workers.ts";
 
@@ -51,7 +53,10 @@ function fakeCluster() {
   };
 }
 
-function primaryDeps(fake: ReturnType<typeof fakeCluster>, listen = vi.fn(async () => 4321)) {
+function primaryDeps(
+  fake: ReturnType<typeof fakeCluster>,
+  listen: Mock<PrimaryDeps["listen"]> = vi.fn(async () => 4321),
+) {
   let signalHandler: ((signal: NodeJS.Signals) => void) | undefined;
   const exits: number[] = [];
   return {
@@ -184,6 +189,53 @@ const voiceAgent = agent({ name: "Voice" });
 const workflowAgent = agent({
   name: "Flows",
   workflows: { ping: workflow({ input: z.object({}), run: async () => ({}) }) },
+});
+
+describe("runPrimary admission policy", () => {
+  /** Drive one upgrade through the primary's router and report whether it was handed off. */
+  async function primaryWith(maxCallsPerWorker: number) {
+    const fake = fakeCluster();
+    let server: import("node:http").Server | undefined;
+    const p = primaryDeps(
+      fake,
+      vi.fn(async (s: import("node:http").Server) => {
+        server = s;
+        return 4321;
+      }),
+    );
+    const running = runPrimary({ ...primaryOpts, workers: 1, maxCallsPerWorker }, p.deps);
+    fake.listenAll();
+    await running;
+    const upgrade = (url: string) => {
+      const before = fake.workers[0]?.sent.length ?? 0;
+      const req = new IncomingMessage(new Socket());
+      req.method = "GET";
+      req.url = url;
+      req.httpVersion = "1.1";
+      req.headers = { host: "h" };
+      req.rawHeaders = ["host", "h"];
+      const socket = new Socket();
+      vi.spyOn(socket, "end").mockImplementation(() => socket);
+      server?.emit("upgrade", req, socket, Buffer.alloc(0));
+      socket.destroy();
+      return (fake.workers[0]?.sent.length ?? 0) > before;
+    };
+    return { upgrade, signal: p.signal };
+  }
+
+  test("a made-up ?sessionId= does not get a call past the per-worker cap", async () => {
+    const run = await primaryWith(1);
+    expect(run.upgrade("/websocket?client=a")).toBe(true);
+    expect(run.upgrade("/websocket?client=b")).toBe(false);
+    expect(run.upgrade(`/websocket?client=b&sessionId=${crypto.randomUUID()}`)).toBe(false);
+  });
+
+  test("while draining, a new call is refused but a reconnect still routes", async () => {
+    const run = await primaryWith(100);
+    run.signal("SIGTERM");
+    expect(run.upgrade("/websocket?client=a")).toBe(false);
+    expect(run.upgrade(`/websocket?client=a&sessionId=${crypto.randomUUID()}`)).toBe(true);
+  });
 });
 
 describe("runWorker", () => {

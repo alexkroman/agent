@@ -76,11 +76,10 @@ export interface WorkerRuntime {
 
 const realRuntime: WorkerRuntime = { setSessionIdMinter, setClientNotifyRelay, notifyClientHere };
 
-/** The request path of a replayed request head, e.g. `/websocket` from `GET /websocket?x HTTP/1.1`. */
-export function requestPath(head: Uint8Array): string {
+/** The request target of a replayed request head, e.g. `/websocket?x` from `GET /websocket?x HTTP/1.1`. */
+export function requestTarget(head: Uint8Array): string {
   const line = Buffer.from(head.subarray(0, Math.min(head.length, 2048))).toString("latin1");
-  const target = line.split(" ", 2)[1] ?? "";
-  return target.split("?", 1)[0] ?? "";
+  return line.split(" ", 2)[1] ?? "";
 }
 
 /** Install the relay client: a notice for a client another slot owns goes through the primary. */
@@ -160,7 +159,7 @@ export async function joinCluster(opts: {
         if (!socket) return;
         // The primary read the request head to route it; put those bytes back
         // where this server's parser will read them first.
-        if (isCallPath(requestPath(message.bytes))) {
+        if (isCallPath(requestTarget(message.bytes))) {
           calls += 1;
           socket.once("close", () => {
             calls -= 1;

@@ -177,7 +177,7 @@ describe("createRouter — upgrades", () => {
 describe("createRouter — admission", () => {
   function upgradeTo(
     url: string,
-    admitCall: (slot: number) => "ok" | "draining" | "full",
+    admitCall: (slot: number, resume: boolean) => "ok" | "draining" | "full",
     reserved: number[],
   ) {
     sentTo.length = 0;
@@ -206,17 +206,31 @@ describe("createRouter — admission", () => {
     expect(full.refusal).toMatch(/call limit/);
   });
 
-  test("a resume, an /inbox socket and a phone resume are never refused", () => {
-    const refuse = () => "full" as const;
-    expect(upgradeTo("/websocket?client=c&sessionId=s1", refuse, []).handedOff).toBe(true);
-    expect(upgradeTo("/inbox?client=c", refuse, []).handedOff).toBe(true);
+  test("the admission check is told whether the call claims to resume", () => {
+    const seen: boolean[] = [];
+    const record = (_slot: number, resume: boolean) => {
+      seen.push(resume);
+      return "ok" as const;
+    };
+    upgradeTo("/websocket?client=c", record, []);
+    upgradeTo("/websocket?client=c&sessionId=s1", record, []);
+    expect(seen).toEqual([false, true]);
   });
 
-  test("an admitted new call is reserved against its worker; a resume is not", () => {
+  test("an /inbox socket is not a call: never checked, never refused", () => {
+    expect(upgradeTo("/inbox?client=c", () => "full", []).handedOff).toBe(true);
+  });
+
+  test("a prefix spelling the server routes as a session is admission-checked too", () => {
+    expect(upgradeTo("/websocket/x?client=c", () => "full", []).handedOff).toBe(false);
+  });
+
+  test("every admitted call socket is reserved, a reconnect included", () => {
     const reserved: number[] = [];
     upgradeTo("/websocket?client=c", () => "ok", reserved);
     upgradeTo("/websocket?client=c&sessionId=s1", () => "ok", reserved);
-    expect(reserved).toEqual([0]);
+    upgradeTo("/inbox?client=c", () => "ok", reserved);
+    expect(reserved).toEqual([0, 0]);
   });
 });
 
