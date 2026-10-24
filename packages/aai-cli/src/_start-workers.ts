@@ -75,19 +75,25 @@ export const MAX_CALLS_ENV = "AAI_MAX_CALLS_PER_WORKER";
 /** How long a drain lets calls finish by default: most calls end well inside it. */
 export const DEFAULT_DRAIN_TIMEOUT_S = 300;
 
-/** A positive integer from a flag, else its env var, else `fallback` — named on error. */
+/**
+ * A positive integer from a flag, else its env var, else `fallback` — named on
+ * error, with its `unit` when it has one: `--drain-timeout 5m` is the natural
+ * thing to type, and "must be a positive integer" alone does not say seconds.
+ */
 export function resolvePositiveInt(
   flag: string | undefined,
   flagName: string,
   envName: string,
   fallback: number,
   env: Readonly<Record<string, string | undefined>> = process.env,
+  unit?: string,
 ): number {
   const [raw, source] =
     flag !== undefined ? [flag, flagName] : [env[envName]?.trim() || undefined, envName];
   if (raw === undefined) return fallback;
   if (!/^\d+$/.test(raw.trim()) || Number(raw) < 1) {
-    throw new Error(`${source} must be a positive integer (got ${JSON.stringify(raw)})`);
+    const what = unit ? `a positive whole number of ${unit}` : "a positive integer";
+    throw new Error(`${source} must be ${what} (got ${JSON.stringify(raw)})`);
   }
   return Number(raw);
 }
@@ -209,6 +215,12 @@ export function nodeCluster(): ClusterLike {
     onMessage: (listener) =>
       cluster.on("message", (worker, message) => listener(like(worker), message)),
   };
+}
+
+/** What a crash cost, for its log line: nothing when the worker held no calls. */
+function heldCalls(held: number): string {
+  if (held === 0) return "";
+  return ` (it held ${held} live call${held === 1 ? "" : "s"})`;
 }
 
 // ─── The supervisor ─────────────────────────────────────────────────────────
@@ -333,6 +345,13 @@ export function superviseWorkers(opts: {
     resolveExited = res;
   });
 
+  /**
+   * How a worker is named in a log line: its slot first, because that is what
+   * the `[worker N]` tag on its own lines and `/workers` both key on; the pid
+   * is what `kill` and `ps` need.
+   */
+  const who = (worker: WorkerLike, slot: number | undefined): string =>
+    `worker ${slot ?? "?"} (pid ${worker.pid})`;
   const fork = (slot: number): WorkerLike => {
     const worker = host.fork({ [SLOT_ENV]: String(slot), [SLOTS_ENV]: String(slots) });
     slotOf.set(worker, slot);
@@ -376,13 +395,25 @@ export function superviseWorkers(opts: {
   const rollNext = (): void => {
     const slot = rollQueue.shift();
     if (slot === undefined) {
-      log("rolling restart complete");
+      log(
+        "rolling restart complete: every slot has a new worker; the old ones finish their " +
+          `calls (up to ${Math.round(rollDrainMs / 1000)}s)`,
+      );
       return;
     }
     incoming.set(slot, fork(slot));
   };
   const roll = (drainTimeoutMs: number): void => {
-    if (ending || rollQueue.length > 0 || incoming.size > 0) return;
+    // Said rather than swallowed: an operator who sent SIGHUP is waiting for a
+    // roll, and silence reads as one that hung.
+    if (ending) {
+      log("rolling restart ignored: the server is shutting down");
+      return;
+    }
+    if (rollQueue.length > 0 || incoming.size > 0) {
+      log("rolling restart ignored: one is already running");
+      return;
+    }
     rollDrainMs = drainTimeoutMs;
     rollQueue = Array.from({ length: slots }, (_, slot) => slot);
     log(`rolling restart of ${slots} workers`);
@@ -425,9 +456,7 @@ export function superviseWorkers(opts: {
       return;
     }
     slowLoggedAt.set(worker, at);
-    log(
-      `worker ${worker.pid} (slot ${slot}) answered a ping in ${ms}ms; its event loop is lagging`,
-    );
+    log(`${who(worker, slot)} answered a ping in ${ms}ms; its event loop is lagging`);
   };
   const onListening = (worker: WorkerLike, slot: number, port: number, agentName: string) => {
     lastHeard.set(worker, now());
@@ -533,15 +562,18 @@ export function superviseWorkers(opts: {
     const how = signal ? `signal ${signal}` : `code ${code}`;
     if (ending) return onEndingExit(worker, slot, code, signal);
     if (onRollingExit(worker, slot, how)) return;
+    // Read before `release` forgets it: how many calls the crash cost is the
+    // first thing an operator reading this line needs to know.
+    const held = loadOf.get(worker)?.calls ?? 0;
     const wasCurrent = release(worker, slot);
     if (!wasCurrent) {
-      log(`worker ${worker.pid} exited with ${how} while starting; stopping the server`);
+      log(`${who(worker, slot)} exited with ${how} while starting; stopping the server`);
       bootFailure = new Error(fatal ?? `a worker exited with ${how} before it was listening`);
       exitCode = 1;
       stop();
       return;
     }
-    log(`worker ${worker.pid} (slot ${slot}) exited with ${how}; starting a replacement`);
+    log(`${who(worker, slot)} exited with ${how}; starting a replacement${heldCalls(held)}`);
     fork(slot);
   });
 
@@ -554,7 +586,8 @@ export function superviseWorkers(opts: {
       const silentFor = at - heard;
       if (silentFor >= LIVENESS_TIMEOUT_MS) {
         log(
-          `worker ${worker.pid} has not answered for ${Math.round(silentFor / 1000)}s; restarting it`,
+          `${who(worker, slotOf.get(worker))} has not answered for ` +
+            `${Math.round(silentFor / 1000)}s; restarting it`,
         );
         lastHeard.delete(worker);
         worker.kill("SIGKILL");

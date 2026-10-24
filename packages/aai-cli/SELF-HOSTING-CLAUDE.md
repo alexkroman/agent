@@ -71,6 +71,14 @@ shape):
   session under an unknown id), so it exempts a call from the drain only. It
   never spills to another worker, which would split a client's call from its
   `/inbox` and `/api` traffic. `GET /workers` (loopback only) reports state.
+- **Logging:** a worker's runtime logger (`_start-log.ts`) tags every line
+  `[worker <slot>]` and drops slot ≠ 0's INFO until it is listening — the boot
+  dump is identical per slot. JSON mode (any non-TTY) sends the runtime log to
+  stderr in BOTH modes, keeping stdout to the one result line. A worker's boot
+  failure goes only to the primary (`aai-start:fatal`), which reports it once;
+  the primary's no-`DATABASE_URL` warning is a `notify` printed AFTER the
+  workers boot, so it never precedes a workflow refusal. Supervisor lines name
+  `worker <slot> (pid <pid>)`.
 - **Seams:** `ClusterLike` (`nodeCluster()` is the typed adapter),
   `PrimaryLink`, and `WorkerRuntime` keep the unit tier fork-free;
   `_start-router.scenario.test.ts` drives the router over real sockets.

@@ -81,8 +81,13 @@ The process in front owns every worker's lifecycle:
   reconnects, `/api` requests and run reads keep working. Each worker exits once
   its calls end, or after `--drain-timeout` seconds (default 300, or
   `AAI_DRAIN_TIMEOUT`). A second signal stops at once. Give your platform's
-  shutdown grace period at least the drain timeout, or it will kill the calls
-  first.
+  shutdown grace period the drain timeout plus about ten seconds, or it will
+  kill the calls first — the defaults are far shorter (`docker stop` waits 10s,
+  Kubernetes 30s), so set `docker stop -t 310` or
+  `terminationGracePeriodSeconds: 310` for the default drain. `/health` keeps
+  answering `200` while draining, so take the instance out of your load balancer
+  before (or as) you send the signal; new calls that still reach it get `503`
+  with `Retry-After`.
 - **`SIGHUP` is a rolling restart.** Each worker is replaced in turn: a fresh
   one starts, takes that worker's new calls, and the old one finishes its calls
   before exiting. Live calls are not interrupted. A call that reconnects
@@ -91,8 +96,16 @@ The process in front owns every worker's lifecycle:
   with `503`, reconnects included, once a worker holds that many. Load is
   refreshed every couple of seconds, so the limit can briefly lag a hang-up.
 
+Without `--workers` (or with `--workers 1`) there is no drain: the first signal
+stops the process, and `--drain-timeout` and `--max-calls-per-worker` have no
+effect.
+
 `curl localhost:3000/workers`, from the machine itself, shows each worker's
-state, live calls and event-loop load.
+state, live calls and event-loop load. Each worker's log lines start with
+`[worker N]`, N matching the `slot` there, and the startup lines that every
+worker would print identically are printed once, by worker 0. When the output is
+not a terminal (a container, or `--json`), these logs go to stderr and stdout
+carries only the one JSON line saying the server is up.
 
 A worker that fails while starting (an unreachable database, say) stops the
 whole server rather than restarting forever. A worker that stops responding for

@@ -31,6 +31,8 @@ export interface StartRunDeps {
   slot(): { slot: number; slots: number };
   load(): Promise<Project>;
   build(project: Project): Promise<AgentServer>;
+  /** A worker is listening: its boot is over (the runtime's boot lines are slot 0's alone). */
+  booted?(): void;
   /** The project's env without importing the agent — the primary's read. */
   readEnv(): Promise<Record<string, string>>;
   /** Throw (saying what to run) when there is no build. */
@@ -49,7 +51,6 @@ export interface StartRunDeps {
   sleep(ms: number): Promise<void>;
   ui: {
     info(message: string): void;
-    warn(message: string): void;
     error(message: string): void;
     notify(level: "warn" | "error", message: string): void;
   };
@@ -114,24 +115,33 @@ export async function runStart(target: StartTarget, deps: StartRunDeps): Promise
  * lifecycle. So a worker prints no result (`--json` owes ONE line), never
  * settles, and ignores signals — a terminal's Ctrl-C reaches it too, and acting
  * on that would end its calls in the middle of the primary's drain. A failure
- * goes to stderr and to the primary (`runWorker`) and ends the process, which
- * the primary reads as a boot failure.
+ * goes to the primary and ends the process, which the primary reads as a boot
+ * failure and reports ONCE as the command's error. Not to stderr as well: every
+ * worker fails the same way (a refused workflow agent, a bad bundle), so N
+ * workers printed the same paragraph N times before the command's own copy.
  */
 async function serveAsWorker(deps: StartRunDeps): Promise<never> {
   deps.ignoreSignals();
+  const link = deps.link();
   try {
     const tracing = await deps.startTracing();
     let close: (graceMs: number) => void = () => undefined;
     const { server, activeCalls } = await runWorker(deps.slot(), {
-      link: deps.link(),
+      link,
       load: () => deps.load(),
       build: (agent, env) => deps.build({ agent, env }),
       onDrain: (timeoutMs) => close(timeoutMs),
       onStop: () => close(0),
     });
     close = workerCloser(server, activeCalls, tracing, deps);
+    deps.booted?.();
   } catch (error: unknown) {
-    deps.ui.notify("error", error instanceof Error ? error.message : String(error));
+    // `runWorker` already reported its own failures; this covers what fails
+    // before it (tracing). The primary keeps the last report, so twice is harmless.
+    link.send({
+      type: "aai-start:fatal",
+      message: error instanceof Error ? error.message : String(error),
+    });
     deps.exit(1);
   }
   return deps.forever();
@@ -180,13 +190,6 @@ export function workerCloser(
 async function startPrimary(target: StartTarget, deps: StartRunDeps): Promise<StartResult> {
   deps.assertBuilt();
   const env = await deps.readEnv();
-  if (!env.DATABASE_URL) {
-    deps.ui.warn(
-      `No DATABASE_URL: each of the ${target.workers} workers keeps its own calls in memory. ` +
-        "Every client is routed to the same worker each time, so reconnects resume — " +
-        "but a call does not survive its worker crashing. Set DATABASE_URL for that.",
-    );
-  }
   const bound = await runPrimary(
     {
       workers: target.workers,
@@ -206,5 +209,17 @@ async function startPrimary(target: StartTarget, deps: StartRunDeps): Promise<St
   deps.ui.info(
     `${bound.name} listening on http://${target.host ?? "127.0.0.1"}:${bound.port} with ${target.workers} workers`,
   );
+  // After the workers boot, not before: a worker can still REFUSE to run
+  // without a database (an agent with workflows), and a warning that reconnects
+  // will resume fine, printed just ahead of that refusal, contradicted it.
+  // `notify`, so a container (JSON mode, no TTY) still sees it.
+  if (!env.DATABASE_URL) {
+    deps.ui.notify(
+      "warn",
+      `No DATABASE_URL: each of the ${target.workers} workers keeps its own calls in memory. ` +
+        "Every client is routed to the same worker each time, so reconnects resume — " +
+        "but a call does not survive its worker crashing. Set DATABASE_URL for that.",
+    );
+  }
   return { ok: true, data: { name: bound.name, port: bound.port, workers: target.workers } };
 }

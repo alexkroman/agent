@@ -3531,8 +3531,9 @@ no database needed for voice. `DATABASE_URL` makes a call survive its worker
 crashing, and is required for an agent with workflows on more than one worker.
 An `/api` route's `ctx.speech` reaches a call only when the request carries the
 caller's `?client=`. SIGTERM drains (new calls get 503, live ones finish within
-`--drain-timeout`), SIGHUP replaces workers one at a time without dropping
-calls, and `--max-calls-per-worker` caps a worker's calls.
+`--drain-timeout`, default 300s — give the platform's shutdown grace that plus
+~10s), SIGHUP replaces workers one at a time without dropping calls, and
+`--max-calls-per-worker` caps a worker's calls.
 
 One thing to know: it binds **loopback by default**, because this server has no
 request authentication of its own; set `HOST=0.0.0.0` only behind your own proxy

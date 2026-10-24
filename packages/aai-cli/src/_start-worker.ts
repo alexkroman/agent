@@ -63,7 +63,7 @@ export function workflowsNeedDatabase(workers: number): string {
   return (
     `This agent declares workflows, and running it on ${workers} workers needs DATABASE_URL: ` +
     "a run started on one worker must be readable and resumable from every other. " +
-    "Set DATABASE_URL (any Postgres), or run one worker."
+    "Set DATABASE_URL (any Postgres), or run with `--workers 1`."
   );
 }
 

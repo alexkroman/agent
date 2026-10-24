@@ -93,7 +93,6 @@ function harness(over: Partial<StartRunDeps> = {}) {
     },
     ui: {
       info: (m) => log.push(`info ${m}`),
-      warn: (m) => log.push(`warn ${m}`),
       error: (m) => log.push(`error ${m}`),
       notify: (level, m) => log.push(`${level} ${m}`),
     },
@@ -162,7 +161,7 @@ describe("runStart — a --workers worker", () => {
     expect(settled).toBe(false);
   });
 
-  test("a failure goes to stderr and the primary, and exits 1", async () => {
+  test("a failure goes to the primary alone (it reports it once), and exits 1", async () => {
     const h = harness({
       isWorker: true,
       build: async () => Promise.reject(new Error("bad bundle")),
@@ -172,8 +171,36 @@ describe("runStart — a --workers worker", () => {
       h.deps,
     );
     await vi.waitFor(() => expect(h.exits).toEqual([1]));
-    expect(h.log).toContain("error bad bundle");
+    expect(h.log).toEqual([]);
     expect(h.sent).toContainEqual({ type: "aai-start:fatal", message: "bad bundle" });
+  });
+
+  test("a failure before runWorker (tracing) still reaches the primary", async () => {
+    const h = harness({
+      isWorker: true,
+      startTracing: async () => Promise.reject(new Error("bad collector")),
+    });
+    void runStart(
+      { port: 0, host: undefined, workers: 2, drainTimeoutMs: 30_000, maxCallsPerWorker: 100 },
+      h.deps,
+    );
+    await vi.waitFor(() => expect(h.exits).toEqual([1]));
+    expect(h.sent).toEqual([{ type: "aai-start:fatal", message: "bad collector" }]);
+  });
+
+  test("says it has booted only once it is listening", async () => {
+    const order: string[] = [];
+    const h = harness({
+      isWorker: true,
+      booted: () => order.push("booted"),
+      link: () => ({ send: (m) => order.push(m.type), onMessage: () => undefined }),
+    });
+    void runStart(
+      { port: 0, host: undefined, workers: 2, drainTimeoutMs: 30_000, maxCallsPerWorker: 100 },
+      h.deps,
+    );
+    await vi.waitFor(() => expect(order).toContain("booted"));
+    expect(order).toEqual(["aai-start:listening", "booted"]);
   });
 });
 
@@ -189,8 +216,12 @@ describe("runStart — the --workers primary", () => {
       ok: true,
       data: { name: "Voice", port: 4444, workers: 2 },
     });
-    expect(h.log.filter((l) => l.startsWith("warn No DATABASE_URL"))).toHaveLength(1);
-    expect(h.log).toContain("info Voice listening on http://0.0.0.0:4444 with 2 workers");
+    // After the announcement: a worker refusing to boot must not be preceded
+    // by a warning promising that reconnects resume.
+    expect(h.log).toEqual([
+      "info Voice listening on http://0.0.0.0:4444 with 2 workers",
+      expect.stringMatching(/^warn No DATABASE_URL: each of the 2 workers/),
+    ]);
   });
 
   test("with a database there is no warning", async () => {

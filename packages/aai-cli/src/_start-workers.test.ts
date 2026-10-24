@@ -50,6 +50,12 @@ describe("resolvePositiveInt", () => {
     expect(resolvePositiveInt(undefined, "--x", "X", 300, {})).toBe(300);
   });
 
+  test("names the unit when the value has one", () => {
+    expect(() => resolvePositiveInt("5m", "--drain-timeout", "X", 1, {}, "seconds")).toThrow(
+      '--drain-timeout must be a positive whole number of seconds (got "5m")',
+    );
+  });
+
   test("refuses a bad value, naming where it came from", () => {
     expect(() => resolvePositiveInt("0", "--x", "X", 1, {})).toThrow(
       /--x must be a positive integer/,
@@ -182,7 +188,17 @@ describe("superviseWorkers — boot and respawn", () => {
     expect(run.supervisor.target(0)).toBeUndefined();
     expect(run.workers).toHaveLength(3);
     expect(run.workers[2]?.env[SLOT_ENV]).toBe("0");
-    expect(run.logs[0]).toMatch(/worker 100 \(slot 0\) exited with code 1; starting a replacement/);
+    expect(run.logs[0]).toBe("worker 0 (pid 100) exited with code 1; starting a replacement");
+  });
+
+  test("a crash says how many live calls the worker held", () => {
+    const run = supervise(1);
+    run.listen(100);
+    run.pong(100, 5);
+    run.exit(100, null, "SIGKILL");
+    expect(run.logs).toEqual([
+      "worker 0 (pid 100) exited with signal SIGKILL; starting a replacement (it held 5 live calls)",
+    ]);
   });
 
   test("a worker that dies before listening stops every worker and fails ready with its reason", async () => {
@@ -284,7 +300,7 @@ describe("superviseWorkers — rolling restart", () => {
     expect(run.workers[3]?.env[SLOT_ENV]).toBe("1");
     run.listen(103, 5003);
     expect(run.supervisor.target(1)?.port).toBe(5003);
-    expect(run.logs).toContain("rolling restart complete");
+    expect(run.logs.some((l) => l.startsWith("rolling restart complete"))).toBe(true);
     // The drained workers leave without being replaced again.
     run.exit(100, 0);
     run.exit(101, 0);
@@ -313,6 +329,9 @@ describe("superviseWorkers — rolling restart", () => {
     run.supervisor.drain(1000);
     run.supervisor.roll(1000);
     expect(run.workers).toHaveLength(2);
+    // Said, not swallowed: an operator who sent SIGHUP is waiting for a roll.
+    expect(run.logs).toContain("rolling restart ignored: one is already running");
+    expect(run.logs).toContain("rolling restart ignored: the server is shutting down");
   });
 });
 
@@ -371,7 +390,7 @@ describe("superviseWorkers — liveness", () => {
     run.advance(1);
     expect(run.workers[0]?.killed).toEqual(["SIGKILL"]);
     expect(run.workers[1]?.killed).toEqual([]);
-    expect(run.logs[0]).toMatch(/worker 100 has not answered for 15s; restarting it/);
+    expect(run.logs[0]).toMatch(/worker 0 \(pid 100\) has not answered for 15s; restarting it/);
     run.exit(100, null, "SIGKILL");
     expect(run.workers[2]?.env[SLOT_ENV]).toBe("0");
   });
@@ -383,7 +402,7 @@ describe("superviseWorkers — liveness", () => {
     run.advance(PING_INTERVAL_MS);
     run.pong(100);
     expect(run.logs).toEqual([
-      "worker 100 (slot 0) answered a ping in 2500ms; its event loop is lagging",
+      "worker 0 (pid 100) answered a ping in 2500ms; its event loop is lagging",
     ]);
     run.advance(PING_INTERVAL_MS);
     run.advance(PING_INTERVAL_MS);

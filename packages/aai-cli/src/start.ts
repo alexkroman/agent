@@ -54,6 +54,7 @@ import {
   createAgentServer,
   ensureSessionStateSchema,
   ensureWorkflowJournalSchema,
+  type Logger,
 } from "@alexkroman1/aai-runtime";
 import { consoleLogger, withHostCredentialFallback } from "@alexkroman1/aai-runtime/internal";
 import { startTracing } from "@alexkroman1/aai-runtime/tracing";
@@ -62,6 +63,7 @@ import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import { resolveDenoRunCode } from "./_run-code-deno.ts";
 import { DEPLOY_ENV_FILES, resolveServerEnv } from "./_server-common.ts";
 import { listenServer } from "./_start-cluster.ts";
+import { startLogger, workerLogger } from "./_start-log.ts";
 import { runStart, type StartResult } from "./_start-run.ts";
 import { processLink } from "./_start-worker.ts";
 import { DEFAULT_DRAIN_TIMEOUT_S, nodeCluster, SLOT_ENV, SLOTS_ENV } from "./_start-workers.ts";
@@ -140,7 +142,10 @@ function resolveClientDir(cwd: string): string {
   const built = path.join(cwd, CLIENT_ARTIFACT_REL);
   if (existsSync(path.join(built, "index.html"))) return built;
   if (existsSync(path.join(cwd, "client.tsx"))) {
-    defaultUi.log.warn("client.tsx is not built — serving the default UI. Run `aai build` first.");
+    defaultUi.notify(
+      "warn",
+      "client.tsx is not built — serving the default UI. Run `aai build` first.",
+    );
   }
   return defaultClientDir();
 }
@@ -171,7 +176,7 @@ function resolveClientDir(cwd: string): string {
  */
 export async function createProjectServer(options: ProjectServerOptions): Promise<AgentServer> {
   const { agent, env } = await loadProject(options.cwd);
-  return buildProjectServer(options.cwd, agent, env);
+  return buildProjectServer(options.cwd, agent, env, consoleLogger);
 }
 
 /** The built agent and its env — what every way of serving a project starts from. */
@@ -188,6 +193,7 @@ async function buildProjectServer(
   cwd: string,
   agent: AgentDef,
   env: Record<string, string>,
+  logger: Logger,
 ): Promise<AgentServer> {
   if (env.DATABASE_URL) {
     // A project with a `DATABASE_URL` puts session state and durable runs in
@@ -198,15 +204,19 @@ async function buildProjectServer(
     // starts, reports `durable: true`, and every session dies at start with the
     // real reason (`relation "aai_session_events" does not exist`) visible only
     // in this process's log.
-    await ensureSessionStateSchema({ url: env.DATABASE_URL, logger: console });
-    await ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger: console });
+    await ensureSessionStateSchema({ url: env.DATABASE_URL, logger });
+    await ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger });
   } else if (cluster.isPrimary) {
     // Say that this process is the only place the state lives, because the next
     // thing an operator does with a container is run two of them. It is not
     // only about restarts: the browser reconnects with `?sessionId=`, so a
     // reconnect landing on another replica resumes a session that replica has
     // never heard of, and the agent's context is gone mid-call.
-    defaultUi.log.warn(
+    // `notify`, not `log.warn`: JSON mode is auto-selected without a TTY, so a
+    // container — exactly where the second replica comes from — would
+    // otherwise never print it.
+    defaultUi.notify(
+      "warn",
       "No DATABASE_URL: session state and durable runs live in THIS process's memory.\n" +
         "One replica is fine. Behind a load balancer, enable sticky sessions so a reconnect " +
         "(the client re-dials with ?sessionId=) reaches the same process — or set DATABASE_URL " +
@@ -217,6 +227,7 @@ async function buildProjectServer(
   return createAgentServer({
     agent,
     env,
+    logger,
     // Provider credentials may ALSO arrive straight from the environment
     // without being declared, and without becoming `ctx.env` — the ordinary way
     // to hand ASSEMBLYAI_API_KEY to a container. Anything in `env` still wins,
@@ -233,7 +244,7 @@ async function buildProjectServer(
     ...(process.env.PUBLIC_URL?.trim() ? { publicUrl: process.env.PUBLIC_URL.trim() } : {}),
     // `AAI_RUN_CODE=deno` gives `run_code` a zero-permission Deno process to run
     // in (`_run-code-deno.ts`); unset, it refuses as it does under `aai dev`.
-    ...omitUndefined({ runCode: resolveDenoRunCode(consoleLogger) }),
+    ...omitUndefined({ runCode: resolveDenoRunCode(logger) }),
   });
 }
 
@@ -249,6 +260,11 @@ export async function executeStart(options: ProjectServerOptions): Promise<Start
   const { cwd } = options;
   const { port, host } = listenAddress(options);
   const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+  // A worker's runtime lines are tagged with its slot and its boot dump left to
+  // slot 0 (`_start-log.ts`); `runStart` says when the boot is over.
+  const base = startLogger(defaultUi.silenced);
+  const tagged = cluster.isWorker ? workerLogger(base, Number(process.env[SLOT_ENV])) : undefined;
+  const logger = tagged?.logger ?? base;
   return runStart(
     {
       port,
@@ -261,7 +277,8 @@ export async function executeStart(options: ProjectServerOptions): Promise<Start
       isWorker: cluster.isWorker,
       slot: () => ({ slot: Number(process.env[SLOT_ENV]), slots: Number(process.env[SLOTS_ENV]) }),
       load: () => loadProject(cwd),
-      build: ({ agent, env }) => buildProjectServer(cwd, agent, env),
+      build: ({ agent, env }) => buildProjectServer(cwd, agent, env, logger),
+      booted: () => tagged?.booted(),
       readEnv: () => resolveServerEnv(cwd, undefined, DEPLOY_ENV_FILES),
       assertBuilt: () => {
         builtAgentPath(cwd);
@@ -284,7 +301,6 @@ export async function executeStart(options: ProjectServerOptions): Promise<Start
       forever: () => new Promise<never>(() => undefined),
       ui: {
         info: (message) => defaultUi.log.info(message),
-        warn: (message) => defaultUi.log.warn(message),
         error: (message) => defaultUi.log.error(message),
         notify: (level, message) => defaultUi.notify(level, message),
       },

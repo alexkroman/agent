@@ -104,6 +104,11 @@ export async function runPrimary(
     throw error;
   }
   void supervisor.exited.then((code) => {
+    // The last line of a drain: without it the process just vanishes, and an
+    // operator watching a deploy cannot tell a finished drain from a crash.
+    deps.log(
+      code === 0 ? "every worker has exited; stopping" : "stopping (a worker exited with an error)",
+    );
     router.close();
     deps.exit(code);
   });
