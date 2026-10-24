@@ -98,11 +98,18 @@ export const PING_INTERVAL_MS = 2500;
 
 /**
  * A worker that has not answered a ping for this long has a wedged event loop:
- * it is killed and respawned into its slot. Long, because a kill costs every
- * call the worker holds — this is for a loop that will never come back, not a
- * slow one (LiveKit's supervisor uses the same 60 s).
+ * it is killed and respawned into its slot.
+ *
+ * Shorter than LiveKit's 60 s on purpose. Theirs guards ONE call per process;
+ * a worker here holds hundreds, and a loop blocked for this long has already
+ * stopped every one of them — their audio stalled at the first missed frame —
+ * so waiting longer only lengthens the outage before the respawn.
  */
-export const LIVENESS_TIMEOUT_MS = 60_000;
+export const LIVENESS_TIMEOUT_MS = 15_000;
+
+/** A pong slower than this is logged (LiveKit's `highPingThreshold`), at most once per {@link SLOW_PONG_LOG_EVERY_MS} per worker. */
+export const SLOW_PONG_MS = 500;
+export const SLOW_PONG_LOG_EVERY_MS = 30_000;
 
 /** Worker → primary. */
 export type WorkerMessage =
@@ -221,6 +228,9 @@ export function superviseWorkers(opts: {
     });
   /** When each listening worker last answered (or reported listening). */
   const lastHeard = new Map<WorkerLike, number>();
+  /** When each worker's outstanding ping went out, and when it was last logged as slow. */
+  const pingSentAt = new Map<WorkerLike, number>();
+  const slowLoggedAt = new Map<WorkerLike, number>();
   /** Live worker → its slot. */
   const slotOf = new Map<WorkerLike, number>();
   /** Slot → its listening worker. */
@@ -296,9 +306,14 @@ export function superviseWorkers(opts: {
       case "aai-start:fatal":
         fatal = message.message;
         return;
-      case "aai-start:pong":
-        lastHeard.set(worker, now());
+      case "aai-start:pong": {
+        const at = now();
+        lastHeard.set(worker, at);
+        const sent = pingSentAt.get(worker);
+        pingSentAt.delete(worker);
+        if (sent !== undefined && at - sent > SLOW_PONG_MS) warnSlow(worker, slot, at - sent, at);
         return;
+      }
       case "aai-start:relay":
         return relay(slot, message);
       case "aai-start:relay-cancel":
@@ -316,9 +331,21 @@ export function superviseWorkers(opts: {
   });
 
   /** Drop a worker that exited from its slot, answering what it can no longer answer. */
+  /** Say a worker's loop is lagging — the early warning before the liveness kill. */
+  const warnSlow = (worker: WorkerLike, slot: number, ms: number, at: number): void => {
+    if (at - (slowLoggedAt.get(worker) ?? Number.NEGATIVE_INFINITY) < SLOW_PONG_LOG_EVERY_MS)
+      return;
+    slowLoggedAt.set(worker, at);
+    log(
+      `worker ${worker.pid} (slot ${slot}) answered a ping in ${ms}ms; its event loop is lagging`,
+    );
+  };
+
   const release = (worker: WorkerLike, slot: number): boolean => {
     slotOf.delete(worker);
     lastHeard.delete(worker);
+    pingSentAt.delete(worker);
+    slowLoggedAt.delete(worker);
     const wasListening = ready.get(slot)?.worker === worker;
     if (wasListening) ready.delete(slot);
     // A notice in flight to this worker will never be answered by it.
@@ -365,6 +392,9 @@ export function superviseWorkers(opts: {
         worker.kill("SIGKILL");
         continue;
       }
+      // One ping outstanding at a time, so a pong's latency is measured from
+      // the ping it answers rather than a later one.
+      if (!pingSentAt.has(worker)) pingSentAt.set(worker, at);
       worker.send({ type: "aai-start:ping" });
     }
   });

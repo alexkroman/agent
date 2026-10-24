@@ -75,7 +75,7 @@ look the call up some other way.
 
 A worker that fails while starting (an unreachable database, say) stops the
 whole server rather than restarting forever. A worker that stops responding for
-a minute is restarted.
+15 seconds is restarted, and one that is slow to respond is reported first.
 
 As a rough guide, one process holds on the order of a thousand concurrent
 browser calls on a modern core before latency rises. Measure your own agent:

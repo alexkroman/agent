@@ -291,9 +291,32 @@ describe("superviseWorkers liveness", () => {
     run.advance(1);
     expect(run.workers[0]?.killed).toEqual(["SIGKILL"]);
     expect(run.workers[1]?.killed).toEqual([]);
-    expect(run.logs[0]).toMatch(/worker 100 has not answered for 60s; restarting it/);
+    expect(run.logs[0]).toMatch(/worker 100 has not answered for 15s; restarting it/);
     run.exit(100, null, "SIGKILL");
     expect(run.workers[2]?.env[SLOT_ENV]).toBe("0");
+  });
+
+  test("a slow pong is warned about, at most once per window", () => {
+    const run = supervisedWithClock(1);
+    run.listen(100);
+    run.advance(PING_INTERVAL_MS); // ping out at t=2500
+    run.advance(PING_INTERVAL_MS); // still outstanding: latency measured from the first
+    run.say(100, { type: "aai-start:pong" }); // answered 2500ms after its ping
+    expect(run.logs).toEqual([
+      "worker 100 (slot 0) answered a ping in 2500ms; its event loop is lagging",
+    ]);
+    run.advance(PING_INTERVAL_MS);
+    run.advance(PING_INTERVAL_MS);
+    run.say(100, { type: "aai-start:pong" });
+    expect(run.logs).toHaveLength(1);
+  });
+
+  test("a prompt pong is not warned about", () => {
+    const run = supervisedWithClock(1);
+    run.listen(100);
+    run.advance(PING_INTERVAL_MS);
+    run.say(100, { type: "aai-start:pong" });
+    expect(run.logs).toEqual([]);
   });
 
   test("stopping stops the pinging", () => {

@@ -48,9 +48,12 @@ shape):
   respawned into the SAME slot. Workers print no CLI result (`--json` owes one
   line) and latch their signal handler (Ctrl-C arrives twice). The primary never
   imports the agent. **Liveness:** the primary pings each listening worker every
-  `PING_INTERVAL_MS` and SIGKILLs one silent for `LIVENESS_TIMEOUT_MS` (60 s, as
-  LiveKit's supervisor) — a wedged loop would otherwise look alive forever while
-  its calls hang; the exit handler respawns it.
+  `PING_INTERVAL_MS`, logs a pong slower than `SLOW_PONG_MS` (throttled), and
+  SIGKILLs one silent for `LIVENESS_TIMEOUT_MS` (15 s — shorter than LiveKit's
+  60 s because a worker holds hundreds of calls, all already stalled); the exit
+  handler respawns it. No orphan timeout is needed: a `node:cluster` worker
+  exits when its primary's IPC channel closes (verified with `kill -9` on the
+  primary).
 - **Seams:** `ClusterLike` (`nodeCluster()` is the typed adapter),
   `PrimaryLink`, and `WorkerRuntime` keep the unit tier fork-free;
   `_start-router.scenario.test.ts` drives the router over real sockets.
