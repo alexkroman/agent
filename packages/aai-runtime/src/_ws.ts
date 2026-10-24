@@ -65,6 +65,77 @@ export type CreateHeaderWebSocket = (
  */
 export const PROVIDER_WS_OPTIONS = { perMessageDeflate: false } as const;
 
+/** The slice of a stream {@link createTickCorker} drives. */
+export type Corkable = { cork(): void; uncork(): void };
+
+/**
+ * Cork `socket` at the first write of a tick and uncork it once the tick's
+ * synchronous work is done, so every frame sent in between leaves as ONE write.
+ * Returns the function to call before each write.
+ *
+ * **Over TLS, the second write of a tick otherwise waits for the event loop.**
+ * Node's TLS layer completes a write it flushed synchronously by deferring the
+ * completion to `setImmediate`, and holds any further write until then — so a
+ * second frame sent in the same tick (AssemblyAI TTS's `Generate`+`Flush`, the
+ * flush that STARTS synthesis) leaves only after everything else the process does
+ * in that loop turn. Measured against a local TLS peer: 2-5 ms per flush on an
+ * idle host, and the full length of whatever synchronous work follows the send
+ * under load (21 ms behind a 20 ms busy loop, vs 0.3 ms corked).
+ *
+ * `process.nextTick` rather than a microtask or a timer: it runs before the loop
+ * yields, after the current microtask queue drains, so the release costs no I/O
+ * turn and still catches frames sent from a chain of promise continuations.
+ */
+export function createTickCorker(
+  socket: Corkable,
+  defer: (release: () => void) => void = (release) => process.nextTick(release),
+): () => void {
+  let corked = false;
+  const release = (): void => {
+    corked = false;
+    socket.uncork();
+  };
+  return () => {
+    if (corked) return;
+    corked = true;
+    socket.cork();
+    defer(release);
+  };
+}
+
+/**
+ * A `ws` client whose frames sent in one tick leave in one write — see
+ * {@link createTickCorker} for why that matters on a TLS provider socket.
+ */
+export class CoalescingWebSocket extends WsWebSocket {
+  #cork: (() => void) | undefined;
+
+  constructor(url: string, options: WsWebSocket.ClientOptions) {
+    super(url, options);
+    // The upgrade response carries the socket `ws` then writes every frame to —
+    // the one public handle on it. `send` before this throws in `ws` anyway.
+    this.once("upgrade", (res) => {
+      this.#cork = createTickCorker(res.socket);
+    });
+  }
+
+  override send(data: WsSendData, cb?: WsSendCallback): void;
+  override send(data: WsSendData, options: WsSendOptions, cb?: WsSendCallback): void;
+  override send(
+    data: WsSendData,
+    optionsOrCb?: WsSendOptions | WsSendCallback,
+    cb?: WsSendCallback,
+  ): void {
+    this.#cork?.();
+    if (typeof optionsOrCb === "function") super.send(data, optionsOrCb);
+    else super.send(data, optionsOrCb ?? {}, cb);
+  }
+}
+
+type WsSendData = Parameters<WsWebSocket["send"]>[0];
+type WsSendOptions = { mask?: boolean; binary?: boolean; compress?: boolean; fin?: boolean };
+type WsSendCallback = (err?: Error) => void;
+
 // Node's native WebSocket doesn't support custom headers; the `ws` package does.
 export const defaultCreateHeaderWebSocket: CreateHeaderWebSocket = (url, options) =>
   openHeaderWebSocket(url, options);
@@ -91,7 +162,7 @@ export function openHeaderWebSocket(
   url: string,
   options: { headers: Record<string, string>; maxPayload?: number | undefined },
 ): HeaderWebSocket {
-  return new WsWebSocket(url, {
+  return new CoalescingWebSocket(url, {
     headers: options.headers,
     ...omitUndefined({ maxPayload: options.maxPayload }),
     ...PROVIDER_WS_OPTIONS,
