@@ -16,17 +16,19 @@ import type { ClusterLike, WorkerLike, WorkerMessage } from "./_start-workers.ts
 
 function fakeCluster() {
   let nextPid = 1;
-  const workers: (WorkerLike & { killed: string[] })[] = [];
+  const workers: (WorkerLike & { killed: string[]; sent: unknown[] })[] = [];
   let onExit: Parameters<ClusterLike["onExit"]>[0] = () => undefined;
   let onMessage: Parameters<ClusterLike["onMessage"]>[0] = () => undefined;
   const cluster: ClusterLike = {
     fork() {
       const killed: string[] = [];
+      const sent: unknown[] = [];
       const worker = {
         pid: nextPid++,
         killed,
+        sent,
         kill: (signal: NodeJS.Signals = "SIGTERM") => void killed.push(signal),
-        send: () => undefined,
+        send: (message: unknown) => void sent.push(message),
       };
       workers.push(worker);
       return worker;
@@ -68,11 +70,19 @@ function primaryDeps(fake: ReturnType<typeof fakeCluster>, listen = vi.fn(async 
   };
 }
 
+const primaryOpts = {
+  workers: 2,
+  port: 3000,
+  host: undefined,
+  drainTimeoutMs: 30_000,
+  maxCallsPerWorker: 100,
+};
+
 describe("runPrimary", () => {
   test("binds only after every slot listens, and answers the workers' name and the bound port", async () => {
     const fake = fakeCluster();
     const p = primaryDeps(fake);
-    const running = runPrimary({ workers: 2, port: 3000, host: undefined }, p.deps);
+    const running = runPrimary(primaryOpts, p.deps);
     await Promise.resolve();
     expect(p.listen).not.toHaveBeenCalled();
     fake.listenAll();
@@ -80,16 +90,40 @@ describe("runPrimary", () => {
     expect(p.listen).toHaveBeenCalledWith(expect.anything(), 3000, undefined);
   });
 
-  test("a signal passes on to every worker, and the process exits with their verdict", async () => {
+  test("a first signal drains every worker; the process exits with their verdict", async () => {
     const fake = fakeCluster();
     const p = primaryDeps(fake);
-    const running = runPrimary({ workers: 2, port: 3000, host: undefined }, p.deps);
+    const running = runPrimary(primaryOpts, p.deps);
+    fake.listenAll();
+    await running;
+    p.signal("SIGTERM");
+    expect(fake.workers.map((w) => w.sent.at(-1))).toEqual([
+      { type: "aai-start:drain", timeoutMs: 30_000 },
+      { type: "aai-start:drain", timeoutMs: 30_000 },
+    ]);
+    for (const w of fake.workers) fake.exit(w, 0);
+    await vi.waitFor(() => expect(p.exits).toEqual([0]));
+  });
+
+  test("a second signal stops at once", async () => {
+    const fake = fakeCluster();
+    const p = primaryDeps(fake);
+    const running = runPrimary(primaryOpts, p.deps);
     fake.listenAll();
     await running;
     p.signal("SIGINT");
-    expect(fake.workers.map((w) => w.killed)).toEqual([["SIGINT"], ["SIGINT"]]);
-    for (const w of fake.workers) fake.exit(w, 0);
-    await vi.waitFor(() => expect(p.exits).toEqual([0]));
+    p.signal("SIGINT");
+    expect(fake.workers[0]?.sent.at(-1)).toEqual({ type: "aai-start:stop" });
+  });
+
+  test("SIGHUP starts a rolling restart: a replacement is forked for slot 0", async () => {
+    const fake = fakeCluster();
+    const p = primaryDeps(fake);
+    const running = runPrimary(primaryOpts, p.deps);
+    fake.listenAll();
+    await running;
+    p.signal("SIGHUP");
+    expect(fake.workers).toHaveLength(3);
   });
 
   test("a port that cannot be bound stops every worker and rejects", async () => {
@@ -98,9 +132,11 @@ describe("runPrimary", () => {
       fake,
       vi.fn(async () => Promise.reject(new Error("EADDRINUSE"))),
     );
-    const running = runPrimary({ workers: 2, port: 3000, host: undefined }, p.deps);
+    const running = runPrimary(primaryOpts, p.deps);
     fake.listenAll();
-    await vi.waitFor(() => expect(fake.workers[0]?.killed).toEqual(["SIGTERM"]));
+    await vi.waitFor(() =>
+      expect(fake.workers[0]?.sent.at(-1)).toEqual({ type: "aai-start:stop" }),
+    );
     for (const w of fake.workers) fake.exit(w, 0);
     await expect(running).rejects.toThrow(/EADDRINUSE/);
   });
@@ -108,7 +144,7 @@ describe("runPrimary", () => {
   test("a worker that fails to boot rejects without ever binding", async () => {
     const fake = fakeCluster();
     const p = primaryDeps(fake);
-    const running = runPrimary({ workers: 2, port: 3000, host: undefined }, p.deps);
+    const running = runPrimary(primaryOpts, p.deps);
     const [first, second] = fake.workers;
     if (!(first && second)) throw new Error("expected two workers");
     fake.exit(first, 1);
@@ -163,7 +199,8 @@ describe("runWorker", () => {
         build: async () => server,
       },
     );
-    expect(built).toBe(server);
+    expect(built.server).toBe(server);
+    expect(built.activeCalls()).toBe(0);
     expect(sent).toEqual([{ type: "aai-start:listening", name: "Voice", port: 5555 }]);
   });
 

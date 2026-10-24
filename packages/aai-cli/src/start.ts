@@ -47,6 +47,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentDef } from "@alexkroman1/aai";
+import { sleep } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import {
   type AgentServer,
@@ -63,7 +64,7 @@ import { DEPLOY_ENV_FILES, resolveServerEnv } from "./_server-common.ts";
 import { listenServer } from "./_start-cluster.ts";
 import { runStart, type StartResult } from "./_start-run.ts";
 import { processLink } from "./_start-worker.ts";
-import { nodeCluster, SLOT_ENV, SLOTS_ENV } from "./_start-workers.ts";
+import { DEFAULT_DRAIN_TIMEOUT_S, nodeCluster, SLOT_ENV, SLOTS_ENV } from "./_start-workers.ts";
 import { stopProjectServer } from "./_stop-server.ts";
 import { defaultUi } from "./_ui.ts";
 
@@ -91,6 +92,10 @@ export interface ProjectServerOptions {
    * `_start-workers.ts`). Defaults to 1. Only {@link executeStart} reads it.
    */
   workers?: number | undefined;
+  /** With `workers > 1`: how long a drain lets calls finish (ms). Default 300 s. */
+  drainTimeoutMs?: number | undefined;
+  /** With `workers > 1`: calls a worker may hold before new ones get 503. Default unlimited. */
+  maxCallsPerWorker?: number | undefined;
 }
 
 /** The built worker's path, or a throw saying what to run. */
@@ -243,8 +248,15 @@ export type { StartResult } from "./_start-run.ts";
 export async function executeStart(options: ProjectServerOptions): Promise<StartResult> {
   const { cwd } = options;
   const { port, host } = listenAddress(options);
+  const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
   return runStart(
-    { port, host, workers: options.workers ?? 1 },
+    {
+      port,
+      host,
+      workers: options.workers ?? 1,
+      drainTimeoutMs: options.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_S * 1000,
+      maxCallsPerWorker: options.maxCallsPerWorker ?? Number.POSITIVE_INFINITY,
+    },
     {
       isWorker: cluster.isWorker,
       slot: () => ({ slot: Number(process.env[SLOT_ENV]), slots: Number(process.env[SLOTS_ENV]) }),
@@ -258,10 +270,15 @@ export async function executeStart(options: ProjectServerOptions): Promise<Start
       cluster: nodeCluster,
       link: processLink,
       listen: listenServer,
+      // SIGHUP too: the `--workers` primary reads it as a rolling restart, and a
+      // single process stops gracefully on it rather than dying mid-call.
       onSignal: (handler) => {
-        for (const signal of ["SIGINT", "SIGTERM"] as const)
-          process.on(signal, () => handler(signal));
+        for (const signal of signals) process.on(signal, () => handler(signal));
       },
+      ignoreSignals: () => {
+        for (const signal of signals) process.on(signal, () => undefined);
+      },
+      sleep,
       exit: (code) => process.exit(code),
       stop: stopProjectServer,
       forever: () => new Promise<never>(() => undefined),

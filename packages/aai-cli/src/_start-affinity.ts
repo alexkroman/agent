@@ -117,3 +117,23 @@ export function affinityKey(
   const sessionId = url.searchParams.get("sessionId")?.trim();
   return sessionId ? sessionKey(sessionId) : undefined;
 }
+
+/** A call is a voice session's socket — what admission and a drain count. `/inbox` holders are not. */
+export function isCallPath(path: string): boolean {
+  return path === "/websocket" || path === "/phone";
+}
+
+/**
+ * Does this request continue a session that already exists (a reconnect), as
+ * opposed to starting one? A resume is never refused by admission control: the
+ * call it continues is already counted.
+ */
+export function isResume(
+  rawUrl: string | undefined,
+  headers: { "sec-websocket-protocol"?: string | string[] | undefined },
+): boolean {
+  const url = new URL(rawUrl ?? "/", "http://route.invalid");
+  if (url.searchParams.get("sessionId")?.trim()) return true;
+  const ticket = presentedTicket(url, headers["sec-websocket-protocol"]);
+  return ticket !== undefined && ticketSessionId(ticket) !== undefined;
+}

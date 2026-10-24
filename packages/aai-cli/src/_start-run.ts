@@ -42,8 +42,11 @@ export interface StartRunDeps {
   onSignal(handler: (signal: NodeJS.Signals) => void): void;
   exit(code: number): void;
   stop(server: AgentServer, tracing: Tracing): Promise<void>;
-  /** Never settles: a worker serves until a signal ends the process. */
+  /** Never settles: a worker serves until its primary ends it. */
   forever(): Promise<never>;
+  /** Make SIGINT/SIGTERM do nothing here — a worker's primary owns its lifecycle. */
+  ignoreSignals(): void;
+  sleep(ms: number): Promise<void>;
   ui: {
     info(message: string): void;
     warn(message: string): void;
@@ -52,12 +55,17 @@ export interface StartRunDeps {
   };
 }
 
-/** The address to bind. */
+/** The address to bind, and how `--workers` places and retires calls. */
 export interface StartTarget {
   port: number;
   host: string | undefined;
   workers: number;
+  drainTimeoutMs: number;
+  maxCallsPerWorker: number;
 }
+
+/** How often a draining worker re-checks whether its calls have ended. */
+export const DRAIN_POLL_MS = 250;
 
 /**
  * Close the server, flush tracing, exit — on the FIRST signal only.
@@ -102,25 +110,66 @@ export async function runStart(target: StartTarget, deps: StartRunDeps): Promise
 
 /**
  * A `--workers` worker: serve its slot and report to the primary, which owns
- * the public port, the announcement and the command's result. So a worker
- * prints no result (`--json` owes ONE line) and never settles; a failure goes
- * to stderr and to the primary (`runWorker`) and ends the process, which the
- * primary reads as a boot failure.
+ * the public port, the announcement, the command's result AND this worker's
+ * lifecycle. So a worker prints no result (`--json` owes ONE line), never
+ * settles, and ignores signals — a terminal's Ctrl-C reaches it too, and acting
+ * on that would end its calls in the middle of the primary's drain. A failure
+ * goes to stderr and to the primary (`runWorker`) and ends the process, which
+ * the primary reads as a boot failure.
  */
 async function serveAsWorker(deps: StartRunDeps): Promise<never> {
+  deps.ignoreSignals();
   try {
     const tracing = await deps.startTracing();
-    const server = await runWorker(deps.slot(), {
+    let close: (graceMs: number) => void = () => undefined;
+    const { server, activeCalls } = await runWorker(deps.slot(), {
       link: deps.link(),
       load: () => deps.load(),
       build: (agent, env) => deps.build({ agent, env }),
+      onDrain: (timeoutMs) => close(timeoutMs),
+      onStop: () => close(0),
     });
-    stopOnSignal(server, tracing, deps);
+    close = workerCloser(server, activeCalls, tracing, deps);
   } catch (error: unknown) {
     deps.ui.notify("error", error instanceof Error ? error.message : String(error));
     deps.exit(1);
   }
   return deps.forever();
+}
+
+/**
+ * How a worker ends: wait (up to `graceMs`) for its calls to finish, then close
+ * the server and exit. A drain passes its timeout; a stop passes 0 — and a stop
+ * arriving mid-drain cuts the wait short. Closing happens once.
+ */
+export function workerCloser(
+  server: AgentServer,
+  activeCalls: () => number,
+  tracing: Tracing,
+  deps: StartRunDeps,
+): (graceMs: number) => void {
+  let deadline: number | undefined;
+  let waited = 0;
+  return (graceMs) => {
+    const first = deadline === undefined;
+    deadline = Math.min(deadline ?? Number.POSITIVE_INFINITY, graceMs);
+    if (!first) return;
+    void (async () => {
+      while (activeCalls() > 0 && waited < (deadline ?? 0)) {
+        await deps.sleep(DRAIN_POLL_MS);
+        waited += DRAIN_POLL_MS;
+      }
+      await deps.stop(server, tracing).then(
+        () => deps.exit(0),
+        (error: unknown) => {
+          deps.ui.error(
+            `shutdown failed: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          deps.exit(1);
+        },
+      );
+    })();
+  };
 }
 
 /**
@@ -139,7 +188,13 @@ async function startPrimary(target: StartTarget, deps: StartRunDeps): Promise<St
     );
   }
   const bound = await runPrimary(
-    { workers: target.workers, port: target.port, host: target.host },
+    {
+      workers: target.workers,
+      port: target.port,
+      host: target.host,
+      drainTimeoutMs: target.drainTimeoutMs,
+      maxCallsPerWorker: target.maxCallsPerWorker,
+    },
     {
       cluster: deps.cluster(),
       listen: deps.listen,

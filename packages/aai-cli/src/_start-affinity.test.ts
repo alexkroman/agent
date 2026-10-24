@@ -3,6 +3,8 @@ import { describe, expect, test } from "vitest";
 import {
   affinityKey,
   clientKey,
+  isCallPath,
+  isResume,
   mintIdForSlot,
   sessionKey,
   slotOf,
@@ -76,5 +78,25 @@ describe("slotOf / mintIdForSlot", () => {
       expect(id).toMatch(/^[0-9a-f-]{36}$/);
       expect(slotOf(sessionKey(id), 5)).toBe(slot);
     }
+  });
+});
+
+describe("isResume / isCallPath", () => {
+  test("a ?sessionId= or a ticket naming a session is a resume; a bare client is not", () => {
+    expect(isResume("/websocket?sessionId=s1", {})).toBe(true);
+    expect(
+      isResume("/websocket", { "sec-websocket-protocol": `aai.auth.${ticket({ sid: "s" })}` }),
+    ).toBe(true);
+    expect(isResume("/websocket?client=c", {})).toBe(false);
+    expect(
+      isResume("/websocket", { "sec-websocket-protocol": `aai.auth.${ticket({ sub: "x" })}` }),
+    ).toBe(false);
+  });
+
+  test("only the voice-session paths are calls", () => {
+    expect(isCallPath("/websocket")).toBe(true);
+    expect(isCallPath("/phone")).toBe(true);
+    expect(isCallPath("/inbox")).toBe(false);
+    expect(isCallPath("/api/x")).toBe(false);
   });
 });

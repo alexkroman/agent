@@ -173,3 +173,83 @@ describe("createRouter — upgrades", () => {
     socket.destroy();
   });
 });
+
+describe("createRouter — admission", () => {
+  function upgradeTo(
+    url: string,
+    admitCall: (slot: number) => "ok" | "draining" | "full",
+    reserved: number[],
+  ) {
+    sentTo.length = 0;
+    const workers = [readyWorker(0)];
+    const server = createRouter({
+      slots: 1,
+      target: (s) => workers[s],
+      admitCall,
+      reserveCall: (slot) => reserved.push(slot),
+    });
+    const socket = new Socket();
+    const end = vi.spyOn(socket, "end").mockImplementation(() => socket);
+    server.emit("upgrade", incoming(url, { host: "h" }), socket, Buffer.alloc(0));
+    socket.destroy();
+    return {
+      handedOff: (sentTo[0] ?? []).length > 0,
+      refusal: String(end.mock.calls[0]?.[0] ?? ""),
+    };
+  }
+
+  test("a NEW call is refused with the reason while draining or full", () => {
+    const draining = upgradeTo("/websocket?client=c", () => "draining", []);
+    expect(draining.handedOff).toBe(false);
+    expect(draining.refusal).toMatch(/503 Service Unavailable[\s\S]*draining/);
+    const full = upgradeTo("/websocket?client=c", () => "full", []);
+    expect(full.refusal).toMatch(/call limit/);
+  });
+
+  test("a resume, an /inbox socket and a phone resume are never refused", () => {
+    const refuse = () => "full" as const;
+    expect(upgradeTo("/websocket?client=c&sessionId=s1", refuse, []).handedOff).toBe(true);
+    expect(upgradeTo("/inbox?client=c", refuse, []).handedOff).toBe(true);
+  });
+
+  test("an admitted new call is reserved against its worker; a resume is not", () => {
+    const reserved: number[] = [];
+    upgradeTo("/websocket?client=c", () => "ok", reserved);
+    upgradeTo("/websocket?client=c&sessionId=s1", () => "ok", reserved);
+    expect(reserved).toEqual([0]);
+  });
+});
+
+describe("createRouter — GET /workers", () => {
+  function getWorkers(remoteAddress: string) {
+    const status = [{ slot: 0, pid: 1, state: "serving" as const, calls: 3, elu: 0.2 }];
+    const server = createRouter({ slots: 1, target: () => undefined, status: () => status });
+    const socket = new Socket();
+    Object.defineProperty(socket, "remoteAddress", { value: remoteAddress });
+    const req = new IncomingMessage(socket);
+    req.method = "GET";
+    req.url = "/workers";
+    req.push(null);
+    const { res, body, ended } = outgoing(req);
+    const writeHead = vi.spyOn(res, "writeHead");
+    server.emit("request", req, res);
+    return { ended, body, writeHead, socket };
+  }
+
+  test("answers loopback with every worker's state", async () => {
+    const run = getWorkers("127.0.0.1");
+    await run.ended;
+    expect(run.writeHead).toHaveBeenCalledWith(200, { "content-type": "application/json" });
+    expect(JSON.parse(run.body.join(""))).toEqual({
+      workers: [{ slot: 0, pid: 1, state: "serving", calls: 3, elu: 0.2 }],
+    });
+    run.socket.destroy();
+  });
+
+  test("is invisible to anyone else", async () => {
+    const run = getWorkers("203.0.113.9");
+    await run.ended;
+    expect(run.writeHead).toHaveBeenCalledWith(404);
+    run.socket.destroy();
+  });
+});

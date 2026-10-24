@@ -16,6 +16,7 @@ import { clientKey, sessionKey, slotOf } from "./_start-affinity.ts";
 import {
   joinCluster,
   type PrimaryLink,
+  requestPath,
   type WorkerRuntime,
   workflowsNeedDatabase,
 } from "./_start-worker.ts";
@@ -227,7 +228,69 @@ describe("joinCluster liveness", () => {
   test("answers a ping with a pong, proving its event loop turns", async () => {
     const { deliver, sent } = await join(0, 2);
     deliver({ type: "aai-start:ping" });
-    expect(sent.at(-1)).toEqual({ type: "aai-start:pong" });
+    expect(sent.at(-1)).toMatchObject({ type: "aai-start:pong", calls: 0 });
+    const pong = sent.at(-1);
+    if (pong?.type !== "aai-start:pong") throw new Error("no pong");
+    expect(pong.elu).toBeGreaterThanOrEqual(0);
+    expect(pong.elu).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("joinCluster call counting and commands", () => {
+  async function joinWithCommands() {
+    const link = fakeLink();
+    const { runtime } = fakeRuntime();
+    const drains: number[] = [];
+    let stops = 0;
+    const joined = await joinCluster({
+      slot: 0,
+      slots: 1,
+      server: fakeServer(),
+      name: "A",
+      link: link.link,
+      runtime,
+      onDrain: (ms) => drains.push(ms),
+      onStop: () => {
+        stops += 1;
+      },
+    });
+    return { ...link, joined, drains, stops: () => stops };
+  }
+
+  test("a handed-off call socket counts until it closes; an /inbox socket never does", async () => {
+    const run = await joinWithCommands();
+    const call = new Socket();
+    const inbox = new Socket();
+    run.deliver(
+      { type: "aai-start:upgrade", bytes: Buffer.from("GET /websocket?client=c HTTP/1.1\r\n\r\n") },
+      call,
+    );
+    run.deliver(
+      { type: "aai-start:upgrade", bytes: Buffer.from("GET /inbox?client=c HTTP/1.1\r\n\r\n") },
+      inbox,
+    );
+    expect(run.joined.activeCalls()).toBe(1);
+    run.deliver({ type: "aai-start:ping" });
+    expect(run.sent.at(-1)).toMatchObject({ type: "aai-start:pong", calls: 1 });
+    call.destroy();
+    await vi.waitFor(() => expect(run.joined.activeCalls()).toBe(0));
+    inbox.destroy();
+  });
+
+  test("drain and stop from the primary reach their callbacks", async () => {
+    const run = await joinWithCommands();
+    run.deliver({ type: "aai-start:drain", timeoutMs: 1234 });
+    run.deliver({ type: "aai-start:stop" });
+    expect(run.drains).toEqual([1234]);
+    expect(run.stops()).toBe(1);
+  });
+});
+
+describe("requestPath", () => {
+  test("reads the path from a request head, without its query", () => {
+    expect(requestPath(Buffer.from("GET /websocket?client=a HTTP/1.1\r\n"))).toBe("/websocket");
+    expect(requestPath(Buffer.from("GET /phone HTTP/1.1\r\n"))).toBe("/phone");
+    expect(requestPath(Buffer.from("garbage"))).toBe("");
   });
 });
 

@@ -1,7 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `aai start --workers` — the count, and the supervisor's readiness, respawn
- * and relay policy, driven through a fake cluster so nothing forks.
+ * `aai start --workers` — the option parsing, and the supervisor's readiness,
+ * respawn, drain, stop, rolling restart, load, liveness and relay policy,
+ * driven through a fake cluster and fake timers so nothing forks or waits.
  */
 
 import { describe, expect, test } from "vitest";
@@ -11,9 +12,11 @@ import {
   PING_INTERVAL_MS,
   type PrimaryMessage,
   parseWorkers,
+  resolvePositiveInt,
   resolveWorkers,
   SLOT_ENV,
   SLOTS_ENV,
+  STOP_GRACE_MS,
   superviseWorkers,
   WORKERS_ENV,
   type WorkerLike,
@@ -40,16 +43,38 @@ describe("parseWorkers / resolveWorkers", () => {
   });
 });
 
+describe("resolvePositiveInt", () => {
+  test("flag, then env, then the fallback", () => {
+    expect(resolvePositiveInt("30", "--x", "X", 300, { X: "60" })).toBe(30);
+    expect(resolvePositiveInt(undefined, "--x", "X", 300, { X: "60" })).toBe(60);
+    expect(resolvePositiveInt(undefined, "--x", "X", 300, {})).toBe(300);
+  });
+
+  test("refuses a bad value, naming where it came from", () => {
+    expect(() => resolvePositiveInt("0", "--x", "X", 1, {})).toThrow(
+      /--x must be a positive integer/,
+    );
+    expect(() => resolvePositiveInt(undefined, "--x", "X", 1, { X: "lots" })).toThrow(
+      /X must be a positive integer/,
+    );
+  });
+});
+
 type FakeWorker = WorkerLike & {
   env: Record<string, string>;
   killed: string[];
   inbox: PrimaryMessage[];
 };
 
-/** A cluster that records forks and lets a test drive each worker's messages and exit. */
-function fakeCluster() {
+/** A cluster, clock and timers a test drives by hand. */
+function supervise(slots: number) {
   let nextPid = 100;
+  let clock = 0;
   const workers: FakeWorker[] = [];
+  const logs: string[] = [];
+  const timers: { at: number; fire: () => void }[] = [];
+  let tick: () => void = () => undefined;
+  let pingingStopped = false;
   let onExit: Parameters<ClusterLike["onExit"]>[0] = () => undefined;
   let onMessage: Parameters<ClusterLike["onMessage"]>[0] = () => undefined;
   const cluster: ClusterLike = {
@@ -76,30 +101,55 @@ function fakeCluster() {
       onMessage = listener;
     },
   };
+  const supervisor = superviseWorkers({
+    slots,
+    cluster,
+    log: (m) => logs.push(m),
+    timers: {
+      now: () => clock,
+      every: (_ms, fn) => {
+        tick = fn;
+        return () => {
+          pingingStopped = true;
+        };
+      },
+      after: (ms, fire) => {
+        timers.push({ at: clock + ms, fire });
+      },
+    },
+  });
   const byPid = (pid: number): FakeWorker => {
     const worker = workers.find((w) => w.pid === pid);
     if (!worker) throw new Error(`no worker ${pid}`);
     return worker;
   };
   return {
-    cluster,
+    supervisor,
     workers,
+    logs,
     say: (pid: number, message: unknown) => onMessage(byPid(pid), message),
     listen: (pid: number, port = 4000 + pid) =>
       onMessage(byPid(pid), { type: "aai-start:listening", name: "Agent", port }),
+    pong: (pid: number, calls = 0, elu = 0) =>
+      onMessage(byPid(pid), { type: "aai-start:pong", calls, elu }),
     exit: (pid: number, code: number | null = 1, signal: string | null = null) =>
       onExit(byPid(pid), code, signal),
+    /** Move the clock, firing due timers, and run one liveness tick. */
+    advance(ms: number) {
+      clock += ms;
+      for (const timer of timers.filter((t) => t.at <= clock)) {
+        timers.splice(timers.indexOf(timer), 1);
+        timer.fire();
+      }
+      tick();
+    },
+    pingingStopped: () => pingingStopped,
   };
 }
 
-function supervise(slots: number) {
-  const fake = fakeCluster();
-  const logs: string[] = [];
-  const supervisor = superviseWorkers({ slots, cluster: fake.cluster, log: (m) => logs.push(m) });
-  return { ...fake, supervisor, logs };
-}
+const lastMessage = (worker: FakeWorker | undefined) => worker?.inbox.at(-1);
 
-describe("superviseWorkers", () => {
+describe("superviseWorkers — boot and respawn", () => {
   test("forks one worker per slot, telling each its slot and the slot count", () => {
     const run = supervise(3);
     expect(run.workers.map((w) => w.env)).toEqual([
@@ -141,34 +191,212 @@ describe("superviseWorkers", () => {
     run.say(100, { type: "aai-start:fatal", message: "This agent declares workflows" });
     run.exit(100);
     expect(run.logs[0]).toMatch(/while starting; stopping the server/);
-    expect(run.workers.map((w) => w.killed)).toEqual([[], ["SIGTERM"], ["SIGTERM"]]);
+    expect(lastMessage(run.workers[1])).toEqual({ type: "aai-start:stop" });
+    expect(lastMessage(run.workers[2])).toEqual({ type: "aai-start:stop" });
     run.exit(101, 0);
     run.exit(102, 0);
     await expect(run.supervisor.ready).rejects.toThrow(/declares workflows/);
     await expect(run.supervisor.exited).resolves.toBe(1);
     expect(run.workers).toHaveLength(3);
   });
+});
 
-  test("stop() passes the signal on, respawns nothing, and exits 0 when all stop cleanly", async () => {
+describe("superviseWorkers — drain and stop", () => {
+  test("a drain tells every worker, stops placing calls, and respawns nothing", async () => {
     const run = supervise(2);
     run.listen(100);
     run.listen(101);
-    run.supervisor.stop("SIGINT");
-    expect(run.workers[0]?.killed).toEqual(["SIGINT"]);
+    expect(run.supervisor.accepting()).toBe(true);
+    run.supervisor.drain(30_000);
+    expect(run.supervisor.accepting()).toBe(false);
+    expect(lastMessage(run.workers[0])).toEqual({ type: "aai-start:drain", timeoutMs: 30_000 });
     run.exit(100, 0);
-    run.exit(101, 0);
     expect(run.workers).toHaveLength(2);
+    run.exit(101, 0);
     await expect(run.supervisor.exited).resolves.toBe(0);
+    expect(run.pingingStopped()).toBe(true);
+  });
+
+  test("a worker still alive past the drain timeout plus grace is SIGKILLed", () => {
+    const run = supervise(1);
+    run.listen(100);
+    run.supervisor.drain(30_000);
+    // Still answering pings while it drains — this is the drain deadline, not liveness.
+    for (let t = 0; t < 30_000 + STOP_GRACE_MS - PING_INTERVAL_MS; t += PING_INTERVAL_MS) {
+      run.advance(PING_INTERVAL_MS);
+      run.pong(100);
+    }
+    expect(run.workers[0]?.killed).toEqual([]);
+    run.advance(PING_INTERVAL_MS);
+    expect(run.workers[0]?.killed).toEqual(["SIGKILL"]);
+  });
+
+  test("stop() asks every worker to close now, SIGKILLs after the grace, and is idempotent", async () => {
+    const run = supervise(2);
+    run.listen(100);
+    run.listen(101);
+    run.supervisor.stop();
+    run.supervisor.stop();
+    expect(run.workers[0]?.inbox.filter((m) => m.type === "aai-start:stop")).toHaveLength(1);
+    run.advance(STOP_GRACE_MS);
+    expect(run.workers.map((w) => w.killed)).toEqual([["SIGKILL"], ["SIGKILL"]]);
+    run.exit(100, null, "SIGKILL");
+    run.exit(101, null, "SIGKILL");
+    // The SIGKILL a forced stop sends is the plan, not a failure.
+    await expect(run.supervisor.exited).resolves.toBe(0);
+  });
+
+  test("a stop during a drain still forces; a second drain is ignored", () => {
+    const run = supervise(1);
+    run.listen(100);
+    run.supervisor.drain(60_000);
+    run.supervisor.drain(1);
+    run.supervisor.stop();
+    expect(run.workers[0]?.inbox.filter((m) => m.type === "aai-start:drain")).toHaveLength(1);
+    expect(lastMessage(run.workers[0])).toEqual({ type: "aai-start:stop" });
   });
 
   test("a worker whose shutdown fails makes the whole stop exit 1", async () => {
     const run = supervise(2);
     run.listen(100);
     run.listen(101);
-    run.supervisor.stop();
+    run.supervisor.drain(1000);
     run.exit(100, 1);
     run.exit(101, 0);
     await expect(run.supervisor.exited).resolves.toBe(1);
+  });
+});
+
+describe("superviseWorkers — rolling restart", () => {
+  test("replaces one slot at a time: new traffic moves on listen, the old worker drains", () => {
+    const run = supervise(2);
+    run.listen(100, 5000);
+    run.listen(101, 5001);
+    run.supervisor.roll(45_000);
+    expect(run.workers).toHaveLength(3);
+    expect(run.workers[2]?.env[SLOT_ENV]).toBe("0");
+    // Until the replacement listens, slot 0 is still the old worker's.
+    expect(run.supervisor.target(0)?.port).toBe(5000);
+    run.listen(102, 5002);
+    expect(run.supervisor.target(0)?.port).toBe(5002);
+    expect(lastMessage(run.workers[0])).toEqual({ type: "aai-start:drain", timeoutMs: 45_000 });
+    // Slot 1 is next, only after slot 0 is done.
+    expect(run.workers[3]?.env[SLOT_ENV]).toBe("1");
+    run.listen(103, 5003);
+    expect(run.supervisor.target(1)?.port).toBe(5003);
+    expect(run.logs).toContain("rolling restart complete");
+    // The drained workers leave without being replaced again.
+    run.exit(100, 0);
+    run.exit(101, 0);
+    expect(run.workers).toHaveLength(4);
+    expect(run.supervisor.status().map((s) => s.state)).toEqual(["serving", "serving"]);
+  });
+
+  test("a replacement that fails to start stops the roll and leaves the old worker serving", () => {
+    const run = supervise(2);
+    run.listen(100, 5000);
+    run.listen(101, 5001);
+    run.supervisor.roll(45_000);
+    run.exit(102, 1);
+    expect(run.supervisor.target(0)?.port).toBe(5000);
+    expect(run.logs.at(-1)).toMatch(/rolling restart stopped: the replacement for slot 0/);
+    expect(run.workers).toHaveLength(3);
+    expect(run.supervisor.accepting()).toBe(true);
+  });
+
+  test("a second roll while one runs is ignored; none starts once draining", () => {
+    const run = supervise(1);
+    run.listen(100);
+    run.supervisor.roll(1000);
+    run.supervisor.roll(1000);
+    expect(run.workers).toHaveLength(2);
+    run.supervisor.drain(1000);
+    run.supervisor.roll(1000);
+    expect(run.workers).toHaveLength(2);
+  });
+});
+
+describe("superviseWorkers — load", () => {
+  test("calls are the last report plus reservations since; status lists every worker", () => {
+    const run = supervise(2);
+    run.listen(100);
+    run.listen(101);
+    run.pong(100, 7, 0.4);
+    run.supervisor.reserve(0);
+    run.supervisor.reserve(0);
+    expect(run.supervisor.calls(0)).toBe(9);
+    run.pong(100, 8, 0.5);
+    expect(run.supervisor.calls(0)).toBe(8);
+    expect(run.supervisor.calls(1)).toBe(0);
+    expect(run.supervisor.status()).toEqual([
+      { slot: 0, pid: 100, state: "serving", calls: 8, elu: 0.5 },
+      { slot: 1, pid: 101, state: "serving", calls: 0, elu: 0 },
+    ]);
+  });
+
+  test("a slot with no listening worker has no calls and takes no reservation", () => {
+    const run = supervise(1);
+    run.supervisor.reserve(0);
+    expect(run.supervisor.calls(0)).toBe(0);
+    expect(run.supervisor.status()[0]?.state).toBe("starting");
+  });
+});
+
+describe("superviseWorkers — liveness", () => {
+  test("pings only listening workers", () => {
+    const run = supervise(2);
+    run.listen(100);
+    run.advance(PING_INTERVAL_MS);
+    expect(run.workers[0]?.inbox).toEqual([{ type: "aai-start:ping" }]);
+    expect(run.workers[1]?.inbox).toEqual([]);
+  });
+
+  test("a worker that keeps answering is never killed", () => {
+    const run = supervise(1);
+    run.listen(100);
+    for (let t = 0; t < LIVENESS_TIMEOUT_MS * 2; t += PING_INTERVAL_MS) {
+      run.advance(PING_INTERVAL_MS);
+      run.pong(100);
+    }
+    expect(run.workers[0]?.killed).toEqual([]);
+  });
+
+  test("a worker silent for the liveness timeout is killed and respawned into its slot", () => {
+    const run = supervise(2);
+    run.listen(100);
+    run.listen(101);
+    run.advance(LIVENESS_TIMEOUT_MS - 1);
+    run.pong(101);
+    expect(run.workers[0]?.killed).toEqual([]);
+    run.advance(1);
+    expect(run.workers[0]?.killed).toEqual(["SIGKILL"]);
+    expect(run.workers[1]?.killed).toEqual([]);
+    expect(run.logs[0]).toMatch(/worker 100 has not answered for 15s; restarting it/);
+    run.exit(100, null, "SIGKILL");
+    expect(run.workers[2]?.env[SLOT_ENV]).toBe("0");
+  });
+
+  test("a slow pong is warned about, at most once per window", () => {
+    const run = supervise(1);
+    run.listen(100);
+    run.advance(PING_INTERVAL_MS);
+    run.advance(PING_INTERVAL_MS);
+    run.pong(100);
+    expect(run.logs).toEqual([
+      "worker 100 (slot 0) answered a ping in 2500ms; its event loop is lagging",
+    ]);
+    run.advance(PING_INTERVAL_MS);
+    run.advance(PING_INTERVAL_MS);
+    run.pong(100);
+    expect(run.logs).toHaveLength(1);
+  });
+
+  test("a prompt pong is not warned about", () => {
+    const run = supervise(1);
+    run.listen(100);
+    run.advance(PING_INTERVAL_MS);
+    run.pong(100);
+    expect(run.logs).toEqual([]);
   });
 });
 
@@ -225,103 +453,5 @@ describe("superviseWorkers relays an inbox notice between workers", () => {
     run.say(100, "hello");
     run.say(100, { type: "something-else" });
     expect(run.workers[0]?.inbox).toEqual([]);
-  });
-});
-
-describe("superviseWorkers liveness", () => {
-  function supervisedWithClock(slots: number) {
-    const fake = fakeCluster();
-    let clock = 0;
-    let tick: () => void = () => undefined;
-    let stopped = false;
-    const intervals: number[] = [];
-    const logs: string[] = [];
-    const supervisor = superviseWorkers({
-      slots,
-      cluster: fake.cluster,
-      log: (m) => logs.push(m),
-      now: () => clock,
-      every: (ms, fn) => {
-        intervals.push(ms);
-        tick = fn;
-        return () => {
-          stopped = true;
-        };
-      },
-    });
-    return {
-      ...fake,
-      supervisor,
-      logs,
-      advance: (ms: number) => {
-        clock += ms;
-        tick();
-      },
-      stopped: () => stopped,
-      intervals,
-    };
-  }
-
-  test("pings only listening workers, every PING_INTERVAL_MS", () => {
-    const run = supervisedWithClock(2);
-    expect(run.intervals).toEqual([PING_INTERVAL_MS]);
-    run.listen(100);
-    run.advance(PING_INTERVAL_MS);
-    expect(run.workers[0]?.inbox).toEqual([{ type: "aai-start:ping" }]);
-    expect(run.workers[1]?.inbox).toEqual([]);
-  });
-
-  test("a worker that keeps answering is never killed", () => {
-    const run = supervisedWithClock(1);
-    run.listen(100);
-    for (let t = 0; t < LIVENESS_TIMEOUT_MS * 2; t += PING_INTERVAL_MS) {
-      run.advance(PING_INTERVAL_MS);
-      run.say(100, { type: "aai-start:pong" });
-    }
-    expect(run.workers[0]?.killed).toEqual([]);
-  });
-
-  test("a worker silent for the liveness timeout is killed and respawned into its slot", () => {
-    const run = supervisedWithClock(2);
-    run.listen(100);
-    run.listen(101);
-    run.advance(LIVENESS_TIMEOUT_MS - 1);
-    run.say(101, { type: "aai-start:pong" });
-    expect(run.workers[0]?.killed).toEqual([]);
-    run.advance(1);
-    expect(run.workers[0]?.killed).toEqual(["SIGKILL"]);
-    expect(run.workers[1]?.killed).toEqual([]);
-    expect(run.logs[0]).toMatch(/worker 100 has not answered for 15s; restarting it/);
-    run.exit(100, null, "SIGKILL");
-    expect(run.workers[2]?.env[SLOT_ENV]).toBe("0");
-  });
-
-  test("a slow pong is warned about, at most once per window", () => {
-    const run = supervisedWithClock(1);
-    run.listen(100);
-    run.advance(PING_INTERVAL_MS); // ping out at t=2500
-    run.advance(PING_INTERVAL_MS); // still outstanding: latency measured from the first
-    run.say(100, { type: "aai-start:pong" }); // answered 2500ms after its ping
-    expect(run.logs).toEqual([
-      "worker 100 (slot 0) answered a ping in 2500ms; its event loop is lagging",
-    ]);
-    run.advance(PING_INTERVAL_MS);
-    run.advance(PING_INTERVAL_MS);
-    run.say(100, { type: "aai-start:pong" });
-    expect(run.logs).toHaveLength(1);
-  });
-
-  test("a prompt pong is not warned about", () => {
-    const run = supervisedWithClock(1);
-    run.listen(100);
-    run.advance(PING_INTERVAL_MS);
-    run.say(100, { type: "aai-start:pong" });
-    expect(run.logs).toEqual([]);
-  });
-
-  test("stopping stops the pinging", () => {
-    const run = supervisedWithClock(1);
-    run.supervisor.stop();
-    expect(run.stopped()).toBe(true);
   });
 });

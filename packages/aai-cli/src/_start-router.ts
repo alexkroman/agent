@@ -30,8 +30,8 @@ import http, {
 } from "node:http";
 import type { Socket } from "node:net";
 import type { Writable } from "node:stream";
-import { affinityKey, slotOf } from "./_start-affinity.ts";
-import type { ReadyWorker } from "./_start-workers.ts";
+import { affinityKey, isCallPath, isResume, slotOf } from "./_start-affinity.ts";
+import type { ReadyWorker, WorkerStatus } from "./_start-workers.ts";
 
 /** How long a client may take to send its request head before it is dropped. */
 export const HEADERS_TIMEOUT_MS = 15_000;
@@ -71,7 +71,22 @@ export interface RouterOptions {
   target(slot: number): ReadyWorker | undefined;
   /** How a request reaches a worker — `http.request` unless a spec says otherwise. */
   request?: UpstreamRequest;
+  /** May a NEW call go to this slot's worker now? Unset: always. */
+  admitCall?: (slot: number) => "ok" | "draining" | "full";
+  /** Count a call handed to the slot's worker before its next load report. */
+  reserveCall?: (slot: number) => void;
+  /** Per-worker state for `GET /workers` (loopback only). Unset: no such route. */
+  status?: () => WorkerStatus[];
 }
+
+/** Why a new call is refused, as the 503 body says it. */
+const REFUSAL: Record<"draining" | "full", string> = {
+  draining: "server is draining for a restart; retry against another instance",
+  full: "this worker is at its call limit; retry shortly",
+};
+
+/** Loopback peers — the only ones `GET /workers` answers. */
+const LOOPBACK = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 
 /** The slice of `http.request` the proxy uses: options, a reply callback, a writable body. */
 export type UpstreamRequest = (
@@ -138,14 +153,27 @@ function proxy(
   req.pipe(upstream);
 }
 
-function refuseUpgrade(socket: Socket): void {
-  socket.end("HTTP/1.1 503 Service Unavailable\r\nRetry-After: 1\r\nConnection: close\r\n\r\n");
+function refuseUpgrade(socket: Socket, reason = "worker restarting, retry shortly"): void {
+  const body = `${reason}\n`;
+  socket.end(
+    "HTTP/1.1 503 Service Unavailable\r\nRetry-After: 1\r\nConnection: close\r\n" +
+      `Content-Type: text/plain\r\nContent-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`,
+  );
 }
 
 /** The primary's public server. The caller binds it. */
 export function createRouter(opts: RouterOptions): http.Server {
   const pick = createSlotPicker(opts);
   const server = http.createServer((req, res) => {
+    if (opts.status && req.method === "GET" && req.url === "/workers") {
+      if (!LOOPBACK.has(req.socket.remoteAddress ?? "")) {
+        res.writeHead(404).end();
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ workers: opts.status() }));
+      return;
+    }
     const slot = pick(affinityKey(req.url, req.headers));
     const worker = slot === undefined ? undefined : opts.target(slot);
     if (!worker) return unavailable(res);
@@ -155,9 +183,18 @@ export function createRouter(opts: RouterOptions): http.Server {
   server.on("upgrade", (req: IncomingMessage, socket: Socket, head: Buffer) => {
     const slot = pick(affinityKey(req.url, req.headers));
     const worker = slot === undefined ? undefined : opts.target(slot);
-    if (!worker) return refuseUpgrade(socket);
+    if (slot === undefined || !worker) return refuseUpgrade(socket);
+    const path = new URL(req.url ?? "/", "http://route.invalid").pathname;
+    // Admission applies to a NEW call only: a reconnect continues a call that
+    // is already counted, and an `/inbox` socket is not a call.
+    const newCall = isCallPath(path) && !isResume(req.url, req.headers);
+    if (newCall) {
+      const verdict = opts.admitCall?.(slot) ?? "ok";
+      if (verdict !== "ok") return refuseUpgrade(socket, REFUSAL[verdict]);
+    }
     const bytes = Buffer.concat([serializeRequestHead(req), head]);
     worker.worker.send({ type: "aai-start:upgrade", bytes }, socket);
+    if (newCall) opts.reserveCall?.(slot);
   });
   return server;
 }

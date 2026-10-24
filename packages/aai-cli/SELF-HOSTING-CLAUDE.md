@@ -43,17 +43,29 @@ shape):
   cross-worker path, an `/inbox` notice from a step on another worker, goes
   through the runtime's `setClientNotifyRelay` and the supervisor
   (`aai-start:relay` IPC; a dying target answers `disconnected`).
+- **The primary owns every worker's lifecycle; workers IGNORE signals** (a
+  terminal's Ctrl-C reaches them too, which would end calls mid-drain). It acts
+  through IPC: first SIGINT/SIGTERM → `drain` (router refuses NEW calls with
+  503; reconnects, `/inbox` and HTTP still route; each worker waits for its call
+  count — handed-off `/websocket`+`/phone` sockets — to reach 0 or
+  `--drain-timeout`, then closes); a second → `stop`; SIGHUP → `roll()` (per
+  slot: fork the replacement, swap the slot to it on `listening`, drain the
+  old). Every command carries a SIGKILL deadline (`STOP_GRACE_MS`).
 - **Supervision:** "booted" is the worker's IPC `listening` report; a worker
   dying before it is a boot failure (stop all, fail the command), after it is
-  respawned into the SAME slot. Workers print no CLI result (`--json` owes one
-  line) and latch their signal handler (Ctrl-C arrives twice). The primary never
-  imports the agent. **Liveness:** the primary pings each listening worker every
-  `PING_INTERVAL_MS`, logs a pong slower than `SLOW_PONG_MS` (throttled), and
-  SIGKILLs one silent for `LIVENESS_TIMEOUT_MS` (15 s — shorter than LiveKit's
-  60 s because a worker holds hundreds of calls, all already stalled); the exit
-  handler respawns it. No orphan timeout is needed: a `node:cluster` worker
-  exits when its primary's IPC channel closes (verified with `kill -9` on the
-  primary).
+  respawned into the SAME slot; a failed replacement aborts a roll, leaving the
+  old worker serving. Workers print no CLI result (`--json` owes one line). The
+  primary never imports the agent. **Liveness:** pings every `PING_INTERVAL_MS`;
+  a pong slower than `SLOW_PONG_MS` is logged (throttled); a worker silent for
+  `LIVENESS_TIMEOUT_MS` (15 s — shorter than LiveKit's 60 s, since a worker
+  holds hundreds of calls, all already stalled) is SIGKILLed and respawned. No
+  orphan timeout: a `node:cluster` worker exits when its primary's IPC channel
+  closes.
+- **Load and admission:** each pong carries `{calls, elu}`; the router reserves
+  a slot per admitted NEW call until the next report (LiveKit's reserved slots)
+  and refuses past `--max-calls-per-worker`. It never spills to another worker:
+  that would split a client's call from its `/inbox` and `/api` traffic.
+  `GET /workers` (loopback only) reports per-worker state.
 - **Seams:** `ClusterLike` (`nodeCluster()` is the typed adapter),
   `PrimaryLink`, and `WorkerRuntime` keep the unit tier fork-free;
   `_start-router.scenario.test.ts` drives the router over real sockets.

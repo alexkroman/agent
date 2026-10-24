@@ -8,7 +8,13 @@ import { EventEmitter } from "node:events";
 import { agent } from "@alexkroman1/aai";
 import type { AgentServer } from "@alexkroman1/aai-runtime";
 import { describe, expect, test, vi } from "vitest";
-import { runStart, type StartRunDeps, stopOnSignal } from "./_start-run.ts";
+import {
+  DRAIN_POLL_MS,
+  runStart,
+  type StartRunDeps,
+  stopOnSignal,
+  workerCloser,
+} from "./_start-run.ts";
 import type { PrimaryLink } from "./_start-worker.ts";
 import type { ClusterLike, WorkerLike, WorkerMessage } from "./_start-workers.ts";
 
@@ -59,6 +65,8 @@ function harness(over: Partial<StartRunDeps> = {}) {
   const exits: number[] = [];
   const sent: WorkerMessage[] = [];
   let signal: ((s: NodeJS.Signals) => void) | undefined;
+  let ignored = 0;
+  let slept = 0;
   const link: PrimaryLink = { send: (m) => sent.push(m), onMessage: () => undefined };
   const deps: StartRunDeps = {
     isWorker: false,
@@ -77,6 +85,12 @@ function harness(over: Partial<StartRunDeps> = {}) {
     exit: (code) => exits.push(code),
     stop: async () => undefined,
     forever: () => new Promise<never>(() => undefined),
+    ignoreSignals: () => {
+      ignored += 1;
+    },
+    sleep: async (ms) => {
+      slept += ms;
+    },
     ui: {
       info: (m) => log.push(`info ${m}`),
       warn: (m) => log.push(`warn ${m}`),
@@ -85,13 +99,26 @@ function harness(over: Partial<StartRunDeps> = {}) {
     },
     ...over,
   };
-  return { deps, log, exits, sent, signal: (s: NodeJS.Signals) => signal?.(s) };
+  return {
+    deps,
+    log,
+    exits,
+    sent,
+    signal: (s: NodeJS.Signals) => signal?.(s),
+    ignored: () => ignored,
+    slept: () => slept,
+  };
 }
 
 describe("runStart — one process", () => {
   test("builds, binds, announces, and answers the bound port", async () => {
     const h = harness();
-    await expect(runStart({ port: 3000, host: undefined, workers: 1 }, h.deps)).resolves.toEqual({
+    await expect(
+      runStart(
+        { port: 3000, host: undefined, workers: 1, drainTimeoutMs: 30_000, maxCallsPerWorker: 100 },
+        h.deps,
+      ),
+    ).resolves.toEqual({
       ok: true,
       data: { name: "Voice", port: 3000, workers: 1 },
     });
@@ -123,7 +150,10 @@ describe("runStart — a --workers worker", () => {
   test("joins its primary and never settles (it prints no result of its own)", async () => {
     const h = harness({ isWorker: true });
     let settled = false;
-    void runStart({ port: 0, host: undefined, workers: 2 }, h.deps).then(() => {
+    void runStart(
+      { port: 0, host: undefined, workers: 2, drainTimeoutMs: 30_000, maxCallsPerWorker: 100 },
+      h.deps,
+    ).then(() => {
       settled = true;
     });
     await vi.waitFor(() =>
@@ -137,7 +167,10 @@ describe("runStart — a --workers worker", () => {
       isWorker: true,
       build: async () => Promise.reject(new Error("bad bundle")),
     });
-    void runStart({ port: 0, host: undefined, workers: 2 }, h.deps);
+    void runStart(
+      { port: 0, host: undefined, workers: 2, drainTimeoutMs: 30_000, maxCallsPerWorker: 100 },
+      h.deps,
+    );
     await vi.waitFor(() => expect(h.exits).toEqual([1]));
     expect(h.log).toContain("error bad bundle");
     expect(h.sent).toContainEqual({ type: "aai-start:fatal", message: "bad bundle" });
@@ -147,7 +180,12 @@ describe("runStart — a --workers worker", () => {
 describe("runStart — the --workers primary", () => {
   test("warns once without a database, then announces the bound port and worker count", async () => {
     const h = harness();
-    await expect(runStart({ port: 3000, host: "0.0.0.0", workers: 2 }, h.deps)).resolves.toEqual({
+    await expect(
+      runStart(
+        { port: 3000, host: "0.0.0.0", workers: 2, drainTimeoutMs: 30_000, maxCallsPerWorker: 100 },
+        h.deps,
+      ),
+    ).resolves.toEqual({
       ok: true,
       data: { name: "Voice", port: 4444, workers: 2 },
     });
@@ -157,7 +195,10 @@ describe("runStart — the --workers primary", () => {
 
   test("with a database there is no warning", async () => {
     const h = harness({ readEnv: async () => ({ DATABASE_URL: "postgres://x" }) });
-    await runStart({ port: 3000, host: undefined, workers: 2 }, h.deps);
+    await runStart(
+      { port: 3000, host: undefined, workers: 2, drainTimeoutMs: 30_000, maxCallsPerWorker: 100 },
+      h.deps,
+    );
     expect(h.log.some((l) => l.startsWith("warn"))).toBe(false);
   });
 
@@ -169,9 +210,78 @@ describe("runStart — the --workers primary", () => {
       },
       cluster: () => cluster,
     });
-    await expect(runStart({ port: 3000, host: undefined, workers: 2 }, h.deps)).rejects.toThrow(
-      /No built agent/,
-    );
+    await expect(
+      runStart(
+        { port: 3000, host: undefined, workers: 2, drainTimeoutMs: 30_000, maxCallsPerWorker: 100 },
+        h.deps,
+      ),
+    ).rejects.toThrow(/No built agent/);
     expect(cluster.workers).toEqual([]);
+  });
+});
+
+describe("runStart — a --workers worker ignores signals", () => {
+  test("its primary owns its lifecycle, so it installs no-op signal handlers first", async () => {
+    const h = harness({ isWorker: true });
+    void runStart(
+      { port: 0, host: undefined, workers: 2, drainTimeoutMs: 30_000, maxCallsPerWorker: 100 },
+      h.deps,
+    );
+    await vi.waitFor(() => expect(h.sent.some((m) => m.type === "aai-start:listening")).toBe(true));
+    expect(h.ignored()).toBe(1);
+  });
+});
+
+describe("workerCloser", () => {
+  test("a drain waits for the calls to end, then closes and exits 0", async () => {
+    let calls = 2;
+    const stop = vi.fn(async () => undefined);
+    const h = harness({
+      stop,
+      sleep: async () => {
+        calls -= 1;
+      },
+    });
+    workerCloser(fakeServer(), () => calls, undefined, h.deps)(60_000);
+    await vi.waitFor(() => expect(h.exits).toEqual([0]));
+    expect(calls).toBe(0);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  test("a drain gives up at its timeout with calls still live", async () => {
+    let slept = 0;
+    const h = harness({
+      sleep: async (ms) => {
+        slept += ms;
+      },
+    });
+    workerCloser(fakeServer(), () => 5, undefined, h.deps)(DRAIN_POLL_MS * 4);
+    await vi.waitFor(() => expect(h.exits).toEqual([0]));
+    expect(slept).toBe(DRAIN_POLL_MS * 4);
+  });
+
+  test("a stop arriving mid-drain cuts the wait short; closing happens once", async () => {
+    let close: (graceMs: number) => void = () => undefined;
+    let polls = 0;
+    const stop = vi.fn(async () => undefined);
+    const h = harness({
+      stop,
+      sleep: async () => {
+        polls += 1;
+        if (polls === 2) close(0);
+      },
+    });
+    close = workerCloser(fakeServer(), () => 3, undefined, h.deps);
+    close(600_000);
+    await vi.waitFor(() => expect(h.exits).toEqual([0]));
+    expect(polls).toBe(2);
+    expect(stop).toHaveBeenCalledTimes(1);
+  });
+
+  test("a failed close is reported and exits 1", async () => {
+    const h = harness({ stop: async () => Promise.reject(new Error("nope")) });
+    workerCloser(fakeServer(), () => 0, undefined, h.deps)(0);
+    await vi.waitFor(() => expect(h.exits).toEqual([1]));
+    expect(h.log).toContain("error shutdown failed: nope");
   });
 });

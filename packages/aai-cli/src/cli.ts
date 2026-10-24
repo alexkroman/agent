@@ -153,6 +153,14 @@ const start = defineExec({
       type: "string",
       description: "Processes to serve from: a number or `auto` (default: 1, or AAI_WORKERS)",
     },
+    "drain-timeout": {
+      type: "string",
+      description: "With --workers: seconds a shutdown lets live calls finish (default: 300)",
+    },
+    "max-calls-per-worker": {
+      type: "string",
+      description: "With --workers: calls per worker before new ones get 503 (default: unlimited)",
+    },
     json: sharedArgs.json,
   },
   // Like dev/build/publish: a directory with no `agent.ts` is not a project to
@@ -161,7 +169,7 @@ const start = defineExec({
   cwd: "agent",
   async run({ args, cwd }) {
     const { executeStart } = await import("./start.ts");
-    const { resolveWorkers } = await import("./_start-workers.ts");
+    const workerOptions = await import("./_start-workers.ts");
     // Parsed here rather than in the executor, so a non-numeric value fails as
     // a CLI error naming the flag — the same rule `aai workflow --limit` follows.
     return executeStart({
@@ -173,7 +181,20 @@ const start = defineExec({
         port: args.port === undefined ? undefined : parsePort(args.port),
         host: args.host?.trim() || undefined,
       }),
-      workers: resolveWorkers(args.workers),
+      workers: workerOptions.resolveWorkers(args.workers),
+      drainTimeoutMs:
+        workerOptions.resolvePositiveInt(
+          args["drain-timeout"],
+          "--drain-timeout",
+          workerOptions.DRAIN_TIMEOUT_ENV,
+          workerOptions.DEFAULT_DRAIN_TIMEOUT_S,
+        ) * 1000,
+      maxCallsPerWorker: workerOptions.resolvePositiveInt(
+        args["max-calls-per-worker"],
+        "--max-calls-per-worker",
+        workerOptions.MAX_CALLS_ENV,
+        Number.POSITIVE_INFINITY,
+      ),
     });
   },
 });

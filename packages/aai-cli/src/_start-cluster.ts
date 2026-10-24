@@ -34,14 +34,35 @@ export interface PrimaryDeps {
   log(message: string): void;
 }
 
+/** How the primary places and retires calls. */
+export interface PrimaryOptions {
+  workers: number;
+  port: number;
+  host: string | undefined;
+  /** How long a drain lets calls finish before the worker is closed anyway. */
+  drainTimeoutMs: number;
+  /** Calls a worker may hold before NEW ones are refused with 503. */
+  maxCallsPerWorker: number;
+}
+
 /**
  * Run the primary: fork `workers` slots, bind the router once EVERY slot
- * listens, and stop everything on a signal. Resolves with the agent's name (as
- * the workers report it) and the bound port; rejects — with every worker
- * stopped — when a worker fails to boot or the port cannot be bound.
+ * listens, and own every worker's lifecycle — workers ignore signals, so this
+ * is where they are interpreted:
+ *
+ * - the first SIGINT/SIGTERM DRAINS: new calls are refused (503), everything
+ *   else — a reconnect, an `/api` call, a run read — still routes, and each
+ *   worker exits once its calls end or `drainTimeoutMs` passes;
+ * - a second one STOPS: every worker closes now;
+ * - SIGHUP is a ROLLING RESTART: each slot's worker is replaced by a fresh one
+ *   that takes the slot's new traffic, while the old one drains its calls.
+ *
+ * Resolves with the agent's name (as the workers report it) and the bound
+ * port; rejects — with every worker stopped — when a worker fails to boot or
+ * the port cannot be bound.
  */
 export async function runPrimary(
-  opts: { workers: number; port: number; host: string | undefined },
+  opts: PrimaryOptions,
   deps: PrimaryDeps,
 ): Promise<{ name: string; port: number }> {
   const supervisor = superviseWorkers({
@@ -49,13 +70,26 @@ export async function runPrimary(
     cluster: deps.cluster,
     log: deps.log,
   });
-  const router = createRouter({ slots: opts.workers, target: supervisor.target });
-  // A terminal's Ctrl-C reaches every worker too; a supervisor's SIGTERM
-  // reaches only this pid. Stop accepting, then pass it on — workers ignore a
-  // repeat.
+  const router = createRouter({
+    slots: opts.workers,
+    target: supervisor.target,
+    admitCall: (slot) => {
+      if (!supervisor.accepting()) return "draining";
+      return supervisor.calls(slot) >= opts.maxCallsPerWorker ? "full" : "ok";
+    },
+    reserveCall: supervisor.reserve,
+    status: supervisor.status,
+  });
+  let signals = 0;
   deps.onSignal((signal) => {
-    router.close();
-    supervisor.stop(signal);
+    if (signal === "SIGHUP") return supervisor.roll(opts.drainTimeoutMs);
+    signals += 1;
+    if (signals > 1) return supervisor.stop();
+    deps.log(
+      `draining: new calls are refused; live calls get up to ${opts.drainTimeoutMs / 1000}s ` +
+        "(signal again to stop now)",
+    );
+    supervisor.drain(opts.drainTimeoutMs);
   });
   const { name } = await supervisor.ready;
   let port: number;
@@ -66,7 +100,10 @@ export async function runPrimary(
     await supervisor.exited;
     throw error;
   }
-  void supervisor.exited.then((code) => deps.exit(code));
+  void supervisor.exited.then((code) => {
+    router.close();
+    deps.exit(code);
+  });
   return { name, port };
 }
 
@@ -92,6 +129,9 @@ export interface WorkerDeps {
   load(): Promise<{ agent: AgentDef; env: Record<string, string> }>;
   build(agent: AgentDef, env: Record<string, string>): Promise<AgentServer>;
   runtime?: WorkerRuntime;
+  /** The primary's lifecycle commands — see {@link runPrimary}. */
+  onDrain?: (timeoutMs: number) => void;
+  onStop?: () => void;
 }
 
 /**
@@ -103,22 +143,22 @@ export interface WorkerDeps {
 export async function runWorker(
   opts: { slot: number; slots: number },
   deps: WorkerDeps,
-): Promise<AgentServer> {
+): Promise<{ server: AgentServer; activeCalls: () => number }> {
   try {
     const { agent, env } = await deps.load();
     if (!env.DATABASE_URL && Object.keys(agent.workflows ?? {}).length > 0) {
       throw new Error(workflowsNeedDatabase(opts.slots));
     }
     const server = await deps.build(agent, env);
-    await joinCluster({
+    const { activeCalls } = await joinCluster({
       slot: opts.slot,
       slots: opts.slots,
       server,
       name: agent.name,
       link: deps.link,
-      ...omitUndefined({ runtime: deps.runtime }),
+      ...omitUndefined({ runtime: deps.runtime, onDrain: deps.onDrain, onStop: deps.onStop }),
     });
-    return server;
+    return { server, activeCalls };
   } catch (error: unknown) {
     deps.link.send({
       type: "aai-start:fatal",

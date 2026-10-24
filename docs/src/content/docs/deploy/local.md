@@ -73,6 +73,27 @@ when the request carries the caller's `?client=`. The default UI's route hooks
 send it; a webhook from another service, which knows only a session id, should
 look the call up some other way.
 
+### Restarts without dropping calls
+
+The process in front owns every worker's lifecycle:
+
+- **`SIGTERM` (or Ctrl-C) drains.** New calls are refused with `503`, while
+  reconnects, `/api` requests and run reads keep working. Each worker exits once
+  its calls end, or after `--drain-timeout` seconds (default 300, or
+  `AAI_DRAIN_TIMEOUT`). A second signal stops at once. Give your platform's
+  shutdown grace period at least the drain timeout, or it will kill the calls
+  first.
+- **`SIGHUP` is a rolling restart.** Each worker is replaced in turn: a fresh
+  one starts, takes that worker's new calls, and the old one finishes its calls
+  before exiting. Live calls are not interrupted. A call that reconnects
+  mid-rollover resumes only with a `DATABASE_URL`.
+- **`--max-calls-per-worker <n>`** (or `AAI_MAX_CALLS_PER_WORKER`) refuses new
+  calls with `503` once a worker holds that many. Load is refreshed every couple
+  of seconds, so the limit can briefly lag a hang-up.
+
+`curl localhost:3000/workers`, from the machine itself, shows each worker's
+state, live calls and event-loop load.
+
 A worker that fails while starting (an unreachable database, say) stops the
 whole server rather than restarting forever. A worker that stops responding for
 15 seconds is restarted, and one that is slow to respond is reported first.
