@@ -56,6 +56,7 @@ import {
 } from "ai";
 import { gatewayToolSchemaMiddleware } from "./_gateway-tool-schema.ts";
 import { type DeferredModel, lazyModel } from "./_lazy-model.ts";
+import { llmFetch } from "./_llm-transport.ts";
 import { repairOpenAiStream } from "./_openai-stream-repair.ts";
 import { type FetchLike, mergeRequestBody } from "./_request-body-extras.ts";
 import { pickEndpoint } from "./_utils.ts";
@@ -136,26 +137,18 @@ function withProviderOptions(
 }
 
 /**
- * The transport every model-provider request rides, named once so the two
- * `fetch` wrappers below delegate to it rather than each defaulting on its own.
+ * The transport every model-provider request rides, named once and handed to
+ * EVERY client below — the native `@ai-sdk/*` ones too — so a body option or the
+ * gateway's stream repair never moves a provider onto a different transport.
  *
- * It is the AMBIENT `fetch`, and deliberately not an egress pool from
- * `../_egress-fetch.ts` (which `guard-invariants` rule 29 otherwise requires):
- *
- * - **Parity.** Every native `@ai-sdk/*` client here, and an OpenAI-compatible
- *   one without `providerOptions`, already uses the AI SDK's default — this
- *   global. A pooled delegate would make a body option or the gateway's stream
- *   repair silently move that provider onto another transport.
- * - **The eval network swaps the global** (`eval/_network-install.ts`), and
- *   `eval/_model-hosts.ts` relies on the model reaching its API through it.
- * - **The shape is not a fan-out**: one streaming call a turn to a model
- *   provider, not the concurrent same-origin bursts the pools exist for.
- *
- * Read per CALL, not captured at module load, so a global installed after the
- * model is built (an eval case's network, a spec's `vi.stubGlobal`) is the one
- * the request goes through.
+ * `_llm-transport.ts` owns it: Node's `fetch` with idle connections kept 30 s
+ * (a voice turn otherwise re-dials TCP + TLS every time), and the global itself
+ * whenever something has replaced it — the eval network
+ * (`eval/_network-install.ts`), a spec's `vi.stubGlobal` — read per CALL.
+ * Deliberately not an egress pool from `../_egress-fetch.ts`: the shape is one
+ * streaming call a turn to a model provider, not a same-origin fan-out.
  */
-const providerFetch: FetchLike = (input, init) => globalThis.fetch(input, init);
+const providerFetch: FetchLike = llmFetch;
 
 /**
  * `@ai-sdk/openai`'s factory, imported once for every kind that uses it —
@@ -203,10 +196,10 @@ function openAiCompatible(name: string, defaultBaseUrl: string | undefined): Llm
       const baseURL = baseUrl ?? defaultBaseUrl;
       const fetch =
         providerOptions === undefined
-          ? undefined
+          ? providerFetch
           : mergeRequestBody(providerOptions, providerFetch);
       return lazyModel(`${name}.chat`, model(d), async () =>
-        (await openAiFactory())({ apiKey, ...omitUndefined({ baseURL, fetch }), name }).chat(
+        (await openAiFactory())({ apiKey, ...omitUndefined({ baseURL }), fetch, name }).chat(
           model(d),
         ),
       );
@@ -234,6 +227,7 @@ const LLM_CLIENTS = {
           return createAnthropic({
             apiKey,
             baseURL: opts(d).baseUrl ?? "https://api.anthropic.com/v1",
+            fetch: providerFetch,
           })(model(d)) as DeferredModel;
         }),
         "anthropic",
@@ -245,7 +239,9 @@ const LLM_CLIENTS = {
       const baseURL = opts(d).baseUrl;
       return withProviderOptions(
         lazyModel(PROVIDER_IDS.openai, model(d), async () =>
-          (await openAiFactory())({ apiKey, ...omitUndefined({ baseURL }) })(model(d)),
+          (await openAiFactory())({ apiKey, ...omitUndefined({ baseURL }), fetch: providerFetch })(
+            model(d),
+          ),
         ),
         "openai",
         d,
@@ -258,9 +254,11 @@ const LLM_CLIENTS = {
       return withProviderOptions(
         lazyModel(PROVIDER_IDS.google, model(d), async () => {
           const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
-          return createGoogleGenerativeAI({ apiKey, ...omitUndefined({ baseURL }) })(
-            model(d),
-          ) as DeferredModel;
+          return createGoogleGenerativeAI({
+            apiKey,
+            ...omitUndefined({ baseURL }),
+            fetch: providerFetch,
+          })(model(d)) as DeferredModel;
         }),
         "google",
         d,
@@ -273,7 +271,7 @@ const LLM_CLIENTS = {
       return withProviderOptions(
         lazyModel(PROVIDER_IDS.mistral, model(d), async () => {
           const { createMistral } = await import("@ai-sdk/mistral");
-          return createMistral({ apiKey, ...omitUndefined({ baseURL }) })(
+          return createMistral({ apiKey, ...omitUndefined({ baseURL }), fetch: providerFetch })(
             model(d),
           ) as DeferredModel;
         }),
@@ -288,7 +286,9 @@ const LLM_CLIENTS = {
       return withProviderOptions(
         lazyModel(PROVIDER_IDS.xai, model(d), async () => {
           const { createXai } = await import("@ai-sdk/xai");
-          return createXai({ apiKey, ...omitUndefined({ baseURL }) })(model(d)) as DeferredModel;
+          return createXai({ apiKey, ...omitUndefined({ baseURL }), fetch: providerFetch })(
+            model(d),
+          ) as DeferredModel;
         }),
         "xai",
         d,
@@ -301,7 +301,9 @@ const LLM_CLIENTS = {
       return withProviderOptions(
         lazyModel(PROVIDER_IDS.groq, model(d), async () => {
           const { createGroq } = await import("@ai-sdk/groq");
-          return createGroq({ apiKey, ...omitUndefined({ baseURL }) })(model(d)) as DeferredModel;
+          return createGroq({ apiKey, ...omitUndefined({ baseURL }), fetch: providerFetch })(
+            model(d),
+          ) as DeferredModel;
         }),
         "groq",
         d,
@@ -322,7 +324,7 @@ const LLM_CLIENTS = {
     create: (apiKey, d) => {
       const baseURL = opts(d).baseUrl;
       return withProviderOptions(
-        createGateway({ apiKey, ...omitUndefined({ baseURL }) })(model(d)),
+        createGateway({ apiKey, ...omitUndefined({ baseURL }), fetch: providerFetch })(model(d)),
         "gateway",
         d,
       );
