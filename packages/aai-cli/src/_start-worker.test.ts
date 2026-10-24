@@ -114,14 +114,12 @@ describe("joinCluster", () => {
     deliver({
       type: "aai-start:relay",
       id: 9,
-      origin: 0,
       payload: { op: "notify", clientId: local, notice, ackTimeoutMs: 50 },
     });
     await vi.waitFor(() =>
       expect(sent).toContainEqual({
         type: "aai-start:relay-result",
         id: 9,
-        origin: 0,
         outcome: "acked",
       }),
     );
@@ -151,10 +149,9 @@ describe("joinCluster", () => {
     link.deliver({
       type: "aai-start:relay",
       id: 4,
-      origin: 1,
       payload: { op: "notify", clientId: "c", notice, ackTimeoutMs: 1000 },
     });
-    link.deliver({ type: "aai-start:relay-cancel", id: 4, origin: 1 });
+    link.deliver({ type: "aai-start:relay-cancel", id: 4 });
     expect(seenSignal?.aborted).toBe(true);
     // Let the delivery chain (reject → catch → then) settle: microtask hops, no timer.
     for (let hop = 0; hop < 5; hop++) await Promise.resolve();

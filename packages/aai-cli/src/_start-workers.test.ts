@@ -490,8 +490,8 @@ describe("superviseWorkers relays an inbox notice between workers", () => {
     run.listen(101);
     run.say(100, { type: "aai-start:relay", id: 7, target: 1, payload });
     // The target sees the PRIMARY's id; the origin gets its own back.
-    expect(run.workers[1]?.inbox).toEqual([{ type: "aai-start:relay", id: 1, origin: 0, payload }]);
-    run.say(101, { type: "aai-start:relay-result", id: 1, origin: 0, outcome: "acked" });
+    expect(run.workers[1]?.inbox).toEqual([{ type: "aai-start:relay", id: 1, payload }]);
+    run.say(101, { type: "aai-start:relay-result", id: 1, outcome: "acked" });
     expect(run.workers[0]?.inbox).toEqual([
       { type: "aai-start:relay-result", id: 7, outcome: "acked" },
     ]);
@@ -506,9 +506,8 @@ describe("superviseWorkers relays an inbox notice between workers", () => {
     expect(run.workers[1]?.inbox.at(-1)).toEqual({
       type: "aai-start:relay-cancel",
       id: 1,
-      origin: 0,
     });
-    run.say(101, { type: "aai-start:relay-result", id: 1, origin: 0, outcome: "acked" });
+    run.say(101, { type: "aai-start:relay-result", id: 1, outcome: "acked" });
     expect(run.workers[0]?.inbox).toEqual([]);
   });
 
@@ -519,7 +518,7 @@ describe("superviseWorkers relays an inbox notice between workers", () => {
     run.say(100, { type: "aai-start:relay", id: 3, target: 1, payload });
     run.exit(100);
     run.listen(102); // slot 0's replacement, whose own relay ids also start at 1
-    run.say(101, { type: "aai-start:relay-result", id: 1, origin: 0, outcome: "acked" });
+    run.say(101, { type: "aai-start:relay-result", id: 1, outcome: "acked" });
     expect(run.workers[2]?.inbox).toEqual([]);
   });
 

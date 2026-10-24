@@ -151,8 +151,8 @@ export async function joinCluster(opts: {
   let eluMark = performance.eventLoopUtilization();
   runtime.setSessionIdMinter(() => mintIdForSlot(slot, slots));
   const settleRelay = installRelayClient(slot, slots, link, runtime);
-  /** Relayed notices this worker is delivering, keyed `origin:id`, so a cancel can abort one. */
-  const delivering = new Map<string, AbortController>();
+  /** Relayed notices this worker is delivering, by the primary's id, so a cancel can abort one. */
+  const delivering = new Map<number, AbortController>();
 
   link.onMessage((message, socket) => {
     switch (message.type) {
@@ -173,9 +173,8 @@ export async function joinCluster(opts: {
         return;
       }
       case "aai-start:relay": {
-        const key = `${message.origin}:${message.id}`;
         const control = new AbortController();
-        delivering.set(key, control);
+        delivering.set(message.id, control);
         const { clientId, notice, ackTimeoutMs } = message.payload;
         // Fire-and-forget by design: the result travels back as a message, and
         // the chain cannot reject (the catch turns any failure into an outcome).
@@ -184,20 +183,14 @@ export async function joinCluster(opts: {
           .catch((): RelayOutcome => "disconnected")
           .then((outcome) => {
             // Deleted by a cancel: the origin has stopped waiting, so say nothing.
-            if (!delivering.delete(key)) return;
-            link.send({
-              type: "aai-start:relay-result",
-              id: message.id,
-              origin: message.origin,
-              outcome,
-            });
+            if (!delivering.delete(message.id)) return;
+            link.send({ type: "aai-start:relay-result", id: message.id, outcome });
           });
         return;
       }
       case "aai-start:relay-cancel": {
-        const key = `${message.origin}:${message.id}`;
-        const control = delivering.get(key);
-        delivering.delete(key);
+        const control = delivering.get(message.id);
+        delivering.delete(message.id);
         control?.abort(new Error("relayed notice cancelled by its sender"));
         return;
       }

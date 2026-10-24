@@ -105,8 +105,8 @@ function liftAudioPayload(raw: Buffer): AssemblyAITtsMessage | undefined {
   const start = key + AUDIO_KEY.length;
   const end = raw.indexOf(QUOTE, start);
   if (end === -1) return undefined;
-  const backslash = raw.indexOf(BACKSLASH, start);
-  if (backslash !== -1 && backslash < end) return undefined;
+  // Within the value only (a view, not a copy): the scan for its end just passed it.
+  if (raw.subarray(start, end).includes(BACKSLASH)) return undefined;
   if (raw.indexOf(AUDIO_KEY, end) !== -1) return undefined;
   // `start - 1` keeps the value's opening quote out of the head; `""` replaces
   // the whole quoted value.

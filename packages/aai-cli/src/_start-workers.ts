@@ -161,7 +161,7 @@ export type WorkerMessage =
   | { type: "aai-start:fatal"; message: string }
   | { type: "aai-start:relay"; id: number; target: number; payload: RelayedNotify }
   | { type: "aai-start:relay-cancel"; id: number; target: number }
-  | { type: "aai-start:relay-result"; id: number; origin: number; outcome: RelayOutcome };
+  | { type: "aai-start:relay-result"; id: number; outcome: RelayOutcome };
 
 /** Primary → worker. */
 export type PrimaryMessage =
@@ -170,8 +170,9 @@ export type PrimaryMessage =
   | { type: "aai-start:ping" }
   | { type: "aai-start:drain"; timeoutMs: number }
   | { type: "aai-start:stop" }
-  | { type: "aai-start:relay"; id: number; origin: number; payload: RelayedNotify }
-  | { type: "aai-start:relay-cancel"; id: number; origin: number }
+  /** `id` is the PRIMARY's, unique across the server — see `relays` in the supervisor. */
+  | { type: "aai-start:relay"; id: number; payload: RelayedNotify }
+  | { type: "aai-start:relay-cancel"; id: number }
   | { type: "aai-start:relay-result"; id: number; outcome: RelayOutcome };
 
 /** One of this protocol's messages (every type is `aai-start:`-prefixed) — either direction. */
@@ -478,38 +479,23 @@ export function superviseWorkers(opts: {
     log(`rolling restart of ${slots} workers`);
     rollNext();
   };
-  const answer = (relay: Relay, outcome: RelayOutcome): void => {
-    if (tracked.has(relay.origin)) {
-      relay.origin.send({ type: "aai-start:relay-result", id: relay.originId, outcome });
+  const answer = (origin: WorkerLike, originId: number, outcome: RelayOutcome): void => {
+    if (tracked.has(origin)) {
+      origin.send({ type: "aai-start:relay-result", id: originId, outcome });
     }
   };
   const relay = (
     origin: WorkerLike,
-    originSlot: number,
     message: Extract<WorkerMessage, { type: "aai-start:relay" }>,
   ) => {
     const target = ready.get(message.target)?.worker;
+    if (!target) return answer(origin, message.id, "offline");
     const id = ++nextRelayId;
-    const entry: Relay = { origin, originId: message.id, target: target ?? origin };
-    if (!target) return answer(entry, "offline");
-    relays.set(id, entry);
-    const sent = target.send({
-      type: "aai-start:relay",
-      id,
-      origin: originSlot,
-      payload: message.payload,
-    });
-    if (!sent) {
+    relays.set(id, { origin, originId: message.id, target });
+    if (!target.send({ type: "aai-start:relay", id, payload: message.payload })) {
       relays.delete(id);
-      answer(entry, "offline");
+      answer(origin, message.id, "offline");
     }
-  };
-  /** The relay `origin` sent under its own `originId`, if still in flight. */
-  const findRelay = (origin: WorkerLike, originId: number): number | undefined => {
-    for (const [id, entry] of relays) {
-      if (entry.origin === origin && entry.originId === originId) return id;
-    }
-    return undefined;
   };
   const onListening = (worker: WorkerLike, state: Tracked, port: number, agentName: string) => {
     const { slot } = state;
@@ -555,19 +541,20 @@ export function superviseWorkers(opts: {
   };
 
   /** The origin stopped waiting, so nothing is owed back to it; tell the target to stop delivering. */
-  const cancelRelay = (origin: WorkerLike, originSlot: number, originId: number): void => {
-    const id = findRelay(origin, originId);
-    const entry = id === undefined ? undefined : relays.get(id);
-    if (id === undefined || !entry) return;
-    relays.delete(id);
-    entry.target.send({ type: "aai-start:relay-cancel", id, origin: originSlot });
+  const cancelRelay = (origin: WorkerLike, originId: number): void => {
+    for (const [id, entry] of relays) {
+      if (entry.origin !== origin || entry.originId !== originId) continue;
+      relays.delete(id);
+      entry.target.send({ type: "aai-start:relay-cancel", id });
+      return;
+    }
   };
   const settleRelay = (from: WorkerLike, id: number, outcome: RelayOutcome): void => {
     const entry = relays.get(id);
     // From the process it was sent to, or it is not this relay's answer.
     if (!entry || entry.target !== from) return;
     relays.delete(id);
-    answer(entry, outcome);
+    answer(entry.origin, entry.originId, outcome);
   };
 
   host.onMessage((worker, message) => {
@@ -582,9 +569,9 @@ export function superviseWorkers(opts: {
       case "aai-start:pong":
         return onPong(worker, state, message);
       case "aai-start:relay":
-        return relay(worker, state.slot, message);
+        return relay(worker, message);
       case "aai-start:relay-cancel":
-        return cancelRelay(worker, state.slot, message.id);
+        return cancelRelay(worker, message.id);
       case "aai-start:relay-result":
         return settleRelay(worker, message.id, message.outcome);
       default:
@@ -601,7 +588,7 @@ export function superviseWorkers(opts: {
   const release = (worker: WorkerLike, slot: number): boolean => {
     tracked.delete(worker);
     for (const [id, entry] of relays) {
-      if (entry.target === worker) answer(entry, "disconnected");
+      if (entry.target === worker) answer(entry.origin, entry.originId, "disconnected");
       if (entry.target === worker || entry.origin === worker) relays.delete(id);
     }
     if (ready.get(slot)?.worker !== worker) return false;

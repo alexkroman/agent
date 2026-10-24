@@ -137,18 +137,16 @@ function withProviderOptions(
 }
 
 /**
- * The transport every model-provider request rides, named once and handed to
- * EVERY client below — the native `@ai-sdk/*` ones too — so a body option or the
- * gateway's stream repair never moves a provider onto a different transport.
- *
- * `_llm-transport.ts` owns it: Node's `fetch` with idle connections kept 30 s
- * (a voice turn otherwise re-dials TCP + TLS every time), and the global itself
- * whenever something has replaced it — the eval network
- * (`eval/_network-install.ts`), a spec's `vi.stubGlobal` — read per CALL.
- * Deliberately not an egress pool from `../_egress-fetch.ts`: the shape is one
- * streaming call a turn to a model provider, not a same-origin fan-out.
+ * The transport every model-provider request rides (`_llm-transport.ts`),
+ * handed to EVERY client below — the native `@ai-sdk/*` ones too — so a body
+ * option or the gateway's stream repair never moves a provider onto another one.
  */
 const providerFetch: FetchLike = llmFetch;
+
+/** A vendor client's options: its key, {@link providerFetch}, and a base URL when one is set. */
+function clientOpts(apiKey: string, baseURL: string | undefined) {
+  return { apiKey, fetch: providerFetch, ...omitUndefined({ baseURL }) };
+}
 
 /**
  * `@ai-sdk/openai`'s factory, imported once for every kind that uses it —
@@ -239,9 +237,7 @@ const LLM_CLIENTS = {
       const baseURL = opts(d).baseUrl;
       return withProviderOptions(
         lazyModel(PROVIDER_IDS.openai, model(d), async () =>
-          (await openAiFactory())({ apiKey, ...omitUndefined({ baseURL }), fetch: providerFetch })(
-            model(d),
-          ),
+          (await openAiFactory())(clientOpts(apiKey, baseURL))(model(d)),
         ),
         "openai",
         d,
@@ -254,11 +250,7 @@ const LLM_CLIENTS = {
       return withProviderOptions(
         lazyModel(PROVIDER_IDS.google, model(d), async () => {
           const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
-          return createGoogleGenerativeAI({
-            apiKey,
-            ...omitUndefined({ baseURL }),
-            fetch: providerFetch,
-          })(model(d)) as DeferredModel;
+          return createGoogleGenerativeAI(clientOpts(apiKey, baseURL))(model(d)) as DeferredModel;
         }),
         "google",
         d,
@@ -271,9 +263,7 @@ const LLM_CLIENTS = {
       return withProviderOptions(
         lazyModel(PROVIDER_IDS.mistral, model(d), async () => {
           const { createMistral } = await import("@ai-sdk/mistral");
-          return createMistral({ apiKey, ...omitUndefined({ baseURL }), fetch: providerFetch })(
-            model(d),
-          ) as DeferredModel;
+          return createMistral(clientOpts(apiKey, baseURL))(model(d)) as DeferredModel;
         }),
         "mistral",
         d,
@@ -286,9 +276,7 @@ const LLM_CLIENTS = {
       return withProviderOptions(
         lazyModel(PROVIDER_IDS.xai, model(d), async () => {
           const { createXai } = await import("@ai-sdk/xai");
-          return createXai({ apiKey, ...omitUndefined({ baseURL }), fetch: providerFetch })(
-            model(d),
-          ) as DeferredModel;
+          return createXai(clientOpts(apiKey, baseURL))(model(d)) as DeferredModel;
         }),
         "xai",
         d,
@@ -301,9 +289,7 @@ const LLM_CLIENTS = {
       return withProviderOptions(
         lazyModel(PROVIDER_IDS.groq, model(d), async () => {
           const { createGroq } = await import("@ai-sdk/groq");
-          return createGroq({ apiKey, ...omitUndefined({ baseURL }), fetch: providerFetch })(
-            model(d),
-          ) as DeferredModel;
+          return createGroq(clientOpts(apiKey, baseURL))(model(d)) as DeferredModel;
         }),
         "groq",
         d,
@@ -324,7 +310,7 @@ const LLM_CLIENTS = {
     create: (apiKey, d) => {
       const baseURL = opts(d).baseUrl;
       return withProviderOptions(
-        createGateway({ apiKey, ...omitUndefined({ baseURL }), fetch: providerFetch })(model(d)),
+        createGateway(clientOpts(apiKey, baseURL))(model(d)),
         "gateway",
         d,
       );

@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * The transport every model-provider request rides: Node's own `fetch`
- * semantics, with idle connections kept {@link LLM_KEEP_ALIVE_MS} instead of
- * undici's 4 s.
+ * semantics, with idle connections kept 30 s (`modelFetch`, the egress module's
+ * model pool) instead of undici's 4 s.
  *
  * ## Why: a voice turn was paying a fresh TCP + TLS handshake
  *
@@ -19,7 +19,7 @@
  * The keep-alive is a dispatcher setting, and a dispatcher must ride the undici
  * copy it was built from: Node's bundled `fetch` is another major and rejects a
  * v8 `Agent` (`host/_undici.ts` in the SDK). So requests go through
- * `pinnedFetch` — but ONLY while the global is still Node's own, judged per call
+ * `modelFetch` (`pinnedFetch` on that pool) — but ONLY while the global is still Node's own, judged per call
  * by what the function IS (see {@link isNodeFetch}), not by identity with what
  * was there at load: an interceptor installed before this module loaded (a
  * test setup file's msw or nock) must still see every model request. When
@@ -31,19 +31,11 @@
  * rare at 30 s (the server's idle limit is longer) and the AI SDK's own retry
  * covers it.
  *
- * HTTP/1.1, as Node's bundled `fetch` speaks today: one streaming request per
- * connection, and the pool opens as many connections as there are calls in
- * flight — never a cap a busy process's turns would queue behind.
- *
  * @module
  */
 
-import { pinnedFetch } from "@alexkroman1/aai/host-internal";
-import { createEgressPool, type EgressPool } from "../_egress-pool.ts";
+import { modelFetch } from "../_egress-fetch.ts";
 import type { FetchLike } from "./_request-body-extras.ts";
-
-/** How long an idle model-provider connection is kept, absent a server hint. */
-export const LLM_KEEP_ALIVE_MS = 30_000;
 
 /**
  * Is `fetch` Node's own? Node's is a plain function whose source loads its
@@ -88,35 +80,22 @@ export function createLlmFetch(deps: LlmFetchDeps): FetchLike {
   };
 }
 
-/** The process's one model-provider pool, built on first use; {@link closeLlmFetch} resets it. */
-let pool: EgressPool | undefined;
-
-function keepAliveFetch(): FetchLike {
-  pool ??= createEgressPool({
-    keepAliveTimeout: LLM_KEEP_ALIVE_MS,
-    // HTTP/1.1, as Node's bundled `fetch` speaks today: one streaming request
-    // per connection (`pipelining: 1`), and as many connections as there are
-    // calls in flight — no cap a busy process's turns would queue behind.
-    allowH2: false,
-    pipelining: 1,
-  });
-  const { dispatcher } = pool;
-  return (input, init) => pinnedFetch(input, { ...init, dispatcher });
-}
-
-/**
- * Close the model-provider pool, letting requests in flight finish. A later
- * request builds a fresh one, so a second runtime in the process is unharmed.
- */
-export async function closeLlmFetch(): Promise<void> {
-  const held = pool;
-  pool = undefined;
-  await held?.close();
+/** `check`, answered again only when the function it is asked about changes. */
+function lastVerdict(check: (fetch: FetchLike) => boolean): (fetch: FetchLike) => boolean {
+  let last: FetchLike | undefined;
+  let verdict = false;
+  return (fetch) => {
+    if (fetch !== last) {
+      last = fetch;
+      verdict = check(fetch);
+    }
+    return verdict;
+  };
 }
 
 /** The real provider `fetch` — see the module doc. */
 export const llmFetch: FetchLike = createLlmFetch({
   ambient: () => globalThis.fetch,
-  isNative: isNodeFetch,
-  keepAlive: keepAliveFetch,
+  isNative: lastVerdict(isNodeFetch),
+  keepAlive: () => modelFetch,
 });

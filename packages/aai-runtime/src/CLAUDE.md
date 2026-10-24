@@ -144,12 +144,13 @@ Rules:
 - The worked example is the `topic-briefing-agent` template (context isolation,
   parallel fan-out with `allSettled`, per-subagent tools and models).
 
-## Every call this runtime makes of its OWN goes through a POOL, and there are two
+## Every call this runtime makes of its OWN goes through a POOL, and there are three
 
 `_egress-fetch.ts` holds `rpcFetch` (platform routes — the fallback under the
 multiplexed platform socket, see
-[`PLATFORM-SOCKET-CLAUDE.md`](../../aai-server/PLATFORM-SOCKET-CLAUDE.md)) and
-`blobFetch` (window bytes); `_egress-pool.ts` builds them and `step-fetch.ts`
+[`PLATFORM-SOCKET-CLAUDE.md`](../../aai-server/PLATFORM-SOCKET-CLAUDE.md)),
+`blobFetch` (window bytes) and `modelFetch` (model providers, no connection
+cap); `_egress-pool.ts` builds them and `step-fetch.ts`
 takes a third. **`globalThis.fetch` is banned here by `guard-invariants`
 rule 29.** Both default to HTTP/1.1: under HTTP/2 concurrent requests share one
 flow-control window and a capacity limit arrives as a status-less reset
@@ -166,11 +167,11 @@ RPC pool only.
   published export.
 - **Bodies must be plain** (`Uint8Array` or string): through `pinnedFetch`, a
   global `FormData`/`Blob`/`Headers`/`Request` is silently stringified
-  (`host/_undici.ts`). Model-provider requests ride their own keep-alive pool
-  (`providers/_llm-transport.ts`, 30 s idle, so a turn does not re-dial TCP +
-  TLS), handed to every LLM client as `providerFetch`; it yields to the global
-  whenever the global was replaced (eval network, `vi.stubGlobal`) or a request
-  is not plain.
+  (`host/_undici.ts`). Model-provider requests reach `modelFetch` through
+  `providers/_llm-transport.ts` (30 s idle, so a turn does not re-dial TCP +
+  TLS), which every LLM client is built with; it yields to the global whenever
+  the global is not Node's own (eval network, an interceptor, `vi.stubGlobal`)
+  or a request is not plain.
 
 ## A reply's metrics are ONE frame, and every reader takes it from there
 
