@@ -11,9 +11,9 @@ import { IncomingMessage, ServerResponse } from "node:http";
 import { Socket } from "node:net";
 import { PassThrough } from "node:stream";
 import { describe, expect, test, vi } from "vitest";
-import { clientKey, slotOf } from "./_start-affinity.ts";
 import { createRouter, type UpstreamRequest } from "./_start-router.ts";
-import type { PrimaryMessage, ReadyWorker } from "./_start-workers.ts";
+import { clientFor } from "./_start-test-utils.ts";
+import type { Admission, PrimaryMessage, ReadyWorker } from "./_start-workers.ts";
 
 /** A request as the server's parser would hand it over, body already ended. */
 function incoming(url: string, headers: Record<string, string> = {}): IncomingMessage {
@@ -72,10 +72,6 @@ function upstreamAnswering(status: number, text: string, headers: Record<string,
     return body;
   };
   return { request, dialled };
-}
-
-function clientFor(slot: number, slots: number): string {
-  for (let i = 0; ; i++) if (slotOf(clientKey(`c${i}`), slots) === slot) return `c${i}`;
 }
 
 describe("createRouter — HTTP", () => {
@@ -161,6 +157,7 @@ describe("createRouter — upgrades", () => {
     expect(Buffer.from(handoff.bytes).toString("latin1")).toBe(
       `GET /websocket?client=${client} HTTP/1.1\r\nhost: h\r\nupgrade: websocket\r\n\r\ntail`,
     );
+    expect(handoff.call).toBe(true);
     socket.destroy();
   });
 
@@ -175,34 +172,27 @@ describe("createRouter — upgrades", () => {
 });
 
 describe("createRouter — admission", () => {
-  function upgradeTo(
-    url: string,
-    admitCall: (slot: number, resume: boolean) => "ok" | "draining" | "full",
-    reserved: number[],
-  ) {
+  function upgradeTo(url: string, admitCall: (slot: number, resume: boolean) => Admission) {
     sentTo.length = 0;
     const workers = [readyWorker(0)];
-    const server = createRouter({
-      slots: 1,
-      target: (s) => workers[s],
-      admitCall,
-      reserveCall: (slot) => reserved.push(slot),
-    });
+    const server = createRouter({ slots: 1, target: (s) => workers[s], admitCall });
     const socket = new Socket();
     const end = vi.spyOn(socket, "end").mockImplementation(() => socket);
     server.emit("upgrade", incoming(url, { host: "h" }), socket, Buffer.alloc(0));
     socket.destroy();
+    const handoff = sentTo[0]?.[0];
     return {
-      handedOff: (sentTo[0] ?? []).length > 0,
+      handedOff: handoff !== undefined,
+      call: handoff?.type === "aai-start:upgrade" ? handoff.call : undefined,
       refusal: String(end.mock.calls[0]?.[0] ?? ""),
     };
   }
 
   test("a NEW call is refused with the reason while draining or full", () => {
-    const draining = upgradeTo("/websocket?client=c", () => "draining", []);
+    const draining = upgradeTo("/websocket?client=c", () => "draining");
     expect(draining.handedOff).toBe(false);
     expect(draining.refusal).toMatch(/503 Service Unavailable[\s\S]*draining/);
-    const full = upgradeTo("/websocket?client=c", () => "full", []);
+    const full = upgradeTo("/websocket?client=c", () => "full");
     expect(full.refusal).toMatch(/call limit/);
   });
 
@@ -212,25 +202,33 @@ describe("createRouter — admission", () => {
       seen.push(resume);
       return "ok" as const;
     };
-    upgradeTo("/websocket?client=c", record, []);
-    upgradeTo("/websocket?client=c&sessionId=s1", record, []);
+    upgradeTo("/websocket?client=c", record);
+    upgradeTo("/websocket?client=c&sessionId=s1", record);
     expect(seen).toEqual([false, true]);
   });
 
-  test("an /inbox socket is not a call: never checked, never refused", () => {
-    expect(upgradeTo("/inbox?client=c", () => "full", []).handedOff).toBe(true);
+  test("an /inbox socket is not a call: never checked, never refused, handed off as no call", () => {
+    const inbox = upgradeTo("/inbox?client=c", () => "full");
+    expect(inbox.handedOff).toBe(true);
+    expect(inbox.call).toBe(false);
   });
 
-  test("a prefix spelling the server routes as a session is admission-checked too", () => {
-    expect(upgradeTo("/websocket/x?client=c", () => "full", []).handedOff).toBe(false);
+  test("a prefix spelling the server routes as a session is a call: admission-checked, counted", () => {
+    expect(upgradeTo("/websocket/x?client=c", () => "full").handedOff).toBe(false);
+    // Handed off as a call, so the worker's drain waits for it.
+    expect(upgradeTo("/websocket/x?client=c", () => "ok").call).toBe(true);
   });
 
-  test("every admitted call socket is reserved, a reconnect included", () => {
-    const reserved: number[] = [];
-    upgradeTo("/websocket?client=c", () => "ok", reserved);
-    upgradeTo("/websocket?client=c&sessionId=s1", () => "ok", reserved);
-    upgradeTo("/inbox?client=c", () => "ok", reserved);
-    expect(reserved).toEqual([0, 0]);
+  test("every call socket is put to admission (which counts it), a reconnect included", () => {
+    const asked: number[] = [];
+    const record = (slot: number) => {
+      asked.push(slot);
+      return "ok" as const;
+    };
+    upgradeTo("/websocket?client=c", record);
+    upgradeTo("/websocket?client=c&sessionId=s1", record);
+    upgradeTo("/inbox?client=c", record);
+    expect(asked).toEqual([0, 0]);
   });
 });
 
@@ -265,5 +263,42 @@ describe("createRouter — GET /workers", () => {
     await run.ended;
     expect(run.writeHead).toHaveBeenCalledWith(404);
     run.socket.destroy();
+  });
+});
+
+describe("createRouter — readiness", () => {
+  async function probe(method: string, url: string, notReady: string | undefined) {
+    const workers = [readyWorker(0)];
+    const up = upstreamAnswering(200, "ok");
+    const server = createRouter({
+      slots: 1,
+      target: (s) => workers[s],
+      request: up.request,
+      notReady: () => notReady,
+    });
+    const req = incoming(url);
+    req.method = method;
+    const { res, body, ended } = outgoing(req);
+    const writeHead = vi.spyOn(res, "writeHead");
+    server.emit("request", req, res);
+    await ended;
+    return { writeHead, body: body.join(""), proxied: up.dialled.length > 0 };
+  }
+
+  test("while not ready, the primary answers a GET or HEAD /health itself with 503 and why", async () => {
+    const get = await probe("GET", "/health", "server is draining");
+    expect(get.proxied).toBe(false);
+    expect(get.writeHead).toHaveBeenCalledWith(
+      503,
+      expect.objectContaining({ "retry-after": "1" }),
+    );
+    expect(get.body).toBe("server is draining\n");
+    expect((await probe("HEAD", "/health", "server is starting")).proxied).toBe(false);
+  });
+
+  test("other requests still route while not ready; /health routes once ready", async () => {
+    expect((await probe("GET", "/api/x", "server is draining")).proxied).toBe(true);
+    expect((await probe("POST", "/health", "server is draining")).proxied).toBe(true);
+    expect((await probe("GET", "/health", undefined)).proxied).toBe(true);
   });
 });

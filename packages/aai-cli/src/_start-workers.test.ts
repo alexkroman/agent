@@ -6,11 +6,10 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { type FakeWorker, fakeCluster } from "./_start-test-utils.ts";
 import {
-  type ClusterLike,
   LIVENESS_TIMEOUT_MS,
   PING_INTERVAL_MS,
-  type PrimaryMessage,
   parseWorkers,
   resolvePositiveInt,
   resolveWorkers,
@@ -19,7 +18,6 @@ import {
   STOP_GRACE_MS,
   superviseWorkers,
   WORKERS_ENV,
-  type WorkerLike,
 } from "./_start-workers.ts";
 
 describe("parseWorkers / resolveWorkers", () => {
@@ -66,51 +64,19 @@ describe("resolvePositiveInt", () => {
   });
 });
 
-type FakeWorker = WorkerLike & {
-  env: Record<string, string>;
-  killed: string[];
-  inbox: PrimaryMessage[];
-};
-
-/** A cluster, clock and timers a test drives by hand. */
-function supervise(slots: number) {
-  let nextPid = 100;
+/** A supervisor over a fake cluster, with a clock and timers a test drives by hand. */
+function supervise(slots: number, maxCallsPerWorker?: number) {
   let clock = 0;
-  const workers: FakeWorker[] = [];
   const logs: string[] = [];
   const timers: { at: number; fire: () => void }[] = [];
   let tick: () => void = () => undefined;
   let pingingStopped = false;
-  let onExit: Parameters<ClusterLike["onExit"]>[0] = () => undefined;
-  let onMessage: Parameters<ClusterLike["onMessage"]>[0] = () => undefined;
-  const cluster: ClusterLike = {
-    fork(env) {
-      const worker: FakeWorker = {
-        pid: nextPid++,
-        env,
-        killed: [],
-        inbox: [],
-        kill(signal = "SIGTERM") {
-          worker.killed.push(signal);
-        },
-        send(message) {
-          worker.inbox.push(message);
-        },
-      };
-      workers.push(worker);
-      return worker;
-    },
-    onExit: (listener) => {
-      onExit = listener;
-    },
-    onMessage: (listener) => {
-      onMessage = listener;
-    },
-  };
+  const fake = fakeCluster();
   const supervisor = superviseWorkers({
     slots,
-    cluster,
+    cluster: fake.cluster,
     log: (m) => logs.push(m),
+    maxCallsPerWorker,
     timers: {
       now: () => clock,
       every: (_ms, fn) => {
@@ -124,22 +90,10 @@ function supervise(slots: number) {
       },
     },
   });
-  const byPid = (pid: number): FakeWorker => {
-    const worker = workers.find((w) => w.pid === pid);
-    if (!worker) throw new Error(`no worker ${pid}`);
-    return worker;
-  };
   return {
+    ...fake,
     supervisor,
-    workers,
     logs,
-    say: (pid: number, message: unknown) => onMessage(byPid(pid), message),
-    listen: (pid: number, port = 4000 + pid) =>
-      onMessage(byPid(pid), { type: "aai-start:listening", name: "Agent", port }),
-    pong: (pid: number, calls = 0, elu = 0) =>
-      onMessage(byPid(pid), { type: "aai-start:pong", calls, elu }),
-    exit: (pid: number, code: number | null = 1, signal: string | null = null) =>
-      onExit(byPid(pid), code, signal),
     /** Move the clock, firing due timers, and run one liveness tick. */
     advance(ms: number) {
       clock += ms;
@@ -218,6 +172,15 @@ describe("superviseWorkers — boot and respawn", () => {
 });
 
 describe("superviseWorkers — drain and stop", () => {
+  test("stopped before every slot listened, ready rejects rather than hanging", async () => {
+    const run = supervise(2);
+    run.listen(100);
+    run.supervisor.drain(1000);
+    run.exit(100, 0);
+    run.exit(101, 0);
+    await expect(run.supervisor.ready).rejects.toThrow(/stopped before every worker was listening/);
+  });
+
   test("a drain tells every worker, stops placing calls, and respawns nothing", async () => {
     const run = supervise(2);
     run.listen(100);
@@ -335,29 +298,47 @@ describe("superviseWorkers — rolling restart", () => {
   });
 });
 
-describe("superviseWorkers — load", () => {
-  test("calls are the last report plus reservations since; status lists every worker", () => {
+describe("superviseWorkers — load and admission", () => {
+  test("calls are the last report plus admissions since; status lists every worker", () => {
     const run = supervise(2);
     run.listen(100);
     run.listen(101);
     run.pong(100, 7, 0.4);
-    run.supervisor.reserve(0);
-    run.supervisor.reserve(0);
-    expect(run.supervisor.calls(0)).toBe(9);
+    expect(run.supervisor.admit(0, false)).toBe("ok");
+    // A reconnect is a new live socket too.
+    expect(run.supervisor.admit(0, true)).toBe("ok");
+    expect(run.supervisor.status()[0]?.calls).toBe(9);
     run.pong(100, 8, 0.5);
-    expect(run.supervisor.calls(0)).toBe(8);
-    expect(run.supervisor.calls(1)).toBe(0);
     expect(run.supervisor.status()).toEqual([
       { slot: 0, pid: 100, state: "serving", calls: 8, elu: 0.5 },
       { slot: 1, pid: 101, state: "serving", calls: 0, elu: 0 },
     ]);
   });
 
-  test("a slot with no listening worker has no calls and takes no reservation", () => {
+  test("a full worker refuses every call — a claimed resume included — until it reports fewer", () => {
+    const run = supervise(1, 2);
+    run.listen(100);
+    expect(run.supervisor.admit(0, false)).toBe("ok");
+    expect(run.supervisor.admit(0, false)).toBe("ok");
+    expect(run.supervisor.admit(0, false)).toBe("full");
+    expect(run.supervisor.admit(0, true)).toBe("full");
+    expect(run.supervisor.status()[0]?.calls).toBe(2);
+    run.pong(100, 1);
+    expect(run.supervisor.admit(0, false)).toBe("ok");
+  });
+
+  test("while draining a new call is refused, but a reconnect is admitted", () => {
     const run = supervise(1);
-    run.supervisor.reserve(0);
-    expect(run.supervisor.calls(0)).toBe(0);
-    expect(run.supervisor.status()[0]?.state).toBe("starting");
+    run.listen(100);
+    run.supervisor.drain(1000);
+    expect(run.supervisor.admit(0, false)).toBe("draining");
+    expect(run.supervisor.admit(0, true)).toBe("ok");
+  });
+
+  test("a slot with no listening worker counts nothing", () => {
+    const run = supervise(1);
+    expect(run.supervisor.admit(0, false)).toBe("ok");
+    expect(run.supervisor.status()[0]).toMatchObject({ state: "starting", calls: 0 });
   });
 });
 

@@ -19,7 +19,7 @@
  * route calls all reach its own worker, nothing about a live call has to be
  * shared — so more than one worker does NOT need a database. A `DATABASE_URL`
  * adds what memory cannot: a session that survives its worker crashing, and
- * durable workflow runs (`_start-worker.ts` refuses workflows without one).
+ * durable workflow runs (a worker refuses workflows without one — `_start-run.ts`).
  *
  * The one cross-worker path is an `/inbox` notice from a workflow step, which
  * runs wherever the engine runs it: the step's worker forwards it here and this
@@ -155,7 +155,8 @@ export type WorkerMessage =
 
 /** Primary → worker. */
 export type PrimaryMessage =
-  | { type: "aai-start:upgrade"; bytes: Uint8Array }
+  /** `call`: the primary's classification (`isCallPath`), so the worker counts it for the drain. */
+  | { type: "aai-start:upgrade"; bytes: Uint8Array; call: boolean }
   | { type: "aai-start:ping" }
   | { type: "aai-start:drain"; timeoutMs: number }
   | { type: "aai-start:stop" }
@@ -163,7 +164,10 @@ export type PrimaryMessage =
   | { type: "aai-start:relay-cancel"; id: number; origin: number }
   | { type: "aai-start:relay-result"; id: number; outcome: RelayOutcome };
 
-function isWorkerMessage(message: unknown): message is WorkerMessage {
+/** One of this protocol's messages (every type is `aai-start:`-prefixed) — either direction. */
+export function isProtocolMessage<M extends WorkerMessage | PrimaryMessage>(
+  message: unknown,
+): message is M {
   const type = (message as { type?: unknown } | null)?.type;
   return typeof type === "string" && type.startsWith("aai-start:");
 }
@@ -217,12 +221,6 @@ export function nodeCluster(): ClusterLike {
   };
 }
 
-/** What a crash cost, for its log line: nothing when the worker held no calls. */
-function heldCalls(held: number): string {
-  if (held === 0) return "";
-  return ` (it held ${held} live call${held === 1 ? "" : "s"})`;
-}
-
 // ─── The supervisor ─────────────────────────────────────────────────────────
 
 /** A slot's current worker: where its new traffic goes. */
@@ -237,11 +235,14 @@ export interface WorkerStatus {
   slot: number;
   pid: number | undefined;
   state: "starting" | "serving" | "draining";
-  /** Live calls, as last reported plus handoffs since. */
+  /** Live calls, as last reported plus admissions since. */
   calls: number;
   /** Event-loop utilization over the last ping interval, 0–1. */
   elu: number;
 }
+
+/** Whether a call may go to a slot's worker now — the router's 503 reason when not. */
+export type Admission = "ok" | "draining" | "full";
 
 /** The running supervisor. */
 export interface SupervisedWorkers {
@@ -256,10 +257,14 @@ export interface SupervisedWorkers {
   target(slot: number): ReadyWorker | undefined;
   /** Whether new calls are being placed at all (`false` once draining or stopping). */
   accepting(): boolean;
-  /** Live calls on the slot's current worker, counting handoffs not yet reported. */
-  calls(slot: number): number;
-  /** Count a call handed to the slot's current worker before its next report. */
-  reserve(slot: number): void;
+  /**
+   * Admit a call socket to the slot's current worker, counting it until the
+   * worker's next load report (LiveKit's reserved slots) — a reconnect is a new
+   * live socket too. The cap covers EVERY call; only the drain lets a reconnect
+   * through, so live calls survive a deploy. `resume` is the client's CLAIM to
+   * continue a call (`isResume`: any well-formed id), so it never buys past the cap.
+   */
+  admit(slot: number, resume: boolean): Admission;
   /** Every live worker, for `/workers`. */
   status(): WorkerStatus[];
   /** Stop placing calls; each worker finishes its calls (up to `timeoutMs`) and exits. */
@@ -297,35 +302,43 @@ function realTimers(): Timers {
   };
 }
 
+/** What the supervisor knows about one live worker — forgotten whole when it exits. */
+interface Tracked {
+  slot: number;
+  /** Last reported load; set when it listens, so `undefined` means still starting. */
+  load?: { calls: number; elu: number } | undefined;
+  /** When it last answered (listening counts); cleared once it is killed for silence. */
+  heard?: number | undefined;
+  /** When the ping it has yet to answer was sent. */
+  pingSentAt?: number | undefined;
+  slowLoggedAt?: number | undefined;
+  /** Replaced by a rolling restart, and draining its calls. */
+  retiring?: boolean | undefined;
+}
+
 /** Fork one worker per slot and keep each slot served — see the module doc. */
 export function superviseWorkers(opts: {
   slots: number;
   cluster: ClusterLike;
   /** Log one line; the supervisor never throws for a worker's sake. */
   log: (message: string) => void;
+  /** Calls a worker may hold before `admit` answers `full`. Default unlimited. */
+  maxCallsPerWorker?: number | undefined;
   timers?: Partial<Timers>;
 }): SupervisedWorkers {
   const { slots, cluster: host, log } = opts;
+  const maxCalls = opts.maxCallsPerWorker ?? Number.POSITIVE_INFINITY;
   const { now, every, after } = { ...realTimers(), ...opts.timers };
-  /** Live worker → its slot. */
-  const slotOf = new Map<WorkerLike, number>();
+  const tracked = new Map<WorkerLike, Tracked>();
   /** Slot → its current, listening worker. */
   const ready = new Map<number, ReadyWorker>();
-  /** Workers being replaced by a rolling restart, draining their calls. */
-  const retiring = new Set<WorkerLike>();
   /** Slot → the replacement a rolling restart is waiting on. */
   const incoming = new Map<number, WorkerLike>();
-  /** Last reported load, per worker that has listened. */
-  const loadOf = new Map<WorkerLike, { calls: number; elu: number }>();
-  /** When each listening worker last answered, its outstanding ping, and its last slow-pong log. */
-  const lastHeard = new Map<WorkerLike, number>();
-  const pingSentAt = new Map<WorkerLike, number>();
-  const slowLoggedAt = new Map<WorkerLike, number>();
   /** Relays awaiting a result, per TARGET slot, so a dying target can answer them. */
   const inflight = new Map<number, Map<string, { id: number; origin: number }>>();
   let name: string | undefined;
-  let bootFailure: Error | undefined;
   let fatal: string | undefined;
+  let bootFailure: Error | undefined;
   /** Draining or stopping: no respawns, no new calls, exit once every worker has. */
   let ending = false;
   let forced = false;
@@ -333,63 +346,54 @@ export function superviseWorkers(opts: {
   let rollQueue: number[] = [];
   let rollDrainMs = 0;
   let exitCode = 0;
-  let readyDone = false;
-  let resolveReady!: (value: { name: string }) => void;
-  let rejectReady!: (error: Error) => void;
-  let resolveExited!: (code: number) => void;
-  const readyPromise = new Promise<{ name: string }>((res, rej) => {
-    resolveReady = res;
-    rejectReady = rej;
-  });
-  const exited = new Promise<number>((res) => {
-    resolveExited = res;
-  });
+  // Each settles once; a later resolve or reject is a no-op.
+  const booted = Promise.withResolvers<{ name: string }>();
+  const exited = Promise.withResolvers<number>();
+  // `ready` may reject with no one awaiting it (a drain during boot in a spec).
+  booted.promise.catch(() => undefined);
+  /**
+   * Every worker has exited. `ready` rejects only now, so a boot failure never
+   * races the shutdown — and it does reject if the server stopped before it
+   * was ever ready, rather than leaving the caller waiting forever.
+   */
+  const settle = (): void => {
+    booted.reject(bootFailure ?? new Error("the server stopped before every worker was listening"));
+    exited.resolve(exitCode);
+  };
 
   /**
    * How a worker is named in a log line: its slot first, because that is what
    * the `[worker N]` tag on its own lines and `/workers` both key on; the pid
    * is what `kill` and `ps` need.
    */
-  const who = (worker: WorkerLike, slot: number | undefined): string =>
-    `worker ${slot ?? "?"} (pid ${worker.pid})`;
+  const who = (worker: WorkerLike): string =>
+    `worker ${tracked.get(worker)?.slot ?? "?"} (pid ${worker.pid})`;
   const fork = (slot: number): WorkerLike => {
     const worker = host.fork({ [SLOT_ENV]: String(slot), [SLOTS_ENV]: String(slots) });
-    slotOf.set(worker, slot);
+    tracked.set(worker, { slot });
     return worker;
   };
-  const settle = (): void => {
-    if (bootFailure && !readyDone) {
-      readyDone = true;
-      rejectReady(bootFailure);
-    }
-    resolveExited(exitCode);
-  };
-  /** SIGKILL `worker` after `ms` if it is still alive then. */
-  const killAfter = (worker: WorkerLike, ms: number): void => {
-    after(ms, () => {
-      if (slotOf.has(worker)) worker.kill("SIGKILL");
+  /** Tell `worker` to drain for `drainMs` (or, `undefined`, to stop now); SIGKILL it if still alive past that plus the grace. */
+  const retire = (worker: WorkerLike, drainMs: number | undefined): void => {
+    worker.send(
+      drainMs === undefined
+        ? { type: "aai-start:stop" }
+        : { type: "aai-start:drain", timeoutMs: drainMs },
+    );
+    after((drainMs ?? 0) + STOP_GRACE_MS, () => {
+      if (tracked.has(worker)) worker.kill("SIGKILL");
     });
+  };
+  const end = (drainMs: number | undefined): void => {
+    ending = true;
+    rollQueue = [];
+    for (const worker of tracked.keys()) retire(worker, drainMs);
+    if (tracked.size === 0) settle();
   };
   const stop = (): void => {
     if (forced) return;
-    ending = true;
     forced = true;
-    rollQueue = [];
-    for (const worker of slotOf.keys()) {
-      worker.send({ type: "aai-start:stop" });
-      killAfter(worker, STOP_GRACE_MS);
-    }
-    if (slotOf.size === 0) settle();
-  };
-  const drain = (timeoutMs: number): void => {
-    if (ending) return;
-    ending = true;
-    rollQueue = [];
-    for (const worker of slotOf.keys()) {
-      worker.send({ type: "aai-start:drain", timeoutMs });
-      killAfter(worker, timeoutMs + STOP_GRACE_MS);
-    }
-    if (slotOf.size === 0) settle();
+    end(undefined);
   };
   /** Start the next slot's replacement, if a rolling restart has one left. */
   const rollNext = (): void => {
@@ -419,18 +423,6 @@ export function superviseWorkers(opts: {
     log(`rolling restart of ${slots} workers`);
     rollNext();
   };
-  /** A replacement is listening: move its slot's new traffic to it and drain the old worker. */
-  const swapIn = (worker: WorkerLike, slot: number, port: number): void => {
-    incoming.delete(slot);
-    const old = ready.get(slot);
-    ready.set(slot, { worker, port });
-    if (old) {
-      retiring.add(old.worker);
-      old.worker.send({ type: "aai-start:drain", timeoutMs: rollDrainMs });
-      killAfter(old.worker, rollDrainMs + STOP_GRACE_MS);
-    }
-    rollNext();
-  };
   const answerOrigin = (origin: number, id: number, outcome: RelayOutcome): void => {
     ready.get(origin)?.worker.send({ type: "aai-start:relay-result", id, outcome });
   };
@@ -450,54 +442,58 @@ export function superviseWorkers(opts: {
       payload: message.payload,
     });
   };
-  /** Say a worker's loop is lagging — the early warning before the liveness kill. */
-  const warnSlow = (worker: WorkerLike, slot: number, ms: number, at: number): void => {
-    if (at - (slowLoggedAt.get(worker) ?? Number.NEGATIVE_INFINITY) < SLOW_PONG_LOG_EVERY_MS) {
-      return;
-    }
-    slowLoggedAt.set(worker, at);
-    log(`${who(worker, slot)} answered a ping in ${ms}ms; its event loop is lagging`);
-  };
-  const onListening = (worker: WorkerLike, slot: number, port: number, agentName: string) => {
-    lastHeard.set(worker, now());
-    loadOf.set(worker, { calls: 0, elu: 0 });
-    if (incoming.get(slot) === worker) return swapIn(worker, slot, port);
+  const onListening = (worker: WorkerLike, state: Tracked, port: number, agentName: string) => {
+    const { slot } = state;
+    state.heard = now();
+    state.load = { calls: 0, elu: 0 };
+    const old = ready.get(slot);
     ready.set(slot, { worker, port });
-    name ??= agentName;
-    if (!(readyDone || ending) && ready.size === slots) {
-      readyDone = true;
-      resolveReady({ name });
+    if (incoming.get(slot) === worker) {
+      // A rolling restart's replacement now takes the slot's new traffic; the old worker drains.
+      incoming.delete(slot);
+      if (old) {
+        const oldState = tracked.get(old.worker);
+        if (oldState) oldState.retiring = true;
+        retire(old.worker, rollDrainMs);
+      }
+      return rollNext();
     }
+    name ??= agentName;
+    if (!ending && ready.size === slots) booted.resolve({ name });
   };
-  const onPong = (worker: WorkerLike, slot: number, calls: number, elu: number) => {
+  const onPong = (worker: WorkerLike, state: Tracked, calls: number, elu: number) => {
     const at = now();
-    lastHeard.set(worker, at);
-    loadOf.set(worker, { calls, elu });
-    const sent = pingSentAt.get(worker);
-    pingSentAt.delete(worker);
-    if (sent !== undefined && at - sent > SLOW_PONG_MS) warnSlow(worker, slot, at - sent, at);
+    const sent = state.pingSentAt;
+    state.heard = at;
+    state.load = { calls, elu };
+    state.pingSentAt = undefined;
+    if (sent === undefined || at - sent <= SLOW_PONG_MS) return;
+    // The early warning before the liveness kill, throttled per worker.
+    if (at - (state.slowLoggedAt ?? Number.NEGATIVE_INFINITY) < SLOW_PONG_LOG_EVERY_MS) return;
+    state.slowLoggedAt = at;
+    log(`${who(worker)} answered a ping in ${at - sent}ms; its event loop is lagging`);
   };
 
   host.onMessage((worker, message) => {
-    const slot = slotOf.get(worker);
-    if (slot === undefined || !isWorkerMessage(message)) return;
+    const state = tracked.get(worker);
+    if (state === undefined || !isProtocolMessage<WorkerMessage>(message)) return;
     switch (message.type) {
       case "aai-start:listening":
-        return onListening(worker, slot, message.port, message.name);
+        return onListening(worker, state, message.port, message.name);
       case "aai-start:fatal":
         fatal = message.message;
         return;
       case "aai-start:pong":
-        return onPong(worker, slot, message.calls, message.elu);
+        return onPong(worker, state, message.calls, message.elu);
       case "aai-start:relay":
-        return relay(slot, message);
+        return relay(state.slot, message);
       case "aai-start:relay-cancel":
         ready
           .get(message.target)
-          ?.worker.send({ type: "aai-start:relay-cancel", id: message.id, origin: slot });
+          ?.worker.send({ type: "aai-start:relay-cancel", id: message.id, origin: state.slot });
         return;
       case "aai-start:relay-result":
-        inflight.get(slot)?.delete(`${message.origin}:${message.id}`);
+        inflight.get(state.slot)?.delete(`${message.origin}:${message.id}`);
         answerOrigin(message.origin, message.id, message.outcome);
         return;
       default:
@@ -505,45 +501,19 @@ export function superviseWorkers(opts: {
     }
   });
 
-  /** Drop a worker that exited from every table; answer what it can no longer answer. */
+  /** Forget a worker that exited and answer what it never will; `true` when it was its slot's current one. */
   const release = (worker: WorkerLike, slot: number): boolean => {
-    slotOf.delete(worker);
-    retiring.delete(worker);
-    loadOf.delete(worker);
-    lastHeard.delete(worker);
-    pingSentAt.delete(worker);
-    slowLoggedAt.delete(worker);
-    const wasCurrent = ready.get(slot)?.worker === worker;
-    if (wasCurrent) {
-      ready.delete(slot);
-      // A notice in flight to this worker will never be answered by it.
-      for (const { id, origin } of inflight.get(slot)?.values() ?? []) {
-        answerOrigin(origin, id, "disconnected");
-      }
-      inflight.delete(slot);
+    tracked.delete(worker);
+    if (ready.get(slot)?.worker !== worker) return false;
+    ready.delete(slot);
+    for (const { id, origin } of inflight.get(slot)?.values() ?? []) {
+      answerOrigin(origin, id, "disconnected");
     }
-    return wasCurrent;
+    inflight.delete(slot);
+    return true;
   };
 
-  /** A worker exited mid-rollover: a retired one is simply gone; a failed replacement aborts the roll. */
-  const onRollingExit = (worker: WorkerLike, slot: number, how: string): boolean => {
-    if (retiring.has(worker)) {
-      release(worker, slot);
-      return true;
-    }
-    if (incoming.get(slot) === worker) {
-      release(worker, slot);
-      incoming.delete(slot);
-      rollQueue = [];
-      log(
-        `rolling restart stopped: the replacement for slot ${slot} exited with ${how} while starting`,
-      );
-      return true;
-    }
-    return false;
-  };
-
-  /** A worker exited while the server drains or stops: count the verdict, settle with the last. */
+  /** An exit while draining or stopping: count the verdict, settle with the last. */
   const onEndingExit = (
     worker: WorkerLike,
     slot: number,
@@ -553,28 +523,51 @@ export function superviseWorkers(opts: {
     release(worker, slot);
     // A forced stop's SIGKILL is the plan, not a failure; anything else non-zero is.
     if (code !== 0 && !(forced && signal === "SIGKILL")) exitCode = 1;
-    if (slotOf.size === 0) settle();
+    if (tracked.size === 0) settle();
+  };
+  /** An exit mid-rollover: a retired worker is simply gone; a failed replacement aborts the roll. */
+  const onRollingExit = (worker: WorkerLike, state: Tracked, how: string): boolean => {
+    const { slot } = state;
+    if (state.retiring) {
+      release(worker, slot);
+      return true;
+    }
+    if (incoming.get(slot) !== worker) return false;
+    release(worker, slot);
+    incoming.delete(slot);
+    rollQueue = [];
+    log(
+      `rolling restart stopped: the replacement for slot ${slot} exited with ${how} while starting`,
+    );
+    return true;
   };
 
-  host.onExit((worker, code, signal) => {
-    const slot = slotOf.get(worker);
-    if (slot === undefined) return;
-    const how = signal ? `signal ${signal}` : `code ${code}`;
-    if (ending) return onEndingExit(worker, slot, code, signal);
-    if (onRollingExit(worker, slot, how)) return;
-    // Read before `release` forgets it: how many calls the crash cost is the
-    // first thing an operator reading this line needs to know.
-    const held = loadOf.get(worker)?.calls ?? 0;
-    const wasCurrent = release(worker, slot);
-    if (!wasCurrent) {
-      log(`${who(worker, slot)} exited with ${how} while starting; stopping the server`);
+  /**
+   * Any other exit. Before listening it is a boot failure, which a respawn
+   * would only repeat, so the server stops; after, the slot gets a replacement.
+   */
+  const onCrash = (worker: WorkerLike, state: Tracked, how: string) => {
+    const label = who(worker);
+    if (!release(worker, state.slot)) {
+      log(`${label} exited with ${how} while starting; stopping the server`);
       bootFailure = new Error(fatal ?? `a worker exited with ${how} before it was listening`);
       exitCode = 1;
       stop();
       return;
     }
-    log(`${who(worker, slot)} exited with ${how}; starting a replacement${heldCalls(held)}`);
-    fork(slot);
+    // How many calls the crash cost is the first thing an operator reading this needs.
+    const held = state.load?.calls ?? 0;
+    const cost = held === 0 ? "" : ` (it held ${held} live call${held === 1 ? "" : "s"})`;
+    log(`${label} exited with ${how}; starting a replacement${cost}`);
+    fork(state.slot);
+  };
+
+  host.onExit((worker, code, signal) => {
+    const state = tracked.get(worker);
+    if (state === undefined) return;
+    const how = signal ? `signal ${signal}` : `code ${code}`;
+    if (ending) return onEndingExit(worker, state.slot, code, signal);
+    if (!onRollingExit(worker, state, how)) onCrash(worker, state, how);
   });
 
   // Liveness: a worker answers pings from its event loop, so silence means the
@@ -582,54 +575,53 @@ export function superviseWorkers(opts: {
   // handler respawns it into its slot like any other crash.
   const stopPinging = every(PING_INTERVAL_MS, () => {
     const at = now();
-    for (const [worker, heard] of lastHeard) {
-      const silentFor = at - heard;
+    for (const [worker, state] of tracked) {
+      if (state.heard === undefined) continue;
+      const silentFor = at - state.heard;
       if (silentFor >= LIVENESS_TIMEOUT_MS) {
-        log(
-          `${who(worker, slotOf.get(worker))} has not answered for ` +
-            `${Math.round(silentFor / 1000)}s; restarting it`,
-        );
-        lastHeard.delete(worker);
+        log(`${who(worker)} has not answered for ${Math.round(silentFor / 1000)}s; restarting it`);
+        state.heard = undefined;
         worker.kill("SIGKILL");
         continue;
       }
       // One ping outstanding at a time, so a pong's latency is measured from
       // the ping it answers rather than a later one.
-      if (!pingSentAt.has(worker)) pingSentAt.set(worker, at);
+      state.pingSentAt ??= at;
       worker.send({ type: "aai-start:ping" });
     }
   });
-  void exited.then(stopPinging);
+  void exited.promise.then(stopPinging);
 
   for (let slot = 0; slot < slots; slot++) fork(slot);
   return {
-    ready: readyPromise,
-    exited,
+    ready: booted.promise,
+    exited: exited.promise,
     target: (slot) => ready.get(slot),
     accepting: () => !ending,
-    calls: (slot) => {
+    admit: (slot, resume) => {
+      if (ending && !resume) return "draining";
       const current = ready.get(slot);
-      return current ? (loadOf.get(current.worker)?.calls ?? 0) : 0;
-    },
-    reserve: (slot) => {
-      const current = ready.get(slot);
-      const load = current && loadOf.get(current.worker);
-      if (load) load.calls += 1;
+      const load = current && tracked.get(current.worker)?.load;
+      if (!load) return "ok";
+      if (load.calls >= maxCalls) return "full";
+      load.calls += 1;
+      return "ok";
     },
     status: () =>
-      [...slotOf].map(([worker, slot]) => {
-        const load = loadOf.get(worker);
-        let state: WorkerStatus["state"] = load === undefined ? "starting" : "serving";
-        if (ending || retiring.has(worker)) state = "draining";
+      [...tracked].map(([worker, state]) => {
+        let phase: WorkerStatus["state"] = state.load ? "serving" : "starting";
+        if (ending || state.retiring) phase = "draining";
         return {
-          slot,
+          slot: state.slot,
           pid: worker.pid,
-          state,
-          calls: load?.calls ?? 0,
-          elu: load?.elu ?? 0,
+          state: phase,
+          calls: state.load?.calls ?? 0,
+          elu: state.load?.elu ?? 0,
         };
       }),
-    drain,
+    drain: (timeoutMs) => {
+      if (!ending) end(timeoutMs);
+    },
     stop,
     roll,
   };

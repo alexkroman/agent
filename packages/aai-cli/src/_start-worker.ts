@@ -27,8 +27,13 @@ import {
   setClientNotifyRelay,
   setSessionIdMinter,
 } from "@alexkroman1/aai-runtime/internal";
-import { clientKey, isCallPath, mintIdForSlot, slotOf } from "./_start-affinity.ts";
-import type { PrimaryMessage, RelayOutcome, WorkerMessage } from "./_start-workers.ts";
+import { clientKey, mintIdForSlot, slotOf } from "./_start-affinity.ts";
+import {
+  isProtocolMessage,
+  type PrimaryMessage,
+  type RelayOutcome,
+  type WorkerMessage,
+} from "./_start-workers.ts";
 
 /** This worker's line to its primary — a seam, so the unit tier needs no cluster. */
 export interface PrimaryLink {
@@ -50,9 +55,8 @@ export function processLink(proc: IpcProcess = process): PrimaryLink {
     },
     onMessage: (listener) => {
       proc.on("message", (message, handle) => {
-        const type = (message as { type?: unknown } | null)?.type;
-        if (typeof type !== "string" || !type.startsWith("aai-start:")) return;
-        listener(message as PrimaryMessage, handle instanceof Socket ? handle : undefined);
+        if (!isProtocolMessage<PrimaryMessage>(message)) return;
+        listener(message, handle instanceof Socket ? handle : undefined);
       });
     },
   };
@@ -75,12 +79,6 @@ export interface WorkerRuntime {
 }
 
 const realRuntime: WorkerRuntime = { setSessionIdMinter, setClientNotifyRelay, notifyClientHere };
-
-/** The request target of a replayed request head, e.g. `/websocket?x` from `GET /websocket?x HTTP/1.1`. */
-export function requestTarget(head: Uint8Array): string {
-  const line = Buffer.from(head.subarray(0, Math.min(head.length, 2048))).toString("latin1");
-  return line.split(" ", 2)[1] ?? "";
-}
 
 /** Install the relay client: a notice for a client another slot owns goes through the primary. */
 function installRelayClient(
@@ -138,11 +136,12 @@ export async function joinCluster(opts: {
   server: AgentServer;
   name: string;
   link: PrimaryLink;
-  runtime?: WorkerRuntime;
-  /** The primary asked this worker to finish its calls and exit. */
-  onDrain?: (timeoutMs: number) => void;
-  /** The primary asked this worker to close now. */
-  onStop?: () => void;
+  runtime?: WorkerRuntime | undefined;
+  /**
+   * The primary asked this worker to end: finish its calls within `graceMs`
+   * (a drain's timeout; 0 for a stop) and exit.
+   */
+  close?: ((graceMs: number) => void) | undefined;
 }): Promise<{ activeCalls: () => number }> {
   const { slot, slots, server, link, runtime = realRuntime } = opts;
   /** Live call sockets: incremented at handoff, decremented when the socket closes. */
@@ -159,7 +158,7 @@ export async function joinCluster(opts: {
         if (!socket) return;
         // The primary read the request head to route it; put those bytes back
         // where this server's parser will read them first.
-        if (isCallPath(requestTarget(message.bytes))) {
+        if (message.call) {
           calls += 1;
           socket.once("close", () => {
             calls -= 1;
@@ -215,10 +214,10 @@ export async function joinCluster(opts: {
         return;
       }
       case "aai-start:drain":
-        opts.onDrain?.(message.timeoutMs);
+        opts.close?.(message.timeoutMs);
         return;
       case "aai-start:stop":
-        opts.onStop?.();
+        opts.close?.(0);
         return;
       default:
         return;

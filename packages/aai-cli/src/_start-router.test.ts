@@ -26,8 +26,8 @@ describe("createSlotPicker", () => {
   test("a keyed request always picks its key's slot", () => {
     const pick = pickerWith(4, [0, 1, 2, 3]);
     const key = clientKey("phone-1");
-    expect(pick(key)).toBe(slotOf(key, 4));
-    expect(pick(key)).toBe(slotOf(key, 4));
+    expect(pick(key)).toEqual({ slot: slotOf(key, 4), worker: { worker, port: 1 } });
+    expect(pick(key)?.slot).toBe(slotOf(key, 4));
   });
 
   test("a keyed request whose slot is restarting picks nothing — never another worker", () => {
@@ -42,9 +42,10 @@ describe("createSlotPicker", () => {
 
   test("unkeyed requests rotate over the listening slots, skipping one that is down", () => {
     const pick = pickerWith(3, [0, 2]);
-    expect([pick(undefined), pick(undefined), pick(undefined), pick(undefined)]).toEqual([
-      0, 2, 0, 2,
-    ]);
+    const slots = [pick(undefined), pick(undefined), pick(undefined), pick(undefined)].map(
+      (picked) => picked?.slot,
+    );
+    expect(slots).toEqual([0, 2, 0, 2]);
   });
 
   test("with no slot listening, an unkeyed request picks nothing", () => {

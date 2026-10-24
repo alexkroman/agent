@@ -30,8 +30,10 @@ import http, {
 } from "node:http";
 import type { Socket } from "node:net";
 import type { Writable } from "node:stream";
+import { requestPath } from "@alexkroman1/aai/internal";
+import { routeMatches, SERVER_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { affinityKey, isCallPath, isResume, slotOf } from "./_start-affinity.ts";
-import type { ReadyWorker, WorkerStatus } from "./_start-workers.ts";
+import type { Admission, ReadyWorker, WorkerStatus } from "./_start-workers.ts";
 
 /** How long a client may take to send its request head before it is dropped. */
 export const HEADERS_TIMEOUT_MS = 15_000;
@@ -72,18 +74,23 @@ export interface RouterOptions {
   /** How a request reaches a worker — `http.request` unless a spec says otherwise. */
   request?: UpstreamRequest;
   /**
-   * May this call go to the slot's worker now? `resume` is the client's claim
-   * that it continues a live call (see `isResume`). Unset: always.
+   * May this call socket go to the slot's worker now? `"ok"` also COUNTS it
+   * (`SupervisedWorkers.admit`). `resume` is the client's claim that it
+   * continues a live call (see `isResume`). Unset: always.
    */
-  admitCall?: (slot: number, resume: boolean) => "ok" | "draining" | "full";
-  /** Count a call socket handed to the slot's worker before its next load report. */
-  reserveCall?: (slot: number) => void;
+  admitCall?: (slot: number, resume: boolean) => Admission;
+  /**
+   * Why this server should be out of a load balancer's rotation right now
+   * (starting, draining), or `undefined` when it should be in. A reason makes
+   * the primary answer `/health` itself with 503 instead of proxying it.
+   */
+  notReady?: () => string | undefined;
   /** Per-worker state for `GET /workers` (loopback only). Unset: no such route. */
   status?: () => WorkerStatus[];
 }
 
 /** Why a new call is refused, as the 503 body says it. */
-const REFUSAL: Record<"draining" | "full", string> = {
+const REFUSAL: Record<Exclude<Admission, "ok">, string> = {
   draining: "server is draining for a restart; retry against another instance",
   full: "this worker is at its call limit; retry shortly",
 };
@@ -98,31 +105,32 @@ export type UpstreamRequest = (
 ) => Writable;
 
 /**
- * Pick the slot for a request: its key's slot when it has a key (and only that
- * slot — `undefined` while it restarts), else the next listening slot in turn.
+ * Pick the worker for a request: its key's slot when it has a key (and only
+ * that slot — `undefined` while it restarts), else the next listening slot in turn.
  */
 export function createSlotPicker(
-  opts: RouterOptions,
-): (key: string | undefined) => number | undefined {
+  opts: Pick<RouterOptions, "slots" | "target">,
+): (key: string | undefined) => { slot: number; worker: ReadyWorker } | undefined {
   let next = 0;
+  const at = (slot: number) => {
+    const worker = opts.target(slot);
+    return worker && { slot, worker };
+  };
   return (key) => {
-    if (key !== undefined) {
-      const slot = slotOf(key, opts.slots);
-      return opts.target(slot) ? slot : undefined;
-    }
+    if (key !== undefined) return at(slotOf(key, opts.slots));
     for (let i = 0; i < opts.slots; i++) {
-      const slot = (next + i) % opts.slots;
-      if (opts.target(slot)) {
-        next = slot + 1;
-        return slot;
+      const picked = at((next + i) % opts.slots);
+      if (picked) {
+        next = picked.slot + 1;
+        return picked;
       }
     }
   };
 }
 
-function unavailable(res: ServerResponse): void {
+function unavailable(res: ServerResponse, reason = "worker restarting, retry shortly"): void {
   res.writeHead(503, { "retry-after": "1", "content-type": "text/plain" });
-  res.end("worker restarting, retry shortly\n");
+  res.end(`${reason}\n`);
 }
 
 function proxy(
@@ -164,6 +172,15 @@ function refuseUpgrade(socket: Socket, reason = "worker restarting, retry shortl
   );
 }
 
+/** A load balancer's probe: `GET`/`HEAD` on the server's own health route. */
+function isHealthProbe(req: IncomingMessage): boolean {
+  const { health } = SERVER_ROUTES;
+  return (
+    (req.method === "GET" || req.method === "HEAD") &&
+    routeMatches(health, requestPath(req.url ?? "/"))
+  );
+}
+
 /** The primary's public server. The caller binds it. */
 export function createRouter(opts: RouterOptions): http.Server {
   const pick = createSlotPicker(opts);
@@ -177,27 +194,26 @@ export function createRouter(opts: RouterOptions): http.Server {
       res.end(JSON.stringify({ workers: opts.status() }));
       return;
     }
-    const slot = pick(affinityKey(req.url, req.headers));
-    const worker = slot === undefined ? undefined : opts.target(slot);
-    if (!worker) return unavailable(res);
-    proxy(req, res, worker, opts.request ?? http.request);
+    // Readiness is the PRIMARY's to answer: while it starts or drains, a
+    // worker's own 200 would keep it in a load balancer's rotation.
+    const notReady = opts.notReady?.();
+    if (notReady && isHealthProbe(req)) return unavailable(res, notReady);
+    const picked = pick(affinityKey(req.url, req.headers));
+    if (!picked) return unavailable(res);
+    proxy(req, res, picked.worker, opts.request ?? http.request);
   });
   server.headersTimeout = HEADERS_TIMEOUT_MS;
   server.on("upgrade", (req: IncomingMessage, socket: Socket, head: Buffer) => {
-    const slot = pick(affinityKey(req.url, req.headers));
-    const worker = slot === undefined ? undefined : opts.target(slot);
-    if (slot === undefined || !worker) return refuseUpgrade(socket);
+    const picked = pick(affinityKey(req.url, req.headers));
+    if (!picked) return refuseUpgrade(socket);
     // Admission applies to CALL sockets only — an `/inbox` socket is not one.
     const call = isCallPath(req.url);
     if (call) {
-      const verdict = opts.admitCall?.(slot, isResume(req.url, req.headers)) ?? "ok";
+      const verdict = opts.admitCall?.(picked.slot, isResume(req.url, req.headers)) ?? "ok";
       if (verdict !== "ok") return refuseUpgrade(socket, REFUSAL[verdict]);
     }
     const bytes = Buffer.concat([serializeRequestHead(req), head]);
-    worker.worker.send({ type: "aai-start:upgrade", bytes }, socket);
-    // Every call socket counts against the worker until its next report —
-    // a reconnect is a new live socket too.
-    if (call) opts.reserveCall?.(slot);
+    picked.worker.worker.send({ type: "aai-start:upgrade", bytes, call }, socket);
   });
   return server;
 }

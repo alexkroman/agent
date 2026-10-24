@@ -6,35 +6,13 @@
  * server and fake runtime seams.
  */
 
-import { EventEmitter } from "node:events";
 import { Socket } from "node:net";
 import type { ClientNotifier } from "@alexkroman1/aai/host-internal";
-import type { AgentServer } from "@alexkroman1/aai-runtime";
 import type { ClientNotifyRelay } from "@alexkroman1/aai-runtime/internal";
 import { describe, expect, test, vi } from "vitest";
-import { clientKey, sessionKey, slotOf } from "./_start-affinity.ts";
-import {
-  joinCluster,
-  type PrimaryLink,
-  requestTarget,
-  type WorkerRuntime,
-  workflowsNeedDatabase,
-} from "./_start-worker.ts";
-import type { PrimaryMessage, WorkerMessage } from "./_start-workers.ts";
-
-/** A link to a primary that records what the worker sends and lets a test speak. */
-function fakeLink() {
-  const sent: WorkerMessage[] = [];
-  let listener: Parameters<PrimaryLink["onMessage"]>[0] = () => undefined;
-  const link: PrimaryLink = {
-    send: (message) => sent.push(message),
-    onMessage: (next) => {
-      listener = next;
-    },
-  };
-  const deliver = (message: PrimaryMessage, socket?: Socket) => listener(message, socket);
-  return { link, sent, deliver };
-}
+import { sessionKey, slotOf } from "./_start-affinity.ts";
+import { clientFor, fakeLink, fakeServer } from "./_start-test-utils.ts";
+import { joinCluster, type WorkerRuntime, workflowsNeedDatabase } from "./_start-worker.ts";
 
 /** Runtime seams that capture what the worker installs. */
 function fakeRuntime(localOutcome: Awaited<ReturnType<ClientNotifier>> = "acked") {
@@ -58,26 +36,6 @@ function fakeRuntime(localOutcome: Awaited<ReturnType<ClientNotifier>> = "acked"
     },
   };
   return { runtime, captured };
-}
-
-function fakeServer(port = 4567): AgentServer {
-  const node = new EventEmitter();
-  let bound: number | undefined;
-  const server: Partial<AgentServer> = {
-    node: node as AgentServer["node"],
-    get port() {
-      return bound;
-    },
-    async listen() {
-      bound = port;
-    },
-  };
-  return server as AgentServer;
-}
-
-/** A client id that routes to `slot` of `slots`. */
-function clientFor(slot: number, slots: number): string {
-  for (let i = 0; ; i++) if (slotOf(clientKey(`c${i}`), slots) === slot) return `c${i}`;
 }
 
 async function join(
@@ -214,7 +172,11 @@ describe("joinCluster", () => {
     const unshift = vi.spyOn(socket, "unshift");
     const resume = vi.spyOn(socket, "resume");
     deliver(
-      { type: "aai-start:upgrade", bytes: Buffer.from("GET /websocket HTTP/1.1\r\n\r\n") },
+      {
+        type: "aai-start:upgrade",
+        bytes: Buffer.from("GET /websocket HTTP/1.1\r\n\r\n"),
+        call: true,
+      },
       socket,
     );
     expect(String(unshift.mock.calls[0]?.[0])).toBe("GET /websocket HTTP/1.1\r\n\r\n");
@@ -240,8 +202,7 @@ describe("joinCluster call counting and commands", () => {
   async function joinWithCommands() {
     const link = fakeLink();
     const { runtime } = fakeRuntime();
-    const drains: number[] = [];
-    let stops = 0;
+    const closes: number[] = [];
     const joined = await joinCluster({
       slot: 0,
       slots: 1,
@@ -249,35 +210,26 @@ describe("joinCluster call counting and commands", () => {
       name: "A",
       link: link.link,
       runtime,
-      onDrain: (ms) => drains.push(ms),
-      onStop: () => {
-        stops += 1;
-      },
+      close: (graceMs) => closes.push(graceMs),
     });
-    return { ...link, joined, drains, stops: () => stops };
+    return { ...link, joined, closes };
   }
 
-  test("a handed-off call socket counts until it closes; an /inbox socket never does", async () => {
+  test("a socket the primary classified as a call counts until it closes; any other never does", async () => {
     const run = await joinWithCommands();
+    const upgrade = (call: boolean, socket: Socket) =>
+      run.deliver(
+        { type: "aai-start:upgrade", bytes: Buffer.from("GET / HTTP/1.1\r\n\r\n"), call },
+        socket,
+      );
     const call = new Socket();
     const inbox = new Socket();
-    run.deliver(
-      { type: "aai-start:upgrade", bytes: Buffer.from("GET /websocket?client=c HTTP/1.1\r\n\r\n") },
-      call,
-    );
-    run.deliver(
-      { type: "aai-start:upgrade", bytes: Buffer.from("GET /inbox?client=c HTTP/1.1\r\n\r\n") },
-      inbox,
-    );
-    expect(run.joined.activeCalls()).toBe(1);
-    // The server routes /websocket by PREFIX, so this is a call too — a drain must wait for it.
-    const prefixed = new Socket();
-    run.deliver(
-      { type: "aai-start:upgrade", bytes: Buffer.from("GET /websocket/x HTTP/1.1\r\n\r\n") },
-      prefixed,
-    );
+    const second = new Socket();
+    upgrade(true, call);
+    upgrade(false, inbox);
+    upgrade(true, second);
     expect(run.joined.activeCalls()).toBe(2);
-    prefixed.destroy();
+    second.destroy();
     await vi.waitFor(() => expect(run.joined.activeCalls()).toBe(1));
     run.deliver({ type: "aai-start:ping" });
     expect(run.sent.at(-1)).toMatchObject({ type: "aai-start:pong", calls: 1 });
@@ -286,21 +238,11 @@ describe("joinCluster call counting and commands", () => {
     inbox.destroy();
   });
 
-  test("drain and stop from the primary reach their callbacks", async () => {
+  test("a drain closes with its timeout as the grace; a stop with none", async () => {
     const run = await joinWithCommands();
     run.deliver({ type: "aai-start:drain", timeoutMs: 1234 });
     run.deliver({ type: "aai-start:stop" });
-    expect(run.drains).toEqual([1234]);
-    expect(run.stops()).toBe(1);
-  });
-});
-
-describe("requestTarget", () => {
-  test("reads the request target from a request head", () => {
-    expect(requestTarget(Buffer.from("GET /websocket?client=a HTTP/1.1\r\n"))).toBe(
-      "/websocket?client=a",
-    );
-    expect(requestTarget(Buffer.from("garbage"))).toBe("");
+    expect(run.closes).toEqual([1234, 0]);
   });
 });
 

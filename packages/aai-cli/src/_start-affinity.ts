@@ -88,18 +88,23 @@ export function ticketSessionId(ticket: string): string | undefined {
   }
 }
 
-/** The ticket a request presents: the auth subprotocol first, then `?token=` (the runtime's order). */
-function presentedTicket(
-  url: URL,
-  protocolHeader: string | string[] | undefined,
-): string | undefined {
-  const header = Array.isArray(protocolHeader) ? protocolHeader.join(",") : protocolHeader;
+type UpgradeHeaders = { "sec-websocket-protocol"?: string | string[] | undefined };
+
+/**
+ * The `sid` of the ticket a request presents — the auth subprotocol first,
+ * then `?token=` (the runtime's order) — or `undefined`.
+ */
+function presentedTicketSid(url: URL, headers: UpgradeHeaders): string | undefined {
+  const raw = headers["sec-websocket-protocol"];
+  const header = Array.isArray(raw) ? raw.join(",") : raw;
   for (const entry of header?.split(",") ?? []) {
     const protocol = entry.trim();
-    if (protocol.startsWith(TICKET_PROTOCOL_PREFIX))
-      return protocol.slice(TICKET_PROTOCOL_PREFIX.length);
+    if (protocol.startsWith(TICKET_PROTOCOL_PREFIX)) {
+      return ticketSessionId(protocol.slice(TICKET_PROTOCOL_PREFIX.length));
+    }
   }
-  return url.searchParams.get("token") ?? undefined;
+  const token = url.searchParams.get("token");
+  return token ? ticketSessionId(token) : undefined;
 }
 
 /**
@@ -108,13 +113,12 @@ function presentedTicket(
  */
 export function affinityKey(
   rawUrl: string | undefined,
-  headers: { "sec-websocket-protocol"?: string | string[] | undefined },
+  headers: UpgradeHeaders,
 ): string | undefined {
   const url = new URL(rawUrl ?? "/", "http://route.invalid");
   const client = url.searchParams.get("client")?.trim();
   if (client) return clientKey(client);
-  const ticket = presentedTicket(url, headers["sec-websocket-protocol"]);
-  const ticketSid = ticket ? ticketSessionId(ticket) : undefined;
+  const ticketSid = presentedTicketSid(url, headers);
   if (ticketSid) return sessionKey(ticketSid);
   const sessionId = url.searchParams.get("sessionId")?.trim();
   return sessionId ? sessionKey(sessionId) : undefined;
@@ -143,12 +147,7 @@ export function isCallPath(rawUrl: string | undefined): boolean {
  * the DRAIN (whose worst case is a call that ends at the drain timeout, like
  * every other), never from the per-worker cap.
  */
-export function isResume(
-  rawUrl: string | undefined,
-  headers: { "sec-websocket-protocol"?: string | string[] | undefined },
-): boolean {
+export function isResume(rawUrl: string | undefined, headers: UpgradeHeaders): boolean {
   if (parseWsUpgradeParams(rawUrl ?? "/").resumeFrom !== undefined) return true;
-  const url = new URL(rawUrl ?? "/", "http://route.invalid");
-  const ticket = presentedTicket(url, headers["sec-websocket-protocol"]);
-  return ticket !== undefined && ticketSessionId(ticket) !== undefined;
+  return presentedTicketSid(new URL(rawUrl ?? "/", "http://route.invalid"), headers) !== undefined;
 }

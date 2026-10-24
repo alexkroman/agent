@@ -84,10 +84,13 @@ The process in front owns every worker's lifecycle:
   shutdown grace period the drain timeout plus about ten seconds, or it will
   kill the calls first — the defaults are far shorter (`docker stop` waits 10s,
   Kubernetes 30s), so set `docker stop -t 310` or
-  `terminationGracePeriodSeconds: 310` for the default drain. `/health` keeps
-  answering `200` while draining, so take the instance out of your load balancer
-  before (or as) you send the signal; new calls that still reach it get `503`
-  with `Retry-After`.
+  `terminationGracePeriodSeconds: 310` for the default drain. `/health` answers
+  `503` while draining (and while the workers are starting), so a load balancer
+  that health-checks it stops sending new calls; any that still arrive get `503`
+  with `Retry-After`. That makes `/health` a **readiness** check: on Kubernetes
+  use it as the `readinessProbe`, never the `livenessProbe` — a failing liveness
+  probe restarts the pod, ending the calls the drain was waiting for. Use a
+  `tcpSocket` probe for liveness.
 - **`SIGHUP` is a rolling restart.** Each worker is replaced in turn: a fresh
   one starts, takes that worker's new calls, and the old one finishes its calls
   before exiting. Live calls are not interrupted. A call that reconnects

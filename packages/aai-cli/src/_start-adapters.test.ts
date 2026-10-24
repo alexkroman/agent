@@ -87,7 +87,11 @@ describe("processLink", () => {
     const got: unknown[] = [];
     processLink(proc).onMessage((message, socket) => got.push([message, socket]));
     const socket = new Socket();
-    emitter.emit("message", { type: "aai-start:upgrade", bytes: new Uint8Array() }, socket);
+    emitter.emit(
+      "message",
+      { type: "aai-start:upgrade", bytes: new Uint8Array(), call: true },
+      socket,
+    );
     emitter.emit(
       "message",
       { type: "aai-start:relay-result", id: 1, outcome: "acked" },
@@ -96,7 +100,7 @@ describe("processLink", () => {
     emitter.emit("message", { type: "someone-else" });
     emitter.emit("message", "plain string");
     expect(got).toEqual([
-      [{ type: "aai-start:upgrade", bytes: new Uint8Array() }, socket],
+      [{ type: "aai-start:upgrade", bytes: new Uint8Array(), call: true }, socket],
       [{ type: "aai-start:relay-result", id: 1, outcome: "acked" }, undefined],
     ]);
     socket.destroy();

@@ -43,14 +43,22 @@ shape):
   cross-worker path, an `/inbox` notice from a step on another worker, goes
   through the runtime's `setClientNotifyRelay` and the supervisor
   (`aai-start:relay` IPC; a dying target answers `disconnected`).
+- **The primary binds the public port BEFORE forking** (a taken port fails as
+  `port N is in use; pass --port or set PORT`, `bindError`, with nothing forked)
+  and routes nothing until every slot listens: each request gets 503 meanwhile.
+  **It answers `GET`/`HEAD /health` itself with 503 while starting or draining**
+  (`notReady`), so a load balancer takes it out of rotation; otherwise `/health`
+  is proxied. That makes `/health` a READINESS probe — a Kubernetes LIVENESS
+  probe on it would kill the pod mid-drain.
 - **The primary owns every worker's lifecycle; workers IGNORE signals** (a
   terminal's Ctrl-C reaches them too, which would end calls mid-drain). It acts
   through IPC: first SIGINT/SIGTERM → `drain` (router refuses NEW calls with
   503; reconnects, `/inbox` and HTTP still route; each worker waits for its call
-  count — handed-off `/websocket`+`/phone` sockets — to reach 0 or
-  `--drain-timeout`, then closes); a second → `stop`; SIGHUP → `roll()` (per
-  slot: fork the replacement, swap the slot to it on `listening`, drain the
-  old). Every command carries a SIGKILL deadline (`STOP_GRACE_MS`).
+  count — the sockets the PRIMARY classified as calls (`isCallPath`, sent as the
+  handoff's `call` flag) — to reach 0 or `--drain-timeout`, then closes); a
+  second → `stop`; SIGHUP → `roll()` (per slot: fork the replacement, swap the
+  slot to it on `listening`, drain the old). Every command carries a SIGKILL
+  deadline (`STOP_GRACE_MS`).
 - **Supervision:** "booted" is the worker's IPC `listening` report; a worker
   dying before it is a boot failure (stop all, fail the command), after it is
   respawned into the SAME slot; a failed replacement aborts a roll, leaving the
@@ -61,16 +69,17 @@ shape):
   holds hundreds of calls, all already stalled) is SIGKILLed and respawned. No
   orphan timeout: a `node:cluster` worker exits when its primary's IPC channel
   closes.
-- **Load and admission:** each pong carries `{calls, elu}`; the router reserves
-  each call socket until the next report (LiveKit's reserved slots). Calls and
-  resumes are classified with the RUNTIME's own parsers — `routeMatches` over
-  `SERVER_ROUTES.session`/`phone` (a PREFIX match) and `parseWsUpgradeParams` —
-  because any other matcher is a parser differential (a security review found
-  `/websocket/x` skipping admission and the drain count). The cap covers EVERY
-  call socket: a resume is only a client's claim (the runtime starts a fresh
-  session under an unknown id), so it exempts a call from the drain only. It
-  never spills to another worker, which would split a client's call from its
-  `/inbox` and `/api` traffic. `GET /workers` (loopback only) reports state.
+- **Load and admission:** each pong carries `{calls, elu}`; the supervisor's
+  `admit` both decides and counts each call socket until the next report
+  (LiveKit's reserved slots). Calls and resumes are classified with the
+  RUNTIME's own parsers — `routeMatches` over `SERVER_ROUTES.session`/`phone` (a
+  PREFIX match) and `parseWsUpgradeParams` — because any other matcher is a
+  parser differential (a security review found `/websocket/x` skipping admission
+  and the drain count). The cap covers EVERY call socket: a resume is only a
+  client's claim (the runtime starts a fresh session under an unknown id), so it
+  exempts a call from the drain only. It never spills to another worker, which
+  would split a client's call from its `/inbox` and `/api` traffic.
+  `GET /workers` (loopback only) reports state.
 - **Logging:** a worker's runtime logger (`_start-log.ts`) tags every line
   `[worker <slot>]` and drops slot ≠ 0's INFO until it is listening — the boot
   dump is identical per slot. JSON mode (any non-TTY) sends the runtime log to
@@ -79,9 +88,11 @@ shape):
   the primary's no-`DATABASE_URL` warning is a `notify` printed AFTER the
   workers boot, so it never precedes a workflow refusal. Supervisor lines name
   `worker <slot> (pid <pid>)`.
-- **Seams:** `ClusterLike` (`nodeCluster()` is the typed adapter),
-  `PrimaryLink`, and `WorkerRuntime` keep the unit tier fork-free;
-  `_start-router.scenario.test.ts` drives the router over real sockets.
+- **Seams:** `StartRunDeps` (`_start-run.ts`, all three modes), `ClusterLike`
+  (`nodeCluster()` is the typed adapter), `PrimaryLink` and `WorkerRuntime` keep
+  the unit tier fork-free; the specs share their fakes via
+  `_start-test-utils.ts`; `_start-router.scenario.test.ts` drives the router
+  over real sockets.
 - **`ctx.speech` from `/api` reaches a call only when the request carries the
   caller's `?client=`** — the published `RouteContext.speech` is synchronous, so
   it is not relayed.
