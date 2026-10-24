@@ -11,7 +11,7 @@ import { describe, expect, test, vi } from "vitest";
 import { createTtsSessionShell } from "../_utils.ts";
 import type { TtsError, TtsEvents } from "../openers.ts";
 import { pcmBase64 } from "./_fake-ws-test-utils.ts";
-import { type CancelWindow, handleMessage } from "./assemblyai-frames.ts";
+import { type CancelWindow, handleMessage, parseServerFrame } from "./assemblyai-frames.ts";
 import { createAssemblyAITtsLifecycle } from "./assemblyai-lifecycle.ts";
 
 function setup() {
@@ -113,5 +113,46 @@ describe("handleMessage", () => {
     expect(cancels.abandoned()).toBe(false);
     deliver({ type: "Audio", audio: pcmBase64([2]) });
     expect(audio).toEqual([[2]]);
+  });
+});
+
+describe("parseServerFrame", () => {
+  const b64 = pcmBase64([1, -2, 3, 32_767, -32_768]);
+  // Every frame here must read exactly as the generic parse reads it, lifted or not.
+  const generic = (text: string): unknown => JSON.parse(text);
+  const cases: Record<string, string> = {
+    documented: `{"type":"Audio","audio":"${b64}"}`,
+    "audio key first": `{"audio":"${b64}","type":"Audio"}`,
+    "extra fields": `{"type":"Audio","audio":"${b64}","seq":3,"meta":{"a":"b"}}`,
+    whitespace: `{ "type": "Audio", "audio": "${b64}" }`,
+    "empty payload": `{"type":"Audio","audio":""}`,
+    "non-ASCII elsewhere": `{"type":"Audio","note":"caf\\u00e9 ☕","audio":"${b64}"}`,
+    "nested audio key only": `{"type":"Audio","meta":{"audio":"${b64}"}}`,
+    "key spelled inside a string": `{"type":"a\\",\\"audio\\":\\"z","audio":"${b64}"}`,
+    "string ending in a backslash": `{"type":"a\\\\","audio":"${b64}"}`,
+    "escaped quote before key": `{"t\\"audio":"v","type":"Begin"}`,
+    "escaped payload": `{"type":"Audio","audio":"${b64.slice(0, 4)}\\/${b64.slice(4)}"}`,
+    "duplicate key": `{"type":"Audio","audio":"${b64}","audio":""}`,
+    "not audio": `{"type":"FlushDone"}`,
+  };
+  for (const [name, text] of Object.entries(cases)) {
+    test(`${name}: a Buffer frame parses as JSON.parse would`, () => {
+      expect(parseServerFrame(Buffer.from(text))).toEqual(generic(text));
+      expect(parseServerFrame(text)).toEqual(generic(text));
+    });
+  }
+
+  test("an unparseable frame is undefined on both paths", () => {
+    expect(parseServerFrame(Buffer.from(`{"type":"Audio","audio":"${b64}"`))).toBeUndefined();
+    expect(
+      parseServerFrame(Buffer.from(`{"type":"Audio","audio":"${b64}"} trailing`)),
+    ).toBeUndefined();
+    expect(parseServerFrame("not json")).toBeUndefined();
+  });
+
+  test("a lifted Audio frame still decodes to the same PCM", () => {
+    const { audio, shell, onComplete, onWords, cancels } = setup();
+    handleMessage(Buffer.from(cases["audio key first"] ?? ""), shell, onComplete, onWords, cancels);
+    expect(audio).toEqual([[1, -2, 3, 32_767, -32_768]]);
   });
 });

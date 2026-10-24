@@ -105,7 +105,38 @@ export const SESSION_EVENT_READ_LIMIT = 500;
  * guarantee stops exactly where the process does. The index continues; the ids
  * do not.
  */
-const nextUlid = monotonicFactory();
+const nextUlid = monotonicFactory(createPooledRandomFraction());
+
+/**
+ * A `ulid` PRNG that draws its bytes from a pooled `getRandomValues` buffer.
+ *
+ * `ulid`'s default PRNG allocates a 1-byte `Uint8Array` and makes one
+ * `getRandomValues` call PER CHARACTER — sixteen per id — and every session
+ * event takes an id. Profiled at 900 concurrent pipeline sessions that was
+ * ~1% of the process's busy CPU, on the per-frame path. The bytes come from
+ * the same CSPRNG, and `byte / 256` is exactly the default's distribution, so
+ * the ids are as unguessable as before; only the call count changes.
+ *
+ * Web Crypto rather than `node:crypto` so the self-hosted output stays
+ * portable (Deno, Bun).
+ *
+ * @internal Exported for its spec.
+ */
+export function createPooledRandomFraction(
+  poolBytes = 1024,
+  fill: (pool: Uint8Array) => void = (pool) => crypto.getRandomValues(pool),
+): () => number {
+  const pool = new Uint8Array(poolBytes);
+  let next = poolBytes;
+  return () => {
+    if (next === poolBytes) {
+      fill(pool);
+      next = 0;
+    }
+    // `?? 0` only satisfies the checker: `next` < `poolBytes` here.
+    return (pool[next++] ?? 0) / 256;
+  };
+}
 
 /** The events after which the pending batch is written out. */
 const FLUSH_AFTER: ReadonlySet<SessionEvent["type"]> = new Set([
