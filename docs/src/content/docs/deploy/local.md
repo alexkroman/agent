@@ -42,7 +42,7 @@ own routes, your own auth — see [Self-hosting](/agent/more/self-hosting/).
 
 One `aai start` process runs every call on a single thread, so it uses one CPU
 core however many the machine has. `--workers` serves the same build from
-several processes that share one port:
+several processes behind one port:
 
 ```sh
 aai start --workers 4               # four processes
@@ -50,20 +50,32 @@ aai start --workers auto            # one per CPU core
 AAI_WORKERS=auto npm start          # the same, for a container
 ```
 
-Connections are dealt round-robin, so a browser that reconnects may reach a
-different process than the one it started on. That only works when every process
-shares the same state, so **more than one worker needs a `DATABASE_URL`**, and
-`aai start` refuses to start without one. With it, a reconnect resumes the call
-on whichever process it reaches, and durable runs and their `notify` work across
-all of them. The tables are created once, before the workers start.
+Every request from one browser reaches the same worker. The browser's client id
+(sent by the default UI on every connection) decides which, so a call, its
+`/inbox` socket and its `/api` requests always land together. A reconnect
+resumes on the worker that holds the call, so **no database is needed** for
+voice. Audio goes straight to its worker; the process in front only routes.
 
-Two things still belong to one process: an `/api` route that speaks into a live
-call (`ctx.speech`), and `/inbox` sockets. Each reaches only the calls held by
-the process that took the request.
+A `DATABASE_URL` adds two things memory cannot:
 
-A worker that crashes is replaced, and only the calls it held are lost. A worker
-that fails while starting — a port already in use, an unreachable database —
-stops the whole server rather than restarting forever.
+- **A call survives its worker crashing.** A crashed worker is replaced, and a
+  reconnect resumes from Postgres. Without one, a crash loses that worker's
+  calls.
+- **Workflows.** A run must be readable from every worker, so an agent that
+  declares workflows refuses to start on more than one worker without a
+  `DATABASE_URL`. With one, a step that notifies a client's `/inbox` reaches it
+  whichever worker runs the step.
+
+The tables are created safely when several processes start at once.
+
+An `/api` request that speaks into a live call (`ctx.speech`) reaches it only
+when the request carries the caller's `?client=`. The default UI's route hooks
+send it; a webhook from another service, which knows only a session id, should
+look the call up some other way.
+
+A worker that fails while starting (an unreachable database, say) stops the
+whole server rather than restarting forever. A worker that stops responding for
+a minute is restarted.
 
 As a rough guide, one process holds on the order of a thousand concurrent
 browser calls on a modern core before latency rises. Measure your own agent:

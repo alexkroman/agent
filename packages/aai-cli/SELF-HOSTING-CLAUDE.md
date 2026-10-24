@@ -22,19 +22,41 @@ a command, not a scaffolded file, so improvements reach existing projects. The
 custom-server opt-out is `createProjectServer` on `@alexkroman1/aai-cli/start` —
 builds the `AgentServer`, binds nothing (also what a serverless host wants).
 
-**`aai start --workers <n|auto>` (or `AAI_WORKERS`) is `node:cluster`**
-(`_start-workers.ts`, whose module doc has the measurement): the primary never
-imports the agent; it applies the schema once, forks, and announces only when
-every worker has reported LISTENING over IPC (that report, not a timer, is what
-"booted" means, and it carries the bound port and agent name). Each worker
-re-runs `aai start`, passes `applySchema: false`, prints no CLI result (`--json`
-owes one line) and ignores a repeated signal (Ctrl-C reaches it twice). **More
-than one worker without `DATABASE_URL` is REFUSED**, not warned: round-robin has
-no affinity, so split memory state breaks resume and run reads. A worker dying
-before it listens stops every worker and fails the command; a later death is
-respawned; a non-zero exit during shutdown makes the primary exit 1. The
-supervisor takes `cluster` as a seam (`ClusterLike`), so
-`_start-workers.test.ts` forks nothing.
+**`aai start --workers <n|auto>` (or `AAI_WORKERS`) is a routing primary plus
+`node:cluster` workers** (`_start-workers.ts` has the measurement and the
+shape):
+
+- **The primary owns the public port and routes by affinity**
+  (`_start-affinity.ts`): `?client=`, then a session ticket's `sid`, then
+  `?sessionId=`, else round-robin; a key hashes to a fixed SLOT. An upgrade is
+  handed to the slot's worker as the raw socket with its request head replayed
+  (`_start-router.ts`) — audio never crosses the primary again. Plain HTTP is
+  proxied PER REQUEST to the worker's private loopback port: per-connection
+  routing breaks behind a proxy that pools keep-alive connections.
+- **A worker mints session ids that hash to its own slot** (`mintIdForSlot`,
+  through the runtime's `setSessionIdMinter`), so a resume naming only the id
+  routes home with no table. A keyed request whose worker is restarting gets
+  `503 Retry-After`, never another worker.
+- **No database is required.** A client's call, `/inbox` and `/api` all reach
+  one worker. `DATABASE_URL` adds crash survival; an agent with workflows is
+  REFUSED on more than one worker without it (`workflowsNeedDatabase`). The one
+  cross-worker path, an `/inbox` notice from a step on another worker, goes
+  through the runtime's `setClientNotifyRelay` and the supervisor
+  (`aai-start:relay` IPC; a dying target answers `disconnected`).
+- **Supervision:** "booted" is the worker's IPC `listening` report; a worker
+  dying before it is a boot failure (stop all, fail the command), after it is
+  respawned into the SAME slot. Workers print no CLI result (`--json` owes one
+  line) and latch their signal handler (Ctrl-C arrives twice). The primary never
+  imports the agent. **Liveness:** the primary pings each listening worker every
+  `PING_INTERVAL_MS` and SIGKILLs one silent for `LIVENESS_TIMEOUT_MS` (60 s, as
+  LiveKit's supervisor) — a wedged loop would otherwise look alive forever while
+  its calls hang; the exit handler respawns it.
+- **Seams:** `ClusterLike` (`nodeCluster()` is the typed adapter),
+  `PrimaryLink`, and `WorkerRuntime` keep the unit tier fork-free;
+  `_start-router.scenario.test.ts` drives the router over real sockets.
+- **`ctx.speech` from `/api` reaches a call only when the request carries the
+  caller's `?client=`** — the published `RouteContext.speech` is synchronous, so
+  it is not relayed.
 
 **`--target` is Nitro's preset shape** (`_build-target.ts`): an entry file is
 EMITTED into build output, never committed. Per-host modules:

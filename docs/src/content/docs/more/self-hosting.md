@@ -83,9 +83,10 @@ You do not have to migrate it. `createAgentServer()` creates the tables it owns
 tables come with whoever owns the database and a self-hosted deployment has no
 migration step to hang them off.
 
-It is also what lets one machine use every core: `aai start --workers` refuses
-more than one process without a `DATABASE_URL`, because round-robin has no
-affinity and a reconnect could land on a process that never saw the call. See
+Several processes can create them at once — `aai start --workers`, or containers
+booting together — because each batch runs behind a Postgres advisory lock. With
+`--workers`, a `DATABASE_URL` is what lets a call survive its worker crashing,
+and what workflows need to run on more than one worker. See
 [Using every core](/agent/deploy/local/#using-every-core---workers).
 
 That creation is best-effort by design. A role that may not `CREATE`, because

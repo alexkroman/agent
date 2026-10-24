@@ -129,6 +129,7 @@ export { parseTraceparent, type TraceParent, traceIdOf } from "./_trace-context.
 export type { HostGenerateFn } from "./generate.ts";
 // What a bundle hands the runtime-less guest harness, as `__aaiCreateRuntime.host`.
 export { GUEST_HOST, GUEST_HOST_VERSION, type GuestHost } from "./guest-host.ts";
+export { type ClientNotifyRelay, notifyClientHere, setClientNotifyRelay } from "./inbox/index.ts";
 // The console-backed `Logger` the CLI, the guest and the platform's own logger
 // all start from. The `Logger` TYPE — the thing a host implements — is
 // contracted, on the root barrel.
@@ -228,12 +229,16 @@ export type {
 // TYPES a reader names (`SessionEventPage`, `SessionEventStream`) are
 // contracted, on the root barrel; `SessionEventLog` is the writing half the
 // factory returns.
+// The two seams a host that spreads one agent over several PROCESSES needs
+// (`aai start --workers`, in aai-cli): mint session ids that route back to
+// this process, and forward an inbox notice to the process holding the client.
 export {
   createSessionDirectory,
   createSessionEventStream,
   type SessionDirectory,
   type SessionEventLog,
   type SessionWiring,
+  setSessionIdMinter,
   stampSessionEvent,
   wireSessionSocket,
 } from "./session/index.ts";

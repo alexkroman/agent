@@ -1,0 +1,155 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * `aai start` as a function of its collaborators: serve from one process, or
+ * as the `--workers` primary, or as one of its workers. `start.ts` passes the
+ * real process, cluster, port and project loaders; the unit tier passes fakes,
+ * so every branch is specified without binding a port or forking.
+ *
+ * @module
+ */
+
+import type { AgentDef } from "@alexkroman1/aai";
+import type { AgentServer } from "@alexkroman1/aai-runtime";
+import { type PrimaryDeps, runPrimary, runWorker } from "./_start-cluster.ts";
+import type { PrimaryLink } from "./_start-worker.ts";
+import type { ClusterLike } from "./_start-workers.ts";
+
+/** What the start command answers, for `--json` and for tests. */
+export interface StartResult {
+  ok: true;
+  data: { name: string; port: number | undefined; workers: number };
+}
+
+type Project = { agent: AgentDef; env: Record<string, string> };
+type Tracing = { shutdown(): Promise<void> } | undefined;
+
+/** Everything `aai start` touches outside its own logic. */
+export interface StartRunDeps {
+  /** Is this process a `--workers` worker? */
+  isWorker: boolean;
+  /** A worker's slot and the slot count (read from its environment). */
+  slot(): { slot: number; slots: number };
+  load(): Promise<Project>;
+  build(project: Project): Promise<AgentServer>;
+  /** The project's env without importing the agent — the primary's read. */
+  readEnv(): Promise<Record<string, string>>;
+  /** Throw (saying what to run) when there is no build. */
+  assertBuilt(): void;
+  startTracing(): Promise<Tracing>;
+  cluster(): ClusterLike;
+  link(): PrimaryLink;
+  listen: PrimaryDeps["listen"];
+  onSignal(handler: (signal: NodeJS.Signals) => void): void;
+  exit(code: number): void;
+  stop(server: AgentServer, tracing: Tracing): Promise<void>;
+  /** Never settles: a worker serves until a signal ends the process. */
+  forever(): Promise<never>;
+  ui: {
+    info(message: string): void;
+    warn(message: string): void;
+    error(message: string): void;
+    notify(level: "warn" | "error", message: string): void;
+  };
+}
+
+/** The address to bind. */
+export interface StartTarget {
+  port: number;
+  host: string | undefined;
+  workers: number;
+}
+
+/**
+ * Close the server, flush tracing, exit — on the FIRST signal only.
+ *
+ * `on` with a latch rather than `once`: a `--workers` worker gets a Ctrl-C
+ * twice (from the terminal and from its primary), and a second delivery to a
+ * `once` listener would take the default action mid-shutdown. The handler is
+ * synchronous: a rejected close becomes a non-zero exit, not an unhandled
+ * rejection.
+ */
+export function stopOnSignal(server: AgentServer, tracing: Tracing, deps: StartRunDeps): void {
+  let stopping = false;
+  deps.onSignal(() => {
+    if (stopping) return;
+    stopping = true;
+    deps.stop(server, tracing).then(
+      () => deps.exit(0),
+      (error: unknown) => {
+        deps.ui.error(`shutdown failed: ${error instanceof Error ? error.message : String(error)}`);
+        deps.exit(1);
+      },
+    );
+  });
+}
+
+/** Serve the built agent: one process, the `--workers` primary, or a worker. */
+export async function runStart(target: StartTarget, deps: StartRunDeps): Promise<StartResult> {
+  if (deps.isWorker) return serveAsWorker(deps);
+  if (target.workers > 1) return startPrimary(target, deps);
+  // Before the server, so the first model call a request causes is already
+  // reported (`@alexkroman1/aai-runtime/tracing`; undefined with no collector).
+  const tracing = await deps.startTracing();
+  const project = await deps.load();
+  const server = await deps.build(project);
+  await server.listen(target.port, target.host);
+  deps.ui.info(
+    `${project.agent.name} listening on http://${target.host ?? "127.0.0.1"}:${server.port}`,
+  );
+  stopOnSignal(server, tracing, deps);
+  return { ok: true, data: { name: project.agent.name, port: server.port, workers: 1 } };
+}
+
+/**
+ * A `--workers` worker: serve its slot and report to the primary, which owns
+ * the public port, the announcement and the command's result. So a worker
+ * prints no result (`--json` owes ONE line) and never settles; a failure goes
+ * to stderr and to the primary (`runWorker`) and ends the process, which the
+ * primary reads as a boot failure.
+ */
+async function serveAsWorker(deps: StartRunDeps): Promise<never> {
+  try {
+    const tracing = await deps.startTracing();
+    const server = await runWorker(deps.slot(), {
+      link: deps.link(),
+      load: () => deps.load(),
+      build: (agent, env) => deps.build({ agent, env }),
+    });
+    stopOnSignal(server, tracing, deps);
+  } catch (error: unknown) {
+    deps.ui.notify("error", error instanceof Error ? error.message : String(error));
+    deps.exit(1);
+  }
+  return deps.forever();
+}
+
+/**
+ * The `--workers` primary (`runPrimary`): it owns no sessions, binds the public
+ * port once every worker listens, and never imports the agent — the name comes
+ * from the workers.
+ */
+async function startPrimary(target: StartTarget, deps: StartRunDeps): Promise<StartResult> {
+  deps.assertBuilt();
+  const env = await deps.readEnv();
+  if (!env.DATABASE_URL) {
+    deps.ui.warn(
+      `No DATABASE_URL: each of the ${target.workers} workers keeps its own calls in memory. ` +
+        "Every client is routed to the same worker each time, so reconnects resume — " +
+        "but a call does not survive its worker crashing. Set DATABASE_URL for that.",
+    );
+  }
+  const bound = await runPrimary(
+    { workers: target.workers, port: target.port, host: target.host },
+    {
+      cluster: deps.cluster(),
+      listen: deps.listen,
+      onSignal: deps.onSignal,
+      exit: deps.exit,
+      log: (message) => deps.ui.notify("warn", message),
+    },
+  );
+  deps.ui.info(
+    `${bound.name} listening on http://${target.host ?? "127.0.0.1"}:${bound.port} with ${target.workers} workers`,
+  );
+  return { ok: true, data: { name: bound.name, port: bound.port, workers: target.workers } };
+}

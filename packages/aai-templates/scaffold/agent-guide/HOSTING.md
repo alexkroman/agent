@@ -38,11 +38,12 @@ Secrets work the same as everywhere else: `ctx.env` holds the keys declared in
 so `docker run -e MY_API_KEY=…` needs no `.env` in the image.
 
 One process uses one CPU core. `aai start --workers <n|auto>` (or `AAI_WORKERS`)
-serves the build from several processes on one port, dealt round-robin; more
-than one needs a `DATABASE_URL`, so a reconnect landing on another process can
-resume the call, and it refuses to start without one. An `/api` route's
-`ctx.speech` and `/inbox` sockets still reach only the calls held by the process
-that took the request.
+serves the build from several processes behind one port, routing each browser by
+its client id so a call, its `/inbox` and its `/api` requests share a worker —
+no database needed for voice. `DATABASE_URL` makes a call survive its worker
+crashing, and is required for an agent with workflows on more than one worker.
+An `/api` route's `ctx.speech` reaches a call only when the request carries the
+caller's `?client=`.
 
 One thing to know: it binds **loopback by default**, because this server has no
 request authentication of its own; set `HOST=0.0.0.0` only behind your own proxy

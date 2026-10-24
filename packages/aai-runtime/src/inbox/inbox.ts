@@ -73,6 +73,7 @@ import { createKeyedLock, omitUndefined, safeJsonParse, withLock } from "@alexkr
 import type { RawData, WebSocket } from "ws";
 import type { Logger } from "../logger.ts";
 import { type ClientEventFrame, publishClientEventFeed } from "./event-feed.ts";
+import { routedClientNotifier } from "./relay.ts";
 
 /** @internal */
 export const CLIENT_INBOX_PATH = "/inbox";
@@ -334,7 +335,9 @@ export function createClientInbox(options: { logger: Logger; pingMs?: number }):
  */
 export function installClientInbox(logger: Logger): ClientInbox {
   const inbox = createClientInbox({ logger });
-  publishClientNotifier(inbox.notify);
+  // Routed, so a host spreading clients over processes can forward a notice
+  // to the one holding the socket (`relay.ts`); with no relay it IS inbox.notify.
+  publishClientNotifier(routedClientNotifier(inbox.notify));
   publishClientEventFeed(inbox.feed);
   return inbox;
 }

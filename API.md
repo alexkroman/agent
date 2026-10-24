@@ -13811,7 +13811,6 @@ export function loadBuiltAgent(cwd: string): Promise<AgentDef>;
 
 // @public
 export interface ProjectServerOptions {
-    applySchema?: boolean | undefined;
     cwd: string;
     host?: string | undefined;
     port?: number | undefined;
@@ -16179,6 +16178,7 @@ export const workflowJournalBrand: unique symbol;
 ```ts
 import type { AgentDef } from '@alexkroman1/aai';
 import type { AgentEnv } from '@alexkroman1/aai/host-internal';
+import type { ClientNotifier } from '@alexkroman1/aai/host-internal';
 import { ClientSink } from '@alexkroman1/aai/protocol';
 import { ClientToolCall } from '@alexkroman1/aai/internal';
 import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
@@ -16295,6 +16295,11 @@ export const CARRIER_PARAM = "carrier";
 
 // @public
 type CarrierName = string;
+
+// @internal
+export interface ClientNotifyRelay {
+    forward(clientId: string): ClientNotifier | undefined;
+}
 
 // @public
 export type ClientSessionLog = {
@@ -16608,6 +16613,9 @@ export function mintPlatformSessionTicket(input: PlatformTicketInput): string;
 
 // @public
 export function normalizeRunLabel(value: unknown): string | undefined;
+
+// @internal
+export const notifyClientHere: ClientNotifier;
 
 export { parseBearer }
 
@@ -17053,6 +17061,12 @@ export type SessionWiring = {
     emitter: SessionEmitter;
     meter: UsageMeter;
 };
+
+// @internal
+export function setClientNotifyRelay(next: ClientNotifyRelay | undefined): void;
+
+// @internal
+export function setSessionIdMinter(mint: (() => string) | undefined): void;
 
 // @public
 export type SleepEntry = SleepRecord & {

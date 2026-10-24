@@ -60,12 +60,10 @@ import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import { resolveDenoRunCode } from "./_run-code-deno.ts";
 import { DEPLOY_ENV_FILES, resolveServerEnv } from "./_server-common.ts";
-import {
-  announceListening,
-  assertWorkersSupported,
-  type ClusterLike,
-  superviseWorkers,
-} from "./_start-workers.ts";
+import { listenServer } from "./_start-cluster.ts";
+import { runStart, type StartResult } from "./_start-run.ts";
+import { processLink } from "./_start-worker.ts";
+import { nodeCluster, SLOT_ENV, SLOTS_ENV } from "./_start-workers.ts";
 import { stopProjectServer } from "./_stop-server.ts";
 import { defaultUi } from "./_ui.ts";
 
@@ -89,19 +87,13 @@ export interface ProjectServerOptions {
    */
   host?: string | undefined;
   /**
-   * Processes to serve from (see `_start-workers.ts`). Defaults to 1; more than
-   * one needs `DATABASE_URL`. Only {@link executeStart} reads it.
+   * Processes to serve from, one per CPU core worth using (see
+   * `_start-workers.ts`). Defaults to 1. Only {@link executeStart} reads it.
    */
   workers?: number | undefined;
-  /**
-   * Create the Postgres tables before serving (default `true`). An
-   * `aai start --workers` worker passes `false`: its primary applied them once,
-   * so N siblings do not race the same DDL.
-   */
-  applySchema?: boolean | undefined;
 }
 
-/** The built worker, or a throw saying what to run. */
+/** The built worker's path, or a throw saying what to run. */
 function builtAgentPath(cwd: string): string {
   const workerPath = path.join(cwd, WORKER_ARTIFACT_REL);
   if (!existsSync(workerPath)) {
@@ -111,17 +103,6 @@ function builtAgentPath(cwd: string): string {
     );
   }
   return workerPath;
-}
-
-/**
- * Create the tables a `DATABASE_URL` project's session state and run journal
- * live in. Concurrent: the two touch disjoint tables over their own pools.
- */
-async function applyProjectSchema(url: string): Promise<void> {
-  await Promise.all([
-    ensureSessionStateSchema({ url, logger: console }),
-    ensureWorkflowJournalSchema({ url, logger: console }),
-  ]);
 }
 
 /** The address `aai start` binds: the option, then `PORT`/`HOST`, then the defaults. */
@@ -139,8 +120,7 @@ function listenAddress(options: ProjectServerOptions): { port: number; host: str
  * POSIX-looking path is not a valid module specifier.
  */
 export async function loadBuiltAgent(cwd: string): Promise<AgentDef> {
-  const workerPath = builtAgentPath(cwd);
-  const worker = (await import(pathToFileURL(workerPath).href)) as { default: AgentDef };
+  const worker = (await import(pathToFileURL(builtAgentPath(cwd)).href)) as { default: AgentDef };
   return worker.default;
 }
 
@@ -185,13 +165,25 @@ function resolveClientDir(cwd: string): string {
  * ```
  */
 export async function createProjectServer(options: ProjectServerOptions): Promise<AgentServer> {
-  const { cwd } = options;
+  const { agent, env } = await loadProject(options.cwd);
+  return buildProjectServer(options.cwd, agent, env);
+}
+
+/** The built agent and its env — what every way of serving a project starts from. */
+async function loadProject(cwd: string): Promise<{ agent: AgentDef; env: Record<string, string> }> {
   const agent = await loadBuiltAgent(cwd);
   // `.env.example` counts as a declaration here — see `DEPLOY_ENV_FILES`, which
   // is what lets a container ship no `.env` and supply the values as real
   // environment variables.
   const env = await resolveServerEnv(cwd, undefined, DEPLOY_ENV_FILES);
+  return { agent, env };
+}
 
+async function buildProjectServer(
+  cwd: string,
+  agent: AgentDef,
+  env: Record<string, string>,
+): Promise<AgentServer> {
   if (env.DATABASE_URL) {
     // A project with a `DATABASE_URL` puts session state and durable runs in
     // Postgres, and those tables come with whoever OWNS the database — which
@@ -201,8 +193,9 @@ export async function createProjectServer(options: ProjectServerOptions): Promis
     // starts, reports `durable: true`, and every session dies at start with the
     // real reason (`relation "aai_session_events" does not exist`) visible only
     // in this process's log.
-    if (options.applySchema !== false) await applyProjectSchema(env.DATABASE_URL);
-  } else {
+    await ensureSessionStateSchema({ url: env.DATABASE_URL, logger: console });
+    await ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger: console });
+  } else if (cluster.isPrimary) {
     // Say that this process is the only place the state lives, because the next
     // thing an operator does with a container is run two of them. It is not
     // only about restarts: the browser reconnects with `?sessionId=`, so a
@@ -239,118 +232,45 @@ export async function createProjectServer(options: ProjectServerOptions): Promis
   });
 }
 
-/** What {@link executeStart} answers, for `--json` and for tests. */
-export interface StartResult {
-  ok: true;
-  data: { name: string; port: number | undefined; workers: number };
-}
+export type { StartResult } from "./_start-run.ts";
 
 /**
  * Serve the built agent and keep serving it: bind, announce, and shut down
- * cleanly on a signal.
- *
- * The signal listeners are SYNCHRONOUS. An `async` one hands its promise to
- * `process`, which discards what a listener returns — so a `close()` that
- * rejected would surface as an unhandled rejection, i.e. a crash with a stack
- * trace on Ctrl-C, instead of the non-zero exit a failed shutdown should be.
+ * cleanly on a signal — from one process, or with `workers > 1` from a primary
+ * routing to that many (`_start-workers.ts`). The logic is `runStart`
+ * (`_start-run.ts`); this hands it the real process.
  */
 export async function executeStart(options: ProjectServerOptions): Promise<StartResult> {
-  const workers = options.workers ?? 1;
-  if (cluster.isWorker) return serveAsWorker(options);
-  if (workers > 1) return startPrimary(options, workers);
-  const { name, port, host } = await serve(options);
-  defaultUi.log.info(`${name} listening on http://${host ?? "127.0.0.1"}:${port}`);
-  return { ok: true, data: { name, port, workers: 1 } };
-}
-
-/** Bind the built agent and install the shutdown handlers. */
-async function serve(
-  options: ProjectServerOptions,
-): Promise<{ name: string; port: number | undefined; host: string | undefined }> {
-  // Before the server, so the first model call a request causes is already
-  // reported. Awaited rather than detached (the guest harness's trade): this
-  // boot has no sandbox cold-start budget to protect, and awaiting is what
-  // makes the first span deterministic instead of racing the dynamic import.
-  // Returns undefined unless a collector is configured — see
-  // `@alexkroman1/aai-runtime/tracing`.
-  const tracing = await startTracing();
-  const agent = await loadBuiltAgent(options.cwd);
-  const server = await createProjectServer({ ...options, applySchema: !cluster.isWorker });
+  const { cwd } = options;
   const { port, host } = listenAddress(options);
-  await server.listen(port, host);
-
-  // `on` with a latch rather than `once`: under `--workers` a Ctrl-C reaches a
-  // worker from the terminal AND from its primary, and a second delivery to a
-  // `once` listener would take the default action mid-shutdown.
-  let stopping = false;
-  for (const signal of ["SIGINT", "SIGTERM"] as const) {
-    process.on(signal, () => {
-      if (stopping) return;
-      stopping = true;
-      // Close, then flush tracing either way — see `_stop-server.ts`.
-      stopProjectServer(server, tracing).then(
-        () => process.exit(0),
-        (error: unknown) => {
-          defaultUi.log.error(
-            `shutdown failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          process.exit(1);
-        },
-      );
-    });
-  }
-  return { name: agent.name, port: server.port, host };
-}
-
-/**
- * A `--workers` worker: serve, then report to the primary — which announces the
- * server and owns the command's result. So a worker prints no result of its own
- * (`--json` owes ONE line) and never settles: its failures go to stderr and end
- * the process, which the primary reads as a boot failure.
- */
-async function serveAsWorker(options: ProjectServerOptions): Promise<never> {
-  try {
-    const { name, port } = await serve(options);
-    announceListening(name, port);
-  } catch (error: unknown) {
-    defaultUi.notify("error", error instanceof Error ? error.message : String(error));
-    process.exit(1);
-  }
-  return new Promise<never>(() => undefined);
-}
-
-/**
- * The `--workers` primary: check everything a worker would fail on, apply the
- * schema once, then fork, supervise, and announce once every worker listens.
- * It owns no sessions, binds nothing (`node:cluster` shares the workers'
- * socket) and never imports the agent: the name and bound port come from the
- * workers' reports.
- */
-async function startPrimary(options: ProjectServerOptions, workers: number): Promise<StartResult> {
-  builtAgentPath(options.cwd);
-  const env = await resolveServerEnv(options.cwd, undefined, DEPLOY_ENV_FILES);
-  assertWorkersSupported(workers, env.DATABASE_URL);
-  if (env.DATABASE_URL) await applyProjectSchema(env.DATABASE_URL);
-
-  // Round-robin is already the default everywhere but Windows; say it anyway,
-  // since leaving it to the OS concentrates connections on a few workers.
-  cluster.schedulingPolicy = cluster.SCHED_RR;
-  const supervisor = superviseWorkers({
-    count: workers,
-    cluster: cluster as unknown as ClusterLike,
-    log: (message) => defaultUi.notify("warn", message),
-  });
-  // A terminal's Ctrl-C reaches every worker too; a supervisor's SIGTERM
-  // reaches only this pid. Forwarding covers both — workers ignore a repeat.
-  for (const signal of ["SIGINT", "SIGTERM"] as const) {
-    process.on(signal, () => supervisor.stop(signal));
-  }
-
-  const { name, port } = await supervisor.ready;
-  void supervisor.exited.then((code) => process.exit(code));
-  const { host } = listenAddress(options);
-  defaultUi.log.info(
-    `${name} listening on http://${host ?? "127.0.0.1"}:${port} with ${workers} workers`,
+  return runStart(
+    { port, host, workers: options.workers ?? 1 },
+    {
+      isWorker: cluster.isWorker,
+      slot: () => ({ slot: Number(process.env[SLOT_ENV]), slots: Number(process.env[SLOTS_ENV]) }),
+      load: () => loadProject(cwd),
+      build: ({ agent, env }) => buildProjectServer(cwd, agent, env),
+      readEnv: () => resolveServerEnv(cwd, undefined, DEPLOY_ENV_FILES),
+      assertBuilt: () => {
+        builtAgentPath(cwd);
+      },
+      startTracing,
+      cluster: nodeCluster,
+      link: processLink,
+      listen: listenServer,
+      onSignal: (handler) => {
+        for (const signal of ["SIGINT", "SIGTERM"] as const)
+          process.on(signal, () => handler(signal));
+      },
+      exit: (code) => process.exit(code),
+      stop: stopProjectServer,
+      forever: () => new Promise<never>(() => undefined),
+      ui: {
+        info: (message) => defaultUi.log.info(message),
+        warn: (message) => defaultUi.log.warn(message),
+        error: (message) => defaultUi.log.error(message),
+        notify: (level, message) => defaultUi.notify(level, message),
+      },
+    },
   );
-  return { ok: true, data: { name, port, workers } };
 }

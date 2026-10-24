@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 186 names
 - [Testing and evals](#testing-and-evals) — 240 names
 - [Hosting and tooling](#hosting-and-tooling) — 234 names
-- [Framework internals](#framework-internals) — 489 names
+- [Framework internals](#framework-internals) — 493 names
 
 ## Agent authoring
 
@@ -1059,7 +1059,7 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `SessionVerifier` | type | `@alexkroman1/aai-runtime/auth` | `aai-runtime:auth` | A caller's own ticket check — a JWT from your IdP, an API key lookup. |
 | `SessionWebSocket` | type | `@alexkroman1/aai-runtime` | `aai-runtime:session` | Minimal WebSocket interface accepted by `AgentRuntime.startSession`. |
 | `SharedServerOptions` | type | `@alexkroman1/aai-runtime` | `aai-runtime:server` | The options every front door over `createServerForRuntime` passes straight through — a logger and the two request hooks. |
-| `StartResult` | interface | `@alexkroman1/aai-cli/start` |  | What `executeStart` answers, for `--json` and for tests. |
+| `StartResult` | interface | `@alexkroman1/aai-cli/start` |  | What the start command answers, for `--json` and for tests. |
 | `SttError` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:providers` | Error raised by an STT provider stream, with a typed `code` naming the failure phase: connecting, authenticating, or mid-stream. |
 | `SttEvents` | type | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:providers` |  |
 | `SttOpenOptions` | interface | `@alexkroman1/aai-runtime` (also `@alexkroman1/aai-runtime/eval`, `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:providers` | Options the host passes when opening an STT stream. |
@@ -1127,7 +1127,7 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `decodeWorkspaceText` | function | `@alexkroman1/aai/workspace-files` |  |  |
 | `ensureSessionStateSchema` | function | `@alexkroman1/aai-runtime` | `aai-runtime:session-state` | Apply `sessionStateDdl` to a database this process OWNS, once, at boot. |
 | `ensureWorkflowJournalSchema` | function | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | Create the journal's tables on a database this deployment owns. |
-| `executeStart` | function | `@alexkroman1/aai-cli/start` |  | Serve the built agent and keep serving it: bind, announce, and shut down cleanly on a signal. |
+| `executeStart` | function | `@alexkroman1/aai-cli/start` |  | Serve the built agent and keep serving it: bind, announce, and shut down cleanly on a signal — from one process, or with `workers > 1` from a primary routing … |
 | `gateToolset` | function | `@alexkroman1/aai/manifest` |  | Layer extra gates over a set — every gate must pass, the set's own first. |
 | `isLocalOnlyFile` | function | `@alexkroman1/aai/workspace-files` |  | True when `name` matches `LOCAL_ONLY_FILES`. |
 | `isLockfile` | function | `@alexkroman1/aai/workspace-files` |  | True when `name` is a package-manager lockfile. |
@@ -1224,6 +1224,7 @@ trace or a type error can be traced back to something.
 | `ClientEventDrop` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `ClientInboxDefaults` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `ClientNotifier` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `ClientNotifyRelay` | interface · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `ClientSessionLog` | type | `@alexkroman1/aai-runtime/internal` |  | The client half of a `SessionStateBackend` (`store.ts`). |
 | `ClientSessionRecord` | type | `@alexkroman1/aai-runtime/internal` |  | One session's binding to a client, as `ClientSessionLog.clientSessions` lists it. |
 | `ClientToolBrand` | type · `@internal` | `@alexkroman1/aai/internal` |  |  |
@@ -1586,6 +1587,7 @@ trace or a type error can be traced back to something.
 | `normalizeLlm` | function | `@alexkroman1/aai/host-internal` |  | Normalize an `llm` field that may be a model-id string shorthand. |
 | `normalizeRunLabel` | function | `@alexkroman1/aai-runtime/internal` |  | The label a run is stored with, or `undefined` for none — see the module doc for each rule. |
 | `normalizeSpeechText` | function | `@alexkroman1/aai/internal` |  | Normalize text on its way to a TTS engine: typographic quotes and apostrophes become their ASCII equivalents. |
+| `notifyClientHere` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `outputWithKillNote` | function | `@alexkroman1/aai/host-internal` |  | The child's stdout with a KILL annotated onto it — the shape every surface that returns one string to the model shares. |
 | `parseBearer` | function | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | Token from an `Authorization: Bearer <token>` header value. |
 | `parseJsonText` | function | `@alexkroman1/aai/host-internal` |  | `text` parsed as JSON, boxed so a body of `null` is told apart from one that is not JSON — `undefined` for an empty body or one that does not parse (a form … |
@@ -1648,8 +1650,10 @@ trace or a type error can be traced back to something.
 | `selectToolMessage` | function | `@alexkroman1/aai/host-internal` |  | One of the eligible messages, drawn — the VARIANT rule. |
 | `serializeToolFailure` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `sessionStateDdl` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
+| `setClientNotifyRelay` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `setSessionCall` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `setSessionClient` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `setSessionIdMinter` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `setSessionLocation` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `setSessionPhone` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `sleep` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |

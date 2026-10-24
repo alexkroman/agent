@@ -75,6 +75,22 @@ files by NAME** (scans, `guard-invariants-scopes.mjs`, baseline JSONs) — see
   registered cross-copy slot ("The server and the sessions are ONE copy of this
   package" in `../CLAUDE.md`).
 
+## One agent on several PROCESSES: three seams, all on `/internal`
+
+`aai start --workers` (aai-cli's `SELF-HOSTING-CLAUDE.md`) spreads one agent
+over processes; the runtime keeps no knowledge of that beyond three seams:
+
+- **`setSessionIdMinter`** (`session/session-id.ts`) — who mints a fresh
+  session's id (`attach.ts`); a worker mints ids that route back to itself.
+- **`setClientNotifyRelay` / `notifyClientHere`** (`inbox/relay.ts`) — the
+  published step notifier is `routedClientNotifier(inbox.notify)`, so a notice
+  for a client another process holds is forwarded, and the owner delivers
+  locally. No relay installed means every client is local.
+- **`withSchemaLock`** (`_schema-lock.ts`) — both `ensure*Schema` wrappers run
+  their DDL in one transaction behind `pg_advisory_xact_lock`, so concurrent
+  boots serialize instead of racing the catalog. It needs a ONE-connection `Db`
+  (the wrappers' `max: 1` pool), never a caller's pool.
+
 ## Subagents: `ctx.delegate` is a second tool loop
 
 `subagent.ts` implements `ctx.delegate` (contract: `sdk/speaker.ts` in the SDK)

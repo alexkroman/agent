@@ -19,6 +19,7 @@
 
 import type { Db } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
+import { withSchemaLock } from "../../_schema-lock.ts";
 import type { Logger } from "../../logger.ts";
 import { createPostgresDb } from "../../postgres-db.ts";
 
@@ -183,9 +184,14 @@ export async function ensureWorkflowJournalSchema(options: {
   url: string;
   logger: Logger;
 }): Promise<boolean> {
+  // `max: 1` for the advisory lock's transaction — see `_schema-lock.ts`.
   const db = createPostgresDb({ url: options.url, max: 1 });
   try {
-    return await applyWorkflowJournalDdl({ db, logger: options.logger });
+    return await withSchemaLock(db, () => applyWorkflowJournalDdl({ db, logger: options.logger }));
+  } catch (err: unknown) {
+    // `begin` or the lock failed — best-effort, as the statements are.
+    options.logger.warn?.("Workflow journal schema not applied", { error: errorMessage(err) });
+    return false;
   } finally {
     await db.close().catch(() => undefined);
   }

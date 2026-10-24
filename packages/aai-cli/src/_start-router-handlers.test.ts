@@ -1,0 +1,175 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * The router's two handlers driven in-process, with no socket bound: a real
+ * `IncomingMessage`/`ServerResponse` pair over an unconnected socket, and an
+ * injected upstream `request`. The same paths over real sockets are in
+ * `_start-router.scenario.test.ts`.
+ */
+
+import type http from "node:http";
+import { IncomingMessage, ServerResponse } from "node:http";
+import { Socket } from "node:net";
+import { PassThrough } from "node:stream";
+import { describe, expect, test, vi } from "vitest";
+import { clientKey, slotOf } from "./_start-affinity.ts";
+import { createRouter, type UpstreamRequest } from "./_start-router.ts";
+import type { PrimaryMessage, ReadyWorker } from "./_start-workers.ts";
+
+/** A request as the server's parser would hand it over, body already ended. */
+function incoming(url: string, headers: Record<string, string> = {}): IncomingMessage {
+  const req = new IncomingMessage(new Socket());
+  req.method = "GET";
+  req.url = url;
+  req.httpVersion = "1.1";
+  req.headers = headers;
+  req.rawHeaders = Object.entries(headers).flat();
+  req.push(null);
+  return req;
+}
+
+/** A response whose status, headers and body a test can read back. */
+function outgoing(req: IncomingMessage) {
+  const res = new ServerResponse(req);
+  const body: string[] = [];
+  vi.spyOn(res, "write").mockImplementation((chunk: unknown) => {
+    body.push(String(chunk));
+    return true;
+  });
+  const ended = new Promise<void>((resolve) => {
+    vi.spyOn(res, "end").mockImplementation((chunk?: unknown) => {
+      if (chunk !== undefined && typeof chunk !== "function") body.push(String(chunk));
+      resolve();
+      return res;
+    });
+  });
+  return { res, body, ended };
+}
+
+const sentTo: PrimaryMessage[][] = [];
+function readyWorker(slot: number): ReadyWorker {
+  sentTo[slot] = [];
+  return {
+    port: 7000 + slot,
+    worker: { pid: slot, kill: () => undefined, send: (message) => sentTo[slot]?.push(message) },
+  };
+}
+
+/** An upstream that answers `status` with `text`, recording the options it was dialled with. */
+function upstreamAnswering(status: number, text: string, headers: Record<string, string> = {}) {
+  const dialled: http.RequestOptions[] = [];
+  const request: UpstreamRequest = (options, onReply) => {
+    dialled.push(options);
+    const body = new PassThrough();
+    queueMicrotask(() => {
+      const reply = new IncomingMessage(new Socket());
+      reply.statusCode = status;
+      reply.statusMessage = "S";
+      reply.headers = headers;
+      reply.push(text);
+      reply.push(null);
+      onReply(reply);
+    });
+    return body;
+  };
+  return { request, dialled };
+}
+
+function clientFor(slot: number, slots: number): string {
+  for (let i = 0; ; i++) if (slotOf(clientKey(`c${i}`), slots) === slot) return `c${i}`;
+}
+
+describe("createRouter — HTTP", () => {
+  test("proxies to the client's worker's private port, dropping hop-by-hop headers", async () => {
+    const workers = [readyWorker(0), readyWorker(1)];
+    const up = upstreamAnswering(201, "made", { connection: "keep-alive", "x-kept": "yes" });
+    const server = createRouter({ slots: 2, target: (s) => workers[s], request: up.request });
+    const client = clientFor(1, 2);
+    const req = incoming(`/api/x?client=${client}`, {
+      host: "h",
+      connection: "keep-alive",
+      "x-app": "1",
+    });
+    const { res, body, ended } = outgoing(req);
+    const writeHead = vi.spyOn(res, "writeHead");
+    server.emit("request", req, res);
+    await ended;
+    expect(up.dialled[0]).toMatchObject({
+      host: "127.0.0.1",
+      port: 7001,
+      method: "GET",
+      path: `/api/x?client=${client}`,
+      headers: { host: "h", "x-app": "1" },
+    });
+    expect(up.dialled[0]?.headers).not.toHaveProperty("connection");
+    expect(writeHead).toHaveBeenCalledWith(201, "S", { "x-kept": "yes" });
+    expect(body.join("")).toBe("made");
+  });
+
+  test("an upstream failure answers 502", async () => {
+    const workers = [readyWorker(0)];
+    const request: UpstreamRequest = () => {
+      const body = new PassThrough();
+      queueMicrotask(() => body.emit("error", new Error("ECONNREFUSED")));
+      return body;
+    };
+    const server = createRouter({ slots: 1, target: (s) => workers[s], request });
+    const req = incoming("/health");
+    const { res, ended } = outgoing(req);
+    const writeHead = vi.spyOn(res, "writeHead");
+    server.emit("request", req, res);
+    await ended;
+    expect(writeHead).toHaveBeenCalledWith(502, { "content-type": "text/plain" });
+  });
+
+  test("no listening worker answers 503 with Retry-After", async () => {
+    const server = createRouter({ slots: 2, target: () => undefined });
+    const req = incoming("/health");
+    const { res, ended } = outgoing(req);
+    const writeHead = vi.spyOn(res, "writeHead");
+    server.emit("request", req, res);
+    await ended;
+    expect(writeHead).toHaveBeenCalledWith(503, expect.objectContaining({ "retry-after": "1" }));
+  });
+
+  test("a client that goes away mid-request stops the upstream request", async () => {
+    const workers = [readyWorker(0)];
+    let upstream: PassThrough | undefined;
+    const request: UpstreamRequest = () => {
+      upstream = new PassThrough();
+      return upstream;
+    };
+    const server = createRouter({ slots: 1, target: (s) => workers[s], request });
+    const req = incoming("/workflows/runs/r1/events");
+    const res = new ServerResponse(req);
+    server.emit("request", req, res);
+    res.emit("close");
+    expect(upstream?.destroyed).toBe(true);
+  });
+});
+
+describe("createRouter — upgrades", () => {
+  test("hands the socket and the replayed head to the client's worker", () => {
+    const workers = [readyWorker(0), readyWorker(1), readyWorker(2)];
+    const server = createRouter({ slots: 3, target: (s) => workers[s] });
+    const client = clientFor(2, 3);
+    const req = incoming(`/websocket?client=${client}`, { host: "h", upgrade: "websocket" });
+    const socket = new Socket();
+    server.emit("upgrade", req, socket, Buffer.from("tail"));
+    const handoff = sentTo[2]?.[0];
+    expect(handoff?.type).toBe("aai-start:upgrade");
+    if (handoff?.type !== "aai-start:upgrade") throw new Error("no handoff");
+    expect(Buffer.from(handoff.bytes).toString("latin1")).toBe(
+      `GET /websocket?client=${client} HTTP/1.1\r\nhost: h\r\nupgrade: websocket\r\n\r\ntail`,
+    );
+    socket.destroy();
+  });
+
+  test("an upgrade with no listening worker is refused with 503", () => {
+    const server = createRouter({ slots: 1, target: () => undefined });
+    const socket = new Socket();
+    const end = vi.spyOn(socket, "end").mockImplementation(() => socket);
+    server.emit("upgrade", incoming("/websocket"), socket, Buffer.alloc(0));
+    expect(String(end.mock.calls[0]?.[0])).toMatch(/^HTTP\/1\.1 503 Service Unavailable/);
+    socket.destroy();
+  });
+});

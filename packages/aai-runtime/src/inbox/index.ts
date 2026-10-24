@@ -12,3 +12,5 @@ export type { ClientEventFeed } from "./event-feed.ts";
 export { feedClientEvent, feedClientSessionEnd, publishClientEventFeed } from "./event-feed.ts";
 export type { ClientInbox } from "./inbox.ts";
 export { CLIENT_INBOX_PATH, installClientInbox } from "./inbox.ts";
+export type { ClientNotifyRelay } from "./relay.ts";
+export { notifyClientHere, setClientNotifyRelay } from "./relay.ts";
