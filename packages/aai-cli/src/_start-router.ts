@@ -31,12 +31,20 @@ import http, {
 import type { Socket } from "node:net";
 import type { Writable } from "node:stream";
 import { requestPath } from "@alexkroman1/aai/internal";
+import { isRecord } from "@alexkroman1/aai/utils";
 import { routeMatches, SERVER_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { affinityKey, isCallPath, isResume, slotOf } from "./_start-affinity.ts";
 import type { Admission, ReadyWorker, WorkerStatus } from "./_start-workers.ts";
 
 /** How long a client may take to send its request head before it is dropped. */
 export const HEADERS_TIMEOUT_MS = 15_000;
+
+/**
+ * How often the server sweeps for connections past {@link HEADERS_TIMEOUT_MS}.
+ * Node's default is 30 s, so a slow-headers client actually held its socket
+ * for 15–45 s (measured: 2000 idle half-sent heads all still open at 18 s).
+ */
+export const CONNECTIONS_CHECK_MS = 2000;
 
 /** Headers that describe ONE hop and must not be forwarded (RFC 9110 §7.6.1). */
 const HOP_BY_HOP = new Set([
@@ -172,6 +180,26 @@ function refuseUpgrade(socket: Socket, reason = "worker restarting, retry shortl
   );
 }
 
+/**
+ * Stop THIS process reading `socket` before its handle goes to a worker.
+ *
+ * Node leaves the handle reading after an upgrade, and the IPC send detaches
+ * it only when the send actually happens — after the ack of every handle
+ * queued ahead of it — then closes it only on this one's ack. Bytes the client
+ * sends meanwhile (a client that writes before the 101, or simply racing the
+ * ack) are read HERE and dropped, and the worker sees a stream with a hole in
+ * it: a corrupt WebSocket frame. Measured with real IPC and pipelining
+ * clients: 12–23 of 300 concurrent handoffs lost bytes; with this, none of
+ * 3000. `pause()` is no
+ * substitute — it stops the stream, not the handle. Stopped, the bytes wait in
+ * the kernel for the worker's own read.
+ */
+export function stopReading(socket: Socket): void {
+  // `_handle` is Node's (untyped) libuv stream; there is no public readStop.
+  const handle: unknown = Reflect.get(socket, "_handle");
+  if (isRecord(handle) && typeof handle.readStop === "function") handle.readStop();
+}
+
 /** A load balancer's probe: `GET`/`HEAD` on the server's own health route. */
 function isHealthProbe(req: IncomingMessage): boolean {
   const { health } = SERVER_ROUTES;
@@ -184,24 +212,27 @@ function isHealthProbe(req: IncomingMessage): boolean {
 /** The primary's public server. The caller binds it. */
 export function createRouter(opts: RouterOptions): http.Server {
   const pick = createSlotPicker(opts);
-  const server = http.createServer((req, res) => {
-    if (opts.status && req.method === "GET" && req.url === "/workers") {
-      if (!LOOPBACK.has(req.socket.remoteAddress ?? "")) {
-        res.writeHead(404).end();
+  const server = http.createServer(
+    { connectionsCheckingInterval: CONNECTIONS_CHECK_MS },
+    (req, res) => {
+      if (opts.status && req.method === "GET" && req.url === "/workers") {
+        if (!LOOPBACK.has(req.socket.remoteAddress ?? "")) {
+          res.writeHead(404).end();
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ workers: opts.status() }));
         return;
       }
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({ workers: opts.status() }));
-      return;
-    }
-    // Readiness is the PRIMARY's to answer: while it starts or drains, a
-    // worker's own 200 would keep it in a load balancer's rotation.
-    const notReady = opts.notReady?.();
-    if (notReady && isHealthProbe(req)) return unavailable(res, notReady);
-    const picked = pick(affinityKey(req.url, req.headers));
-    if (!picked) return unavailable(res);
-    proxy(req, res, picked.worker, opts.request ?? http.request);
-  });
+      // Readiness is the PRIMARY's to answer: while it starts or drains, a
+      // worker's own 200 would keep it in a load balancer's rotation.
+      const notReady = opts.notReady?.();
+      if (notReady && isHealthProbe(req)) return unavailable(res, notReady);
+      const picked = pick(affinityKey(req.url, req.headers));
+      if (!picked) return unavailable(res);
+      proxy(req, res, picked.worker, opts.request ?? http.request);
+    },
+  );
   server.headersTimeout = HEADERS_TIMEOUT_MS;
   server.on("upgrade", (req: IncomingMessage, socket: Socket, head: Buffer) => {
     const picked = pick(affinityKey(req.url, req.headers));
@@ -213,6 +244,7 @@ export function createRouter(opts: RouterOptions): http.Server {
       if (verdict !== "ok") return refuseUpgrade(socket, REFUSAL[verdict]);
     }
     const bytes = Buffer.concat([serializeRequestHead(req), head]);
+    stopReading(socket);
     picked.worker.worker.send({ type: "aai-start:upgrade", bytes, call }, socket);
   });
   return server;

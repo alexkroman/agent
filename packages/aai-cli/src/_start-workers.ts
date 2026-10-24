@@ -314,6 +314,8 @@ interface Tracked {
   slowLoggedAt?: number | undefined;
   /** Replaced by a rolling restart, and draining its calls. */
   retiring?: boolean | undefined;
+  /** SIGKILLed because the server ended while it was still starting — the plan, not a failure. */
+  abandoned?: boolean | undefined;
 }
 
 /** Fork one worker per slot and keep each slot served — see the module doc. */
@@ -387,7 +389,18 @@ export function superviseWorkers(opts: {
   const end = (drainMs: number | undefined): void => {
     ending = true;
     rollQueue = [];
-    for (const worker of tracked.keys()) retire(worker, drainMs);
+    for (const [worker, state] of tracked) {
+      if (state.load) {
+        retire(worker, drainMs);
+        continue;
+      }
+      // Still starting: it has not installed its IPC listener yet, so a drain
+      // or stop sent now is DROPPED (cluster discards a message nobody
+      // listens for) and it would sit out the whole drain timeout before the
+      // SIGKILL. It holds no calls — nothing routes to it — so end it now.
+      state.abandoned = true;
+      worker.kill("SIGKILL");
+    }
     if (tracked.size === 0) settle();
   };
   const stop = (): void => {
@@ -419,6 +432,8 @@ export function superviseWorkers(opts: {
       return;
     }
     rollDrainMs = drainTimeoutMs;
+    // A reason left over from an earlier failure must not be blamed on this roll.
+    fatal = undefined;
     rollQueue = Array.from({ length: slots }, (_, slot) => slot);
     log(`rolling restart of ${slots} workers`);
     rollNext();
@@ -520,9 +535,11 @@ export function superviseWorkers(opts: {
     code: number | null,
     signal: string | null,
   ) => {
+    const abandoned = tracked.get(worker)?.abandoned === true;
     release(worker, slot);
-    // A forced stop's SIGKILL is the plan, not a failure; anything else non-zero is.
-    if (code !== 0 && !(forced && signal === "SIGKILL")) exitCode = 1;
+    // A forced stop's SIGKILL is the plan, not a failure, and so is the one
+    // that ends a still-starting worker; anything else non-zero is.
+    if (code !== 0 && !((forced || abandoned) && signal === "SIGKILL")) exitCode = 1;
     if (tracked.size === 0) settle();
   };
   /** An exit mid-rollover: a retired worker is simply gone; a failed replacement aborts the roll. */
@@ -536,8 +553,11 @@ export function superviseWorkers(opts: {
     release(worker, slot);
     incoming.delete(slot);
     rollQueue = [];
+    // The worker's own reason (a broken build, a bad env) is what the operator
+    // must fix before the next SIGHUP; the exit code alone does not say it.
+    const why = fatal === undefined ? "" : `: ${fatal}`;
     log(
-      `rolling restart stopped: the replacement for slot ${slot} exited with ${how} while starting`,
+      `rolling restart stopped: the replacement for slot ${slot} exited with ${how} while starting${why}`,
     );
     return true;
   };

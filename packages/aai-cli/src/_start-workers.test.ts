@@ -162,9 +162,10 @@ describe("superviseWorkers — boot and respawn", () => {
     run.exit(100);
     expect(run.logs[0]).toMatch(/while starting; stopping the server/);
     expect(lastMessage(run.workers[1])).toEqual({ type: "aai-start:stop" });
-    expect(lastMessage(run.workers[2])).toEqual({ type: "aai-start:stop" });
+    // Still starting, so a stop message would be dropped: it is killed outright.
+    expect(run.workers[2]?.killed).toEqual(["SIGKILL"]);
     run.exit(101, 0);
-    run.exit(102, 0);
+    run.exit(102, null, "SIGKILL");
     await expect(run.supervisor.ready).rejects.toThrow(/declares workflows/);
     await expect(run.supervisor.exited).resolves.toBe(1);
     expect(run.workers).toHaveLength(3);
@@ -179,6 +180,33 @@ describe("superviseWorkers — drain and stop", () => {
     run.exit(100, 0);
     run.exit(101, 0);
     await expect(run.supervisor.ready).rejects.toThrow(/stopped before every worker was listening/);
+  });
+
+  test("a drain during boot SIGKILLs a still-starting worker at once, and that is not a failure", async () => {
+    // A worker that has not reported listening has no IPC listener yet, so the
+    // drain message would be dropped and it would sit out the whole timeout.
+    const run = supervise(2);
+    run.listen(100);
+    run.supervisor.drain(300_000);
+    expect(lastMessage(run.workers[0])).toEqual({ type: "aai-start:drain", timeoutMs: 300_000 });
+    expect(run.workers[0]?.killed).toEqual([]);
+    expect(run.workers[1]?.inbox).toEqual([]);
+    expect(run.workers[1]?.killed).toEqual(["SIGKILL"]);
+    run.exit(101, null, "SIGKILL");
+    run.exit(100, 0);
+    await expect(run.supervisor.exited).resolves.toBe(0);
+  });
+
+  test("a drain mid-roll SIGKILLs the starting replacement; the old worker drains", async () => {
+    const run = supervise(1);
+    run.listen(100);
+    run.supervisor.roll(1000);
+    run.supervisor.drain(30_000);
+    expect(run.workers[1]?.killed).toEqual(["SIGKILL"]);
+    expect(lastMessage(run.workers[0])).toEqual({ type: "aai-start:drain", timeoutMs: 30_000 });
+    run.exit(101, null, "SIGKILL");
+    run.exit(100, 0);
+    await expect(run.supervisor.exited).resolves.toBe(0);
   });
 
   test("a drain tells every worker, stops placing calls, and respawns nothing", async () => {
@@ -276,9 +304,12 @@ describe("superviseWorkers — rolling restart", () => {
     run.listen(100, 5000);
     run.listen(101, 5001);
     run.supervisor.roll(45_000);
+    run.say(102, { type: "aai-start:fatal", message: "chaos: broken build" });
     run.exit(102, 1);
     expect(run.supervisor.target(0)?.port).toBe(5000);
-    expect(run.logs.at(-1)).toMatch(/rolling restart stopped: the replacement for slot 0/);
+    expect(run.logs.at(-1)).toBe(
+      "rolling restart stopped: the replacement for slot 0 exited with code 1 while starting: chaos: broken build",
+    );
     expect(run.workers).toHaveLength(3);
     expect(run.supervisor.accepting()).toBe(true);
   });

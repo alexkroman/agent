@@ -58,7 +58,12 @@ shape):
   handoff's `call` flag) — to reach 0 or `--drain-timeout`, then closes); a
   second → `stop`; SIGHUP → `roll()` (per slot: fork the replacement, swap the
   slot to it on `listening`, drain the old). Every command carries a SIGKILL
-  deadline (`STOP_GRACE_MS`).
+  deadline (`STOP_GRACE_MS`). A worker still STARTING when the server ends is
+  SIGKILLed at once: it has no IPC listener yet, so the command would be dropped
+  and it would sit out the whole drain timeout.
+- **The router stops reading a socket before handing it off** (`stopReading`):
+  Node keeps the primary's copy of a sent handle reading until the IPC ack, and
+  bytes read there are lost — a corrupt WebSocket frame in the worker.
 - **Supervision:** "booted" is the worker's IPC `listening` report; a worker
   dying before it is a boot failure (stop all, fail the command), after it is
   respawned into the SAME slot; a failed replacement aborts a roll, leaving the

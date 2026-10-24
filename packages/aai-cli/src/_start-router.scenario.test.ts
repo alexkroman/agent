@@ -3,13 +3,14 @@
  * The `--workers` router over REAL loopback sockets: per-request HTTP proxying
  * and the upgrade handoff. Scenario tier because it binds ports.
  *
- * The "workers" here are in-process HTTP servers standing in for real ones:
- * what is under test is the router — which worker a request reaches, that a
- * keep-alive connection is routed per REQUEST, and that a handed-off upgrade
- * arrives with its request bytes intact. The cross-process half of the handoff
- * (sending the socket over IPC) is Node's, exercised by `aai start --workers`.
+ * The "workers" are small child processes standing in for real ones: what is
+ * under test is the router — which worker a request reaches, that a keep-alive
+ * connection is routed per REQUEST, and that a handed-off upgrade arrives with
+ * every byte intact. They are real processes because the handoff's hazards are
+ * cross-process: the primary's copy of a sent handle can still read.
  */
 
+import { spawn } from "node:child_process";
 import http from "node:http";
 import net, { type AddressInfo, type Socket } from "node:net";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -39,34 +40,51 @@ function listen(server: http.Server | net.Server): Promise<number> {
 }
 
 /**
- * A stand-in worker for `slot`: answers HTTP with its slot and the path it
- * saw, and accepts an `Upgrade: echo` by announcing its slot and echoing.
+ * A stand-in worker process: answers HTTP with its slot and the path it saw,
+ * and accepts an `Upgrade: echo` by announcing its slot and echoing. A handoff
+ * reaches it as `joinCluster` receives one — the socket over IPC, its request
+ * bytes put back with `unshift`.
  */
+const STAND_IN_SOURCE = String.raw`
+const http = require("node:http");
+const slot = Number(process.argv[1]);
+const server = http.createServer((req, res) => {
+  res.setHeader("x-slot", String(slot));
+  res.end(JSON.stringify({ slot, url: req.url, host: req.headers.host }));
+});
+server.on("upgrade", (_req, socket, head) => {
+  socket.write("HTTP/1.1 101 Switching Protocols\r\nUpgrade: echo\r\nConnection: Upgrade\r\nX-Slot: " + slot + "\r\n\r\n");
+  if (head.length > 0) socket.write(head);
+  socket.pipe(socket);
+});
+process.on("message", (message, socket) => {
+  if (message.type !== "aai-start:upgrade" || !socket) return;
+  socket.on("error", () => {});
+  socket.unshift(Buffer.from(message.bytes));
+  server.emit("connection", socket);
+  socket.resume();
+});
+server.listen(0, "127.0.0.1", () => process.send({ port: server.address().port }));
+`;
+
+/** Spawn the stand-in for `slot` — a REAL process, because the handoff's hazards are cross-process. */
 async function standInWorker(slot: number): Promise<ReadyWorker> {
-  const server = http.createServer((req, res) => {
-    res.setHeader("x-slot", String(slot));
-    res.end(JSON.stringify({ slot, url: req.url, host: req.headers.host }));
+  const child = spawn(process.execPath, ["-e", STAND_IN_SOURCE, String(slot)], {
+    stdio: ["ignore", "inherit", "inherit", "ipc"],
+    serialization: "advanced",
   });
-  server.on("upgrade", (_req, socket: Socket, head: Buffer) => {
-    socket.write(
-      `HTTP/1.1 101 Switching Protocols\r\nUpgrade: echo\r\nConnection: Upgrade\r\nX-Slot: ${slot}\r\n\r\n`,
-    );
-    if (head.length > 0) socket.write(head);
-    socket.pipe(socket);
+  closers.push(async () => {
+    child.kill("SIGKILL");
   });
-  const port = await listen(server);
+  const { port } = await new Promise<{ port: number }>((resolve) =>
+    child.once("message", (message: { port: number }) => resolve(message)),
+  );
   return {
     port,
     worker: {
-      pid: 1000 + slot,
+      pid: child.pid,
       kill: () => undefined,
-      // What `joinCluster` does with a handoff, minus the IPC hop.
-      send: (message: PrimaryMessage, socket?: Socket) => {
-        if (message.type !== "aai-start:upgrade" || !socket) return;
-        socket.unshift(Buffer.from(message.bytes));
-        server.emit("connection", socket);
-        socket.resume();
-      },
+      send: (message: PrimaryMessage, socket?: Socket) => child.send(message, socket),
     },
   };
 }
@@ -170,5 +188,51 @@ describe("the --workers router", () => {
       received += chunk.toString("latin1");
     });
     await vi.waitFor(() => expect(received).toContain("503 Service Unavailable"));
+  });
+
+  test("bytes a client pipelines during the handoff all reach the worker, in order", async () => {
+    // The router used to leave its copy of the handle reading until the IPC
+    // ack, so bytes arriving in that window were read in the primary and
+    // dropped: a hole in the stream, which a WebSocket parser reports as an
+    // invalid frame. Measured: 18–47 of these 100 connections lost bytes.
+    const port = await startRouter(new Set([0, 1, 2]));
+    // At most macOS's listen backlog (128): a bigger burst measures SYN retransmits.
+    const CONNECTIONS = 100;
+    const CHUNKS = 10;
+    const CHUNK = 3000;
+    const roundTrip = (i: number) =>
+      new Promise<boolean>((resolve) => {
+        const sent: Buffer[] = [];
+        let received = Buffer.alloc(0);
+        const socket = net.connect(port, "127.0.0.1", () => {
+          socket.write(
+            `GET /websocket?client=c${i} HTTP/1.1\r\nHost: x\r\nConnection: Upgrade\r\nUpgrade: echo\r\n\r\n`,
+          );
+          // Written without waiting for the 101: these race the handoff.
+          let n = 0;
+          const timer = setInterval(() => {
+            const chunk = Buffer.alloc(CHUNK, (i + n) % 251);
+            sent.push(chunk);
+            socket.write(chunk);
+            if (++n === CHUNKS) clearInterval(timer);
+          }, 1);
+        });
+        const want = CHUNKS * CHUNK;
+        const finish = (intact: boolean) => {
+          clearTimeout(giveUp);
+          socket.destroy();
+          resolve(intact);
+        };
+        // A connection that lost bytes never reaches `want`.
+        const giveUp = setTimeout(() => finish(false), 5000);
+        socket.on("data", (chunk: Buffer) => {
+          received = Buffer.concat([received, chunk]);
+          const body = received.subarray(received.indexOf("\r\n\r\n") + 4);
+          if (body.length >= want) finish(body.equals(Buffer.concat(sent)));
+        });
+        socket.on("error", () => finish(false));
+      });
+    const intact = await Promise.all(Array.from({ length: CONNECTIONS }, (_, i) => roundTrip(i)));
+    expect(intact.filter((ok) => !ok)).toHaveLength(0);
   });
 });
