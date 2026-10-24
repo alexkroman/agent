@@ -80,6 +80,7 @@ export function fakeCluster(opts: { firstPid?: number; eager?: boolean } = {}) {
         },
         send(message) {
           worker.inbox.push(message);
+          return true;
         },
       };
       workers.push(worker);
@@ -101,8 +102,9 @@ export function fakeCluster(opts: { firstPid?: number; eager?: boolean } = {}) {
     listenAll: () => {
       for (const worker of workers) listen(worker.pid);
     },
-    pong: (pid: number, calls = 0, elu = 0) =>
-      onMessage(byPid(pid), { type: "aai-start:pong", calls, elu }),
+    /** `received`: call sockets the worker has been handed so far (see `onPong`). */
+    pong: (pid: number, calls = 0, elu = 0, received = 0) =>
+      onMessage(byPid(pid), { type: "aai-start:pong", calls, elu, received }),
     exit: (pid: number, code: number | null = 1, signal: string | null = null) =>
       onExit(byPid(pid), code, signal),
   };

@@ -8,6 +8,7 @@
 import { describe, expect, test } from "vitest";
 import { type FakeWorker, fakeCluster } from "./_start-test-utils.ts";
 import {
+  BOOT_TIMEOUT_MS,
   LIVENESS_TIMEOUT_MS,
   PING_INTERVAL_MS,
   parseWorkers,
@@ -172,6 +173,31 @@ describe("superviseWorkers — boot and respawn", () => {
   });
 });
 
+describe("superviseWorkers — a boot that hangs", () => {
+  test("a worker that never listens is killed at the boot timeout, failing ready with why", async () => {
+    const run = supervise(2);
+    run.listen(100);
+    run.advance(BOOT_TIMEOUT_MS - 1);
+    expect(run.workers[1]?.killed).toEqual([]);
+    run.advance(1);
+    expect(run.workers[1]?.killed).toEqual(["SIGKILL"]);
+    run.exit(101, null, "SIGKILL");
+    run.exit(100, 0);
+    await expect(run.supervisor.ready).rejects.toThrow(/did not start listening within 120s/);
+  });
+
+  test("a roll's replacement that hangs aborts the roll; the old worker keeps serving", () => {
+    const run = supervise(1);
+    run.listen(100);
+    run.supervisor.roll(1000);
+    run.advance(BOOT_TIMEOUT_MS);
+    expect(run.workers[1]?.killed).toEqual(["SIGKILL"]);
+    run.exit(101, null, "SIGKILL");
+    expect(run.logs.at(-1)).toMatch(/rolling restart stopped: .*did not start listening/);
+    expect(run.supervisor.target(0)?.worker.pid).toBe(100);
+  });
+});
+
 describe("superviseWorkers — drain and stop", () => {
   test("stopped before every slot listened, ready rejects rather than hanging", async () => {
     const run = supervise(2);
@@ -314,6 +340,14 @@ describe("superviseWorkers — rolling restart", () => {
     expect(run.supervisor.accepting()).toBe(true);
   });
 
+  test("a roll before every slot has listened is refused, so a replacement cannot be orphaned", () => {
+    const run = supervise(2);
+    run.listen(100);
+    run.supervisor.roll(1000);
+    expect(run.workers).toHaveLength(2);
+    expect(run.logs).toContain("rolling restart ignored: the server is still starting");
+  });
+
   test("a second roll while one runs is ignored; none starts once draining", () => {
     const run = supervise(1);
     run.listen(100);
@@ -339,7 +373,7 @@ describe("superviseWorkers — load and admission", () => {
     // A reconnect is a new live socket too.
     expect(run.supervisor.admit(0, true)).toBe("ok");
     expect(run.supervisor.status()[0]?.calls).toBe(9);
-    run.pong(100, 8, 0.5);
+    run.pong(100, 8, 0.5, 2);
     expect(run.supervisor.status()).toEqual([
       { slot: 0, pid: 100, state: "serving", calls: 8, elu: 0.5 },
       { slot: 1, pid: 101, state: "serving", calls: 0, elu: 0 },
@@ -354,8 +388,19 @@ describe("superviseWorkers — load and admission", () => {
     expect(run.supervisor.admit(0, false)).toBe("full");
     expect(run.supervisor.admit(0, true)).toBe("full");
     expect(run.supervisor.status()[0]?.calls).toBe(2);
-    run.pong(100, 1);
+    run.pong(100, 1, 0, 2);
     expect(run.supervisor.admit(0, false)).toBe("ok");
+  });
+
+  test("a pong sent before an admitted socket arrived still counts it, so the cap holds", () => {
+    const run = supervise(1, 2);
+    run.listen(100);
+    expect(run.supervisor.admit(0, false)).toBe("ok");
+    expect(run.supervisor.admit(0, false)).toBe("ok");
+    // The worker has received neither handoff yet: it reports 0 calls, 0 received.
+    run.pong(100, 0, 0, 0);
+    expect(run.supervisor.status()[0]?.calls).toBe(2);
+    expect(run.supervisor.admit(0, false)).toBe("full");
   });
 
   test("while draining a new call is refused, but a reconnect is admitted", () => {
@@ -444,19 +489,51 @@ describe("superviseWorkers relays an inbox notice between workers", () => {
     run.listen(100);
     run.listen(101);
     run.say(100, { type: "aai-start:relay", id: 7, target: 1, payload });
-    expect(run.workers[1]?.inbox).toEqual([{ type: "aai-start:relay", id: 7, origin: 0, payload }]);
-    run.say(101, { type: "aai-start:relay-result", id: 7, origin: 0, outcome: "acked" });
+    // The target sees the PRIMARY's id; the origin gets its own back.
+    expect(run.workers[1]?.inbox).toEqual([{ type: "aai-start:relay", id: 1, origin: 0, payload }]);
+    run.say(101, { type: "aai-start:relay-result", id: 1, origin: 0, outcome: "acked" });
     expect(run.workers[0]?.inbox).toEqual([
       { type: "aai-start:relay-result", id: 7, outcome: "acked" },
     ]);
   });
 
-  test("a cancel is forwarded to the target", () => {
+  test("a cancel is forwarded to the target under the relay's id, and nothing is owed back", () => {
     const run = supervise(2);
     run.listen(100);
     run.listen(101);
+    run.say(100, { type: "aai-start:relay", id: 7, target: 1, payload });
     run.say(100, { type: "aai-start:relay-cancel", id: 7, target: 1 });
-    expect(run.workers[1]?.inbox).toEqual([{ type: "aai-start:relay-cancel", id: 7, origin: 0 }]);
+    expect(run.workers[1]?.inbox.at(-1)).toEqual({
+      type: "aai-start:relay-cancel",
+      id: 1,
+      origin: 0,
+    });
+    run.say(101, { type: "aai-start:relay-result", id: 1, origin: 0, outcome: "acked" });
+    expect(run.workers[0]?.inbox).toEqual([]);
+  });
+
+  test("a result goes to the PROCESS that asked, never to its slot's replacement", () => {
+    const run = supervise(2);
+    run.listen(100);
+    run.listen(101);
+    run.say(100, { type: "aai-start:relay", id: 3, target: 1, payload });
+    run.exit(100);
+    run.listen(102); // slot 0's replacement, whose own relay ids also start at 1
+    run.say(101, { type: "aai-start:relay-result", id: 1, origin: 0, outcome: "acked" });
+    expect(run.workers[2]?.inbox).toEqual([]);
+  });
+
+  test("a retired target that exits mid-delivery answers its relays disconnected", () => {
+    const run = supervise(2);
+    run.listen(100);
+    run.listen(101);
+    run.say(101, { type: "aai-start:relay", id: 9, target: 0, payload }); // to 100
+    run.supervisor.roll(1000);
+    run.listen(102); // slot 0's replacement takes over; 100 retires mid-delivery
+    run.exit(100);
+    expect(run.workers[1]?.inbox).toEqual([
+      { type: "aai-start:relay-result", id: 9, outcome: "disconnected" },
+    ]);
   });
 
   test("a target that is not listening answers offline at once", () => {

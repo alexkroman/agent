@@ -137,6 +137,15 @@ export const PING_INTERVAL_MS = 2500;
  */
 export const LIVENESS_TIMEOUT_MS = 15_000;
 
+/**
+ * How long a worker may take to start listening before it is killed as hung —
+ * a boot stuck on a database that never answers (`ensure*Schema` behind the
+ * schema lock, a silently partitioned Postgres) would otherwise hold the
+ * server at "starting", or a rolling restart open, forever. Generous: an
+ * agent's import and its schema DDL are seconds, not minutes.
+ */
+export const BOOT_TIMEOUT_MS = 120_000;
+
 /** How long a worker told to stop (or done draining) gets before it is SIGKILLed. */
 export const STOP_GRACE_MS = 10_000;
 
@@ -147,7 +156,8 @@ export const SLOW_PONG_LOG_EVERY_MS = 30_000;
 /** Worker → primary. */
 export type WorkerMessage =
   | { type: "aai-start:listening"; name: string; port: number }
-  | { type: "aai-start:pong"; calls: number; elu: number }
+  /** `received`: call sockets handed to it so far — the primary's in-transit count is what it sent minus this. */
+  | { type: "aai-start:pong"; calls: number; elu: number; received: number }
   | { type: "aai-start:fatal"; message: string }
   | { type: "aai-start:relay"; id: number; target: number; payload: RelayedNotify }
   | { type: "aai-start:relay-cancel"; id: number; target: number }
@@ -178,7 +188,8 @@ export function isProtocolMessage<M extends WorkerMessage | PrimaryMessage>(
 export interface WorkerLike {
   readonly pid: number | undefined;
   kill(signal?: NodeJS.Signals): void;
-  send(message: PrimaryMessage, socket?: Socket): void;
+  /** `false` when the worker is gone and nothing was sent (its socket, if any, is still the caller's). */
+  send(message: PrimaryMessage, socket?: Socket): boolean;
 }
 
 /** The slice of `node:cluster` the supervisor drives — a seam, so the unit tier forks nothing. */
@@ -202,7 +213,10 @@ export function nodeCluster(): ClusterLike {
         pid: worker.process.pid,
         kill: (signal) => worker.process.kill(signal),
         send: (message, socket) => {
-          if (worker.isConnected()) worker.send(message, socket);
+          if (!worker.isConnected()) return false;
+          // `worker.send`'s own boolean is backpressure, not delivery: queued is sent.
+          worker.send(message, socket);
+          return true;
         },
       };
       wrapped.set(worker, handle);
@@ -316,6 +330,18 @@ interface Tracked {
   retiring?: boolean | undefined;
   /** SIGKILLed because the server ended while it was still starting — the plan, not a failure. */
   abandoned?: boolean | undefined;
+  /** When it was forked; cleared once it listens or is killed for a hung boot. */
+  forkedAt?: number | undefined;
+  /** Call sockets the router was told it may hand to it, ever — see `onPong`. */
+  admitted: number;
+}
+
+/** A relayed notice the primary is carrying, under the id IT assigned. */
+interface Relay {
+  origin: WorkerLike;
+  /** The origin's own id, which only that process's pending table knows. */
+  originId: number;
+  target: WorkerLike;
 }
 
 /** Fork one worker per slot and keep each slot served — see the module doc. */
@@ -336,8 +362,14 @@ export function superviseWorkers(opts: {
   const ready = new Map<number, ReadyWorker>();
   /** Slot → the replacement a rolling restart is waiting on. */
   const incoming = new Map<number, WorkerLike>();
-  /** Relays awaiting a result, per TARGET slot, so a dying target can answer them. */
-  const inflight = new Map<number, Map<string, { id: number; origin: number }>>();
+  /**
+   * Relays awaiting a result, keyed by an id the PRIMARY assigns. Keyed by
+   * process, never by slot: each worker numbers its relays from 1, and across
+   * a crash-respawn or a roll a slot is two processes — a result routed by
+   * slot reached the wrong one (an `acked` for a notice it never sent).
+   */
+  const relays = new Map<number, Relay>();
+  let nextRelayId = 0;
   let name: string | undefined;
   let fatal: string | undefined;
   let bootFailure: Error | undefined;
@@ -348,6 +380,8 @@ export function superviseWorkers(opts: {
   let rollQueue: number[] = [];
   let rollDrainMs = 0;
   let exitCode = 0;
+  /** Every slot has listened once; a rolling restart before then is refused. */
+  let started = false;
   // Each settles once; a later resolve or reject is a no-op.
   const booted = Promise.withResolvers<{ name: string }>();
   const exited = Promise.withResolvers<number>();
@@ -372,7 +406,7 @@ export function superviseWorkers(opts: {
     `worker ${tracked.get(worker)?.slot ?? "?"} (pid ${worker.pid})`;
   const fork = (slot: number): WorkerLike => {
     const worker = host.fork({ [SLOT_ENV]: String(slot), [SLOTS_ENV]: String(slots) });
-    tracked.set(worker, { slot });
+    tracked.set(worker, { slot, forkedAt: now(), admitted: 0 });
     return worker;
   };
   /** Tell `worker` to drain for `drainMs` (or, `undefined`, to stop now); SIGKILL it if still alive past that plus the grace. */
@@ -427,6 +461,12 @@ export function superviseWorkers(opts: {
       log("rolling restart ignored: the server is shutting down");
       return;
     }
+    // Before every slot has listened, a replacement could listen ahead of the
+    // worker it replaces, which would then take the slot back and orphan it.
+    if (!started) {
+      log("rolling restart ignored: the server is still starting");
+      return;
+    }
     if (rollQueue.length > 0 || incoming.size > 0) {
       log("rolling restart ignored: one is already running");
       return;
@@ -438,28 +478,43 @@ export function superviseWorkers(opts: {
     log(`rolling restart of ${slots} workers`);
     rollNext();
   };
-  const answerOrigin = (origin: number, id: number, outcome: RelayOutcome): void => {
-    ready.get(origin)?.worker.send({ type: "aai-start:relay-result", id, outcome });
-  };
-  const relay = (origin: number, message: Extract<WorkerMessage, { type: "aai-start:relay" }>) => {
-    const target = ready.get(message.target);
-    if (!target) return answerOrigin(origin, message.id, "offline");
-    let pending = inflight.get(message.target);
-    if (!pending) {
-      pending = new Map();
-      inflight.set(message.target, pending);
+  const answer = (relay: Relay, outcome: RelayOutcome): void => {
+    if (tracked.has(relay.origin)) {
+      relay.origin.send({ type: "aai-start:relay-result", id: relay.originId, outcome });
     }
-    pending.set(`${origin}:${message.id}`, { id: message.id, origin });
-    target.worker.send({
+  };
+  const relay = (
+    origin: WorkerLike,
+    originSlot: number,
+    message: Extract<WorkerMessage, { type: "aai-start:relay" }>,
+  ) => {
+    const target = ready.get(message.target)?.worker;
+    const id = ++nextRelayId;
+    const entry: Relay = { origin, originId: message.id, target: target ?? origin };
+    if (!target) return answer(entry, "offline");
+    relays.set(id, entry);
+    const sent = target.send({
       type: "aai-start:relay",
-      id: message.id,
-      origin,
+      id,
+      origin: originSlot,
       payload: message.payload,
     });
+    if (!sent) {
+      relays.delete(id);
+      answer(entry, "offline");
+    }
+  };
+  /** The relay `origin` sent under its own `originId`, if still in flight. */
+  const findRelay = (origin: WorkerLike, originId: number): number | undefined => {
+    for (const [id, entry] of relays) {
+      if (entry.origin === origin && entry.originId === originId) return id;
+    }
+    return undefined;
   };
   const onListening = (worker: WorkerLike, state: Tracked, port: number, agentName: string) => {
     const { slot } = state;
     state.heard = now();
+    state.forkedAt = undefined;
     state.load = { calls: 0, elu: 0 };
     const old = ready.get(slot);
     ready.set(slot, { worker, port });
@@ -474,19 +529,45 @@ export function superviseWorkers(opts: {
       return rollNext();
     }
     name ??= agentName;
-    if (!ending && ready.size === slots) booted.resolve({ name });
+    if (!ending && ready.size === slots) {
+      started = true;
+      booted.resolve({ name });
+    }
   };
-  const onPong = (worker: WorkerLike, state: Tracked, calls: number, elu: number) => {
+  const onPong = (
+    worker: WorkerLike,
+    state: Tracked,
+    pong: Extract<WorkerMessage, { type: "aai-start:pong" }>,
+  ) => {
     const at = now();
     const sent = state.pingSentAt;
     state.heard = at;
-    state.load = { calls, elu };
+    // The worker's count misses sockets still crossing the IPC channel; without
+    // them, a pong could LOWER the count below what was admitted and let the
+    // cap be overshot by every handoff in flight.
+    state.load = { calls: pong.calls + Math.max(0, state.admitted - pong.received), elu: pong.elu };
     state.pingSentAt = undefined;
     if (sent === undefined || at - sent <= SLOW_PONG_MS) return;
     // The early warning before the liveness kill, throttled per worker.
     if (at - (state.slowLoggedAt ?? Number.NEGATIVE_INFINITY) < SLOW_PONG_LOG_EVERY_MS) return;
     state.slowLoggedAt = at;
     log(`${who(worker)} answered a ping in ${at - sent}ms; its event loop is lagging`);
+  };
+
+  /** The origin stopped waiting, so nothing is owed back to it; tell the target to stop delivering. */
+  const cancelRelay = (origin: WorkerLike, originSlot: number, originId: number): void => {
+    const id = findRelay(origin, originId);
+    const entry = id === undefined ? undefined : relays.get(id);
+    if (id === undefined || !entry) return;
+    relays.delete(id);
+    entry.target.send({ type: "aai-start:relay-cancel", id, origin: originSlot });
+  };
+  const settleRelay = (from: WorkerLike, id: number, outcome: RelayOutcome): void => {
+    const entry = relays.get(id);
+    // From the process it was sent to, or it is not this relay's answer.
+    if (!entry || entry.target !== from) return;
+    relays.delete(id);
+    answer(entry, outcome);
   };
 
   host.onMessage((worker, message) => {
@@ -499,32 +580,32 @@ export function superviseWorkers(opts: {
         fatal = message.message;
         return;
       case "aai-start:pong":
-        return onPong(worker, state, message.calls, message.elu);
+        return onPong(worker, state, message);
       case "aai-start:relay":
-        return relay(state.slot, message);
+        return relay(worker, state.slot, message);
       case "aai-start:relay-cancel":
-        ready
-          .get(message.target)
-          ?.worker.send({ type: "aai-start:relay-cancel", id: message.id, origin: state.slot });
-        return;
+        return cancelRelay(worker, state.slot, message.id);
       case "aai-start:relay-result":
-        inflight.get(state.slot)?.delete(`${message.origin}:${message.id}`);
-        answerOrigin(message.origin, message.id, message.outcome);
-        return;
+        return settleRelay(worker, message.id, message.outcome);
       default:
         return;
     }
   });
 
-  /** Forget a worker that exited and answer what it never will; `true` when it was its slot's current one. */
+  /**
+   * Forget a worker that exited: answer the relays it was delivering (whether
+   * or not it was still its slot's current worker — a retired one drains
+   * them too) and drop the ones it was waiting on. `true` when it was its
+   * slot's current worker.
+   */
   const release = (worker: WorkerLike, slot: number): boolean => {
     tracked.delete(worker);
+    for (const [id, entry] of relays) {
+      if (entry.target === worker) answer(entry, "disconnected");
+      if (entry.target === worker || entry.origin === worker) relays.delete(id);
+    }
     if (ready.get(slot)?.worker !== worker) return false;
     ready.delete(slot);
-    for (const { id, origin } of inflight.get(slot)?.values() ?? []) {
-      answerOrigin(origin, id, "disconnected");
-    }
-    inflight.delete(slot);
     return true;
   };
 
@@ -596,6 +677,15 @@ export function superviseWorkers(opts: {
   const stopPinging = every(PING_INTERVAL_MS, () => {
     const at = now();
     for (const [worker, state] of tracked) {
+      if (state.forkedAt !== undefined && at - state.forkedAt >= BOOT_TIMEOUT_MS) {
+        const why = `did not start listening within ${BOOT_TIMEOUT_MS / 1000}s`;
+        log(`${who(worker)} ${why}; stopping it`);
+        // Its exit is then a boot failure (or a failed roll) that names why.
+        fatal = `a worker ${why}`;
+        state.forkedAt = undefined;
+        worker.kill("SIGKILL");
+        continue;
+      }
       if (state.heard === undefined) continue;
       const silentFor = at - state.heard;
       if (silentFor >= LIVENESS_TIMEOUT_MS) {
@@ -621,10 +711,12 @@ export function superviseWorkers(opts: {
     admit: (slot, resume) => {
       if (ending && !resume) return "draining";
       const current = ready.get(slot);
-      const load = current && tracked.get(current.worker)?.load;
-      if (!load) return "ok";
+      const state = current && tracked.get(current.worker);
+      const load = state?.load;
+      if (!(state && load)) return "ok";
       if (load.calls >= maxCalls) return "full";
       load.calls += 1;
+      state.admitted += 1;
       return "ok";
     },
     status: () =>

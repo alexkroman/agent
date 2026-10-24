@@ -42,7 +42,10 @@ shape):
   REFUSED on more than one worker without it (`workflowsNeedDatabase`). The one
   cross-worker path, an `/inbox` notice from a step on another worker, goes
   through the runtime's `setClientNotifyRelay` and the supervisor
-  (`aai-start:relay` IPC; a dying target answers `disconnected`).
+  (`aai-start:relay` IPC). Relays are keyed by PROCESS under a primary-assigned
+  id, never by slot (each worker numbers its own from 1, and across a respawn or
+  roll a slot is two processes); any exiting target, retired or not, answers its
+  relays `disconnected`.
 - **The primary binds the public port BEFORE forking** (a taken port fails as
   `port N is in use; pass --port or set PORT`, `bindError`, with nothing forked)
   and routes nothing until every slot listens: each request gets 503 meanwhile.
@@ -57,34 +60,42 @@ shape):
   count — the sockets the PRIMARY classified as calls (`isCallPath`, sent as the
   handoff's `call` flag) — to reach 0 or `--drain-timeout`, then closes); a
   second → `stop`; SIGHUP → `roll()` (per slot: fork the replacement, swap the
-  slot to it on `listening`, drain the old). Every command carries a SIGKILL
-  deadline (`STOP_GRACE_MS`). A worker still STARTING when the server ends is
-  SIGKILLed at once: it has no IPC listener yet, so the command would be dropped
-  and it would sit out the whole drain timeout.
+  slot to it on `listening`, drain the old; refused until every slot has
+  listened once). Every command carries a SIGKILL deadline (`STOP_GRACE_MS`). A
+  worker still STARTING when the server ends is SIGKILLed at once: it has no IPC
+  listener yet, so the command would be dropped and it would sit out the whole
+  drain timeout.
 - **The router stops reading a socket before handing it off** (`stopReading`):
   Node keeps the primary's copy of a sent handle reading until the IPC ack, and
-  bytes read there are lost — a corrupt WebSocket frame in the worker.
+  bytes read there are lost — a corrupt WebSocket frame in the worker. A worker
+  that died since it was picked (`send` answers `false`) gets the socket refused
+  with 503, never left unread; `send`'s `true` means connected, since
+  `worker.send`'s own boolean is backpressure.
 - **Supervision:** "booted" is the worker's IPC `listening` report; a worker
   dying before it is a boot failure (stop all, fail the command), after it is
   respawned into the SAME slot; a failed replacement aborts a roll, leaving the
-  old worker serving. Workers print no CLI result (`--json` owes one line). The
-  primary never imports the agent. **Liveness:** pings every `PING_INTERVAL_MS`;
-  a pong slower than `SLOW_PONG_MS` is logged (throttled); a worker silent for
-  `LIVENESS_TIMEOUT_MS` (15 s — shorter than LiveKit's 60 s, since a worker
-  holds hundreds of calls, all already stalled) is SIGKILLed and respawned. No
-  orphan timeout: a `node:cluster` worker exits when its primary's IPC channel
-  closes.
-- **Load and admission:** each pong carries `{calls, elu}`; the supervisor's
-  `admit` both decides and counts each call socket until the next report
-  (LiveKit's reserved slots). Calls and resumes are classified with the
-  RUNTIME's own parsers — `routeMatches` over `SERVER_ROUTES.session`/`phone` (a
-  PREFIX match) and `parseWsUpgradeParams` — because any other matcher is a
-  parser differential (a security review found `/websocket/x` skipping admission
-  and the drain count). The cap covers EVERY call socket: a resume is only a
-  client's claim (the runtime starts a fresh session under an unknown id), so it
-  exempts a call from the drain only. It never spills to another worker, which
-  would split a client's call from its `/inbox` and `/api` traffic.
-  `GET /workers` (loopback only) reports state.
+  old worker serving. A worker not listening within `BOOT_TIMEOUT_MS` (120 s — a
+  boot hung on a database that never answers) is SIGKILLed, which is then one of
+  those failures, naming why. Workers print no CLI result (`--json` owes one
+  line). The primary never imports the agent. **Liveness:** pings every
+  `PING_INTERVAL_MS`; a pong slower than `SLOW_PONG_MS` is logged (throttled); a
+  worker silent for `LIVENESS_TIMEOUT_MS` (15 s — shorter than LiveKit's 60 s,
+  since a worker holds hundreds of calls, all already stalled) is SIGKILLed and
+  respawned. No orphan timeout: a `node:cluster` worker exits when its primary's
+  IPC channel closes.
+- **Load and admission:** each pong carries `{calls, elu, received}`; the
+  supervisor's `admit` both decides and counts each call socket (LiveKit's
+  reserved slots), and a report's count is `calls` plus the sockets admitted but
+  not yet `received`, so a pong never lowers it below what is in transit. Calls
+  and resumes are classified with the RUNTIME's own parsers — `routeMatches`
+  over `SERVER_ROUTES.session`/`phone` (a PREFIX match) and
+  `parseWsUpgradeParams` — because any other matcher is a parser differential (a
+  security review found `/websocket/x` skipping admission and the drain count).
+  The cap covers EVERY call socket: a resume is only a client's claim (the
+  runtime starts a fresh session under an unknown id), so it exempts a call from
+  the drain only. It never spills to another worker, which would split a
+  client's call from its `/inbox` and `/api` traffic. `GET /workers` (loopback
+  only) reports state.
 - **Logging:** a worker's runtime logger (`_start-log.ts`) tags every line
   `[worker <slot>]` and drops slot ≠ 0's INFO until it is listening — the boot
   dump is identical per slot. JSON mode (any non-TTY) sends the runtime log to

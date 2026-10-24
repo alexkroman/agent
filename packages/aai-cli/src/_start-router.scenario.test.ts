@@ -84,7 +84,12 @@ async function standInWorker(slot: number): Promise<ReadyWorker> {
     worker: {
       pid: child.pid,
       kill: () => undefined,
-      send: (message: PrimaryMessage, socket?: Socket) => child.send(message, socket),
+      // As `nodeCluster` does: `child.send`'s boolean is backpressure, not delivery.
+      send: (message: PrimaryMessage, socket?: Socket) => {
+        if (!child.connected) return false;
+        child.send(message, socket);
+        return true;
+      },
     },
   };
 }

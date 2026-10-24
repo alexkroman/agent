@@ -12,7 +12,7 @@ import { clientKey, slotOf } from "./_start-affinity.ts";
 import { createSlotPicker, serializeRequestHead } from "./_start-router.ts";
 import type { ReadyWorker, WorkerLike } from "./_start-workers.ts";
 
-const worker: WorkerLike = { pid: 1, kill: () => undefined, send: () => undefined };
+const worker: WorkerLike = { pid: 1, kill: () => undefined, send: () => true };
 
 function pickerWith(slots: number, up: number[]) {
   const live = new Set(up);

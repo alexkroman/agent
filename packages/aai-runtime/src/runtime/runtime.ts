@@ -13,6 +13,7 @@ import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { openAppDb } from "../app-db.ts";
 import { consoleLogger } from "../logger.ts";
+import { closeLlmFetch } from "../providers/_llm-transport.ts";
 import { DEFAULT_S2S_CONFIG, pinAssemblyS2sRates } from "../s2s-config.ts";
 import {
   createSessionDirectory,
@@ -345,6 +346,9 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     // Fire-and-forget: releaseResources is sync and a drain failure on a
     // dying pool is not actionable.
     void ownedDb?.close().catch(() => undefined);
+    // The model-provider keep-alive pool: idle sockets are unref'd, but a
+    // host that shuts the runtime down expects its connections closed too.
+    void closeLlmFetch().catch(() => undefined);
   }
 
   async function shutdown(): Promise<void> {

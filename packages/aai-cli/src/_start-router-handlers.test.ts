@@ -50,7 +50,14 @@ function readyWorker(slot: number): ReadyWorker {
   sentTo[slot] = [];
   return {
     port: 7000 + slot,
-    worker: { pid: slot, kill: () => undefined, send: (message) => sentTo[slot]?.push(message) },
+    worker: {
+      pid: slot,
+      kill: () => undefined,
+      send: (message) => {
+        sentTo[slot]?.push(message);
+        return true;
+      },
+    },
   };
 }
 
@@ -117,6 +124,36 @@ describe("createRouter — HTTP", () => {
     expect(writeHead).toHaveBeenCalledWith(502, { "content-type": "text/plain" });
   });
 
+  test("an upstream failure mid-body destroys the response rather than ending it cleanly", async () => {
+    const workers = [readyWorker(0)];
+    const request: UpstreamRequest = (_options, onReply) => {
+      const body = new PassThrough();
+      queueMicrotask(() => {
+        const reply = new IncomingMessage(new Socket());
+        reply.statusCode = 200;
+        reply.headers = {};
+        reply.push("partial");
+        onReply(reply); // headers sent, body never ends
+        queueMicrotask(() => body.emit("error", new Error("ECONNRESET")));
+      });
+      return body;
+    };
+    const server = createRouter({ slots: 1, target: (s) => workers[s], request });
+    const req = incoming("/workflows/runs/r1/events");
+    const { res } = outgoing(req);
+    vi.spyOn(res, "headersSent", "get").mockReturnValue(true);
+    const destroyed = new Promise<void>((resolve) => {
+      vi.spyOn(res, "destroy").mockImplementation(() => {
+        resolve();
+        return res;
+      });
+    });
+    const end = vi.spyOn(res, "end");
+    server.emit("request", req, res);
+    await destroyed;
+    expect(end).not.toHaveBeenCalled();
+  });
+
   test("no listening worker answers 503 with Retry-After", async () => {
     const server = createRouter({ slots: 2, target: () => undefined });
     const req = incoming("/health");
@@ -158,6 +195,19 @@ describe("createRouter — upgrades", () => {
       `GET /websocket?client=${client} HTTP/1.1\r\nhost: h\r\nupgrade: websocket\r\n\r\ntail`,
     );
     expect(handoff.call).toBe(true);
+    socket.destroy();
+  });
+
+  test("a worker that died since it was picked: the socket is refused with 503, not left hanging", () => {
+    const gone: ReadyWorker = {
+      port: 7000,
+      worker: { pid: 9, kill: () => undefined, send: () => false },
+    };
+    const server = createRouter({ slots: 1, target: () => gone });
+    const socket = new Socket();
+    const end = vi.spyOn(socket, "end").mockImplementation(() => socket);
+    server.emit("upgrade", incoming("/websocket?client=c"), socket, Buffer.alloc(0));
+    expect(String(end.mock.calls[0]?.[0])).toMatch(/^HTTP\/1\.1 503 Service Unavailable/);
     socket.destroy();
   });
 

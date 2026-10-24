@@ -146,6 +146,8 @@ export async function joinCluster(opts: {
   const { slot, slots, server, link, runtime = realRuntime } = opts;
   /** Live call sockets: incremented at handoff, decremented when the socket closes. */
   let calls = 0;
+  /** Call sockets ever handed over — lets the primary count the ones still in transit. */
+  let received = 0;
   let eluMark = performance.eventLoopUtilization();
   runtime.setSessionIdMinter(() => mintIdForSlot(slot, slots));
   const settleRelay = installRelayClient(slot, slots, link, runtime);
@@ -160,6 +162,7 @@ export async function joinCluster(opts: {
         // where this server's parser will read them first.
         if (message.call) {
           calls += 1;
+          received += 1;
           socket.once("close", () => {
             calls -= 1;
           });
@@ -209,6 +212,7 @@ export async function joinCluster(opts: {
         link.send({
           type: "aai-start:pong",
           calls,
+          received,
           elu: Math.round(elu.utilization * 1000) / 1000,
         });
         return;

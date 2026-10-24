@@ -161,8 +161,13 @@ function proxy(
     },
   );
   upstream.on("error", () => {
-    if (!res.headersSent) res.writeHead(502, { "content-type": "text/plain" });
-    res.end();
+    if (!res.headersSent) {
+      res.writeHead(502, { "content-type": "text/plain" }).end();
+      return;
+    }
+    // Mid-body (a worker died streaming an SSE run or a large /api reply): a
+    // clean end would hand the client a truncated body that looks complete.
+    res.destroy();
   });
   // The client went away mid-request (or mid-stream, e.g. a run's SSE): stop
   // the upstream request rather than letting it run for nobody.
@@ -245,7 +250,11 @@ export function createRouter(opts: RouterOptions): http.Server {
     }
     const bytes = Buffer.concat([serializeRequestHead(req), head]);
     stopReading(socket);
-    picked.worker.worker.send({ type: "aai-start:upgrade", bytes, call }, socket);
+    // The worker died since it was picked: the handle never left, so answer
+    // the client here rather than leave its socket unread and unanswered.
+    if (!picked.worker.worker.send({ type: "aai-start:upgrade", bytes, call }, socket)) {
+      refuseUpgrade(socket);
+    }
   });
   return server;
 }
