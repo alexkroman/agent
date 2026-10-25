@@ -56,16 +56,21 @@
  */
 
 import type { AgentDef, SessionEvent } from "@alexkroman1/aai";
-import { claimDtmfSender, type ProviderEnv } from "@alexkroman1/aai/host-internal";
+import {
+  claimDtmfSender,
+  declaredWorkflowName,
+  type ProviderEnv,
+} from "@alexkroman1/aai/host-internal";
 import { invariant, sleep } from "@alexkroman1/aai/internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import type { AnyWorkflowDef, StartOptions, WorkflowClient } from "@alexkroman1/aai/workflow-api";
+import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { silentLogger } from "../logger.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import { createRuntimeWithSeams } from "../runtime/index.ts";
 import { SessionRefusedError } from "../session/index.ts";
+import { wrapStart } from "../workflow/_client-wrap.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { type EvalSessionEnd, watchSessionEnd, watchSessionEndHook } from "./_session-end.ts";
 import { checkedIdentity, observeSessionContext, recordIdentity } from "./_session-identity.ts";
@@ -462,49 +467,29 @@ async function openWithFakes(
 }
 
 /**
- * `client` with its `start` RECORDED into `log`, everything else forwarded.
- *
- * A `Proxy` rather than a spread, so a client whose methods read their own
- * object (the real one, over an engine) keeps working, and the recorder's own
- * attachments (`started`, `seed`) stay reachable through it. The name is
- * resolved the way the client resolves it — a def by IDENTITY against what the
- * agent declares — so a start by def and a start by name record the same key,
- * and `evalRunOf` can be asked with either.
+ * `client` with its `start` RECORDED into `log`, everything else forwarded
+ * (`workflow/_client-wrap.ts`). The name is resolved the way the client
+ * resolves it — a def by IDENTITY against what the agent declares — so a start
+ * by def and a start by name record the same key, and `evalRunOf` can be asked
+ * with either.
  */
 function recordingStarts(
   client: WorkflowClient,
   declared: AgentDef["workflows"],
   log: EvalWorkflowStart[],
 ): WorkflowClient {
-  // Spelled out: `WorkflowClient["start"]` is overloaded, which gives a
-  // function expression no contextual parameter types; the erased union is
-  // what both overloads reach, and the cast below is what the client itself
-  // does for its own `start`.
-  const start = async (
-    workflow: string | AnyWorkflowDef,
-    input?: unknown,
-    options?: StartOptions,
-  ): Promise<string> => {
-    const runId = await client.start(workflow as string, input, options);
+  return wrapStart(client, async (start, workflow, input, options) => {
+    const runId = await start(workflow, input, options);
     const name =
       typeof workflow === "string"
         ? workflow
-        : (Object.entries(declared ?? {}).find(([, def]) => def === workflow)?.[0] ??
-          workflow.description ??
-          "(unnamed)");
+        : (declaredWorkflowName(declared ?? {}, workflow) ?? workflow.description ?? "(unnamed)");
     log.push({
       workflow: name,
       def: typeof workflow === "string" ? declared?.[workflow] : workflow,
       runId,
     });
     return runId;
-  };
-  return new Proxy(client, {
-    get(target, property) {
-      if (property === "start") return start as WorkflowClient["start"];
-      // Bound to the TARGET, so a getter on the real client reads its own state.
-      return Reflect.get(target, property, target);
-    },
   });
 }
 

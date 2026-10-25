@@ -95,6 +95,10 @@ export {
  * @property {string} re      POSIX ERE handed to `git grep -E`.
  * @property {string[]} paths Pathspecs to scan.
  * @property {boolean} skipComments Drop matches on comment-only lines.
+ * @property {string[]} [skipInside] Drop matches inside the body of a property
+ *   of one of these names (`propertyBodyLines` in the scanners module) — for a
+ *   rule over a BODY that cannot tell, from a line, a declaration's own
+ *   host-side function from the body beside it.
  * @property {string} remedy  What to do instead — printed on failure.
  * @property {{ matches: string[], ignores: string[] }} [samples]
  *   A positive and a negative sample, carried BY THE RULE.

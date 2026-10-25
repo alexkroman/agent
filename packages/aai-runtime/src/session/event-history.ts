@@ -64,6 +64,7 @@
 import type { Message, SessionEvent, SessionEventBody } from "@alexkroman1/aai";
 import { MAX_CLIENT_MESSAGES } from "@alexkroman1/aai/internal";
 import type { RestoredToolCall } from "@alexkroman1/aai/protocol";
+import type { ClientTranscriptMessage } from "@alexkroman1/aai/step";
 import type { ModelMessage } from "ai";
 import { toolResultMessage } from "../tools/index.ts";
 import {
@@ -95,6 +96,31 @@ export function historyMessageOf(event: SessionEventBody): Message | undefined {
   // `record: false`. See the event's own doc in `sdk/protocol-events.ts`.
   if (event.recovery !== undefined || event.recorded === false) return undefined;
   return { role: "assistant", content: event.text };
+}
+
+/**
+ * The transcript LINE `event` is — {@link historyMessageOf}'s rule, read as
+ * what was said and when — or `undefined` for an event that is no line (a
+ * recovery phrase, a `record: false` say, a tool result, a control event).
+ * `SessionEndContext.transcript`, `RouteContext.sessionTranscript` and
+ * `stepClientTranscript` are all lists of these.
+ *
+ * @internal
+ */
+export function transcriptLineOf(event: SessionEvent): ClientTranscriptMessage | undefined {
+  const message = historyMessageOf(event);
+  if (message === undefined || message.role === "tool") return undefined;
+  return { role: message.role, text: message.content, at: event.meta.at };
+}
+
+/** The committed lines of `events`, oldest first — {@link transcriptLineOf} over a list. @internal */
+export function transcriptLinesOf(events: readonly SessionEvent[]): ClientTranscriptMessage[] {
+  const lines: ClientTranscriptMessage[] = [];
+  for (const event of events) {
+    const line = transcriptLineOf(event);
+    if (line !== undefined) lines.push(line);
+  }
+  return lines;
 }
 
 /**

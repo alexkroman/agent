@@ -58,11 +58,13 @@
 import type { SessionEvent, SessionEventBody } from "@alexkroman1/aai";
 import { invariant } from "@alexkroman1/aai/internal";
 import { EVENT_ID_PREFIX, SessionEventSchema } from "@alexkroman1/aai/protocol";
+import type { ClientTranscriptMessage } from "@alexkroman1/aai/step";
 import { errorMessage } from "@alexkroman1/aai/utils";
 import { monotonicFactory } from "ulid";
 import { getOrCreate } from "../_get-or-create.ts";
 import type { Logger } from "../logger.ts";
 import type { SessionStateBackend, StoredSessionEvent } from "../session-state/store.ts";
+import { transcriptLineOf } from "./event-history.ts";
 
 /**
  * Cap on how many events one session RETAINS.
@@ -159,6 +161,14 @@ type StreamEntry = {
   next: number;
   /** Recorded but not yet persisted, in index order. */
   pending: StoredSessionEvent[];
+  /**
+   * The committed lines of every STORED event this process appended, oldest
+   * first — what `onSessionEnd` reads as the session's transcript without a
+   * trip to the backend for a log this process just wrote (a resume's earlier
+   * events were read at start and are prepended there). Bounded as the log
+   * is: an event past the retention cap contributes no line either.
+   */
+  lines: ClientTranscriptMessage[];
   /** True once the retention cap was reported, so it is reported once. */
   cappedReported: boolean;
 };
@@ -231,6 +241,12 @@ export type SessionEventLog = SessionEventStream & {
   flush(sessionId: string, options?: { final?: boolean }): Promise<void>;
   /** Learn this session's stored length, so a resume continues its log. */
   hydrate(sessionId: string): Promise<void>;
+  /**
+   * The committed lines of what THIS PROCESS appended for `sessionId`, oldest
+   * first (`transcriptLineOf`'s rule) — the in-memory half of a session's
+   * transcript; a resume's earlier log is the stream reader's.
+   */
+  transcript(sessionId: string): readonly ClientTranscriptMessage[];
   /** Forget a session: its position, its pending events, and its stored rows. */
   discard(sessionId: string): void;
   /** Drop every in-process entry (runtime shutdown). Stored rows are left alone. */
@@ -267,7 +283,12 @@ export function createSessionEventStream(options: {
   const sessions = new Map<string, StreamEntry>();
 
   const entryFor = (sessionId: string): StreamEntry =>
-    getOrCreate(sessions, sessionId, () => ({ next: 0, pending: [], cappedReported: false }));
+    getOrCreate(sessions, sessionId, () => ({
+      next: 0,
+      pending: [],
+      lines: [],
+      cappedReported: false,
+    }));
 
   /** Write out `entry`'s pending events, putting them back on failure. */
   async function writePending(sessionId: string, entry: StreamEntry): Promise<void> {
@@ -321,6 +342,8 @@ export function createSessionEventStream(options: {
       return event;
     }
     entry.pending.push({ index, json: JSON.stringify(event) });
+    const line = transcriptLineOf(event);
+    if (line !== undefined) entry.lines.push(line);
     if (entry.pending.length >= SESSION_EVENT_FLUSH_THRESHOLD || FLUSH_AFTER.has(event.type)) {
       // Fire-and-forget, and correct: `flush` never rejects, and the caller is an
       // emit on the audio path with nothing to await. What a lost write costs is
@@ -409,6 +432,12 @@ export function createSessionEventStream(options: {
     tail,
     read,
     flush,
+    // `readonly` as the interface spells it: the `as` below needs the literal
+    // comparable in BOTH directions, and a mutable array is not what the
+    // interface promises back.
+    transcript(sessionId): readonly ClientTranscriptMessage[] {
+      return sessions.get(sessionId)?.lines ?? [];
+    },
     async hydrate(sessionId) {
       // The COUNT rather than the events: a resuming session needs to know where
       // to continue writing, and nothing in the process needs the history —

@@ -23,6 +23,7 @@ import {
 } from "./testing-vitest.ts";
 import { createRunSnapshot } from "./testing-workflows.ts";
 import type { ToolDef } from "./types.ts";
+import { workflow } from "./workflow.ts";
 
 /**
  * Each fake is asserted twice: once that it is INSTALLED, and once — from the
@@ -201,8 +202,11 @@ describe("installStubGateway seeds the credential", () => {
 });
 
 describe("installStubWorkflows derives the listing from the agent", () => {
+  const recap = workflow({ description: "recap", run: async () => "r" });
+  const digest = workflow({ description: "digest", run: async () => "d" });
+
   test("reports the agent's declared workflows", () => {
-    const def = { workflows: { recap: {}, digest: {} } };
+    const def = { workflows: { recap, digest } };
     expect(installStubWorkflows({ agent: def }).listing()).toEqual([
       { name: "recap" },
       { name: "digest" },
@@ -210,7 +214,7 @@ describe("installStubWorkflows derives the listing from the agent", () => {
   });
 
   test("an explicit `names` wins over the agent", () => {
-    const def = { workflows: { recap: {} } };
+    const def = { workflows: { recap } };
     expect(installStubWorkflows({ agent: def, names: ["other"] }).listing()).toEqual([
       { name: "other" },
     ]);
@@ -230,9 +234,10 @@ describe("installStubWorld", () => {
     expect(world.model[0]?.prompt).toBe("Summarize the otters.");
     const page = await stepFetch("https://example.test/otters");
     expect(await page.text()).toBe("<p>otters</p>");
-    // A leg nobody named is a finding, never an empty 200.
+    // A leg nobody named is a finding, never an empty 200 — the chain's own
+    // refusal, since a `pages` table DECLINES what it does not answer.
     await expect(stepFetch("https://example.test/elsewhere")).rejects.toThrow(
-      /no fetch route for GET https:\/\/example.test\/elsewhere/,
+      "installStubWorld: no leg answers GET https://example.test/elsewhere",
     );
   });
 

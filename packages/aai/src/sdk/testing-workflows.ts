@@ -14,6 +14,7 @@
 
 import { omitUndefined } from "./omit-undefined.ts";
 import type { AnyWorkflowDef, WorkflowClient } from "./workflow.ts";
+import { workflowNameOf } from "./workflow-names.ts";
 import type { WorkflowRunBase, WorkflowRunSnapshot } from "./workflow-run.ts";
 import { rejectingWorkflows } from "./workflow-unavailable.ts";
 
@@ -77,19 +78,19 @@ export function createRunSnapshot<R = unknown>(
  * caller names. A fixture whose output stopped matching the body is then a
  * compile error in the spec rather than a page that renders `undefined`.
  *
- * The def names nothing else: a workflow's NAME is the key in
- * `agent({ workflows })`, which the def does not carry, so `workflow` still
- * defaults to `"workflow"` unless the overrides name it.
+ * The def names the run too, when it can: `workflow` is the key the def was
+ * declared under (`workflowNameOf`, recorded when the agent is lowered — a
+ * `virtual:aai/agent` import, `withWorkflows`, `workflowRegistry`), the
+ * overrides' `workflow` winning, and `"workflow"` for a def no agent declares.
  *
  * @example
  * ```ts no-check
  * import { recap } from "./shared.ts";
  *
  * const done = createRunSnapshot(recap, {
- *   workflow: "recap",
  *   status: "completed",
  *   output: { headline: "…", points: [] }, // typed by `recap`
- * });
+ * }); // `workflow` is "recap" once the agent declaring it has been imported
  * ```
  *
  * @public
@@ -104,13 +105,24 @@ export function createRunSnapshot<R = unknown>(
 ): WorkflowRunSnapshot<R> {
   // A def is told from an overrides bag by its `run`: no snapshot field is a
   // function, and every workflow def has one.
+  const def = first !== undefined && isWorkflowDef(first) ? first : undefined;
   const overrides: RunSnapshotOverrides<R> =
     first !== undefined && isWorkflowDef(first) ? (second ?? {}) : (first ?? {});
   const base: WorkflowRunBase = {
     runId: overrides.runId ?? DEFAULT_RUN_ID,
-    workflow: overrides.workflow ?? DEFAULT_WORKFLOW,
+    workflow:
+      overrides.workflow ??
+      (def === undefined ? undefined : workflowNameOf(def)) ??
+      DEFAULT_WORKFLOW,
     createdAt: overrides.createdAt ?? DEFAULT_CREATED_AT,
-    ...omitUndefined({ key: overrides.key }),
+    // Every optional base field the overrides name, so a fixture built with a
+    // `label` or a `startedAt` is the snapshot a page would read for it.
+    ...omitUndefined({
+      key: overrides.key,
+      label: overrides.label,
+      startedAt: overrides.startedAt,
+      settledAt: overrides.settledAt,
+    }),
   };
   if (!("status" in overrides) || overrides.status === undefined)
     return { ...base, status: "running" };

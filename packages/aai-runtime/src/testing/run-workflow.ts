@@ -67,9 +67,18 @@
  * @module
  */
 
-import type { ToolInputSchema, WorkflowDef, WorkflowOutputOf } from "@alexkroman1/aai";
+import type { ToolInputSchema, WorkflowDef } from "@alexkroman1/aai";
+import { workflowSignalToken } from "@alexkroman1/aai/host-internal";
 import { parseSchemaInput } from "@alexkroman1/aai/testing";
+import {
+  type WorkflowAppLike,
+  type WorkflowDefOf,
+  type WorkflowNameOf,
+  type WorkflowOutputOf,
+  workflowNameOf,
+} from "@alexkroman1/aai/workflow-api";
 import { type Logger, silentLogger } from "../logger.ts";
+import { unknownWorkflowMessage } from "../workflow/client.ts";
 import {
   createInProcessWorkflowEngine,
   type InProcessWorkflowEngine,
@@ -78,6 +87,7 @@ import { createMemoryJournal } from "../workflow/journal/backends/memory.ts";
 import { journalStoreOf, workflowJournal } from "../workflow/journal/handle.ts";
 import { isTerminalStatus, type JournalStore, type SleepEntry } from "../workflow/journal/types.ts";
 import { type DeterminismKind, isDeterminismKey } from "../workflow/replay/determinism.ts";
+import { RUN_KEY_STEP } from "../workflow/replay/run-key.ts";
 import type {
   RunWorkflowOptions,
   WorkflowTestHandle,
@@ -101,25 +111,8 @@ export const DEFAULT_MAX_DELIVERIES = 50;
 /** One queued delivery, as the injected dispatcher receives it. */
 type Queued = { runId: string; at: number | undefined };
 
-/**
- * An agent with a `workflows` map, for the `runWorkflow(agentDef, "name", …)`
- * form: `agent({ workflows })`'s result, or `virtual:aai/agent`'s.
- *
- * @input
- * @public
- */
-export type WorkflowBearingAgent = {
-  readonly workflows?: Readonly<Record<string, WorkflowDef>> | undefined;
-};
-
-/**
- * The names `App` declares under `workflows` — what the agent form of
- * {@link runWorkflow} accepts as its second argument.
- *
- * @public
- */
-export type WorkflowNameOf<App extends WorkflowBearingAgent> = keyof NonNullable<App["workflows"]> &
-  string;
+/** The key a run is started with when the spec names none — see `RunWorkflowOptions.key`. */
+const DEFAULT_RUN_KEY = "test";
 
 /**
  * Start `def` with `input` and drive it until it finishes or parks.
@@ -133,13 +126,15 @@ export type WorkflowNameOf<App extends WorkflowBearingAgent> = keyof NonNullable
  * against a validated input, so handing it an unvalidated one tests a call that
  * cannot happen.
  *
- * **Two forms.** Handed a DEF, the run is named by `options.name` (default
- * `"workflow"`). Handed the AGENT and a workflow's name — `runWorkflow(agentDef,
- * "digest", input)`, with `agentDef` from `virtual:aai/agent` — the def is the
- * one the agent declares (or the build discovered in `workflows/`) under that
- * name, and the run carries that name, so a body that reads `ctx.workflow`,
- * starts a sibling by name or is found by `ctx.workflows.find` sees what a
- * deployment would. An unknown name throws, listing the ones the agent has.
+ * **Two forms.** Handed a DEF, the run is named by `options.name`, else by the
+ * name the def was declared under (`workflowNameOf`, recorded when the agent
+ * declaring it was lowered — a `virtual:aai/agent` import), else `"workflow"`.
+ * Handed the AGENT and a workflow's name — `runWorkflow(agentDef, "digest",
+ * input)`, with `agentDef` from `virtual:aai/agent` — the def is the one the
+ * agent declares (or the build discovered in `workflows/`) under that name,
+ * and the run carries that name, so a body that reads `ctx.workflow`, starts a
+ * sibling by name or is found by `ctx.workflows.find` sees what a deployment
+ * would. An unknown name throws, listing the ones the agent has.
  *
  * @example
  * ```ts
@@ -184,36 +179,36 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
   input: Record<string, unknown>,
   options?: RunWorkflowOptions,
 ): Promise<WorkflowTestHandle<R>>;
-export async function runWorkflow<
-  App extends WorkflowBearingAgent,
-  Name extends WorkflowNameOf<App>,
->(
+export async function runWorkflow<App extends WorkflowAppLike, Name extends WorkflowNameOf<App>>(
   agent: App,
   name: Name,
   input: Record<string, unknown>,
   options?: Omit<RunWorkflowOptions, "name">,
-): Promise<WorkflowTestHandle<WorkflowOutputOf<NonNullable<App["workflows"]>[Name]>>>;
+): Promise<WorkflowTestHandle<WorkflowOutputOf<WorkflowDefOf<App, Name>>>>;
 export async function runWorkflow(
-  first: WorkflowDef<ToolInputSchema, unknown> | WorkflowBearingAgent,
+  first: WorkflowDef<ToolInputSchema, unknown> | WorkflowAppLike,
   second: string | Record<string, unknown>,
   third?: Record<string, unknown> | RunWorkflowOptions,
   fourth?: Omit<RunWorkflowOptions, "name">,
 ): Promise<WorkflowTestHandle<unknown>> {
   if (typeof second === "string") {
-    const agent = first as WorkflowBearingAgent;
+    const agent = first as WorkflowAppLike;
     const def = agent.workflows?.[second];
     if (def === undefined) {
-      const known = Object.keys(agent.workflows ?? {});
+      // The client's own sentence (declared set, nearest name), so a spec and
+      // a tool are refused in the same words.
       throw new Error(
-        `runWorkflow: the agent declares no workflow "${second}"` +
-          (known.length > 0 ? ` (it has ${known.join(", ")})` : " (it has none)") +
-          ". Check the name, or register the def in agent({ workflows }) or as workflows/<name>.ts.",
+        `runWorkflow: ${unknownWorkflowMessage(second, Object.keys(agent.workflows ?? {}))} ` +
+          "Check the name, or register the def in agent({ workflows }) or as workflows/<name>.ts.",
       );
     }
-    return runDef(def, (third as Record<string, unknown> | undefined) ?? {}, {
-      ...fourth,
-      name: second,
-    });
+    // The declared def is a `WorkflowDef` (`AnyWorkflowDef` is the reading's
+    // contravariant view of it); the explicit key wins over any recorded one.
+    return runDef(
+      def as WorkflowDef<ToolInputSchema, unknown>,
+      (third as Record<string, unknown> | undefined) ?? {},
+      { ...fourth, name: second },
+    );
   }
   return runDef(
     first as WorkflowDef<ToolInputSchema, unknown>,
@@ -228,7 +223,8 @@ async function runDef<P extends ToolInputSchema, R>(
   input: Record<string, unknown>,
   options: RunWorkflowOptions,
 ): Promise<WorkflowTestHandle<R>> {
-  const name = options.name ?? "workflow";
+  const name = options.name ?? workflowNameOf(def) ?? "workflow";
+  const key = options.key ?? DEFAULT_RUN_KEY;
   const logger = options.logger ?? silentLogger;
   const maxDeliveries = options.maxDeliveries ?? DEFAULT_MAX_DELIVERIES;
   const validated = def.input
@@ -251,10 +247,15 @@ async function runDef<P extends ToolInputSchema, R>(
   // to resume at all.
   let crash: AbortController | undefined;
   let armed = options.crashAt;
-  // Set for the duration of ONE delivery by `expireWaits` — see its doc for why
-  // nothing public can end a `waitFor` window and why this answers the READ
-  // rather than rewriting the record.
-  let expiring = false;
+  // The deadline KEYS `expireWaits` has closed — see its doc for why nothing
+  // public can end a `waitFor` window and why this answers the READ rather
+  // than rewriting the record. Each call adds what was outstanding at the
+  // call, so a window the body opens during the delivery it triggers is not
+  // closed before it was ever open; and a key stays here for the rest of the
+  // run, because the window DID close (`closeHook` ran) and every later walk
+  // re-reads its deadline on the way past — answered as still open, the run
+  // would park on a window it already took the timeout branch of.
+  const expiring = new Set<string>();
   const store = journalStoreOf(options.journal) ?? createMemoryJournal();
   const journal: JournalStore = {
     ...store,
@@ -271,7 +272,7 @@ async function runDef<P extends ToolInputSchema, R>(
       // Only a hook's DEADLINE, never an ordinary `ctx.sleep`: those are
       // `advanceSleep`'s, through the engine's own `wakeUp`, and folding the two
       // together is the exact mistake `SleepRecord.kind` exists to prevent.
-      if (!expiring || record.kind !== "hookTimeout") return record;
+      if (record.kind !== "hookTimeout" || !expiring.has(key)) return record;
       return { ...record, woken: true };
     },
   };
@@ -293,10 +294,11 @@ async function runDef<P extends ToolInputSchema, R>(
     signalled: false,
   } as Mutable<R>;
 
-  const runId = await state.engine.start(name, [validated]);
+  const runId = await state.engine.start(name, [validated], { key });
 
   const handle: WorkflowTestHandle<R> = {
     runId,
+    key,
     // The UNWRAPPED store: a second run handed this must not inherit this
     // run's crash arming or its window expiry.
     journal: workflowJournal(store),
@@ -343,19 +345,20 @@ async function runDef<P extends ToolInputSchema, R>(
       await drain();
       return handle;
     },
+    signalRun(label, payload) {
+      // The token the body derived (`sdk/workflow-signals.ts`), from the same
+      // three parts, so neither side spells it.
+      return handle.signal(workflowSignalToken(name, key, label), payload);
+    },
     async expireWaits() {
-      expiring = true;
-      try {
-        // A delivery of its own, because a parked run has nothing in flight: the
-        // window closes on the walk that re-reads it.
-        queue.push({ runId, at: undefined });
-        await drain();
-      } finally {
-        // Cleared whatever happened, so a later delivery reads the real
-        // deadlines — an expiry that leaked would close every window the run
-        // opens for the rest of the spec.
-        expiring = false;
+      // The windows open NOW — and only those: see the set's own comment.
+      for (const wait of await store.readSleeps(runId)) {
+        if (wait.kind === "hookTimeout" && !wait.woken) expiring.add(wait.key);
       }
+      // A delivery of its own, because a parked run has nothing in flight: the
+      // window closes on the walk that re-reads it.
+      queue.push({ runId, at: undefined });
+      await drain();
       return handle;
     },
     async restart() {
@@ -425,7 +428,9 @@ async function runDef<P extends ToolInputSchema, R>(
     state.error = record?.error?.message;
     const journaled = await journal.readSteps(runId);
     state.steps = journaled
-      .filter((entry) => !isDeterminismKey(entry.key))
+      // Neither a determinism read nor the run's own key entry is a STEP the
+      // body named (`workflow/replay/run-key.ts`).
+      .filter((entry) => !isDeterminismKey(entry.key) && entry.key !== RUN_KEY_STEP)
       .map(toStep)
       .sort(byCallSite);
     state.reads = journaled

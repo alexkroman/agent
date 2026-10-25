@@ -16,10 +16,11 @@
 
 import { type WorkflowContext, workflow } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
+import type { WorkflowAppLike } from "@alexkroman1/aai/workflow-api";
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryJournal } from "../workflow/journal/backends/memory.ts";
 import { workflowJournal } from "../workflow/journal/handle.ts";
-import { runWorkflow, type WorkflowBearingAgent } from "./run-workflow.ts";
+import { runWorkflow } from "./run-workflow.ts";
 
 /** A day, which is the point: no spec may wait one and none has to. */
 const A_DAY = 86_400_000;
@@ -87,9 +88,11 @@ describe("the agent form", () => {
     await expect(
       // @ts-expect-error — the name is typed by the agent's `workflows` keys.
       runWorkflow(agentDef, "recap", {}),
-    ).rejects.toThrow(/no workflow "recap" \(it has digest\)/);
-    const voice: WorkflowBearingAgent = {};
-    await expect(runWorkflow(voice, "digest", {})).rejects.toThrow(/it has none/);
+    ).rejects.toThrow(
+      /Workflow "recap" is not declared on this agent. Declared workflows: digest\./,
+    );
+    const voice: WorkflowAppLike = {};
+    await expect(runWorkflow(voice, "digest", {})).rejects.toThrow(/Declared workflows: \(none\)/);
   });
 });
 
@@ -187,6 +190,33 @@ describe("a run parked on somebody else's ANSWER", () => {
   });
 });
 
+describe("a run's KEY, and a signal by LABEL", () => {
+  /** A body that derives its wait token from the run's key, as a tool's twin does. */
+  const keyed = workflow({
+    description: "keyed",
+    run: async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
+      const answer = await ctx.waitForSignal<{ approved: boolean }>("approval");
+      return { key: ctx.key, approved: answer?.approved ?? false };
+    },
+  });
+
+  test("a run is keyed `test` by default, so a body deriving a token walks at all", async () => {
+    const run = await runWorkflow(keyed, {});
+    expect(run.key).toBe("test");
+    expect(run.status).toBe("running");
+    // The key's own journal entry is not a step the body named.
+    expect(run.steps).toEqual([]);
+  });
+
+  test("signalRun answers the label the body waits on, under the run's own key", async () => {
+    const run = await runWorkflow(keyed, {}, { key: "sess-9" });
+    await run.signalRun("approval", { approved: true });
+    expect(run.signalled).toBe(true);
+    expect(run.status).toBe("completed");
+    expect(run.output).toEqual({ key: "sess-9", approved: true });
+  });
+});
+
 describe("a wait whose WINDOW closes unanswered", () => {
   /** A gate whose safe default is to refuse — the shape an approval has. */
   const gate = workflow({
@@ -225,6 +255,37 @@ describe("a wait whose WINDOW closes unanswered", () => {
     expect(run.output).toEqual({ approved: true, answered: true });
     await run.expireWaits();
     expect(run.output).toEqual({ approved: true, answered: true });
+  });
+
+  test("expires only the windows open at the call: a SECOND wait the first's close led to still parks", async () => {
+    const twoGates = workflow({
+      description: "two gates",
+      run: async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
+        const first = await ctx.waitFor<{ ok: boolean }>("gate:1", { timeoutMs: 60_000 });
+        const second = await ctx.waitFor<{ ok: boolean }>("gate:2", { timeoutMs: 60_000 });
+        return { first: first !== undefined, second: second !== undefined };
+      },
+    });
+    const run = await runWorkflow(twoGates, {});
+    await run.expireWaits();
+    // The first window closed; the second was opened by that very delivery and
+    // is still open — expiring it too would have skipped a wait the body never
+    // got to park on.
+    expect(run.status).toBe("running");
+    expect(run.waits.map((wait) => [wait.key, wait.woken])).toEqual([
+      ["hookTimeout!gate:1#0", false],
+      ["hookTimeout!gate:2#0", false],
+    ]);
+    await run.signal("gate:2", { ok: true });
+    expect(run.status).toBe("completed");
+    expect(run.output).toEqual({ first: false, second: true });
+    // And expiring again closes the second: the first stays closed on the walk
+    // past it, rather than re-parking the run on a window it already left.
+    const again = await runWorkflow(twoGates, {});
+    await again.expireWaits();
+    await again.expireWaits();
+    expect(again.status).toBe("completed");
+    expect(again.output).toEqual({ first: false, second: false });
   });
 
   test("does not touch an ordinary ctx.sleep", async () => {

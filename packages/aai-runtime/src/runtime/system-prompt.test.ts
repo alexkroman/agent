@@ -124,7 +124,7 @@ describe("a systemPrompt RESOLVER", () => {
       agentConfig: toAgentConfig({ name: "Desk", greeting: "" }),
       hasTools: false,
       toolGuidance: undefined,
-      instructions,
+      agent: { systemPrompt: instructions },
     });
   }
 
@@ -202,7 +202,7 @@ describe("an agent's promptContext", () => {
       }),
       hasTools: false,
       toolGuidance: undefined,
-      promptContext: "Specials: soup.",
+      agent: { systemPrompt: "Be brief.", promptContext: "Specials: soup." },
     });
     const session = prompts.forSession(TEST_SESSION_CONTEXT);
     expect(prompts.base()).toContain(`${HEADER}\nBe brief.\n\nSpecials: soup.`);
@@ -224,8 +224,7 @@ describe("an agent's promptContext", () => {
       agentConfig,
       hasTools: false,
       toolGuidance: undefined,
-      instructions: () => "The caller is verified.",
-      promptContext: "Specials: soup.",
+      agent: { systemPrompt: () => "The caller is verified.", promptContext: "Specials: soup." },
     });
     expect(prompts.base()).not.toContain("Specials: soup.");
     const resolved = prompts.forSession(TEST_SESSION_CONTEXT).resolve();
@@ -239,7 +238,10 @@ describe("an agent's promptContext", () => {
       agentConfig: toAgentConfig({ name: "Desk", greeting: "", systemPrompt: "Be brief." }),
       hasTools: false,
       toolGuidance: undefined,
-      promptContext: (ctx) => `Session ${ctx.sessionId} is on the ${tier} tier.`,
+      agent: {
+        systemPrompt: "Be brief.",
+        promptContext: (ctx) => `Session ${ctx.sessionId} is on the ${tier} tier.`,
+      },
     });
     const session = prompts.forSession(TEST_SESSION_CONTEXT);
     expect(session.resolve()).toContain(
@@ -261,7 +263,7 @@ describe("an agent's promptContext", () => {
       agentConfig: toAgentConfig({ name: "Desk", greeting: "", systemPrompt: "Be brief." }),
       hasTools: false,
       toolGuidance: undefined,
-      promptContext: () => "",
+      agent: { systemPrompt: "Be brief.", promptContext: () => "" },
     });
     expect(blank.forSession(TEST_SESSION_CONTEXT).resolve()).toBe(
       plain.forSession(TEST_SESSION_CONTEXT).resolve(),
@@ -277,7 +279,7 @@ describe("a session's CONTEXT block (`sessionContext`'s instructions)", () => {
       agentConfig: toAgentConfig({ name: "Desk", greeting: "" }),
       hasTools: false,
       toolGuidance: undefined,
-      instructions: () => "Agent resolver text.",
+      agent: { systemPrompt: () => "Agent resolver text." },
     }).forSession(TEST_SESSION_CONTEXT);
     session.setContext("They like jazz.");
     session.setSuffix("dialogs", () => "Current phase: checkout.");

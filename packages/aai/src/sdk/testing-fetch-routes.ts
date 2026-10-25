@@ -199,9 +199,16 @@ async function recordGlobal(request: Request): Promise<StubStepRequest> {
   return { url, method, headers, body: text };
 }
 
-/** A fixed table answer, fresh per request — a `Response` body is read once. */
-function fixed(answer: StubStepAnswer): FetchRouteHandler {
-  return () => (answer instanceof Response ? answer.clone() : answer);
+/**
+ * A table's value as a handler: a handler is itself; a fixed answer is given
+ * to every request it is asked, a `Response` CLONED per request — a body is
+ * read once, and the second request would otherwise find it consumed.
+ *
+ * @public
+ */
+export function routeHandlerOf(value: FetchRouteHandler | StubStepAnswer): FetchRouteHandler {
+  if (typeof value === "function") return value;
+  return () => (value instanceof Response ? value.clone() : value);
 }
 
 /** The ordered candidate handlers for a request, most specific first. */
@@ -216,8 +223,26 @@ function resolverFor(routes: FetchRouteTable | readonly FetchRouteHandler[]): Re
   return (request) =>
     table.match(request.method, new URL(request.url)).map(({ key, value }) => ({
       route: key,
-      handler: typeof value === "function" ? value : fixed(value),
+      handler: routeHandlerOf(value),
     }));
+}
+
+/**
+ * `routes` as ONE handler — a table matched by specificity, a list tried in
+ * order — that DECLINES (`undefined`) a request no route answers, so it can be
+ * one leg of a list or the `otherwise` of another fake. The same matching
+ * {@link stubFetchRoutes} does, without installing anything.
+ *
+ * @public
+ */
+export function routeOf(routes: FetchRouteTable | readonly FetchRouteHandler[]): FetchRouteHandler {
+  const resolve = resolverFor(routes);
+  return async (request) => {
+    for (const { handler } of resolve(request)) {
+      const answered = await handler(request);
+      if (answered !== undefined) return answered;
+    }
+  };
 }
 
 /**

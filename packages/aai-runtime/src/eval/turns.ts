@@ -33,7 +33,7 @@
  * @module
  */
 
-import type { AnyWorkflowDef } from "@alexkroman1/aai/workflow-api";
+import { type AnyWorkflowDef, workflowNameOf } from "@alexkroman1/aai/workflow-api";
 import { describeToolCalls, type EvalToolCall } from "./events.ts";
 import type { EvalTurn, EvalWorkflowStart } from "./session.ts";
 
@@ -340,10 +340,13 @@ export function evalRunOf(turn: EvalTurn, workflow: string | AnyWorkflowDef): st
   const matching = starts.filter((start) =>
     typeof workflow === "string" ? start.workflow === workflow : start.def === workflow,
   );
+  // A def is named by the key it was declared under when the agent recorded
+  // one (`workflowNameOf`), and by its description otherwise.
   const asked =
     typeof workflow === "string"
       ? JSON.stringify(workflow)
-      : `the def described as ${JSON.stringify(workflow.description ?? "")}`;
+      : (workflowNameOf(workflow) ??
+        `the def described as ${JSON.stringify(workflow.description ?? "")}`);
   if (matching.length === 0) {
     const did =
       starts.length === 0

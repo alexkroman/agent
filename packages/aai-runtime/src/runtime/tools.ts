@@ -85,9 +85,11 @@ type ToolSetupDeps = {
   env: AgentEnv;
   providerEnv: ProviderEnv;
   /**
-   * `ctx.workflows`. Undefined when the agent declares no workflows, and the
-   * executor substitutes a client that rejects naming the reason — so this is
-   * "does this agent have workflows", not "is the option set".
+   * `ctx.workflows`, the per-RUNTIME client. Undefined when the agent declares
+   * no workflows, and the executor substitutes a client that rejects naming
+   * the reason — so this is "does this agent have workflows", not "is the
+   * option set". A tool call is handed the SESSION's scope of it, built once
+   * per session (`session-factory.ts`) — see `scopedWorkflows`.
    */
   workflows: WorkflowClient | undefined;
   /**
@@ -115,7 +117,7 @@ type ToolSetupDeps = {
    * - `ctx.speech`, resolved at each `say` — a tool that arms a timer speaks
    *   after a resume swapped the session in.
    */
-  sessions: Pick<SessionDirectory, "emitter" | "meter" | "turn"> & {
+  sessions: Pick<SessionDirectory, "emitter" | "meter" | "turn" | "workflows"> & {
     speech: Pick<SpeechDirectory, "of">;
   };
   /** Where a `clientTool` call waits for the page's answer (self-hosted mode only). */
@@ -161,13 +163,28 @@ function setupSubagents(deps: ToolSetupDeps): SubagentRunner {
   });
 }
 
+/**
+ * `ctx.workflows` for a tool call in `sessionId`: the client the session built
+ * once at its wiring (`session-factory.ts`, read by id like the meter), or —
+ * for a call with no live session behind it: none named, or one already
+ * stopped — scoped on the spot, exactly as it was before the wiring held one.
+ */
+function scopedWorkflows(
+  deps: Pick<ToolSetupDeps, "sessions" | "workflows" | "notifier">,
+): (sessionId: string | undefined) => WorkflowClient | undefined {
+  return (sessionId) =>
+    (sessionId === undefined ? undefined : deps.sessions.workflows(sessionId)) ??
+    withNotify(deps.workflows, deps.notifier, sessionId);
+}
+
 /** Sandbox mode — custom tools are RPC-backed; builtins run host-side. */
 function setupSandboxTools(
   deps: ToolSetupDeps,
   rpcExecuteTool: ExecuteTool,
   schemas: ToolSchema[],
 ): ToolSurface {
-  const { agent, options, env, workflows, notifier, logger } = deps;
+  const { agent, options, env, logger } = deps;
+  const sessionWorkflows = scopedWorkflows(deps);
   const builtinFetchOpt = options.fetch ? { fetch: options.fetch } : undefined;
   const generate = setupGenerate(deps);
   const subagents = setupSubagents(deps);
@@ -197,7 +214,7 @@ function setupSandboxTools(
         toolset: builtins,
         env: frozenEnv,
         sessionId: sessionId ?? "",
-        workflows: withNotify(workflows, notifier, sessionId),
+        workflows: sessionWorkflows(sessionId),
         messages,
         generate,
         subagents,
@@ -224,8 +241,9 @@ function setupSandboxTools(
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
 function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
-  const { agent, options, env, workflows, notifier, logger, sessions, stateStore } = deps;
+  const { agent, options, env, logger, sessions, stateStore } = deps;
   const { clientTools } = deps;
+  const sessionWorkflows = scopedWorkflows(deps);
   const builtinOpts = {
     ...omitUndefined({ fetch: options.fetch }),
     // The guest harness runs this path INSIDE the sandbox and provides the
@@ -336,7 +354,9 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
         env: frozenEnv,
         slots: stateStore.viewFor(sid),
         sessionId: sid,
-        workflows: withNotify(workflows, notifier, sid),
+        // Read when the call STARTS, like the meter below: the session built
+        // its scoped client once, and a resume holds a new one.
+        workflows: sessionWorkflows(sid),
         messages,
         generate,
         subagents,

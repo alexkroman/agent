@@ -46,13 +46,10 @@
 
 import { capToolResult } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import type {
-  StartOptions,
-  WorkflowClient,
-  WorkflowRunSnapshot,
-} from "@alexkroman1/aai/workflow-api";
+import type { WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { isTerminal } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "../logger.ts";
+import { wrapStart } from "./_client-wrap.ts";
 import { forSession } from "./client-session.ts";
 import { isRunWatchClosed, type RunReader, type RunWatch, watchRun } from "./run-reads.ts";
 
@@ -297,11 +294,10 @@ export function withNotify(
   // a notifier to wrap it.
   const scoped = forSession(workflows, sessionId);
   if (!notifier) return scoped;
-  // The overload is preserved by delegating with the arguments as given —
   // `start` takes a definition or a name, and the watcher needs neither: the
   // run it polls reports its own declared name.
-  const start = (async (workflow: never, input: never, options?: StartOptions): Promise<string> => {
-    const runId = await scoped.start(workflow, input, options);
+  return wrapStart(scoped, async (start, workflow, input, options) => {
+    const runId = await start(workflow, input, options);
     if (options?.notify !== undefined && options.notify !== false) {
       notifier.watch({
         sessionId,
@@ -311,6 +307,5 @@ export function withNotify(
       });
     }
     return runId;
-  }) as WorkflowClient["start"];
-  return { ...scoped, start };
+  });
 }

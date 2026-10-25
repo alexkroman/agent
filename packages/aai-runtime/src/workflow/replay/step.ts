@@ -156,10 +156,11 @@ type Budgets = { tries: number; waits: number };
  *
  * Two ways to go again. A far side's own "come back later", when the body
  * opted in with `maxWaits` and has waits left, is a WAIT out of that budget:
- * the try is handed back (`tries--` meets the loop's `tries++`, so the next
- * run of the body is the same attempt number). Anything else retryable is a
- * TRY while tries remain. Once the waits are spent a delay is a failure like
- * any other, which is what stops a far side holding a step forever.
+ * the attempt just made is reported as itself, then the try is handed back
+ * (`tries--` meets the loop's `tries++`, so the next run of the body is the
+ * same attempt number). Anything else retryable is a TRY while tries remain.
+ * Once the waits are spent a delay is a failure like any other, which is what
+ * stops a far side holding a step forever.
  */
 async function recover(
   options: StepAttemptOptions,
@@ -169,8 +170,8 @@ async function recover(
   const maxWaits = options.maxWaits;
   if (maxWaits !== undefined && budgets.waits < maxWaits && isRetryAfterWait(err)) {
     budgets.waits++;
+    await backOff(options, budgets.tries, err, { taken: budgets.waits, max: maxWaits });
     budgets.tries--;
-    await backOff(options, budgets.tries + 1, err, { taken: budgets.waits, max: maxWaits });
     return true;
   }
   if (FatalError.is(err) || budgets.tries >= options.maxAttempts) return false;

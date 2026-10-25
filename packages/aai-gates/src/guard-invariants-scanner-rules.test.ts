@@ -50,9 +50,16 @@ import { sole } from "./_gate-support.ts";
  * fallback, so every member stays possibly-absent and the "is importable" cases
  * below keep asserting it.
  */
-const { findUndeclaredGuestRoutes, importEscapesTemplate, resolveAgainstFile, fixtureDirs } =
+const {
+  findUndeclaredGuestRoutes,
+  importEscapesTemplate,
+  resolveAgainstFile,
+  fixtureDirs,
+  propertyBodyLines,
+} =
   sole(
     import.meta.glob<{
+      propertyBodyLines?: (source: string, names: readonly string[]) => Set<number>;
       findUndeclaredGuestRoutes: (
         literals: { file: string; line: number; literal: string }[],
         declared: Set<string>,
@@ -373,5 +380,39 @@ describe("rule 38 — a pipeline stage importing the wrong way", () => {
     expect(
       wrongWayStageImport?.(`${PIPE}/turn/gate.ts`, "../../../session/index.ts"),
     ).toBeUndefined();
+  });
+});
+
+describe("rule 30 — `skipInside`: a `describeRun` property's body is not the workflow body", () => {
+  const source = [
+    "export default workflow({",
+    "  description: 'd',",
+    "  describeRun(run) {",
+    "    const at = new Date(run.createdAt).toISOString();",
+    "    return 'started ' + at;",
+    "  },",
+    "  run: async (input, ctx) => {",
+    "    const now = Date.now();",
+    "    return now;",
+    "  },",
+    "  cancelNote: (run) => 'cancelled ' + new Date().toISOString(),",
+    "});",
+  ].join("\n");
+
+  test("the pure half is importable", () => {
+    expect(propertyBodyLines, "propertyBodyLines not exported").toBeTypeOf("function");
+  });
+
+  test("names the lines of the method's body, and no line of the run body", () => {
+    const inside = propertyBodyLines?.(source, ["describeRun"]) ?? new Set();
+    expect([...inside].sort((a, b) => a - b)).toEqual([3, 4, 5, 6]);
+    // The clock in the run body (line 8) stays a finding.
+    expect(inside.has(8)).toBe(false);
+  });
+
+  test("an arrow property and a one-line arrow are read too", () => {
+    const arrow = "const x = {\n  describeRun: (run) => {\n    return Date.now();\n  },\n};";
+    expect([...(propertyBodyLines?.(arrow, ["describeRun"]) ?? [])]).toEqual([2, 3, 4]);
+    expect([...(propertyBodyLines?.(source, ["cancelNote"]) ?? [])]).toEqual([11]);
   });
 });

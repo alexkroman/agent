@@ -32,6 +32,25 @@ describe("a run started with a key", () => {
     expect(seen).toEqual(["sess-1", "sess-1", "sess-1"]);
   });
 
+  test("runs the caller's key-INDEX write before the id is handed back, loser of a dedupe included", async () => {
+    const world = harness({ digest: async () => "done" });
+    const index = vi.fn(async (_runId: string) => undefined);
+    const runId = await world.engine.start("digest", [{}], {
+      key: "sess-1",
+      dedupeKey: "evt_1",
+      index,
+    });
+    expect(index).toHaveBeenCalledWith(runId);
+    // The loser is answering for the same run, and its caller still has to be
+    // able to find it by key — the index is idempotent on the id.
+    expect(
+      await world.engine.start("digest", [{}], { key: "sess-1", dedupeKey: "evt_1", index }),
+    ).toBe(runId);
+    expect(index).toHaveBeenCalledTimes(2);
+    // The journaling of the key is not displaced by the index riding beside it.
+    expect((await world.journal.readSteps(runId)).map((s) => s.key)).toEqual(["key!"]);
+  });
+
   test("a run started without one reads `undefined`, and signalToken refuses", async () => {
     const world = harness({
       digest: async (_input, ctx: WorkflowContext) => {

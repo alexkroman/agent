@@ -25,8 +25,14 @@
  * package guide) — so the signaller's `signal` and the walk's `claimHook` read
  * the same map.
  *
+ * The map is one more bounded, insertion-ordered, TTL'd map keyed by a string,
+ * so it reads and writes through the SDK's own pair for those
+ * (`writeSessionEntry` / `liveSessionEntry`, `_session-identity-store.ts`).
+ *
  * @internal
  */
+
+import { liveSessionEntry, writeSessionEntry } from "@alexkroman1/aai/host-internal";
 
 /** One held payload. */
 type Held = { payload: unknown; expiresAt: number };
@@ -56,14 +62,9 @@ function purgeExpired(now: number): void {
  */
 export function holdSignal(token: string, payload: unknown, holdMs: number): void {
   const now = Date.now();
+  // Expired holds first, so a live one is never the "oldest" evicted for them.
   purgeExpired(now);
-  // `Map` keeps insertion order, so the first key is the oldest hold.
-  if (held.size >= MAX_HELD_SIGNALS) {
-    const oldest = held.keys().next().value;
-    if (oldest !== undefined) held.delete(oldest);
-  }
-  held.delete(token);
-  held.set(token, { payload, expiresAt: now + holdMs });
+  writeSessionEntry(held, token, { payload, expiresAt: now + holdMs }, MAX_HELD_SIGNALS);
 }
 
 /**
@@ -73,10 +74,9 @@ export function holdSignal(token: string, payload: unknown, holdMs: number): voi
  * @internal
  */
 export function takeHeldSignal(token: string): { payload: unknown } | undefined {
-  const entry = held.get(token);
+  const entry = liveSessionEntry(held, token);
   if (entry === undefined) return undefined;
   held.delete(token);
-  if (entry.expiresAt <= Date.now()) return undefined;
   return { payload: entry.payload };
 }
 

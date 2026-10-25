@@ -24,10 +24,11 @@
  * literal the compiler knows; a typo is an error naming the keys the agent has.
  * The workflows a build DISCOVERS in `workflows/` are not in that map at the
  * type level — only `agent({ workflows })`'s entries are — so those pages keep
- * the def form.
+ * the def form. The four readings are declared by the SDK
+ * (`@alexkroman1/aai/workflow-api`) and re-exported here.
  */
 
-import type { AnyWorkflowDef, WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
+import type { WorkflowInputOf } from "@alexkroman1/aai/workflow-api";
 
 /**
  * What `submit()` takes for `D` — `undefined` when `D` declares no schema.
@@ -49,57 +50,11 @@ export type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never]
   ? undefined
   : WorkflowInputOf<D>;
 
-/**
- * An agent with a `workflows` map — what `agent({ workflows })` and
- * `workflowApp()` return, and what the agent form of the workflow hooks is
- * parameterized by (`useWorkflowSubmit<typeof agentDef>("digest")`).
- *
- * @input
- * @public
- */
-export type WorkflowAppLike = {
-  readonly workflows?: Readonly<Record<string, AnyWorkflowDef>> | undefined;
-};
-
-/**
- * The `workflows` map of `App`, or `never` for a type that has none — a
- * workflow DEF, say, which is the other thing a hook's type argument may be.
- * `Extract` rather than `NonNullable`: an absent key infers `unknown`, which
- * `NonNullable` would keep. Exported because {@link WorkflowNameOf} and
- * {@link WorkflowDefOf} are spelled in it.
- *
- * @public
- */
-export type WorkflowsOf<App> = App extends { readonly workflows?: infer W }
-  ? Extract<W, Record<string, unknown>>
-  : never;
-
-/**
- * The names `App` declares under `workflows` — the literal union a page passes
- * to `useWorkflowSubmit<typeof agentDef>(…)`, `useWorkflowStream`,
- * `useWorkflowRuns` and `<WorkflowFields>`.
- *
- * `never` for a type with no `workflows` map (a def, an unrelated object), so
- * the agent form of each overloaded hook declines it and the def form is tried.
- * The `[T] extends [never]` guard is load-bearing: `keyof never` is every key.
- *
- * @public
- */
-export type WorkflowNameOf<App> = [WorkflowsOf<App>] extends [never]
-  ? never
-  : keyof WorkflowsOf<App> & string;
-
-/**
- * The def `App` declares under `Name` — what the agent form of a hook derives
- * its input and output from: `WorkflowOutputOf<WorkflowDefOf<App, Name>>`.
- *
- * With `Name` left to its default (the whole {@link WorkflowNameOf} union) it
- * is the union of the agent's defs, so an app with ONE workflow — most of them
- * — gets exactly that workflow's types from `<typeof agentDef>` alone, and an
- * app with several names the one it means as a second type argument:
- * `useWorkflowSubmit<typeof agentDef, "digest">("digest")`.
- *
- * @public
- */
-export type WorkflowDefOf<App, Name extends string> = WorkflowsOf<App>[Name &
-  keyof WorkflowsOf<App>];
+// The four agent readings are the SDK's — `workflow-readings.ts` declares them
+// once for this package's hooks and the runtime's `runWorkflow` alike.
+export type {
+  WorkflowAppLike,
+  WorkflowDefOf,
+  WorkflowNameOf,
+  WorkflowsOf,
+} from "@alexkroman1/aai/workflow-api";

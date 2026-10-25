@@ -26,12 +26,16 @@
  * The DevKit recorded a run under its COMPILER's identifier while ours was the
  * key in `agent({ workflows })`, and the missing translation silently emptied
  * `recent` and mislabelled every snapshot. The engine now records the declared
- * name, so `nameByDef` is the only index; why it maps by IDENTITY is `resolve`'s.
- * `findByKey`/`cancelAll` are composed of `find`/`cancel` in `client-keyed.ts`.
+ * name, so the declared map is the only index — read by IDENTITY through
+ * `declaredWorkflowName` (`sdk/workflow-names.ts`), which is `resolve`'s to
+ * explain. `findByKey`/`cancelAll` are composed of `find`/`cancel` in
+ * `client-keyed.ts`.
  */
 
 import {
+  declaredWorkflowName,
   formatSchemaIssues,
+  nearestNames,
   SESSION_KEY,
   toToolJsonSchema,
   workflowSignalToken,
@@ -51,6 +55,7 @@ import {
   type WorkflowDef,
   type WorkflowRunSnapshot,
   type WorkflowSummary,
+  workflowNameOf,
 } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "../logger.ts";
 import { WorkflowRequestError } from "./_request-error.ts";
@@ -119,34 +124,23 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
   const { workflows, keys, wdk, publicUrl, logger } = opts;
 
   /**
-   * The index over `agent({ workflows })`: a def to the key it is declared
-   * under.
+   * The declared name of a workflow, by IDENTITY against `agent({ workflows })`.
    *
-   * FIRST key wins, matching `Object.entries` order — the same def declared
-   * under two keys is legitimate (see `resolve`) and a run of it carries no
-   * trace of which one a caller meant, so the choice has to be deterministic.
+   * Identity rather than a `name` field on the def is what keeps that record the
+   * single source of the name: a workflow declared twice under two keys is a
+   * legitimate (if odd) thing to write — the FIRST key wins, deterministically —
+   * and the def cannot know which key a caller meant. It also means a rename is
+   * one edit — the key — rather than two that can disagree. The lookup is
+   * `declaredWorkflowName`'s: the name the lowering recorded on the def, when
+   * this map agrees with it, else a scan of the map.
    *
    * **There used to be a second index here, and its disappearance is the shape
    * of the DevKit removal.** A workflow had two identities: the key an author
    * declared it under, and the `workflowId` a compile-time transform stamped
    * onto the body (`workflow//{file}//{export}`). Everything downstream — the
    * run record's `workflowName`, `listRuns`'s filter — spoke the second one, so
-   * this map existed to translate back. The engine now takes the declared name
+   * a map existed to translate back. The engine now takes the declared name
    * directly, the two identities are one, and the translation is gone with it.
-   */
-  const nameByDef = new Map<AnyWorkflowDef, string>();
-  for (const [name, def] of Object.entries(workflows)) {
-    if (!nameByDef.has(def)) nameByDef.set(def, name);
-  }
-
-  /**
-   * The declared name of a workflow, by IDENTITY against `agent({ workflows })`.
-   *
-   * Identity rather than a `name` field on the def is what keeps that record the
-   * single source of the name: a workflow declared twice under two keys is a
-   * legitimate (if odd) thing to write, and the def cannot know which key a
-   * caller meant. It also means a rename is one edit — the key — rather than two
-   * that can disagree.
    *
    * The reverse direction, name → def, is a plain lookup; `resolve` accepts
    * either so every overloaded method can take `WorkflowDef | string` without
@@ -159,7 +153,7 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
         throw new WorkflowRequestError(unknownWorkflowMessage(workflow, Object.keys(workflows)));
       return { name: workflow, def };
     }
-    const name = nameByDef.get(workflow);
+    const name = declaredWorkflowName(workflows, workflow);
     const declared = name === undefined ? undefined : workflows[name];
     if (name !== undefined && declared) return { name, def: declared };
     // A def that is not in the record cannot be started: nothing maps it to a
@@ -167,7 +161,10 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     // declared set because the usual cause is a workflow written and not wired
     // into `agent({ workflows })`.
     throw new WorkflowRequestError(
-      unknownWorkflowMessage(workflow.description ?? "(unnamed)", Object.keys(workflows)),
+      unknownWorkflowMessage(
+        workflowNameOf(workflow) ?? workflow.description ?? "(unnamed)",
+        Object.keys(workflows),
+      ),
     );
   }
 
@@ -275,28 +272,30 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       // reaches here as the literal is a key nobody can look up: dropped, as
       // `StartOptions.key` says, rather than indexed as five letters.
       const key = options?.key === SESSION_KEY ? undefined : options?.key;
+      // The key-index write, handed to the engine to run beside its own
+      // journaling of the key (`WdkStartOptions.index`). A failed key write
+      // must not fail the `start`: the run is already created, so throwing
+      // here would tell the caller nothing happened while the work proceeds
+      // unreachably. Losing the index entry costs a later `find`, which is
+      // recoverable; losing the runId the caller was about to be handed is not.
+      const index =
+        key === undefined
+          ? undefined
+          : (runId: string) =>
+              keys.record(name, key, runId).catch((err: unknown) => {
+                logger.warn?.("Workflow correlation key not recorded", {
+                  workflow: name,
+                  runId,
+                  error: errorMessage(err),
+                });
+              });
       // `dedupeKey` is the ENGINE's to honour — it derives the run id from it, so
       // two racing starts meet at one `createRun` (`workflow/engine.ts`) — and so
       // is `key`, which it journals for the body to read back as `ctx.key`.
-      const startOptions = omitUndefined({ label, dedupeKey: options?.dedupeKey, key });
-      const runId = await (Object.keys(startOptions).length === 0
+      const startOptions = omitUndefined({ label, dedupeKey: options?.dedupeKey, key, index });
+      return await (Object.keys(startOptions).length === 0
         ? wdk.start(name, args)
         : wdk.start(name, args, startOptions));
-      if (key !== undefined) {
-        // A failed key write must not fail the `start`: the run is already
-        // created and running, so throwing here would tell the caller nothing
-        // happened while the work proceeds unreachably. Losing the index entry
-        // costs a later `find`, which is recoverable; losing the runId the caller
-        // was about to be handed is not.
-        await keys.record(name, key, runId).catch((err: unknown) => {
-          logger.warn?.("Workflow correlation key not recorded", {
-            workflow: name,
-            runId,
-            error: errorMessage(err),
-          });
-        });
-      }
-      return runId;
     },
 
     get(runId: string): Promise<WorkflowRunSnapshot | undefined> {
@@ -365,12 +364,9 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       // field off it would throw on a signal sent for its arrival alone. An
       // empty object is the "I am only telling you it happened" value, and it
       // survives the serialization a hook payload crosses.
-      // The options bag reaches the adapter only when there is one, as `start`'s
-      // does — a signal with no hold is the call it always was.
-      const holdMs = options?.holdMs;
-      return holdMs === undefined
-        ? wdk.signal(token, payload ?? {})
-        : wdk.signal(token, payload ?? {}, { holdMs });
+      // The options bag carries only what was asked: a signal with no hold
+      // reaches the adapter with an empty one, which it reads as none.
+      return wdk.signal(token, payload ?? {}, omitUndefined({ holdMs: options?.holdMs }));
     },
 
     signalRun(
@@ -522,10 +518,18 @@ function safeJsonSchema(
   }
 }
 
-/** One message for both directions of `createWorkflowClient`'s name resolution. */
-function unknownWorkflowMessage(named: string, declared: readonly string[]): string {
+/**
+ * One message for both directions of `createWorkflowClient`'s name resolution,
+ * and for `runWorkflow`'s agent form — naming the declared set and, when one
+ * is a slip away, the name that was probably meant.
+ *
+ * @internal
+ */
+export function unknownWorkflowMessage(named: string, declared: readonly string[]): string {
   const list = declared.length > 0 ? declared.join(", ") : "(none)";
-  return `Workflow "${named}" is not declared on this agent. Declared workflows: ${list}.`;
+  const [near] = nearestNames(named, declared, { maxNames: 1 });
+  const hint = near === undefined ? "" : ` Did you mean "${near}"?`;
+  return `Workflow "${named}" is not declared on this agent. Declared workflows: ${list}.${hint}`;
 }
 
 /**

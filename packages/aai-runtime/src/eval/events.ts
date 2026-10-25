@@ -55,13 +55,30 @@ import { formatSchemaIssues } from "@alexkroman1/aai/host-internal";
 // below take the DEF, typed, where it takes the string. Runner-free, like
 // everything on that subpath, so `/eval` stays importable without vitest.
 import { toolNameOf } from "@alexkroman1/aai/testing";
-import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { type INSTRUCTION_KEY, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 
 /**
  * A tool as a reader may name it: the string the model calls, or the DEF the
  * tool file exports — which carries the result type the string cannot.
  */
 type ToolName = string | ToolDef<ToolInputSchema>;
+
+/**
+ * The result `D`'s `execute` declares, WITHOUT the `$instruction` key a
+ * `withInstruction` result carries: the runtime strips it before the
+ * `tool.completed` frame is recorded (`tools/result-instruction.ts`), so the
+ * wire value a reader parses never has it, and a spec must not be able to
+ * read a field that is not there. Distributes over a union, so a
+ * `ToolFailure` arm and a plain (non-record) result come through untouched.
+ * Spelled inline below rather than named, because a named type in a published
+ * signature would need its own place on every barrel.
+ */
+type EvalToolOutput<D extends ToolDef<ToolInputSchema>> =
+  InferToolOutput<D> extends infer O
+    ? O extends Record<string, unknown>
+      ? Omit<O, typeof INSTRUCTION_KEY>
+      : O
+    : never;
 
 /** The wire name of `tool`, however it was named. */
 function nameOf(tool: ToolName): string {
@@ -377,7 +394,7 @@ function requireCallsTo(calls: readonly EvalToolCall[], name: string): readonly 
 export function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(
   calls: readonly EvalToolCall[],
   tool: D,
-): InferToolOutput<D>;
+): EvalToolOutput<D>;
 export function lastToolResultIn<T = unknown>(
   calls: readonly EvalToolCall[],
   name: string,
@@ -407,7 +424,9 @@ export function lastToolResultIn<T = unknown>(
  * asserts against nothing and passes. This names what was called instead.
  *
  * **Handed the tool's DEF, the result is TYPED** — `InferToolOutput<typeof
- * placeOrder>`, the type its `execute` declares — and the wire name is read off
+ * placeOrder>`, the type its `execute` declares, minus the `$instruction` key
+ * a `withInstruction` result carries (the runtime strips it before the frame
+ * is recorded, so the wire value never has it) — and the wire name is read off
  * the def (`toolNameOf`), so a renamed file fails here by name. For a
  * `dialog.tool` the envelope type is known (`DialogToolResult<R> | ToolFailure`),
  * so `dialogResultSchema` is no longer needed to read one; `expectToolOk`
@@ -417,7 +436,7 @@ export function lastToolResultIn<T = unknown>(
 export function toolResultIn<D extends ToolDef<ToolInputSchema>>(
   calls: readonly EvalToolCall[],
   tool: D,
-): InferToolOutput<D>;
+): EvalToolOutput<D>;
 export function toolResultIn<T = unknown>(
   calls: readonly EvalToolCall[],
   name: string,
@@ -505,7 +524,7 @@ export function toolArgsIn<T>(
 export function toolResultsIn<D extends ToolDef<ToolInputSchema>>(
   calls: readonly EvalToolCall[],
   tool: D,
-): readonly InferToolOutput<D>[];
+): readonly EvalToolOutput<D>[];
 export function toolResultsIn<T = unknown>(
   calls: readonly EvalToolCall[],
   name: string,

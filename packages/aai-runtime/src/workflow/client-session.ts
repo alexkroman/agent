@@ -22,7 +22,8 @@
  */
 
 import { SESSION_KEY } from "@alexkroman1/aai/host-internal";
-import type { StartOptions, WorkflowClient } from "@alexkroman1/aai/workflow-api";
+import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
+import { mapArgument, wrapStart } from "./_client-wrap.ts";
 
 /**
  * `workflows`, with `"session"` (and an absent start key) meaning `sessionId`.
@@ -32,33 +33,19 @@ import type { StartOptions, WorkflowClient } from "@alexkroman1/aai/workflow-api
 export function forSession(workflows: WorkflowClient, sessionId: string): WorkflowClient {
   const keyOf = (key: string | undefined): string =>
     key === undefined || key === SESSION_KEY ? sessionId : key;
-  // Each overloaded method is delegated with its arguments as given and the key
-  // rewritten, then asserted back to the client's own overload set: a wrapper
-  // cannot restate an overload without copying it, and `never` parameters are
-  // what let one body serve both arms.
+  // The key is the second argument of every keyed method but two: `start`
+  // carries it in its options, `findByKey` first.
+  const keyed = <F extends (...args: never[]) => unknown>(method: F, at = 1): F =>
+    mapArgument(method, at, keyOf);
   return {
-    ...workflows,
-    start: ((workflow: never, input: never, options?: StartOptions) =>
-      workflows.start(workflow, input, {
-        ...options,
-        key: keyOf(options?.key),
-      })) as WorkflowClient["start"],
-    find: ((workflow: never, key: string, options?: never) =>
-      workflows.find(workflow, keyOf(key), options)) as WorkflowClient["find"],
-    latest: ((workflow: never, key?: string) =>
-      workflows.latest(workflow, keyOf(key))) as WorkflowClient["latest"],
-    live: ((workflow: never, key?: string) =>
-      workflows.live(workflow, keyOf(key))) as WorkflowClient["live"],
-    findByKey: (key, options) => workflows.findByKey(keyOf(key), options),
-    cancelAll: ((workflow: never, key: string) =>
-      workflows.cancelAll(workflow, keyOf(key))) as WorkflowClient["cancelAll"],
-    signalRun: ((workflow: never, key: string, label: string, payload?: unknown, options?: never) =>
-      workflows.signalRun(
-        workflow,
-        keyOf(key),
-        label,
-        payload,
-        options,
-      )) as WorkflowClient["signalRun"],
+    ...wrapStart(workflows, (start, workflow, input, options) =>
+      start(workflow, input, { ...options, key: keyOf(options?.key) }),
+    ),
+    find: keyed(workflows.find),
+    latest: keyed(workflows.latest),
+    live: keyed(workflows.live),
+    findByKey: keyed(workflows.findByKey, 0),
+    cancelAll: keyed(workflows.cancelAll),
+    signalRun: keyed(workflows.signalRun),
   };
 }
