@@ -309,15 +309,20 @@ and replayed. Declare `uploads: [...]` and read windows with `stepReadUpload`.
 
 ### A transcription step is the SDK's; the boundaries are the template's
 
-Use `stepTranscribeUpload`/`Submit`/`Poll` and `stepTranscribeSync` wrapped in
+The async leg (upload, submit, poll on a durable sleep) is
+`transcribeUploadDurably(ctx, uploadId)` (`@alexkroman1/aai/step`): it journals
+`TRANSCRIBE_DURABLY_STEPS` as three steps of the body's own `ctx`, so a resumed
+run replays the upload and the submit and polls the same job (`batch.ts`,
+`spoken-summary-workflow`). Where the body owns the poll — a batch of jobs
+(`podcast-digest-workflow`) or the sync endpoint — use
+`stepTranscribeUpload`/`Submit`/`Poll` and `stepTranscribeSync` wrapped in
 `orFail` (`orFail(stepTranscribeSubmit)`, which turns `TranscribeError`'s
-`retryable`/`retryAfter` into the engine's verdict). The SDK cannot ship a step
-— a step is what a body wraps in `ctx.step(name, fn)` — so the template owns
-which steps exist, i.e. what is journaled and what a retry repeats.
+`retryable`/`retryAfter` into the engine's verdict), and keep upload and submit
+as separate steps so a submit retry does not re-upload the file.
 
-- Keep upload and submit as separate steps, so a submit retry does not re-upload
-  the file.
 - `stepTranscribePoll` returns the transcript; do not fetch it again.
+- `stepTranscribeUpload` resolves `{ audioUrl, source, size }`; report the
+  `source` (the upload's `label`), never the id.
 - `meeting-recap-agent` keeps its hand-written poll on purpose (its status is a
   value its Query port and saga read); do not convert it.
 

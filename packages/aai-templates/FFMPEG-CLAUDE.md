@@ -110,35 +110,30 @@ gate short of a real build was green while every deployed run failed. When a
 rule depends on how a project's dependencies were INSTALLED, the in-tree run is
 not evidence.
 
-### A body that names `WorkflowInputOf` obliges the DEF to carry a type
+### A body names `WorkflowInputOf<typeof theInputSchema>`, never the def
 
-A workflow body should take `WorkflowInputOf<typeof theDef>` — `WorkflowBody` is
+A workflow body should take the schema's own output type — `WorkflowBody` is
 contravariant, so a body restating a WIDER shape is assignable and nothing
 warns, which is how `podcast-digest-workflow` came to re-implement six schema
-`.default()`s with `??`. But **the obvious spelling does not compile**:
-`workflow<P, R>()` infers `R` from `run`, so `typeof theDef` needs the body's
-signature and vice versa — `TS7022` against `agent.ts`, plus `TS2456`/`TS2502`
-at the body, and annotating the body's RETURN type does not break it. Two
-template groups hit this independently; the type tests miss it because every def
-there declares `run` as an inline arrow, and `sdk/workflow.ts`'s `@example` is
-`no-check`.
+`.default()`s with `??`. But **`WorkflowInputOf<typeof theDef>` does not
+compile**: `workflow()` infers the output from `run`, so `typeof theDef` needs
+the body's signature and vice versa — `TS7022` against `agent.ts`, plus
+`TS2456`/`TS2502` at the body — and annotating the def (`WorkflowDef<…>`) only
+buys it back by NAMING the output type by hand.
 
-The fix is two edits in `agent.ts`, not one — name the schema const and ANNOTATE
-the declaration:
+`WorkflowInputOf` accepts the schema directly, so name the schema const and
+point the body at THAT:
 
 ```ts
-const auditInput = z.object({ /* … */ });
-export const audit: WorkflowDef<typeof auditInput, CallAudit> =
-  workflow({ input: auditInput, run: auditFlow });
+// agent.ts
+export const auditInput = z.object({ /* … */ });
+export const audit = workflow({ input: auditInput, run: auditFlow });
+
+// workflows/audit.ts
+import type { auditInput } from "../agent.ts"; // erased at build: no runtime cycle
+export async function auditFlow(input: WorkflowInputOf<typeof auditInput>, ctx: WorkflowContext) { … }
 ```
 
-The annotation resolves without the initializer, so
-`WorkflowInputOf<typeof audit>` comes from the schema alone; the body takes it
-through a type-only import of `agent.ts`, erased at build, so there is no
-runtime cycle. The cost is that the output type must be NAMED — the trade to
-weigh per template. `podcast-digest-workflow`, `call-audit-workflow` and
-`spoken-summary-workflow` pay it, having exported that type for
-`WorkflowOutputOf` already, and it deletes five `??` fallbacks that could
-silently disagree with a `.default()`. `document-redline-workflow` does NOT
-convert: its body returns an inferred object literal, so the annotation would
-mean writing that shape out by hand.
+The def stays unannotated, so `WorkflowOutputOf<typeof audit>` is still the
+body's inferred return — nothing is restated on either side. Every workflow-app
+template is in this form.
