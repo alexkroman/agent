@@ -15,8 +15,8 @@
  * They are also the seam where a template is at its most tempting to hand-roll,
  * so what each spec really pins is that the SDK's own verdict is READ rather
  * than re-derived: `stepRequireCompleteUpload` already decided that a
- * still-arriving upload is terminal, and `throwStepError` is the line that makes
- * the engine act on it.
+ * still-arriving upload is terminal, and `orFail` is what makes the engine act
+ * on it.
  *
  * Its own file rather than more of `agent.test.ts`, which is already the longest
  * spec in `templates/` — the split is by subject, and `medication-safety-agent` and
@@ -27,17 +27,12 @@
  */
 
 import type { MediaInfo } from "@alexkroman1/aai/ffmpeg";
-import type { StepInfo, UploadSlice } from "@alexkroman1/aai/step";
+import type { UploadSlice } from "@alexkroman1/aai/step";
 import { FatalError } from "@alexkroman1/aai/step-errors";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { installStubReporter, installStubUploads } from "@alexkroman1/aai-runtime/testing/vitest";
-import { beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  attemptSuffix,
-  segmentShortfall,
-  segmentWindow,
-  transcribeSegment,
-} from "./workflows/audit.ts";
+import { installStubWorld } from "@alexkroman1/aai-runtime/testing/vitest";
+import { describe, expect, test } from "vitest";
+import { segmentShortfall, segmentWindow, transcribeSegment } from "./workflows/audit.ts";
 import { ingestRecording } from "./workflows/ingest.ts";
 import {
   BYTES_PER_SECOND,
@@ -76,9 +71,12 @@ function probed(...kinds: string[]): MediaInfo {
   return { format: "mov,mp4,m4a", streams, ...omitUndefined({ audio }), raw: {} };
 }
 
-beforeEach(() => {
-  vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
-});
+/** The store, holding `bytes` of the recording — whole unless `complete: false`. */
+function stored(bytes: Uint8Array, options: { complete?: boolean; type?: string } = {}) {
+  return installStubWorld({
+    uploads: { [UPLOAD_ID]: { bytes, name: "call.m4a", ...options } },
+  });
+}
 
 describe("an upload that is still arriving", () => {
   test("fails the run TERMINALLY rather than re-asking six times", async () => {
@@ -86,25 +84,18 @@ describe("an upload that is still arriving", () => {
     // are in would level part of a call and report success. The SDK already
     // refuses that and already carries the verdict (`retryable: false`) — but a
     // carried verdict is only read where a caller asks, and this call site sets
-    // `maxAttempts: 6`. Without `.catch(throwStepError)` in `ingest.ts` the engine
-    // would spend all six inside a millisecond on bytes that arrive on their own
-    // schedule.
-    installStubUploads({
-      [UPLOAD_ID]: { bytes: new Uint8Array(2048), name: "call.m4a", complete: false },
-    });
-    installStubReporter();
+    // `maxAttempts: 6`. Without `orFail` in `ingest.ts` the engine would spend
+    // all six inside a millisecond on bytes that arrive on their own schedule.
+    stored(new Uint8Array(2048), { complete: false });
 
     await expect(ingestRecording(UPLOAD_ID)).rejects.toBeInstanceOf(FatalError);
   });
 
   test("keeps the SDK's own sentence, which is the one naming the remedy", async () => {
-    // `throwStepError` replaces no message, deliberately: what the caller has
-    // otherwise is "the step failed", where the SDK's refusal says how many bytes
-    // landed and what to do about it.
-    installStubUploads({
-      [UPLOAD_ID]: { bytes: new Uint8Array(2048), name: "call.m4a", complete: false },
-    });
-    installStubReporter();
+    // `orFail` replaces no message, deliberately: what the caller has otherwise
+    // is "the step failed", where the SDK's refusal says how many bytes landed
+    // and what to do about it.
+    stored(new Uint8Array(2048), { complete: false });
 
     await expect(ingestRecording(UPLOAD_ID)).rejects.toThrow(/still arriving/);
   });
@@ -158,14 +149,7 @@ describe("a stored file smaller than the plan", () => {
     // plan asks for one second and twelve bytes, exactly as the rounding bug
     // produced. `stepReadUpload` clamps, so nothing throws on its own — the run
     // used to transcribe the short slice and report success.
-    installStubUploads({
-      [UPLOAD_ID]: {
-        bytes: new Uint8Array(BYTES_PER_SECOND),
-        name: "call.pcm",
-        type: "application/octet-stream",
-      },
-    });
-    installStubReporter();
+    stored(new Uint8Array(BYTES_PER_SECOND), { type: "application/octet-stream" });
     // No transcription stub, which is the other half of the claim: the step must
     // fail BEFORE it spends a request on audio it knows is incomplete.
     const overrun = { ...SEGMENT, endByte: BYTES_PER_SECOND + 12 };
@@ -193,41 +177,10 @@ describe("what the run reports about ffmpeg itself", () => {
     expect(totalFfmpegMs()).toBe(0);
   });
 
-  test("both steps materialize under ONE prefix, which is what the leak spec matches", () => {
-    // Two files write temp directories — the ingest and the narration — and each
-    // used to name the prefix itself. The spec proving nothing leaks matches
-    // directories by this string, so a rename in one file would have left the
-    // other's leaks unwatched while the test still passed.
+  test("the ingest materializes under the prefix the leak spec matches", () => {
+    // The spec proving nothing leaks matches directories by this string, so a
+    // rename in one file would leave the other's leaks unwatched while the test
+    // still passed.
     expect(TEMP_DIR.prefix).toBe("aai-call-audit-");
-  });
-});
-
-describe("the progress line while a fan-out is retrying", () => {
-  /** `stepInfo()`'s answer, as the engine publishes it mid-attempt. */
-  const attempt = (n: number): StepInfo => ({
-    name: "transcribeSegment",
-    key: `transcribeSegment!${n}`,
-    attempt: n,
-    maxAttempts: 6,
-    isLastAttempt: n === 6,
-  });
-
-  test("says nothing on a first attempt, so an ordinary run reads as it did", () => {
-    // The eval pins the whole line — `Transcribing 0:00–1:01.` — so a suffix that
-    // appeared on attempt one would be a change to the desk's narration rather
-    // than an addition to it.
-    expect(attemptSuffix(attempt(1))).toBe("");
-  });
-
-  test("names the attempt and the budget once it is really retrying", () => {
-    // A thirty-segment fan-out riding out a 429 otherwise re-prints the line it
-    // already printed, which looks exactly like a run that has stalled.
-    expect(attemptSuffix(attempt(3))).toBe(" (attempt 3 of 6)");
-  });
-
-  test("outside a step is ORDINARY and reads as `not retrying`", () => {
-    // `stepInfo()` answers `undefined` in a body, in a tool, and in a spec driving
-    // the step directly — which is what the first attempt would have said anyway.
-    expect(attemptSuffix(undefined)).toBe("");
   });
 });

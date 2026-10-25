@@ -102,14 +102,8 @@ export const BYTES_PER_SECOND =
   (ANALYSIS_FORMAT.sampleRate * ANALYSIS_FORMAT.channels * ANALYSIS_FORMAT.bitsPerSample) / 8;
 
 /**
- * Where every step of this desk materializes, as ONE value.
- *
- * Both steps that touch a file call `withTempDir` — the ingest to hold the
- * recording and the levelled PCM, the narration to hold the WAV and the MP3 —
- * and each had written the prefix itself. That is a string two files have to
- * agree on and nothing checked: the spec that proves nothing is LEAKED matches
- * directories by this prefix, so renaming it in one file would leave the other's
- * leaks unwatched while the test still passed.
+ * Where the ingest materializes — the recording and the levelled PCM — as a
+ * value the spec that proves nothing is LEAKED can match directories by.
  *
  * Typed as the SDK's own options rather than inferred, because the annotation is
  * what says the rest of the bag exists and is deliberately left at its default.
@@ -221,7 +215,7 @@ export type Segment = {
 /**
  * Raised when a probe or an analysis pass produced something this module cannot
  * USE — a `loudnorm` block with a renamed key, a silence log cut off mid-write,
- * a file ffprobe found no audio track in. Always terminal: `analyse` in
+ * a file ffprobe found no audio track in. Always terminal: `orFatal` in
  * `ingest.ts` is what turns one into a `FatalError`, on the argument that every
  * retry runs the same binary over the same file and reads the same answer.
  */
@@ -245,7 +239,7 @@ export class MediaAnalysisError extends Error {
  * ffmpeg's own complaint about a filter graph, which names the filter rather
  * than the file.
  *
- * A {@link MediaAnalysisError}, so `analyse` in `ingest.ts` makes it TERMINAL:
+ * A {@link MediaAnalysisError}, so `orFatal` in `ingest.ts` makes it TERMINAL:
  * the same file has no audio track on every attempt.
  *
  * The stream KINDS are listed rather than counted, because "found video" is what
@@ -656,40 +650,6 @@ export function planSegments(silences: readonly Silence[], totalBytes: number): 
     });
   }
   return segments;
-}
-
-/**
- * Pass three: the spoken summary, mastered.
- *
- * The other direction, and the reason this template runs ffmpeg twice rather than
- * once. `stepSpeak` answers with a 24 kHz WAV, which is correct and is not a
- * deliverable: it is uncompressed (a two-minute summary is 5.8 MB, which a page
- * downloads before it plays anything) and its level is whatever the voice service
- * chose, so a summary played after the recording it summarizes is jarringly
- * louder or quieter.
- *
- * So: level it to the same {@link LOUDNESS_TARGET_LUFS} as everything else, and
- * encode it as MP3. One `loudnorm` pass rather than two here, deliberately — a
- * two-pass measure is worth a decode on a recording of unknown provenance, and
- * this is 90 seconds of synthesis whose level is already consistent.
- * `-q:a 4` is VBR at roughly 128 kbit/s, which is transparent for one voice and
- * about a fortieth of the WAV.
- */
-export function masterArgs(input: string, output: string): string[] {
-  return [
-    ...ffmpegBaseArgs(),
-    "-i",
-    input,
-    "-af",
-    `loudnorm=I=${LOUDNESS_TARGET_LUFS}:TP=${LOUDNESS_TRUE_PEAK_DB}:LRA=${LOUDNESS_RANGE_LU}`,
-    "-c:a",
-    "libmp3lame",
-    "-q:a",
-    "4",
-    "-ac",
-    "1",
-    output,
-  ];
 }
 
 /** How much of a recording is speech, as a fraction — the one line a summary needs. */

@@ -54,13 +54,10 @@
  * ## What it needs
  *
  * - **`ASSEMBLYAI_API_KEY` in the agent env** — `.env` under `aai dev`,
- *   `aai secret put ASSEMBLYAI_API_KEY` once deployed. `requiredEnv` below is what
- *   makes a deploy check for it rather than letting the first run find out. One key
- *   covers transcription, the model and the voice alike.
- * - **A `DATABASE_URL`** — a secret when deployed, `.env` under `aai dev`, and a
- *   Postgres you bring since the platform provisions none. REQUIRED, unlike most
- *   workflow apps: an upload's record is a row, and this desk both reads an
- *   upload and writes two.
+ *   `aai secret put ASSEMBLYAI_API_KEY` once deployed. It is `workflowApp()`'s
+ *   default `requiredEnv`, so a deploy checks for it; one key covers
+ *   transcription, the model and the voice alike. (ffmpeg cannot be declared
+ *   there: a binary on `PATH` is not an environment variable.)
  * - **ffmpeg** — every deployed guest's image installs it (and `ffprobe` with it).
  *   Under `aai dev` it is whatever is on `PATH`, or what `AAI_FFMPEG_PATH` /
  *   `AAI_FFPROBE_PATH` name. That is the one place dev/prod parity is partial, so
@@ -87,9 +84,8 @@
 
 import { workflow, workflowApp } from "@alexkroman1/aai";
 import { ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
-import type { WorkflowDef } from "@alexkroman1/aai/workflow-api";
 import { z } from "zod";
-import { auditFlow, type CallAudit } from "./workflows/audit.ts";
+import { auditFlow } from "./workflows/audit.ts";
 
 /**
  * The voices the form offers: the SDK's library voices, as the tuple `z.enum`
@@ -100,15 +96,10 @@ import { auditFlow, type CallAudit } from "./workflows/audit.ts";
 const VOICES = ASSEMBLYAI_TTS_VOICES;
 
 /**
- * The run input, as its own const.
- *
- * Named rather than inline because {@link audit} carries an explicit type, and
- * that annotation is what lets `workflows/audit.ts` name
- * `WorkflowInputOf<typeof audit>` for its body's parameter: the body's own
- * signature would otherwise be part of what infers this declaration's type, and
- * TypeScript refuses the cycle (`TS7022`).
+ * The run input. Named so the body can take `WorkflowInputOf<typeof auditInput>`
+ * — the schema's own output.
  */
-const auditInput = z.object({
+export const auditInput = z.object({
   // A plain string, because an upload id is what the run really receives. What
   // makes it a file picker rather than a text box is the `uploads` line below.
   //
@@ -123,14 +114,13 @@ const auditInput = z.object({
 });
 
 /**
- * The declaration: schema, description, and the directive body.
+ * The declaration: schema, description, and the body.
  *
  * Exported so `WorkflowOutputOf<typeof audit>` names the output type in one place —
  * including from `client.tsx`, where `import type` is erased and so bundles nothing
- * server-side — and so `workflows/audit.ts` can name `WorkflowInputOf<typeof audit>`
- * for the body's parameter.
+ * server-side.
  */
-export const audit: WorkflowDef<typeof auditInput, CallAudit> = workflow({
+export const audit = workflow({
   description: "Level a call recording, transcribe it at its pauses, and audit what was said",
   input: auditInput,
   // The one line that makes the form take a file: `<WorkflowFields>` renders a
@@ -145,12 +135,4 @@ export default workflowApp({
   description:
     "Turns a recorded call into a written and spoken audit — headline, risks and follow-up actions",
   workflows: { audit },
-  // Checked at deploy time, so a missing key is a warning naming it rather than a run
-  // that fails on its third step. A workflow app declares no providers, so this is the
-  // only thing that can name the credential its steps read.
-  //
-  // ffmpeg is NOT here and cannot be: `requiredEnv` checks the agent's environment,
-  // and a binary on `PATH` is not an environment variable. The deployed guest always
-  // has one; under `aai dev` the failure names its own remedy.
-  requiredEnv: ["ASSEMBLYAI_API_KEY"],
 });

@@ -56,19 +56,13 @@
  * `ffmpeg-verdict.ts` because of it, and `throwFfmpegStepError` — which reaches
  * no `node:` builtin at all — is what dissolved the boundary.
  *
- * `analyse` stays here for the other half of that rule: everything IT names is
- * pure, so it may survive into the bundle.
  */
 
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { describeMedia, probeMedia, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
 import { pcmDurationMs, stepReport, stepRequireCompleteUpload } from "@alexkroman1/aai/step";
-import {
-  throwFatalStepError,
-  throwFfmpegStepError,
-  throwStepError,
-} from "@alexkroman1/aai/step-errors";
+import { orFail, orFatal, throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
 import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
 import { formatBytes, formatDuration, plural } from "@alexkroman1/aai/utils";
 import {
@@ -85,6 +79,17 @@ import {
   TEMP_DIR,
   totalFfmpegMs,
 } from "./media.ts";
+
+/**
+ * Run a `media.ts` reader, making "I cannot read this analysis" TERMINAL.
+ *
+ * A {@link MediaAnalysisError} means ffmpeg SUCCEEDED and printed something
+ * this desk does not understand — a version whose `loudnorm` renamed a key, an
+ * argv that lost `-loglevel info` — and every retry runs the same binary with
+ * the same argv. `orFatal` converts only that class; a bug in the parser stays
+ * plainly retryable.
+ */
+const analysed = <T>(read: () => T): T => orFatal(read, { when: MediaAnalysisError });
 
 /**
  * How long any one ffmpeg invocation may run before it is killed.
@@ -116,10 +121,8 @@ export type Ingested = {
   /** What the recording measured before it was levelled. */
   loudness: Loudness;
   /**
-   * Wall clock the two `loudnorm` passes spent, in milliseconds.
-   *
-   * The decoder's own cost, which is what makes the run's `elapsedMs` readable —
-   * see {@link totalFfmpegMs}.
+   * Wall clock the two `loudnorm` passes spent, in milliseconds — the decoder's
+   * own cost, which is what makes the run's `elapsedMs` readable.
    */
   ffmpegMs: number;
   /** Every pause long enough to cut in. The fan-out's cut points come from these. */
@@ -146,18 +149,12 @@ export type Ingested = {
 // nothing. Removing them is what took the file under the floor: a directive
 // propping a coverage number up is the least useful statement in the tree.
 export async function ingestRecording(uploadId: string): Promise<Ingested> {
-  // `stepRequireCompleteUpload`, not `stepUploadInfo`: `size` is the readable PREFIX, so
-  // an upload still arriving would be copied short and levelled as the whole call.
-  // `.catch(throwStepError)` is not decoration: `stepRequireCompleteUpload`
-  // refuses a still-arriving upload with an `UploadIncompleteError` that already
-  // CARRIES `retryable: false`, and nothing reads a carried verdict unless a
-  // caller asks. Thrown raw it is a plain failure, so the engine's unclassified
-  // default applies and this call site's `maxAttempts: 6` re-asks the store six
-  // times inside a millisecond for bytes that arrive on their own schedule.
-  // `throwStepError` turns the carried verdict into the `FatalError` the SDK
-  // meant, with its own sentence — which names the remedy — intact.
-  const stored = await stepRequireCompleteUpload(uploadId).catch(throwStepError);
-  await stepReport(`Reading ${stored.name || uploadId} (${formatBytes(stored.size)}).`);
+  // `stepRequireCompleteUpload`, not `stepUploadInfo`: `size` is the readable
+  // PREFIX, so an upload still arriving would be copied short and levelled as
+  // the whole call. `orFail` is what makes its refusal FATAL rather than six
+  // re-asks inside a millisecond for bytes that arrive on their own schedule.
+  const stored = await orFail(stepRequireCompleteUpload)(uploadId);
+  await stepReport(`Reading ${stored.label} (${formatBytes(stored.size)}).`);
 
   return await withTempDir(async (dir) => {
     const source = join(dir, "source");
@@ -187,7 +184,7 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
     // off the track itself rather than off an optional chain, so `unknown` here
     // means "ffprobe named no codec" and no longer doubles as "there was
     // nothing to name".
-    const track = analyse(() => requireAudioStream(probed));
+    const track = analysed(() => requireAudioStream(probed));
     const codec = track.codec ?? "unknown";
     await stepReport(
       `Levelling ${describeMedia(probed)} to ${ANALYSIS_FORMAT.sampleRate / 1000} kHz mono.`,
@@ -198,7 +195,7 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
     const measured = await runFfmpeg(measureLoudnessArgs(source), {
       timeoutMs: FFMPEG_TIMEOUT_MS,
     }).catch(throwFfmpegStepError);
-    const loudness = analyse(() => parseLoudness(measured.stderr));
+    const loudness = analysed(() => parseLoudness(measured.stderr));
 
     // Pass two: apply the measurement, find the pauses, write the audio.
     const levelled = await runFfmpeg(normalizeArgs(source, loudness, normalized, silenceLog), {
@@ -217,13 +214,13 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
     // recording with no pause in it leaves an EMPTY log rather than no log. A
     // missing file here is therefore a real failure and not a case to tolerate.
     const log = await readFile(silenceLog, "utf-8");
-    const silences = analyse(() => parseSilences(log, durationMs / 1000));
+    const silences = analysed(() => parseSilences(log, durationMs / 1000));
 
     const written = await writeUploadFromFile(normalized, {
       // Named after the original, so a download reads as the recording it came
       // from. `.pcm` because that is what it is — raw samples with no header, and
       // a `.wav` name on a headerless file is one no player will open.
-      name: `${baseName(stored.name || uploadId)}.pcm`,
+      name: `${baseName(stored.label)}.pcm`,
       // Not `audio/wav`: the type is served back on the byte route, and claiming a
       // container this file does not have would be a lie a browser acts on. Not
       // `audio/L16` either, which looks right and is not — that type is defined as
@@ -241,7 +238,7 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
 
     return {
       audio: written.id,
-      source: stored.name || uploadId,
+      source: stored.label,
       codec,
       durationMs,
       bytes,
@@ -250,26 +247,6 @@ export async function ingestRecording(uploadId: string): Promise<Ingested> {
       silences,
     };
   }, TEMP_DIR);
-}
-
-/**
- * Run a `media.ts` reader, turning "I cannot read this analysis" into a terminal
- * failure.
- *
- * Fatal rather than retryable, and the distinction is real: a
- * {@link MediaAnalysisError} means ffmpeg SUCCEEDED and printed something this
- * desk does not understand — a version whose `loudnorm` renamed a key, an argv
- * that lost `-loglevel info`. Every retry runs the same binary with the same argv
- * and prints the same thing, so the retries only delay a person reading the
- * message.
- */
-export function analyse<T>(read: () => T): T {
-  try {
-    return read();
-  } catch (err: unknown) {
-    if (err instanceof MediaAnalysisError) return throwFatalStepError(err);
-    throw err;
-  }
 }
 
 /** A filename without its extension, so a new one can be put on. */

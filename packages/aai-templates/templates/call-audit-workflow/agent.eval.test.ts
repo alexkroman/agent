@@ -409,7 +409,7 @@ describeWorkflowEvalWithFfmpeg(
       expect(output.audioBytes).toBeLessThan(wavBytes / 4);
       // The run says both numbers, which is what makes the trade visible.
       expect(run.reported.at(-1)).toMatch(
-        /^Recorded a \d+s audit with voice [\w-]+ — .* of MP3, from .* of WAV\.$/,
+        /^Recorded a \d+s audit with voice [\w-]+ — .* of MP3\.$/,
       );
 
       // The model really read the transcript, and the audit really reached the

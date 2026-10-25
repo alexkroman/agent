@@ -9,14 +9,11 @@
  * - The PURE helpers, pulled out of the flow for exactly this reason.
  * - The STEPS, directly. A step is an ordinary exported async function, so its
  *   HTTP handling, its partial-failure policy and its `FatalError` guards are
- *   all reachable — `installStubStepFetch` answers the network and
- *   `installStubGateway` answers the model.
+ *   all reachable — `installStubWorld` answers the provider, the model and the
+ *   rest of the network.
  * - The BODY, twice. `createWorkflowContext` records what it asked for (the digest
  *   loop, the shrinking pending set, the sleep BETWEEN digests and never after
- *   the last), and `runWorkflow` runs it on the real replay engine — which is
- *   what this file used to say a unit test could not do, on the ground that a
- *   body "is only durable once the Workflow DevKit's build has transformed it".
- *   That stopped being true when the DevKit was replaced.
+ *   the last), and `runWorkflow` runs it on the real replay engine.
  *
  * The cases worth having are the ones where a mistake is SILENT: a schema that
  * accepts a webhook pointing anywhere, a Slack payload in the shape the other
@@ -29,17 +26,13 @@ import {
   createWorkflowContext,
   parseSchemaInput,
   runWorkflow,
+  type StubTranscribeOptions,
   schemaInputIssues,
   stubFetchRoutes,
-  stubGatewayRoute,
   type WorkflowContextRecorder,
 } from "@alexkroman1/aai-runtime/testing";
-import {
-  installStubGateway,
-  installStubStepFetch,
-  installStubTranscribe,
-} from "@alexkroman1/aai-runtime/testing/vitest";
-import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
+import { installStubStepFetch, installStubWorld } from "@alexkroman1/aai-runtime/testing/vitest";
+import { describe, expect, onTestFinished, test } from "vitest";
 import agentDef, { dailyDigest } from "./agent.ts";
 import {
   dailyDigestFlow,
@@ -102,30 +95,6 @@ const slackInput = (webhookUrl: string, episodes: EpisodeDigest[] = [EPISODE]) =
   episodes,
   digestNumber: 1,
   totalDigests: 2,
-});
-
-describe("the declaration", () => {
-  test("is a workflow app with one workflow and a static page", () => {
-    // Not the agent's name: renaming it is an invited edit, and pinning the
-    // literal here would fail a build in somebody else's project.
-    expect(agentDef.name).toBeTruthy();
-    // `toContain` rather than an exact key list: adding a second workflow is an
-    // invited edit and must not redden a test the author did not write. The
-    // NAME is still pinned, deliberately — the page starts a run by this
-    // string, so renaming the key is a runtime 400 rather than a compile
-    // error, and this pin is the only thing that says so. Rename it here and
-    // in `client.tsx` together.
-    expect(Object.keys(agentDef.workflows ?? {})).toContain("dailyDigest");
-    expect(agentDef.workflows?.dailyDigest).toBe(dailyDigest);
-  });
-
-  test("names the one credential its steps read", () => {
-    // A workflow app declares no providers, so nothing else in the config can
-    // name this — which is what makes a deploy able to check for it.
-    // `toContain`, so a step of your own that reads a second credential can be
-    // declared beside this one without failing a test you did not write.
-    expect(agentDef.requiredEnv).toContain("ASSEMBLYAI_API_KEY");
-  });
 });
 
 describe("input schema", () => {
@@ -773,7 +742,9 @@ describe("discoverEpisodes", () => {
  * these cases are, is exactly what the fake is shaped for.
  */
 describe("transcribing one episode", () => {
-  beforeEach(() => vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key"));
+  /** The provider, with the credential the step reads seeded. */
+  const provider = (options: StubTranscribeOptions = {}) =>
+    installStubWorld({ transcribe: options }).provider;
 
   const EPISODE_IN = {
     id: "episode-1",
@@ -795,7 +766,7 @@ describe("transcribing one episode", () => {
   test("submits the audio and keeps the id the rest of the run polls", async () => {
     // The id is MINTED by the fake, so a spec asserting a run polled the job it
     // submitted has a value to write down.
-    installStubTranscribe({ jobIdPrefix: "t-" });
+    provider({ jobIdPrefix: "t-" });
 
     expect(await submitTranscript(EPISODE_IN)).toMatchObject({
       transcriptStatus: "submitted",
@@ -805,9 +776,7 @@ describe("transcribing one episode", () => {
 
   /** The partial-failure policy: this-episode-is-broken degrades, it does not throw. */
   test("degrades a terminal submit failure to an unavailable episode", async () => {
-    installStubTranscribe({
-      failure: { leg: "submit", status: 400, message: "audio_url is not reachable" },
-    });
+    provider({ failure: { leg: "submit", status: 400, message: "audio_url is not reachable" } });
 
     const job = await submitTranscript(EPISODE_IN);
 
@@ -817,12 +786,12 @@ describe("transcribing one episode", () => {
 
   /** The other half: a transport problem is the DevKit's to retry. */
   test("re-throws a retryable submit failure instead of degrading it", async () => {
-    installStubTranscribe({ failure: { leg: "submit", status: 503 } });
+    provider({ failure: { leg: "submit", status: 503 } });
     await expect(submitTranscript(EPISODE_IN)).rejects.toThrow();
   });
 
   test("returns the job unchanged while the provider is still working", async () => {
-    installStubTranscribe({ pendingPolls: 1 });
+    provider({ pendingPolls: 1 });
     const job = submitted("t-1");
 
     // Unchanged, so `waitForTranscripts` can keep it in `pending` without a
@@ -831,7 +800,7 @@ describe("transcribing one episode", () => {
   });
 
   test("reads the transcript once the provider is done", async () => {
-    installStubTranscribe({ text: "Otters use tools.", durationSec: 61 });
+    provider({ text: "Otters use tools.", durationSec: 61 });
 
     // The whole `Transcript`, the provider's own duration included — which is
     // what the digest entry reports and the page prints.
@@ -844,7 +813,7 @@ describe("transcribing one episode", () => {
   test("degrades a job the provider gave up on", async () => {
     // A 200 with `status: "error"` — the provider ANSWERED, and the answer is
     // no, which is terminal however long you poll.
-    installStubTranscribe({ jobError: "corrupt media" });
+    provider({ jobError: "corrupt media" });
 
     expect(await pollTranscript(submitted("t-1"))).toMatchObject({
       transcriptStatus: "unavailable",
@@ -853,17 +822,17 @@ describe("transcribing one episode", () => {
   });
 
   test("passes an already-unavailable episode straight through without a request", async () => {
-    const provider = installStubTranscribe();
+    const calls = provider();
     const job = { ...EPISODE_IN, transcriptStatus: "unavailable" as const, reason: "no audio" };
 
     expect(await pollTranscript(job)).toBe(job);
-    expect(provider.calls).toHaveLength(0);
+    expect(calls).toHaveLength(0);
   });
 
   test("summarizes a finished transcript into the digest entry", async () => {
-    installStubGateway(
-      '{"summary":"Otters are clever.","keyPoints":["They use tools","They float"]}',
-    );
+    installStubWorld({
+      model: '{"summary":"Otters are clever.","keyPoints":["They use tools","They float"]}',
+    });
 
     expect(
       await summarizeTranscript({
@@ -1086,57 +1055,46 @@ describe("the run is DURABLE", () => {
 
   /**
    * The feed, the provider, the model and Slack, behind ONE published
-   * `stepFetch`.
-   *
-   * Every step's HTTP goes through the slot, the model call included, so a
-   * gateway stub over `globalThis.fetch` beside these routes would be bypassed.
-   * `stubGatewayRoute` is the composition for it — the same note
-   * `link-digest-workflow/agent.test.ts` carries.
-   *
+   * `stepFetch`: the model is the world's own leg, and everything else is a
+   * `pages` handler — the provider by hand rather than `transcribe`, because
    * `polls` is how many `GET /v2/transcript/:id` answers say "not yet" before
    * the job is reported done, which is how a case decides whether the run has
    * to sit through the poll cadence at all.
    */
   function stubWorld({ polls = 0 }: { polls?: number } = {}) {
-    const model = stubGatewayRoute(SUMMARY);
     const seen = { feeds: 0, submits: 0, slack: 0, polls: 0 };
-    installStubStepFetch((request) => {
-      const routed = model.route(request);
-      if (routed) return routed;
-      if (request.url.includes("hooks.slack.com")) {
-        seen.slack += 1;
-        return { status: 200, body: "ok" };
-      }
-      if (request.url.includes("/v2/transcript")) {
-        if (request.method === "POST") {
-          seen.submits += 1;
-          return { status: 200, body: { id: "t_1", status: "queued" } };
+    const { model } = installStubWorld({
+      model: SUMMARY,
+      pages: (request) => {
+        if (request.url.includes("hooks.slack.com")) {
+          seen.slack += 1;
+          return { status: 200, body: "ok" };
         }
-        seen.polls += 1;
-        return seen.polls <= polls
-          ? { status: 200, body: { id: "t_1", status: "processing" } }
-          : { status: 200, body: { id: "t_1", status: "completed", text: "Otters use tools." } };
-      }
-      seen.feeds += 1;
-      return { status: 200, body: FEED, headers: { "Content-Type": "application/xml" } };
+        if (request.url.includes("/v2/transcript")) {
+          if (request.method === "POST") {
+            seen.submits += 1;
+            return { status: 200, body: { id: "t_1", status: "queued" } };
+          }
+          seen.polls += 1;
+          return seen.polls <= polls
+            ? { status: 200, body: { id: "t_1", status: "processing" } }
+            : { status: 200, body: { id: "t_1", status: "completed", text: "Otters use tools." } };
+        }
+        seen.feeds += 1;
+        return { status: 200, body: FEED, headers: { "Content-Type": "application/xml" } };
+      },
     });
     return { model, seen };
   }
-
-  beforeEach(() => vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key"));
 
   test("a one-digest run ends without sleeping, and posts once", async () => {
     // The negative half of the schedule claim, and the cheap one: a run that has
     // delivered everything it owes should END, not sleep for a day and then end.
     const world = stubWorld();
-    const run = await runWorkflow(
-      dailyDigest,
-      { ...SCHEDULE, daysToRun: 1 },
-      { name: "dailyDigest" },
-    );
+    const run = await runWorkflow(agentDef, "dailyDigest", { ...SCHEDULE, daysToRun: 1 });
 
     expect(run.status).toBe("completed");
-    expect(run.output?.digestsSent).toBe(1);
+    expect(run.output).toMatchObject({ digestsSent: 1 });
     expect(run.deliveries).toBe(1);
     expect(run.wakeAt).toBeUndefined();
     expect(world.seen.slack).toBe(1);
@@ -1146,11 +1104,7 @@ describe("the run is DURABLE", () => {
     // The transcription is already paid for; a resume that submitted again would
     // buy it twice and get a different job id.
     const world = stubWorld({ polls: 1 });
-    const run = await runWorkflow(
-      dailyDigest,
-      { ...SCHEDULE, daysToRun: 1 },
-      { name: "dailyDigest" },
-    );
+    const run = await runWorkflow(agentDef, "dailyDigest", { ...SCHEDULE, daysToRun: 1 });
 
     expect(run.status).toBe("running");
     expect(run.wakeAt).toBeGreaterThan(Date.now());
@@ -1163,7 +1117,7 @@ describe("the run is DURABLE", () => {
 
     await run.advanceSleep();
     expect(run.status).toBe("completed");
-    expect(run.output?.digestsSent).toBe(1);
+    expect(run.output).toMatchObject({ digestsSent: 1 });
     // ONE submit across two walks — the first is read back out of the journal.
     expect(world.seen.submits).toBe(1);
     expect(world.seen.polls).toBe(2);
@@ -1172,11 +1126,7 @@ describe("the run is DURABLE", () => {
   test("sleeps the SCHEDULE between digests, then runs the second one", async () => {
     const world = stubWorld();
     const started = Date.now();
-    const run = await runWorkflow(
-      dailyDigest,
-      { ...SCHEDULE, daysToRun: 2 },
-      { name: "dailyDigest" },
-    );
+    const run = await runWorkflow(agentDef, "dailyDigest", { ...SCHEDULE, daysToRun: 2 });
 
     // Digest one is posted and the run is parked on the interval — two hours,
     // which nothing here waits for.
@@ -1187,7 +1137,7 @@ describe("the run is DURABLE", () => {
 
     await run.advanceSleep();
     expect(run.status).toBe("completed");
-    expect(run.output?.digestsSent).toBe(2);
+    expect(run.output).toMatchObject({ digestsSent: 2 });
     expect(run.deliveries).toBe(2);
     // TWO posts, and the second digest did its own discovery — the loop's second
     // turn is `discoverEpisodes#1`, a different journal entry from the first, so
@@ -1204,22 +1154,23 @@ describe("the run is DURABLE", () => {
     // provider time; a resume must reach Slack without paying for either again.
     const world = stubWorld();
     const run = await runWorkflow(
-      dailyDigest,
+      agentDef,
+      "dailyDigest",
       { ...SCHEDULE, daysToRun: 1 },
-      { name: "dailyDigest", crashAt: "postDigest" },
+      { crashAt: "postDigest" },
     );
 
     expect(run.crashed).toBe(true);
     expect(world.seen.slack).toBe(0);
     expect(world.seen.submits).toBe(1);
-    expect(world.model.calls).toHaveLength(1);
+    expect(world.model).toHaveLength(1);
 
     await run.restart();
     expect(run.status).toBe("completed");
-    expect(run.output?.digestsSent).toBe(1);
+    expect(run.output).toMatchObject({ digestsSent: 1 });
     expect(world.seen.slack).toBe(1);
     // Neither the provider nor the model was asked a second time.
     expect(world.seen.submits).toBe(1);
-    expect(world.model.calls).toHaveLength(1);
+    expect(world.model).toHaveLength(1);
   });
 });
