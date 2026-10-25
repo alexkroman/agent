@@ -7,13 +7,14 @@
  * three things that can go quietly wrong with one is a claim a spec can make
  * about the DECLARATION rather than about any tool:
  *
- * 1. **The projection agrees with the default.** `slot.projected()` is the
- *    frame a page renders before the first tool call, and it must be the view
- *    of the default AS A SESSION STORES IT — `create()` with the slot's `after`
- *    hook and caps applied, which is what a fresh session installs. An `empty`
- *    seed that differs from the default, or a `create()` that hands back a
- *    SHARED object, drifts the two apart. A default already past one of its
- *    caps is reported under the cap it restates (invariant 3).
+ * 1. **The projection agrees with the blank it renders.** `slot.projected()`
+ *    is the frame a page renders before the first tool call, and it must be
+ *    the view of the slot's BLANK as a session would store it — `empty()` for
+ *    a seeded slot, else `create()`, with the slot's `after` hook and caps
+ *    applied. A `projected()` that applies the hook differently from a store,
+ *    or a `create()` that hands back a SHARED object, drifts the two apart. A
+ *    default already past one of its caps is reported under the cap it
+ *    restates (invariant 3).
  * 2. **Sessions do not share state.** A write through one context is invisible
  *    through another; a slot whose default is a module-level object leaks the
  *    first session's writes into the second.
@@ -98,7 +99,7 @@ export function expectSlotContract<K extends string, T, V>(
   }
 }
 
-/** Invariant 1: the empty frame is the view of the default, and the default is fresh per call. */
+/** Invariant 1: the empty frame is the view of the blank as stored, and the default is fresh per call. */
 function assertProjectionAgrees<K extends string, T, V>(slot: SessionSlot<K, T, V>): void {
   const { projected } = slot;
   if (projected.key !== slot.key) {
@@ -116,24 +117,20 @@ function assertProjectionAgrees<K extends string, T, V>(slot: SessionSlot<K, T, 
     );
   }
   const empty = projected();
-  // The default as STORED — `after` and caps applied, through a fresh session
-  // — rather than `create()` raw: `projected()` applies both to its own frame,
-  // so a slot whose `after` derives a field would otherwise fail here on every
-  // declaration that has one.
-  const viewed = projected(storedDefault(slot));
+  // The blank as STORED — `empty()` for a seeded slot (the frame a page is
+  // meant to see before the seed), else `create()`, with `after` and caps
+  // applied through a real `set` — rather than the raw factory: `projected()`
+  // applies both to its own frame, so a slot whose `after` derives a field, or
+  // one declaring `empty`, is held to what it actually renders.
+  const blank = slot.empty ?? slot.create;
+  const viewed = projected(slot.set(createToolContext(), blank()));
   if (!sameJson(empty, viewed)) {
     throw new Error(
-      `expectSlotContract("${slot.key}"): projected() is not the view of the default — the frame ` +
-        `a page renders first differs from the stored default's projection. Rendered ` +
-        `${describe(empty)}; the default projects to ${describe(viewed)}. An \`empty\` seed that ` +
-        "differs from the default is the usual cause.",
+      `expectSlotContract("${slot.key}"): projected() is not the view of the slot's blank — the ` +
+        `frame a page renders first differs from the stored ${slot.empty ? "`empty`" : "default"}'s ` +
+        `projection. Rendered ${describe(empty)}; the blank projects to ${describe(viewed)}.`,
     );
   }
-}
-
-/** The default as a fresh session stores it: `create()`, then `after`, then caps. */
-function storedDefault<K extends string, T, V>(slot: SessionSlot<K, T, V>): T {
-  return slot.snapshot(createToolContext());
 }
 
 /** Invariant 2: a write through one session is invisible through another. */

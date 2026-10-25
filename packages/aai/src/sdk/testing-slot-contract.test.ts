@@ -44,11 +44,44 @@ describe("expectSlotContract", () => {
     ).not.toThrow();
   });
 
-  test("an `empty` seed that differs from the default drifts the empty frame from the default's projection", () => {
+  test("a slot declaring `empty` is held to its empty frame, not to the seeded default", () => {
     const log = sessionSlot("log", (): Log => ({ lines: ["seed"], total: 0 }), {
       empty: (): Log => ({ lines: [], total: 0 }),
+      view: (value) => ({ count: value.lines.length }),
     });
-    expect(() => expectSlotContract(log)).toThrow("projected() is not the view of the default");
+    expect(() =>
+      expectSlotContract(log, {
+        write: (draft) => {
+          draft.lines.push("more");
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  test("a seeded slot whose `after` derives a field passes too — the hook applies to the blank", () => {
+    const log = sessionSlot("log", (): Log => ({ lines: ["seed"], total: -1 }), {
+      empty: (): Log => ({ lines: [], total: -1 }),
+      after: (value) => {
+        value.total = value.lines.length;
+      },
+      view: (value) => ({ count: value.lines.length, total: value.total }),
+    });
+    expect(() => expectSlotContract(log)).not.toThrow();
+  });
+
+  test("a projection that disagrees with the stored blank is named", () => {
+    // A `projected` that was rebuilt by hand, projecting a different frame.
+    const log = sessionSlot("log", (): Log => ({ lines: [], total: 0 }));
+    const broken = {
+      ...log,
+      projected: Object.assign(
+        (value?: unknown) => (value === undefined ? { lines: ["ghost"], total: 0 } : value),
+        log.projected,
+      ),
+    };
+    expect(() => expectSlotContract(broken)).toThrow(
+      "projected() is not the view of the slot's blank",
+    );
   });
 
   test("a default already past its restated cap is reported under that cap", () => {
