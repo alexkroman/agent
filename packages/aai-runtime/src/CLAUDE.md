@@ -150,12 +150,11 @@ Rules:
 multiplexed platform socket, see
 [`PLATFORM-SOCKET-CLAUDE.md`](../../aai-server/PLATFORM-SOCKET-CLAUDE.md)),
 `blobFetch` (window bytes) and `modelFetch` (model providers, no connection
-cap); `_egress-pool.ts` builds them and `step-fetch.ts`
-takes a third. **`globalThis.fetch` is banned here by `guard-invariants`
-rule 29.** Both default to HTTP/1.1: under HTTP/2 concurrent requests share one
-flow-control window and a capacity limit arrives as a status-less reset
-(`sdk/step-fetch.ts` has the measurement). `AAI_EGRESS_RPC_HTTP2` switches the
-RPC pool only.
+cap); `_egress-pool.ts` builds them and `step-fetch.ts` takes a third.
+**`globalThis.fetch` is banned here by `guard-invariants` rule 29.** Both
+default to HTTP/1.1: under HTTP/2 concurrent requests share one flow-control
+window and a capacity limit arrives as a status-less reset (`sdk/step-fetch.ts`
+has the measurement). `AAI_EGRESS_RPC_HTTP2` switches the RPC pool only.
 
 - **Per PROCESS, a lazy singleton**; `closeEgressFetch()` RESETS rather than
   poisons it.

@@ -124,7 +124,7 @@ const nextUlid = monotonicFactory(createPooledRandomFraction());
  */
 export function createPooledRandomFraction(
   poolBytes = 1024,
-  fill: (pool: Uint8Array) => void = (pool) => crypto.getRandomValues(pool),
+  fill: (pool: Uint8Array<ArrayBuffer>) => void = (pool) => crypto.getRandomValues(pool),
 ): () => number {
   const pool = new Uint8Array(poolBytes);
   let next = poolBytes;
