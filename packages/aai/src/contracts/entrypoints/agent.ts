@@ -100,10 +100,15 @@ export {
   type AgentDef,
   type AgentGuardrail,
   type AgentGuardrails,
+  // `agent({ promptContext })` and `agent({ listing })`: the two halves `AgentDef` is
+  // cut from, and the env a `workflowApp()` requires by default.
+  type AgentInstructions,
+  type AgentListing,
   type AgentMode,
   type AgentModelTuning,
   type AgentObservation,
   type AgentParams,
+  type AgentPromptContext,
   type AgentSystemPrompt,
   type AgentVoicePresets,
   type AssemblyAIPipelineOptions,
@@ -127,6 +132,7 @@ export {
   type UsageLimits,
   VOICE_PRESETS,
   type VoicePresetName,
+  WORKFLOW_APP_REQUIRED_ENV,
   type WorkflowAppAgentParams,
   workflowApp,
 } from "../../index.ts";

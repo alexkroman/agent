@@ -35,6 +35,9 @@ export {
   UploadIncompleteError,
   type UploadInfo,
   type UploadRange,
+  // What a STORE answers — `UploadInfo` minus the derived `label`. A claim about
+  // the store, so it is this capability's whichever subpath re-exports it.
+  type UploadRecord,
   type UploadSlice,
   type WriteUploadOptions,
 } from "../../sdk/step-barrel.ts";

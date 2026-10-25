@@ -69,7 +69,16 @@ type ChatMessage = {
 };
 
 // @public @input
-type ClientTheme = {
+type ClientTheme = ClientThemeTokens | ClientThemePreset;
+
+// @public @input
+type ClientThemePreset = {
+    primary: string;
+    mode?: "dark" | "light";
+};
+
+// @public @input
+type ClientThemeTokens = {
     bg?: string;
     primary?: string;
     text?: string;
@@ -166,10 +175,10 @@ type ToolCallOutcome = {
 // @internal
 export const ToolConfigContext: Context<ToolDisplayConfig>;
 
-// @public
+// @public @input
 type ToolDisplayConfig = Record<string, {
-    icon?: string;
-    label?: string;
+    icon?: string | undefined;
+    label?: string | undefined;
 }>;
 
 // @internal

@@ -19,6 +19,8 @@ export type AnyWorkflowDef<R = unknown> = {
     uploads?: readonly string[];
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
+    describeRun?(run: never): string;
+    cancelNote?: string | undefined;
 };
 
 // @public @sealed
@@ -28,6 +30,7 @@ export interface ClientConfigResponse {
     page: "voice" | "static";
     sessionToken?: string | undefined;
     sessionUrl?: string | undefined;
+    tools?: Record<string, ToolUi> | undefined;
 }
 
 // @public
@@ -38,6 +41,12 @@ export function createAgentClient(options: WorkflowApiClientOptions): AgentClien
 
 // @public
 export function createWorkflowApiClient(options: WorkflowApiClientOptions): WorkflowApi;
+
+// @public
+export const DEFAULT_SIGNAL_HOLD_MS: number;
+
+// @public
+export function describeRun(def: AnyWorkflowDef | undefined, run: WorkflowRunSnapshot): string;
 
 // @public @sealed
 export type EventStreamFrame = {
@@ -59,7 +68,7 @@ export type FindOptions = {
 };
 
 // @public
-type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S extends undefined ? Record<string, never> : never;
 
 // @public
 export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
@@ -68,11 +77,21 @@ export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is T
 type Literal<S extends string> = string extends S ? never : S;
 
 // @public @input
+export type PollFirstWait = {
+    waitFor: string;
+    timeoutMs: number;
+    schema?: StandardSchemaV1 | undefined;
+};
+
+// @public @input
 export type PollOptions<T> = {
     everyMs: number;
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    first?: PollFirstWait | undefined;
+    slowAfterMs?: number | undefined;
+    onSlow?: string | undefined;
 };
 
 // @public @sealed
@@ -80,6 +99,7 @@ export type PollResult<T> = {
     value: T;
     done: boolean;
     checks: number;
+    woken?: boolean;
 };
 
 // @public
@@ -98,6 +118,11 @@ type SayOnClientNotice = {
     retryAfterMs?: number | undefined;
     signal?: AbortSignal | undefined;
     maxAttempts?: number | undefined;
+};
+
+// @public @input
+export type SignalOptions = {
+    holdMs?: number;
 };
 
 // @public @input
@@ -149,6 +174,7 @@ export type StartOptions = {
 // @public @input
 export type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
+    maxWaits?: number;
     schema?: S | undefined;
 };
 
@@ -171,17 +197,18 @@ export type TerminalWorkflowRun<R = unknown> = Extract<WorkflowRunSnapshot<R>, {
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
+// @public @input
+type ToolUi = {
+    icon?: string | undefined;
+    label?: string | undefined;
+};
+
 // @public
 export type UploadBody = Blob | ArrayBuffer | ArrayBufferView | string;
 
 // @public @sealed
-export type UploadInfo = {
-    id: string;
-    name: string;
-    type: string;
-    size: number;
-    complete: boolean;
-    ranges?: readonly UploadRange[];
+export type UploadInfo = UploadRecord & {
+    label: string;
 };
 
 // @public @input
@@ -214,6 +241,16 @@ export type UploadProgress = {
 export type UploadRange = {
     start: number;
     end: number;
+};
+
+// @public @sealed
+export type UploadRecord = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+    complete: boolean;
+    ranges?: readonly UploadRange[];
 };
 
 // @public @sealed
@@ -258,7 +295,7 @@ export type WorkflowApi = {
     followOutput(runId: string, options?: WorkflowFollowOutputOptions): AsyncIterable<unknown>;
     wake(runId: string, options?: WakeUpOptions & WorkflowApiCallOptions): Promise<number>;
     uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
-    uploadInfo(id: string, options?: WorkflowApiCallOptions): Promise<UploadInfo>;
+    uploadInfo(id: string, options?: WorkflowApiCallOptions): Promise<UploadRecord>;
     download(id: string, options?: WorkflowApiCallOptions): Promise<Blob>;
 };
 
@@ -286,6 +323,10 @@ export type WorkflowClient = {
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    latest<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key?: string): Promise<WorkflowRunSnapshot<R> | undefined>;
+    latest(workflow: string, key?: string): Promise<WorkflowRunSnapshot | undefined>;
+    live<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key?: string): Promise<WorkflowRunSnapshot<R> | undefined>;
+    live(workflow: string, key?: string): Promise<WorkflowRunSnapshot | undefined>;
     findByKey(key: string, options?: FindByKeyOptions): Promise<WorkflowRunSnapshot[]>;
     cancelAll<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string): Promise<number>;
     cancelAll(workflow: string, key: string): Promise<number>;
@@ -293,7 +334,9 @@ export type WorkflowClient = {
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
-    signal(token: string, payload?: unknown): Promise<boolean>;
+    signal(token: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
+    signalRun<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, label: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
+    signalRun(workflow: string, key: string, label: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
@@ -305,6 +348,7 @@ export type WorkflowClient = {
 export type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
+    readonly key: string | undefined;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     now(): Promise<number>;
@@ -317,6 +361,24 @@ export type WorkflowContext = {
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
+    report<const Name extends string>(name: Name & Literal<Name>, line: string): Promise<void>;
+    signalToken(label: string): string;
+    waitForSignal<S extends StandardSchemaV1>(label: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
+    waitForSignal<S extends StandardSchemaV1>(label: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    waitForSignal<T = unknown>(label: string): Promise<T>;
+    waitForSignal<T = unknown>(label: string, options: WaitForOptions): Promise<T | undefined>;
+};
+
+// @public @sealed
+export type WorkflowDeclaration<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+    description?: string;
+    input?: P;
+    uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
+    onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
+    describeRun?(run: WorkflowRunSnapshot<R>): string;
+    cancelNote?: string | undefined;
+    body(run: WorkflowBody<InferSchemaOutput<P>, R>): WorkflowDef<P, R>;
 };
 
 // @public @input
@@ -327,6 +389,8 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
     onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
+    describeRun?(run: WorkflowRunSnapshot<R>): string;
+    cancelNote?: string | undefined;
 };
 
 // @public @sealed
@@ -361,6 +425,8 @@ export type WorkflowGetOptions = {
 // @public
 export type WorkflowInputOf<D> = D extends {
     readonly run: (input: infer I, ctx: never) => unknown;
+} ? I : D extends StandardSchemaV1<unknown, infer O> ? O : D extends {
+    readonly body: (run: (input: infer I, ctx: unknown) => unknown) => unknown;
 } ? I : never;
 
 // @public
@@ -376,6 +442,8 @@ export type WorkflowRunBase = {
     createdAt: number;
     key?: string;
     label?: string;
+    startedAt?: number;
+    settledAt?: number;
 };
 
 // @public @input

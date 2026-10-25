@@ -33,7 +33,10 @@ export {
   describeTurn,
   type EvalToolCall,
   type EvalTurn,
+  // `EvalTurn.workflowStarts` and the reader that picks a def's run id off a turn.
+  type EvalWorkflowStart,
   errorsIn,
+  evalRunOf,
   expectCalled,
   expectToolBeforeSpeech,
   lastStateIn,

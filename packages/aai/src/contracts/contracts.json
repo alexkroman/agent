@@ -150,8 +150,8 @@
     "dropped": {}
   },
   "testing": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "testing-client": {
@@ -160,6 +160,11 @@
     "dropped": {}
   },
   "testing-deploy": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "testing-events": {
     "current": 1,
     "supported": [1],
     "dropped": {}
@@ -180,8 +185,8 @@
     "dropped": {}
   },
   "tool": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "transcribe": {
@@ -215,8 +220,8 @@
     "dropped": {}
   },
   "workflow-api": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   }
 }

@@ -909,6 +909,18 @@ Re-exports [failable](index.md#failable)
 
 ***
 
+### INSTRUCTION\_KEY
+
+Re-exports [INSTRUCTION_KEY](index.md#instruction_key)
+
+***
+
+### instructionOf
+
+Re-exports [instructionOf](index.md#instructionof)
+
+***
+
 ### isRecord
 
 Re-exports [isRecord](index.md#isrecord)
@@ -969,6 +981,12 @@ Re-exports [safeJsonParse](index.md#safejsonparse)
 
 ***
 
+### stripInstruction
+
+Re-exports [stripInstruction](index.md#stripinstruction)
+
+***
+
 ### toolFailure
 
 Re-exports [toolFailure](index.md#toolfailure-1)
@@ -996,6 +1014,18 @@ Re-exports [ToolRefusal](index.md#toolrefusal)
 ### ToolRefusalReason
 
 Re-exports [ToolRefusalReason](index.md#toolrefusalreason)
+
+***
+
+### withInstruction
+
+Re-exports [withInstruction](index.md#withinstruction-1)
+
+***
+
+### WithInstruction
+
+Re-exports [WithInstruction](index.md#withinstruction)
 
 ***
 

@@ -53,10 +53,10 @@ export type SlotValueOf<S extends SessionSlot<string, unknown, unknown>> =
 export type SlotDraftOf<S extends SessionSlot<string, unknown, unknown>> =
   S extends SessionSlot<string, infer T, unknown> ? T : never;
 
-/** A gated tool's declared output: the success value in the envelope, or a failure. */
 /**
- * What a slot tool declaring a dialog gate resolves: the dialog envelope over the
- * body's success value, or the refusal/failure. Named because every gated
+ * A gated tool's declared output — what a slot tool declaring a dialog gate
+ * resolves: the dialog envelope over the body's success value, or the
+ * refusal/failure. Named because every gated
  * overload of {@link SessionSlot.tool} and {@link SessionSlot.updateTool} answers it.
  *
  * @sealed

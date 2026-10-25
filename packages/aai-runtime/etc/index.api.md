@@ -16,7 +16,7 @@ import type { ModelMessage } from 'ai';
 import type { PrepareStepFunction } from 'ai';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { ReadyConfig } from '@alexkroman1/aai/protocol';
-import type { SessionCall } from '@alexkroman1/aai';
+import type { SessionCallInput } from '@alexkroman1/aai';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
@@ -26,6 +26,7 @@ import { ToolCallRepairFunction } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
 import { ToolRegistry } from '@alexkroman1/aai/manifest';
 import { ToolSet } from 'ai';
+import type { ToolUi } from '@alexkroman1/aai';
 import type { TtsProvider } from '@alexkroman1/aai/tts';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 
@@ -410,6 +411,7 @@ export type RuntimeServerOptions = {
     env?: Record<string, string>;
     hostBaseAgent?: AgentDef;
     greeting?: string;
+    tools?: Record<string, ToolUi> | undefined;
     uploadBroker?: string;
     upgrade?: ServerUpgradeHook | undefined;
     request?: ServerRequestHook | undefined;
@@ -478,7 +480,7 @@ export type SessionStartOptions = {
     clientLocation?: string;
     clientId?: string;
     clientPhone?: string;
-    call?: SessionCall;
+    call?: SessionCallInput;
     logContext?: Record<string, string>;
     onOpen?: () => void;
     onClose?: () => void;

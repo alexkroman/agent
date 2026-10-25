@@ -252,7 +252,7 @@ export { TELEPHONY_CARRIERS } from "./sdk/telephony-config.ts";
 // The per-tool display hints `GET /client-config` carries, built by every
 // server holding the agent definition — the guest harness among them, which is
 // why this is on the zod-free subpath (`sdk/tool-ui.ts`).
-export { toolUiMap } from "./sdk/tool-ui.ts";
+export { type ToolUiSource, toolUiMap } from "./sdk/tool-ui.ts";
 /**
  * The SERVER's half of the workflow HTTP API.
  *

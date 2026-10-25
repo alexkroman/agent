@@ -147,6 +147,7 @@ export type TranscribeDurablyOptions = {
  * refuses a non-literal name at compile time, and the names here are this
  * module's own literals. Method syntax, so a `WorkflowContext` is assignable.
  *
+ * @input
  * @public
  */
 export type TranscribeDurablyHost = {

@@ -52,6 +52,12 @@ export class HttpError extends Error {
 }
 
 // @public
+export const INSTRUCTION_KEY = "$instruction";
+
+// @public
+export function instructionOf(result: unknown): string | undefined;
+
+// @public
 export function isRecord(value: unknown): value is Record<string, unknown>;
 
 // @public
@@ -143,6 +149,12 @@ export type SpokenErrorReasonOptions = {
 };
 
 // @public
+export function stripInstruction<T extends Record<string, unknown>>(result: T): Omit<T, typeof INSTRUCTION_KEY>;
+
+// @public (undocumented)
+export function stripInstruction(result: unknown): unknown;
+
+// @public
 export type ToolFailure = {
     error: string;
 };
@@ -160,6 +172,14 @@ export function toolRefusal(reason: ToolRefusalReason, message: string): ToolRef
 
 // @public
 export type ToolRefusalReason = "unknown_tool" | "invalid_arguments" | "cancelled" | "persona" | "dialog" | "roster" | (string & {});
+
+// @public @sealed
+export type WithInstruction<T extends Record<string, unknown>> = T & {
+    readonly [INSTRUCTION_KEY]: string;
+};
+
+// @public
+export function withInstruction<T extends Record<string, unknown>>(value: T, instruction: string): WithInstruction<T>;
 
 // @public
 export const withLock: <T>(lock: (key: string, options?: KeyedLockOptions) => Promise<() => void>, key: string, fn: () => Promise<T>, options?: KeyedLockOptions) => Promise<T>;

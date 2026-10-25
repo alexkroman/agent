@@ -152,7 +152,7 @@
     "packages/aai/src/sdk/_testing-tool-results.ts": 1,
     "packages/aai/src/sdk/_tuning-schema.ts": 19,
     "packages/aai/src/sdk/_upload-retry.ts": 1,
-    "packages/aai/src/sdk/agent-config.ts": 39,
+    "packages/aai/src/sdk/agent-config.ts": 38,
     "packages/aai/src/sdk/agent-guardrails.ts": 1,
     "packages/aai/src/sdk/agent-mode.ts": 1,
     "packages/aai/src/sdk/agent-model-tuning.ts": 1,
@@ -179,7 +179,6 @@
     "packages/aai/src/sdk/providers/tts/rime.ts": 2,
     "packages/aai/src/sdk/session-event-map.ts": 1,
     "packages/aai/src/sdk/tool-messages.ts": 14,
-    "packages/aai/src/sdk/tool-schema.ts": 6,
     "packages/aai/src/sdk/type-schemas.ts": 7,
     "packages/aai/src/sdk/voice-presets.ts": 1,
     "packages/aai/src/sdk/workflow-run.ts": 1

@@ -23,6 +23,12 @@
 
 export {
   DEFAULT_STEP_MAX_ATTEMPTS,
+  // The two-phase declaration (`workflow({...}).body(...)`), `ctx.poll`'s `first`
+  // wait, and `describeRun(def, run)` — `WorkflowDef.describeRun`'s helper for a
+  // route handler. All three are what a `workflows/*.ts` module names, so they
+  // join the declaring surface rather than `workflow-api`.
+  describeRun,
+  type PollFirstWait,
   // `WorkflowContext.sleep`'s options. Durable sleep is what makes a replay engine
   // worth having, so its option bag is part of the declaring surface.
   // `ctx.poll`'s bag and result: a durable check-and-wait loop is written in a
@@ -52,6 +58,7 @@ export {
   // Workflow DevKit's `"use step"` directive — the durability an author reaches
   // for is a method call now, so it is part of the declaring surface.
   type WorkflowContext,
+  type WorkflowDeclaration,
   type WorkflowDef,
   // `onFailure` on a workflow: declared in the same literal as `run`.
   type WorkflowFailureContext,

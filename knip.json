@@ -107,7 +107,10 @@
         // report for that slice of the authoring API. "Unused" in knip's sense
         // and load-bearing in the only sense that matters here. A `--bump
         // --retain` that writes a compatibility fixture owes an entry for it.
-        "src/contracts/entrypoints/*.ts"
+        "src/contracts/entrypoints/*.ts",
+        // The frozen compatibility examples: each is a retained epoch's evidence,
+        // compiled by `pnpm typecheck` and imported by nothing.
+        "src/contracts/compatibility/*/*.ts"
       ]
     },
     "packages/aai-runtime": {
@@ -117,8 +120,10 @@
         "**/*-test-utils.ts",
         "src/integration/**/*.integration.test.ts",
         "**/*.test.ts",
-        // The capability contracts — same reason as `packages/aai` above.
+        // The capability contracts — same reason as `packages/aai` above, and
+        // the frozen compatibility examples `--bump --retain` obliges.
         "src/contracts/entrypoints/*.ts",
+        "src/contracts/compatibility/*/*.ts",
         // The tool fixtures `tools-dir.test.ts` scans. Nothing imports them by
         // name and nothing is meant to — a tool is reached by being IN the
         // directory, which is the property under test.

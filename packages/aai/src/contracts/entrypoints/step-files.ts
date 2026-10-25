@@ -36,8 +36,17 @@
 export {
   type ReadUploadToFileOptions,
   readUploadToFile,
+  // `transcodeUpload` and `stepSpeakToUpload`: ffmpeg over an upload, and
+  // synthesized speech stored as one.
+  type SpeakMaster,
+  type SpeakToUploadOptions,
+  type SpokenUpload,
   STEP_FILE_READ_CONCURRENCY,
   STEP_FILE_WINDOW_BYTES,
+  stepSpeakToUpload,
+  type TranscodedUpload,
+  type TranscodeUploadOptions,
+  transcodeUpload,
   type WithTempDirOptions,
   type WriteUploadFromFileOptions,
   withTempDir,

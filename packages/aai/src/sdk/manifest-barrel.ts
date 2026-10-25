@@ -60,7 +60,7 @@ export { type ToolSchema, ToolSchemaSchema } from "./tool-schema.ts";
 // `toolUiMap` beside the schemas it mirrors: the pre-connection client config's
 // `tools` field is built from the agent's toolsets by every server that holds
 // the definition. Also on `/internal`, zod-free, for the guest harness.
-export { toolUiMap } from "./tool-ui.ts";
+export { type ToolUiSource, toolUiMap } from "./tool-ui.ts";
 // The ONE shape every tool source hands the runtime — see `sdk/toolset.ts`.
 export {
   agentToolsets,

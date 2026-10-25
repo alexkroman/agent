@@ -27,17 +27,184 @@ import { type ToolMessages, ToolMessagesSchema } from "./tool-messages.ts";
  *
  * @internal
  */
-export const ToolUiSchema = z
+export const ToolUiSchema: z.ZodType<ToolUi> = z
   .object({ icon: z.string().optional(), label: z.string().optional() })
   .strict();
 
+// The annotation is the type zod infers, written out — a published declaration
+// with an explicit type keeps the API hash off the compiler
+// (`check:api-shape`'s isolatedDeclarations ratchet), and `messages` has to be
+// the full `ZodObject` rather than a `ZodType<ToolMessages>`, because a reader
+// of `HostConfigSchema` (`/protocol`) is promised `.shape` on it.
 /**
  * Zod schema for {@link ToolSchema}. `parameters` must be a valid JSON Schema
  * object — the Vercel AI SDK wraps it via `jsonSchema()`.
  *
  * @internal
  */
-export const ToolSchemaSchema = z.object({
+export const ToolSchemaSchema: z.ZodObject<
+  {
+    type: z.ZodLiteral<"function">;
+    name: z.ZodString;
+    description: z.ZodString;
+    parameters: z.ZodRecord<z.ZodString, z.ZodUnknown>;
+    messages: z.ZodOptional<
+      z.ZodObject<
+        {
+          start: z.ZodOptional<
+            z.ZodArray<
+              z.ZodObject<
+                {
+                  content: z.ZodString;
+                  when: z.ZodOptional<
+                    z.ZodArray<
+                      z.ZodObject<
+                        {
+                          arg: z.ZodString;
+                          op: z.ZodOptional<
+                            z.ZodEnum<{
+                              eq: "eq";
+                              gt: "gt";
+                              gte: "gte";
+                              lt: "lt";
+                              lte: "lte";
+                              neq: "neq";
+                            }>
+                          >;
+                          value: z.ZodUnion<
+                            readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]
+                          >;
+                        },
+                        z.core.$strip
+                      >
+                    >
+                  >;
+                  blocking: z.ZodOptional<z.ZodBoolean>;
+                },
+                z.core.$strip
+              >
+            >
+          >;
+          delayed: z.ZodOptional<
+            z.ZodArray<
+              z.ZodObject<
+                {
+                  content: z.ZodString;
+                  when: z.ZodOptional<
+                    z.ZodArray<
+                      z.ZodObject<
+                        {
+                          arg: z.ZodString;
+                          op: z.ZodOptional<
+                            z.ZodEnum<{
+                              eq: "eq";
+                              gt: "gt";
+                              gte: "gte";
+                              lt: "lt";
+                              lte: "lte";
+                              neq: "neq";
+                            }>
+                          >;
+                          value: z.ZodUnion<
+                            readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]
+                          >;
+                        },
+                        z.core.$strip
+                      >
+                    >
+                  >;
+                  afterMs: z.ZodNumber;
+                },
+                z.core.$strip
+              >
+            >
+          >;
+          complete: z.ZodOptional<
+            z.ZodArray<
+              z.ZodObject<
+                {
+                  content: z.ZodString;
+                  when: z.ZodOptional<
+                    z.ZodArray<
+                      z.ZodObject<
+                        {
+                          arg: z.ZodString;
+                          op: z.ZodOptional<
+                            z.ZodEnum<{
+                              eq: "eq";
+                              gt: "gt";
+                              gte: "gte";
+                              lt: "lt";
+                              lte: "lte";
+                              neq: "neq";
+                            }>
+                          >;
+                          value: z.ZodUnion<
+                            readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]
+                          >;
+                        },
+                        z.core.$strip
+                      >
+                    >
+                  >;
+                  role: z.ZodOptional<
+                    z.ZodEnum<{
+                      assistant: "assistant";
+                      system: "system";
+                    }>
+                  >;
+                },
+                z.core.$strip
+              >
+            >
+          >;
+          failed: z.ZodOptional<
+            z.ZodArray<
+              z.ZodObject<
+                {
+                  content: z.ZodString;
+                  when: z.ZodOptional<
+                    z.ZodArray<
+                      z.ZodObject<
+                        {
+                          arg: z.ZodString;
+                          op: z.ZodOptional<
+                            z.ZodEnum<{
+                              eq: "eq";
+                              gt: "gt";
+                              gte: "gte";
+                              lt: "lt";
+                              lte: "lte";
+                              neq: "neq";
+                            }>
+                          >;
+                          value: z.ZodUnion<
+                            readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]
+                          >;
+                        },
+                        z.core.$strip
+                      >
+                    >
+                  >;
+                  role: z.ZodOptional<
+                    z.ZodEnum<{
+                      assistant: "assistant";
+                      system: "system";
+                    }>
+                  >;
+                },
+                z.core.$strip
+              >
+            >
+          >;
+        },
+        z.core.$strip
+      >
+    >;
+    ui: z.ZodOptional<z.ZodType<ToolUi>>;
+  },
+  z.core.$strip
+> = z.object({
   type: z.literal("function"),
   name: z.string().min(1),
   description: z.string().min(1),

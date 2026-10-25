@@ -50,8 +50,9 @@
  * off so the test-runner dependency is opt-in.
  *
  * **It is the head of a FAMILY.** The fakes for workflows, devices, the network,
- * step slots and the deployed def are `testing-workflow`, `testing-client`,
- * `testing-network`, `testing-steps` and `testing-deploy` — split off when this
+ * step slots, the deployed def and session events are `testing-workflow`,
+ * `testing-client`, `testing-network`, `testing-steps`, `testing-deploy` and
+ * `testing-events` — split off when this
  * contract reached 116 names, because each moves for a reason unrelated to a
  * tool's context and every move renumbered the one contract every template
  * spec imports. `aai-runtime`'s `testing-stubs` and `eval-stubs` doors mirror
@@ -72,6 +73,9 @@ export {
   eventsOf,
   expectDialogOk,
   expectDialogRefused,
+  // `toolNameOf(def)` beside `toolOf`; `expectSlotContract` asserts the three
+  // invariants of a slot's DECLARATION in one call.
+  expectSlotContract,
   expectToolOk,
   isEvent,
   parseSchemaInput,
@@ -80,6 +84,7 @@ export {
   runTool,
   type SaidLine,
   type SentEvent,
+  type SlotContractOptions,
   type StubDelegate,
   type StubDelegateCall,
   type StubDelegateReply,
@@ -98,6 +103,7 @@ export {
   type ToolContextOverrides,
   type ToolRunner,
   toolInputIssues,
+  toolNameOf,
   toolOf,
   toolRunner,
 } from "../../sdk/testing-barrel.ts";

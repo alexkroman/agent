@@ -42,14 +42,11 @@ export type SessionEventFields<K extends SessionEventType> = {
 }[K];
 
 /**
- * The positions after the type: the fields when the event has any, and the
- * `meta` overrides. An event that is only its envelope (`reply.completed`)
- * takes no fields argument at all, so `sessionEvent("reply.completed")` is
- * the whole call rather than `sessionEvent("reply.completed", {})`.
- */
-/**
  * The trailing parameters of {@link sessionEvent}: `[meta?]` for an envelope-only
- * event, `[fields, meta?]` for one with a payload.
+ * event, `[fields, meta?]` for one with a payload. An event that is only its
+ * envelope (`reply.completed`) takes no fields argument at all, so
+ * `sessionEvent("reply.completed")` is the whole call rather than
+ * `sessionEvent("reply.completed", {})`.
  *
  * @public
  */

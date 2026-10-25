@@ -1,0 +1,9 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "testing-events",
+  "epoch": 1,
+  "rule": 3,
+  "sha256": "fe1d34d5c48a8f089ff0fb2d1ea934a2ddb1bdf85407cb20c5652eed4ee81fc6",
+  "exports": ["FiredEvent", "SessionEventFields", "SessionEventRest", "fireEvent", "sessionEvent"],
+  "rollup": "ea2a76f2e5cdfeb9b778bcbb96c780b04fd6edc6e8b45492bfe17b066ff50ea0"
+}

@@ -527,7 +527,6 @@
     "StepTextOwnerOptions",
     "StepTextOwnerResult",
     "StepTransportError",
-    "StepWebhookUrlOptions",
     "TRANSCRIBE_DURABLY_STEPS",
     "TRANSCRIBE_MODELS",
     "TRANSCRIBE_POLL_EVERY_MS",

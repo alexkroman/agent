@@ -36,4 +36,8 @@ export {
   stubGatewayRoute,
   stubStepFetch,
 } from "../../sdk/testing-barrel.ts";
-export { installStubGateway, installStubStepFetch } from "../../sdk/testing-vitest-barrel.ts";
+export {
+  type InstallStubGatewayOptions,
+  installStubGateway,
+  installStubStepFetch,
+} from "../../sdk/testing-vitest-barrel.ts";

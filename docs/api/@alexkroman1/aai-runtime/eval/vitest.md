@@ -216,7 +216,9 @@ describeTextEval(agentDef, (test) => {
 function describeWorkflowEval(
    agent: AgentDef, 
    define: (test: EvalWorkflowTest) => void, 
-   options?: Omit<EvalWorkflowsOptions, "agent">
+   options?: Omit<EvalWorkflowsOptions, "agent"> & {
+  steps?: EvalStepsOptions;
+}
 ): void;
 ```
 
@@ -240,7 +242,9 @@ callback as jest's `done`). Do not tidy either.
 
 ##### options?
 
-`Omit`\<[`EvalWorkflowsOptions`](../eval.md#evalworkflowsoptions), `"agent"`\>
+`Omit`\<[`EvalWorkflowsOptions`](../eval.md#evalworkflowsoptions), `"agent"`\> & \{
+  `steps?`: [`EvalStepsOptions`](#evalstepsoptions);
+\}
 
 #### Returns
 
@@ -879,6 +883,7 @@ Every call, in order — the same log [stubDelegate](../testing.md#stubdelegate-
 type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
   network?:   | EvalNetwork
      | (() => EvalNetwork);
+  steps?: EvalStepsOptions;
   workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
 };
 ```
@@ -929,6 +934,21 @@ use a factory for that — and state carried from one repeat into the next
 makes the second repeat measure the first. Mutually exclusive with
 `fetch`, which it replaces.
 
+##### steps?
+
+```ts
+readonly optional steps?: EvalStepsOptions;
+```
+
+The STEP fetch every case's workflow steps dial, scripted — routes, an
+optional hold on the first answer, and a drain at case end: the harness
+releases the hold and `settleAll()`s the case's workflow app before the
+routes are unpublished, so no run outlives its fakes. See
+[EvalStepsOptions](#evalstepsoptions). Installed afresh per case and per repeat; the
+session's own model traffic stays on the global `fetch`, so a live case
+still measures the agent. Mutually exclusive with `network` and
+`workflowOptions.stepFetch`, which answer the same requests.
+
 ##### workflowOptions?
 
 ```ts
@@ -953,7 +973,7 @@ What [describeTextEval](#describetexteval) takes beyond the agent.
 
 ```ts
 type EvalCaseOptions = {
-  call?: SessionCall | null;
+  call?: SessionCallInput | null;
   clientId?: string | null;
   live?: boolean;
   network?:   | EvalNetwork
@@ -974,7 +994,7 @@ What a case gets to say about how it should be run.
 ##### call?
 
 ```ts
-readonly optional call?: SessionCall | null;
+readonly optional call?: SessionCallInput | null;
 ```
 
 This case's placed phone call, over the suite's — what `sessionContext`
@@ -1102,6 +1122,128 @@ How the suite is running, and why.
 
 ***
 
+### EvalSteps
+
+```ts
+type EvalSteps = {
+  held: boolean;
+  hits: readonly FetchRouteHit[];
+  requests: readonly FetchRouteRequest[];
+  release: void;
+};
+```
+
+**`Sealed`**
+
+What a case is handed as `ctx.steps`.
+
+#### Methods
+
+##### release()
+
+```ts
+release(): void;
+```
+
+Let the held request answer. Idempotent; the harness calls it at case end.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### held
+
+```ts
+readonly held: boolean;
+```
+
+Whether a request is parked on the gate right now.
+
+##### hits
+
+```ts
+readonly hits: readonly FetchRouteHit[];
+```
+
+Every step request as it was ANSWERED, with its outcome and status —
+`stubFetchRoutes`' own log, which records a request once it has resolved,
+so a held one is not here until released.
+
+##### requests
+
+```ts
+readonly requests: readonly FetchRouteRequest[];
+```
+
+Every step request as it ARRIVED, in order — a held one included, which is
+what makes "the run is waiting on the provider" a claim about this list.
+
+***
+
+### EvalStepsOptions
+
+```ts
+type EvalStepsOptions = {
+  drain?: boolean;
+  hold?:   | "first"
+     | "none"
+     | ((request: FetchRouteRequest) => boolean);
+  routes:   | FetchRouteTable
+     | readonly FetchRouteHandler[];
+};
+```
+
+**`Input`**
+
+The `steps` option: the routes a case's step HTTP is answered from, and
+whether the first answer is HELD.
+
+#### Properties
+
+##### drain?
+
+```ts
+readonly optional drain?: boolean;
+```
+
+Release the gate and `settleAll()` the case's workflow app when the case
+ends, so no run outlives its routes. Defaults to `true`; `false` for a
+case that drains by hand or means to leave a run abandoned (the app's
+`close()` still warns).
+
+##### hold?
+
+```ts
+readonly optional hold?: 
+  | "first"
+  | "none"
+  | ((request: FetchRouteRequest) => boolean);
+```
+
+Park the FIRST answered request until the case calls `steps.release()`
+(or ends), so a run is observably still in flight: a durable `sleep` is
+skipped in an eval, and an unheld run burns its whole poll loop in
+milliseconds. `"first"` holds the first request any route answered; a
+predicate holds the first request it matches (the first `GET`, say).
+Defaults to `"none"`.
+
+##### routes
+
+```ts
+readonly routes: 
+  | FetchRouteTable
+  | readonly FetchRouteHandler[];
+```
+
+What a step's `stepFetch` is answered from — a `stubFetchRoutes` table,
+or an ordered handler list (how `stubGatewayRoute`'s `route` composes).
+The STEP fetch only: a live case's own model traffic stays on the global.
+A request no route answers is a finding and rejects naming it.
+
+***
+
 ### EvalTest
 
 ```ts
@@ -1172,6 +1314,7 @@ type EvalTestContext = {
   mode: EvalMode;
   network: EvalNetwork | undefined;
   session: EvalSession;
+  steps: EvalSteps | undefined;
   workflowClient: WorkflowClient | undefined;
   workflows: EvalWorkflows | undefined;
 };
@@ -1260,6 +1403,17 @@ readonly session: EvalSession;
 ```
 
 Open for this case, closed after it.
+
+##### steps
+
+```ts
+readonly steps: EvalSteps | undefined;
+```
+
+The case's scripted step HTTP, when the suite passed `steps`: its request
+log, whether a request is held, and `release()` — which the harness calls
+at case end anyway, before draining the workflow app. `undefined` in a
+suite given none.
 
 ##### workflowClient
 
@@ -1426,6 +1580,7 @@ Declare one workflow eval case. The app is opened for it and closed after it.
 type EvalWorkflowTestContext = {
   app: EvalWorkflows;
   mode: EvalMode;
+  steps: EvalSteps | undefined;
 };
 ```
 
@@ -1454,6 +1609,15 @@ Which mode this run got.
 Unlike a voice case, a workflow case is EXPECTED to branch on it: it is what
 decides whether to install a fake for a provider a step would otherwise
 really dial.
+
+##### steps
+
+```ts
+readonly steps: EvalSteps | undefined;
+```
+
+The case's scripted step HTTP, when the suite passed `steps` — see
+`DescribeEvalOptions.steps`; `undefined` in a suite given none.
 
 ***
 
@@ -2152,6 +2316,12 @@ Re-exports [EvalRoute](../eval.md#evalroute)
 
 ***
 
+### evalRunOf
+
+Re-exports [evalRunOf](../eval.md#evalrunof)
+
+***
+
 ### EvalRunOptions
 
 Re-exports [EvalRunOptions](../eval.md#evalrunoptions)
@@ -2245,6 +2415,12 @@ Re-exports [EvalWorkflows](../eval.md#evalworkflows)
 ### EvalWorkflowsOptions
 
 Re-exports [EvalWorkflowsOptions](../eval.md#evalworkflowsoptions)
+
+***
+
+### EvalWorkflowStart
+
+Re-exports [EvalWorkflowStart](../eval.md#evalworkflowstart)
 
 ***
 
