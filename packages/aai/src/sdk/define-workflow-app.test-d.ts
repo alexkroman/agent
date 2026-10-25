@@ -5,12 +5,15 @@
  * does not have. Split from `define.test-d.ts` at the test-file length cap.
  */
 import { expectTypeOf, test } from "vitest";
+import { z } from "zod";
 import type { AgentAccepts } from "./_test-utils.ts";
-import type { AgentParams, workflowApp } from "./define.ts";
+import type { ModeAgentDef } from "./agent-params.ts";
+import { type AgentParams, agent, workflowApp } from "./define.ts";
 import type { LlmProvider, S2sProvider } from "./providers.ts";
 import type { StateProjection } from "./session-state.ts";
 import type { AgentDef } from "./types.ts";
-import type { WorkflowDeclaration } from "./workflow.ts";
+import { type WorkflowDeclaration, workflow } from "./workflow.ts";
+import type { WorkflowOutputOf } from "./workflow-readings.ts";
 
 /**
  * The workflow-app arm — the fourth, and the only one keyed on the FRONT DOOR
@@ -143,7 +146,8 @@ test("a workflow app accepts only the fields a workflow app has", () => {
  * second shape.
  */
 test("workflowApp() returns an AgentDef and takes no page field", () => {
-  expectTypeOf<ReturnType<typeof workflowApp>>().toEqualTypeOf<AgentDef>();
+  expectTypeOf<ReturnType<typeof workflowApp>>().toExtend<AgentDef>();
+  expectTypeOf<ReturnType<typeof workflowApp>["mode"]>().toEqualTypeOf<"workflow-app">();
   expectTypeOf<Parameters<typeof workflowApp>[0]>().not.toHaveProperty("page");
   expectTypeOf<Parameters<typeof workflowApp>[0]>().toHaveProperty("workflows");
 });
@@ -168,6 +172,42 @@ test("the workflow-app member and workflowApp() do not have the session fields",
   type AppParams = Parameters<typeof workflowApp>[0];
   expectTypeOf<"maxSteps" extends keyof AppParams ? true : false>().toEqualTypeOf<false>();
   expectTypeOf<"systemPrompt" extends keyof AppParams ? true : false>().toEqualTypeOf<false>();
+});
+
+/**
+ * The declared `workflows` map SURVIVES on the result — literal keys, each
+ * def's own type — so a page names a workflow through the agent
+ * (`useWorkflowSubmit<typeof app>("digest")`) rather than importing the def.
+ * `AgentDef` itself keeps the open map, which is right for every other reader.
+ */
+test("agent() and workflowApp() keep the declared workflows map as declared", () => {
+  const digest = workflow({
+    input: z.object({ url: z.string() }),
+    output: z.object({ headline: z.string() }),
+    run: async () => ({ headline: "" }),
+  });
+  const other = workflow({ run: async () => 1 });
+  const app = workflowApp({ name: "A", workflows: { digest, other } });
+  expectTypeOf<keyof (typeof app)["workflows"]>().toEqualTypeOf<"digest" | "other">();
+  expectTypeOf<(typeof app)["workflows"]["digest"]>().toEqualTypeOf<typeof digest>();
+  expectTypeOf<WorkflowOutputOf<(typeof app)["workflows"]["digest"]>>().toEqualTypeOf<{
+    headline: string;
+  }>();
+  expectTypeOf(app).toExtend<AgentDef>();
+  expectTypeOf(app.mode).toEqualTypeOf<"workflow-app">();
+  // Every voice member keeps it too.
+  const voice = agent({ name: "V", workflows: { digest } });
+  expectTypeOf<keyof (typeof voice)["workflows"]>().toEqualTypeOf<"digest">();
+  expectTypeOf(voice).toExtend<ModeAgentDef<"pipeline">>();
+  const text = agent({ name: "T", mode: "text", workflows: { other } });
+  expectTypeOf<keyof (typeof text)["workflows"]>().toEqualTypeOf<"other">();
+  // And a def declaring none is exactly the mode def — nothing widened.
+  expectTypeOf(agent({ name: "P" })).toEqualTypeOf<ModeAgentDef<"pipeline">>();
+  expectTypeOf(agent({ name: "T", mode: "text" })).toEqualTypeOf<ModeAgentDef<"text">>();
+  // The open map stays assignable where a reader takes the definition.
+  const open: AgentDef = app;
+  expectTypeOf(open.workflows).toEqualTypeOf<Workflows | undefined>();
+  type Workflows = NonNullable<AgentDef["workflows"]>;
 });
 
 test("a two-phase declaration's def is a workflow an app may declare", () => {

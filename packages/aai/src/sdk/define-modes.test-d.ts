@@ -67,7 +67,8 @@ test("each mode selects exactly one member, and each overload returns its mode",
   expectTypeOf<ModeAgentDef<"s2s">["mode"]>().toEqualTypeOf<"s2s">();
   // Still the one definition type.
   expectTypeOf<ModeAgentDef<"text">>().toExtend<AgentDef>();
-  expectTypeOf<ReturnType<typeof workflowApp>>().toEqualTypeOf<AgentDef>();
+  expectTypeOf<ReturnType<typeof workflowApp>>().toExtend<AgentDef>();
+  expectTypeOf<ReturnType<typeof workflowApp>["mode"]>().toEqualTypeOf<"workflow-app">();
   expectTypeOf<ReturnType<typeof agent>>().toExtend<AgentDef>();
 });
 
