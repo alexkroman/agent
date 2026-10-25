@@ -32,12 +32,19 @@ import { sole } from "./_gate-support.ts";
 const FILES_MODULE = "scripts/_doc-example-files.mjs";
 
 type Section = { path: string; code: string };
-const splitExampleFiles = sole(
-  import.meta.glob<(code: string, origin?: string) => Section[] | null>(
-    "../../../scripts/_doc-example-files.mjs",
-    { import: "splitExampleFiles", eager: true },
-  ),
-);
+type Split = (code: string, origin?: string) => Section[] | null;
+// A glob that stopped resolving leaves this `undefined`; every call below then
+// fails naming the module rather than passing on an empty search.
+const splitExampleFiles: Split =
+  sole(
+    import.meta.glob<Split>("../../../scripts/_doc-example-files.mjs", {
+      import: "splitExampleFiles",
+      eager: true,
+    }),
+  ) ??
+  (() => {
+    throw new Error(`${FILES_MODULE} did not resolve`);
+  });
 
 /** The checked ts/tsx fence bodies of one markdown document. */
 function checkedFences(source: string): string[] {

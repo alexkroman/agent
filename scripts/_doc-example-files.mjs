@@ -77,7 +77,8 @@ export function splitExampleFiles(code, origin = "<fence>") {
     const path = line.match(FILE_MARKER)?.[1];
     if (path !== undefined) {
       const problem = pathProblem(path, seen);
-      if (problem) throw new Error(`check-doc-examples: ${origin} \`// file: ${path}\` ${problem}.`);
+      if (problem)
+        throw new Error(`check-doc-examples: ${origin} \`// file: ${path}\` ${problem}.`);
       seen.add(path);
       files.push({ path, code: [] });
     } else if (files.length > 0) {
