@@ -168,7 +168,7 @@ export interface SlotUpdateToolDef<P extends ToolInputSchema | undefined, T, R, 
    * **Skipped when the body returned a {@link ToolFailure}**, which is answered
    * unchanged: a failure has no partial result to complete.
    */
-  report?: (stored: DeepReadonly<T>, partial: Exclude<NoInfer<R>, ToolFailure>) => R2;
+  report?: (stored: DeepReadonly<T>, partial: NoInfer<Exclude<R, ToolFailure>>) => R2;
 }
 
 /**
@@ -220,8 +220,8 @@ export interface SlotPreparedToolDef<P extends ToolInputSchema | undefined, T, P
  * @input
  * @public
  */
-export interface SlotDialogGate<R, E extends { type: string }>
-  extends DialogGate<Awaited<R>, NoInfer<E>> {
+export interface SlotDialogGate<R, E extends { type: string }, K extends string = string>
+  extends DialogGate<Awaited<R>, NoInfer<E>, K> {
   /** The dialog this tool is gated on. */
   dialog: Dialog<E>;
 }
