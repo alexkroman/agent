@@ -7,6 +7,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentDef } from "@alexkroman1/aai";
 import { validateAgentExport } from "./_utils.ts";
+import { vendorsToOmit } from "./_vendor-openers.ts";
 import { buildClient } from "./client-bundler.ts";
 import { type BuildWorkerOptions, buildWorker } from "./worker-bundler.ts";
 
@@ -39,8 +40,29 @@ export async function buildAgentBundle(
   // to embed, and — the part easy to lose with it — no ordering left between the
   // two that remain. They write to disjoint paths (`.aai/client` and a temp HTML
   // against `.aai/worker-entry.ts`), so the client build is free again.
-  const [clientFiles, worker] = await Promise.all([buildClient(cwd), buildWorker(cwd, opts)]);
+  const [clientFiles, worker] = await Promise.all([
+    buildClient(cwd),
+    buildTrimmedWorker(cwd, opts),
+  ]);
   return { worker, clientFiles };
+}
+
+/**
+ * The worker, carrying only the speech SDKs its agent declares.
+ *
+ * A runtime-bearing build inlines every vendor opener the registry can lazily
+ * load (see `_vendor-openers.ts`), so the agent is first built WITHOUT the
+ * runtime — ~0.5 s against ~6 s for the full build — and its `__aaiConfig`
+ * read back for the STT/TTS kinds it declares. The full build then leaves the
+ * other vendors out. A caller that names `omitVendors` itself, or builds no
+ * runtime, gets exactly what it asked for.
+ */
+async function buildTrimmedWorker(cwd: string, opts: BuildWorkerOptions): Promise<string> {
+  if (opts.runtime === false || opts.omitVendors !== undefined) return buildWorker(cwd, opts);
+  const config = await evalWorkerConfig(
+    await buildWorker(cwd, { ...opts, runtime: false, minify: false }),
+  );
+  return buildWorker(cwd, { ...opts, omitVendors: vendorsToOmit(config) });
 }
 
 /**

@@ -331,6 +331,14 @@ the summary.
   loop deliberately does not. **`--singleThreaded` is a speedup** for one small
   project on the guest's one reserved CPU; it is passed only when the compiler's
   major is >= 7 (older TypeScript rejects the unknown option, TS5023).
+- **A deploy worker carries only the speech SDKs its agent declares.** The
+  worker is one file, so the runtime registry's lazy vendor imports are all
+  inlined; `buildAgentBundle` builds the agent once without the runtime, reads
+  the STT/TTS kinds off its `__aaiConfig`, and the full build stubs the other
+  vendors' openers (`_vendor-openers.ts`; the stub throws only when a session
+  opens that stage). LLM vendors stay: a tool's `ctx.generate({ llm })` can name
+  any of them at run time. `_vendor-openers.test.ts` holds the table to the
+  built runtime's chunk names.
 - **`buildClient` with no `client.tsx` returns `{}`** → default UI.
 - **`buildClient` dedupes React** (`resolve.dedupe`): `aai-ui` declares React as
   a peer, and a pruned install can leave it unresolvable from `aai-ui/dist/**`.

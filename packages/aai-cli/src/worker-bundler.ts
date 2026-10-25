@@ -30,6 +30,12 @@
  * harness↔bundle contract is deliberately tiny: the factory takes
  * `{ env, db?, runCode? }` and returns `{ startSession, shutdown }`.
  *
+ * **Only the speech SDKs the agent can reach ride along.** The worker is one
+ * file, so the registry's lazy vendor imports are inlined whether or not a
+ * session can open them; `omitVendors` replaces the openers of the STT/TTS
+ * kinds the agent's config does not declare with a throwing stub
+ * (`_vendor-openers.ts`, which carries the measurement and the argument).
+ *
  * What the studio supplies via options, because a workspace is not a project:
  *
  * - **`configFile: false`.** Workspace files are untrusted and a Vite config
@@ -45,6 +51,7 @@ import { invariant } from "@alexkroman1/aai/internal";
 import { build, mergeConfig, type PluginOption, type Rollup } from "vite";
 import { devSourceViteConfig } from "./_dev-source.ts";
 import { errorCode } from "./_utils.ts";
+import { omitVendorOpeners } from "./_vendor-openers.ts";
 import { withPreservedNodeEnv } from "./_vite-env.ts";
 
 /**
@@ -72,6 +79,14 @@ export type BuildWorkerOptions = {
    * rebuild would turn the watch loop from sub-second into multi-second.
    */
   runtime?: boolean;
+  /**
+   * Vendor STT/TTS kinds whose runtime opener (and so whose SDK) the bundle
+   * leaves out, replaced by a stub that throws when a session opens that
+   * stage. `buildAgentBundle` fills this from the agent's own built config —
+   * the kinds it does NOT declare — so a deploy carries only the speech SDKs
+   * it can reach (`_vendor-openers.ts`). Undefined keeps every vendor in.
+   */
+  omitVendors?: readonly string[];
 };
 
 /**
@@ -255,7 +270,10 @@ export async function buildWorker(cwd: string, options: BuildWorkerOptions = {})
   // DevKit's client transform, which is gone. The key stays ABSENT when the
   // caller supplied none, so a project's own `vite.config.ts` plugins are
   // untouched rather than overwritten with an empty list.
-  const plugins = options.plugins ?? [];
+  const plugins = [
+    ...(options.plugins ?? []),
+    ...(options.omitVendors?.length ? [omitVendorOpeners(options.omitVendors)] : []),
+  ];
 
   let result: Awaited<ReturnType<typeof build>>;
   try {
