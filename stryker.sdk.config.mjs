@@ -26,10 +26,15 @@ export default {
   ...base,
   mutate: [
     "packages/aai/src/sdk/protocol.ts",
-    "packages/aai/src/sdk/manifest.ts",
+    // `manifest.ts` is gone: `toAgentConfig` and the config rules live here now.
+    "packages/aai/src/sdk/agent-config.ts",
     "packages/aai/src/sdk/_internal-types.ts",
     "packages/aai/src/sdk/system-prompt.ts",
   ],
+  // The SDK's own vitest project, not the root config: the root loads every
+  // package, and that dry run (with per-test coverage) exceeds the default five
+  // minutes before a single mutant is tried.
+  vitest: { configFile: "packages/aai/vitest.config.ts" },
   htmlReporter: { fileName: "reports/mutation/sdk/index.html" },
   incrementalFile: ".stryker-incremental-sdk.json",
   timeoutMS: 30_000,
