@@ -49,16 +49,32 @@ import type { WorkflowRunSnapshot } from "./workflow-run.ts";
  * bundle.
  *
  * @example
- * ```ts no-check
- * // agent.ts
- * export const transcribe = workflow({ input: …, output: transcriptSchema, run: transcribeFlow });
+ * ```ts
+ * // file: agent.ts
+ * import { agent, workflow } from "@alexkroman1/aai";
+ * import { z } from "zod";
  *
- * // client.tsx — `import type` is erased, so nothing server-side is bundled.
+ * export const transcribe = workflow({
+ *   description: "Transcribe one upload",
+ *   input: z.object({ uploadId: z.string() }),
+ *   output: z.object({ text: z.string() }),
+ *   run: async (input, ctx) => ({
+ *     text: await ctx.step("transcribe", () => `(transcript of ${input.uploadId})`),
+ *   }),
+ * });
+ *
+ * export default agent({ name: "Transcriber", workflows: { transcribe } });
+ *
+ * // file: client.tsx
+ * // `import type` is erased, so nothing server-side is bundled.
  * import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
+ * import { useWorkflowRun } from "@alexkroman1/aai-ui";
  * import type { transcribe } from "./agent.ts";
  *
- * const run = useWorkflowRun<WorkflowOutputOf<typeof transcribe>>(runId, { api });
- * if (run?.status === "completed") console.log(run.output.text); // typed
+ * export function Transcript({ runId }: { runId: string }) {
+ *   const { run } = useWorkflowRun<WorkflowOutputOf<typeof transcribe>>(runId);
+ *   return run?.status === "completed" ? <p>{run.output.text}</p> : null; // typed
+ * }
  * ```
  *
  * ## It reads the declared SCHEMA first, and that is what breaks a cycle
@@ -144,20 +160,34 @@ export type WorkflowOutputOf<D> = D extends {
  * through a type-only import of `../agent.ts` drags no runtime cycle behind it.
  *
  * @example
- * ```ts no-check
- * // agent.ts
- * export const digest = workflow({
- *   input: z.object({ topic: z.string(), limit: z.number().default(5) }),
+ * ```ts
+ * // file: agent.ts
+ * import { agent, workflow, type WorkflowDef } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ * import { digestFlow } from "./workflows/digest.ts";
+ *
+ * const digestInput = z.object({ topic: z.string(), limit: z.number().default(5) });
+ *
+ * // ANNOTATED, so the body may name `typeof digest` without a cycle (below).
+ * export const digest: WorkflowDef<typeof digestInput, string> = workflow({
+ *   description: "Digest a topic",
+ *   input: digestInput,
  *   run: digestFlow,
  * });
  *
- * // workflows/digest.ts — `import type` is erased, so there is no cycle.
- * import type { WorkflowInputOf } from "@alexkroman1/aai";
+ * export default agent({ name: "Digest", workflows: { digest } });
+ *
+ * // file: workflows/digest.ts
+ * // `import type` is erased, so there is no cycle.
+ * import type { WorkflowContext, WorkflowInputOf } from "@alexkroman1/aai";
+ * import { stepGenerate } from "@alexkroman1/aai/step";
  * import type { digest } from "../agent.ts";
  *
  * export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
  *   // `limit` is `number`, not `number | undefined` — the default already ran.
- *   return await research(input.topic, input.limit);
+ *   return await ctx.step("research", () =>
+ *     stepGenerate(`${input.limit} facts about ${input.topic}`),
+ *   );
  * }
  * ```
  *
@@ -211,10 +241,34 @@ export type WorkflowInputOf<D> = D extends {
  * — this names the shape, it does not flatten it.
  *
  * @example
- * ```ts no-check
- * import type { WorkflowRunOf } from "@alexkroman1/aai";
+ * ```ts
+ * // file: agent.ts
+ * import { agent, workflow } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
+ * export const research = workflow({
+ *   description: "Research a topic",
+ *   input: z.object({ topic: z.string() }),
+ *   output: z.object({ summary: z.string() }),
+ *   run: async (input) => ({ summary: `Everything about ${input.topic}.` }),
+ * });
+ *
+ * export default agent({ name: "Researcher", workflows: { research } });
+ *
+ * // file: tools/research_status.ts
+ * import { tool, type WorkflowRunOf } from "@alexkroman1/aai";
  * import { isTerminal } from "@alexkroman1/aai/workflow-api";
- * import type { research } from "../agent.ts";
+ * import { z } from "zod";
+ * import { research } from "../agent.ts";
+ *
+ * export default tool({
+ *   description: "How the research is going",
+ *   inputSchema: z.object({ runId: z.string() }),
+ *   execute: async ({ runId }, ctx) => {
+ *     const run = await ctx.workflows.get(runId, research);
+ *     return run ? describe(run) : "no such run";
+ *   },
+ * });
  *
  * function describe(run: WorkflowRunOf<typeof research>): string {
  *   if (!isTerminal(run)) return "still working on it";

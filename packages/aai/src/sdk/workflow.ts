@@ -29,27 +29,34 @@
  *
  * The body is an ordinary exported async function in its own module under
  * `workflows/`. No directive and no compile step of its own — the agent
- * bundle's Vite pass compiles it like any other source file:
+ * bundle's Vite pass compiles it like any other source file — and `agent.ts`
+ * declares it:
  *
- * ```ts no-check
- * // workflows/digest.ts
- * import type { WorkflowContext } from "@alexkroman1/aai/workflow";
+ * ```ts
+ * // file: workflows/digest.ts
+ * import type { WorkflowContext } from "@alexkroman1/aai";
+ * import { stepGenerate } from "@alexkroman1/aai/step";
  *
  * export async function digestFlow(input: { topic: string }, ctx: WorkflowContext) {
- *   const notes = await ctx.step("research", () => research(input.topic));
+ *   const notes = await ctx.step("research", () => stepGenerate(`Research ${input.topic}.`));
  *   await ctx.step("save", () => save(input.topic, notes));
  *   return { topic: input.topic };
  * }
- * ```
  *
- * and declares it in `agent.ts`:
+ * declare function save(topic: string, notes: string): Promise<void>; // your own store
  *
- * ```ts no-check
+ * // file: agent.ts
+ * import { agent, workflow } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ * import { digestFlow } from "./workflows/digest.ts";
+ *
  * export const digest = workflow({
  *   description: "Research a topic overnight and store the result",
  *   input: z.object({ topic: z.string() }),
  *   run: digestFlow,
  * });
+ *
+ * export default agent({ name: "Researcher", workflows: { digest } });
  * ```
  *
  * ## The rule that outlived the engine
@@ -478,10 +485,21 @@ export type WorkflowSummary = {
  * `WorkflowDef<P, R>`, so nothing downstream can tell which was used.
  *
  * @example
- * `agent.ts` — declare the workflow beside the agent. A tool is a FILE, so
+ * `agent.ts` declares the workflow beside the agent. A tool is a FILE, so
  * `agent()` takes no `tools`. Declaring `output` beside `input` is what makes
- * the run's result checked where it completes and typed where it is read.
- * ```ts no-check
+ * the run's result checked where it completes and typed where it is read;
+ * `tools/research.ts` is the tool that starts a run.
+ * ```ts
+ * // file: workflows/digest.ts
+ * import type { WorkflowContext } from "@alexkroman1/aai";
+ * import { stepGenerate } from "@alexkroman1/aai/step";
+ *
+ * export async function digestFlow(input: { topic: string }, ctx: WorkflowContext) {
+ *   const headline = await ctx.step("headline", () => stepGenerate(`Headline: ${input.topic}`));
+ *   return { topic: input.topic, headline };
+ * }
+ *
+ * // file: agent.ts
  * import { agent, workflow } from "@alexkroman1/aai";
  * import { z } from "zod";
  * import { digestFlow } from "./workflows/digest.ts";
@@ -497,11 +515,8 @@ export type WorkflowSummary = {
  *   name: "Researcher",
  *   workflows: { digest },
  * });
- * ```
  *
- * @example
- * `tools/research.ts` — the tool that starts a run.
- * ```ts no-check
+ * // file: tools/research.ts
  * import { tool } from "@alexkroman1/aai";
  * import { z } from "zod";
  * import { digest } from "../agent.ts";

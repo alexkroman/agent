@@ -147,11 +147,17 @@ export function stepEnv(name: string): string | undefined {
  * spec, neither of which has a workflow around it. A step that wants the retries
  * skipped wraps the call:
  *
- * ```ts no-check
- * try {
- *   key = requireStepEnv("ASSEMBLYAI_API_KEY");
- * } catch (err) {
- *   throw new FatalError(errorMessage(err));
+ * ```ts
+ * import { requireStepEnv } from "@alexkroman1/aai/step";
+ * import { FatalError } from "@alexkroman1/aai/step-errors";
+ * import { errorMessage } from "@alexkroman1/aai/utils";
+ *
+ * export function apiKey(): string {
+ *   try {
+ *     return requireStepEnv("ASSEMBLYAI_API_KEY");
+ *   } catch (err) {
+ *     throw new FatalError(errorMessage(err));
+ *   }
  * }
  * ```
  *

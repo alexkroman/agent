@@ -97,22 +97,19 @@ export type { SlotHolder } from "./session-state.ts";
  *
  * @example
  * ```ts
- * // shared.ts — the one place the slot is declared, view included.
+ * // file: shared.ts
+ * // The one place the slot is declared, view included.
  * import { sessionSlot } from "@alexkroman1/aai";
  *
  * export type Cart = { items: string[] };
  * export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }), {
  *   view: (cart) => ({ count: cart.items.length }),
  * });
- * ```
  *
- * @example
- * ```ts no-check
- * // tools/add_item.ts — no cast, no annotation, no lazy-init boilerplate.
- * // (`no-check`: the point of the example is the OTHER file, so it cannot be
- * // self-contained.)
- * import { cartSlot } from "../shared.ts";
+ * // file: tools/add_item.ts
+ * // No cast, no annotation, no lazy-init boilerplate: the slot types the draft.
  * import { z } from "zod";
+ * import { cartSlot } from "../shared.ts";
  *
  * export default cartSlot.updateTool({
  *   description: "Add an item to the cart",

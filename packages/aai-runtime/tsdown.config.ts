@@ -37,6 +37,17 @@ export default defineConfig({
   // carried `import { estimateTokenCount } from "tokenx"`.
   deps: { neverBundle: [/^(?!tokenx(?:\/|$))[^./]/] },
   outputOptions: {
+    // A provider opener the registry loads lazily (`providers/stt/*.ts`,
+    // `providers/tts/*.ts`) becomes a chunk at a STABLE path,
+    // `dist/providers/<stage>/<module>.js`, rather than `<module>-<hash>.js`:
+    // the CLI's worker bundler names those chunks to leave an undeclared
+    // vendor's SDK out of a deploy artifact (`aai-cli/_vendor-openers.ts`), and a
+    // hash in the name would make that a pattern match on this file's output.
+    // Every other chunk keeps rolldown's default name.
+    chunkFileNames: (chunk) => {
+      const opener = /\/providers\/(stt|tts)\/([\w-]+)\.ts$/.exec(chunk.facadeModuleId ?? "");
+      return opener ? `providers/${opener[1]}/${opener[2]}.js` : "[name]-[hash].js";
+    },
     banner: [
       "// This bundle inlines tokenx (https://github.com/johannschopplich/tokenx).",
       "// MIT License. Copyright (c) 2023-PRESENT Johann Schopplich.",

@@ -319,14 +319,20 @@ export function stubStepInfo(step: {
  * The two are separated the way the streams are, so a spec asserting a chunk
  * never has to filter the sentences out of it.
  *
- * ```ts no-check
+ * ```ts
+ * import { stepEmit } from "@alexkroman1/aai/step";
+ * import { stubReporter } from "@alexkroman1/aai/testing";
+ * import { afterEach, expect, test } from "vitest";
+ *
  * const reported = stubReporter();
  * afterEach(reported.restore);
  *
- * await transcribeSegment(uploadId, format, segment);
- * expect(reported.emitted).toEqual([
- *   { namespace: "transcript", chunk: { index: 0, text: "hello there" } },
- * ]);
+ * test("each segment is emitted as it lands", async () => {
+ *   await stepEmit("transcript", { index: 0, text: "hello there" });
+ *   expect(reported.emitted).toEqual([
+ *     { namespace: "transcript", chunk: { index: 0, text: "hello there" } },
+ *   ]);
+ * });
  * ```
  *
  * Publishing REPLACES, so a spec that forgets to restore leaves this one

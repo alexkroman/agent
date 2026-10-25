@@ -13,8 +13,11 @@
  * while being exactly what a reader (human or coding agent) copies first.
  *
  * Every example must be SELF-CONTAINED: it imports what it uses and declares
- * what it references. A fence that is deliberately a fragment (a type-shape
- * listing, an API sketch) opts out with `no-check` in the fence info string:
+ * what it references. An example whose point is ANOTHER file carries it, as
+ * `// file: <path>` sections compiled at those paths
+ * (`_doc-example-files.mjs`). A fence that is deliberately a fragment (a
+ * type-shape listing, an API sketch) opts out with `no-check` in the fence
+ * info string:
  *
  *   ```ts no-check
  *
@@ -40,6 +43,7 @@ import path from "node:path";
 import { assertEveryGuideFileListed } from "./_agent-guide.mjs";
 import { parseScriptArgs } from "./_args.mjs";
 import { stripReferenceDirectives } from "./_doc-example-ambients.mjs";
+import { splitExampleFiles } from "./_doc-example-files.mjs";
 import { assertEveryDocsPageListed } from "./_docs-site-pages.mjs";
 import { enforceNoCheckBudget } from "./_no-check-ratchet.mjs";
 import { REPO_ROOT as repo, runScaffoldTsc, VITE_CLIENT_TYPES } from "./_scaffold-tsc.mjs";
@@ -372,8 +376,13 @@ const examples = fences.filter((fence) => fence.checked);
  * read `160` against an actual of 181 for long enough that the floor sat 24
  * under the real count, which is the drift this line exists to prevent —
  * re-measure from the run's own closing line whenever it moves.
+ *
+ * **MEASURED 2026-10-25: 516 compiled, of 575 ts/tsx fences (59 `no-check`).**
+ * 470 before `// file:` sections let the SDK's 46 "the other file" fragments
+ * compile; the floor had sat at 200 against 470 since the docs site's guide
+ * pages joined the corpus.
  */
-const MIN_EXAMPLES = 200;
+const MIN_EXAMPLES = 500;
 if (examples.length < MIN_EXAMPLES) {
   console.error(
     `check-doc-examples: extracted only ${examples.length} examples, expected at least ` +
@@ -408,21 +417,45 @@ const manifest = new Map();
  * stripper and re-derives this count from the corpus with its own parser.
  */
 let directivesStripped = 0;
-examples.forEach((ex, i) => {
-  // JSX in a .ts file is a parse error, so anything with JSX gets .tsx.
-  const ext = ex.lang === "tsx" || /<[A-Z][^>]*>/.test(ex.code) ? "tsx" : "ts";
-  const name = `example-${i}.${ext}`;
-  manifest.set(name, ex);
-  const { code, stripped } = stripReferenceDirectives(ex.code);
+/** Fences that declared several files (`// file:` sections) — reported, not floored. */
+let multiFileFences = 0;
+/**
+ * Write one scratch file: ambients stripped, made a module of its own.
+ * `line` is where its first line sits in the document, so a diagnostic's
+ * own (line,col) — relative to the scratch file — reads against the fence.
+ */
+const writeExample = (name, ex, source, line) => {
+  manifest.set(name, { origin: ex.origin, line });
+  const { code, stripped } = stripReferenceDirectives(source);
   directivesStripped += stripped;
   // `export {}` makes each example its own module, so identically-named
   // consts across examples don't collide in one global scope.
   writeFileSync(path.join(scratch, name), `${code}\nexport {};\n`);
+};
+examples.forEach((ex, i) => {
+  const files = splitExampleFiles(ex.code, `${ex.origin}:${ex.line}`);
+  if (files !== null) {
+    // Each section at the path it names, under the fence's own directory, so
+    // `../shared.ts` from `tools/x.ts` resolves the way a project's would.
+    multiFileFences += 1;
+    for (const file of files) {
+      const name = `example-${i}/${file.path}`;
+      mkdirSync(path.dirname(path.join(scratch, name)), { recursive: true });
+      writeExample(name, ex, file.code, ex.line + file.line);
+    }
+    return;
+  }
+  // JSX in a .ts file is a parse error, so anything with JSX gets .tsx.
+  const ext = ex.lang === "tsx" || /<[A-Z][^>]*>/.test(ex.code) ? "tsx" : "ts";
+  writeExample(`example-${i}.${ext}`, ex, ex.code, ex.line);
 });
 
 console.log(
   `check-doc-examples: ${directivesStripped} inline \`/// <reference\` directive(s) ` +
     "stripped — a fence's ambients come from the scaffold's tsconfig preset, never a sibling fence.",
+);
+console.log(
+  `check-doc-examples: ${multiFileFences} fence(s) declare several files (\`// file:\` sections).`,
 );
 
 let result;
@@ -460,7 +493,8 @@ try {
       noUnusedLocals: false,
       noUnusedParameters: false,
     },
-    include: [path.join(scratch, "*.ts"), path.join(scratch, "*.tsx")],
+    // `**`: a multi-file fence's sections sit under `example-N/`.
+    include: [path.join(scratch, "**/*.ts"), path.join(scratch, "**/*.tsx")],
   });
 } finally {
   rmSync(scratch, { recursive: true, force: true });
@@ -470,8 +504,9 @@ if (result.ok) {
   console.log(`check-doc-examples: all ${examples.length} doc examples compile. ✓`);
 } else {
   // Rewrite scratch paths in diagnostics back to the doc that owns the fence.
+  // A single file is `example-N.ts`; a section is `example-N/<its path>`.
   const out = result.output.replace(
-    /[^\s(]*\.doc-examples-scratch-\d+\/(example-\d+\.tsx?)/g,
+    /[^\s(]*\.doc-examples-scratch-\d+\/(example-\d+(?:\.tsx?|\/[^\s(:]+))/g,
     (_, name) => {
       const ex = manifest.get(name);
       return ex ? `${ex.origin}:${ex.line} (example)` : name;

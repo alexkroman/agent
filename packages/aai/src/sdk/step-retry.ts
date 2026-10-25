@@ -15,13 +15,15 @@
  * `RetryableError` (`@alexkroman1/aai/step-errors`) takes a `retryAfter`
  * instead — and the far side of a rate limit has already told us the number:
  *
- * ```ts no-check
- * import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
+ * ```ts
  * import { isTransientStatus, retryAfter } from "@alexkroman1/aai/step";
+ * import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
  *
- * if (!isTransientStatus(res.status)) throw new FatalError(message);
- * const at = retryAfter(res);
- * throw at ? new RetryableError(message, { retryAfter: at }) : new RetryableError(message);
+ * export function refuse(res: Response, message: string): never {
+ *   if (!isTransientStatus(res.status)) throw new FatalError(message);
+ *   const at = retryAfter(res);
+ *   throw at ? new RetryableError(message, { retryAfter: at }) : new RetryableError(message);
+ * }
  * ```
  *
  * That matters most exactly where this SDK encourages a fan-out: four segments

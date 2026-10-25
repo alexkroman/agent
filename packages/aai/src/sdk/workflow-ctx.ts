@@ -176,14 +176,17 @@ export {
 /**
  * The handle a workflow body receives as its second argument.
  *
- * ```ts no-check
+ * ```ts
  * // workflows/research.ts
+ * import type { WorkflowContext } from "@alexkroman1/aai";
+ * import { stepGenerate } from "@alexkroman1/aai/step";
+ *
  * export async function researchFlow(
  *   input: { topic: string },
  *   ctx: WorkflowContext,
  * ) {
- *   const brief = await ctx.step("writeBrief", () => writeBrief(input.topic));
- *   const notes = await ctx.step("investigate", () => investigate(brief));
+ *   const brief = await ctx.step("writeBrief", () => stepGenerate(`Brief: ${input.topic}`));
+ *   const notes = await ctx.step("investigate", () => stepGenerate(`Investigate: ${brief}`));
  *   return { topic: input.topic, notes };
  * }
  * ```
@@ -367,10 +370,17 @@ export type WorkflowContext = {
    * **Call it from the BODY, never from inside a {@link WorkflowContext.step}** — a
    * step body that waits fails the run, and the message names the fix.
    *
-   * ```ts no-check
-   * await ctx.step("draft", () => draft(input.topic));
-   * await ctx.sleep("review-window", 6 * 60 * 60 * 1000, { correlationId: "review" });
-   * await ctx.step("publish", () => publish(input.topic));
+   * ```ts
+   * import type { WorkflowContext } from "@alexkroman1/aai";
+   * import { stepGenerate } from "@alexkroman1/aai/step";
+   *
+   * export async function publishFlow(input: { topic: string }, ctx: WorkflowContext) {
+   *   const draft = await ctx.step("draft", () => stepGenerate(`Draft a post on ${input.topic}`));
+   *   await ctx.sleep("review-window", 6 * 60 * 60 * 1000, { correlationId: "review" });
+   *   await ctx.step("publish", () => publish(input.topic, draft));
+   * }
+   *
+   * declare function publish(topic: string, draft: string): Promise<void>; // your own site
    * ```
    *
    * @param label - This wait's identity in the journal. A string LITERAL, for
@@ -445,11 +455,21 @@ export type WorkflowContext = {
    * by `aai-runtime/src/server/workflow-app.test.ts`, and `signal`→resume by
    * `workflow/in-process.test.ts`.
    *
-   * ```ts no-check
+   * ```ts
+   * // file: approval.ts
    * // The token is the AUTHOR's, derived so the body and the tool that hands it
    * // out agree — see below.
-   * const approval = await ctx.waitFor<{ approved: boolean }>(approvalToken(input.id));
-   * if (!approval.approved) return { published: false };
+   * export const approvalToken = (id: string): string => `approve-${id}`;
+   *
+   * // file: workflows/publish.ts
+   * import type { WorkflowContext } from "@alexkroman1/aai";
+   * import { approvalToken } from "../approval.ts";
+   *
+   * export async function publishFlow(input: { id: string }, ctx: WorkflowContext) {
+   *   const approval = await ctx.waitFor<{ approved: boolean }>(approvalToken(input.id));
+   *   if (!approval.approved) return { published: false };
+   *   return { published: true };
+   * }
    * ```
    *
    * **The token must be DERIVED, not random.** Whoever hands the URL out is

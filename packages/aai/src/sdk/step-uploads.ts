@@ -9,13 +9,15 @@
  * to `POST /workflows/uploads`, the run input carries the returned **id**, and a
  * step reads exactly the window it needs:
  *
- * ```ts no-check
+ * ```ts
  * import { stepReadUpload } from "@alexkroman1/aai/step";
  *
  * export async function readHeader(uploadId: string) {
  *   const { bytes, info } = await stepReadUpload(uploadId, { end: 64 * 1024 });
  *   return parseHeader(bytes, info.size);
  * }
+ *
+ * declare function parseHeader(bytes: Uint8Array, size: number): { sampleRate: number }; // yours
  * ```
  *
  * So sixty steps move the recording once between them rather than sixty times,

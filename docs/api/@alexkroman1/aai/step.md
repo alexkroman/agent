@@ -294,12 +294,18 @@ Called once per item, with the item and its index in `items`.
 
 #### Example
 
-```ts no-check
+```ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { mapConcurrent, stepGenerate } from "@alexkroman1/aai/step";
+
 // In a workflow body: one step per segment, four in flight. The callback
 // issues its `ctx.step` immediately, under ONE literal name.
-const cleaned = await mapConcurrent(segments, 4, (text) =>
-  ctx.step("postProcess", () => postProcess(text)),
-);
+export async function cleanFlow(input: { segments: string[] }, ctx: WorkflowContext) {
+  const cleaned = await mapConcurrent(input.segments, 4, (text) =>
+    ctx.step("postProcess", () => stepGenerate(`Clean up this transcript: ${text}`)),
+  );
+  return { cleaned };
+}
 ```
 
 ***
@@ -643,11 +649,17 @@ is `/step-errors`' and this module must stay importable from a tool body and a
 spec, neither of which has a workflow around it. A step that wants the retries
 skipped wraps the call:
 
-```ts no-check
-try {
-  key = requireStepEnv("ASSEMBLYAI_API_KEY");
-} catch (err) {
-  throw new FatalError(errorMessage(err));
+```ts
+import { requireStepEnv } from "@alexkroman1/aai/step";
+import { FatalError } from "@alexkroman1/aai/step-errors";
+import { errorMessage } from "@alexkroman1/aai/utils";
+
+export function apiKey(): string {
+  try {
+    return requireStepEnv("ASSEMBLYAI_API_KEY");
+  } catch (err) {
+    throw new FatalError(errorMessage(err));
+  }
 }
 ```
 
@@ -899,7 +911,7 @@ a fan-out that has transcribed forty of sixty segments has forty results and no
 way to hand any of them over. Emitting each one as it lands means a page renders
 the answer growing instead of a spinner:
 
-```ts no-check
+```ts
 import { stepEmit } from "@alexkroman1/aai/step";
 
 export async function transcribeSegment(index: number) {
@@ -907,13 +919,26 @@ export async function transcribeSegment(index: number) {
   await stepEmit("transcript", { index, text });
   return { index, text };
 }
+
+declare function transcribe(index: number): Promise<string>; // your own step
 ```
 
-```tsx no-check
+```tsx
 // The reader, which the SDK already had: one stream per namespace.
-const { progress } = useWorkflowProgress<{ index: number; text: string }>(runId, {
-  namespace: "transcript",
-});
+import { useWorkflowProgress } from "@alexkroman1/aai-ui";
+
+export function Transcript({ runId }: { runId: string }) {
+  const { progress } = useWorkflowProgress<{ index: number; text: string }>(runId, {
+    namespace: "transcript",
+  });
+  return (
+    <ol>
+      {progress.map((chunk) => (
+        <li key={chunk.index}>{chunk.text}</li>
+      ))}
+    </ol>
+  );
+}
 ```
 
 **The namespace is REQUIRED, and that is the point of the argument.** The
@@ -2675,12 +2700,17 @@ it is the caller's opt-in: whether a terminal failure should burn a step's
 remaining attempts is not this module's call. The mapping is one line at
 the call site:
 
-```ts no-check
-try {
-  return await stepGenerate(prompt, { system });
-} catch (err) {
-  if (err instanceof StepGenerateError && !err.retryable) throw new FatalError(err.message);
-  throw err;
+```ts
+import { StepGenerateError, stepGenerate } from "@alexkroman1/aai/step";
+import { FatalError } from "@alexkroman1/aai/step-errors";
+
+export async function summarize(prompt: string, system: string) {
+  try {
+    return await stepGenerate(prompt, { system });
+  } catch (err) {
+    if (err instanceof StepGenerateError && !err.retryable) throw new FatalError(err.message);
+    throw err;
+  }
 }
 ```
 

@@ -118,15 +118,19 @@ export function toStepResponse(answered: StubStepAnswer): Response {
  * with that registration already done.
  *
  * @example
- * ```ts no-check
- * // `no-check`: the assertion is the point, and a doc example may not import a
- * // test runner — the same reason `createToolContext`'s example opts out.
+ * ```ts
+ * import { stepFetch } from "@alexkroman1/aai/step";
  * import { stubStepFetch } from "@alexkroman1/aai/testing";
+ * import { expect, test } from "vitest";
  *
- * const sync = stubStepFetch(() => ({ body: { text: "hello there" } }));
- * // … call the step …
- * expect(sync.calls[0]?.headers.Authorization).toBe("sk-test");
- * sync.restore();
+ * test("the step sends its credential", async () => {
+ *   const sync = stubStepFetch(() => ({ body: { text: "hello there" } }));
+ *   await stepFetch("https://sync.example.com/transcribe", {
+ *     headers: { Authorization: "sk-test" },
+ *   });
+ *   expect(sync.calls[0]?.headers.Authorization).toBe("sk-test");
+ *   sync.restore();
+ * });
  * ```
  *
  * @param answer - Called per request with the recorded request. Defaults to an

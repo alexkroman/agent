@@ -6,7 +6,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentDef } from "@alexkroman1/aai";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { validateAgentExport } from "./_utils.ts";
+import { vendorsToOmit } from "./_vendor-openers.ts";
 import { buildClient } from "./client-bundler.ts";
 import { type BuildWorkerOptions, buildWorker } from "./worker-bundler.ts";
 
@@ -16,6 +18,13 @@ export type DirectoryBundleOutput = {
   worker: string;
   /** Static client files from Vite build. Empty if no client.tsx. */
   clientFiles: Record<string, string>;
+  /**
+   * The worker's `__aaiConfig`, read off the runtime-less pre-build that
+   * decided which vendors to leave out — the same `toAgentConfig(def)` the
+   * full worker exports, so a caller that only needs the config need not
+   * import the full worker again. `undefined` when no pre-build ran.
+   */
+  config?: unknown;
 };
 
 /**
@@ -39,8 +48,35 @@ export async function buildAgentBundle(
   // to embed, and — the part easy to lose with it — no ordering left between the
   // two that remain. They write to disjoint paths (`.aai/client` and a temp HTML
   // against `.aai/worker-entry.ts`), so the client build is free again.
-  const [clientFiles, worker] = await Promise.all([buildClient(cwd), buildWorker(cwd, opts)]);
-  return { worker, clientFiles };
+  const [clientFiles, { worker, config }] = await Promise.all([
+    buildClient(cwd),
+    buildTrimmedWorker(cwd, opts),
+  ]);
+  return { worker, clientFiles, ...omitUndefined({ config }) };
+}
+
+/**
+ * The worker, carrying only the speech SDKs its agent declares.
+ *
+ * A runtime-bearing build inlines every vendor opener the registry can lazily
+ * load (see `_vendor-openers.ts`), so the agent is first built WITHOUT the
+ * runtime — ~0.5 s against ~6 s for the full build — and its `__aaiConfig`
+ * read back for the STT/TTS kinds it declares. The full build then leaves the
+ * other vendors out. A caller that names `omitVendors` itself, or builds no
+ * runtime, gets exactly what it asked for.
+ */
+async function buildTrimmedWorker(
+  cwd: string,
+  opts: BuildWorkerOptions,
+): Promise<{ worker: string; config?: unknown }> {
+  if (opts.runtime === false || opts.omitVendors !== undefined) {
+    return { worker: await buildWorker(cwd, opts) };
+  }
+  const config = await evalWorkerConfig(
+    await buildWorker(cwd, { ...opts, runtime: false, minify: false }),
+  );
+  const worker = await buildWorker(cwd, { ...opts, omitVendors: vendorsToOmit(config) });
+  return { worker, config };
 }
 
 /**
@@ -68,8 +104,14 @@ export async function evalWorkerBundle(code: string): Promise<AgentDef> {
   return agentDef;
 }
 
-/** Import a built worker from a temp file. See {@link evalWorkerBundle}. */
-async function importWorkerModule(code: string): Promise<Record<string, unknown>> {
+/**
+ * Import a built worker from a temp file. See {@link evalWorkerBundle}.
+ *
+ * Exported for the one spec that asserts on a worker's OTHER exports
+ * (`_vendor-openers.scenario.test.ts`, on `__aaiCreateRuntime`); a command
+ * reaches a worker through the two readers below.
+ */
+export async function importWorkerModule(code: string): Promise<Record<string, unknown>> {
   const dir = await mkdtemp(path.join(tmpdir(), "aai-worker-"));
   const file = path.join(dir, "worker.mjs");
   try {

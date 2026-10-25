@@ -158,7 +158,8 @@ function enteredPath(event: InspectionEvent): string | undefined {
  *
  * @example
  * ```ts
- * // shared.ts — the one place the dialog is declared.
+ * // file: shared.ts
+ * // The one place the dialog is declared.
  * import { dialog } from "@alexkroman1/aai";
  * import { setup } from "xstate";
  *
@@ -181,14 +182,11 @@ function enteredPath(event: InspectionEvent): string | undefined {
  * });
  *
  * export const claim = dialog("claim", machine);
- * ```
  *
- * @example
- * ```ts no-check
- * // tools/quote_claim.ts — cannot run before the caller is verified.
- * // (`no-check`: the point of the example is the OTHER file's declaration.)
- * import { claim } from "../shared.ts";
+ * // file: tools/quote_claim.ts
+ * // Cannot run before the caller is verified.
  * import { z } from "zod";
+ * import { claim } from "../shared.ts";
  *
  * export default claim.tool({
  *   description: "Quote the claim once the policy is verified",

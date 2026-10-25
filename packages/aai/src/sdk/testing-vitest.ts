@@ -160,8 +160,15 @@ export type InstallStubGatewayOptions = StubGatewayOptions & {
  *   `stubGateway` in `@alexkroman1/aai/testing`, which this installs.
  *
  * @example
- * ```ts no-check
- * // `no-check`: the step under test is in another file, which is the point.
+ * ```ts
+ * // file: workflows/digest.ts
+ * import { stepGenerateJson } from "@alexkroman1/aai/step";
+ * import { z } from "zod";
+ *
+ * export const summarize = (article: string) =>
+ *   stepGenerateJson(`One headline for: ${article}`, { schema: z.object({ headline: z.string() }) });
+ *
+ * // file: digest.test.ts
  * import { installStubGateway } from "@alexkroman1/aai/testing/vitest";
  * import { expect, test } from "vitest";
  * import { summarize } from "./workflows/digest.ts";
@@ -193,8 +200,19 @@ export function installStubGateway(
  * serves, why writes are opt-in, and why the minted ids count up.
  *
  * @example
- * ```ts no-check
+ * ```ts
+ * // file: workflows/ingest.ts
+ * import { stepReadUpload, stepWriteUpload } from "@alexkroman1/aai/step";
+ *
+ * export async function ingest(uploadId: string) {
+ *   const { bytes } = await stepReadUpload(uploadId);
+ *   return stepWriteUpload(bytes);
+ * }
+ *
+ * // file: ingest.test.ts
  * import { installStubUploads } from "@alexkroman1/aai/testing/vitest";
+ * import { expect, test } from "vitest";
+ * import { ingest } from "./workflows/ingest.ts";
  *
  * test("the step reads the recording it was given", async () => {
  *   const uploads = installStubUploads({ upl_1: new Uint8Array(5000) }, { writable: true });

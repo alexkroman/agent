@@ -14,15 +14,24 @@
  * point.
  *
  * @example
- * ```ts no-check
- * // `no-check`: the step under test is in another file, and the assertion is
- * // the runner's — which is the point of the fake being framework-agnostic.
- * import { stubSpeech } from "@alexkroman1/aai/testing";
+ * ```ts
+ * // file: workflows/narrate.ts
+ * import { stepSpeak } from "@alexkroman1/aai/step";
  *
- * const speech = stubSpeech();
- * await narrate("Three findings.");
- * expect(speech.calls[0]?.text).toContain("Three findings");
- * speech.restore();
+ * export const narrate = (text: string) => stepSpeak(text, { voice: "aai-jane" });
+ *
+ * // file: narrate.test.ts
+ * // The assertion is the runner's — the fake itself is framework-agnostic.
+ * import { stubSpeech } from "@alexkroman1/aai/testing";
+ * import { expect, test } from "vitest";
+ * import { narrate } from "./workflows/narrate.ts";
+ *
+ * test("narrate speaks the findings", async () => {
+ *   const speech = stubSpeech();
+ *   await narrate("Three findings.");
+ *   expect(speech.calls[0]?.text).toContain("Three findings");
+ *   speech.restore();
+ * });
  * ```
  *
  * @module testing-speech

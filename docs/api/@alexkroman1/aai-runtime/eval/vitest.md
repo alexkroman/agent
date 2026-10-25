@@ -553,8 +553,19 @@ serves, why writes are opt-in, and why the minted ids count up.
 
 #### Example
 
-```ts no-check
+```ts
+// file: workflows/ingest.ts
+import { stepReadUpload, stepWriteUpload } from "@alexkroman1/aai/step";
+
+export async function ingest(uploadId: string) {
+  const { bytes } = await stepReadUpload(uploadId);
+  return stepWriteUpload(bytes);
+}
+
+// file: ingest.test.ts
 import { installStubUploads } from "@alexkroman1/aai/testing/vitest";
+import { expect, test } from "vitest";
+import { ingest } from "./workflows/ingest.ts";
 
 test("the step reads the recording it was given", async () => {
   const uploads = installStubUploads({ upl_1: new Uint8Array(5000) }, { writable: true });
@@ -771,15 +782,19 @@ is the half no hand-rolled version had. Reading what the model was ASKED off a
 request; one eval asserted its prompts that way and was really asserting
 against the serialized `model` and `temperature` too.
 
-```ts no-check
-// `no-check`: the step under test is in another file, which is the point.
+```ts
 import { stubGatewayRoute } from "@alexkroman1/aai/testing";
 import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
+import { expect, test } from "vitest";
 
-const model = stubGatewayRoute(['{"verdict":"ship"}']);
-installStubStepFetch((request) => model.route(request) ?? { body: PAGE_HTML });
-// … run the workflow …
-expect(model.calls[0]?.prompt).toContain("the brief");
+const PAGE_HTML = "<html><body>the brief</body></html>";
+
+test("the reviewer is asked about the brief", async () => {
+  const model = stubGatewayRoute(['{"verdict":"ship"}']);
+  installStubStepFetch((request) => model.route(request) ?? { body: PAGE_HTML });
+  // … run the workflow …
+  expect(model.calls[0]?.prompt).toContain("the brief");
+});
 ```
 
 #### Parameters

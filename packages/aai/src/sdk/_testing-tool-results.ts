@@ -90,11 +90,17 @@ export function expectToolOk<R>(
  * @typeParam T - The type the spec claims for the tool's own value.
  *
  * @example
- * ```ts no-check
+ * ```ts
+ * import agentDef from "virtual:aai/agent";
  * import { expectToolOk, toolRunner } from "@alexkroman1/aai/testing";
+ * import { expect, test } from "vitest";
  *
  * const run = toolRunner(agentDef);
- * const order = expectToolOk<{ id: string }>(await run("place_order", { item: "pizza" }));
+ *
+ * test("place_order answers an id", async () => {
+ *   const order = expectToolOk<{ id: string }>(await run("place_order", { item: "pizza" }));
+ *   expect(order.id).toMatch(/^ord_/);
+ * });
  * ```
  *
  * @public
@@ -146,14 +152,19 @@ function isDialogEnvelope(value: unknown): value is { result: unknown } {
  *   position to keep; use {@link expectToolOk} for it.
  *
  * @example
- * ```ts no-check
- * import { expectDialogOk, runTool } from "@alexkroman1/aai/testing";
+ * ```ts
+ * import agentDef from "virtual:aai/agent";
+ * import { createToolContext, expectDialogOk, runTool } from "@alexkroman1/aai/testing";
+ * import { expect, test } from "vitest";
  *
- * const answered = expectDialogOk<{ quoted: number }>(
- *   await runTool(agentDef, "quote", {}, ctx),
- * );
- * expect(answered.state).toBe("quote.pending");
- * expect(answered.result.quoted).toBe(42);
+ * test("quote moves the dialog on", async () => {
+ *   const ctx = createToolContext();
+ *   const answered = expectDialogOk<{ quoted: number }>(
+ *     await runTool(agentDef, "quote", {}, ctx),
+ *   );
+ *   expect(answered.state).toBe("quote.pending");
+ *   expect(answered.result.quoted).toBe(42);
+ * });
  * ```
  *
  * @public

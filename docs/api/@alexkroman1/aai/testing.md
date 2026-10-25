@@ -318,8 +318,26 @@ the slot back is how a spec asserts what a tool wrote.
 
 #### Examples
 
-```ts no-check
-// `no-check`: the tool under test is in another file, which is the point.
+```ts
+// file: shared.ts
+import { sessionSlot } from "@alexkroman1/aai";
+
+export const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
+
+// file: tools/add_item.ts
+import { z } from "zod";
+import { cartSlot } from "../shared.ts";
+
+export default cartSlot.updateTool({
+  description: "Add an item to the cart",
+  inputSchema: z.object({ item: z.string() }),
+  execute: ({ item }, cart) => {
+    cart.items.push(item);
+    return { count: cart.items.length };
+  },
+});
+
+// file: agent.test.ts
 import { createToolContext } from "@alexkroman1/aai/testing";
 import { expect, test } from "vitest";
 import { cartSlot } from "./shared.ts";
@@ -334,10 +352,24 @@ test("add_item appends to this session's cart", async () => {
 
 **Asserting on what a tool sent**
 
-```ts no-check
+```ts
+// file: tools/recommend.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Recommend something for a mood",
+  inputSchema: z.object({ mood: z.string() }),
+  execute: ({ mood }, ctx) => {
+    ctx.send("recommendations", { mood, picks: ["a walk by the river"] });
+    return { picks: 1 };
+  },
+});
+
+// file: agent.test.ts
 import { createToolContext } from "@alexkroman1/aai/testing";
 import { expect, test } from "vitest";
-import { recommend } from "./tools/recommend.ts";
+import recommend from "./tools/recommend.ts";
 
 test("recommend pushes its picks to the client", async () => {
   const ctx = createToolContext();
@@ -380,13 +412,31 @@ Build a `WorkflowContext` that runs a body and records what it asked for.
 
 #### Example
 
-```ts no-check
-const ctx = createWorkflowContext();
-const output = await digestFlow({ url: "https://example.com/a" }, ctx);
+```ts
+// file: workflows/digest.ts
+import type { WorkflowContext } from "@alexkroman1/aai";
 
-expect(output.headline).toBe("…");
-expect(ctx.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize", "file"]);
-expect(ctx.slept).toEqual([{ label: "settle", until: 10_000 }]);
+export async function digestFlow(input: { url: string }, ctx: WorkflowContext) {
+  const article = await ctx.step("fetchArticle", () => `the article at ${input.url}`);
+  const headline = await ctx.step("summarize", () => article.slice(0, 11));
+  await ctx.sleep("settle", 10_000);
+  await ctx.step("file", () => undefined);
+  return { headline };
+}
+
+// file: digest.test.ts
+import { createWorkflowContext } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+import { digestFlow } from "./workflows/digest.ts";
+
+test("digest runs its steps in order and sleeps once", async () => {
+  const ctx = createWorkflowContext();
+  const output = await digestFlow({ url: "https://example.com/a" }, ctx);
+
+  expect(output.headline).toBe("the article");
+  expect(ctx.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize", "file"]);
+  expect(ctx.slept).toEqual([{ label: "settle", until: 10_000 }]);
+});
 ```
 
 ***
@@ -425,12 +475,23 @@ matches nothing, and lowering nothing onto the def is indistinguishable from
 not lowering at all. A project with no tools omits the field instead, which
 is a statement rather than an accident.
 
-```ts no-check
-// `no-check`: two of these imports are files YOU own — `./agent.ts` and
-// `./system-prompt.md?raw` — which exist in your project and in no tree of
-// ours, so nothing here can resolve them. (`import.meta.glob` is not the
-// blocker: the doc-example gate compiles with Vite's client types, as the
-// scaffold's `@alexkroman1/aai/tsconfig` preset does.)
+```ts
+// file: agent.ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({ name: "Notes" });
+
+// file: tools/add_note.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Save a note",
+  inputSchema: z.object({ text: z.string() }),
+  execute: ({ text }) => ({ saved: text.length }),
+});
+
+// file: agent.test.ts
 import { deployedAgent } from "@alexkroman1/aai/testing";
 import authored from "./agent.ts";
 import systemPrompt from "./system-prompt.md?raw";
@@ -831,14 +892,19 @@ When the value is not a dialog envelope — a plain `tool()` has no
 
 ##### Example
 
-```ts no-check
-import { expectDialogOk, runTool } from "@alexkroman1/aai/testing";
+```ts
+import agentDef from "virtual:aai/agent";
+import { createToolContext, expectDialogOk, runTool } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
 
-const answered = expectDialogOk<{ quoted: number }>(
-  await runTool(agentDef, "quote", {}, ctx),
-);
-expect(answered.state).toBe("quote.pending");
-expect(answered.result.quoted).toBe(42);
+test("quote moves the dialog on", async () => {
+  const ctx = createToolContext();
+  const answered = expectDialogOk<{ quoted: number }>(
+    await runTool(agentDef, "quote", {}, ctx),
+  );
+  expect(answered.state).toBe("quote.pending");
+  expect(answered.result.quoted).toBe(42);
+});
 ```
 
 #### Call Signature
@@ -1205,11 +1271,17 @@ The type the spec claims for the tool's own value.
 
 ##### Example
 
-```ts no-check
+```ts
+import agentDef from "virtual:aai/agent";
 import { expectToolOk, toolRunner } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
 
 const run = toolRunner(agentDef);
-const order = expectToolOk<{ id: string }>(await run("place_order", { item: "pizza" }));
+
+test("place_order answers an id", async () => {
+  const order = expectToolOk<{ id: string }>(await run("place_order", { item: "pizza" }));
+  expect(order.id).toMatch(/^ord_/);
+});
 ```
 
 ***
@@ -1418,14 +1490,25 @@ When the schema refuses `value`, with the issues rendered as one line
 
 #### Example
 
-```ts no-check
+```ts
+import { workflow } from "@alexkroman1/aai";
 import { parseSchemaInput } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+import { z } from "zod";
 
-const parsed = await parseSchemaInput<{ voice: string }>(myWorkflow.input, {
-  recording: "upl_1",
-  voice: "jane",
+const myWorkflow = workflow({
+  description: "Read a recording aloud",
+  input: z.object({ recording: z.string(), voice: z.string().default("jane") }),
+  run: async (input) => input,
 });
-expect(parsed.voice).toBe("jane");
+
+test("the voice survives parsing", async () => {
+  const parsed = await parseSchemaInput<{ voice: string }>(myWorkflow.input, {
+    recording: "upl_1",
+    voice: "jane",
+  });
+  expect(parsed.voice).toBe("jane");
+});
 ```
 
 ***
@@ -1822,10 +1905,21 @@ How the schema is named in that error.
 
 #### Example
 
-```ts no-check
+```ts
+import { workflow } from "@alexkroman1/aai";
 import { schemaInputIssues } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+import { z } from "zod";
 
-expect(await schemaInputIssues(myWorkflow.input, { voice: "not-a-voice" })).toBeDefined();
+const myWorkflow = workflow({
+  description: "Read a recording aloud",
+  input: z.object({ recording: z.string(), voice: z.enum(["jane", "paul"]) }),
+  run: async (input) => input,
+});
+
+test("an unknown voice is refused", async () => {
+  expect(await schemaInputIssues(myWorkflow.input, { voice: "not-a-voice" })).toBeDefined();
+});
 ```
 
 ***
@@ -2060,8 +2154,15 @@ Completion contents, in order. A bare string is one reply.
 
 #### Example
 
-```ts no-check
-// `no-check`: the step under test is in another file, which is the point.
+```ts
+// file: workflows/digest.ts
+import { stepGenerateJson } from "@alexkroman1/aai/step";
+import { z } from "zod";
+
+export const summarize = (article: string) =>
+  stepGenerateJson(`One headline for: ${article}`, { schema: z.object({ headline: z.string() }) });
+
+// file: digest.test.ts
 import { stubGateway } from "@alexkroman1/aai/testing";
 import { expect, test, vi } from "vitest";
 import { summarize } from "./workflows/digest.ts";
@@ -2112,15 +2213,19 @@ is the half no hand-rolled version had. Reading what the model was ASKED off a
 request; one eval asserted its prompts that way and was really asserting
 against the serialized `model` and `temperature` too.
 
-```ts no-check
-// `no-check`: the step under test is in another file, which is the point.
+```ts
 import { stubGatewayRoute } from "@alexkroman1/aai/testing";
 import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
+import { expect, test } from "vitest";
 
-const model = stubGatewayRoute(['{"verdict":"ship"}']);
-installStubStepFetch((request) => model.route(request) ?? { body: PAGE_HTML });
-// … run the workflow …
-expect(model.calls[0]?.prompt).toContain("the brief");
+const PAGE_HTML = "<html><body>the brief</body></html>";
+
+test("the reviewer is asked about the brief", async () => {
+  const model = stubGatewayRoute(['{"verdict":"ship"}']);
+  installStubStepFetch((request) => model.route(request) ?? { body: PAGE_HTML });
+  // … run the workflow …
+  expect(model.calls[0]?.prompt).toContain("the brief");
+});
 ```
 
 #### Parameters
@@ -2245,14 +2350,20 @@ of those chunks, and nothing else in a spec can see them.
 The two are separated the way the streams are, so a spec asserting a chunk
 never has to filter the sentences out of it.
 
-```ts no-check
+```ts
+import { stepEmit } from "@alexkroman1/aai/step";
+import { stubReporter } from "@alexkroman1/aai/testing";
+import { afterEach, expect, test } from "vitest";
+
 const reported = stubReporter();
 afterEach(reported.restore);
 
-await transcribeSegment(uploadId, format, segment);
-expect(reported.emitted).toEqual([
-  { namespace: "transcript", chunk: { index: 0, text: "hello there" } },
-]);
+test("each segment is emitted as it lands", async () => {
+  await stepEmit("transcript", { index: 0, text: "hello there" });
+  expect(reported.emitted).toEqual([
+    { namespace: "transcript", chunk: { index: 0, text: "hello there" } },
+  ]);
+});
 ```
 
 Publishing REPLACES, so a spec that forgets to restore leaves this one
@@ -2377,15 +2488,19 @@ Called per request with the recorded request. Defaults to an
 
 #### Example
 
-```ts no-check
-// `no-check`: the assertion is the point, and a doc example may not import a
-// test runner — the same reason `createToolContext`'s example opts out.
+```ts
+import { stepFetch } from "@alexkroman1/aai/step";
 import { stubStepFetch } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
 
-const sync = stubStepFetch(() => ({ body: { text: "hello there" } }));
-// … call the step …
-expect(sync.calls[0]?.headers.Authorization).toBe("sk-test");
-sync.restore();
+test("the step sends its credential", async () => {
+  const sync = stubStepFetch(() => ({ body: { text: "hello there" } }));
+  await stepFetch("https://sync.example.com/transcribe", {
+    headers: { Authorization: "sk-test" },
+  });
+  expect(sync.calls[0]?.headers.Authorization).toBe("sk-test");
+  sync.restore();
+});
 ```
 
 ***
@@ -2500,33 +2615,64 @@ one with `stubUploads`. The two fakes fill different slots and compose.
 
 [`StubTranscribe`](#stubtranscribe)
 
-#### Examples
+#### Example
 
 **A whole async job, in one line of setup**
 
-```ts no-check
-// `no-check`: the workflow under test is in another file, which is the point.
+```ts
+// file: workflows/transcribe.ts
+import {
+  stepReadUpload,
+  stepTranscribePoll,
+  stepTranscribeSubmit,
+  stepTranscribeSync,
+  stepTranscribeUpload,
+} from "@alexkroman1/aai/step";
+import { orFail } from "@alexkroman1/aai/step-errors";
+
+export async function transcribeRecording(uploadId: string) {
+  const { audioUrl } = await stepTranscribeUpload(uploadId);
+  const { id } = await stepTranscribeSubmit(audioUrl);
+  let progress = await stepTranscribePoll(id);
+  while (!progress.done) progress = await stepTranscribePoll(id);
+  return progress.transcript.text;
+}
+
+export async function transcribeSegment(uploadId: string, segment: { start: number; end: number }) {
+  const { bytes } = await stepReadUpload(uploadId, segment);
+  return orFail(stepTranscribeSync)(bytes);
+}
+
+// file: transcribe.test.ts
+import { RetryableError } from "@alexkroman1/aai/step-errors";
 import { stubTranscribe, stubUploads } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+import { transcribeRecording, transcribeSegment } from "./workflows/transcribe.ts";
 
-const uploads = stubUploads({ upl_1: new Uint8Array(5000) });
-const provider = stubTranscribe({ text: "we ship tuesday", durationSec: 42 });
+test("a whole async job, in one line of setup", async () => {
+  const uploads = stubUploads({ upl_1: new Uint8Array(5000) });
+  const provider = stubTranscribe({ text: "we ship tuesday", durationSec: 42 });
 
-expect(await transcribeRecording("upl_1")).toBe("we ship tuesday");
-// The file really streamed: `stubStepFetch` drains the body into bytes.
-expect(provider.calls.find((call) => call.leg === "upload")?.body).toBeInstanceOf(Uint8Array);
+  expect(await transcribeRecording("upl_1")).toBe("we ship tuesday");
+  // The file really streamed: `stubStepFetch` drains the body into bytes.
+  expect(provider.calls.find((call) => call.leg === "upload")?.body).toBeInstanceOf(Uint8Array);
 
-provider.restore();
-uploads.restore();
-```
-
-**A rate limit, classified by the SDK rather than by the fake**
-
-```ts no-check
-const provider = stubTranscribe({
-  failure: { leg: "sync", status: 429, retryAfterSeconds: 30 },
+  provider.restore();
+  uploads.restore();
 });
-// `toStepError` reads `retryable` and `retryAfter` off the real TranscribeError.
-await expect(transcribeSegment("upl_1", segment)).rejects.toBeInstanceOf(RetryableError);
+
+test("a rate limit, classified by the SDK rather than by the fake", async () => {
+  const uploads = stubUploads({ upl_1: new Uint8Array(5000) });
+  const provider = stubTranscribe({
+    failure: { leg: "sync", status: 429, retryAfterSeconds: 30 },
+  });
+  // `toStepError` reads `retryable` and `retryAfter` off the real TranscribeError.
+  await expect(transcribeSegment("upl_1", { start: 0, end: 1000 })).rejects.toBeInstanceOf(
+    RetryableError,
+  );
+  provider.restore();
+  uploads.restore();
+});
 ```
 
 ***
@@ -2582,10 +2728,17 @@ stubUploads({ upl_2: { bytes: firstHalf, complete: false } }).restore();
 
 **What a step wrote, without reading it back through the slot**
 
-```ts no-check
-const uploads = stubUploads({}, { writable: true });
-// … call the step …
-expect(uploads.writes.map((one) => one.name)).toEqual(["summary.wav"]);
+```ts
+import { stepWriteUpload } from "@alexkroman1/aai/step";
+import { stubUploads } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+
+test("the step files its summary", async () => {
+  const uploads = stubUploads({}, { writable: true });
+  await stepWriteUpload(new Uint8Array(16), { name: "summary.wav", type: "audio/wav" });
+  expect(uploads.writes.map((one) => one.name)).toEqual(["summary.wav"]);
+  uploads.restore();
+});
 ```
 
 ***
@@ -2636,10 +2789,14 @@ When the agent declares no such tool, or when it declares no
 
 #### Example
 
-```ts no-check
+```ts
+import agentDef from "virtual:aai/agent";
 import { toolInputIssues } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
 
-expect(await toolInputIssues(agentDef, "recommend", { mood: "melancholy" })).toBeDefined();
+test("recommend refuses a mood off its list", async () => {
+  expect(await toolInputIssues(agentDef, "recommend", { mood: "melancholy" })).toBeDefined();
+});
 ```
 
 ***
@@ -2744,7 +2901,11 @@ A spec drives one agent, so `agentDef` is the same in every call and the name
 is the thing that varies. Every shipped template therefore opened with the
 same wrapper:
 
-```ts no-check
+```ts
+import agentDef from "virtual:aai/agent";
+import type { ToolContext } from "@alexkroman1/aai";
+import { runTool } from "@alexkroman1/aai/testing";
+
 const run = (name: string, argsOrCtx?: Record<string, unknown> | ToolContext, ctx?: ToolContext) =>
   runTool(agentDef, name, argsOrCtx, ctx);
 ```
@@ -6149,8 +6310,11 @@ whose value may never be `undefined`. So a spec holding a `string |
 undefined` could not pass it, and the workaround it reached for instead was a
 conditional spread:
 
-```ts no-check
-createToolContext({ generate, ...(sessionId ? { sessionId } : {}) });
+```ts
+import { createToolContext } from "@alexkroman1/aai/testing";
+
+declare const sessionId: string | undefined;
+createToolContext({ ...(sessionId ? { sessionId } : {}) });
 ```
 
 Two shipped templates had that line byte-identical, and it is the exact shape

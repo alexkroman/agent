@@ -108,12 +108,17 @@ export type StepGenerateOptions = {
  * remaining attempts is not this module's call. The mapping is one line at
  * the call site:
  *
- * ```ts no-check
- * try {
- *   return await stepGenerate(prompt, { system });
- * } catch (err) {
- *   if (err instanceof StepGenerateError && !err.retryable) throw new FatalError(err.message);
- *   throw err;
+ * ```ts
+ * import { StepGenerateError, stepGenerate } from "@alexkroman1/aai/step";
+ * import { FatalError } from "@alexkroman1/aai/step-errors";
+ *
+ * export async function summarize(prompt: string, system: string) {
+ *   try {
+ *     return await stepGenerate(prompt, { system });
+ *   } catch (err) {
+ *     if (err instanceof StepGenerateError && !err.retryable) throw new FatalError(err.message);
+ *     throw err;
+ *   }
  * }
  * ```
  *

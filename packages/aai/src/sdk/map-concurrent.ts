@@ -128,12 +128,18 @@
  *   module doc above carries why, and why the window itself needs no barrier.
  *
  * @example
- * ```ts no-check
+ * ```ts
+ * import type { WorkflowContext } from "@alexkroman1/aai";
+ * import { mapConcurrent, stepGenerate } from "@alexkroman1/aai/step";
+ *
  * // In a workflow body: one step per segment, four in flight. The callback
  * // issues its `ctx.step` immediately, under ONE literal name.
- * const cleaned = await mapConcurrent(segments, 4, (text) =>
- *   ctx.step("postProcess", () => postProcess(text)),
- * );
+ * export async function cleanFlow(input: { segments: string[] }, ctx: WorkflowContext) {
+ *   const cleaned = await mapConcurrent(input.segments, 4, (text) =>
+ *     ctx.step("postProcess", () => stepGenerate(`Clean up this transcript: ${text}`)),
+ *   );
+ *   return { cleaned };
+ * }
  * ```
  *
  * @public

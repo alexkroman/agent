@@ -970,7 +970,8 @@ The machine. Give a state a `meta.instruction` and it becomes
 ##### Examples
 
 ```ts
-// shared.ts — the one place the dialog is declared.
+// file: shared.ts
+// The one place the dialog is declared.
 import { dialog } from "@alexkroman1/aai";
 import { setup } from "xstate";
 
@@ -993,13 +994,11 @@ const machine = setup({
 });
 
 export const claim = dialog("claim", machine);
-```
 
-```ts no-check
-// tools/quote_claim.ts — cannot run before the caller is verified.
-// (`no-check`: the point of the example is the OTHER file's declaration.)
-import { claim } from "../shared.ts";
+// file: tools/quote_claim.ts
+// Cannot run before the caller is verified.
 import { z } from "zod";
+import { claim } from "../shared.ts";
 
 export default claim.tool({
   description: "Quote the claim once the policy is verified",
@@ -2182,7 +2181,10 @@ set it rather than surface as a `TypeError` on the first property access —
 which `aai-runtime/src/tools/executor.ts` serializes and hands to the MODEL, so what a caller
 hears is the agent apologising for something no log line explains.
 
-```ts no-check
+```ts
+import { requireEnv, tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
 export default tool({
   description: "Look up a note",
   inputSchema: z.object({ id: z.string() }),
@@ -2833,24 +2835,22 @@ See [SessionSlotOptions](#sessionslotoptions). `view` is the one worth
 
 [`SessionSlot`](#sessionslot)\<`K`, `T`, `V`\>
 
-#### Examples
+#### Example
 
 ```ts
-// shared.ts — the one place the slot is declared, view included.
+// file: shared.ts
+// The one place the slot is declared, view included.
 import { sessionSlot } from "@alexkroman1/aai";
 
 export type Cart = { items: string[] };
 export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }), {
   view: (cart) => ({ count: cart.items.length }),
 });
-```
 
-```ts no-check
-// tools/add_item.ts — no cast, no annotation, no lazy-init boilerplate.
-// (`no-check`: the point of the example is the OTHER file, so it cannot be
-// self-contained.)
-import { cartSlot } from "../shared.ts";
+// file: tools/add_item.ts
+// No cast, no annotation, no lazy-init boilerplate: the slot types the draft.
 import { z } from "zod";
+import { cartSlot } from "../shared.ts";
 
 export default cartSlot.updateTool({
   description: "Add an item to the cart",
@@ -3694,12 +3694,23 @@ workflow promises. With no `output` nothing changes: the result type is
 inferred from the body exactly as before. Both answer the same
 `WorkflowDef<P, R>`, so nothing downstream can tell which was used.
 
-##### Examples
+##### Example
 
-`agent.ts` — declare the workflow beside the agent. A tool is a FILE, so
+`agent.ts` declares the workflow beside the agent. A tool is a FILE, so
 `agent()` takes no `tools`. Declaring `output` beside `input` is what makes
-the run's result checked where it completes and typed where it is read.
-```ts no-check
+the run's result checked where it completes and typed where it is read;
+`tools/research.ts` is the tool that starts a run.
+```ts
+// file: workflows/digest.ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { stepGenerate } from "@alexkroman1/aai/step";
+
+export async function digestFlow(input: { topic: string }, ctx: WorkflowContext) {
+  const headline = await ctx.step("headline", () => stepGenerate(`Headline: ${input.topic}`));
+  return { topic: input.topic, headline };
+}
+
+// file: agent.ts
 import { agent, workflow } from "@alexkroman1/aai";
 import { z } from "zod";
 import { digestFlow } from "./workflows/digest.ts";
@@ -3715,10 +3726,8 @@ export default agent({
   name: "Researcher",
   workflows: { digest },
 });
-```
 
-`tools/research.ts` — the tool that starts a run.
-```ts no-check
+// file: tools/research.ts
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import { digest } from "../agent.ts";
@@ -3913,12 +3922,23 @@ workflow promises. With no `output` nothing changes: the result type is
 inferred from the body exactly as before. Both answer the same
 `WorkflowDef<P, R>`, so nothing downstream can tell which was used.
 
-##### Examples
+##### Example
 
-`agent.ts` — declare the workflow beside the agent. A tool is a FILE, so
+`agent.ts` declares the workflow beside the agent. A tool is a FILE, so
 `agent()` takes no `tools`. Declaring `output` beside `input` is what makes
-the run's result checked where it completes and typed where it is read.
-```ts no-check
+the run's result checked where it completes and typed where it is read;
+`tools/research.ts` is the tool that starts a run.
+```ts
+// file: workflows/digest.ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { stepGenerate } from "@alexkroman1/aai/step";
+
+export async function digestFlow(input: { topic: string }, ctx: WorkflowContext) {
+  const headline = await ctx.step("headline", () => stepGenerate(`Headline: ${input.topic}`));
+  return { topic: input.topic, headline };
+}
+
+// file: agent.ts
 import { agent, workflow } from "@alexkroman1/aai";
 import { z } from "zod";
 import { digestFlow } from "./workflows/digest.ts";
@@ -3934,10 +3954,8 @@ export default agent({
   name: "Researcher",
   workflows: { digest },
 });
-```
 
-`tools/research.ts` — the tool that starts a run.
-```ts no-check
+// file: tools/research.ts
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import { digest } from "../agent.ts";
@@ -15497,10 +15515,18 @@ Almost every real agent keeps its prose in a file beside `agent.ts`, and a
 resolver composes against that file by IMPORTING it — the same
 `?raw` import the composed-string case takes, closed over by the function:
 
-```ts no-check
+```ts
+// file: shared.ts
+import { sessionSlot } from "@alexkroman1/aai";
+
+export const gameSlot = sessionSlot("game", () => ({ room: "cavern", torches: 2 }));
+export const statusBlock = (game: { room: string; torches: number }): string =>
+  `Room: ${game.room}. Torches left: ${game.torches}.`;
+
+// file: agent.ts
 import { agent } from "@alexkroman1/aai";
-import prompt from "./system-prompt.md?raw";
 import { gameSlot, statusBlock } from "./shared.ts";
+import prompt from "./system-prompt.md?raw";
 
 export default agent({
   name: "Cavern Adventure",
@@ -21259,14 +21285,17 @@ type WorkflowContext = {
 
 The handle a workflow body receives as its second argument.
 
-```ts no-check
+```ts
 // workflows/research.ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { stepGenerate } from "@alexkroman1/aai/step";
+
 export async function researchFlow(
   input: { topic: string },
   ctx: WorkflowContext,
 ) {
-  const brief = await ctx.step("writeBrief", () => writeBrief(input.topic));
-  const notes = await ctx.step("investigate", () => investigate(brief));
+  const brief = await ctx.step("writeBrief", () => stepGenerate(`Brief: ${input.topic}`));
+  const notes = await ctx.step("investigate", () => stepGenerate(`Investigate: ${brief}`));
   return { topic: input.topic, notes };
 }
 ```
@@ -21533,10 +21562,17 @@ and a run could sleep forever.
 **Call it from the BODY, never from inside a [WorkflowContext.step](#step)** — a
 step body that waits fails the run, and the message names the fix.
 
-```ts no-check
-await ctx.step("draft", () => draft(input.topic));
-await ctx.sleep("review-window", 6 * 60 * 60 * 1000, { correlationId: "review" });
-await ctx.step("publish", () => publish(input.topic));
+```ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { stepGenerate } from "@alexkroman1/aai/step";
+
+export async function publishFlow(input: { topic: string }, ctx: WorkflowContext) {
+  const draft = await ctx.step("draft", () => stepGenerate(`Draft a post on ${input.topic}`));
+  await ctx.sleep("review-window", 6 * 60 * 60 * 1000, { correlationId: "review" });
+  await ctx.step("publish", () => publish(input.topic, draft));
+}
+
+declare function publish(topic: string, draft: string): Promise<void>; // your own site
 ```
 
 ###### Type Parameters
@@ -21757,11 +21793,21 @@ answered `HookNotFound`. Both hops are covered now: the route→`signal` hop
 by `aai-runtime/src/server/workflow-app.test.ts`, and `signal`→resume by
 `workflow/in-process.test.ts`.
 
-```ts no-check
+```ts
+// file: approval.ts
 // The token is the AUTHOR's, derived so the body and the tool that hands it
 // out agree — see below.
-const approval = await ctx.waitFor<{ approved: boolean }>(approvalToken(input.id));
-if (!approval.approved) return { published: false };
+export const approvalToken = (id: string): string => `approve-${id}`;
+
+// file: workflows/publish.ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { approvalToken } from "../approval.ts";
+
+export async function publishFlow(input: { id: string }, ctx: WorkflowContext) {
+  const approval = await ctx.waitFor<{ approved: boolean }>(approvalToken(input.id));
+  if (!approval.approved) return { published: false };
+  return { published: true };
+}
 ```
 
 **The token must be DERIVED, not random.** Whoever hands the URL out is
@@ -22570,20 +22616,34 @@ through a type-only import of `../agent.ts` drags no runtime cycle behind it.
 
 #### Example
 
-```ts no-check
-// agent.ts
-export const digest = workflow({
-  input: z.object({ topic: z.string(), limit: z.number().default(5) }),
+```ts
+// file: agent.ts
+import { agent, workflow, type WorkflowDef } from "@alexkroman1/aai";
+import { z } from "zod";
+import { digestFlow } from "./workflows/digest.ts";
+
+const digestInput = z.object({ topic: z.string(), limit: z.number().default(5) });
+
+// ANNOTATED, so the body may name `typeof digest` without a cycle (below).
+export const digest: WorkflowDef<typeof digestInput, string> = workflow({
+  description: "Digest a topic",
+  input: digestInput,
   run: digestFlow,
 });
 
-// workflows/digest.ts — `import type` is erased, so there is no cycle.
-import type { WorkflowInputOf } from "@alexkroman1/aai";
+export default agent({ name: "Digest", workflows: { digest } });
+
+// file: workflows/digest.ts
+// `import type` is erased, so there is no cycle.
+import type { WorkflowContext, WorkflowInputOf } from "@alexkroman1/aai";
+import { stepGenerate } from "@alexkroman1/aai/step";
 import type { digest } from "../agent.ts";
 
 export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
   // `limit` is `number`, not `number | undefined` — the default already ran.
-  return await research(input.topic, input.limit);
+  return await ctx.step("research", () =>
+    stepGenerate(`${input.limit} facts about ${input.topic}`),
+  );
 }
 ```
 
@@ -22639,16 +22699,32 @@ bundle.
 
 #### Example
 
-```ts no-check
-// agent.ts
-export const transcribe = workflow({ input: …, output: transcriptSchema, run: transcribeFlow });
+```ts
+// file: agent.ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
 
-// client.tsx — `import type` is erased, so nothing server-side is bundled.
+export const transcribe = workflow({
+  description: "Transcribe one upload",
+  input: z.object({ uploadId: z.string() }),
+  output: z.object({ text: z.string() }),
+  run: async (input, ctx) => ({
+    text: await ctx.step("transcribe", () => `(transcript of ${input.uploadId})`),
+  }),
+});
+
+export default agent({ name: "Transcriber", workflows: { transcribe } });
+
+// file: client.tsx
+// `import type` is erased, so nothing server-side is bundled.
 import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
+import { useWorkflowRun } from "@alexkroman1/aai-ui";
 import type { transcribe } from "./agent.ts";
 
-const run = useWorkflowRun<WorkflowOutputOf<typeof transcribe>>(runId, { api });
-if (run?.status === "completed") console.log(run.output.text); // typed
+export function Transcript({ runId }: { runId: string }) {
+  const { run } = useWorkflowRun<WorkflowOutputOf<typeof transcribe>>(runId);
+  return run?.status === "completed" ? <p>{run.output.text}</p> : null; // typed
+}
 ```
 
 ## It reads the declared SCHEMA first, and that is what breaks a cycle
@@ -22723,10 +22799,34 @@ The result is still the DISCRIMINATED union, so `isTerminal(run)` and
 
 #### Example
 
-```ts no-check
-import type { WorkflowRunOf } from "@alexkroman1/aai";
+```ts
+// file: agent.ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const research = workflow({
+  description: "Research a topic",
+  input: z.object({ topic: z.string() }),
+  output: z.object({ summary: z.string() }),
+  run: async (input) => ({ summary: `Everything about ${input.topic}.` }),
+});
+
+export default agent({ name: "Researcher", workflows: { research } });
+
+// file: tools/research_status.ts
+import { tool, type WorkflowRunOf } from "@alexkroman1/aai";
 import { isTerminal } from "@alexkroman1/aai/workflow-api";
-import type { research } from "../agent.ts";
+import { z } from "zod";
+import { research } from "../agent.ts";
+
+export default tool({
+  description: "How the research is going",
+  inputSchema: z.object({ runId: z.string() }),
+  execute: async ({ runId }, ctx) => {
+    const run = await ctx.workflows.get(runId, research);
+    return run ? describe(run) : "no such run";
+  },
+});
 
 function describe(run: WorkflowRunOf<typeof research>): string {
   if (!isTerminal(run)) return "still working on it";
