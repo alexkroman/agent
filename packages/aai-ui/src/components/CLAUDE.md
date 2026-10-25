@@ -118,11 +118,15 @@ theme rules are in `../CLAUDE.md`.
   per line) and an object of exactly `{ name: string, text: string }` renders
   `<FileField read="text" as="namedText">` (a `NamedTextValue`);
   `render={{ prop: "lines" | "namedText" }}` asks for either by name, never over
-  an upload (`fieldKindFor`). No `exclude`/`only`; `SchemaField` reads only
-  `type`, `enum`, `items`, `properties`, `required`, `description`, `default`
-  (no `min`/`max`). A conditionally-shown field must be hand-written and must be
-  one `<WorkflowFields>` skips, or it renders twice (`document-redline-workflow`
-  is the mixed-form example).
+  an upload (`fieldKindFor`). `document-redline-workflow` is the end-to-end
+  example: its `mustCover` (`z.array(z.string())`) and `source`
+  (`z.object({ name, text })`) render from the schema alone, so its form is one
+  `<WorkflowFields workflow="redline" />` and no hand-written field. No
+  `exclude`/`only`; `SchemaField` reads only `type`, `enum`, `items`,
+  `properties`, `required`, `description`, `default` (no `min`/`max`). A
+  hand-written control (a conditionally-shown field, a shape outside the two)
+  sits beside `<WorkflowFields>` in the same `<Form>` and must be for a property
+  it SKIPS, or the property renders twice.
 - `useFlash`, `useCopy` and `fieldKindFor` exist for the studio's tooling; their
   unexercised names are in `template-api-allowlist.json` on purpose.
 
