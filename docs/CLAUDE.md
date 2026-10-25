@@ -66,8 +66,9 @@ to `main`; the turbo `docs` task is a merge gate in `pnpm check` and CI.
 - **Every guide page is compiled.** `docs/src/content/docs/**` is listed
   literally in `MARKDOWN_FILES` (`scripts/check-doc-examples.mjs`; the gate
   specs scrape the literals), and `assertEveryDocsPageListed` fails on a page
-  nobody listed. A fence importing a reader's own file takes `no-check` plus an
-  entry in `scripts/no-check-baseline.json`; prefer a self-contained example.
+  nobody listed. A fence whose point is a reader's OTHER file carries that file
+  too, as `// file: <path>` sections (`scripts/_doc-example-files.mjs`), rather
+  than taking `no-check` plus an entry in `scripts/no-check-baseline.json`.
 - **The guide's sidebar in `docs/astro.config.mjs` is hand-kept**: a new page
   nobody adds is built and unreachable. The reference group is filled by the
   plugin (`typeDocSidebarGroup`).
@@ -433,8 +434,10 @@ typedoc a dependency of this workspace.
 CI) compiles every ` ```ts `/` ```tsx ` fence in published-package doc comments,
 the scaffold guide, READMEs, `docs/home.md`, the site's guide pages and the
 studio prompt modules, as self-contained modules under the scaffold tsconfig. A
-deliberate fragment opts out with ` ```ts no-check `. The list is explicit, so
-the generated `docs/api/` is not in it.
+fence that spans files (a tool reading a slot its agent declares) writes each as
+a `// file: <path>` section, compiled at that path so the relative imports
+resolve. A deliberate fragment opts out with ` ```ts no-check `, which is
+ratcheted. The list is explicit, so the generated `docs/api/` is not in it.
 
 **`home.md` opens with NO heading** (hence the `markdownlint-disable MD041` on
 its first line), because the renderer titles the page and a body `# …` produces

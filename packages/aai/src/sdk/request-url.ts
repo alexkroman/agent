@@ -6,10 +6,12 @@
  * handler that wants either half has to cut it itself. This package had cut it
  * at thirteen sites, three different ways, and one of the three is WRONG:
  *
- * ```ts no-check
- * new URLSearchParams((req.url ?? "").split("?")[1] ?? "")   // truncating
- * new URLSearchParams(raw.slice(raw.indexOf("?") + 1))       // correct
- * new URL(req.url ?? "/", "http://localhost").searchParams   // correct, allocates
+ * ```ts
+ * declare const req: { url?: string };
+ * const raw = req.url ?? "";
+ * new URLSearchParams((req.url ?? "").split("?")[1] ?? ""); // truncating
+ * new URLSearchParams(raw.slice(raw.indexOf("?") + 1)); // correct
+ * new URL(req.url ?? "/", "http://localhost").searchParams; // correct, allocates
  * ```
  *
  * `split("?")[1]` keeps only the segment BETWEEN the first and second `?`, so a

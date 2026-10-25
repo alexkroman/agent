@@ -7,7 +7,13 @@
  * hand, because two of the three inputs are literals Vite must see at the call
  * site:
  *
- * ```ts no-check
+ * ```ts
+ * // file: agent.ts
+ * import { agent } from "@alexkroman1/aai";
+ *
+ * export default agent({ name: "Notes" });
+ *
+ * // file: agent.test.ts
  * import { deployedAgent } from "@alexkroman1/aai/testing";
  * import authoredAgent from "./agent.ts";
  * import systemPrompt from "./system-prompt.md?raw";

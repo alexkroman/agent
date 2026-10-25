@@ -68,10 +68,18 @@ import type { AgentSessionContext } from "./agent-session-context.ts";
  * resolver composes against that file by IMPORTING it — the same
  * `?raw` import the composed-string case takes, closed over by the function:
  *
- * ```ts no-check
+ * ```ts
+ * // file: shared.ts
+ * import { sessionSlot } from "@alexkroman1/aai";
+ *
+ * export const gameSlot = sessionSlot("game", () => ({ room: "cavern", torches: 2 }));
+ * export const statusBlock = (game: { room: string; torches: number }): string =>
+ *   `Room: ${game.room}. Torches left: ${game.torches}.`;
+ *
+ * // file: agent.ts
  * import { agent } from "@alexkroman1/aai";
- * import prompt from "./system-prompt.md?raw";
  * import { gameSlot, statusBlock } from "./shared.ts";
+ * import prompt from "./system-prompt.md?raw";
  *
  * export default agent({
  *   name: "Cavern Adventure",

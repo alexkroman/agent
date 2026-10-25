@@ -21,7 +21,10 @@ import { missingEnvMessage } from "./_missing-env.ts";
  * which `aai-runtime/src/tools/executor.ts` serializes and hands to the MODEL, so what a caller
  * hears is the agent apologising for something no log line explains.
  *
- * ```ts no-check
+ * ```ts
+ * import { requireEnv, tool } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
  * export default tool({
  *   description: "Look up a note",
  *   inputSchema: z.object({ id: z.string() }),

@@ -199,8 +199,9 @@ The gates with a section of their own further down (`check:hatches`,
   agent that cannot fetch the rendered site.
 - **`check:doc-examples`** — every `ts`/`tsx` fence in published doc comments
   and user-facing markdown compiles under the scaffold tsconfig (the PUBLISHED
-  types), like `check:template-types`; a `no-check` fence is an escape hatch
-  with its own budget (`no-check-baseline.json`).
+  types), like `check:template-types`; an example spanning files writes each as
+  a `// file: <path>` section (`_doc-example-files.mjs`), and a `no-check` fence
+  is an escape hatch with its own budget (`no-check-baseline.json`).
 
 **None of them resolves a git ref, except three, and that is deliberate.** The
 escape-hatch gate used to diff the work tree against its merge-base with

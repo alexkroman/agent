@@ -151,10 +151,17 @@ export type StubUploads = {
  * ```
  *
  * @example What a step wrote, without reading it back through the slot
- * ```ts no-check
- * const uploads = stubUploads({}, { writable: true });
- * // … call the step …
- * expect(uploads.writes.map((one) => one.name)).toEqual(["summary.wav"]);
+ * ```ts
+ * import { stepWriteUpload } from "@alexkroman1/aai/step";
+ * import { stubUploads } from "@alexkroman1/aai/testing";
+ * import { expect, test } from "vitest";
+ *
+ * test("the step files its summary", async () => {
+ *   const uploads = stubUploads({}, { writable: true });
+ *   await stepWriteUpload(new Uint8Array(16), { name: "summary.wav", type: "audio/wav" });
+ *   expect(uploads.writes.map((one) => one.name)).toEqual(["summary.wav"]);
+ *   uploads.restore();
+ * });
  * ```
  *
  * @param files - Keyed by upload id — the same string a run input would carry.

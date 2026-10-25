@@ -218,13 +218,31 @@ export const WORKFLOW_CONTEXT_NOW: number = 1_767_225_600_000;
  * Build a `WorkflowContext` that runs a body and records what it asked for.
  *
  * @example
- * ```ts no-check
- * const ctx = createWorkflowContext();
- * const output = await digestFlow({ url: "https://example.com/a" }, ctx);
+ * ```ts
+ * // file: workflows/digest.ts
+ * import type { WorkflowContext } from "@alexkroman1/aai";
  *
- * expect(output.headline).toBe("…");
- * expect(ctx.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize", "file"]);
- * expect(ctx.slept).toEqual([{ label: "settle", until: 10_000 }]);
+ * export async function digestFlow(input: { url: string }, ctx: WorkflowContext) {
+ *   const article = await ctx.step("fetchArticle", () => `the article at ${input.url}`);
+ *   const headline = await ctx.step("summarize", () => article.slice(0, 11));
+ *   await ctx.sleep("settle", 10_000);
+ *   await ctx.step("file", () => undefined);
+ *   return { headline };
+ * }
+ *
+ * // file: digest.test.ts
+ * import { createWorkflowContext } from "@alexkroman1/aai/testing";
+ * import { expect, test } from "vitest";
+ * import { digestFlow } from "./workflows/digest.ts";
+ *
+ * test("digest runs its steps in order and sleeps once", async () => {
+ *   const ctx = createWorkflowContext();
+ *   const output = await digestFlow({ url: "https://example.com/a" }, ctx);
+ *
+ *   expect(output.headline).toBe("the article");
+ *   expect(ctx.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize", "file"]);
+ *   expect(ctx.slept).toEqual([{ label: "settle", until: 10_000 }]);
+ * });
  * ```
  *
  * @public

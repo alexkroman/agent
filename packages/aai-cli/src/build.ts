@@ -27,7 +27,7 @@ import {
   SECRET_NAME_PLACEHOLDER,
   TARGET_OUTPUTS,
 } from "./_build-target.ts";
-import { buildAgentBundle, evalWorkerBundle, evalWorkerConfig } from "./_bundler.ts";
+import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
 import { emitDenoOutput } from "./_deno-output.ts";
 import { emitModalOutput } from "./_modal-output.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
@@ -231,16 +231,18 @@ export async function executeBuild(
   // `_preflight.ts` carries the argument, and `aai deploy` reads the same
   // export for the same reason.
   //
-  // It costs a SECOND evaluation of the user's bundle, so it is skipped for a
-  // target that deploys nowhere — which is every ordinary local build, `node`
-  // being the default and `missingDeployEnv` returning nothing for it anyway.
-  const deployConfig = output.dir === undefined ? undefined : await evalWorkerConfig(bundle.worker);
+  // The bundle carries it from the runtime-less pre-build that decided which
+  // vendors to leave out (`buildAgentBundle`), so no second import of the full
+  // worker; it used to cost one, skipped for a target that deploys nowhere.
+  // Still read only for a deploy target: `node` is the default and
+  // `missingDeployEnv` returns nothing for it anyway.
+  const deployConfig = output.dir === undefined ? undefined : bundle.config;
   const missingEnv = await missingDeployEnv(
     cwd,
     target,
     process.env,
-    // `evalWorkerConfig` answers `unknown` — the export is the USER's SDK's —
-    // and nothing at all for a bundle old enough not to emit it. Truthiness is
+    // The config is `unknown` — the export is the USER's SDK's — and absent
+    // for a bundle old enough not to emit it. Truthiness is
     // the narrowing `aai deploy` applies to the same value, and a falsy one
     // means "nothing to derive", never an error.
     deployConfig || undefined,

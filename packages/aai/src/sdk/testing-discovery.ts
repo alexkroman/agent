@@ -138,12 +138,23 @@ export type ProjectFiles = {
  * not lowering at all. A project with no tools omits the field instead, which
  * is a statement rather than an accident.
  *
- * ```ts no-check
- * // `no-check`: two of these imports are files YOU own — `./agent.ts` and
- * // `./system-prompt.md?raw` — which exist in your project and in no tree of
- * // ours, so nothing here can resolve them. (`import.meta.glob` is not the
- * // blocker: the doc-example gate compiles with Vite's client types, as the
- * // scaffold's `@alexkroman1/aai/tsconfig` preset does.)
+ * ```ts
+ * // file: agent.ts
+ * import { agent } from "@alexkroman1/aai";
+ *
+ * export default agent({ name: "Notes" });
+ *
+ * // file: tools/add_note.ts
+ * import { tool } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
+ * export default tool({
+ *   description: "Save a note",
+ *   inputSchema: z.object({ text: z.string() }),
+ *   execute: ({ text }) => ({ saved: text.length }),
+ * });
+ *
+ * // file: agent.test.ts
  * import { deployedAgent } from "@alexkroman1/aai/testing";
  * import authored from "./agent.ts";
  * import systemPrompt from "./system-prompt.md?raw";

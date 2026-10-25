@@ -80,7 +80,11 @@ export type InvariantDetail = () => Record<string, unknown>;
  * BECAUSE there is no sampling: the check really did run.
  *
  * @example
- * ```ts no-check
+ * ```ts
+ * import { invariant } from "@alexkroman1/aai/internal";
+ *
+ * declare const tail: number;
+ * declare const events: unknown[];
  * invariant(tail >= events.length, "page.tail", () => ({ tail, got: events.length }));
  * ```
  */

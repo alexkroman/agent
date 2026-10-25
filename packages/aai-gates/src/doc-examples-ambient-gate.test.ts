@@ -174,8 +174,10 @@ describe("the ambient stripper's wiring", () => {
       docExamplesSource,
       `${DOC_EXAMPLES_SCRIPT} no longer imports ${AMBIENTS_MODULE}`,
     ).toContain("_doc-example-ambients.mjs");
+    // Inside `writeExample`, the one path every scratch file — a whole fence or
+    // one `// file:` section of it — goes through.
     expect(docExamplesSource, `${DOC_EXAMPLES_SCRIPT} no longer calls the stripper`).toContain(
-      "stripReferenceDirectives(ex.code)",
+      "stripReferenceDirectives(source)",
     );
     expect(
       docExamplesSource,

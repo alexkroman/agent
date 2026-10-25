@@ -127,8 +127,15 @@ An agent's value is the actions it takes, and every one of them lives in a
 system only your code can reach. A tool is a file in `tools/`, named by its own
 filename — `agent()` takes no `tools` field and nothing registers it:
 
-```ts no-check
-// tools/add_note.ts — `no-check`: `../agent.ts` is a file in YOUR project.
+```ts
+// file: agent.ts
+import { agent, sessionSlot } from "@alexkroman1/aai";
+
+export const notesSlot = sessionSlot("notes", () => ({ items: [] as string[] }));
+
+export default agent({ name: "Notes" });
+
+// file: tools/add_note.ts
 import { z } from "zod";
 import { notesSlot } from "../agent.ts";
 
@@ -522,8 +529,28 @@ carries no tools; `deployedAgent` gives you the definition a deployed agent
 runs, and each tool is then callable in isolation with no session, no model and
 no network:
 
-```ts no-check
-// `no-check`: `./agent.ts` and `./tools/` are files in YOUR project, not here.
+```ts
+// file: agent.ts
+import { agent, sessionSlot } from "@alexkroman1/aai";
+
+export const notesSlot = sessionSlot("notes", () => ({ items: [] as string[] }));
+
+export default agent({ name: "Notes" });
+
+// file: tools/add_note.ts
+import { z } from "zod";
+import { notesSlot } from "../agent.ts";
+
+export default notesSlot.updateTool({
+  description: "Save a note for the caller",
+  inputSchema: z.object({ text: z.string() }),
+  execute: ({ text }, notes) => {
+    notes.items.push(text);
+    return { saved: notes.items.length };
+  },
+});
+
+// file: agent.test.ts
 import { createToolContext, deployedAgent, runTool } from "@alexkroman1/aai-runtime/testing";
 import { expect, test } from "vitest";
 import authored from "./agent.ts";
