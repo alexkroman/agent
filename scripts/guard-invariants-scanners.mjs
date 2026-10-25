@@ -76,24 +76,35 @@ export function propertyBodyLines(source, names) {
   );
   for (let at = 0; at < lines.length; at++) {
     if (!opens.test(lines[at])) continue;
-    let depth = 0;
-    let opened = false;
-    for (let end = at; end < lines.length; end++) {
-      inside.add(end + 1);
-      for (const char of lines[end]) {
-        if (char === "{") {
-          depth += 1;
-          opened = true;
-        } else if (char === "}") {
-          depth -= 1;
-        }
-      }
-      // Closed: the brace that opened the body has its match. A property that
-      // opens none on its own line (an expression arrow) is that line only.
-      if (!opened || depth <= 0) break;
-    }
+    for (let end = at; end <= bodyEnd(lines, at); end++) inside.add(end + 1);
   }
   return inside;
+}
+
+/**
+ * The index of the line that closes the property body opened at `at`: the one
+ * whose `}` matches the first `{`, or `at` itself for a property that opens no
+ * brace on its own line (an expression arrow is that line only).
+ *
+ * @param {readonly string[]} lines
+ * @param {number} at
+ * @returns {number}
+ */
+function bodyEnd(lines, at) {
+  let depth = 0;
+  let opened = false;
+  for (let end = at; end < lines.length; end++) {
+    for (const char of lines[end]) {
+      if (char === "{") {
+        depth += 1;
+        opened = true;
+      } else if (char === "}") {
+        depth -= 1;
+      }
+    }
+    if (!opened || depth <= 0) return end;
+  }
+  return lines.length - 1;
 }
 
 export function scanSymlinks() {
