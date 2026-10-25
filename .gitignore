@@ -86,3 +86,9 @@ zz-*
 # `git ls-files --exclude-standard`.
 docs/src/content/docs/reference/
 docs/.astro/
+
+# `aai-guest-core/src/bundle.ts` writes each loaded bundle beside itself (the
+# anchor its `require` resolves from) and unlinks it after the import. Under the
+# test suites that is `src/`, and a concurrent knip run - or a test killed
+# mid-import - otherwise sees an unused or untracked file.
+aai-bundle-*.mjs
