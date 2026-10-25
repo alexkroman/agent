@@ -41,7 +41,7 @@ import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { Logger } from "../logger.ts";
 import { guestCodeVersion } from "./code-version.ts";
 import { dedupedRunId } from "./dedupe-run-id.ts";
-import { holdSignal } from "./held-signals.ts";
+import { holdSignal, takeHeldSignal } from "./held-signals.ts";
 import { isTerminalStatus, type JournalStore, type RunRecord } from "./journal/types.ts";
 import { settleRunOutcome } from "./output.ts";
 import { runKeyEntry } from "./replay/run-key.ts";
@@ -488,6 +488,19 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
         const holdMs = options?.holdMs ?? 0;
         if (!(holdMs > 0)) return false;
         holdSignal(token, payload, holdMs);
+        // The wait can be CLAIMED between the miss above and the hold: the wait
+        // side reads the hold exactly once, right after its claim (`answerHeld`
+        // in `replay/waits.ts`), so a claim landing in that gap found nothing and
+        // parked — and nothing re-dispatches a hold. One retry closes the gap. A
+        // delivery now means the wait was open, so the hold is taken back (or a
+        // later wait on the token would read a stale answer) and the run is
+        // re-walked to read the journaled payload; a second miss means the hold
+        // stands, for the claim still to come. At most one of the two sides
+        // delivers — `deliverHook` refuses a hook already answered.
+        const claimed = await journal.deliverHook(token, payload);
+        if (!claimed) return true;
+        takeHeldSignal(token);
+        dispatchDetached(claimed);
         return true;
       }
       // The answer is stored; the body has to be re-walked to read it.
