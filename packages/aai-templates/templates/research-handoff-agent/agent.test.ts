@@ -2,53 +2,39 @@
 /// <reference types="vite/client" />
 
 /**
- * Specs for the research desk's four tools.
+ * Specs for the research desk.
  *
- * All are exercised against a STUBBED `ctx.workflows`, which is the honest way
- * to unit-test a TOOL: what a tool owns is the call it makes, not what the run
- * does afterwards.
- * What these assert is the agent's half of the contract — that the handoff tool
- * passes the correlation key, that the status tool narrows a snapshot correctly
- * before reading it aloud, and that the two tools reaching PAST a status (the
- * progress stream, the early wake) ask for what a voice reply can use.
- *
- * The WORKFLOW half is `workflows.test.ts` beside this file: the steps driven
- * directly, the body on the real replay engine, and what a finished pass files.
- * The split is where the subject changes rather than where the line count did —
- * a tool's subject is the call it makes with a `ToolContext`, and a step's is
- * what it does with none.
+ * Three tiers: the two tools against a stubbed `ctx.workflows` (what a tool owns
+ * is the call it makes), the desk's configuration and delivery through
+ * `createWorkflowContext`, and the whole run on the real replay engine
+ * (`runWorkflow`). The pass itself — the brief's fallback, the planner's width
+ * cap, the researcher's cite-else-opened sources — is asserted in the SDK's own
+ * `sdk/deep-research.test.ts`; what is asserted here is this desk's half.
  */
 
-/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import { DEFAULT_STEP_MAX_ATTEMPTS, type WorkflowClient } from "@alexkroman1/aai";
+import { describeRun } from "@alexkroman1/aai";
 import { renderSlackPlainText } from "@alexkroman1/aai/channels";
 import {
   DEFAULT_DEEP_RESEARCH_BUDGET,
   DEFAULT_DEEP_RESEARCH_PROMPTS,
 } from "@alexkroman1/aai/experimental";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import type { WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
-import type {
-  RunWorkflowOptions,
-  WorkflowTestRun,
-  WorkflowTestStep,
-  WorkflowTestWait,
-} from "@alexkroman1/aai-runtime/testing";
+import { isTerminal, type WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
+import type { WorkflowTestRun, WorkflowTestWait } from "@alexkroman1/aai-runtime/testing";
 import {
   createRunSnapshot,
   createToolContext,
   createWorkflowContext,
   parseSchemaInput,
-  runTool,
   runWorkflow,
   type StubStepAnswer,
   type StubStepFetch,
   type StubStepRequest,
   schemaInputIssues,
-  toolRunner,
 } from "@alexkroman1/aai-runtime/testing";
 import {
+  describeAgent,
   installStubGateway,
   installStubReporter,
   installStubStepDelegate,
@@ -56,8 +42,8 @@ import {
   installStubWorkflows,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { research } from "./shared.ts";
-import researchStatus from "./tools/research_status.ts";
+import fileItNow from "./tools/file_it_now.ts";
+import requestResearch from "./tools/request_research.ts";
 import {
   FILING_TEXT_PARAM_ENV,
   FILING_WEBHOOK_ENV,
@@ -67,312 +53,116 @@ import {
   renderFiling,
 } from "./workflows/filing.ts";
 import { BRIEF_SUMMARY_SYSTEM, BRIEF_SYSTEM } from "./workflows/prompts.ts";
-import { deliverResearch } from "./workflows/research.ts";
-import { REVIEW_DELAY_MS, REVIEW_SLEEP_ID } from "./workflows/review.ts";
+import research, { deliverResearch, REVIEW_DELAY_MS } from "./workflows/research.ts";
 
 /**
- * Every tool here is driven through the agent's own table, by the name the model
- * calls.
+ * A `ctx.workflows` that records `start` and answers the lookups from a fixture.
  *
- * The second parameter is args-or-context, which is `runTool`'s own shape: three
- * of this desk's four tools take no arguments, and the `{}` those calls were
- * obliged to pass sat between the two values a reader cares about.
+ * `installStubWorkflows` answers everything but `live`, which `file_it_now`
+ * reads, so that one is added beside it: the newest run that has not finished.
  */
-const run = toolRunner(agentDef);
-
-/**
- * A `ctx.workflows` that records `start` and answers `find` from a fixture.
- *
- * Returned WITHOUT a cast, which is the property worth keeping: a cast would
- * also stop reporting the day `WorkflowClient` grows a method, and this stub is
- * how the template's tools reach the client at all. `installStubWorkflows`
- * (`@alexkroman1/aai-runtime/testing/vitest`) is what keeps that affordable — a `vi.fn`
- * per method over one `runs` list, filling in what this desk does not drive, so
- * the day the client does grow a method only the tests using it change.
- * `stream`/`streamTail` are left rejecting on purpose: `research_progress` reads
- * progress through `lastLine`, and composing those two by hand is the hazard
- * `lastLine` exists to remove.
- */
-function stubWorkflows(runs: WorkflowRunSnapshot[] = []): WorkflowClient {
-  // Name only: `WorkflowSummary.description` is optional, so passing this
-  // desk's through would mean handing `description: undefined` to a field that
-  // does not accept it. Nothing here reads the description anyway.
-  return installStubWorkflows({ runs, names: ["research"] });
+function stubWorkflows(runs: WorkflowRunSnapshot[] = []) {
+  return {
+    ...installStubWorkflows({ agent: agentDef, runs }),
+    live: vi.fn(async () => runs.find((run) => !isTerminal(run))),
+  };
 }
 
-describe("the agent declares its workflow", () => {
-  test("under the name ctx.workflows.start resolves it by", () => {
-    // `toContain` rather than an exact key list: a second workflow is an
-    // invited edit and must not redden a test the author did not write. The
-    // NAME is still pinned, deliberately — this key is a STRING to everything
-    // outside this file (the REST route, `ctx.workflows.get`, a schedule), so
-    // renaming it is a runtime 404 rather than a compile error, and nothing
-    // else says so.
-    expect(Object.keys(agentDef.workflows ?? {})).toContain("research");
-    expect(agentDef.workflows?.research).toBe(research);
-  });
+/** A finished pass, as the status line reads it. */
+function findings(over: { summary?: string; sources?: number } = {}) {
+  return {
+    topic: "otters",
+    summary: "Otters use tools.",
+    report: "# Otters",
+    sources: 3,
+    angles: ["Tool use"],
+    filedAt: "2026-01-01T00:00:00.000Z",
+    ...over,
+  };
+}
 
-  test("with an input schema, so a bad topic fails at the call site", async () => {
-    // `parseSchemaInput` / `schemaInputIssues` rather than a reach through
-    // `["~standard"].validate`: that is the vendor WIRE contract, and whether it
-    // answers synchronously or with a promise is the vendor's business — a
-    // missing `await` there leaves `.issues` undefined and the refusing half
-    // passes for the wrong reason.
+describeAgent(agentDef, (run) => {
+  test("declares its workflow by its file name, with an input schema", async () => {
+    // `workflows/research.ts` is discovered the way `tools/` is, so the name the
+    // run API and the builtins use is the file's.
+    expect(agentDef.workflows?.research).toBe(research);
     const parsed = await parseSchemaInput(research.input, { topic: "otters", requestedBy: "s" });
     expect(parsed).toMatchObject({ topic: "otters" });
     expect(
       await schemaInputIssues(research.input, { topic: "no", requestedBy: "s" }),
     ).toBeDefined();
   });
-});
 
-/**
- * The options `request_research` starts its run with.
- *
- * AWAITED rather than `void`-ed. Reading a mock's call list off a floating
- * promise worked only because the tool body happens to reach `start` before its
- * first `await`; anything async landing ahead of that would have made this
- * return `undefined` and the reader throw a `TypeError` instead of failing on
- * the option it is about — and the dropped promise is an unhandled rejection
- * either way.
- *
- * The return type is inferred from the mock, so `notify` arrives typed and the
- * caller needs no cast.
- */
-async function workflowsStartOptions() {
-  const workflows = stubWorkflows();
-  const ctx = createToolContext({ workflows });
-  await run("request_research", { topic: "otters" }, ctx);
-  return vi.mocked(workflows.start).mock.calls[0]?.[2];
-}
+  describe("request_research", () => {
+    test("starts a run on the session's key, and asks to be TOLD when it lands", async () => {
+      const workflows = stubWorkflows();
+      const ctx = createToolContext({ workflows });
+      const result = await run(requestResearch, { topic: "otters" }, ctx);
 
-describe("request_research", () => {
-  test("starts a run keyed by the session, so a later turn can find it", async () => {
-    const workflows = stubWorkflows();
-    const ctx = createToolContext({ workflows });
-    const result = await run("request_research", { topic: "otters" }, ctx);
-
-    expect(workflows.start).toHaveBeenCalledWith(
-      research,
-      { topic: "otters", requestedBy: ctx.sessionId },
-      // `key` is the DURABLE handle — a later call finds the run by it — and
-      // `notify` is the live one: this session is told when the run lands, which
-      // is what makes the agent's "I'll let you know" true.
-      { key: ctx.sessionId, notify: expect.stringContaining("read the summary") },
-    );
-    expect(result).toMatchObject({ started: true, runId: "wrun_stub", topic: "otters" });
-  });
-
-  test("asks to be TOLD when the run lands, rather than waiting to be asked", async () => {
-    // The gap this closes: the agent promised an update, the run finished, and
-    // nothing made it speak — so the caller had to think to ask again. A voice
-    // agent that starts durable work and never announces it is the shape to
-    // avoid, and one option is the whole fix.
-    const options = await workflowsStartOptions();
-    expect(options, "request_research started no run").toBeDefined();
-    expect(typeof options?.notify).toBe("string");
-  });
-
-  test("passes the definition rather than its name", async () => {
-    const workflows = stubWorkflows();
-    await run("request_research", { topic: "otters" }, createToolContext({ workflows }));
-    // The def overload is what types the input and turns a rename into a compile
-    // error; a string would still work at runtime and lose both.
-    expect(vi.mocked(workflows.start).mock.calls[0]?.[0]).toBe(research);
-  });
-});
-
-describe("research_status", () => {
-  test("says nothing was started when the key has no runs", async () => {
-    const ctx = createToolContext({ workflows: stubWorkflows([]) });
-    const result = await run("research_status", ctx);
-    expect(result).toMatchObject({ runs: [], note: "Nothing started yet." });
-  });
-
-  test("reads a completed run's summary and source count back", async () => {
-    const runs = [
-      createRunSnapshot({
-        workflow: "research",
-        status: "completed",
-        output: { topic: "otters", summary: "Otters use tools.", sources: 3, filedAt: "now" },
-      }),
-    ];
-    const ctx = createToolContext({ workflows: stubWorkflows(runs) });
-    const result = await runTool(researchStatus, ctx);
-    expect(result.runs[0]).toContain("Otters use tools.");
-    expect(result.runs[0]).toContain("3 sources");
-  });
-
-  test("says WHEN it was asked for, so two requests can be told apart", async () => {
-    // What a caller ringing back needs. It replaces the workflow NAME, which
-    // was the same word on every line and read aloud as noise.
-    const runs = [
-      createRunSnapshot({
-        workflow: "research",
-        status: "running",
-        createdAt: Date.now() - 12 * 60_000,
-      }),
-    ];
-    const ctx = createToolContext({ workflows: stubWorkflows(runs) });
-    const result = await runTool(researchStatus, ctx);
-    expect(result.runs[0]).toContain("12 minutes ago");
-    expect(result.runs[0]).not.toContain("research:");
-  });
-
-  test("a run started moments ago is not reported as zero minutes old", async () => {
-    const ctx = createToolContext({
-      workflows: stubWorkflows([
-        createRunSnapshot({ workflow: "research", status: "running", createdAt: Date.now() }),
-      ]),
+      // The def, not its name, so the input is typed; no `key`, because a
+      // tool's start is keyed by the session by default; and `notify` is what
+      // makes the agent's "I'll let you know" true.
+      expect(workflows.start).toHaveBeenCalledWith(
+        research,
+        { topic: "otters", requestedBy: ctx.sessionId },
+        { notify: expect.stringContaining("read the summary") },
+      );
+      expect(result).toEqual({ started: true, runId: "wrun_stub", topic: "otters" });
     });
-    const result = await runTool(researchStatus, ctx);
-    expect(result.runs[0]).toContain("Just now");
   });
 
-  test("reports a live run as still working rather than as empty", async () => {
-    const ctx = createToolContext({
-      workflows: stubWorkflows([createRunSnapshot({ workflow: "research", status: "running" })]),
+  describe("file_it_now", () => {
+    test("wakes the REVIEW wait by its label, not whatever the run happens to hold", async () => {
+      const workflows = stubWorkflows([createRunSnapshot(research, { status: "running" })]);
+      vi.mocked(workflows.wakeUp).mockResolvedValue(1);
+      const result = await run(fileItNow, createToolContext({ workflows }));
+      expect(workflows.wakeUp).toHaveBeenCalledWith("wrun_1", {
+        correlationIds: ["reviewWindow"],
+      });
+      expect(result).toMatchObject({ filed: true });
     });
-    const result = await runTool(researchStatus, ctx);
-    expect(result.runs[0]).toContain("Still working on it.");
-  });
 
-  test("surfaces a failed run's message instead of swallowing it", async () => {
-    const runs = [
-      createRunSnapshot({ workflow: "research", status: "failed", error: "model unavailable" }),
-    ];
-    const ctx = createToolContext({ workflows: stubWorkflows(runs) });
-    const result = await runTool(researchStatus, ctx);
-    expect(result.runs[0]).toContain("model unavailable");
-  });
-
-  test("bounds how many past runs it reads aloud", async () => {
-    const workflows = stubWorkflows([]);
-    const ctx = createToolContext({ workflows });
-    await run("research_status", ctx);
-    // A voice reply cannot be a list of twenty runs.
-    expect(workflows.find).toHaveBeenCalledWith(research, ctx.sessionId, { limit: 3 });
-  });
-});
-
-describe("research_progress", () => {
-  test("reads the run's own progress line rather than its status", async () => {
-    const workflows = stubWorkflows([
-      createRunSnapshot({ workflow: "research", status: "running" }),
-    ]);
-    vi.mocked(workflows.lastLine).mockResolvedValue("Found 3 sources.");
-    const result = await run("research_progress", createToolContext({ workflows }));
-    expect(result).toMatchObject({ progress: "Found 3 sources." });
-  });
-
-  test("asks for the LAST line, not the whole log", async () => {
-    // A voice reply cannot recite every line the run has written. `lastLine` is
-    // the whole request — the bound that keeps an empty channel from hanging
-    // belongs to the method, so nothing here composes `streamTail` and `stream`.
-    const workflows = stubWorkflows([
-      createRunSnapshot({ workflow: "research", status: "running" }),
-    ]);
-    vi.mocked(workflows.lastLine).mockResolvedValue("a");
-    await run("research_progress", createToolContext({ workflows }));
-    expect(workflows.lastLine).toHaveBeenCalledWith("wrun_1");
-  });
-
-  test("a run that has written nothing yet says so", async () => {
-    // `lastLine` resolves `undefined` for an empty channel, and this is the arm
-    // the tool branches on. That an empty channel does not HANG — it is never
-    // closed, so a stream opened on one waits for a line that may never come —
-    // is `lastLine`'s own guarantee now, and `aai`'s to test.
-    const workflows = stubWorkflows([
-      createRunSnapshot({ workflow: "research", status: "running" }),
-    ]);
-    const result = await run("research_progress", createToolContext({ workflows }));
-    expect(result).toMatchObject({ note: "Started, nothing to report yet." });
-  });
-
-  test("says nothing was started when the key has no runs", async () => {
-    const workflows = stubWorkflows([]);
-    const result = await run("research_progress", createToolContext({ workflows }));
-    expect(result).toMatchObject({ note: "Nothing started yet." });
-    expect(workflows.lastLine).not.toHaveBeenCalled();
-  });
-});
-
-describe("file_it_now", () => {
-  test("wakes the sleeping run so the review wait ends early", async () => {
-    const workflows = stubWorkflows([
-      createRunSnapshot({ workflow: "research", status: "running" }),
-    ]);
-    vi.mocked(workflows.wakeUp).mockResolvedValue(1);
-    const result = await run("file_it_now", createToolContext({ workflows }));
-    expect(workflows.wakeUp).toHaveBeenCalledWith("wrun_1", {
-      correlationIds: [REVIEW_SLEEP_ID],
+    test("a run that was not waiting is reported honestly, not as a failure", async () => {
+      const workflows = stubWorkflows([createRunSnapshot(research, { status: "running" })]);
+      const result = await run(fileItNow, createToolContext({ workflows }));
+      expect(result).toMatchObject({ filed: false, note: expect.stringContaining("moved on") });
     });
-    expect(result).toMatchObject({ filed: true });
-  });
 
-  test("wakes the REVIEW wait by name, not whatever the run happens to hold", async () => {
-    // The tool's description is "skip the review wait", and an un-named
-    // `wakeUp(runId)` ends every suspension the run has — including an approval
-    // waitpoint a later body might open, which would file a report that was
-    // still waiting on a person. `review.ts` is where both sides read the id.
-    const workflows = stubWorkflows([
-      createRunSnapshot({ workflow: "research", status: "running" }),
-    ]);
-    vi.mocked(workflows.wakeUp).mockResolvedValue(1);
-    await run("file_it_now", createToolContext({ workflows }));
-    expect(vi.mocked(workflows.wakeUp).mock.calls[0]?.[1]?.correlationIds).toEqual([
-      REVIEW_SLEEP_ID,
-    ]);
-  });
-
-  test("a run that was not waiting is reported honestly, not as a failure", async () => {
-    // `wakeUp` answering 0 means the run had already moved past its sleep — the
-    // same shape as `cancel` answering false.
-    const workflows = stubWorkflows([
-      createRunSnapshot({ workflow: "research", status: "running" }),
-    ]);
-    vi.mocked(workflows.wakeUp).mockResolvedValue(0);
-    const result = await run("file_it_now", createToolContext({ workflows }));
-    expect(result).toMatchObject({ filed: false });
-  });
-
-  test("says nothing was started when the key has no runs", async () => {
-    const workflows = stubWorkflows([]);
-    const result = await run("file_it_now", createToolContext({ workflows }));
-    expect(result).toMatchObject({ note: "Nothing started yet." });
-    expect(workflows.wakeUp).not.toHaveBeenCalled();
+    test("says nothing is in flight when the session's runs have all finished", async () => {
+      const workflows = stubWorkflows([
+        createRunSnapshot(research, { status: "completed", output: findings() }),
+      ]);
+      const result = await run(fileItNow, createToolContext({ workflows }));
+      expect(result).toMatchObject({ filed: false, note: expect.stringContaining("in flight") });
+      expect(workflows.wakeUp).not.toHaveBeenCalled();
+    });
   });
 });
 
-/**
- * The WORKFLOW half of the research desk: what it configures, what it files,
- * and the run itself.
- *
- * The pass is `deepResearchWorkflow()`'s, and its stages — the brief's
- * fallback, the planner's width cap, the researcher's cite-else-opened
- * sources, the report's one numbering, the gateway's retry classification —
- * are asserted in the SDK's own spec (`sdk/deep-research.test.ts`), where they
- * live. What is asserted HERE is this desk's half: the prompts it overrides,
- * the researcher and budget it keeps, the review wait and filing its `deliver`
- * adds, and — on the REAL replay engine — that the whole run keeps the desk's
- * promise: **answer the caller now, finish the work later**.
- *
- * The body is driven twice, once through `createWorkflowContext`, which records
- * what it asked for and replays nothing, and once through `runWorkflow`
- * (`@alexkroman1/aai-runtime/testing`), which reads the journal directly for
- * the three things the run's own snapshot cannot show (which sleep is open and
- * under what name, what an `investigate` left behind for a resume to reuse, and
- * whether a boot sweep would still find a run whose worker died).
- * `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier above both, with a
- * built project and a real queue.
- */
+describe("what the status builtin says per run", () => {
+  test("reads a completed run's summary and source count back", () => {
+    const run = createRunSnapshot(research, { status: "completed", output: findings() });
+    expect(describeRun(research, run)).toContain("Otters use tools.");
+    expect(describeRun(research, run)).toContain("3 sources");
+  });
+
+  test("says WHEN it was asked for, so two requests can be told apart", () => {
+    const twelveMinutesAgo = createRunSnapshot(research, {
+      status: "running",
+      createdAt: Date.now() - 12 * 60_000,
+    });
+    expect(describeRun(research, twelveMinutesAgo)).toMatch(/^12 minutes ago: still working/);
+    const justNow = createRunSnapshot(research, { status: "running", createdAt: Date.now() });
+    expect(describeRun(research, justNow)).toMatch(/^Just now/);
+  });
+
+  test("surfaces a failed run's message instead of swallowing it", () => {
+    const run = createRunSnapshot(research, { status: "failed", error: "model unavailable" });
+    expect(describeRun(research, run)).toContain("model unavailable");
+  });
+});
+
 describe("the desk's research configuration", () => {
-  beforeEach(() => {
-    // `stepEnv` falls back to the process env when no host has published one,
-    // which is exactly the case a spec is. `unstubEnvs` clears it per test.
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-  });
-
   const INPUT = { topic: "Tool use", requestedBy: "Ada" };
   const brief = { brief: "How otters use tools", criteria: ["Which species"] };
 
@@ -418,37 +208,7 @@ describe("the desk's research configuration", () => {
     expect(desk.calls[0]?.options.context).toContain("How otters use tools");
   });
 
-  test("both investigate waves are called with more attempts than the default", async () => {
-    // With `runSteps: false` nothing runs, so this is the skeleton of a run: no
-    // page, no model and no search, in exchange for spelling the shape out.
-    const ctx = createWorkflowContext({
-      runSteps: false,
-      results: {
-        writeBrief: brief,
-        planAngles: ["Adoption", "Tooling"],
-        findGaps: ["Cost"],
-        investigate: { angle: "Adoption", findings: "f", sources: [] },
-        investigateGap: { angle: "Cost", findings: "f", sources: [] },
-        writeReport: { summary: "s", report: "r" },
-      },
-    });
-    await research.run(INPUT, ctx);
-
-    const investigations = ctx.steps.filter((step) => step.name.startsWith("investigate"));
-    expect(investigations.map((step) => step.name)).toEqual([
-      "investigate",
-      "investigate",
-      "investigateGap",
-    ]);
-    for (const step of investigations) {
-      expect(step.maxAttempts).toBeGreaterThan(DEFAULT_STEP_MAX_ATTEMPTS);
-    }
-  });
-
-  test("the review wait is opened under the name file_it_now wakes", async () => {
-    // The two halves of one agreement, and the only place a spec can see both:
-    // the delivery's `correlationId` here, and the tool's `correlationIds` in
-    // the `file_it_now` block. `review.ts` is the module that keeps them equal.
+  test("the review wait comes after the report and before filing, under the label file_it_now wakes", async () => {
     const ctx = createWorkflowContext({
       runSteps: false,
       results: {
@@ -461,13 +221,11 @@ describe("the desk's research configuration", () => {
     });
     await research.run(INPUT, ctx);
 
-    expect(ctx.slept).toHaveLength(1);
-    expect(ctx.slept[0]?.correlationId).toBe(REVIEW_SLEEP_ID);
-    // The wait comes AFTER the report, and filing after the wait.
+    expect(ctx.slept).toMatchObject([{ label: "reviewWindow", until: REVIEW_DELAY_MS }]);
     expect(ctx.steps.map((step) => step.name).slice(-2)).toEqual(["writeReport", "file"]);
   });
 
-  test("deliverResearch answers with what research_status reads back", async () => {
+  test("deliverResearch answers with what the status line reads back", async () => {
     const ctx = createWorkflowContext({ results: { file: "2026-01-01T00:00:00.000Z" } });
     const source = { title: "Otters", url: "https://otters.example" };
     const out = await deliverResearch(
@@ -494,7 +252,7 @@ describe("the desk's research configuration", () => {
 
   test("a missing key is FATAL, naming the key, and fails the run rather than filing", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
-    installStubGateway(["anything"]);
+    installStubGateway(["anything"], { apiKey: false });
     const ctx = createWorkflowContext();
     const err = await Promise.resolve(research.run(INPUT, ctx)).catch((thrown: unknown) => thrown);
     expect(FatalError.is(err)).toBe(true);
@@ -512,13 +270,9 @@ describe("the desk's research configuration", () => {
 });
 
 /**
- * The last step, which used to be a promise.
- *
- * What is asserted here is this template's half — what a filed report SAYS, and
- * that the channel is resolved from the env rather than assumed. The 4xx/5xx
- * split, the Block Kit assembly and the mrkdwn escaping are
- * `@alexkroman1/aai/channels`' and have their own specs; a template asserting
- * them again would pin the SDK's rendering from the outside.
+ * The last step. What is asserted here is this template's half — what a filed
+ * report SAYS, and that the channel is resolved from the env rather than
+ * assumed; the 4xx/5xx split and the rendering are `@alexkroman1/aai/channels`'.
  */
 describe("filing the findings", () => {
   const WEBHOOK = "https://hooks.slack.com/services/T000/B000/abc";
@@ -536,15 +290,7 @@ describe("filing the findings", () => {
     ],
   };
 
-  /**
-   * The webhook, answered without a network.
-   *
-   * `installStubStepFetch` rather than a `fetch` global stub: a channel post
-   * goes out through the published `stepFetch` slot like every other step
-   * request, and stubbing the global would test a path production does not
-   * take. Anything that is not the webhook is a finding rather than a 200 —
-   * an unexpected request answered emptily reads to the run as a refusal.
-   */
+  /** The webhook, answered without a network; anything else is a finding. */
   function stubPost(answer: StubStepAnswer): StubStepFetch {
     return installStubStepFetch((request: StubStepRequest): StubStepAnswer => {
       if (!request.url.startsWith("https://hooks.slack.com/")) {
@@ -563,15 +309,12 @@ describe("filing the findings", () => {
     expect(posted.calls[0]?.method).toBe("POST");
     expect(posted.calls[0]?.url).toBe(WEBHOOK);
     expect(String(posted.calls[0]?.body)).toContain("crack shellfish");
-    // `filedAt` is a TIME now. It was the literal string "filed" under a field
-    // named for a timestamp, which was two claims and neither was true.
     expect(Number.isNaN(Date.parse(filedAt))).toBe(false);
   });
 
   test("with no webhook it files nowhere, says so, and does not fail the run", async () => {
     // The last step of a five-minute pass is the worst place to discover a
-    // missing credential, so the channel is optional by construction — this is
-    // the arm that keeps `aai dev` runnable before anything is configured.
+    // missing credential, so the channel is optional by construction.
     const reported = installStubReporter();
     const posted = stubPost({ body: "ok" });
 
@@ -588,8 +331,7 @@ describe("filing the findings", () => {
 
   test("a text param is carried only where it means something", () => {
     // It names a Slack WORKFLOW variable, so it does something on a trigger URL
-    // and quietly nothing on an incoming webhook — and a setting that looks
-    // configured and is ignored is the worse of the two.
+    // and quietly nothing on an incoming webhook.
     vi.stubEnv(FILING_TEXT_PARAM_ENV, "report");
     vi.stubEnv(FILING_WEBHOOK_ENV, WEBHOOK);
     expect(filingChannel()?.options.textParam).toBeUndefined();
@@ -604,7 +346,6 @@ describe("filing the findings", () => {
     expect(message.heading).toBe("Research: how otters use tools");
     expect(message.subtitle).toContain("Requested by sess_1");
     expect(message.subtitle).toContain("1 source across 1 angle");
-    // The answer first, then one section per angle.
     expect(message.sections?.[0]).toMatchObject({ title: "In short" });
     expect(message.sections?.[1]).toMatchObject({
       title: "Tool use",
@@ -614,9 +355,7 @@ describe("filing the findings", () => {
 
   test("the message still answers where a destination renders no sections", () => {
     // A Slack workflow trigger takes ONE string, so the SDK folds the whole
-    // message down to text — `renderSlackPlainText` is that folding. What has to
-    // survive it is the answer and the sources, which is what a reader who never
-    // opens the run gets.
+    // message down to text; the answer and the sources must survive it.
     const flat = renderSlackPlainText(renderFiling(FILING));
 
     expect(flat).toContain("crack shellfish");
@@ -625,27 +364,12 @@ describe("filing the findings", () => {
 });
 
 /**
- * The whole run — `deepResearchWorkflow`'s pass plus this desk's delivery — on
- * the real replay engine.
+ * The whole run on the real replay engine, which is the only tier that can
+ * reach the desk's promise: **answer the caller now, finish the work later**.
  *
- * The block above drives this body through `createWorkflowContext`, which records
- * what it ASKED for and replays nothing — right for the retry policy and the
- * step order, and silent about the desk's actual promise: **answer the caller
- * now, finish the work later**. `runWorkflow`
- * (`@alexkroman1/aai-runtime/testing`) is the engine `aai dev` runs, over an
- * in-memory journal, so the review wait really suspends and the resume really
- * comes off the journal.
- *
- * The model is scripted POSITIONALLY, which is only safe because the run is made
- * sequential: one angle, and a researcher that stops on its first turn, so the
- * `mapConcurrent` fan-out has a single item and nothing races. A case that wants
- * two angles at once wants a router keyed on the system prompt instead — the
- * shape `link-digest-workflow` uses — because the order two concurrent step bodies reach
- * the gateway in is the scheduler's business.
- *
- * Five calls make a whole run: the brief, the angles, the researcher's first
- * action, the gap pass, and the report — plus its summary, which is a second
- * call on the same step.
+ * The model is scripted POSITIONALLY, which is only safe because the run is
+ * made sequential: one angle, and a researcher that stops on its first turn,
+ * so the `mapConcurrent` fan-out has a single item and nothing races.
  */
 describe("the run is DURABLE", () => {
   const SCRIPT = [
@@ -653,9 +377,8 @@ describe("the run is DURABLE", () => {
     JSON.stringify({ brief: "How otters use tools", criteria: ["Which species"] }),
     // planAngles — ONE, so the fan-out is sequential and the script positional.
     JSON.stringify({ angles: ["Tool use"] }),
-    // `investigate` is NOT in this script any more: it delegates, so its model
-    // calls are the subagent's and are answered by `installStubStepDelegate`
-    // below rather than by the gateway.
+    // `investigate` delegates: its model calls are the subagent's, answered by
+    // `installStubStepDelegate` below rather than by the gateway.
     // findGaps — none, so there is no second wave.
     JSON.stringify({ angles: [] }),
     // writeReport, then its summary.
@@ -664,20 +387,7 @@ describe("the run is DURABLE", () => {
   ];
   const INPUT = { topic: "otters", requestedBy: "sess_1" };
 
-  /**
-   * How every case here starts the run.
-   *
-   * `name` is the key the engine registers the run under and has to match the
-   * one `agent.ts` declares — a string five call sites repeated, which is the
-   * kind that drifts in four of them. The annotation is what says what else
-   * belongs in this bag (`crashAt` below, and a `journal` of your own).
-   */
-  const RUN = { name: "research" } satisfies RunWorkflowOptions;
-
   beforeEach(() => {
-    // `unstubEnvs` (set by `defineAgentTestConfig`) undoes the webhook an
-    // earlier case stubbed, so these cases start with none configured.
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
     // No `RESEARCH_SLACK_WEBHOOK_URL`, so the filing step posts nothing — which
     // is why the gateway counts below are the run's model calls and only those.
     installStubStepDelegate({ routes: { researcher: "Nothing was found on this angle." } });
@@ -688,25 +398,15 @@ describe("the run is DURABLE", () => {
     return run.steps.map((step) => step.key);
   }
 
-  /**
-   * The one suspension a research run takes, read off the journal itself.
-   *
-   * The run's snapshot carries `wakeAt` and nothing about WHICH wait it is, so
-   * the correlation id `file_it_now` names is only visible here.
-   */
+  /** The one suspension a research run takes, read off the journal itself. */
   function reviewSleep(run: WorkflowTestRun<unknown>): WorkflowTestWait | undefined {
-    return run.waits.find((wait) => wait.correlationId === REVIEW_SLEEP_ID);
-  }
-
-  /** What an `investigate` left in the journal for a resume to reuse. */
-  function journaledResearch(run: WorkflowTestRun<unknown>): WorkflowTestStep | undefined {
-    return run.steps.find((step) => step.name === "investigate");
+    return run.waits.find((wait) => wait.correlationId === "reviewWindow");
   }
 
   test("suspends on the review wait with the whole report already journaled", async () => {
     const started = Date.now();
     const model = installStubGateway(SCRIPT);
-    const run = await runWorkflow(research, INPUT, RUN);
+    const run = await runWorkflow(agentDef, "research", INPUT);
 
     // Not blocked — suspended. The sandbox is free here, which is the whole
     // reason a caller can hang up.
@@ -720,41 +420,29 @@ describe("the run is DURABLE", () => {
       "writeBrief#0",
       "writeReport#0",
     ]);
-    // FIVE gateway calls for six steps, and the missing one is `investigate`:
-    // its model turns belong to the subagent now and go through the delegate
-    // slot instead. The STEP is still journaled — it is in the list above.
+    // FIVE gateway calls for six steps: `investigate`'s turns went to the
+    // subagent through the delegate slot.
     expect(model).toHaveLength(5);
-  });
-
-  test("the open wait is the REVIEW wait, by the name the tool wakes", async () => {
-    installStubGateway(SCRIPT);
-    const run = await runWorkflow(research, INPUT, RUN);
-
-    const sleep = reviewSleep(run);
-    expect(sleep, "the run holds no sleep under the review correlation id").toBeDefined();
-    expect(sleep?.woken).toBe(false);
-    expect(sleep?.kind).toBe("sleep");
+    // The open wait is the REVIEW wait, by the label `file_it_now` wakes.
+    expect(reviewSleep(run)).toMatchObject({ kind: "sleep", woken: false });
   });
 
   test("makes no decision a replay could not reproduce", async () => {
     // `reads` records every `ctx.now`/`ctx.random`/`ctx.uuid` the body took, and
     // this body takes none: the fan-out's width comes from a journaled step, and
-    // the filing timestamp is a step RESULT. An empty list is the determinism
-    // rule this template's doc states, asserted rather than described.
+    // the filing timestamp is a step RESULT.
     installStubGateway(SCRIPT);
-    const run = await runWorkflow(research, INPUT, RUN);
+    const run = await runWorkflow(agentDef, "research", INPUT);
 
     expect(run.reads).toEqual([]);
   });
 
   test("resumes past the review wait and files, without researching again", async () => {
     const model = installStubGateway(SCRIPT);
-    const run = await runWorkflow(research, INPUT, RUN);
-    // `advanceSleep` is `ctx.workflows.wakeUp`'s own mechanism, which is what
-    // the `file_it_now` tool calls to cut the review short — and it is given the
-    // SAME correlation id that tool passes, so what this drives is that tool's
-    // effect rather than a blanket wake nothing in the desk performs.
-    await run.advanceSleep([REVIEW_SLEEP_ID]);
+    const run = await runWorkflow(agentDef, "research", INPUT);
+    // `advanceSleep` is `ctx.workflows.wakeUp`'s own mechanism, given the same
+    // label `file_it_now` passes.
+    await run.advanceSleep(["reviewWindow"]);
 
     expect(run.status).toBe("completed");
     expect(run.output).toMatchObject({
@@ -762,9 +450,9 @@ describe("the run is DURABLE", () => {
       summary: "Otters use tools.",
       report: "The report about otters.",
       angles: ["Tool use"],
+      // A real timestamp: the filing step really ran.
+      filedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
     });
-    // A real timestamp, and the filing step really ran.
-    expect(Number.isNaN(Date.parse(run.output?.filedAt ?? ""))).toBe(false);
     expect(run.deliveries).toBe(2);
     // The second walk re-entered the body from the top and paid the model
     // NOTHING: every step above the wait came back out of the journal.
@@ -775,32 +463,25 @@ describe("the run is DURABLE", () => {
     // The expensive claim. A deep-research pass is five to twelve model calls
     // and as many searches; a resume that redid them would cost the run twice.
     const model = installStubGateway(SCRIPT);
-    const run = await runWorkflow(research, INPUT, { ...RUN, crashAt: "writeReport" });
+    const run = await runWorkflow(agentDef, "research", INPUT, { crashAt: "writeReport" });
 
     expect(run.crashed).toBe(true);
     expect(stepKeys(run)).toEqual(["findGaps#0", "investigate#0", "planAngles#0", "writeBrief#0"]);
-    // THREE, not four: `investigate` is one of the four steps above and paid
-    // the gateway nothing — its turns went to the subagent.
-    const spentBeforeTheCrash = model.length;
-    expect(spentBeforeTheCrash).toBe(3);
-
-    // WHY the resume is free, read off the store rather than inferred from a
-    // call count: the finished angle's own result is sitting in the journal,
-    // which is what the second walk answers `investigate#0` from.
-    const done = journaledResearch(run);
+    // THREE, not four: `investigate` paid the gateway nothing.
+    expect(model).toHaveLength(3);
+    // The finished angle's own result is sitting in the journal, which is what
+    // the second walk answers `investigate#0` from; and the run is still
+    // FINDABLE, so a boot sweep resumes it.
+    const done = run.steps.find((step) => step.name === "investigate");
     expect(done?.status).toBe("ok");
     expect(done?.output).toMatchObject({ angle: "Tool use" });
-    // And the run is still FINDABLE: a dead worker leaves it for a boot sweep,
-    // which is what makes "resume" a platform behaviour rather than a promise
-    // this handle keeps.
     expect(run.resumable).toBe(true);
 
     await run.restart();
-    await run.advanceSleep([REVIEW_SLEEP_ID]);
+    await run.advanceSleep(["reviewWindow"]);
     expect(run.status).toBe("completed");
-    // Five in total: the three the crash already paid for came back out of the
-    // journal, and only the report and its summary were re-issued.
+    // Five in total: only the report and its summary were re-issued.
     expect(model).toHaveLength(5);
-    expect(run.output?.report).toBe("The report about otters.");
+    expect(run.output).toMatchObject({ report: "The report about otters." });
   });
 });
