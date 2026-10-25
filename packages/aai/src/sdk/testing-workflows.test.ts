@@ -21,6 +21,14 @@ describe("createRunSnapshot", () => {
     });
   });
 
+  test("carries every base field the overrides name — a label, the run's timing", () => {
+    expect(
+      createRunSnapshot({ key: "sess-1", label: "Otters", startedAt: 10, settledAt: 20 }),
+    ).toMatchObject({ key: "sess-1", label: "Otters", startedAt: 10, settledAt: 20 });
+    // And none of them when unnamed: an absent field stays absent, not `undefined`.
+    expect(Object.keys(createRunSnapshot())).not.toContain("label");
+  });
+
   test("a completed run narrows to its output without a cast", () => {
     const run = createRunSnapshot({ status: "completed", output: { sources: 3 } });
     // The property under test: `output` is reachable after narrowing, which is

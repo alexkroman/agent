@@ -51,10 +51,10 @@ import type { AgentDef } from "@alexkroman1/aai";
 import { describe, test } from "vitest";
 import { announceEvalMode, closeEvalSuite, type EvalMode } from "./_announce.ts";
 import {
-  drainThenClose,
   type EvalSteps,
   type EvalStepsOptions,
-  installCaseSteps,
+  refuseStepsBeside,
+  withCaseSteps,
 } from "./_case-steps.ts";
 import { evalOnlySelects, evalRepeat } from "./_env.ts";
 import { runRepeats, SuiteSpread } from "./_spread.ts";
@@ -132,9 +132,7 @@ export function describeWorkflowEval(
   },
 ): void {
   if (options?.steps !== undefined && options.stepFetch !== undefined) {
-    throw new Error(
-      "describeWorkflowEval: `steps` answers a step's HTTP, as `stepFetch` does — pass one, not both.",
-    );
+    refuseStepsBeside(describeWorkflowEval.name, ["`stepFetch`"]);
   }
   const { steps: stepsOptions, ...appOptions } = options ?? {};
   const { mode, reason } = resolveWorkflowEvalMode(agent);
@@ -173,21 +171,14 @@ export function describeWorkflowEval(
       const once = async () => {
         stubProcessEnv(agent, mode);
         const app = openEvalWorkflows({ ...appOptions, agent, env });
-        // After the app, which publishes a step fetch only when handed one.
-        const steps = stepsOptions === undefined ? undefined : installCaseSteps(stepsOptions);
-        let bodyFailed = false;
-        try {
-          await body({ app, mode, steps });
-        } catch (err) {
-          bodyFailed = true;
-          throw err;
-        } finally {
-          // The closes run whether or not the drain did — see `drainThenClose`.
-          await drainThenClose(steps, app, bodyFailed, async () => {
-            await app.close();
-            steps?.restore();
-          });
-        }
+        // The steps after the app, which publishes a step fetch only when
+        // handed one; drained, then closed, in `withCaseSteps`' one order.
+        await withCaseSteps(
+          stepsOptions,
+          app,
+          (steps) => body({ app, mode, steps }),
+          () => app.close(),
+        );
       };
       run(name, () => runRepeats(once, name, repeat, spread));
     };

@@ -211,6 +211,12 @@ export type WorkflowTestWait = {
  */
 export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
   /**
+   * The correlation key the run was started with — {@link RunWorkflowOptions.key},
+   * `"test"` by default — which is what the body reads as `ctx.key` and what
+   * its `ctx.signalToken(label)` derives a token from.
+   */
+  readonly key: string;
+  /**
    * Cut short every wait the run is parked on, and deliver.
    *
    * `ctx.workflows.wakeUp`'s own mechanism, which is what makes it honest: the
@@ -237,7 +243,15 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
    * a deployed `ctx.workflows.signal` gives.
    */
   signal(token: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
-  /** What the last `signal` answered. */
+  /**
+   * Answer the body's `ctx.waitForSignal(label)`, and deliver — {@link signal}
+   * for the token the body DERIVED from the run's name, its {@link key} and
+   * `label` (`ctx.signalToken`), so a spec names the label it reads in the
+   * body rather than re-spelling the token grammar. `signalled` reads the
+   * same answer.
+   */
+  signalRun(label: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
+  /** What the last `signal` or `signalRun` answered. */
   readonly signalled: boolean;
   /**
    * Close every `ctx.waitFor` WINDOW the run is parked on, and deliver.
@@ -254,9 +268,14 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
    * It does NOT move a clock and does not rewrite the stored record. It answers
    * the deadline READ the way an elapsed one answers it — `woken`, which
    * {@link WorkflowTestWait.woken} defines as "returns immediately" — for the
-   * duration of the delivery it triggers. Everything downstream is the engine's
-   * own: the close is still a compare-and-set on `delivered`, so a payload that
-   * landed first still wins and the body still takes the ANSWERED branch.
+   * windows OUTSTANDING when it is called, from the delivery it triggers on
+   * (a closed window stays closed on every later walk, as an elapsed one
+   * does). A window the body opens during that delivery (a second `waitFor`
+   * the first one's close led to) is not expired with them: it parks, and a
+   * later `expireWaits()` or `signal` ends it. Everything downstream is the
+   * engine's own: the close is still a compare-and-set on `delivered`, so a
+   * payload that landed first still wins and the body still takes the
+   * ANSWERED branch.
    *
    * Resolves this handle. A run parked on a `ctx.sleep` is unaffected;
    * `advanceSleep` is that one.
@@ -309,6 +328,13 @@ export type RunWorkflowOptions = {
    * carries — so a spec asserting on either passes the real key.
    */
   name?: string;
+  /**
+   * The correlation key the run is started with — `StartOptions.key`, which
+   * the body reads as `ctx.key` and `ctx.signalToken`/`ctx.waitForSignal`
+   * derive their token from. Defaults to `"test"`, so a keyed body runs out
+   * of the box; a spec asserting on the key passes its own.
+   */
+  key?: string;
   /**
    * The journal the run lives in. Defaults to a fresh in-memory one.
    *

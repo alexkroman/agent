@@ -22,7 +22,9 @@
  *   `history.restored` frame and one seed, never two that could overlap.
  *
  * And on the way out, **`onSessionEnd`**, after the stream has flushed, so a run
- * it starts reads the session's last words rather than racing their write.
+ * it starts reads the session's last words rather than racing their write — and
+ * handed those words by the stream wrapper (`session-stream.ts`), which holds
+ * them in memory, so the hook costs the stop no backend read.
  *
  * The client id is read from `sessionClientId` rather than passed down, because
  * that is where the socket recorded it (`session/ws-handler.ts`, before the session
@@ -34,7 +36,9 @@
 import {
   type AgentDef,
   type SessionCall,
+  type SessionEndContext,
   type SessionEvent,
+  type SlotStore,
   sessionCall,
   sessionClientId,
 } from "@alexkroman1/aai";
@@ -49,7 +53,6 @@ import {
   bindClientSession,
   type ClientHistoryDeps,
   loadClientHistory,
-  readSessionTranscript,
   resolveSessionContext,
 } from "../session/index.ts";
 import type { SessionSystemPrompt } from "./system-prompt.ts";
@@ -80,13 +83,15 @@ export type SessionMemory = {
    */
   readonly greeting: string | undefined;
   /**
-   * The session stopped and its log is flushed through `lastEventIndex`.
+   * The session stopped and its log is flushed through `lastEventIndex`;
+   * `transcript` is what that log says was said — read off memory by the
+   * caller (`session-stream.ts`), never re-read from the backend here.
    * Resolves once the hook has been CALLED (its own settlement is nobody's to
    * wait on), so a stop that awaits this has fired it; never rejects. A no-op
    * for a REFUSED session: it never began, and a summarizer started for it
    * would digest a conversation a stranger was denied.
    */
-  ended(lastEventIndex: number): Promise<void>;
+  ended(lastEventIndex: number, transcript: readonly ClientTranscriptMessage[]): Promise<void>;
 };
 
 /**
@@ -101,6 +106,8 @@ export function openSessionMemory(deps: {
   workflows: WorkflowClient | undefined;
   history: ClientHistoryDeps;
   prompt: Pick<SessionSystemPrompt, "setContext">;
+  /** The session's slot view, so `onSessionEnd` reads what the session wrote. */
+  slots: SlotStore;
   sessionId: string;
   logger: Logger;
 }): SessionMemory {
@@ -148,7 +155,7 @@ export function openSessionMemory(deps: {
         since: context?.historySince,
       });
     },
-    async ended(lastEventIndex) {
+    async ended(lastEventIndex, transcript) {
       // The client's live feed hears it first: its log is flushed, which is what
       // a page reacting to it (reading the transcript back) relies on.
       feedClientSessionEnd(sessionId);
@@ -157,42 +164,32 @@ export function openSessionMemory(deps: {
       const report = (err: unknown): void => {
         logger.warn("onSessionEnd failed", { sid, error: errorMessage(err) });
       };
-      const fire = (transcript: readonly ClientTranscriptMessage[]): void => {
-        try {
-          const result: unknown = hook({
-            sessionId,
-            env,
-            lastEventIndex,
-            transcript,
-            // The surface a tool's `ctx.workflows` is, minus `notify`: there is no
-            // session left to announce a result to.
-            workflows: deps.workflows ?? rejectingWorkflows(WORKFLOWS_UNAVAILABLE_MESSAGE),
-            ...omitUndefined({ clientId: clientOf(), call: callOf() }),
-          });
-          // Not awaited by anything the caller waits on — but a rejection is
-          // still this hook's failure, and an unhandled one would take the process.
-          // `Promise.resolve` so any thenable is covered, and a plain value is a no-op.
-          Promise.resolve(result).catch(report);
-        } catch (err: unknown) {
-          report(err);
-        }
+      // TODO(integrator): `slots` is on `SessionEndContext` once S1's SDK change
+      // lands — drop the intersection.
+      const context: SessionEndContext & { readonly slots: SlotStore } = {
+        sessionId,
+        env,
+        lastEventIndex,
+        transcript,
+        // The surface a tool's `ctx.workflows` is, minus `notify`: there is no
+        // session left to announce a result to.
+        workflows: deps.workflows ?? rejectingWorkflows(WORKFLOWS_UNAVAILABLE_MESSAGE),
+        // The session's own slot view, so a fact a tool or a hook wrote is
+        // readable at the end — the same view they wrote through.
+        slots: deps.slots,
+        ...omitUndefined({ clientId: clientOf(), call: callOf() }),
       };
-      // The transcript is read off the flushed log first, and the hook fires
-      // once it is in hand — still inside the stop that called this, which is
-      // what an eval's `watchSessionEndHook` and a page's "the end was
-      // reported" both rely on. A log the backend cannot read is not the
-      // hook's failure: it is logged and the hook runs with an empty
-      // transcript, which is what it would have seen before the field existed.
-      const transcript = await readSessionTranscript(deps.history, sessionId).catch(
-        (err: unknown): ClientTranscriptMessage[] => {
-          logger.warn("Session transcript not read for onSessionEnd", {
-            sid,
-            error: errorMessage(err),
-          });
-          return [];
-        },
-      );
-      fire(transcript);
+      // Fired inside the stop that called this, which is what an eval's
+      // `watchSessionEndHook` and a page's "the end was reported" both rely on.
+      try {
+        const result: unknown = hook(context);
+        // Not awaited by anything the caller waits on — but a rejection is
+        // still this hook's failure, and an unhandled one would take the process.
+        // `Promise.resolve` so any thenable is covered, and a plain value is a no-op.
+        Promise.resolve(result).catch(report);
+      } catch (err: unknown) {
+        report(err);
+      }
     },
   };
 }

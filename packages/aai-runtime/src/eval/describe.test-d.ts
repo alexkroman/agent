@@ -11,7 +11,7 @@
  * route's shared state reached the case through a module-level `let`.
  */
 
-import { agent, type SessionEvent, sessionSlot, tool } from "@alexkroman1/aai";
+import { agent, type SessionEvent, sessionSlot, tool, withInstruction } from "@alexkroman1/aai";
 import { createStubWorkflows } from "@alexkroman1/aai/testing";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { expectTypeOf, test } from "vitest";
@@ -21,9 +21,11 @@ import {
   customEventsIn,
   type EvalToolCall,
   lastStateIn,
+  lastToolResultIn,
   statesIn,
   toolArgsIn,
   toolResultIn,
+  toolResultsIn,
 } from "./events.ts";
 import { type EvalNetwork, evalNetwork } from "./network.ts";
 
@@ -151,6 +153,23 @@ test("a reader handed the tool DEF answers the def's own types", () => {
   expectTypeOf(toolArgsIn(calls, placeOrder)).toEqualTypeOf<readonly { item: string }[]>();
   // The string form is unchanged.
   expectTypeOf(toolResultIn(calls, "place_order")).toBeUnknown();
+});
+
+test("a result's `$instruction` is not readable off a def-typed reader — the wire never carries it", () => {
+  const plan = tool({
+    description: "Draft the plan",
+    inputSchema: z.object({ goal: z.string() }),
+    execute: async ({ goal }) => withInstruction({ steps: [goal] }, "Read it back."),
+  });
+  const calls: readonly EvalToolCall[] = [];
+  // The runtime strips the key before the `tool.completed` frame is recorded,
+  // so the type a spec reads is the result WITHOUT it.
+  expectTypeOf(toolResultIn(calls, plan)).toEqualTypeOf<{ steps: string[] }>();
+  expectTypeOf(lastToolResultIn(calls, plan)).toEqualTypeOf<{ steps: string[] }>();
+  expectTypeOf(toolResultsIn(calls, plan)).toEqualTypeOf<readonly { steps: string[] }[]>();
+  // A result that is no record — a tool answering a string — is itself.
+  const greet = tool({ description: "Greet", execute: async () => "hello" });
+  expectTypeOf(toolResultIn(calls, greet)).toEqualTypeOf<string>();
 });
 
 test("a state reader handed the PROJECTION answers the page's view", () => {

@@ -115,7 +115,14 @@ export function createRunSnapshot<R = unknown>(
       (def === undefined ? undefined : workflowNameOf(def)) ??
       DEFAULT_WORKFLOW,
     createdAt: overrides.createdAt ?? DEFAULT_CREATED_AT,
-    ...omitUndefined({ key: overrides.key }),
+    // Every optional base field the overrides name, so a fixture built with a
+    // `label` or a `startedAt` is the snapshot a page would read for it.
+    ...omitUndefined({
+      key: overrides.key,
+      label: overrides.label,
+      startedAt: overrides.startedAt,
+      settledAt: overrides.settledAt,
+    }),
   };
   if (!("status" in overrides) || overrides.status === undefined)
     return { ...base, status: "running" };

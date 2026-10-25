@@ -29,7 +29,7 @@
  * @module
  */
 
-import type { AgentDef, AgentSessionContext, SessionSpeech } from "@alexkroman1/aai";
+import type { AgentDef, AgentSessionContext, SessionSpeech, SlotStore } from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout, { TimeoutError } from "p-timeout";
@@ -37,7 +37,12 @@ import { feedClientEvent } from "../inbox/index.ts";
 import type { Logger } from "../logger.ts";
 import { recordSessionMetrics } from "../metrics-sink.ts";
 import type { ServerSession } from "../session/index.ts";
-import { createSessionEmitter, hookDepsFor, type SessionEmitter } from "../session/index.ts";
+import {
+  createSessionEmitter,
+  hookDepsFor,
+  type SessionEmitter,
+  type TurnCounter,
+} from "../session/index.ts";
 import { createTurnGuardrails, type TurnGuardrails } from "../transports/pipeline/index.ts";
 import type { Transport } from "../transports/types.ts";
 import { createUsageMeter, type UsageMeter } from "../usage-meter.ts";
@@ -54,6 +59,12 @@ export interface SessionWiring {
   emitter: SessionEmitter;
   usage: UsageMeter;
   guardrails: TurnGuardrails;
+  /**
+   * THE view of this session's slots — the one the hooks, the dialogs and
+   * the author functions read, handed on so `onSessionEnd` reads the same
+   * cache rather than a second view of one value.
+   */
+  slots: SlotStore;
 }
 
 /** Build one session's observation and control wiring, in order. @internal */
@@ -70,6 +81,8 @@ export function openSessionWiring(deps: {
   commitSessionState?: ((sessionId: string) => Promise<void> | void) | undefined;
   /** A handler's `ctx.speech` — resolved through the runtime's session map. */
   speech: SessionSpeech;
+  /** The session's committed-turn count, which a resolver reads as `ctx.turn`. */
+  turns: TurnCounter;
 }): SessionWiring {
   const { agent, env, sessionId, state, logger } = deps;
   // ONE view of this session's slots, shared by the hooks, the dialogs and the
@@ -84,8 +97,19 @@ export function openSessionWiring(deps: {
     ? (): void => void deps.commitSessionState?.(sessionId)
     : undefined;
   // What a per-session author FUNCTION is handed — a `systemPrompt` resolver
-  // and both guardrail lists. See `AgentSessionContext`.
-  const context: AgentSessionContext = { sessionId, env, slots };
+  // and both guardrail lists. See `AgentSessionContext`. `turn` is read LIVE:
+  // the object is built once per session and the counter advances with every
+  // committed user turn, so a resolver asked on turn three reads 3.
+  // TODO(integrator): `turn` is on `AgentSessionContext` once S1's SDK change
+  // lands — drop the intersection.
+  const context: AgentSessionContext & { readonly turn: number } = {
+    sessionId,
+    env,
+    slots,
+    get turn() {
+      return deps.turns.count;
+    },
+  };
   // Every session event is offered to each declared dialog, its per-state
   // deadline is armed, and the active instructions become the prompt's per-turn
   // suffix. Inert for an agent that declares none — see `dialogs.ts`.
@@ -160,6 +184,7 @@ export function openSessionWiring(deps: {
     personas,
     emitter,
     usage,
+    slots,
     guardrails: createTurnGuardrails({
       inputGuardrails: agent.inputGuardrails,
       outputGuardrails: agent.outputGuardrails,

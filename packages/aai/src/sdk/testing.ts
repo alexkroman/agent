@@ -130,6 +130,8 @@ export {
   type FetchRouteRequest,
   type FetchRoutesOptions,
   type FetchRouteTable,
+  routeHandlerOf,
+  routeOf,
   type StubFetchRoutes,
   stubFetchRoutes,
 } from "./testing-fetch-routes.ts";

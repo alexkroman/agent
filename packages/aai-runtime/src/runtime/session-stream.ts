@@ -23,7 +23,10 @@
  * - **Flush on the way out.** The batch that has not been written yet is the
  *   part a crash costs, and a clean stop is the one time it costs nothing.
  *   Only THEN is `onSessionEnd` told (`session-memory.ts`), so a run it
- *   starts reads a log that already holds the session's last words.
+ *   starts reads a log that already holds the session's last words — handed
+ *   the transcript from MEMORY: the resume's own log read at start, plus the
+ *   lines the stream retained as this process appended them
+ *   (`SessionEventLog.transcript`), so the hook costs the stop no backend read.
  *
  * ## A client's prior sessions restore in the SAME call as a resume's own log
  *
@@ -47,6 +50,7 @@ import {
   SESSION_EVENT_READ_LIMIT,
   type SessionEventLog,
   SessionRefusedError,
+  transcriptLinesOf,
 } from "../session/index.ts";
 import type { SessionMemory } from "./session-memory.ts";
 
@@ -106,6 +110,9 @@ export function attachSessionStream(
   },
 ): void {
   const { stream, sessionId, resumed, findings, memory } = opts;
+  // This session's OWN log as read at start — a resume's earlier events, the
+  // half of the transcript the stream did not see appended.
+  let earlier: readonly SessionEvent[] = [];
   const startCore = core.start.bind(core);
   core.start = async () => {
     await stream.hydrate(sessionId);
@@ -119,6 +126,7 @@ export function attachSessionStream(
       resumed ? readAllEvents(stream, sessionId) : [],
     ]);
     const prior = opened ?? [];
+    earlier = own;
     // BEFORE the history restore and `startCore()`: the core's own start is what
     // connects the providers and, once the client is ready, speaks the greeting,
     // so a refused session reaches neither a model nor the caller's ear.
@@ -147,10 +155,14 @@ export function attachSessionStream(
       // touch is written now rather than never (`backends/postgres.ts`).
       await stream.flush(sessionId, { final: true });
       // `tail` is one past the last index assigned, so an empty log answers -1.
-      // Awaited: the hook is CALLED before the stop resolves (its transcript
-      // is read first), which is the contract an eval's turn and a page
-      // reading "the end was reported" both hold.
-      await memory?.ended(stream.tail(sessionId) - 1);
+      // Awaited: the hook is CALLED before the stop resolves, which is the
+      // contract an eval's turn and a page reading "the end was reported" both
+      // hold. The transcript is in hand already: nothing was appended before
+      // `start` read the own log, so the two halves do not overlap.
+      await memory?.ended(stream.tail(sessionId) - 1, [
+        ...transcriptLinesOf(earlier),
+        ...stream.transcript(sessionId),
+      ]);
     }
   };
 }

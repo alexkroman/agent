@@ -5,10 +5,11 @@
  * - The **base** is `buildSystemPrompt(agentConfig, …)` — fixed for the
  *   runtime's lifetime except for the date it stamps, and cached per calendar
  *   day for exactly that reason (see {@link createSystemPromptResolver}).
- * - The agent's own **instructions**, when `systemPrompt` is a RESOLVER rather
- *   than a string: asked once per model request and folded in under the same
+ * - The agent's own **instructions**, when `systemPrompt` or `promptContext`
+ *   is a RESOLVER rather than a string: the whole section is asked once per
+ *   model request (`resolveAgentInstructions`) and folded in under the same
  *   precedence header a static prompt gets. Nothing of it is on the wire — the
- *   config carries only the static half — so it cannot live in the base.
+ *   config carries only the static halves — so it cannot live in the base.
  * - The session's **context** — `sessionContext`'s `instructions`, awaited
  *   ONCE at connect and fixed for the session. After the agent's own prompt
  *   and before the suffix, because it is the last STABLE part: a provider's
@@ -26,15 +27,10 @@
  * with no symptom on a machine running one session at a time.
  */
 
-import type { AgentPromptContext, AgentSessionContext, AgentSystemPrompt } from "@alexkroman1/aai";
-import {
-  agentInstructionsSection,
-  appendPromptContext,
-  authorInstructions,
-  buildSystemPrompt,
-  staticPromptContext,
-} from "@alexkroman1/aai/host-internal";
+import type { AgentDef, AgentSessionContext } from "@alexkroman1/aai";
+import { agentInstructionsSection, buildSystemPrompt } from "@alexkroman1/aai/host-internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
+import { resolveAgentInstructions } from "../_agent-instructions.ts";
 
 /**
  * Between the base prompt and a non-empty suffix.
@@ -139,45 +135,35 @@ export function createSystemPromptResolver(deps: {
   hasTools: boolean;
   toolGuidance: readonly string[] | undefined;
   /**
-   * The agent's `systemPrompt` when it is a RESOLVER rather than a string —
-   * `systemPromptResolver(agent.systemPrompt)`.
+   * The agent's `systemPrompt` and `promptContext`, either half of each a
+   * string or a RESOLVER. With nothing dynamic the strings are already on the
+   * wire and `buildSystemPrompt` bakes the agent section into the base. With
+   * a resolver on either side the base is built with NO agent section, and
+   * `forSession` composes the whole section per request
+   * (`resolveAgentInstructions`: the static or resolved prompt with the static
+   * or resolved context appended under it) under the same precedence header
+   * a static prompt gets ({@link agentInstructionsSection}) — which is what
+   * makes a resolver and a string land in the same place rather than merely
+   * near each other, and the context land under an override rather than
+   * above it. `toAgentConfig` puts nothing on the wire for a resolver.
    *
-   * A THIRD part between the base and the suffix, not a replacement for either.
-   * `toAgentConfig` puts nothing on the wire for a resolver, so the base carries
-   * no agent-specific section for one, and this fills that section per request
-   * under the same precedence header a static prompt gets
-   * ({@link agentInstructionsSection}) — which is what makes a resolver and a
-   * string land in the same place rather than merely near each other.
-   *
-   * Deliberately NOT `setSuffix`: that slot belongs to the session's dialogs,
-   * last writer wins, and a session may legitimately have both.
+   * A THIRD part between the base and the suffix, not a replacement for
+   * either; deliberately NOT `setSuffix`: that slot belongs to the session's
+   * dialogs, last writer wins, and a session may legitimately have both.
    */
-  instructions?: Exclude<AgentSystemPrompt, string> | undefined;
-  /**
-   * The agent's `promptContext`, either half — appended under its
-   * instructions, blank-line separated (`appendPromptContext` is the one
-   * spelling). With nothing dynamic on the agent the STRING is already on the
-   * wire and `buildSystemPrompt` bakes it into the base. With a resolver on
-   * either side the base is built with NO agent section, and `forSession`
-   * composes the two halves — static or dynamic each — under one header per
-   * request, so the context lands under the override rather than above it. A
-   * FUNCTION is never on the wire and is asked from the same session context
-   * a `systemPrompt` resolver gets.
-   */
-  promptContext?: AgentPromptContext | undefined;
+  agent?: Pick<AgentDef, "systemPrompt" | "promptContext"> | undefined;
 }): SystemPromptResolver {
   let promptCache: { day: string; text: string } | null = null;
   // Either half asked per request means the whole agent section is composed
-  // per request — see `promptContext` above. The base then carries none of
-  // it: `""` rather than the default, which `stripDefaultPrefix` would report
-  // as a duplicated copy.
-  const composed = deps.instructions !== undefined || typeof deps.promptContext === "function";
+  // per request — see `agent` above. The base then carries none of it: `""`
+  // rather than the default, which `stripDefaultPrefix` would report as a
+  // duplicated copy.
+  const { agent } = deps;
+  const composed =
+    typeof agent?.systemPrompt === "function" || typeof agent?.promptContext === "function";
   const baseConfig = composed
     ? { ...deps.agentConfig, systemPrompt: "", promptContext: undefined }
     : deps.agentConfig;
-  // The static half of the author's prompt, for the composed case — read once,
-  // so the duplicate-default warning behaves as it did when the base read it.
-  const staticOwn = composed ? authorInstructions(deps.agentConfig.systemPrompt) : undefined;
 
   function base(): string {
     const day = new Date().toDateString();
@@ -199,13 +185,6 @@ export function createSystemPromptResolver(deps: {
     return promptCache.text;
   }
 
-  /** This session's context half, per request — the static one only when composed. */
-  function contextFor(context: AgentSessionContext): string | undefined {
-    const { promptContext } = deps;
-    if (typeof promptContext === "function") return promptContext(context);
-    return composed ? staticPromptContext(promptContext) : undefined;
-  }
-
   return {
     base,
     forSession(context: AgentSessionContext): SessionSystemPrompt {
@@ -213,12 +192,8 @@ export function createSystemPromptResolver(deps: {
       let sessionContext = "";
       return {
         resolve(): string {
-          // Nothing composed: the base already holds the whole agent section
-          // and both halves answer `undefined` here.
-          const own = appendPromptContext(
-            deps.instructions?.(context) ?? staticOwn,
-            contextFor(context),
-          );
+          // Nothing composed: the base already holds the whole agent section.
+          const own = composed && agent ? resolveAgentInstructions(agent, context) : undefined;
           const agentText =
             own === undefined
               ? base()

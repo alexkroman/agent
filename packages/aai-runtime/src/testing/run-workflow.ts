@@ -68,6 +68,7 @@
  */
 
 import type { ToolInputSchema, WorkflowDef } from "@alexkroman1/aai";
+import { workflowSignalToken } from "@alexkroman1/aai/host-internal";
 import { parseSchemaInput } from "@alexkroman1/aai/testing";
 import {
   type WorkflowAppLike,
@@ -86,6 +87,7 @@ import { createMemoryJournal } from "../workflow/journal/backends/memory.ts";
 import { journalStoreOf, workflowJournal } from "../workflow/journal/handle.ts";
 import { isTerminalStatus, type JournalStore, type SleepEntry } from "../workflow/journal/types.ts";
 import { type DeterminismKind, isDeterminismKey } from "../workflow/replay/determinism.ts";
+import { RUN_KEY_STEP } from "../workflow/replay/run-key.ts";
 import type {
   RunWorkflowOptions,
   WorkflowTestHandle,
@@ -108,6 +110,9 @@ export const DEFAULT_MAX_DELIVERIES = 50;
 
 /** One queued delivery, as the injected dispatcher receives it. */
 type Queued = { runId: string; at: number | undefined };
+
+/** The key a run is started with when the spec names none — see `RunWorkflowOptions.key`. */
+const DEFAULT_RUN_KEY = "test";
 
 /**
  * Start `def` with `input` and drive it until it finishes or parks.
@@ -219,6 +224,7 @@ async function runDef<P extends ToolInputSchema, R>(
   options: RunWorkflowOptions,
 ): Promise<WorkflowTestHandle<R>> {
   const name = options.name ?? workflowNameOf(def) ?? "workflow";
+  const key = options.key ?? DEFAULT_RUN_KEY;
   const logger = options.logger ?? silentLogger;
   const maxDeliveries = options.maxDeliveries ?? DEFAULT_MAX_DELIVERIES;
   const validated = def.input
@@ -241,10 +247,15 @@ async function runDef<P extends ToolInputSchema, R>(
   // to resume at all.
   let crash: AbortController | undefined;
   let armed = options.crashAt;
-  // Set for the duration of ONE delivery by `expireWaits` — see its doc for why
-  // nothing public can end a `waitFor` window and why this answers the READ
-  // rather than rewriting the record.
-  let expiring = false;
+  // The deadline KEYS `expireWaits` has closed — see its doc for why nothing
+  // public can end a `waitFor` window and why this answers the READ rather
+  // than rewriting the record. Each call adds what was outstanding at the
+  // call, so a window the body opens during the delivery it triggers is not
+  // closed before it was ever open; and a key stays here for the rest of the
+  // run, because the window DID close (`closeHook` ran) and every later walk
+  // re-reads its deadline on the way past — answered as still open, the run
+  // would park on a window it already took the timeout branch of.
+  const expiring = new Set<string>();
   const store = journalStoreOf(options.journal) ?? createMemoryJournal();
   const journal: JournalStore = {
     ...store,
@@ -261,7 +272,7 @@ async function runDef<P extends ToolInputSchema, R>(
       // Only a hook's DEADLINE, never an ordinary `ctx.sleep`: those are
       // `advanceSleep`'s, through the engine's own `wakeUp`, and folding the two
       // together is the exact mistake `SleepRecord.kind` exists to prevent.
-      if (!expiring || record.kind !== "hookTimeout") return record;
+      if (record.kind !== "hookTimeout" || !expiring.has(key)) return record;
       return { ...record, woken: true };
     },
   };
@@ -283,10 +294,11 @@ async function runDef<P extends ToolInputSchema, R>(
     signalled: false,
   } as Mutable<R>;
 
-  const runId = await state.engine.start(name, [validated]);
+  const runId = await state.engine.start(name, [validated], { key });
 
   const handle: WorkflowTestHandle<R> = {
     runId,
+    key,
     // The UNWRAPPED store: a second run handed this must not inherit this
     // run's crash arming or its window expiry.
     journal: workflowJournal(store),
@@ -333,19 +345,20 @@ async function runDef<P extends ToolInputSchema, R>(
       await drain();
       return handle;
     },
+    signalRun(label, payload) {
+      // The token the body derived (`sdk/workflow-signals.ts`), from the same
+      // three parts, so neither side spells it.
+      return handle.signal(workflowSignalToken(name, key, label), payload);
+    },
     async expireWaits() {
-      expiring = true;
-      try {
-        // A delivery of its own, because a parked run has nothing in flight: the
-        // window closes on the walk that re-reads it.
-        queue.push({ runId, at: undefined });
-        await drain();
-      } finally {
-        // Cleared whatever happened, so a later delivery reads the real
-        // deadlines — an expiry that leaked would close every window the run
-        // opens for the rest of the spec.
-        expiring = false;
+      // The windows open NOW — and only those: see the set's own comment.
+      for (const wait of await store.readSleeps(runId)) {
+        if (wait.kind === "hookTimeout" && !wait.woken) expiring.add(wait.key);
       }
+      // A delivery of its own, because a parked run has nothing in flight: the
+      // window closes on the walk that re-reads it.
+      queue.push({ runId, at: undefined });
+      await drain();
       return handle;
     },
     async restart() {
@@ -415,7 +428,9 @@ async function runDef<P extends ToolInputSchema, R>(
     state.error = record?.error?.message;
     const journaled = await journal.readSteps(runId);
     state.steps = journaled
-      .filter((entry) => !isDeterminismKey(entry.key))
+      // Neither a determinism read nor the run's own key entry is a STEP the
+      // body named (`workflow/replay/run-key.ts`).
+      .filter((entry) => !isDeterminismKey(entry.key) && entry.key !== RUN_KEY_STEP)
       .map(toStep)
       .sort(byCallSite);
     state.reads = journaled

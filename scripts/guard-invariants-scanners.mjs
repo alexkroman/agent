@@ -49,6 +49,53 @@ export function readRepoFile(file) {
   return readFileSync(path, "utf8");
 }
 
+/**
+ * The 1-based line numbers inside the body of any property named in `names`
+ * — `describeRun(run) { … }`, `describeRun: (run) => { … }`,
+ * `describeRun: function (run) { … }` — in `source`. A one-line arrow body
+ * (`describeRun: (run) => \`…\``) counts its own line.
+ *
+ * The pure half of a line rule's `skipInside`: a `git grep` line cannot see
+ * that a `new Date()` sits in a `workflow({ describeRun })` property rather
+ * than in the body, and the two are not the same hazard — `describeRun` runs
+ * on the HOST at read time, outside any replay, so a clock there re-executes
+ * nothing. Braces are counted from the property's own line, which is exact for
+ * the shapes an object literal admits and ignores strings and comments, so a
+ * brace inside a template literal there would end the range early — it would
+ * then COUNT the lines after it, which is the safe direction.
+ *
+ * @param {string} source
+ * @param {readonly string[]} names
+ * @returns {Set<number>}
+ */
+export function propertyBodyLines(source, names) {
+  const inside = new Set();
+  const lines = source.split("\n");
+  const opens = new RegExp(
+    `^\\s*(?:async\\s+)?(?:${names.join("|")})\\s*(?:\\(|:\\s*(?:async\\s*)?(?:\\(|function\\b|[A-Za-z_$][\\w$]*\\s*=>))`,
+  );
+  for (let at = 0; at < lines.length; at++) {
+    if (!opens.test(lines[at])) continue;
+    let depth = 0;
+    let opened = false;
+    for (let end = at; end < lines.length; end++) {
+      inside.add(end + 1);
+      for (const char of lines[end]) {
+        if (char === "{") {
+          depth += 1;
+          opened = true;
+        } else if (char === "}") {
+          depth -= 1;
+        }
+      }
+      // Closed: the brace that opened the body has its match. A property that
+      // opens none on its own line (an expression arrow) is that line only.
+      if (!opened || depth <= 0) break;
+    }
+  }
+  return inside;
+}
+
 export function scanSymlinks() {
   // Mode 120000 is git's symlink mode. Read from the index rather than
   // lstat-walking the tree: that is what actually gets archived.

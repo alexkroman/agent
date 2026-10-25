@@ -115,6 +115,8 @@ export {
   type RecordingWorkflows,
   type RecordingWorkflowsOptions,
   type RunSnapshotOverrides,
+  routeHandlerOf,
+  routeOf,
   runGuardrail,
   runTool,
   type SaidLine,

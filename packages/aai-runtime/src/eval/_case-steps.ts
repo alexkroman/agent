@@ -17,7 +17,8 @@
  *
  * What stays the case's is the ROUTES: what the provider answers is the
  * scenario. What moves here is the lifetime — install, hold, release, drain,
- * restore — in the one order that works.
+ * restore — in the one order that works, which {@link withCaseSteps} owns for
+ * both suites.
  *
  * @module _case-steps
  */
@@ -27,6 +28,7 @@ import {
   type FetchRouteHit,
   type FetchRouteRequest,
   type FetchRouteTable,
+  routeHandlerOf,
   stubFetchRoutes,
 } from "@alexkroman1/aai/testing";
 import type { EvalWorkflows } from "./workflows.ts";
@@ -157,7 +159,11 @@ function holdPredicate(
   return hold;
 }
 
-/** Every route wrapped, a table's fixed answers lifted to handlers first. */
+/**
+ * Every route wrapped, a table's fixed answers lifted to handlers first
+ * (`routeHandlerOf`, which clones a `Response` per request as the table's
+ * own matching would). The table stays a table, so a hit still names its key.
+ */
 function wrapRoutes(
   routes: FetchRouteTable | readonly FetchRouteHandler[],
   wrap: (handler: FetchRouteHandler) => FetchRouteHandler,
@@ -166,9 +172,60 @@ function wrapRoutes(
   return Object.fromEntries(
     Object.entries(routes as FetchRouteTable).map(([key, value]) => [
       key,
-      wrap(typeof value === "function" ? value : () => value),
+      wrap(routeHandlerOf(value)),
     ]),
   );
+}
+
+/**
+ * @throws The one sentence both suites refuse a `steps` option beside
+ *   another answerer of a step's HTTP with — `conflicting` names them as the
+ *   caller spells them (`` `network` ``). Checked before anything is
+ *   installed: everything a case opens is a process-global registration or a
+ *   live runtime, and a throw after an install leaks it into the next case.
+ */
+export function refuseStepsBeside(suite: string, conflicting: readonly string[]): never {
+  const named =
+    conflicting.length === 1
+      ? `${conflicting[0]} does`
+      : `${conflicting.slice(0, -1).join(", ")} and ${conflicting.at(-1)} do`;
+  throw new Error(
+    `${suite}: \`steps\` answers a step's HTTP, as ${named} — pass one of them, not two.`,
+  );
+}
+
+/**
+ * A case's steps, for the life of its body: install (when `options` names
+ * routes), run `body` with the case's view, then drain and close in the one
+ * order that works — {@link drainThenClose}: release the gate, settle the
+ * app's runs against the still-published routes, then `close` (the caller's
+ * session, app and stubs) and unpublish the step fetch LAST, whether or not
+ * the drain rejected. The body's own rejection is rethrown as the finding;
+ * a drain that fails after it is swallowed (`drainCaseSteps`).
+ *
+ * Installed right before the body rather than before the caller opened its
+ * session: nothing dials a step until the body's first call, and a session
+ * that fails to open then leaks no step fetch.
+ */
+export async function withCaseSteps<T>(
+  options: EvalStepsOptions | undefined,
+  app: EvalWorkflows | undefined,
+  body: (steps: EvalSteps | undefined) => Promise<T>,
+  close: () => Promise<void>,
+): Promise<T> {
+  const steps = options === undefined ? undefined : installCaseSteps(options);
+  let bodyFailed = false;
+  try {
+    return await body(steps);
+  } catch (err) {
+    bodyFailed = true;
+    throw err;
+  } finally {
+    await drainThenClose(steps, app, bodyFailed, async () => {
+      await close();
+      steps?.restore();
+    });
+  }
 }
 
 /**

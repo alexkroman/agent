@@ -51,7 +51,6 @@ import type {
   StubTranscribeOptions,
 } from "./_testing-transcribe.ts";
 import { stubTranscribe } from "./_testing-transcribe.ts";
-import { omitUndefined } from "./omit-undefined.ts";
 import type { StubReporter } from "./testing.ts";
 import { stubReporter } from "./testing.ts";
 import type { StubClientInbox, StubClientInboxOptions } from "./testing-client-inbox.ts";
@@ -62,7 +61,7 @@ import { expectDeployable } from "./testing-deployable.ts";
 import {
   type FetchRouteHandler,
   type FetchRouteTable,
-  stubFetchRoutes,
+  routeOf,
   toRouteRequest,
 } from "./testing-fetch-routes.ts";
 import type { StubGatewayCall, StubGatewayOptions } from "./testing-gateway.ts";
@@ -460,11 +459,13 @@ export type StubWorldOptions = {
   readonly transcribe?: StubTranscribeOptions | undefined;
   /**
    * Everything else a step fetches — a page, a vendor API — as a
-   * `stubFetchRoutes` table or one handler. The LAST leg: a request it does
+   * `stubFetchRoutes` table, an ordered handler list (what `describeEval`'s
+   * `steps.routes` takes too) or one handler. The LAST leg: a request it does
    * not answer is a finding and throws naming the method and URL, never an
-   * empty `200` a step would try to parse.
+   * empty `200` a step would try to parse — after a `transcribe.otherwise` of
+   * your own has declined it.
    */
-  readonly pages?: FetchRouteTable | FetchRouteHandler | undefined;
+  readonly pages?: FetchRouteTable | readonly FetchRouteHandler[] | FetchRouteHandler | undefined;
   /** Publish a recording synthesizer — `installStubSpeech`'s options, or `true` for the defaults. */
   readonly speech?: StubSpeechOptions | true | undefined;
   /** Publish an in-memory upload store holding these files — `installStubUploads`'s. */
@@ -547,20 +548,24 @@ export function installStubWorld(options: StubWorldOptions = {}): StubWorld {
   // The chain every leg falls through to, gateway FIRST: see the doc.
   const fallback = async (request: StubStepRequest): Promise<StubStepAnswer | undefined> =>
     model?.route(request) ?? (await pages?.(toRouteRequest(request)));
+  // A finding, never an empty 200 — `stubFetchRoutes`' own default.
+  const noLeg = (request: StubStepRequest): never => {
+    throw new TypeError(`installStubWorld: no leg answers ${request.method} ${request.url}`);
+  };
   let provider: StubTranscribe | undefined;
   if (options.transcribe !== undefined) {
     const own = options.transcribe.otherwise;
     provider = installStubTranscribe({
       ...options.transcribe,
-      otherwise: async (request) => (await fallback(request)) ?? (await own?.(request)),
+      // A `pages` leg that declines is the finding it is on the other branch;
+      // with no pages at all, the transcribe fake's own 404 stays the answer.
+      otherwise: async (request) =>
+        (await fallback(request)) ??
+        (await own?.(request)) ??
+        (pages === undefined ? undefined : noLeg(request)),
     });
   } else if (model !== undefined || pages !== undefined) {
-    installStubStepFetch(async (request) => {
-      const answered = await fallback(request);
-      if (answered !== undefined) return answered;
-      // A finding, never an empty 200 — `stubFetchRoutes`' own default.
-      throw new TypeError(`installStubWorld: no leg answers ${request.method} ${request.url}`);
-    });
+    installStubStepFetch(async (request) => (await fallback(request)) ?? noLeg(request));
   }
   const speech =
     options.speech === undefined
@@ -581,26 +586,14 @@ export function installStubWorld(options: StubWorldOptions = {}): StubWorld {
 }
 
 /**
- * The `pages` leg as one handler: a table is routed by `stubFetchRoutes`'
- * own matcher, installed NOWHERE (both flags off) and reached only through
- * the chain, so an unmatched page request throws naming it.
+ * The `pages` leg as one handler: a table or list is routed by
+ * `stubFetchRoutes`' own matcher (`routeOf`), installed nowhere and reached
+ * only through the chain, declining what it does not answer so the chain's
+ * own refusal names it.
  */
-function pagesHandler(
-  pages: FetchRouteTable | FetchRouteHandler | undefined,
-): FetchRouteHandler | undefined {
+function pagesHandler(pages: StubWorldOptions["pages"]): FetchRouteHandler | undefined {
   if (pages === undefined || typeof pages === "function") return pages;
-  const net = stubFetchRoutes(pages, { globalFetch: false, stepFetch: false });
-  return (request) => {
-    const { body } = request;
-    return net.fetch(request.url, {
-      method: request.method,
-      headers: request.headers,
-      // A fresh `Uint8Array` over its own buffer is what `BodyInit` admits.
-      ...omitUndefined({
-        body: body === undefined || typeof body === "string" ? body : new Uint8Array(body),
-      }),
-    });
-  };
+  return routeOf(pages);
 }
 
 /**

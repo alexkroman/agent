@@ -234,9 +234,10 @@ describe("installStubWorld", () => {
     expect(world.model[0]?.prompt).toBe("Summarize the otters.");
     const page = await stepFetch("https://example.test/otters");
     expect(await page.text()).toBe("<p>otters</p>");
-    // A leg nobody named is a finding, never an empty 200.
+    // A leg nobody named is a finding, never an empty 200 — the chain's own
+    // refusal, since a `pages` table DECLINES what it does not answer.
     await expect(stepFetch("https://example.test/elsewhere")).rejects.toThrow(
-      /no fetch route for GET https:\/\/example.test\/elsewhere/,
+      "installStubWorld: no leg answers GET https://example.test/elsewhere",
     );
   });
 

@@ -56,7 +56,12 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Logger } from "../logger.ts";
 import type { ClientSessionRecord } from "../session-state/clients.ts";
 import type { SessionStateBackend } from "../session-state/store.ts";
-import { historyMessageOf, seededToolResult, transcriptLineOf } from "./event-history.ts";
+import {
+  historyMessageOf,
+  seededToolResult,
+  transcriptLineOf,
+  transcriptLinesOf,
+} from "./event-history.ts";
 import { SESSION_EVENT_READ_LIMIT, type SessionEventLog } from "./event-stream.ts";
 
 /** The default size of a client's prior history in a new session, in (estimated) tokens. */
@@ -228,12 +233,7 @@ export async function loadClientHistory(
  * they are from the model's own history.
  */
 function linesOf(events: readonly IndexedEvent[]): ClientTranscriptMessage[] {
-  const lines: ClientTranscriptMessage[] = [];
-  for (const { event } of events) {
-    const line = transcriptLineOf(event);
-    if (line !== undefined) lines.push(line);
-  }
-  return lines;
+  return transcriptLinesOf(events.map((indexed) => indexed.event));
 }
 
 /**

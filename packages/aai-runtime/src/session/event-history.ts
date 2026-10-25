@@ -113,6 +113,16 @@ export function transcriptLineOf(event: SessionEvent): ClientTranscriptMessage |
   return { role: message.role, text: message.content, at: event.meta.at };
 }
 
+/** The committed lines of `events`, oldest first — {@link transcriptLineOf} over a list. @internal */
+export function transcriptLinesOf(events: readonly SessionEvent[]): ClientTranscriptMessage[] {
+  const lines: ClientTranscriptMessage[] = [];
+  for (const event of events) {
+    const line = transcriptLineOf(event);
+    if (line !== undefined) lines.push(line);
+  }
+  return lines;
+}
+
 /**
  * The conversation these events record, oldest first and retained like the
  * live session's own record — {@link historyFromEvents}' messages, without its

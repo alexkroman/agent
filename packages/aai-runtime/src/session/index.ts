@@ -34,7 +34,7 @@ export type { SessionDirectory, SessionWiring } from "./directory.ts";
 export { createSessionDirectory } from "./directory.ts";
 export type { SessionEmitter, SessionEventHookDeps } from "./emitter.ts";
 export { createSessionEmitter, hookDepsFor } from "./emitter.ts";
-export { historyFromEvents, modelHistoryOf } from "./event-history.ts";
+export { historyFromEvents, modelHistoryOf, transcriptLinesOf } from "./event-history.ts";
 export type {
   SessionEventLog,
   SessionEventPage,

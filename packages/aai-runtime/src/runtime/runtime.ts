@@ -7,7 +7,7 @@
  * lifecycle hooks, and session management.
  */
 
-import { DEFAULT_SHUTDOWN_TIMEOUT_MS, systemPromptResolver } from "@alexkroman1/aai/host-internal";
+import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { buildReadyConfig, type ReadyConfig } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
@@ -255,11 +255,10 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     agentConfig,
     hasTools: toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0,
     toolGuidance,
-    // `undefined` unless the author declared a RESOLVER, in which case
+    // Read per request only when either half is a RESOLVER, in which case
     // `toAgentConfig` put nothing on the wire for it and this is what fills the
     // agent-specific section per request — see `system-prompt.ts`.
-    ...omitUndefined({ instructions: systemPromptResolver(agent.systemPrompt) }),
-    ...omitUndefined({ promptContext: agent.promptContext }),
+    agent,
   });
 
   const recall = { agent, env, workflows, logger, history: sessionState.history, speech };

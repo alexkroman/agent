@@ -55,18 +55,14 @@
  */
 
 import type { AgentSessionContext, Message } from "@alexkroman1/aai";
-import {
-  appendPromptContext,
-  createDetachedSlotStore,
-  staticSystemPrompt,
-  systemPromptResolver,
-} from "@alexkroman1/aai/host-internal";
+import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_MAX_STEPS } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
 import { agentToolsets, agentToolsToSchemas } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { type LanguageModel, stepCountIs, streamText, type ToolSet } from "ai";
+import { resolveAgentInstructions } from "../_agent-instructions.ts";
 import {
   composePreparers,
   forceFinalAnswer,
@@ -254,13 +250,21 @@ export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
   });
 
   /**
-   * What a per-session author function is handed — a `systemPrompt` resolver
-   * here, and nothing else yet: guardrails are refused in text mode
-   * (`assertGuardrailScope`) because this door returns the model stream
-   * directly and owns no point at which to hold a reply.
+   * What a per-session author function is handed — a `systemPrompt` or
+   * `promptContext` resolver here, and nothing else yet: guardrails are
+   * refused in text mode (`assertGuardrailScope`) because this door returns
+   * the model stream directly and owns no point at which to hold a reply.
+   * Per TURN, because `turn` is the count of user messages in the history
+   * that turn was handed — what a session counts as committed transcripts.
+   * TODO(integrator): `turn` is on `AgentSessionContext` once S1's SDK change
+   * lands — drop the intersection.
    */
-  const sessionContext: AgentSessionContext = { sessionId, env, slots };
-  const instructions = systemPromptResolver(agent.systemPrompt);
+  const contextFor = (messages: readonly Message[]): AgentSessionContext & { turn: number } => ({
+    sessionId,
+    env,
+    slots,
+    turn: userTurnsIn(messages),
+  });
 
   const executeTool = createToolDispatcher(toolsets, (toolset, call) =>
     executeToolCall(call.name, call.args, {
@@ -352,7 +356,8 @@ export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
       // agent's turns are not serialized (two `stream()` calls may overlap), so
       // a shared latch would let one run's fatal tool abort another's request.
       const fatalTool = createFatalToolLatch();
-      const turnTools = toolsFor(toContextMessages(turn.messages), fatalTool);
+      const messages = toContextMessages(turn.messages);
+      const turnTools = toolsFor(messages, fatalTool);
       // Opened before the request, so the turn's own user transcript is the
       // first event of it. `undefined` when nothing is listening, which is what
       // keeps an unobserved turn from installing a per-part callback at all.
@@ -373,15 +378,15 @@ export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
         // this door assembles one request and lets the SDK step it. The agent's
         // `promptContext` lands under EITHER, as the voice resolver composes it
         // (`runtime/system-prompt.ts`): an override replaces the instructions,
-        // not the context the agent declared for every turn.
+        // not the context the agent declared for every turn — so the override
+        // takes the prompt's place in the one resolver call.
         ...omitUndefined({
-          system: appendPromptContext(
-            turn.systemPrompt ??
-              instructions?.(sessionContext) ??
-              staticSystemPrompt(agent.systemPrompt),
-            typeof agent.promptContext === "function"
-              ? agent.promptContext(sessionContext)
-              : agent.promptContext,
+          system: resolveAgentInstructions(
+            {
+              systemPrompt: turn.systemPrompt ?? agent.systemPrompt,
+              promptContext: agent.promptContext,
+            },
+            contextFor(messages),
           ),
         }),
         // PAIRED: a caller that appends each run's `response.messages` carries
