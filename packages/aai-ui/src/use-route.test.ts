@@ -121,6 +121,39 @@ describe("useRoute", () => {
     }
   });
 
+  test("a reload() during a poll does not stop the poll", async () => {
+    vi.useFakeTimers();
+    try {
+      // The poll's mount read is SLOW; a reload lands while it is in flight, so
+      // the poll's own read is superseded when it finally settles.
+      let releaseSlow: (r: Response) => void = () => undefined;
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            releaseSlow = resolve;
+          }),
+      );
+      const hook = mount("/tasks", 1000);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      act(() => hook.result.current.reload());
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        releaseSlow(json({ ok: "stale" }));
+      });
+      // A superseded tick is not a finished poll: the next ticks still come.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(hook.result.current.data).toEqual({ ok: true });
+      hook.unmount();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   test("unmounting aborts the read in flight, and nothing lands afterwards", async () => {
     let seen: AbortSignal | undefined;
     fetchMock.mockImplementationOnce(
