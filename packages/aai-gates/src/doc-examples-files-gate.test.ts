@@ -31,7 +31,7 @@ import { sole } from "./_gate-support.ts";
 
 const FILES_MODULE = "scripts/_doc-example-files.mjs";
 
-type Section = { path: string; code: string };
+type Section = { path: string; code: string; line: number };
 type Split = (code: string, origin?: string) => Section[] | null;
 // A glob that stopped resolving leaves this `undefined`; every call below then
 // fails naming the module rather than passing on an empty search.
@@ -87,18 +87,21 @@ describe("splitExampleFiles", () => {
       'import { cart } from "../shared.ts";',
       "export default cart;",
     ].join("\n");
+    // `line` is where each section's code starts in the fence (0-based), so a
+    // compiler diagnostic in a section can be pointed back at the document.
     expect(splitExampleFiles(fence)).toEqual([
-      { path: "shared.ts", code: "export const cart = 1;\n" },
+      { path: "shared.ts", code: "export const cart = 1;\n", line: 1 },
       {
         path: "tools/add_item.ts",
         code: 'import { cart } from "../shared.ts";\nexport default cart;',
+        line: 4,
       },
     ]);
   });
 
   test("blank lines before the first marker are fine; code is not", () => {
     expect(splitExampleFiles("\n// file: a.ts\nexport {};")).toEqual([
-      { path: "a.ts", code: "export {};" },
+      { path: "a.ts", code: "export {};", line: 2 },
     ]);
     expect(() => splitExampleFiles("const x = 1;\n// file: a.ts\n", "doc.md:3")).toThrow(
       /doc\.md:3 has code before its first `\/\/ file:` marker/,
