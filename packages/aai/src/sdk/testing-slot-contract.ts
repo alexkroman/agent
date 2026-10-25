@@ -9,8 +9,11 @@
  *
  * 1. **The projection agrees with the default.** `slot.projected()` is the
  *    frame a page renders before the first tool call, and it must be the view
- *    of `create()` — a default that already exceeds a cap, or a `create()` that
- *    hands back a SHARED object, drifts the two apart.
+ *    of the default AS A SESSION STORES IT — `create()` with the slot's `after`
+ *    hook and caps applied, which is what a fresh session installs. An `empty`
+ *    seed that differs from the default, or a `create()` that hands back a
+ *    SHARED object, drifts the two apart. A default already past one of its
+ *    caps is reported under the cap it restates (invariant 3).
  * 2. **Sessions do not share state.** A write through one context is invisible
  *    through another; a slot whose default is a module-level object leaks the
  *    first session's writes into the second.
@@ -108,15 +111,24 @@ function assertProjectionAgrees<K extends string, T, V>(slot: SessionSlot<K, T, 
     );
   }
   const empty = projected();
-  const viewed = projected(slot.create());
+  // The default as STORED — `after` and caps applied, through a fresh session
+  // — rather than `create()` raw: `projected()` applies both to its own frame,
+  // so a slot whose `after` derives a field would otherwise fail here on every
+  // declaration that has one.
+  const viewed = projected(storedDefault(slot));
   if (!sameJson(empty, viewed)) {
     throw new Error(
-      `expectSlotContract("${slot.key}"): projected() is not the view of create() — the frame a ` +
-        `page renders first differs from the default's projection. Rendered ${describe(empty)}; ` +
-        `the default projects to ${describe(viewed)}. A default already past one of the slot's ` +
-        "caps is the usual cause.",
+      `expectSlotContract("${slot.key}"): projected() is not the view of the default — the frame ` +
+        `a page renders first differs from the stored default's projection. Rendered ` +
+        `${describe(empty)}; the default projects to ${describe(viewed)}. An \`empty\` seed that ` +
+        "differs from the default is the usual cause.",
     );
   }
+}
+
+/** The default as a fresh session stores it: `create()`, then `after`, then caps. */
+function storedDefault<K extends string, T, V>(slot: SessionSlot<K, T, V>): T {
+  return slot.snapshot(createToolContext());
 }
 
 /** Invariant 2: a write through one session is invisible through another. */
@@ -145,7 +157,9 @@ function assertSessionsIsolated<K extends string, T, V>(
         "it proves nothing about isolation. Mutate the draft so the stored value changes.",
     );
   }
-  if (!sameJson(slot.snapshot(b), slot.create())) {
+  // Against the stored default (`before` is one), not `create()` raw — the
+  // same reason `assertProjectionAgrees` gives.
+  if (!sameJson(slot.snapshot(b), before)) {
     throw new Error(
       `expectSlotContract("${slot.key}"): a write through one session changed what another ` +
         `session reads — it now holds ${describe(slot.snapshot(b))} rather than the default`,
@@ -160,10 +174,20 @@ function assertCapTrimsOldest<K extends string, T, V>(
   max: number,
 ): void {
   const initial = slot.create();
-  if (!(isRecord(initial) && Array.isArray(initial[key]))) {
+  const declared = isRecord(initial) ? initial[key] : undefined;
+  if (!Array.isArray(declared)) {
     throw new Error(
       `expectSlotContract("${slot.key}"): caps.${key} names no top-level array of the default — ` +
         `the default has ${isRecord(initial) ? `keys ${Object.keys(initial).join(", ") || "(none)"}` : describe(initial)}`,
+    );
+  }
+  // A default past its own cap ships entries the first store drops — invisible
+  // above, where the comparison is against the default as stored.
+  if (declared.length > max) {
+    throw new Error(
+      `expectSlotContract("${slot.key}"): caps.${key} = ${max}, but the default already holds ` +
+        `${declared.length} entries — the first store trims it, so the declared default is never ` +
+        "what a session reads. Trim the default, or raise the cap.",
     );
   }
   const ctx = createToolContext();
