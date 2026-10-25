@@ -160,7 +160,9 @@ function isDialogEnvelope(value: unknown): value is { result: unknown } {
  */
 export function expectDialogOk<R>(
   result: R,
-): R extends DialogToolResult<infer V> ? DialogToolResult<V> : DialogToolResult<unknown>;
+): [Exclude<R, ToolFailure>] extends [DialogToolResult<infer V>]
+  ? DialogToolResult<V>
+  : DialogToolResult<unknown>;
 /**
  * The dialog envelope a gated tool answered — the CLAIMED form, for a result
  * typed `unknown` (`runTool(agent, "name", …)`, a `toolRunner`): `T` is what

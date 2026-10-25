@@ -56,6 +56,13 @@ const claimed = new WeakSet<StateProjection>();
 /** The `syncState` records this registry's contents were collected into. */
 const collected = new WeakSet<object>();
 
+/**
+ * Claiming assumes the BUNDLE's evaluation order — `agent.ts` first, then the
+ * `tools/` modules `withTools` loads — so a loader that evaluates several
+ * agents' slot modules before any of their `agent()` calls (a test harness
+ * globbing every template eagerly) hands the first agent every projection.
+ * Load one agent's modules at a time, as `aai-templates`' `_discovery.ts` does.
+ */
 /** Mark `record` as collected from this registry rather than declared. */
 export function markCollectedSyncState(record: object): void {
   collected.add(record);
