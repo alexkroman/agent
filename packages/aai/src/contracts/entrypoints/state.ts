@@ -17,12 +17,21 @@
 
 export {
   type DeepReadonly,
+  // The slot tool forms (`updateTool` with `prepare`, the dialog gate on a slot
+  // tool, `slot.transact`) and the two value types read off a handle.
+  type GatedOutput,
   type SessionSlot,
   type SessionSlotOptions,
   type SlotCaps,
+  type SlotDialogGate,
+  type SlotDraftOf,
   type SlotHolder,
+  type SlotPreparedToolDef,
   type SlotStore,
   type SlotToolDef,
+  type SlotTransaction,
+  type SlotUpdateToolDef,
+  type SlotValueOf,
   type StateProjection,
   sessionSlot,
 } from "../../index.ts";

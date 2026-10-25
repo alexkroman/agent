@@ -57,6 +57,10 @@ export {
   formatDuration,
   formatMoney,
   HttpError,
+  // A per-outcome instruction to the model, carried under one reserved key.
+  // Also on the root; owned here by the narrower-subpath rule.
+  INSTRUCTION_KEY,
+  instructionOf,
   isRecord,
   type JsonClient,
   type JsonClientContext,
@@ -76,5 +80,8 @@ export {
   type SpokenErrorReasonOptions,
   safeJsonParse,
   spokenErrorReason,
+  stripInstruction,
+  type WithInstruction,
+  withInstruction,
   withLock,
 } from "../../sdk/utils-barrel.ts";

@@ -57,6 +57,8 @@ export {
   type ToolRefusal,
   type ToolRefusalReason,
   type ToolStartMessage,
+  // `tool({ ui })`: how a page labels the tool; rides on the wire `ToolSchema`.
+  type ToolUi,
   tool,
   toolFailure,
   toolRefusal,

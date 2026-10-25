@@ -96,6 +96,7 @@ describe("API-EXPORTS.json", () => {
       "FetchRouteRequest",
       "FetchRouteTable",
       "FetchRoutesOptions",
+      "FiredEvent",
       "ProjectFiles",
       "RecordedSleep",
       "RecordedStart",
@@ -106,6 +107,9 @@ describe("API-EXPORTS.json", () => {
       "STUB_SPEECH_PCM_BYTES",
       "SaidLine",
       "SentEvent",
+      "SessionEventFields",
+      "SessionEventRest",
+      "SlotContractOptions",
       "StubClientInbox",
       "StubClientInboxCall",
       "StubClientInboxOptions",
@@ -171,13 +175,16 @@ describe("API-EXPORTS.json", () => {
       "expectDialogOk",
       "expectDialogRefused",
       "expectPromptBuiltinsDeclared",
+      "expectSlotContract",
       "expectToolOk",
+      "fireEvent",
       "isEvent",
       "parseSchemaInput",
       "parseToolInput",
       "runGuardrail",
       "runTool",
       "schemaInputIssues",
+      "sessionEvent",
       "stubClientInbox",
       "stubClientTranscript",
       "stubDelegate",
@@ -194,6 +201,7 @@ describe("API-EXPORTS.json", () => {
       "stubTranscribe",
       "stubUploads",
       "toolInputIssues",
+      "toolNameOf",
       "toolOf",
       "toolRunner",
     ]);
@@ -205,7 +213,11 @@ describe("API-EXPORTS.json", () => {
     // nothing and restores nothing, but its methods are `vi.fn`s, so `vi` IS its
     // content. See `sdk/testing-vitest.ts`.
     expect(surface["@alexkroman1/aai/testing/vitest"]).toEqual([
+      "InstallStubGatewayOptions",
       "StubWorkflowsOptions",
+      "StubWorld",
+      "StubWorldOptions",
+      "describeAgent",
       "installStubClientInbox",
       "installStubGateway",
       "installStubReporter",
@@ -215,6 +227,7 @@ describe("API-EXPORTS.json", () => {
       "installStubTranscribe",
       "installStubUploads",
       "installStubWorkflows",
+      "installStubWorld",
     ]);
     // `WorkflowClient` is `mockWorkflows`'s return type and is FORGOTTEN here
     // for the same reason it is forgotten on `/testing`: it is exported from the

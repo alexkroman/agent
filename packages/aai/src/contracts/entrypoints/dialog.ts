@@ -54,6 +54,11 @@ export {
   type DialogMachine,
   type DialogOptions,
   type DialogPosition,
+  // `dialog.tool(def, { sendFrom })` and the `sendFrom: "field"` key form;
+  // `EventNameOf` is the type `DialogSendFromKey` is spelled in.
+  type DialogSendFrom,
+  type DialogSendFromKey,
+  type DialogSendOptions,
   type DialogSessionEventName,
   type DialogSpec,
   type DialogStateSpec,
@@ -63,4 +68,5 @@ export {
   type DialogToolResult,
   type DialogVoiceConfig,
   dialog,
+  type EventNameOf,
 } from "../../index.ts";

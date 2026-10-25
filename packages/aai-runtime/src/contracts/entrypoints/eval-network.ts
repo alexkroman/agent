@@ -28,3 +28,11 @@ export {
   type EvalRoute,
   evalNetwork,
 } from "../../eval-barrel.ts";
+// `describeEval({ steps })`: the routes a case's STEP fetch is answered from,
+// the held first answer, and the `ctx.steps` handle that releases it. Network
+// like the rest of this capability, and young like it; `EvalCaseOptions.steps`
+// names the option type and stays `eval`'s.
+export type {
+  EvalSteps,
+  EvalStepsOptions,
+} from "../../eval-vitest-barrel.ts";
