@@ -89,14 +89,12 @@ export interface Desk {
 }
 
 export const deskSlot = sessionSlot("desk", (): Desk => ({ refunded: [] }), {
-  // What the browser sees, and `sync: true` is what pushes it after every tool
-  // call — `agent.ts` names no `syncState`.
+  // What the browser sees; `agent.ts` syncs it.
   view: (desk) => ({
     verified: desk.verified?.name,
     refunded: desk.refunded.length,
     appointment: desk.appointment,
   }),
-  sync: true,
 });
 
 /** The one answer every desk gives an unverified caller. */

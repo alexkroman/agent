@@ -141,7 +141,6 @@ export const orderSlot = sessionSlot("order", EMPTY_ORDER, {
         : {}),
     };
   },
-  sync: true,
 });
 
 /**

@@ -25,10 +25,8 @@ export const notebookSlot = sessionSlot(
   { notes: [] as Note[], nextId: 1 },
   {
     // What the browser sees: newest first, which is how the panel reads best.
-    // The slot itself stays chronological. `sync: true` pushes it to the page
-    // after every tool call; the panel keeps no copy of its own.
+    // The slot itself stays chronological.
     view: (notebook) => ({ notes: [...notebook.notes].reverse() }),
     caps: { notes: MAX_NOTES },
-    sync: true,
   },
 );

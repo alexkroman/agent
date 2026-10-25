@@ -98,10 +98,10 @@ export interface SupportView {
 }
 
 /**
- * The call's state, pushed to the browser after every tool call through its
- * `view`. The `ticket` field is why that is a projection rather than the state
- * itself: a ticket carries the caller's phone number, and the view is where
- * you decide what leaves the server.
+ * The call's state, and the `view` `agent.ts` syncs. The `ticket` field is why
+ * that is a projection rather than the state itself: a ticket carries the
+ * caller's phone number, and the view is where you decide what leaves the
+ * server.
  */
 export const supportSlot = sessionSlot("support", EMPTY_SUPPORT, {
   view: (state): SupportView => ({
@@ -111,5 +111,4 @@ export const supportSlot = sessionSlot("support", EMPTY_SUPPORT, {
     ticket: state.ticket?.reference ?? null,
   }),
   caps,
-  sync: true,
 });

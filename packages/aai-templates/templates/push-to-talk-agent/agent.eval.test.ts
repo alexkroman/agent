@@ -14,6 +14,7 @@
 // That proves the wiring and nothing about the choice.
 
 import agentDef from "virtual:aai/agent";
+import { toolNameOf } from "@alexkroman1/aai-runtime/testing";
 import {
   describeEval,
   expectCalled,
@@ -22,6 +23,7 @@ import {
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import { notebookSlot } from "./shared.ts";
+import saveNote from "./tools/save_note.ts";
 
 describeEval(agentDef, (test) => {
   test(
@@ -30,9 +32,11 @@ describeEval(agentDef, (test) => {
       const turn = await session.say(
         "Unit four, the window seal in the kitchen is cracked and needs replacing before winter.",
       );
-      expectCalled(turn, "save_note");
-      // One note, one call: the whole press is one thought.
-      expect(toolNames(turn.toolCalls).filter((name) => name === "save_note")).toHaveLength(1);
+      // One note, one call: the whole press is one thought. The name is read
+      // off the def, so a renamed file fails here rather than matching nothing.
+      const saved = toolNameOf(saveNote);
+      expectCalled(turn, saved);
+      expect(toolNames(turn.toolCalls).filter((name) => name === saved)).toHaveLength(1);
       // The notebook as the PAGE has it: the last frame pushed, read through
       // the same projection `client.tsx` renders.
       const notes = lastStateIn(turn.events, notebookSlot.projected)?.notes ?? [];

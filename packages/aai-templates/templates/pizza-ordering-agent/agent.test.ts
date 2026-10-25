@@ -1,5 +1,6 @@
 import agentDef from "virtual:aai/agent";
-import { createSeededRandom, type InferToolInput, instructionOf } from "@alexkroman1/aai";
+import { createSeededRandom, type InferToolInput } from "@alexkroman1/aai";
+import { instructionOf, stripInstruction } from "@alexkroman1/aai/utils";
 import {
   createToolContext,
   expectSlotContract,
@@ -118,7 +119,8 @@ describeAgent(agentDef, (run) => {
 
       // Empty order guards: the model is told what to do, and nothing is placed.
       const empty = await run(viewOrder, ctx);
-      expect(empty).toMatchObject({ pizzas: [], itemCount: 0 });
+      // The data alone is the summary; the instruction rides beside it.
+      expect(stripInstruction(empty)).toEqual({ pizzas: [], orderTotal: "$0.00", itemCount: 0 });
       expect(instructionOf(empty)).toContain("empty");
       expect(await run(placeOrder, ctx)).toEqual({ error: "Cannot place an empty order." });
 

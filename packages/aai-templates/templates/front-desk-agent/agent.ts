@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import { desk } from "./shared.ts";
+import { desk, deskSlot } from "./shared.ts";
 
 /**
  * A front desk that hands the caller between three personas — the worked
@@ -16,4 +16,5 @@ export default agent({
     "Answers the phone for an internet provider and hands the caller between triage, billing and support",
   greeting: "Northwind Internet, front desk. Is this about your bill, or about your service?",
   roster: desk,
+  syncState: deskSlot.projected,
 });

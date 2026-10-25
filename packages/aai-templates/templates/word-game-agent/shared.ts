@@ -129,15 +129,8 @@ const NEW_GAME: GameState = {
  */
 export const GAME_CAPS: SlotCaps<GameState> = { descriptions: 12, spoken: 12, wrongGuesses: 10 };
 
-/**
- * The round, as one typed slot. Its view is the scoreboard — the word the
- * describer is looking at, the score, the clock — pushed after every tool call.
- */
-export const gameSlot = sessionSlot("game", NEW_GAME, {
-  view: gameView,
-  caps: GAME_CAPS,
-  sync: true,
-});
+/** The round, as one typed slot; its view is the scoreboard `agent.ts` syncs. */
+export const gameSlot = sessionSlot("game", NEW_GAME, { view: gameView, caps: GAME_CAPS });
 
 /**
  * The describer's own words, recorded as the runtime commits them.

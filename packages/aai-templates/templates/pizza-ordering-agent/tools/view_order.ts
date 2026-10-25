@@ -1,4 +1,4 @@
-import { withInstruction } from "@alexkroman1/aai";
+import { withInstruction } from "@alexkroman1/aai/utils";
 import { cartSummary, orderSlot } from "../shared.ts";
 
 export default orderSlot.tool({
