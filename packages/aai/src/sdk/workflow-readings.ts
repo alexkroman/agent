@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The three ways a workflow's DECLARATION is read back as a type.
+ * The ways a workflow's DECLARATION is read back as a type.
  *
  * `workflow()` and `WorkflowDef` say what a run IS; these say what it means for
  * the three files that have to agree with it — a `workflows/*.ts` body naming
@@ -10,6 +10,14 @@
  * unchecked (see {@link WorkflowInputOf} on why a body's parameter is
  * contravariant) and drifts from the schema it was copied off.
  *
+ * The second half reads the AGENT instead of a def: {@link WorkflowAppLike},
+ * {@link WorkflowsOf}, {@link WorkflowNameOf} and {@link WorkflowDefOf} let a
+ * page, a hook or a spec name a workflow through `agent({ workflows })` by its
+ * declared KEY, with the def's types following. Declared once here and read by
+ * `@alexkroman1/aai-ui`'s hooks and `@alexkroman1/aai-runtime/testing`'s
+ * `runWorkflow` alike, so the two doors cannot disagree about what "an agent
+ * with workflows" is.
+ *
  * Split out of `workflow.ts` under the 500-line cap, along the seam a reader
  * already uses — the same split `dialog-types.ts` makes beside `dialog.ts`:
  * what a caller DECLARES lives with the factory, and what reads a declaration
@@ -18,6 +26,9 @@
  */
 
 import type { StandardSchemaV1 } from "./standard-schema.ts";
+// Type-only, as below: `workflow.ts` re-exports this module's readings, so the
+// cycle is erased rather than real.
+import type { AnyWorkflowDef } from "./workflow.ts";
 // Type-only, so the cycle with `workflow-run.ts` (which names `WorkflowClient`
 // in its own docs) is erased rather than real. `WorkflowRunOf` composes the
 // snapshot with a def's output type, which is what moved this import here with
@@ -219,3 +230,57 @@ export type WorkflowInputOf<D> = D extends {
  * @public
  */
 export type WorkflowRunOf<D> = WorkflowRunSnapshot<WorkflowOutputOf<D>>;
+
+/**
+ * An agent with a `workflows` map — what `agent({ workflows })` and
+ * `workflowApp()` return, and what the agent form of the workflow hooks and of
+ * `runWorkflow` is parameterized by (`useWorkflowSubmit<typeof
+ * agentDef>("digest")`, `runWorkflow(agentDef, "digest", input)`).
+ *
+ * @public
+ */
+export type WorkflowAppLike = {
+  readonly workflows?: Readonly<Record<string, AnyWorkflowDef>> | undefined;
+};
+
+/**
+ * The `workflows` map of an app def, or `never` when it declares none — the
+ * reading {@link WorkflowNameOf} and {@link WorkflowDefOf} are spelled in.
+ * `Extract` rather than `NonNullable`: an absent key infers `unknown`, which
+ * `NonNullable` would keep.
+ *
+ * @public
+ */
+export type WorkflowsOf<App> = App extends { readonly workflows?: infer W }
+  ? Extract<W, Record<string, unknown>>
+  : never;
+
+/**
+ * The names `App` declares under `workflows` — the literal union a page passes
+ * to `useWorkflowSubmit<typeof agentDef>(…)`, `useWorkflowStream`,
+ * `useWorkflowRuns` and `<WorkflowFields>`, and a spec to `runWorkflow`.
+ *
+ * `never` for a type with no `workflows` map (a def, an unrelated object), so
+ * the agent form of each overloaded hook declines it and the def form is tried.
+ * The `[T] extends [never]` guard is load-bearing: `keyof never` is every key.
+ *
+ * @public
+ */
+export type WorkflowNameOf<App> = [WorkflowsOf<App>] extends [never]
+  ? never
+  : keyof WorkflowsOf<App> & string;
+
+/**
+ * The def `App` declares under `Name` — what the agent form of a hook derives
+ * its input and output from: `WorkflowOutputOf<WorkflowDefOf<App, Name>>`.
+ *
+ * With `Name` the whole {@link WorkflowNameOf} union it is the union of the
+ * agent's defs, so an app with ONE workflow — most of them — gets exactly that
+ * workflow's types from `<typeof agentDef>` alone, and an app with several
+ * names the one it means as a second type argument:
+ * `useWorkflowSubmit<typeof agentDef, "digest">("digest")`.
+ *
+ * @public
+ */
+export type WorkflowDefOf<App, Name extends string> = WorkflowsOf<App>[Name &
+  keyof WorkflowsOf<App>];

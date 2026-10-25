@@ -79,6 +79,7 @@ import type {
 import { stubUploads } from "./testing-uploads.ts";
 import { createStubWorkflows } from "./testing-workflows.ts";
 import type { WorkflowClient } from "./workflow-client.ts";
+import type { WorkflowAppLike } from "./workflow-readings.ts";
 import type { WorkflowRunSnapshot } from "./workflow-run.ts";
 
 /**
@@ -355,7 +356,7 @@ export type StubWorkflowsOptions = {
    * reports — so a renamed workflow is read off the def rather than restated.
    * Pass `agentDef`; an explicit `names` wins over it.
    */
-  agent?: { readonly workflows?: Readonly<Record<string, unknown>> | undefined } | undefined;
+  agent?: WorkflowAppLike | undefined;
   /** What `start` resolves with. Defaults to `"wrun_stub"`. */
   runId?: string;
   /**

@@ -23,6 +23,7 @@ function wiring(): SessionWiring {
     emitter: {} as SessionWiring["emitter"],
     meter: {} as SessionWiring["meter"],
     turns: createTurnCounter(),
+    workflows: undefined,
   };
 }
 

@@ -67,9 +67,17 @@
  * @module
  */
 
-import type { ToolInputSchema, WorkflowDef, WorkflowOutputOf } from "@alexkroman1/aai";
+import type { ToolInputSchema, WorkflowDef } from "@alexkroman1/aai";
 import { parseSchemaInput } from "@alexkroman1/aai/testing";
+import {
+  type WorkflowAppLike,
+  type WorkflowDefOf,
+  type WorkflowNameOf,
+  type WorkflowOutputOf,
+  workflowNameOf,
+} from "@alexkroman1/aai/workflow-api";
 import { type Logger, silentLogger } from "../logger.ts";
+import { unknownWorkflowMessage } from "../workflow/client.ts";
 import {
   createInProcessWorkflowEngine,
   type InProcessWorkflowEngine,
@@ -102,26 +110,6 @@ export const DEFAULT_MAX_DELIVERIES = 50;
 type Queued = { runId: string; at: number | undefined };
 
 /**
- * An agent with a `workflows` map, for the `runWorkflow(agentDef, "name", …)`
- * form: `agent({ workflows })`'s result, or `virtual:aai/agent`'s.
- *
- * @input
- * @public
- */
-export type WorkflowBearingAgent = {
-  readonly workflows?: Readonly<Record<string, WorkflowDef>> | undefined;
-};
-
-/**
- * The names `App` declares under `workflows` — what the agent form of
- * {@link runWorkflow} accepts as its second argument.
- *
- * @public
- */
-export type WorkflowNameOf<App extends WorkflowBearingAgent> = keyof NonNullable<App["workflows"]> &
-  string;
-
-/**
  * Start `def` with `input` and drive it until it finishes or parks.
  *
  * Resolves a handle carrying the run's status, output and journaled steps, with
@@ -133,13 +121,15 @@ export type WorkflowNameOf<App extends WorkflowBearingAgent> = keyof NonNullable
  * against a validated input, so handing it an unvalidated one tests a call that
  * cannot happen.
  *
- * **Two forms.** Handed a DEF, the run is named by `options.name` (default
- * `"workflow"`). Handed the AGENT and a workflow's name — `runWorkflow(agentDef,
- * "digest", input)`, with `agentDef` from `virtual:aai/agent` — the def is the
- * one the agent declares (or the build discovered in `workflows/`) under that
- * name, and the run carries that name, so a body that reads `ctx.workflow`,
- * starts a sibling by name or is found by `ctx.workflows.find` sees what a
- * deployment would. An unknown name throws, listing the ones the agent has.
+ * **Two forms.** Handed a DEF, the run is named by `options.name`, else by the
+ * name the def was declared under (`workflowNameOf`, recorded when the agent
+ * declaring it was lowered — a `virtual:aai/agent` import), else `"workflow"`.
+ * Handed the AGENT and a workflow's name — `runWorkflow(agentDef, "digest",
+ * input)`, with `agentDef` from `virtual:aai/agent` — the def is the one the
+ * agent declares (or the build discovered in `workflows/`) under that name,
+ * and the run carries that name, so a body that reads `ctx.workflow`, starts a
+ * sibling by name or is found by `ctx.workflows.find` sees what a deployment
+ * would. An unknown name throws, listing the ones the agent has.
  *
  * @example
  * ```ts
@@ -184,36 +174,36 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
   input: Record<string, unknown>,
   options?: RunWorkflowOptions,
 ): Promise<WorkflowTestHandle<R>>;
-export async function runWorkflow<
-  App extends WorkflowBearingAgent,
-  Name extends WorkflowNameOf<App>,
->(
+export async function runWorkflow<App extends WorkflowAppLike, Name extends WorkflowNameOf<App>>(
   agent: App,
   name: Name,
   input: Record<string, unknown>,
   options?: Omit<RunWorkflowOptions, "name">,
-): Promise<WorkflowTestHandle<WorkflowOutputOf<NonNullable<App["workflows"]>[Name]>>>;
+): Promise<WorkflowTestHandle<WorkflowOutputOf<WorkflowDefOf<App, Name>>>>;
 export async function runWorkflow(
-  first: WorkflowDef<ToolInputSchema, unknown> | WorkflowBearingAgent,
+  first: WorkflowDef<ToolInputSchema, unknown> | WorkflowAppLike,
   second: string | Record<string, unknown>,
   third?: Record<string, unknown> | RunWorkflowOptions,
   fourth?: Omit<RunWorkflowOptions, "name">,
 ): Promise<WorkflowTestHandle<unknown>> {
   if (typeof second === "string") {
-    const agent = first as WorkflowBearingAgent;
+    const agent = first as WorkflowAppLike;
     const def = agent.workflows?.[second];
     if (def === undefined) {
-      const known = Object.keys(agent.workflows ?? {});
+      // The client's own sentence (declared set, nearest name), so a spec and
+      // a tool are refused in the same words.
       throw new Error(
-        `runWorkflow: the agent declares no workflow "${second}"` +
-          (known.length > 0 ? ` (it has ${known.join(", ")})` : " (it has none)") +
-          ". Check the name, or register the def in agent({ workflows }) or as workflows/<name>.ts.",
+        `runWorkflow: ${unknownWorkflowMessage(second, Object.keys(agent.workflows ?? {}))} ` +
+          "Check the name, or register the def in agent({ workflows }) or as workflows/<name>.ts.",
       );
     }
-    return runDef(def, (third as Record<string, unknown> | undefined) ?? {}, {
-      ...fourth,
-      name: second,
-    });
+    // The declared def is a `WorkflowDef` (`AnyWorkflowDef` is the reading's
+    // contravariant view of it); the explicit key wins over any recorded one.
+    return runDef(
+      def as WorkflowDef<ToolInputSchema, unknown>,
+      (third as Record<string, unknown> | undefined) ?? {},
+      { ...fourth, name: second },
+    );
   }
   return runDef(
     first as WorkflowDef<ToolInputSchema, unknown>,
@@ -228,7 +218,7 @@ async function runDef<P extends ToolInputSchema, R>(
   input: Record<string, unknown>,
   options: RunWorkflowOptions,
 ): Promise<WorkflowTestHandle<R>> {
-  const name = options.name ?? "workflow";
+  const name = options.name ?? workflowNameOf(def) ?? "workflow";
   const logger = options.logger ?? silentLogger;
   const maxDeliveries = options.maxDeliveries ?? DEFAULT_MAX_DELIVERIES;
   const validated = def.input

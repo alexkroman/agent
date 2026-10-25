@@ -49,6 +49,8 @@ function harness() {
     tools: { executeTool, toolSchemas: [] },
     clientTools: createClientToolBroker(),
     relayToolResult: undefined,
+    workflows: undefined,
+    notifier: undefined,
     recall: {
       agent,
       env: {},

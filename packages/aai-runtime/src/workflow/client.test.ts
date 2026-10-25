@@ -387,7 +387,8 @@ describe("signalling a parked run", () => {
     const signal = vi.fn(async () => true);
     const { client } = makeClient({ wdk: { signal } });
     await client.signal("retention:s_1", { keep: true });
-    expect(signal).toHaveBeenCalledWith("retention:s_1", { keep: true });
+    // An empty options bag: no hold was asked for, and `undefined` is not sent.
+    expect(signal).toHaveBeenCalledWith("retention:s_1", { keep: true }, {});
   });
 
   test("substitutes an EMPTY OBJECT for an omitted payload, not undefined", async () => {
@@ -397,7 +398,7 @@ describe("signalling a parked run", () => {
     const signal = vi.fn(async () => true);
     const { client } = makeClient({ wdk: { signal } });
     await client.signal("stop:s_1");
-    expect(signal).toHaveBeenCalledWith("stop:s_1", {});
+    expect(signal).toHaveBeenCalledWith("stop:s_1", {}, {});
   });
 });
 

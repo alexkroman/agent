@@ -174,6 +174,8 @@ export {
   type WorkflowStreamOutputOptions,
 } from "./workflow-api-client.ts";
 export type { WorkflowClient } from "./workflow-client.ts";
+// The declared name read back off a def — see `workflow-names.ts`.
+export { workflowNameOf } from "./workflow-names.ts";
 export {
   // How long `signalRun` holds a payload for a wait the run has not reached —
   // a value, so a caller sizing its own `holdMs` reads it rather than copying it.
@@ -185,6 +187,16 @@ export {
   type StreamOptions,
   type WakeUpOptions,
 } from "./workflow-options.ts";
+// A workflow named through its AGENT: the four readings a page's hooks
+// (`useWorkflowSubmit<typeof agentDef>("digest")`) and a spec's `runWorkflow`
+// are parameterized by, declared once in `workflow-readings.ts` so
+// `@alexkroman1/aai-ui` and `@alexkroman1/aai-runtime` read the same type.
+export type {
+  WorkflowAppLike,
+  WorkflowDefOf,
+  WorkflowNameOf,
+  WorkflowsOf,
+} from "./workflow-readings.ts";
 export {
   isTerminal,
   // The type `isTerminal` narrows TO, so it is part of that guard's signature —

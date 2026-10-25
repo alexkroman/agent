@@ -204,12 +204,7 @@ export {
   type TextAgentTestRun,
   type TextAgentTestToolCall,
 } from "./testing/run-text-agent.ts";
-export {
-  DEFAULT_MAX_DELIVERIES,
-  runWorkflow,
-  type WorkflowBearingAgent,
-  type WorkflowNameOf,
-} from "./testing/run-workflow.ts";
+export { DEFAULT_MAX_DELIVERIES, runWorkflow } from "./testing/run-workflow.ts";
 export type {
   RunWorkflowOptions,
   WorkflowTestHandle,

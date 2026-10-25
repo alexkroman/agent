@@ -16,10 +16,11 @@
 
 import { type WorkflowContext, workflow } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
+import type { WorkflowAppLike } from "@alexkroman1/aai/workflow-api";
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryJournal } from "../workflow/journal/backends/memory.ts";
 import { workflowJournal } from "../workflow/journal/handle.ts";
-import { runWorkflow, type WorkflowBearingAgent } from "./run-workflow.ts";
+import { runWorkflow } from "./run-workflow.ts";
 
 /** A day, which is the point: no spec may wait one and none has to. */
 const A_DAY = 86_400_000;
@@ -87,9 +88,11 @@ describe("the agent form", () => {
     await expect(
       // @ts-expect-error — the name is typed by the agent's `workflows` keys.
       runWorkflow(agentDef, "recap", {}),
-    ).rejects.toThrow(/no workflow "recap" \(it has digest\)/);
-    const voice: WorkflowBearingAgent = {};
-    await expect(runWorkflow(voice, "digest", {})).rejects.toThrow(/it has none/);
+    ).rejects.toThrow(
+      /Workflow "recap" is not declared on this agent. Declared workflows: digest\./,
+    );
+    const voice: WorkflowAppLike = {};
+    await expect(runWorkflow(voice, "digest", {})).rejects.toThrow(/Declared workflows: \(none\)/);
   });
 });
 

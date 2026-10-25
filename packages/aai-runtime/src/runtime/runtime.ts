@@ -282,6 +282,8 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     clientTools,
     relayToolResult: options.onToolResult,
     recall,
+    workflows,
+    notifier,
   });
 
   // ── AgentRuntime methods ──────────────────────────────────────────────

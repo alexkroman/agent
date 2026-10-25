@@ -35,6 +35,7 @@
 
 import { isRecord } from "./is-record.ts";
 import type { WorkflowDef } from "./workflow.ts";
+import { recordWorkflowNames } from "./workflow-names.ts";
 
 /**
  * The name grammar: what `agent({ workflows })` keys and the workflow API's
@@ -116,6 +117,8 @@ export function workflowRegistry(modules: WorkflowModules): WorkflowRegistry {
     sources[name] = path;
     registry[name] = exported;
   }
+  // The file name IS the def's name from here on — `workflowNameOf(def)` reads it.
+  recordWorkflowNames(registry);
   return registry;
 }
 
@@ -174,5 +177,8 @@ export function withWorkflows<D extends object>(
     }
   }
   if (Object.keys(merged).length === 0) return def;
+  // The map the runtime runs is the one whose keys name the defs
+  // (`workflow-names.ts`): a declared key over a file's, exactly as above.
+  recordWorkflowNames(merged);
   return { ...def, workflows: merged };
 }
