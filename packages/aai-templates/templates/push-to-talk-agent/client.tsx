@@ -110,15 +110,5 @@ function App() {
 mountClient({
   component: App,
   sidebar: Notebook,
-  theme: {
-    bg: "#101412",
-    primary: "#f5b942",
-    text: "#e9ece8",
-    surface: "#1a201c",
-    border: "#2a332d",
-  },
-  tools: {
-    save_note: { icon: "\u{1F4DD}", label: "Saving the note" },
-    list_notes: { icon: "\u{1F4D6}", label: "Reading the notebook" },
-  },
+  theme: { primary: "#f5b942", mode: "dark" },
 });

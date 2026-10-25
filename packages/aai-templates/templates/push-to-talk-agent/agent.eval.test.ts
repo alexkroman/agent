@@ -13,11 +13,6 @@
 // `stubReply`): the real session, the real slot, the real tools, a fake reply.
 // That proves the wiring and nothing about the choice.
 
-/**
- * The def a DEPLOYED agent runs: authored, plus `tools/` and `system-prompt.md`
- * — the prompt is resolved by the build, so an eval driving `agent.ts` alone
- * would measure an agent on the framework default prompt.
- */
 import agentDef from "virtual:aai/agent";
 import {
   describeEval,
@@ -26,10 +21,7 @@ import {
   toolNames,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
-
-/** The notebook as the PAGE has it: the last `syncState` frame pushed. */
-const Projected = z.object({ notes: z.array(z.object({ id: z.number(), text: z.string() })) });
+import { notebookSlot } from "./shared.ts";
 
 describeEval(agentDef, (test) => {
   test(
@@ -41,7 +33,9 @@ describeEval(agentDef, (test) => {
       expectCalled(turn, "save_note");
       // One note, one call: the whole press is one thought.
       expect(toolNames(turn.toolCalls).filter((name) => name === "save_note")).toHaveLength(1);
-      const notes = lastStateIn(turn.events, "notebook", Projected)?.notes ?? [];
+      // The notebook as the PAGE has it: the last frame pushed, read through
+      // the same projection `client.tsx` renders.
+      const notes = lastStateIn(turn.events, notebookSlot.projected)?.notes ?? [];
       expect(notes).toHaveLength(1);
       expect(notes[0]?.text.toLowerCase()).toContain("window seal");
     },

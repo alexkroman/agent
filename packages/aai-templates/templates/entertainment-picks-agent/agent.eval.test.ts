@@ -10,24 +10,9 @@
 // SCRIPTED model (its `stubReply`): the real session, the real slot, the real
 // tool, a fake reply. That proves the wiring and nothing about the choice.
 
-/**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
- *
- * Taken from `virtual:aai/agent` rather than a hand-written glob: the plugin
- * expands it against THIS file's own directory, so the spec needs no glob and
- * no shared helper — which matters because this file SHIPS, and a scaffolded
- * project has no repo helper to import. Without
- * it the eval would drive an agent with no `recommend` at all, which is the one
- * failure a green eval must never be able to hide.
- *
- * And plus its PROMPT. `agent.ts` does not declare one — `system-prompt.md` is
- * resolved by the BUILD (`aai build`/`aai deploy`), so the raw default export
- * carries the FRAMEWORK DEFAULT prompt. An eval that drives it measures a
- * different agent than the one that deploys, and every tool-choice claim below
- * then passes or fails for the wrong reason.
- */
 import agentDef from "virtual:aai/agent";
 import type { SessionEvent } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai/utils";
 import {
   createVmRunCode,
   customEventsIn,
@@ -41,32 +26,17 @@ import {
   toolResultIn,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
-import { CATEGORIES, MOODS } from "./shared.ts";
+import { nightSlot } from "./shared.ts";
+import recommend from "./tools/recommend.ts";
+import revisit from "./tools/revisit.ts";
 
 /**
- * One `recommend` answer, and the whole projection, as the wire carries them.
- *
- * Schemas rather than casts, which is what `toolResultIn` and `lastStateIn`
- * take one for: a shelf or a projection that stopped matching FAILS here naming
- * the field, where a cast hands the assertions `undefined` and fails a line
- * later on something unrelated.
- */
-const RecSchema = z.object({
-  category: z.enum(CATEGORIES),
-  mood: z.enum(MOODS),
-  picks: z.array(z.string()),
-});
-const ProjectedNight = z.object({ recs: z.array(RecSchema) });
-
-/**
- * The night's log as the PAGE has it: the last `syncState` frame pushed.
- *
- * The frame's `night` key is `nightSlot.projected`'s result — the same `{ recs }`
- * value `useAgentState(nightSlot.projected)` selects in `client.tsx`. Asserting on it is asserting on what the sidebar shows.
+ * The night's log as the PAGE has it: the last frame pushed, read through the
+ * same projection `useAgentState(nightSlot.projected)` renders in `client.tsx`.
+ * Asserting on it is asserting on what the sidebar shows.
  */
 const pushedRecs = (events: readonly SessionEvent[]) =>
-  lastStateIn(events, "night", ProjectedNight)?.recs ?? [];
+  lastStateIn(events, nightSlot.projected)?.recs ?? [];
 
 /** The `wind_down` nudges in `events` — `customEventsIn` filters by name. */
 const nudges = (events: readonly SessionEvent[]) => customEventsIn(events, "wind_down");
@@ -113,7 +83,7 @@ describeEval(
 
         // And what it read out came back from the shelf: the tool answers with
         // the picks for exactly the pair it was asked for.
-        const rec = toolResultIn(turn.toolCalls, "recommend", RecSchema);
+        const rec = toolResultIn(turn.toolCalls, recommend);
         expect(rec).toMatchObject({ category: "movie", mood: "cozy" });
         expect(rec.picks.length).toBeGreaterThan(0);
         // It read out what the shelf handed back rather than a title of its own.
@@ -170,7 +140,8 @@ describeEval(
         // the moment the night is long enough for the early turns to fall out
         // of the context window. `revisit` is a lookup in the slot.
         expect(toolNames(turn.toolCalls), describeTurn(turn)).toEqual(["revisit"]);
-        const rec = toolResultIn(turn.toolCalls, "revisit", RecSchema);
+        const rec = toolResultIn(turn.toolCalls, revisit);
+        if (isToolFailure(rec)) throw new Error(rec.error);
         expect(rec).toMatchObject({ category: "movie", mood: "cozy" });
         // And what came back is the shelf's, read out — the same claim the
         // first case makes about a fresh recommendation.
