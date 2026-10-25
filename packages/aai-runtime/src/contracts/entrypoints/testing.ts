@@ -62,9 +62,6 @@ export {
   scriptedTextModel,
   type TextAgentTestRun,
   type TextAgentTestToolCall,
-  // `runWorkflow(agentDef, "name", …)`: the agent shape and the name set it is typed by.
-  type WorkflowBearingAgent,
-  type WorkflowNameOf,
   type WorkflowTestHandle,
   type WorkflowTestRead,
   type WorkflowTestRun,
