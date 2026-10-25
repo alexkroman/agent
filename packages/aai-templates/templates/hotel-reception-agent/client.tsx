@@ -6,7 +6,7 @@ import { type DeskView, deskView, emptyHotelState } from "./shared.ts";
 /**
  * The receptionist's screen — their `ui_view.py`, which streamed SQLite
  * changesets to the playground so a watcher could see the database change as
- * the call went on. `syncState` is that stream: the projection is pushed after
+ * the call went on. The slot's synced projection is that stream: pushed after
  * every tool call, and this renders the three things a desk agent glances at
  * between sentences — who they are talking to, how far the booking has got, and
  * what this call has written.
@@ -51,17 +51,9 @@ const KIND_LABELS: Record<DeskView["ledger"][number]["kind"], string> = {
   walk: "Walk",
 };
 
-// The desk before the first tool call, derived from the projection itself so a
-// new DeskView field can't miss the pre-first-call render.
-//
-// **This template does NOT pass its projection to `useAgentState`** — it names
-// the slot (`"hotel"`) and passes this fallback — and the reason is the browser
-// bundle rather than style: that overload derives the
-// empty frame by calling the projection, which calls the slot's `create()` —
-// and this slot's factory lives in `session.ts` and pulls `seed.ts`, so
-// importing it here would ship every seeded booking to the browser.
-// `emptyHotelState()` is the same shape without the seed. Reach for the
-// projection overload everywhere the factory is cheap.
+// The desk before the first push: the slot's own `empty` frame, projected here
+// rather than imported, because the slot's module pulls `seed.ts` and must not
+// reach the browser bundle.
 const EMPTY_VIEW: DeskView = deskView(emptyHotelState());
 
 function DeskSidebar() {
@@ -137,14 +129,7 @@ function DeskSidebar() {
 }
 
 mountClient({
-  name: "The Harborlight Hotel",
   sidebar: DeskSidebar,
   sidebarWidth: "22rem",
-  theme: {
-    bg: "#101418",
-    primary: "#c8a96e",
-    text: "#f2ede4",
-    surface: "#1a2026",
-    border: "#2a323b",
-  },
+  theme: { primary: "#c8a96e", mode: "dark" },
 });

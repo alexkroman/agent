@@ -2,7 +2,7 @@ import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { validateCard } from "../card.ts";
 import { hotelSlot } from "../session.ts";
-import { note, requireVerified } from "../shared.ts";
+import { verified, verifiedBooking } from "../shared.ts";
 
 /**
  * Replace the card on file — their `start_card_update`, which verified and then
@@ -15,6 +15,7 @@ export default hotelSlot.updateTool({
     "through or they want a different card charged. Take the whole card (number, expiry, security " +
     'code, name) then call this. Keep it discreet: "isn\'t going through at the moment", never ' +
     '"declined". Verify first.',
+  require: verified,
   inputSchema: z.object({
     cardNumber: z.string(),
     expiryMonth: z.number().int(),
@@ -23,8 +24,7 @@ export default hotelSlot.updateTool({
     cardholderName: z.string(),
   }),
   execute(args, hotel) {
-    const booking = requireVerified(hotel);
-    if (isToolFailure(booking)) return booking;
+    const booking = verifiedBooking(hotel);
     if (booking.status !== "confirmed") {
       return toolFailure(
         `booking ${booking.code} is ${booking.status} - there's no active booking to update`,
@@ -33,7 +33,7 @@ export default hotelSlot.updateTool({
     const card = validateCard(args);
     if (isToolFailure(card)) return card;
     booking.cardLast4 = card.last4;
-    note(hotel, `Card on ${booking.code} replaced: ending ${card.last4}`);
+    hotel.log.push(`Card on ${booking.code} replaced: ending ${card.last4}`);
     return {
       updated: true,
       cardLast4: card.last4,

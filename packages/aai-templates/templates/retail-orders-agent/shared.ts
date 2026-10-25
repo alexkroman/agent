@@ -156,7 +156,7 @@ export interface RetailState {
   /** Set by the two finder tools. Null until the caller is identified. */
   authenticatedUserId: string | null;
   /** Monotonic. Every tool call increments it, which is what guarantees the
-   *  projection differs and therefore gets pushed — `syncState` sends only
+   *  projection differs and therefore gets pushed — a synced slot sends only
    *  when the projected result changed. */
   callSeq: number;
   activity: ActivityEntry[];
@@ -408,11 +408,11 @@ function swapOptionsFor(
   });
 }
 
-/** The `syncState` projection — the entire contract with `client.tsx`.
+/** The slot's synced projection — the entire contract with `client.tsx`.
  *
  *  Only the authenticated customer is projected. The other five seeded
  *  customers' emails, addresses, and payment methods never leave the server,
- *  which is why `syncState` takes a projection rather than a boolean.
+ *  which is why the slot declares a `view` rather than syncing the whole store.
  *
  *  Takes the state itself, not the slot: `retailSlot.projection` supplies a
  *  real one even before the first tool call, so the optional chaining this

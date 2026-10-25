@@ -2,7 +2,6 @@ import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { digitsOf, normalizeCode, speakCode, spokenDate } from "../records.ts";
 import { hotelSlot } from "../session.ts";
-import { note } from "../shared.ts";
 
 /** Failed lookups before a human takes over — their `_attempts >= 3`. */
 export const MAX_VERIFY_ATTEMPTS = 3;
@@ -13,8 +12,8 @@ export const MAX_VERIFY_ATTEMPTS = 3;
  * the ONLY two paths: last name plus code, or last name plus the card's last
  * four. Email is not a verification field and is not accepted here.
  *
- * Success fills `verifiedCode`, which every booking tool reads through
- * `requireVerified` — so the desk verifies once per call, and a tool that
+ * Success fills `verifiedCode`, which every booking tool gates on with
+ * `require: verified` — so the desk verifies once per call, and a tool that
  * needs a verified booking refuses with the sentence naming this one. Their
  * three-strike rule is the counter: past it the result says to stop trying and
  * record a `verification_help` followup for a manager.
@@ -82,7 +81,7 @@ export default hotelSlot.updateTool({
     }
     hotel.verifiedCode = match.code;
     hotel.verifyAttempts = 0;
-    note(hotel, `Verified ${match.code} (${match.lastName})`);
+    hotel.log.push(`Verified ${match.code} (${match.lastName})`);
     return {
       verified: true,
       code: match.code,

@@ -383,7 +383,7 @@ function CallControls({ productCount }: { productCount: number }) {
 }
 
 function App() {
-  // The agent's own store, projected by `syncState` after every tool call —
+  // The agent's own store, projected and pushed after every tool call —
   // the only subscription at this level now. The session reads that used to sit
   // beside it moved into the four components above, so a partial transcript no
   // longer re-renders the customer file.

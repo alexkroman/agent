@@ -2,7 +2,7 @@ import { isToolFailure } from "@alexkroman1/aai";
 import { resolveRoomConflict } from "../hotel.ts";
 import { spokenDate } from "../records.ts";
 import { hotelSlot } from "../session.ts";
-import { requireVerified } from "../shared.ts";
+import { verified, verifiedBooking } from "../shared.ts";
 
 /**
  * Fix a double-booked room on the verified booking — their
@@ -16,9 +16,9 @@ export default hotelSlot.updateTool({
     "warned the room is double-booked. Moves the guest to a same-or-better room for free, or when " +
     "nothing in the house fits, arranges the walk (partner hotel tonight on us, taxi covered, their " +
     'room back from the return date). Deliver the result per lookup_policy "guest_walks".',
+  require: verified,
   execute(_args, hotel) {
-    const booking = requireVerified(hotel);
-    if (isToolFailure(booking)) return booking;
+    const booking = verifiedBooking(hotel);
     const resolution = resolveRoomConflict(hotel, booking.code);
     if (isToolFailure(resolution)) return resolution;
     if (resolution.kind === "moved") {

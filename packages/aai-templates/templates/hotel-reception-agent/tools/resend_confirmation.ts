@@ -1,7 +1,6 @@
-import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { hotelSlot } from "../session.ts";
-import { addTicket, requireVerified } from "../shared.ts";
+import { addTicket, verified, verifiedBooking } from "../shared.ts";
 
 /**
  * Re-send a document to the email ON FILE — their `resend_confirmation` over
@@ -15,10 +14,10 @@ export default hotelSlot.updateTool({
     "Re-send the booking confirmation or the itemized folio to the email already on file for the " +
     "verified booking. It cannot go to a different address the caller reads out. Only say it's " +
     "sent after this returns.",
+  require: verified,
   inputSchema: z.object({ kind: z.enum(["booking_confirmation", "folio"]) }),
   execute({ kind }, hotel) {
-    const booking = requireVerified(hotel);
-    if (isToolFailure(booking)) return booking;
+    const booking = verifiedBooking(hotel);
     const ticket = addTicket(
       hotel,
       "email",
