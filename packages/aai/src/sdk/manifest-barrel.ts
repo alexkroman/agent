@@ -22,6 +22,16 @@ export {
 // callers reach it through `./config-rules.ts` or `/host-internal`, so a
 // barrel entry would buy nothing.
 export { agentConfigWarnings, type SessionMode } from "./config-rules.ts";
+// The same seam for `workflows/`: a file default-exporting a `workflow()` def
+// is registered under its file name, an explicit `agent({ workflows })` entry
+// winning a clash.
+export {
+  type WithWorkflowsOptions,
+  type WorkflowModules,
+  type WorkflowRegistry,
+  withWorkflows,
+  workflowRegistry,
+} from "./manifest-workflows.ts";
 // The same seam for the other thing a file beside `agent.ts` can BE: its
 // `system-prompt.md`.
 export { withSystemPrompt } from "./system-prompt-file.ts";

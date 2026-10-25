@@ -99,7 +99,11 @@ import { readBrand, setBrand } from "./_boundary.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import type { SessionSpeech } from "./session-speech.ts";
-import type { ClientTranscript, StepClientTranscriptOptions } from "./step-client-transcript.ts";
+import type {
+  ClientTranscript,
+  ClientTranscriptMessage,
+  StepClientTranscriptOptions,
+} from "./step-client-transcript.ts";
 import type { WorkflowClient } from "./workflow.ts";
 
 /**
@@ -179,6 +183,22 @@ export interface RouteContext {
     clientId: string,
     options?: StepClientTranscriptOptions,
   ): Promise<ClientTranscript>;
+  /**
+   * What ONE session has said so far — its committed user and agent lines,
+   * oldest first, the same lines `onSessionEnd` receives as `transcript` once
+   * the session stops. Read from the session's own log, flushed first, so a
+   * LIVE session answers everything said up to now: the view a page polls
+   * while a call this app placed is still going. Empty for an unknown session,
+   * and for one that recorded nothing.
+   *
+   * Keyed by session id rather than client id because a phone call names no
+   * client. As with `speech`, a session id is not authorization: take it from
+   * state your own code wrote, never from the request alone.
+   *
+   * Optional only so a context built by hand (a spec's) need not supply one;
+   * every runtime does.
+   */
+  sessionTranscript?(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
   /**
    * The speech of the LIVE session `sessionId` on this server: say a sentence
    * on that call, or stop the agent. See {@link SessionSpeech}. `undefined`

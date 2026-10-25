@@ -20,6 +20,7 @@ export {
   loadClientHistory,
   publishClientTranscripts,
   readClientTranscript,
+  readSessionTranscript,
 } from "./client-history.ts";
 export {
   answeredGreeting,

@@ -131,24 +131,36 @@ function generate(dir: string): string {
     'import { deployedAgent } from "@alexkroman1/aai/testing";',
     `import authored from ${JSON.stringify(agent)};`,
   ];
-  const tools = toolFiles(dir);
+  const tools = moduleFiles(dir, "tools");
   for (const [i, file] of tools.entries()) {
     lines.push(`import * as tool${i} from ${JSON.stringify(file)};`);
+  }
+  // Every `workflows/*.ts` — `workflowRegistry` keeps the ones that
+  // default-export a def and skips a body's helpers, so the whole directory is
+  // imported, the way the CLI's generated entry imports it.
+  const workflows = moduleFiles(dir, "workflows");
+  for (const [i, file] of workflows.entries()) {
+    lines.push(`import * as workflow${i} from ${JSON.stringify(file)};`);
   }
   const prompt = join(dir, "system-prompt.md");
   const hasPrompt = existsSync(prompt);
   if (hasPrompt) lines.push(`import systemPrompt from ${JSON.stringify(`${prompt}?raw`)};`);
 
   const entries = tools.map((file, i) => `  [${JSON.stringify(file)}]: tool${i},`).join("\n");
+  const workflowEntries = workflows
+    .map((file, i) => `  [${JSON.stringify(file)}]: workflow${i},`)
+    .join("\n");
   lines.push(
     "",
     `const tools = {\n${entries}\n};`,
+    `const workflows = {\n${workflowEntries}\n};`,
     "",
     // `deployedAgent` refuses an EMPTY tools glob, because a glob that matched
     // nothing means a broken pattern. Here an empty directory is a fact, not a
     // typo, so the key is omitted rather than passed empty.
     "export default deployedAgent(authored, {",
     ...(tools.length > 0 ? ["  tools,"] : []),
+    ...(workflows.length > 0 ? ["  workflows,"] : []),
     ...(hasPrompt ? ["  systemPrompt,"] : []),
     "});",
     "",
@@ -156,9 +168,9 @@ function generate(dir: string): string {
   return lines.join("\n");
 }
 
-/** Every `tools/*.ts` file that is a tool — specs and type tests are not. */
-function toolFiles(dir: string): string[] {
-  const root = join(dir, "tools");
+/** Every `<sub>/*.ts` file that is a module of its kind — specs and type tests are not. */
+function moduleFiles(dir: string, sub: "tools" | "workflows"): string[] {
+  const root = join(dir, sub);
   if (!existsSync(root)) return [];
   return readdirSync(root)
     .filter((name) => name.endsWith(".ts") && !/\.(test|test-d)\.ts$/.test(name))

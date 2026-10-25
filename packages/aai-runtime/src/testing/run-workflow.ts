@@ -67,7 +67,7 @@
  * @module
  */
 
-import type { ToolInputSchema, WorkflowDef } from "@alexkroman1/aai";
+import type { ToolInputSchema, WorkflowDef, WorkflowOutputOf } from "@alexkroman1/aai";
 import { parseSchemaInput } from "@alexkroman1/aai/testing";
 import { type Logger, silentLogger } from "../logger.ts";
 import {
@@ -102,6 +102,26 @@ export const DEFAULT_MAX_DELIVERIES = 50;
 type Queued = { runId: string; at: number | undefined };
 
 /**
+ * An agent with a `workflows` map, for the `runWorkflow(agentDef, "name", …)`
+ * form: `agent({ workflows })`'s result, or `virtual:aai/agent`'s.
+ *
+ * @input
+ * @public
+ */
+export type WorkflowBearingAgent = {
+  readonly workflows?: Readonly<Record<string, WorkflowDef>> | undefined;
+};
+
+/**
+ * The names `App` declares under `workflows` — what the agent form of
+ * {@link runWorkflow} accepts as its second argument.
+ *
+ * @public
+ */
+export type WorkflowNameOf<App extends WorkflowBearingAgent> = keyof NonNullable<App["workflows"]> &
+  string;
+
+/**
  * Start `def` with `input` and drive it until it finishes or parks.
  *
  * Resolves a handle carrying the run's status, output and journaled steps, with
@@ -112,6 +132,14 @@ type Queued = { runId: string; at: number | undefined };
  * is what `ctx.workflows.start` does on every real path: a body is written
  * against a validated input, so handing it an unvalidated one tests a call that
  * cannot happen.
+ *
+ * **Two forms.** Handed a DEF, the run is named by `options.name` (default
+ * `"workflow"`). Handed the AGENT and a workflow's name — `runWorkflow(agentDef,
+ * "digest", input)`, with `agentDef` from `virtual:aai/agent` — the def is the
+ * one the agent declares (or the build discovered in `workflows/`) under that
+ * name, and the run carries that name, so a body that reads `ctx.workflow`,
+ * starts a sibling by name or is found by `ctx.workflows.find` sees what a
+ * deployment would. An unknown name throws, listing the ones the agent has.
  *
  * @example
  * ```ts
@@ -139,6 +167,14 @@ type Queued = { runId: string; at: number | undefined };
  * console.log(run.status, run.output, run.deliveries);
  * ```
  *
+ * @example The agent form, from a project's own spec
+ * ```ts no-check
+ * import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+ * import agentDef from "virtual:aai/agent";
+ *
+ * const run = await runWorkflow(agentDef, "digest", { url: "https://example.com/a" });
+ * ```
+ *
  * @typeParam R - What the body returns, taken from the declaration.
  *
  * @public
@@ -146,7 +182,51 @@ type Queued = { runId: string; at: number | undefined };
 export async function runWorkflow<P extends ToolInputSchema, R>(
   def: WorkflowDef<P, R>,
   input: Record<string, unknown>,
-  options: RunWorkflowOptions = {},
+  options?: RunWorkflowOptions,
+): Promise<WorkflowTestHandle<R>>;
+export async function runWorkflow<
+  App extends WorkflowBearingAgent,
+  Name extends WorkflowNameOf<App>,
+>(
+  agent: App,
+  name: Name,
+  input: Record<string, unknown>,
+  options?: Omit<RunWorkflowOptions, "name">,
+): Promise<WorkflowTestHandle<WorkflowOutputOf<NonNullable<App["workflows"]>[Name]>>>;
+export async function runWorkflow(
+  first: WorkflowDef<ToolInputSchema, unknown> | WorkflowBearingAgent,
+  second: string | Record<string, unknown>,
+  third?: Record<string, unknown> | RunWorkflowOptions,
+  fourth?: Omit<RunWorkflowOptions, "name">,
+): Promise<WorkflowTestHandle<unknown>> {
+  if (typeof second === "string") {
+    const agent = first as WorkflowBearingAgent;
+    const def = agent.workflows?.[second];
+    if (def === undefined) {
+      const known = Object.keys(agent.workflows ?? {});
+      throw new Error(
+        `runWorkflow: the agent declares no workflow "${second}"` +
+          (known.length > 0 ? ` (it has ${known.join(", ")})` : " (it has none)") +
+          ". Check the name, or register the def in agent({ workflows }) or as workflows/<name>.ts.",
+      );
+    }
+    return runDef(def, (third as Record<string, unknown> | undefined) ?? {}, {
+      ...fourth,
+      name: second,
+    });
+  }
+  return runDef(
+    first as WorkflowDef<ToolInputSchema, unknown>,
+    second,
+    (third as RunWorkflowOptions | undefined) ?? {},
+  );
+}
+
+/** The def form — see {@link runWorkflow}. */
+async function runDef<P extends ToolInputSchema, R>(
+  def: WorkflowDef<P, R>,
+  input: Record<string, unknown>,
+  options: RunWorkflowOptions,
 ): Promise<WorkflowTestHandle<R>> {
   const name = options.name ?? "workflow";
   const logger = options.logger ?? silentLogger;

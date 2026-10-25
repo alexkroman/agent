@@ -44,6 +44,7 @@
  */
 
 import type { AgentSystemPrompt } from "./agent-instructions.ts";
+import { withWorkflows, workflowRegistry } from "./manifest-workflows.ts";
 import { withSystemPrompt } from "./system-prompt-file.ts";
 import type { ToolBearingAgent } from "./testing-tools.ts";
 import { type ToolModules, toolRegistry, withTools } from "./tool-registry.ts";
@@ -99,6 +100,14 @@ export type ProjectFiles = {
    * capability owns.
    */
   readonly tools?: Readonly<Record<string, unknown>>;
+  /**
+   * `import.meta.glob("./workflows/*.ts", { eager: true })`, written at the
+   * call site like `tools`. A module default-exporting a `workflow()` def is
+   * registered under its file name, an explicit `agent({ workflows })` entry
+   * winning a clash; the rest of the directory (a body's helpers) is skipped,
+   * so unlike `tools` an empty or helper-only result is not an error.
+   */
+  readonly workflows?: Readonly<Record<string, unknown>>;
   /**
    * `import prompt from "./system-prompt.md?raw"`.
    *
@@ -170,8 +179,8 @@ export type ProjectFiles = {
 export function deployedAgent<
   D extends ToolBearingAgent & { readonly systemPrompt: AgentSystemPrompt },
 >(authored: D, project: ProjectFiles): D {
-  const { tools, systemPrompt } = project;
-  if (tools === undefined && systemPrompt === undefined) {
+  const { tools, workflows, systemPrompt } = project;
+  if (tools === undefined && systemPrompt === undefined && workflows === undefined) {
     throw new Error(
       'deployedAgent was given no project files. Pass `tools: import.meta.glob("./tools/*.ts", { eager: true })` for a project whose tools are files, `systemPrompt` for one with a system-prompt.md, or both — an empty second argument lowers nothing and leaves the eval measuring the framework defaults.',
     );
@@ -181,6 +190,8 @@ export function deployedAgent<
       'deployedAgent was given an EMPTY tools glob, which lowers nothing. Check the pattern (it must be a literal, expanded against THIS file — `import.meta.glob("./tools/*.ts", { eager: true })`), or omit `tools` if this project really has no tools/ directory.',
     );
   }
-  const lowered = tools === undefined ? authored : withDiscoveredTools(authored, tools);
+  const withTools = tools === undefined ? authored : withDiscoveredTools(authored, tools);
+  const lowered =
+    workflows === undefined ? withTools : withWorkflows(withTools, workflowRegistry(workflows));
   return systemPrompt === undefined ? lowered : withSystemPrompt(lowered, systemPrompt);
 }

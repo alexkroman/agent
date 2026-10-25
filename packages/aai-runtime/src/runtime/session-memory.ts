@@ -40,6 +40,7 @@ import {
 } from "@alexkroman1/aai";
 import { recordSessionIdentity } from "@alexkroman1/aai/host-internal";
 import { rejectingWorkflows, WORKFLOWS_UNAVAILABLE_MESSAGE } from "@alexkroman1/aai/internal";
+import type { ClientTranscriptMessage } from "@alexkroman1/aai/step";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { feedClientSessionEnd } from "../inbox/index.ts";
@@ -48,6 +49,7 @@ import {
   bindClientSession,
   type ClientHistoryDeps,
   loadClientHistory,
+  readSessionTranscript,
   resolveSessionContext,
 } from "../session/index.ts";
 import type { SessionSystemPrompt } from "./system-prompt.ts";
@@ -153,23 +155,40 @@ export function openSessionMemory(deps: {
       const report = (err: unknown): void => {
         logger.warn("onSessionEnd failed", { sid, error: errorMessage(err) });
       };
-      try {
-        const result: unknown = hook({
-          sessionId,
-          env,
-          lastEventIndex,
-          // The surface a tool's `ctx.workflows` is, minus `notify`: there is no
-          // session left to announce a result to.
-          workflows: deps.workflows ?? rejectingWorkflows(WORKFLOWS_UNAVAILABLE_MESSAGE),
-          ...omitUndefined({ clientId: clientOf(), call: callOf() }),
-        });
-        // Not awaited by anything the caller waits on — but a rejection is
-        // still this hook's failure, and an unhandled one would take the process.
-        // `Promise.resolve` so any thenable is covered, and a plain value is a no-op.
-        Promise.resolve(result).catch(report);
-      } catch (err: unknown) {
-        report(err);
-      }
+      const fire = (transcript: readonly ClientTranscriptMessage[]): void => {
+        try {
+          const result: unknown = hook({
+            sessionId,
+            env,
+            lastEventIndex,
+            transcript,
+            // The surface a tool's `ctx.workflows` is, minus `notify`: there is no
+            // session left to announce a result to.
+            workflows: deps.workflows ?? rejectingWorkflows(WORKFLOWS_UNAVAILABLE_MESSAGE),
+            ...omitUndefined({ clientId: clientOf(), call: callOf() }),
+          });
+          // Not awaited by anything the caller waits on — but a rejection is
+          // still this hook's failure, and an unhandled one would take the process.
+          // `Promise.resolve` so any thenable is covered, and a plain value is a no-op.
+          Promise.resolve(result).catch(report);
+        } catch (err: unknown) {
+          report(err);
+        }
+      };
+      // The transcript is read off the flushed log first, and the hook fires
+      // once it is in hand. A log the backend cannot read is not the hook's
+      // failure: it is logged and the hook runs with an empty transcript,
+      // which is what it would have seen before the field existed.
+      readSessionTranscript(deps.history, sessionId)
+        .catch((err: unknown): ClientTranscriptMessage[] => {
+          logger.warn("Session transcript not read for onSessionEnd", {
+            sid,
+            error: errorMessage(err),
+          });
+          return [];
+        })
+        .then(fire)
+        .catch(report);
     },
   };
 }

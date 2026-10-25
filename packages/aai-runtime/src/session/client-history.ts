@@ -47,6 +47,7 @@ import {
 import { SessionEventSchema } from "@alexkroman1/aai/protocol";
 import {
   type ClientTranscript,
+  type ClientTranscriptMessage,
   type ClientTranscriptSession,
   mapConcurrent,
   type StepClientTranscriptOptions,
@@ -221,6 +222,38 @@ export async function loadClientHistory(
   return chunks.flat();
 }
 
+/**
+ * The committed lines of `events`, oldest first — `historyMessageOf`'s rule,
+ * so a recovery phrase and a `record: false` line are absent here exactly as
+ * they are from the model's own history.
+ */
+function linesOf(events: readonly IndexedEvent[]): ClientTranscriptMessage[] {
+  const lines: ClientTranscriptMessage[] = [];
+  for (const { event } of events) {
+    const message = historyMessageOf(event);
+    if (message && message.role !== "tool") {
+      lines.push({ role: message.role, text: message.content, at: event.meta.at });
+    }
+  }
+  return lines;
+}
+
+/**
+ * What ONE session has said: its committed lines, oldest first, flushed
+ * first so a live session is read whole. `SessionEndContext.transcript` and
+ * `RouteContext.sessionTranscript` are both this — a session that named no
+ * client (a phone call) has a log all the same, which is why it is keyed by
+ * session rather than going through `readClientTranscript`.
+ *
+ * @internal
+ */
+export async function readSessionTranscript(
+  deps: ClientHistoryDeps,
+  sessionId: string,
+): Promise<ClientTranscriptMessage[]> {
+  return linesOf(await readIndexed(deps, sessionId));
+}
+
 /** One session's transcript, from its indexed events. */
 function transcriptOf(
   record: ClientSessionRecord,
@@ -230,15 +263,12 @@ function transcriptOf(
     sessionId: record.sessionId,
     startedAt: record.startedAt,
     lastEventIndex: events.at(-1)?.index ?? -1,
-    messages: [],
+    messages: linesOf(events),
     tools: [],
   };
   const calls = new Map<string, { name: string; args: Record<string, unknown> }>();
   for (const { event } of events) {
-    const message = historyMessageOf(event);
-    if (message && message.role !== "tool") {
-      session.messages.push({ role: message.role, text: message.content, at: event.meta.at });
-    } else if (event.type === "tool.called") {
+    if (event.type === "tool.called") {
       calls.set(event.toolCallId, { name: event.toolName, args: event.args });
     } else if (event.type === "tool.completed") {
       const call = calls.get(event.toolCallId);

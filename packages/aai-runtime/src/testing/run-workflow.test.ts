@@ -19,7 +19,7 @@ import { isRecord } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryJournal } from "../workflow/journal/backends/memory.ts";
 import { workflowJournal } from "../workflow/journal/handle.ts";
-import { runWorkflow } from "./run-workflow.ts";
+import { runWorkflow, type WorkflowBearingAgent } from "./run-workflow.ts";
 
 /** A day, which is the point: no spec may wait one and none has to. */
 const A_DAY = 86_400_000;
@@ -61,6 +61,35 @@ describe("a run that finishes on the first delivery", () => {
     expect(run.status).toBe("failed");
     expect(run.error).toBe("the gateway is down");
     expect(run.output).toBeUndefined();
+  });
+});
+
+describe("the agent form", () => {
+  const digest = workflow({
+    description: "digest",
+    run: async (input: Record<string, unknown>, ctx: WorkflowContext) => ({
+      topic: input.topic,
+      name: ctx.workflow,
+      headline: await ctx.step("summarize", () => "ok"),
+    }),
+  });
+  const agentDef = { name: "App", workflows: { digest } };
+
+  test("resolves the def by name off the agent and runs it UNDER that name", async () => {
+    const run = await runWorkflow(agentDef, "digest", { topic: "otters" });
+    expect(run.status).toBe("completed");
+    expect(run.output).toEqual({ topic: "otters", name: "digest", headline: "ok" });
+    expect(run.steps.map((s) => s.key)).toEqual(["summarize#0"]);
+    await run.close();
+  });
+
+  test("an unknown name throws, listing the agent's workflows", async () => {
+    await expect(
+      // @ts-expect-error — the name is typed by the agent's `workflows` keys.
+      runWorkflow(agentDef, "recap", {}),
+    ).rejects.toThrow(/no workflow "recap" \(it has digest\)/);
+    const voice: WorkflowBearingAgent = {};
+    await expect(runWorkflow(voice, "digest", {})).rejects.toThrow(/it has none/);
   });
 });
 

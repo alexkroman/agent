@@ -9,6 +9,7 @@ import {
 import { createStubWorkflows } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "../_logger-test-utils.ts";
+import { flush } from "../_timing-test-utils.ts";
 import { bindClientSession, createSessionEventStream } from "../session/index.ts";
 import { createMemoryStateBackend } from "../session-state/store.ts";
 import { openSessionMemory } from "./session-memory.ts";
@@ -95,18 +96,56 @@ describe("openSessionMemory", () => {
 
     memory.ended(7);
 
+    await vi.waitFor(() => expect(onSessionEnd).toHaveBeenCalled());
     const ctx = onSessionEnd.mock.calls[0]?.[0];
     expect(ctx).toMatchObject({
       sessionId,
       clientId: "porch",
       lastEventIndex: 7,
       env: { MEMORY_URL: "http://memory" },
+      transcript: [],
     });
     // No workflows declared: the same rejecting client a tool would get.
     await expect(ctx?.workflows.start("memorize", {})).rejects.toThrow();
   });
 
-  test("onSessionEnd gets the runtime's workflow client when there is one", () => {
+  test("onSessionEnd is handed the session's committed lines, recovery phrases excluded", async () => {
+    const onSessionEnd = vi.fn<(ctx: SessionEndContext) => unknown>();
+    const { memory, sessionId, stream } = wire({ onSessionEnd });
+    // No client named: a phone call's log is read by SESSION, which is the point.
+    stream.append(sessionId, { type: "userTranscript.committed", text: "table for two" });
+    stream.append(sessionId, {
+      type: "agentTranscript.committed",
+      text: "Sorry, something went wrong.",
+      recovery: "turn-failed",
+    });
+    stream.append(sessionId, { type: "agentTranscript.committed", text: "Booked for seven." });
+
+    memory.ended(2);
+
+    await vi.waitFor(() => expect(onSessionEnd).toHaveBeenCalled());
+    expect(onSessionEnd.mock.calls[0]?.[0].transcript).toEqual([
+      { role: "user", text: "table for two", at: expect.any(Number) },
+      { role: "assistant", text: "Booked for seven.", at: expect.any(Number) },
+    ]);
+  });
+
+  test("a log that cannot be read is logged, and onSessionEnd still fires with none", async () => {
+    const onSessionEnd = vi.fn<(ctx: SessionEndContext) => unknown>();
+    const { memory, backend, logger } = wire({ onSessionEnd });
+    backend.readEvents = () => Promise.reject(new Error("store down"));
+
+    memory.ended(0);
+
+    await vi.waitFor(() => expect(onSessionEnd).toHaveBeenCalled());
+    expect(onSessionEnd.mock.calls[0]?.[0].transcript).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Session transcript not read for onSessionEnd",
+      expect.objectContaining({ error: "store down" }),
+    );
+  });
+
+  test("onSessionEnd gets the runtime's workflow client when there is one", async () => {
     const onSessionEnd = vi.fn<(ctx: SessionEndContext) => unknown>();
     const workflows = createStubWorkflows();
     const backend = createMemoryStateBackend();
@@ -121,6 +160,7 @@ describe("openSessionMemory", () => {
       logger,
     });
     memory.ended(-1);
+    await vi.waitFor(() => expect(onSessionEnd).toHaveBeenCalled());
     expect(onSessionEnd.mock.calls[0]?.[0].workflows).toBe(workflows);
   });
 
@@ -131,9 +171,11 @@ describe("openSessionMemory", () => {
       },
     });
     expect(() => thrower.memory.ended(0)).not.toThrow();
-    expect(thrower.logger.warn).toHaveBeenCalledWith(
-      "onSessionEnd failed",
-      expect.objectContaining({ error: "boom" }),
+    await vi.waitFor(() =>
+      expect(thrower.logger.warn).toHaveBeenCalledWith(
+        "onSessionEnd failed",
+        expect.objectContaining({ error: "boom" }),
+      ),
     );
 
     const rejecter = wire({ onSessionEnd: () => Promise.reject(new Error("later")) });
@@ -159,6 +201,7 @@ describe("openSessionMemory", () => {
     expect(memory.refused).toBe("stranger");
     expect(prompt.setContext).not.toHaveBeenCalled();
     memory.ended(3);
+    await flush();
     expect(onSessionEnd).not.toHaveBeenCalled();
   });
 
@@ -172,6 +215,7 @@ describe("openSessionMemory", () => {
     await memory.open();
     memory.ended(0);
     expect(sessionContext).toHaveBeenCalledWith(expect.objectContaining({ call }));
+    await vi.waitFor(() => expect(ended).toHaveLength(1));
     expect(ended[0]?.call).toEqual(call);
     expect(memory.refused).toBeUndefined();
   });

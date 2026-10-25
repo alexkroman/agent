@@ -170,6 +170,26 @@ describe("compileAgentRoutes", () => {
     expect(ctx?.signal).toBe(controller.signal);
   });
 
+  test("ctx.sessionTranscript reads ONE session's committed lines, live or ended, by its id", async () => {
+    const { serve, stream } = compile({
+      "GET /calls/:id": (req, ctx) => ctx.sessionTranscript?.(req.params.id ?? ""),
+    });
+    // No client bound: a placed call names none, and is read by session.
+    stream.append("route-call", { type: "userTranscript.committed", text: "hello?" });
+    stream.append("route-call", {
+      type: "agentTranscript.committed",
+      text: "Hi, this is Sam's assistant.",
+    });
+    expect(await serve?.(call({ path: "/calls/route-call" }))).toMatchObject({
+      status: 200,
+      body: [
+        { role: "user", text: "hello?" },
+        { role: "assistant", text: "Hi, this is Sam's assistant." },
+      ],
+    });
+    expect(await serve?.(call({ path: "/calls/nobody" }))).toMatchObject({ status: 200, body: [] });
+  });
+
   test("ctx.clientTranscript reads THIS runtime's client log, and refuses a malformed id", async () => {
     const { serve, history, stream } = compile({
       "GET /sessions": (req, ctx) => ctx.clientTranscript(req.clientId ?? ""),

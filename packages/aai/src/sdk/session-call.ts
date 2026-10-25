@@ -36,6 +36,7 @@ import {
   recordSessionIdentity,
   sessionCallEntries,
 } from "./_session-identity-store.ts";
+import type { CallBrief } from "./call-brief.ts";
 import type { ToolContext } from "./tool-context.ts";
 
 /**
@@ -60,7 +61,27 @@ export type SessionCall = {
    * under 500 characters (Twilio's own limit), non-string values dropped.
    */
   readonly parameters: Readonly<Record<string, string>>;
+  /**
+   * The signed brief these parameters carry — what `stepPlaceCall({ brief })`
+   * put on the call — verified under `secret` and reassembled, or `undefined`
+   * when they were not signed with it: a stranger, a stale secret, a
+   * truncated stream, or no secret at all. `readCallBrief(call, secret)` bound
+   * to this call; the same check, so a session refusing on `undefined` is
+   * refusing exactly the streams this app did not dial.
+   */
+  readonly brief: (secret: string | undefined) => Promise<CallBrief | undefined>;
 };
+
+/**
+ * A call as the carrier's `start` frame reported it — {@link SessionCall}
+ * without the {@link SessionCall.brief} reader, which the record attaches.
+ * What the runtime's phone bridge, an eval and `createToolContext({ call })`
+ * hand in.
+ *
+ * @input
+ * @public
+ */
+export type SessionCallInput = Omit<SessionCall, "brief">;
 
 /**
  * Record the call a phone session's stream reported. Frozen, parameters too, so
@@ -69,7 +90,7 @@ export type SessionCall = {
  *
  * @internal — the runtime's half; `recordSessionIdentity` records every field at once.
  */
-export function setSessionCall(sessionId: string, call: SessionCall): void {
+export function setSessionCall(sessionId: string, call: SessionCallInput): void {
   recordSessionIdentity(sessionId, { call });
 }
 

@@ -27,7 +27,7 @@
  * @module
  */
 
-import type { AgentDef, SessionCall } from "@alexkroman1/aai";
+import type { AgentDef, SessionCallInput } from "@alexkroman1/aai";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { afterAll, beforeAll, describe, test } from "vitest";
@@ -127,7 +127,7 @@ export type EvalCaseOptions = {
    * agent's refusal of a session no carrier started, inside a suite whose
    * other cases are all the one call.
    */
-  readonly call?: SessionCall | null;
+  readonly call?: SessionCallInput | null;
   /**
    * This case's fake network, over the suite's — see
    * `DescribeEvalOptions.network`. A case needing routes of its own (a
