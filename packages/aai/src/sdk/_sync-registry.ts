@@ -15,6 +15,18 @@
  * a key declared twice is left for `normalizeSyncState` to refuse at `agent()`
  * — the one place that already names the collision.
  *
+ * ## An entry is CLAIMED by the first def that collects it
+ *
+ * The registry is read whole and never drained, so in a process that declares
+ * several agents — a template suite, a monorepo spec, a page-mount test —
+ * every agent declared AFTER a `sync: true` slot used to inherit that
+ * projection, and a `workflowApp()` declared after one then met its own
+ * "`syncState` has no effect on a workflow-app agent" refusal. So a projection
+ * is claimed by the first def that collects it; a later def collects only
+ * what is still unclaimed; and a workflow-app def never collects (see
+ * `resolveSyncState`). A def re-collecting at the lowering keeps what it
+ * already holds and claims only the new entries.
+ *
  * ## A collected `syncState` is re-collected at the lowering
  *
  * `agent()` runs when `agent.ts` is evaluated, and the generated bundle entry
@@ -38,6 +50,9 @@ import type { StateProjection } from "./session-state.ts";
 
 const synced: StateProjection[] = [];
 
+/** The projections some def has already collected — see the module doc. */
+const claimed = new WeakSet<StateProjection>();
+
 /** The `syncState` records this registry's contents were collected into. */
 const collected = new WeakSet<object>();
 
@@ -56,7 +71,17 @@ export function registerSyncedProjection(projection: StateProjection): void {
   synced.push(projection);
 }
 
-/** Every projection registered so far, in declaration order. */
+/** Every projection registered so far, in declaration order, claimed or not. */
 export function syncedProjections(): readonly StateProjection[] {
   return synced;
+}
+
+/**
+ * The registered projections no def has collected yet, in declaration order
+ * — and CLAIM them for the caller, so the next def collects none of them.
+ */
+export function claimUnsyncedProjections(): StateProjection[] {
+  const fresh = synced.filter((projection) => !claimed.has(projection));
+  for (const projection of fresh) claimed.add(projection);
+  return fresh;
 }

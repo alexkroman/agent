@@ -29,12 +29,13 @@
  * `define.ts` and the config boundary, not API.
  */
 
-import { assertModeFields, resolveAgentMode } from "./_agent-modes.ts";
+import { assertModeFields, isAgentMode, resolveAgentMode } from "./_agent-modes.ts";
 import {
+  claimUnsyncedProjections,
   isCollectedSyncState,
   markCollectedSyncState,
-  syncedProjections,
 } from "./_sync-registry.ts";
+import type { AgentMode } from "./agent-mode.ts";
 import { assertTurnSilenceWindow, ENDPOINTING_KEYS } from "./config-rules.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
@@ -53,7 +54,7 @@ export function normalizeAgentParams(input: unknown): unknown {
   assertModeFields(mode, rest);
   rest.mode = mode;
   if (typeof rest.llm === "string") rest.llm = normalizeLlm(rest.llm);
-  const syncState = resolveSyncState(rest.syncState);
+  const syncState = resolveSyncState(rest.syncState, mode);
   if (syncState !== undefined) rest.syncState = syncState;
   normalizeListing(rest);
   normalizeEndpointing(rest);
@@ -122,25 +123,34 @@ function takeNumber(group: Record<string, unknown>, key: string): number | undef
 
 /**
  * The canonical `syncState` for what an author declared — or, declared
- * nothing, the slots registered `sync: true` (see `SessionSlotOptions.sync`).
+ * nothing, the slots registered `sync: true` that no other def has claimed
+ * (see `SessionSlotOptions.sync`, and "An entry is CLAIMED" in
+ * `_sync-registry.ts`).
  *
  * Resolved here rather than in `agent()` alone so a raw `export default {...}`
  * config in the same bundle syncs the same slots — and idempotent, because the
  * record this produces is accepted unchanged by the next pass. A record an
- * EARLIER pass collected from the registry is collected again rather than
- * kept: `agent()` runs before the `tools/*.ts` modules the generated entry
- * imports after `agent.ts`, so a slot synced in one of those registers after
- * the agent was built, and the next pass is where every module has evaluated
- * ("A collected `syncState` is re-collected at the lowering" in
- * `_sync-registry.ts`). An explicit `syncState` always wins.
+ * EARLIER pass collected from the registry is EXTENDED rather than kept:
+ * `agent()` runs before the `tools/*.ts` modules the generated entry imports
+ * after `agent.ts`, so a slot synced in one of those registers after the agent
+ * was built, and the next pass is where every module has evaluated ("A
+ * collected `syncState` is re-collected at the lowering" in
+ * `_sync-registry.ts`). An explicit `syncState` always wins, and a workflow
+ * app collects nothing: it opens no session, and `assertModeFields` has
+ * already refused a declared one.
  */
-function resolveSyncState(declared: unknown): Record<string, unknown> | undefined {
+function resolveSyncState(
+  declared: unknown,
+  mode: AgentMode | undefined,
+): Record<string, unknown> | undefined {
+  if (mode === "workflow-app") return undefined;
   if (declared !== undefined && !isCollectedSyncState(declared)) {
     return normalizeSyncState(declared);
   }
-  const synced = syncedProjections();
-  if (synced.length === 0) return declared === undefined ? undefined : declared;
-  const record = normalizeSyncState(synced);
+  const fresh = claimUnsyncedProjections();
+  if (fresh.length === 0) return declared === undefined ? undefined : declared;
+  const held = declared === undefined ? [] : Object.values(declared);
+  const record = normalizeSyncState([...held, ...fresh]);
   markCollectedSyncState(record);
   return record;
 }
@@ -152,9 +162,12 @@ function resolveSyncState(declared: unknown): Record<string, unknown> | undefine
  * nothing new to collect, is handed back as it is.
  */
 export function withCollectedSyncState<D extends object>(def: D): D {
-  const declared = (def as { readonly syncState?: unknown }).syncState;
+  const { syncState: declared, mode } = def as {
+    readonly syncState?: unknown;
+    readonly mode?: unknown;
+  };
   if (declared !== undefined && !isCollectedSyncState(declared)) return def;
-  const syncState = resolveSyncState(declared);
+  const syncState = resolveSyncState(declared, isAgentMode(mode) ? mode : undefined);
   if (syncState === undefined || syncState === declared) return def;
   return { ...def, syncState };
 }

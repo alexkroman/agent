@@ -31,7 +31,7 @@ import type {
   WorkflowAppOnlyField,
 } from "./agent-params.ts";
 
-function isAgentMode(value: unknown): value is AgentMode {
+export function isAgentMode(value: unknown): value is AgentMode {
   return (AGENT_MODES as readonly unknown[]).includes(value);
 }
 
