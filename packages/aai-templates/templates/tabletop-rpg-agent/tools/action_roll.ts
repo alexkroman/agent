@@ -4,8 +4,6 @@ import {
   canBurnMomentum,
   checkChaosInterrupt,
   gameSlot,
-  inCrisis,
-  isGameOver,
   MOVE_LABELS,
   MOVES,
   RESULT_LABELS,
@@ -15,32 +13,32 @@ import {
 } from "../shared.ts";
 
 /**
- * Gated on `playing`, which is what makes "never narrate a success without
- * rolling" hold from the other side too: before `setup_character` there are no
- * stats to roll against, and this used to roll 2d6 against nobody and apply
- * consequences to a game that did not exist. After a game over it refuses
- * outright — `gameOver` was a flag nothing acted on.
+ * Gated on `playing`: before `setup_character` there are no stats to roll
+ * against, and after a game over nothing rolls.
  */
-export default storyFlow.tool({
-  description:
-    "Core mechanic. Roll 2d6 + stat (capped at 10) vs 2d10 challenge dice. Also applies consequences (health/spirit/supply/momentum changes, clock advancement) based on move type, position, and result. Call for ANY risky action. Pure conversation needs no roll.",
-  when: "playing",
-  inputSchema: z.object({
-    move: z.enum(MOVES).describe("Which move the player is making"),
-    stat: z.enum(["edge", "heart", "iron", "shadow", "wits"]).describe("Which stat to roll"),
-    position: z
-      .enum(["controlled", "risky", "desperate"])
-      .describe("How dangerous the situation is"),
-    effect: z.enum(["limited", "standard", "great"]).describe("What can realistically be achieved"),
-    purpose: z.string().max(300).describe("What the character is attempting"),
-    targetNpcId: z.string().max(32).describe("Target NPC id for social moves").optional(),
-  }),
-  execute: (args, ctx) =>
-    gameSlot.update(ctx, (state) => {
+export default gameSlot.updateTool(
+  {
+    description:
+      "Core mechanic. Roll 2d6 + stat (capped at 10) vs 2d10 challenge dice. Also applies consequences (health/spirit/supply/momentum changes, clock advancement) based on move type, position, and result. Call for ANY risky action. Pure conversation needs no roll.",
+    dialog: storyFlow,
+    when: "playing",
+    inputSchema: z.object({
+      move: z.enum(MOVES).describe("Which move the player is making"),
+      stat: z.enum(["edge", "heart", "iron", "shadow", "wits"]).describe("Which stat to roll"),
+      position: z
+        .enum(["controlled", "risky", "desperate"])
+        .describe("How dangerous the situation is"),
+      effect: z
+        .enum(["limited", "standard", "great"])
+        .describe("What can realistically be achieved"),
+      purpose: z.string().max(300).describe("What the character is attempting"),
+      targetNpcId: z.string().max(32).describe("Target NPC id for social moves").optional(),
+    }),
+    execute(args, state, ctx) {
       const statValue = state[args.stat];
+      // Every draw — the four dice and the chaos check's own — comes off
+      // `ctx.random`, so a seeded context replays the whole scene.
       const roll = rollAction(args.stat, statValue, args.move, ctx.random);
-
-      // Apply consequences
       const { consequences, clockEvents, deltas } = applyConsequences(
         state,
         roll,
@@ -49,8 +47,8 @@ export default storyFlow.tool({
         args.targetNpcId ?? null,
       );
 
-      // Persist the roll (with the exact deltas applied) so burn_momentum can
-      // validate against it and revert it — the model never supplies dice.
+      // The roll and the exact deltas it applied, so `burn_momentum` can
+      // revert them — the model never supplies dice.
       state.lastRoll = {
         ...roll,
         position: args.position,
@@ -58,21 +56,9 @@ export default storyFlow.tool({
         targetNpcId: args.targetNpcId ?? null,
         deltas,
       };
-
-      // Update chaos factor
       updateChaosFactor(state, roll.result);
-
-      // Check for chaos interrupt. `ctx.random` here as everywhere else in this
-      // body: the parameter is optional and falls back to `Math.random`, so
-      // omitting it took ONE of a roll's five draws off the seam and out of the
-      // process — a scene resolved from a seeded context was reproducible in its
-      // dice and not in its interrupt.
       const interrupt = checkChaosInterrupt(state, ctx.random);
-
-      // Increment scene count
       state.sceneCount++;
-
-      // Can burn momentum?
       const burnTarget = canBurnMomentum(state, roll);
 
       return {
@@ -102,18 +88,22 @@ export default storyFlow.tool({
         currentSupply: state.supply,
         currentMomentum: state.momentum,
         chaosFactor: state.chaosFactor,
-        // Derived, not copied: `gameSlot`'s `after` restores the stored flags
-        // only once this body has returned, so `state.gameOver` here would be
-        // the value from before the roll that emptied the track.
-        crisisMode: inCrisis(state),
-        gameOver: isGameOver(state),
         sceneCount: state.sceneCount,
         canBurnMomentum: Boolean(burnTarget),
         burnWouldYield: burnTarget ? RESULT_LABELS[burnTarget] : undefined,
       };
+    },
+    // The two flags are read off the STORED game, after `after` restored them.
+    report: (stored, partial) => ({
+      ...partial,
+      crisisMode: stored.crisisMode,
+      gameOver: stored.gameOver,
     }),
-  // A roll that emptied both tracks ends the story; anything else leaves a
-  // standing roll that `burn_momentum` may still upgrade.
-  sendFrom: (result) =>
-    result.gameOver ? { type: "DOWNED" as const } : { type: "ROLLED" as const },
-});
+  },
+  {
+    // A roll that emptied both tracks ends the story; anything else leaves a
+    // standing roll that `burn_momentum` may still upgrade.
+    sendFrom: (result) =>
+      result.gameOver ? { type: "DOWNED" as const } : { type: "ROLLED" as const },
+  },
+);

@@ -440,6 +440,17 @@ function StoryArc({ story }: { story: DeepReadonly<StoryArcView> }) {
   );
 }
 
+const CSS = `
+@import url('https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+.et-section { border-bottom: 1px solid ${C.border}; padding: 10px 12px; }
+.et-section:last-child { border-bottom: none; }
+.et-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.14em; color: ${C.textDim}; margin-bottom: 6px; font-family: sans-serif; }
+.et-gold { color: ${C.accent}; text-shadow: 0 0 8px ${C.accentGlow}; }
+.et-crisis-pulse { animation: crisisPulse 2s ease-in-out infinite; }
+@keyframes crisisPulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
+.et-sidebar { --aai-scrollbar-thumb: ${C.borderLight}; }
+      `;
+
 // ── Sidebar ──────────────────────────────────────────────────────────────────
 
 /**
@@ -459,8 +470,6 @@ function StoryArc({ story }: { story: DeepReadonly<StoryArcView> }) {
 function Sidebar() {
   const game = useAgentState(gameSlot.projected);
   return (
-    // `.aai-scroll` is the SDK's thin scrollbar; the sheet's own `.et-scroll`
-    // rules were declared here for years and applied to no element at all.
     <div
       className="et-sidebar aai-scroll"
       style={{
@@ -470,17 +479,6 @@ function Sidebar() {
         fontFamily: "'Crimson Text', 'Georgia', serif",
       }}
     >
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap');
-        .et-section { border-bottom: 1px solid ${C.border}; padding: 10px 12px; }
-        .et-section:last-child { border-bottom: none; }
-        .et-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.14em; color: ${C.textDim}; margin-bottom: 6px; font-family: sans-serif; }
-        .et-gold { color: ${C.accent}; text-shadow: 0 0 8px ${C.accentGlow}; }
-        .et-crisis-pulse { animation: crisisPulse 2s ease-in-out infinite; }
-        @keyframes crisisPulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }
-        .et-sidebar { --aai-scrollbar-thumb: ${C.borderLight}; }
-      `}</style>
-
       {/* Header */}
       <div
         className="et-section"
@@ -783,7 +781,6 @@ function Sidebar() {
 // ── App ──────────────────────────────────────────────────────────────────────
 
 mountClient({
-  name: "Solo RPG",
   icon: (
     <span style={{ fontSize: "28px", color: C.accent }}>
       {/* biome-ignore lint/style/useConsistentCurlyBraces: unicode escape */}
@@ -795,13 +792,8 @@ mountClient({
   sidebar: Sidebar,
   sidebarWidth: "260px",
   sidebarPosition: "right",
-  theme: {
-    bg: C.bg,
-    primary: C.accent,
-    text: C.text,
-    surface: C.surface,
-    border: C.border,
-  },
+  theme: { primary: C.accent, mode: "dark" },
+  css: CSS,
 });
 
 // No `onSessionId`/`resumeSessionId` here any more, and their removal is a FIX
