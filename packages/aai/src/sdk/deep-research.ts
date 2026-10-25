@@ -82,6 +82,7 @@ import type { StepGenerateOptions } from "./step-generate.ts";
 import type { WorkflowDef } from "./workflow.ts";
 import type { WorkflowContext } from "./workflow-ctx.ts";
 import type { WorkflowFailureHook } from "./workflow-failure.ts";
+import type { WorkflowRunSnapshot } from "./workflow-run.ts";
 
 /** The budget a pass gets for every field left out. @public */
 export const DEFAULT_DEEP_RESEARCH_BUDGET: Readonly<Record<keyof DeepResearchBudget, number>> = {
@@ -140,6 +141,10 @@ export interface DeepResearchOptions<P extends DeepResearchInputSchema, R> {
         run: WorkflowFailureHook<InferSchemaOutput<P>>;
         maxAttempts?: number | undefined;
       };
+  /** The spoken line per run — `WorkflowDef.describeRun`, passed through. */
+  readonly describeRun?: ((run: WorkflowRunSnapshot<R>) => string) | undefined;
+  /** The line after a cancel — `WorkflowDef.cancelNote`, passed through. */
+  readonly cancelNote?: string | undefined;
 }
 /**
  * Declare a durable deep-research workflow, ready for `agent({ workflows })`.
@@ -195,7 +200,12 @@ export function deepResearchWorkflow<P extends DeepResearchInputSchema, R = Deep
   }
 
   return {
-    ...omitUndefined({ description: options.description, onFailure: engineFailure }),
+    ...omitUndefined({
+      description: options.description,
+      onFailure: engineFailure,
+      describeRun: options.describeRun,
+      cancelNote: options.cancelNote,
+    }),
     input: options.input,
     run,
   };
