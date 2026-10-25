@@ -1,5 +1,7 @@
 import { agent } from "@alexkroman1/aai";
-import { planSlot } from "./shared.ts";
+// The plan slot declared there syncs itself (`sync: true`), and `agent()`
+// collects it only from a module this file imports.
+import "./shared.ts";
 
 /**
  * A planning desk you can phone: plan-and-execute, with the caller in the loop.
@@ -15,12 +17,8 @@ import { planSlot } from "./shared.ts";
  */
 export default agent({
   name: "Planning Desk",
-  // For a reader of a list of agents. It says the LOOP rather than "research",
-  // because a caller who wants an answer in one turn is on the wrong line.
-  description: "Turns an objective into a plan and works it one step at a time with the caller",
-  // The plan exists before the first tool call, so a resumed connection has
-  // something to project.
-  // The plan, its progress and its revision trail, pushed after every tool call.
-  syncState: planSlot.projected,
+  // It says the LOOP rather than "research", because a caller who wants an
+  // answer in one turn is on the wrong line.
+  listing: "Turns an objective into a plan and works it one step at a time with the caller",
   greeting: "Planning desk. Tell me what you're trying to get done and I'll work out the steps.",
 });

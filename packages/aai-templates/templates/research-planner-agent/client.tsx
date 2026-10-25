@@ -102,19 +102,6 @@ function PlanSidebar() {
 }
 
 mountClient({
-  name: "Planning Desk",
   sidebar: PlanSidebar,
-  theme: {
-    bg: "#12100e",
-    primary: "#d9a441",
-    text: "#f3efe7",
-    surface: "#1e1a16",
-    border: "#2c2620",
-  },
-  tools: {
-    start_plan: { icon: "\u{1F5C2}", label: "Drafting the plan" },
-    work_next_step: { icon: "\u{1F50E}", label: "Working a step" },
-    revise_plan: { icon: "\u{270F}", label: "Revising the plan" },
-    plan_status: { icon: "\u{2139}", label: "Checking the plan" },
-  },
+  theme: { primary: "#d9a441", mode: "dark" },
 });

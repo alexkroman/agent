@@ -22,8 +22,8 @@
 // product questions from its own knowledge and skips the tools the prompt exists
 // to route it through, so a case run that way measures nothing it claims to.
 
-/** The def a DEPLOYED agent runs — see `agent.test.ts` on why the glob is here. */
 import agentDef from "virtual:aai/agent";
+import { isToolFailure } from "@alexkroman1/aai/utils";
 import {
   describeEval,
   describeToolCalls,
@@ -35,39 +35,14 @@ import {
   toolResultIn,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
+import { planSlot } from "./shared.ts";
+import planStatus from "./tools/plan_status.ts";
 
 /**
- * What the BROWSER is sent, as this eval reads it.
- *
- * Parsed rather than cast: `state.updated` carries `unknown`, so a projection
- * that stopped matching FAILS naming the field, where the cast this replaced
- * handed the assertions `undefined` and failed a line later on something else.
- * It names only the fields asserted below, so `planView` may grow without
- * touching this.
+ * The latest frame — what the browser would be rendering, read through the
+ * same projection `client.tsx` passes to `useAgentState`.
  */
-const ProjectedPlan = z.object({
-  objective: z.string().nullable(),
-  plan: z.array(z.string()),
-  done: z.array(z.object({ step: z.string(), result: z.string() })),
-  response: z.string().nullable(),
-  revisions: z.array(z.string()),
-  progress: z.number(),
-});
-
-/**
- * The latest `syncState` frame — what the browser would be rendering.
- *
- * `planSlot.projected` rides out on `state.updated` after every tool call, so this
- * is how an eval sees the plan at all: the session hands back events, and the
- * projection is the one of them that carries state. `lastStateIn` is the SDK's
- * reader for exactly this.
- */
-const planState = (session: EvalSession) => lastStateIn(session.events(), "plan", ProjectedPlan);
-
-/** What `plan_status` answers on an untouched desk. An ordinary `tool()`, so no
- *  dialog envelope — it reads the position itself. */
-const IdleStatus = z.object({ stage: z.string(), reads: z.string(), next: z.string() });
+const planState = (session: EvalSession) => lastStateIn(session.events(), planSlot.projected);
 
 /** How many steps the plan has actually recorded as worked, so far this session. */
 const workedSteps = (session: EvalSession): number => planState(session)?.done.length ?? 0;
@@ -86,15 +61,15 @@ describeEval(agentDef, (test) => {
       expect(view?.progress ?? 0).toBe(0);
 
       for (const call of turn.toolCalls.filter((one) => one.name === "plan_status")) {
-        // `stage` comes off `planFlow.position`, and `reads` off `stageLabel` —
-        // deriving either from `!plan.objective` a second time is the drift this
-        // template removed, and it would show up right here. Read as a SHAPE:
-        // the regex this replaces asserted on the result's JSON text, so a
-        // renamed sibling key would have broken a claim about neither.
-        const status = toolResultIn([call], "plan_status", IdleStatus);
-        expect(status.stage).toBe("idle");
-        expect(status.reads).toMatch(/no plan yet/);
-        expect(status.next).toMatch(/start_plan/);
+        // `state` and `instruction` are the dialog envelope's, and `reads` is
+        // `stageLabel` over the same position — deriving either from
+        // `!plan.objective` a second time is the drift this template removed,
+        // and it would show up right here.
+        const status = toolResultIn([call], planStatus);
+        if (isToolFailure(status)) throw new Error(status.error);
+        expect(status.state).toBe("idle");
+        expect(status.instruction).toMatch(/start_plan/);
+        expect(status.result.reads).toMatch(/no plan yet/);
       }
     },
     { stubReply: [{ tool: "plan_status" }, "Nothing on the go yet — what are you trying to do?"] },
