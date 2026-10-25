@@ -198,14 +198,7 @@ function Scoreboard() {
 }
 
 mountClient({
-  name: "Word Wrangler",
   sidebar: Scoreboard,
   sidebarWidth: "20rem",
-  theme: {
-    bg: "#14102a",
-    primary: "#facc15",
-    text: "#f5f3ff",
-    surface: "#221a44",
-    border: "#37306b",
-  },
+  theme: { primary: "#facc15", mode: "dark" },
 });

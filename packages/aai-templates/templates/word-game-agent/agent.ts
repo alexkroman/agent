@@ -1,6 +1,6 @@
 import { agent } from "@alexkroman1/aai";
 import { DIALOGS } from "./game.ts";
-import { GAME_EVENTS, gameSlot } from "./shared.ts";
+import { GAME_EVENTS } from "./shared.ts";
 
 /**
  * Word Wrangler — Pipecat's three-way phone word game as one voice agent.
@@ -30,12 +30,9 @@ import { GAME_EVENTS, gameSlot } from "./shared.ts";
  */
 export default agent({
   name: "Word Wrangler",
-  // The listing line — a registry row, the studio's picker, never the model.
   // Three participants in one sentence, because that is the whole shape of the
   // thing and what makes it worth reading `shared.ts` for.
-  description: "Hosts a two-minute word game between the caller and an A.I. guesser",
-  // The scoreboard: the word the describer is looking at, the score, the clock.
-  syncState: gameSlot.projected,
+  listing: "Hosts a two-minute word game between the caller and an A.I. guesser",
   /**
    * Arms the clock. `playing` declares a two-minute `timeout`, and a dialog's
    * deadline is armed by the runtime only for a dialog listed here — without

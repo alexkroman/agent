@@ -47,8 +47,14 @@
  * renders the number.
  */
 
-import type { DeepReadonly, SessionEventHandlers, SlotCaps, SlotHolder } from "@alexkroman1/aai";
-import { sessionSlot } from "@alexkroman1/aai";
+import type {
+  DeepReadonly,
+  SessionEventHandlers,
+  SlotCaps,
+  SlotHolder,
+  ToolFailure,
+} from "@alexkroman1/aai";
+import { sessionSlot, toolFailure } from "@alexkroman1/aai";
 import { containsWord } from "./guess.ts";
 
 /** Their `GAME_DURATION_SECONDS`: the phone game gives two minutes. */
@@ -93,19 +99,17 @@ export interface GameState {
   lastRemark: string | null;
 }
 
-export function newGame(): GameState {
-  return {
-    words: [],
-    startedAt: null,
-    endedAt: null,
-    descriptions: [],
-    spoken: [],
-    wrongGuesses: [],
-    rounds: [],
-    best: 0,
-    lastRemark: null,
-  };
-}
+const NEW_GAME: GameState = {
+  words: [],
+  startedAt: null,
+  endedAt: null,
+  descriptions: [],
+  spoken: [],
+  wrongGuesses: [],
+  rounds: [],
+  best: 0,
+  lastRemark: null,
+};
 
 /**
  * The bounds on the three lists that grow WITHIN one word, declared on the slot
@@ -123,10 +127,17 @@ export function newGame(): GameState {
  * `words`, so dropping the oldest round would rewind the describer to a word
  * they already played. A cap is only safe on a list nothing counts.
  */
-const GAME_CAPS: SlotCaps<GameState> = { descriptions: 12, spoken: 12, wrongGuesses: 10 };
+export const GAME_CAPS: SlotCaps<GameState> = { descriptions: 12, spoken: 12, wrongGuesses: 10 };
 
-/** The round, as one typed slot. */
-export const gameSlot = sessionSlot("game", newGame, { view: gameView, caps: GAME_CAPS });
+/**
+ * The round, as one typed slot. Its view is the scoreboard — the word the
+ * describer is looking at, the score, the clock — pushed after every tool call.
+ */
+export const gameSlot = sessionSlot("game", NEW_GAME, {
+  view: gameView,
+  caps: GAME_CAPS,
+  sync: true,
+});
 
 /**
  * The describer's own words, recorded as the runtime commits them.
@@ -187,8 +198,16 @@ export function currentWord(game: FrozenGameState): string | null {
   return game.words[wordsPlayed(game)] ?? null;
 }
 
-/** Whole seconds left on the clock, never negative. `null` before a round starts. */
-export function secondsLeft(game: FrozenGameState, now: number = Date.now()): number | null {
+/** The `require` of every tool that needs a word in play. */
+export function requireWord(game: FrozenGameState): ToolFailure | undefined {
+  return currentWord(game) === null
+    ? toolFailure("No word is in play - start_game starts a round.")
+    : undefined;
+}
+
+/** Whole seconds left on the clock at `now` (a tool reads `ctx.now()`), never
+ *  negative. `null` before a round starts. */
+export function secondsLeft(game: FrozenGameState, now: number): number | null {
   if (game.startedAt === null) return null;
   return Math.max(0, Math.ceil((game.startedAt + GAME_SECONDS * 1000 - now) / 1000));
 }
