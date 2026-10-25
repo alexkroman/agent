@@ -303,7 +303,11 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       const dedupeKey = options?.dedupeKey;
       const runId = dedupeKey === undefined ? newRunId() : dedupedRunId(workflow, dedupeKey);
       const existing = async () => dedupeKey !== undefined && (await journal.getRun(runId));
-      if (await existing()) return runId;
+      if (await existing()) {
+        // The loser's caller still indexes the run it was answered with.
+        await options?.index?.(runId);
+        return runId;
+      }
       const created = await journal
         .createRun({
           runId,
@@ -326,10 +330,15 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       // The correlation key, journaled as the entry `key!` BEFORE the first
       // dispatch so the first walk already reads it as `ctx.key` —
       // `workflow/replay/run-key.ts`. Only the winner writes it: the loser of
-      // a dedupe race is answering for a run whose start already did.
-      if (created && options?.key !== undefined) {
-        await journal.appendStep(runId, runKeyEntry(options.key));
-      }
+      // a dedupe race is answering for a run whose start already did. The
+      // caller's key-INDEX write (`WdkStartOptions.index`) rides the same
+      // wait, so the two round trips overlap rather than queue.
+      await Promise.all([
+        created && options?.key !== undefined
+          ? journal.appendStep(runId, runKeyEntry(options.key))
+          : undefined,
+        options?.index?.(runId),
+      ]);
       // After the record exists, never before: a dispatcher that delivered first
       // would race a worker against `createRun` and find no such run.
       if (created) dispatchDetached(runId);

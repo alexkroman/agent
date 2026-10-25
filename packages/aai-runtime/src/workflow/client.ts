@@ -272,28 +272,30 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       // reaches here as the literal is a key nobody can look up: dropped, as
       // `StartOptions.key` says, rather than indexed as five letters.
       const key = options?.key === SESSION_KEY ? undefined : options?.key;
+      // The key-index write, handed to the engine to run beside its own
+      // journaling of the key (`WdkStartOptions.index`). A failed key write
+      // must not fail the `start`: the run is already created, so throwing
+      // here would tell the caller nothing happened while the work proceeds
+      // unreachably. Losing the index entry costs a later `find`, which is
+      // recoverable; losing the runId the caller was about to be handed is not.
+      const index =
+        key === undefined
+          ? undefined
+          : (runId: string) =>
+              keys.record(name, key, runId).catch((err: unknown) => {
+                logger.warn?.("Workflow correlation key not recorded", {
+                  workflow: name,
+                  runId,
+                  error: errorMessage(err),
+                });
+              });
       // `dedupeKey` is the ENGINE's to honour — it derives the run id from it, so
       // two racing starts meet at one `createRun` (`workflow/engine.ts`) — and so
       // is `key`, which it journals for the body to read back as `ctx.key`.
-      const startOptions = omitUndefined({ label, dedupeKey: options?.dedupeKey, key });
-      const runId = await (Object.keys(startOptions).length === 0
+      const startOptions = omitUndefined({ label, dedupeKey: options?.dedupeKey, key, index });
+      return await (Object.keys(startOptions).length === 0
         ? wdk.start(name, args)
         : wdk.start(name, args, startOptions));
-      if (key !== undefined) {
-        // A failed key write must not fail the `start`: the run is already
-        // created and running, so throwing here would tell the caller nothing
-        // happened while the work proceeds unreachably. Losing the index entry
-        // costs a later `find`, which is recoverable; losing the runId the caller
-        // was about to be handed is not.
-        await keys.record(name, key, runId).catch((err: unknown) => {
-          logger.warn?.("Workflow correlation key not recorded", {
-            workflow: name,
-            runId,
-            error: errorMessage(err),
-          });
-        });
-      }
-      return runId;
     },
 
     get(runId: string): Promise<WorkflowRunSnapshot | undefined> {

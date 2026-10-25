@@ -48,7 +48,12 @@ describe("start", () => {
   test("hands the key to the engine, which journals it for the body", async () => {
     const { client, wdk } = makeClient();
     await client.start(digest, {}, { key: "sess-1", label: "x" });
-    expect(wdk.start).toHaveBeenCalledWith("digest", [{}], { label: "x", key: "sess-1" });
+    expect(wdk.start).toHaveBeenCalledWith("digest", [{}], {
+      label: "x",
+      key: "sess-1",
+      // The key-index write, run by the engine beside its own journaling.
+      index: expect.any(Function),
+    });
   });
 
   test("the literal `session` on the per-runtime client is NO key — nothing to resolve it to", async () => {

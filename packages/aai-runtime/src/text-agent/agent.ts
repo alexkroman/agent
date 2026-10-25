@@ -75,6 +75,7 @@ import {
 import { createGenerateFn } from "../generate.ts";
 import { consoleLogger } from "../logger.ts";
 import { resolveLlm } from "../providers/resolve.ts";
+import { userTurnsIn } from "../session/index.ts";
 import { createSubagentRunner } from "../subagent.ts";
 import {
   createFatalToolLatch,
@@ -275,7 +276,7 @@ export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
       // One text agent is one conversation, and its turns ARE the user
       // messages the caller hands each `stream()`: what a session counts as
       // committed transcripts, this door counts off the history it was given.
-      turn: (call.messages ?? []).filter((message) => message.role === "user").length,
+      turn: userTurnsIn(call.messages ?? []),
       generate,
       subagents,
       // A text agent's tools spend on the same meter its turns do — one

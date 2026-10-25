@@ -33,6 +33,19 @@ export type TurnCounter = {
   reset(): void;
 };
 
+/**
+ * How many turns the caller took in `messages` — the user messages, which is
+ * what a resume seeds {@link TurnCounter} from and what a text agent counts
+ * off the history each `stream()` is handed.
+ *
+ * @internal
+ */
+export function userTurnsIn(messages: readonly Message[]): number {
+  let turns = 0;
+  for (const message of messages) if (message.role === "user") turns += 1;
+  return turns;
+}
+
 /** Build an empty {@link TurnCounter}. @internal */
 export function createTurnCounter(): TurnCounter {
   let count = 0;
@@ -44,7 +57,7 @@ export function createTurnCounter(): TurnCounter {
       count += 1;
     },
     seed(messages): void {
-      count = messages.filter((message) => message.role === "user").length;
+      count = userTurnsIn(messages);
     },
     reset(): void {
       count = 0;

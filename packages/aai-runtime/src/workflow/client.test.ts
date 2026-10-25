@@ -17,6 +17,7 @@ import { z } from "zod";
 import { makeLogger } from "../_logger-test-utils.ts";
 import { createWorkflowClient, type WdkAdapter, type WdkRunRecord } from "./client.ts";
 import { createMemoryKeyStore, type WorkflowKeyStore } from "./keys.ts";
+import type { WdkStartOptions } from "./wdk-types.ts";
 
 /** A workflow body. Identity is the key it is declared under, so this carries none. */
 function body<I, R>(result?: R): WorkflowBody<I, R> {
@@ -60,7 +61,12 @@ function record(over: Partial<WdkRunRecord> = {}): WdkRunRecord {
 
 function makeAdapter(over: Partial<WdkAdapter> = {}): WdkAdapter {
   return {
-    start: vi.fn(async () => "wrun_1"),
+    // The real engine runs the client's key-index write (`index`) before it
+    // hands the id back; the fake does the same, so the index is observable.
+    start: vi.fn(async (_name: string, _args: unknown[], options?: WdkStartOptions) => {
+      await options?.index?.("wrun_1");
+      return "wrun_1";
+    }),
     getRun: vi.fn(async () => record()),
     listRuns: vi.fn(async () => []),
     cancel: vi.fn(async () => true),
@@ -112,7 +118,11 @@ describe("starting a run", () => {
     // The workflowId reaches WDK, and so does the key — the engine journals it
     // for the body's `ctx.key`; the NAME is what the key index records, so a
     // workflow moved between modules keeps its keys.
-    expect(wdk.start).toHaveBeenCalledWith(DIGEST_ID, [{ topic: "otters" }], { key: "sess-1" });
+    expect(wdk.start).toHaveBeenCalledWith(DIGEST_ID, [{ topic: "otters" }], {
+      key: "sess-1",
+      // The index write rides the engine's start — see `WdkStartOptions.index`.
+      index: expect.any(Function),
+    });
     expect(await keys.lookup("digest", "sess-1", 10)).toEqual(["wrun_1"]);
   });
 

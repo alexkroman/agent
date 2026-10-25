@@ -100,9 +100,19 @@ export type WdkStartOptions = {
    * `StartOptions.key`, already resolved (a session-scoped client has turned
    * `"session"` into the id). Journaled WITH the run so a body reads it back as
    * `ctx.key` on every walk — `workflow/replay/run-key.ts`. The key INDEX is
-   * the client's own write and not the engine's.
+   * the client's own write and not the engine's: it rides {@link index}.
    */
   key?: string | undefined;
+  /**
+   * The client's own write for the run's id — its key-index entry — run by
+   * the engine CONCURRENTLY with its own journaling of the key, before the
+   * first dispatch, so a keyed start costs one round trip of latency rather
+   * than two in series. Called with the id `start` resolves with, winner or
+   * loser of a dedupe race alike (the index is idempotent on the id). The
+   * engine awaits it and never catches: a failed index must not fail the
+   * start, so the caller catches inside.
+   */
+  index?: ((runId: string) => Promise<void>) | undefined;
 };
 
 /** What {@link WdkAdapter.signal} is told beyond the payload. */

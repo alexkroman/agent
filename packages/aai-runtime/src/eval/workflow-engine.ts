@@ -51,7 +51,7 @@
  * | `cancel` | marks the run cancelled; the body keeps going | there is no queue to stop delivering to |
  * | `wakeUp` | `0` | a sleep is skipped, not suspended — nothing is asleep to wake |
  * | `ctx.waitFor` | a TIMED wait resolves `undefined`; an unbounded one rejects | a deadline that nobody answered is an honest outcome; an open wait has none |
- * | `signal` | `false` | nothing here registers a waitpoint, so no run is ever listening for one |
+ * | `signal` | `false`, or `true` with a `holdMs` | nothing here registers a waitpoint; a HELD payload is kept for a `waitFor` the body reaches, as production keeps it |
  * | `readOutput` | the value the body returned | no serialization round trip, so a value a real journal would refuse passes here |
  *
  * **And a step's `maxRetries` is INERT**, which is the one consequence worth
@@ -114,6 +114,7 @@ import type {
   WorkflowContext,
   WorkflowDef,
 } from "@alexkroman1/aai/workflow-api";
+import { holdSignal, takeHeldSignal } from "../workflow/held-signals.ts";
 import { checkedStepOutput } from "../workflow/replay/schema.ts";
 import { toWdkRunRecord } from "../workflow/wdk-record.ts";
 import type { WdkAdapter, WdkRunRecord } from "../workflow/wdk-types.ts";
@@ -288,13 +289,20 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       // Both option bags, because a wait may carry a schema and no deadline at
       // all. It is the DEADLINE that decides the branch below, never the mere
       // presence of options — a schema does not make a wait bounded.
-      waitFor: (_token: string, waitOptions?: WaitForOptions | WaitForSchemaOptions) =>
+      waitFor: (token: string, waitOptions?: WaitForOptions | WaitForSchemaOptions) => {
+        // A payload signalled AHEAD of this wait with a hold is the one case a
+        // signaller really did answer — the courtesy production extends to a
+        // tool that signals the run it just started (`held-signals.ts`) — so
+        // the wait takes it, handed on as sent: the schema is not consulted
+        // here any more than on the branches below.
+        const held = takeHeldSignal(token);
+        if (held !== undefined) return Promise.resolve(held.payload);
         // A wait with a DEADLINE has an honest answer here — nobody signalled, so
         // the window closed — and it is the branch a retention gate or an
         // approval window takes when no one replies. Only an UNBOUNDED wait has
         // nothing this engine can say. The schema is never consulted: there is
         // no payload to check, which is the same rule the real engine follows.
-        waitOptions !== undefined && "timeoutMs" in waitOptions
+        return waitOptions !== undefined && "timeoutMs" in waitOptions
           ? Promise.resolve(undefined)
           : Promise.reject(
               new Error(
@@ -302,7 +310,8 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
                   "outside the run, so there is nothing here to send one. Drive the run " +
                   "through the workflow HTTP API in a scenario test instead.",
               ),
-            ),
+            );
+      },
     };
     return ctx;
   }
@@ -385,14 +394,12 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
   }
 
   const adapter: WdkAdapter = {
-    start(workflowName, args, options) {
+    async start(workflowName, args, options) {
       const entry = byName.get(workflowName);
       if (!entry) {
-        return Promise.reject(
-          new Error(
-            `eval workflow engine has no workflow named ${JSON.stringify(workflowName)}; ` +
-              `it serves ${[...byName.keys()].join(", ") || "(none)"}`,
-          ),
+        throw new Error(
+          `eval workflow engine has no workflow named ${JSON.stringify(workflowName)}; ` +
+            `it serves ${[...byName.keys()].join(", ") || "(none)"}`,
         );
       }
       // `dedupeKey`: the first run started with it answers every later start, as
@@ -400,7 +407,11 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       const deduped =
         options?.dedupeKey === undefined ? undefined : `${workflowName}\u0000${options.dedupeKey}`;
       const earlier = deduped === undefined ? undefined : byDedupeKey.get(deduped);
-      if (earlier !== undefined) return Promise.resolve(earlier);
+      if (earlier !== undefined) {
+        // The loser of a dedupe is indexed too, as the real engine indexes it.
+        await options?.index?.(earlier);
+        return earlier;
+      }
       sequence += 1;
       const runId = `${prefix}-run-${sequence}`;
       if (deduped !== undefined) byDedupeKey.set(deduped, runId);
@@ -420,7 +431,10 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       // `current.run` is what puts the record in scope for every `stepReport()` the
       // body's steps make, including the ones a fan-out makes concurrently.
       record.settled = current.run(record, () => execute(record, entry.def, args[0]));
-      return Promise.resolve(runId);
+      // The client's key-index write, before the id is handed back — the real
+      // engine's order (`WdkStartOptions.index`).
+      await options?.index?.(runId);
+      return runId;
     },
 
     getRun(runId) {
@@ -454,11 +468,18 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       return Promise.resolve(0);
     },
 
-    signal() {
-      // `createHook()` throws untransformed — the DevKit's non-workflow build
-      // does nothing else — so no body running here can be listening on a token.
-      // `false` is what the real adapter answers for a token nobody holds.
-      return Promise.resolve(false);
+    signal(token, payload, options) {
+      // No body running here can be listening on a token (`waitFor` refuses or
+      // times out), so `false` is the answer for an unheld signal, as the real
+      // adapter answers for a token nobody holds. A signal with a HOLD is kept
+      // exactly as production keeps one (`workflow/held-signals.ts`) and is
+      // `true` for having been taken: a tool's `signalRun` — held by default —
+      // reads the same answer it would from a run that has not reached its
+      // wait, and a `waitFor` the body reaches within the window takes it.
+      const holdMs = options?.holdMs ?? 0;
+      if (!(holdMs > 0)) return Promise.resolve(false);
+      holdSignal(token, payload, holdMs);
+      return Promise.resolve(true);
     },
 
     streamTail(runId, options) {

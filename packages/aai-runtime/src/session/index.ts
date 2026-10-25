@@ -51,7 +51,7 @@ export type { ResumeFindings } from "./resume-found.ts";
 export { composeSessionGreeting, createResumeFindings } from "./resume-found.ts";
 export { setSessionIdMinter } from "./session-id.ts";
 export type { SpeechDirectory } from "./speech.ts";
-export { createTurnCounter, type TurnCounter } from "./turn-counter.ts";
+export { createTurnCounter, type TurnCounter, userTurnsIn } from "./turn-counter.ts";
 export type { SessionWebSocket } from "./ws-frames.ts";
 export { asSessionWebSocket, safeSend } from "./ws-frames.ts";
 export { wireSessionSocket } from "./ws-handler.ts";
