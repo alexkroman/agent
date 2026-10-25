@@ -216,21 +216,21 @@ the wire.
 Every row is a `defineUnitProject` call; anything not listed is the shared
 default (threads, node, vitest's 5s `testTimeout`, the four tier excludes).
 
-| Package           | Pool      | Timeout | Setup / plugins                                             | Notes                                                                                        |
-| ----------------- | --------- | ------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| aai               | threads   | 5s      | —                                                           | `contracts/` out of coverage; **`isolate: false`** (one module graph per worker, 4× faster)  |
-| aai-ui            | threads   | 5s      | `_jsdom-setup.ts` (stubs `scrollIntoView`)                  | `globals: true`; node by default, a file opts into jsdom with `// @vitest-environment jsdom` |
-| aai-runtime       | **forks** | 5s      | —                                                           | sockets, the workflow world and process-wide dispatchers                                     |
-| aai-cli           | threads   | 5s      | `_test-setup.ts` (temp `AAI_CONFIG_DIR`, scrubs `*API_KEY`) | also loaded by its scenario/e2e runs (`PACKAGE_SETUP_FILES`)                                 |
-| aai-evals         | threads   | 5s      | —                                                           | `gate.ts` is never loaded by the unit tier                                                   |
-| aai-gates         | threads   | 5s      | —                                                           | `include: ["src/*.test.ts"]`                                                                 |
-| aai-guest-core    | threads   | 5s      | —                                                           | `src/test-utils.ts` (a subpath export) out of coverage                                       |
-| aai-guest-studio  | threads   | 5s      | —                                                           | needs `^build` (reads the SDK, aai-ui and aai-cli `dist`)                                    |
-| aai-guest         | threads   | 5s      | —                                                           | needs its own `build` (`dist/harness.mjs`)                                                   |
-| aai-server        | **forks** | **20s** | `globalSetup`: `scripts/ensure-guest-harness.mjs`           | process isolation; `agent-server-integration.test.ts` stays unit (sole subprocess coverage)  |
-| aai-studio-client | threads   | **20s** | `_test-setup.ts` (10s Testing Library ceiling, unmounts)    | node by default, jsdom by per-file pragma                                                    |
-| aai-studio-server | **forks** | **20s** | —                                                           | headroom under a contended `pnpm check`                                                      |
-| aai-templates     | threads   | 5s      | `aaiAgentPlugin()` (`virtual:aai/agent`)                    | `include`: `src/*.test.ts` + `templates/*/*.test.ts`; its config loads the SDK's `dist`      |
+| Package           | Pool      | Timeout | Setup / plugins                                                                                           | Notes                                                                                                              |
+| ----------------- | --------- | ------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| aai               | threads   | 5s      | —                                                                                                         | `contracts/` out of coverage; **`isolate: false`** (one module graph per worker, 4× faster)                        |
+| aai-ui            | threads   | 5s      | `_jsdom-setup.ts` (stubs `scrollIntoView`, registers RTL `cleanup` per file, clears web storage per test) | `globals: true`; node by default, a file opts into jsdom with `// @vitest-environment jsdom`; **`isolate: false`** |
+| aai-runtime       | **forks** | 5s      | —                                                                                                         | sockets, the workflow world and process-wide dispatchers                                                           |
+| aai-cli           | threads   | 5s      | `_test-setup.ts` (temp `AAI_CONFIG_DIR`, scrubs `*API_KEY`)                                               | also loaded by its scenario/e2e runs (`PACKAGE_SETUP_FILES`); **`isolate: false`**                                 |
+| aai-evals         | threads   | 5s      | —                                                                                                         | `gate.ts` is never loaded by the unit tier                                                                         |
+| aai-gates         | threads   | 5s      | —                                                                                                         | `include: ["src/*.test.ts"]`                                                                                       |
+| aai-guest-core    | threads   | 5s      | —                                                                                                         | `src/test-utils.ts` (a subpath export) out of coverage                                                             |
+| aai-guest-studio  | threads   | 5s      | —                                                                                                         | needs `^build` (reads the SDK, aai-ui and aai-cli `dist`)                                                          |
+| aai-guest         | threads   | 5s      | —                                                                                                         | needs its own `build` (`dist/harness.mjs`)                                                                         |
+| aai-server        | **forks** | **20s** | `globalSetup`: `scripts/ensure-guest-harness.mjs`                                                         | process isolation; `agent-server-integration.test.ts` stays unit (sole subprocess coverage)                        |
+| aai-studio-client | threads   | **20s** | `_test-setup.ts` (10s Testing Library ceiling, unmounts)                                                  | node by default, jsdom by per-file pragma                                                                          |
+| aai-studio-server | **forks** | **20s** | —                                                                                                         | headroom under a contended `pnpm check`                                                                            |
+| aai-templates     | threads   | 5s      | `aaiAgentPlugin()` (`virtual:aai/agent`)                                                                  | `include`: `src/*.test.ts` + `templates/*/*.test.ts`; its config loads the SDK's `dist`                            |
 
 ## Test environment variables
 
