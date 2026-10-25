@@ -20,6 +20,7 @@ const CTX: AgentSessionContext = {
   sessionId: "s-1",
   env: { TIER: "gold" },
   slots: createDetachedSlotStore(),
+  turn: 0,
 };
 
 const resolver: Resolver = (ctx) => `Session ${ctx.sessionId}, tier ${ctx.env.TIER}.`;

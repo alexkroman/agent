@@ -20,6 +20,7 @@ const CTX: AgentSessionContext = {
   sessionId: "s-1",
   env: { TIER: "gold" },
   slots: createDetachedSlotStore(),
+  turn: 0,
 };
 
 /** A guardrail that always answers the same verdict, and counts its calls. */

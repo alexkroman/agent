@@ -83,7 +83,7 @@ describe("buildSystemPrompt", () => {
   });
 
   test("resolveAgentInstructions composes the same section from either half, static or resolved", () => {
-    const ctx = { sessionId: "s", env: {}, slots: createSlotStore() };
+    const ctx = { sessionId: "s", env: {}, slots: createSlotStore(), turn: 0 };
     const static_ = resolveAgentInstructions(
       { systemPrompt: "Custom rules.", promptContext: "Today's special is soup." },
       ctx,

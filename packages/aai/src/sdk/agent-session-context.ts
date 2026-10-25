@@ -11,7 +11,7 @@
  * capability the others were deliberately denied.
  *
  * **It is deliberately the same shape as `SessionEventContext`, bar that
- * context's `speech`,** and carries the same omissions for the same reason: no
+ * context's `speech` and this one's `turn`,** and carries the same omissions for the same reason: no
  * `send`, no `generate`, no `delegate`, no `messages`. None of these functions
  * may SPEAK, and unlike an event handler they may not `say` either: each runs
  * INSIDE the reply a `say` would queue behind. A resolver
@@ -65,4 +65,13 @@ export interface AgentSessionContext {
    * writes is writing several times a turn.
    */
   slots: SlotStore;
+  /**
+   * How many USER turns this session has taken so far — `0` before the caller
+   * has said anything, `1` while the reply to the first thing they said is
+   * being assembled. For a `promptContext` that changes with the
+   * conversation's age ("the caller has been on the line a while; wrap up")
+   * without a hook counting turns into a slot; the runtime reads it off the
+   * session's own turn counter, the same count the metrics report.
+   */
+  turn: number;
 }
