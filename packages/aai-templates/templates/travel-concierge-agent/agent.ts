@@ -18,6 +18,7 @@ import { gateFlow, tripSlot } from "./shared.ts";
 export default agent({
   name: "Swiss Air Concierge",
   listing: "Changes flights, hotels, car rentals and excursions for a booked traveller",
+  syncState: tripSlot.projected,
   // Declared so the CALL can move the gate: a caller who hangs up with a
   // change staged leaves the gate on `abandoned`, where nothing may apply it.
   dialogs: [gateFlow],

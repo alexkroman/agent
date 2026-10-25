@@ -1,7 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-// `hiringSlot` is declared with `sync: true`, and `agent()` collects a synced
-// slot only from a module it has already loaded — the tools load afterwards.
-import "./shared.ts";
+import { hiringSlot } from "./shared.ts";
 
 /**
  * A hiring desk you can phone: CrewAI's `lead-score-flow`, with the hiring
@@ -32,6 +30,7 @@ import "./shared.ts";
 export default agent({
   name: "Hiring Desk",
   listing: "Screens a stack of applicants against a role and drafts each of them a follow-up email",
+  syncState: hiringSlot.projected,
   /**
    * A ceiling on what one hiring call may spend.
    *

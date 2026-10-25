@@ -398,7 +398,6 @@ export const LOG_CAP = 40;
  */
 export const tripSlot = sessionSlot("trip", seedTrip, {
   view: tripView,
-  sync: true,
   after: (state) => {
     if (state.dialogState.length === 0) state.dialogState.push("primary");
   },

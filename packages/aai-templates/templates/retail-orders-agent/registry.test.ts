@@ -293,7 +293,6 @@ describe("the authentication gate", () => {
 
 describe("agent config", () => {
   test("projects its slot under the slot name — without it the UI never updates", () => {
-    // `sync: true` on the slot, collected by `agent()`: no `syncState` to forget.
     expect(Object.keys(retailAgent.syncState ?? {})).toEqual(["retail"]);
     expect(typeof retailAgent.syncState?.retail).toBe("function");
   });

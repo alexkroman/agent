@@ -177,7 +177,6 @@ export const MAX_FEEDBACK_ENTRIES = MAX_FEEDBACK_ROUNDS + 1;
 
 export const hiringSlot = sessionSlot("hiring", emptyHiring, {
   view: hiringView,
-  sync: true,
   caps: { feedback: MAX_FEEDBACK_ENTRIES },
 });
 

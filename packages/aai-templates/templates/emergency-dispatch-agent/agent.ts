@@ -5,6 +5,7 @@ import { callFlow, callInHand, dispatchSlot, logEvent } from "./shared.ts";
 export default agent({
   name: "Dispatch Command Center",
   listing: "Runs a 911 dispatch shift: logs incidents, triages them, and assigns units",
+  syncState: dispatchSlot.projected,
   // The flow gates its tools whether or not it is declared here. Declaring it
   // puts the active state's instruction in front of the model on EVERY turn —
   // and a dispatcher spends most turns talking to a caller, not calling tools.

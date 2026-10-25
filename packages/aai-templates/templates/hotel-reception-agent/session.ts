@@ -6,7 +6,8 @@
  * holds its factory, so any module that imports `hotelSlot` imports the seed
  * with it, and `client.tsx` reads the slot by NAME with `emptyHotelState()`'s
  * view as its fallback. `empty` below is the same frame on the server side —
- * what the slot projects before a tool has run.
+ * what the slot projects before a tool has run. `agent.ts` names the
+ * projection as `syncState`.
  */
 
 import { sessionSlot } from "@alexkroman1/aai";
@@ -27,7 +28,6 @@ export function createHotelState(): HotelState {
  */
 export const hotelSlot = sessionSlot("hotel", createHotelState, {
   view: deskView,
-  sync: true,
   empty: emptyHotelState,
   caps: { log: 40 },
 });
