@@ -1,5 +1,4 @@
 import { agent } from "@alexkroman1/aai";
-import { notebookSlot } from "./shared.ts";
 
 // A hold-to-talk notebook. The one line that makes it push-to-talk is
 // `turnTaking: { detection: "manual" }`: the CALLER ends each turn by letting go of the
@@ -16,7 +15,4 @@ export default agent({
   greeting:
     "Hold the button, or the space bar, and tell me what to write down. Take your time, I won't jump in until you let go.",
   turnTaking: { detection: "manual" },
-  // The notebook, pushed to the page after every tool call. The panel renders
-  // `useAgentState(notebookSlot.projected)` and keeps no copy of its own.
-  syncState: notebookSlot.projected,
 });

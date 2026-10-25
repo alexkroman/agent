@@ -229,6 +229,9 @@ const CAPS: SlotCaps<AssistantState> = {
  * leave `openId` pointing at it.
  */
 export const assistantSlot = sessionSlot("assistant", seedAssistant, {
+  // Synced to the page: the inbox, the memory and the proposal exist before
+  // the first tool call, so a resumed connection has something to project.
+  sync: true,
   view: assistantView,
   after: (state) => {
     const open = state.openId ? findEmail(state.emails, state.openId) : undefined;

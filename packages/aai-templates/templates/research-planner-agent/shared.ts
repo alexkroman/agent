@@ -93,11 +93,13 @@ const EMPTY_PLAN: PlanState = {
 const planCaps: SlotCaps<PlanState> = { pastSteps: MAX_PAST_STEPS, revisions: MAX_REVISIONS };
 
 /**
- * The plan, and the `view` `agent.ts` syncs after every tool call: nearly the state — a plan has nothing private in it — with `progress`
+ * The plan, and the `view` synced to the page after every tool call: nearly the state — a plan has nothing private in it — with `progress`
  * derived there so the bar and any spoken "two of four" can never disagree
  * about what fraction means.
  */
 export const planSlot = sessionSlot("plan", EMPTY_PLAN, {
+  // The plan, its progress and its revision trail, synced after every tool call.
+  sync: true,
   view: (state): PlanView => {
     const done = state.pastSteps.length;
     const total = done + state.plan.length;

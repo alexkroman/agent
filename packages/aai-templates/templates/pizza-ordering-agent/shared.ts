@@ -130,6 +130,8 @@ const EMPTY_ORDER: OrderState = { pizzas: [], nextId: 1, customerName: null };
  * and its total, since `syncState` is where you decide what leaves the server.
  */
 export const orderSlot = sessionSlot("order", EMPTY_ORDER, {
+  // Synced to the page as `view` projects it, after every tool call.
+  sync: true,
   view: (order): OrderView => {
     const placed = order.placed;
     return {

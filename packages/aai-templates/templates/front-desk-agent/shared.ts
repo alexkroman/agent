@@ -89,7 +89,8 @@ export interface Desk {
 }
 
 export const deskSlot = sessionSlot("desk", (): Desk => ({ refunded: [] }), {
-  // What the browser sees; `agent.ts` syncs it.
+  // What the browser sees, synced to it after every tool call.
+  sync: true,
   view: (desk) => ({
     verified: desk.verified?.name,
     refunded: desk.refunded.length,

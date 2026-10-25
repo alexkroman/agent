@@ -397,6 +397,7 @@ export const LOG_CAP = 40;
  * and a reported error write it as well as the tools.
  */
 export const tripSlot = sessionSlot("trip", seedTrip, {
+  sync: true,
   view: tripView,
   after: (state) => {
     if (state.dialogState.length === 0) state.dialogState.push("primary");

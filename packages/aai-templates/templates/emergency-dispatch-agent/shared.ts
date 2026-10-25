@@ -187,6 +187,7 @@ function pruneState(state: DispatchState): void {
  * incidents and recalculating the alert level the dashboard reads.
  */
 export const dispatchSlot = sessionSlot("dispatch", createDefaultState, {
+  sync: true,
   view: dashboardView,
   after: (state) => {
     pruneState(state);

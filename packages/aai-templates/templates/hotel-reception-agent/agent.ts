@@ -1,7 +1,6 @@
 import { agent } from "@alexkroman1/aai";
 import { deskFlow } from "./desk.ts";
 import { PRICING, spokenDate, TODAY, usd } from "./records.ts";
-import { hotelSlot } from "./session.ts";
 
 /**
  * A boutique hotel's front desk, on the phone — LiveKit Agents'
@@ -21,7 +20,6 @@ export default agent({
   name: "The Harborlight Hotel",
   listing:
     "Takes a hotel front desk's calls: room bookings, restaurant tables, folios and concierge requests",
-  syncState: hotelSlot.projected,
   /**
    * Wires `@userTranscript.committed` and `@session.timedOut` to the desk
    * dialog. Without it `offering` and `readBack` — the two states that exist to

@@ -6,7 +6,6 @@ export default agent({
   // What the borrowed systems DO rather than their names — the attribution is
   // `shared.ts`'s, not a picker row's.
   listing: "Narrates a solo tabletop campaign and keeps its dice, tracks and clocks",
-  syncState: gameSlot.projected,
   greeting:
     "Welcome. Tell me your name, or describe the kind of story you want, and we will begin. You can say something like, dark fantasy warrior named Kael, or just give me a name and I will build a world around you.",
   sttPrompt:
