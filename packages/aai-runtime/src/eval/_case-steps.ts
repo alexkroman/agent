@@ -191,3 +191,27 @@ export async function drainCaseSteps(
   }
   await workflows.settleAll();
 }
+
+/**
+ * {@link drainCaseSteps} (when there are steps), then `close` WHATEVER the
+ * drain did.
+ *
+ * The drain is the first thing a case's teardown does, and it can reject — a
+ * run that never settles times out. Written inline ahead of the closes, that
+ * rejection skipped every one of them, and each is a PROCESS-GLOBAL
+ * registration or a live runtime handed back nowhere else: the next case then
+ * ran over this one's scripted model, step fetch and engine. The drain's error
+ * is rethrown once every close has run.
+ */
+export async function drainThenClose(
+  steps: CaseSteps | undefined,
+  workflows: EvalWorkflows | undefined,
+  bodyFailed: boolean,
+  close: () => Promise<void>,
+): Promise<void> {
+  try {
+    if (steps !== undefined) await drainCaseSteps(steps, workflows, bodyFailed);
+  } finally {
+    await close();
+  }
+}

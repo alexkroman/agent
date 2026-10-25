@@ -51,7 +51,7 @@ import type { AgentDef } from "@alexkroman1/aai";
 import { describe, test } from "vitest";
 import { announceEvalMode, closeEvalSuite, type EvalMode } from "./_announce.ts";
 import {
-  drainCaseSteps,
+  drainThenClose,
   type EvalSteps,
   type EvalStepsOptions,
   installCaseSteps,
@@ -182,9 +182,11 @@ export function describeWorkflowEval(
           bodyFailed = true;
           throw err;
         } finally {
-          if (steps !== undefined) await drainCaseSteps(steps, app, bodyFailed);
-          await app.close();
-          steps?.restore();
+          // The closes run whether or not the drain did — see `drainThenClose`.
+          await drainThenClose(steps, app, bodyFailed, async () => {
+            await app.close();
+            steps?.restore();
+          });
         }
       };
       run(name, () => runRepeats(once, name, repeat, spread));

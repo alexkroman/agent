@@ -10,7 +10,7 @@
 
 import { stepFetch } from "@alexkroman1/aai/step";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
-import { drainCaseSteps, installCaseSteps } from "./_case-steps.ts";
+import { drainCaseSteps, drainThenClose, installCaseSteps } from "./_case-steps.ts";
 import type { EvalWorkflows } from "./workflows.ts";
 
 const ROUTES = {
@@ -129,6 +129,20 @@ describe("drainCaseSteps", () => {
     });
     await expect(drainCaseSteps(steps, failing, true)).resolves.toBeUndefined();
     await expect(drainCaseSteps(steps, failing, false)).rejects.toThrow("run timed out");
+  });
+
+  test("a drain that rejects still runs every close, and is rethrown after them", async () => {
+    const steps = installCaseSteps({ routes: ROUTES });
+    onTestFinished(steps.restore);
+    const failing = app(async () => {
+      throw new Error("run timed out");
+    });
+    const close = vi.fn(async () => undefined);
+    await expect(drainThenClose(steps, failing, false, close)).rejects.toThrow("run timed out");
+    expect(close).toHaveBeenCalledOnce();
+    // No steps: nothing to drain, and the close still runs.
+    await drainThenClose(undefined, failing, false, close);
+    expect(close).toHaveBeenCalledTimes(2);
   });
 
   test("`drain: false` releases and settles nothing; no app settles nothing", async () => {
