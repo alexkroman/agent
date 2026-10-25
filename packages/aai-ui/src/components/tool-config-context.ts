@@ -10,6 +10,7 @@ import { type Context, createContext, useContext } from "react";
  * `GET /client-config` body and `mountClient()` merges underneath this, per
  * key. An entry's `undefined` field is "no override", not "no icon".
  *
+ * @input
  * @public
  */
 export type ToolDisplayConfig = Record<

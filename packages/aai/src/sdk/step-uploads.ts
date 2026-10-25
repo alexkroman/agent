@@ -104,10 +104,11 @@ import { UPLOAD_TOKEN_RE } from "./upload-constants.ts";
 /**
  * What a STORE answers about an upload: the record as stored, minus its bytes.
  *
- * {@link UploadInfo} is this plus {@link UploadInfo.label}, which the reader
- * module derives; a store never writes it. See {@link labelUpload} for why the
- * two shapes are split.
+ * {@link UploadInfo} is this plus `UploadInfo.label`, which the reader
+ * module derives; a store never writes it. See `labelUpload` (`/host-internal`)
+ * for why the two shapes are split.
  *
+ * @sealed
  * @public
  */
 export type UploadRecord = {
@@ -386,7 +387,7 @@ export function requireUploadAccess(): UploadAccess {
 
 /**
  * A store's record, as a step reads it: the same fields plus
- * {@link UploadInfo.label}.
+ * `UploadInfo.label`.
  *
  * The one place the label is computed, which is what makes it a FACT about an
  * upload rather than a convention: `stepUploadInfo`, `stepReadUpload`'s `info`,

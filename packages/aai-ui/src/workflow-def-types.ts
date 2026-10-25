@@ -54,6 +54,7 @@ export type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never]
  * `workflowApp()` return, and what the agent form of the workflow hooks is
  * parameterized by (`useWorkflowSubmit<typeof agentDef>("digest")`).
  *
+ * @input
  * @public
  */
 export type WorkflowAppLike = {
@@ -64,11 +65,8 @@ export type WorkflowAppLike = {
  * The `workflows` map of `App`, or `never` for a type that has none — a
  * workflow DEF, say, which is the other thing a hook's type argument may be.
  * `Extract` rather than `NonNullable`: an absent key infers `unknown`, which
- * `NonNullable` would keep.
- */
-/**
- * The `workflows` map of an app def, or `never` when it declares none — the
- * reading {@link WorkflowNameOf} and {@link WorkflowDefOf} are spelled in.
+ * `NonNullable` would keep. Exported because {@link WorkflowNameOf} and
+ * {@link WorkflowDefOf} are spelled in it.
  *
  * @public
  */

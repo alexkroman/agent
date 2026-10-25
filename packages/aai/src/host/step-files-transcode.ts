@@ -127,7 +127,7 @@ export type TranscodedUpload = {
  * @param options - See {@link TranscodeUploadOptions}.
  *
  * @throws {FatalError} on an ffmpeg exit, a missing binary, an output past the
- *   cap, or an output ffmpeg wrote nothing to; {@link RetryableError}-shaped
+ *   cap, or an output ffmpeg wrote nothing to; `RetryableError`-shaped
  *   (the `FfmpegError` unchanged) on a timeout or an abort — `throwFfmpegStepError`'s
  *   verdict, which its doc argues.
  * @throws {UploadIncompleteError} when the upload is still arriving.

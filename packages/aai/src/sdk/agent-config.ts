@@ -34,6 +34,7 @@ import { MCP_SERVER_KEY_RE, type McpServers } from "./mcp-config.ts";
 import { defaultProviders } from "./providers/_default-providers.ts";
 import { stageMembers } from "./providers/fallback.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
+import type { ProviderDescriptor } from "./providers.ts";
 import { formatSchemaIssues } from "./standard-schema.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import {
@@ -81,7 +82,9 @@ export type ExecuteTool = (
  *
  * @internal
  */
-export const ProviderDescriptorSchema = z.object({
+export const ProviderDescriptorSchema: z.ZodType<
+  ProviderDescriptor<string, Record<string, unknown>>
+> = z.object({
   kind: z.string().min(1),
   options: z.record(z.string(), z.unknown()),
 });

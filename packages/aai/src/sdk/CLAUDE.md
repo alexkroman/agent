@@ -126,8 +126,8 @@ detail; the rules:
   `write(key, value, { durable })` defaults to durable.
 - **`aai:testing` is a FAMILY** — `testing` (context, tool runs, model fakes),
   `testing-steps`, `testing-network`, `testing-workflow`, `testing-client`,
-  `testing-deploy` — split for the 40-name budget; all on the same two subpaths,
-  and `aai-runtime`'s doors mirror the whole family.
+  `testing-deploy`, `testing-events` — split for the 40-name budget; all on the
+  same two subpaths, and `aai-runtime`'s doors mirror the whole family.
 - **A script NAMES its shape — `{ reply }` or `{ routes }`** — everywhere one is
   taken; a computed route is `{ reply: (call) => … }`; a bare shape reaching the
   runtime untyped throws at bind.

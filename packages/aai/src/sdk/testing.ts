@@ -172,6 +172,7 @@ export {
   type FiredEvent,
   fireEvent,
   type SessionEventFields,
+  type SessionEventRest,
   sessionEvent,
 } from "./testing-session-events.ts";
 // The three invariants of a slot's DECLARATION, asserted in one call.

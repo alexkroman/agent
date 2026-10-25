@@ -346,6 +346,7 @@ function resolveToolByDef(
  * the second position is written down once here rather than at every call site
  * that binds it.
  *
+ * @sealed
  * @public
  */
 export interface ToolRunner {

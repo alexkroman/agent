@@ -120,6 +120,7 @@ export {
   type SaidLine,
   type SentEvent,
   type SessionEventFields,
+  type SessionEventRest,
   type SlotContractOptions,
   STUB_SPEECH_PCM_BYTES,
   type StubClientInbox,

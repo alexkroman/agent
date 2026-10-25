@@ -76,12 +76,21 @@ export type SessionCall = {
  * A call as the carrier's `start` frame reported it — {@link SessionCall}
  * without the {@link SessionCall.brief} reader, which the record attaches.
  * What the runtime's phone bridge, an eval and `createToolContext({ call })`
- * hand in.
+ * hand in. Declared on its own rather than cut from `SessionCall` so each side
+ * of the wire is probed in its own direction; the three fields mean what
+ * {@link SessionCall}'s do.
  *
  * @input
  * @public
  */
-export type SessionCallInput = Omit<SessionCall, "brief">;
+export type SessionCallInput = {
+  /** See {@link SessionCall.carrier}. */
+  readonly carrier: string;
+  /** See {@link SessionCall.callId}. */
+  readonly callId?: string;
+  /** See {@link SessionCall.parameters}. */
+  readonly parameters: Readonly<Record<string, string>>;
+};
 
 /**
  * Record the call a phone session's stream reported. Frozen, parameters too, so

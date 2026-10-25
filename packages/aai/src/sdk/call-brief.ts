@@ -54,6 +54,10 @@ const BRIEF_PARAMETER_RE = /^(?:call|sig|p\d+)$/;
 /**
  * What a placed call tells the session that answers it, once verified.
  *
+ * Sealed as a ROUND TRIP: `readCallBrief` and `ctx.call.brief` build it, and
+ * `stepPlaceCall({ brief })` is handed one back.
+ *
+ * @sealed
  * @public
  */
 export type CallBrief = {

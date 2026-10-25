@@ -244,6 +244,7 @@ export {
   type SessionWiring,
   setSessionIdMinter,
   stampSessionEvent,
+  type TurnCounter,
   wireSessionSocket,
 } from "./session/index.ts";
 // Session state's PLATFORM backend — the HTTP client `aai-server` serves on
@@ -361,6 +362,7 @@ export type {
   ResumableRun,
   RunRecord,
   RunStatus,
+  RunStatusPatch,
   SleepEntry,
   SleepRecord,
   StepEntry,

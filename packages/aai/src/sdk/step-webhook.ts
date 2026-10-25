@@ -174,7 +174,11 @@ export function publishStepWebhookUrl(mint: StepWebhookMinter | undefined): void
  * @param token - The waitpoint's token, exactly as the body passes it to
  *   `ctx.waitFor`. Derived from the run's input, never random.
  * @param options - `{ optional: true }` answers `undefined` instead of throwing
- *   when no public URL is configured — see {@link StepWebhookUrlOptions}.
+ *   when no public URL is configured: for a step with a path that needs no
+ *   callback — a submit whose body polls the provider when no hook can arrive,
+ *   which is every run under `aai dev`. The default throws, for the reason
+ *   the module doc gives: a step that reads `undefined` without having asked
+ *   for it is one that parks on a hook nobody was told about.
  * @returns The absolute URL, encoded for the route's single token segment.
  * @throws {Error} when this process cannot mint one — the message names the
  *   configuration and says what `aai dev` can and cannot do.
@@ -214,8 +218,14 @@ export function stepWebhookUrl(token: string, options: { optional: true }): stri
  *
  * @public
  */
-export function stepWebhookUrl(token: string, options?: StepWebhookUrlOptions): string | undefined;
-export function stepWebhookUrl(token: string, options?: StepWebhookUrlOptions): string | undefined {
+export function stepWebhookUrl(
+  token: string,
+  options?: { optional?: boolean | undefined },
+): string | undefined;
+export function stepWebhookUrl(
+  token: string,
+  options?: { optional?: boolean | undefined },
+): string | undefined {
   // The token FIRST: an empty one is a bug in the caller whatever the deployment
   // is, so it is refused before the configuration is consulted — including
   // under `optional`, which excuses only the missing URL.
@@ -227,22 +237,3 @@ export function stepWebhookUrl(token: string, options?: StepWebhookUrlOptions): 
   }
   return mint(token);
 }
-
-/**
- * What {@link stepWebhookUrl} accepts.
- *
- * @input
- * @public
- */
-export type StepWebhookUrlOptions = {
-  /**
-   * Answer `undefined` rather than throw when no public URL is configured.
-   *
-   * For a step with a path that needs no callback — a submit whose body polls
-   * the provider when no hook can arrive, which is every run under `aai dev`.
-   * The default (`false`) throws, for the reason the module doc gives: a step
-   * that reads `undefined` without having asked for it is one that parks on a
-   * hook nobody was told about.
-   */
-  optional?: boolean | undefined;
-};
