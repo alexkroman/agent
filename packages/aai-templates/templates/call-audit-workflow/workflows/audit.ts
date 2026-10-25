@@ -228,7 +228,9 @@ export async function auditFlow(
     codec: ingested.codec,
     durationMs: ingested.durationMs,
     elapsedMs: finishedAt - startedAt,
-    ffmpegMs: ingested.ffmpegMs,
+    // Every ffmpeg invocation the run paid for: the ingest's probe and two
+    // passes, and the mastering pass under the spoken audit.
+    ffmpegMs: ingested.ffmpegMs + spoken.ffmpegMs,
     segments: segments.length,
     blindCuts: segments.filter((segment) => segment.cutInSpeech).length,
     speechPercent: Math.round(

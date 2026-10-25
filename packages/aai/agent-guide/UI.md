@@ -200,7 +200,7 @@ Server: `ctx.send("order", { total: "$14.99" })` — Client:
 
 **`useRoute` / `routeFetch`** — one of the agent's own `routes`, resolved
 against the page: `routeFetch("api/calls", { method: "POST", headers })` and
-`useRoute("api/calls/1", { every: 2000, until: (call) => call.done, headers })`,
+`useRoute("api/calls/1", { pollMs: 2000, until: (call) => call.done, headers })`,
 which re-reads on that interval until `until` says so and stops on unmount. The
 `headers` carry an `authorization` for an `apiKeyRoute`.
 

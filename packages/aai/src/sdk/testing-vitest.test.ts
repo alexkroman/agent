@@ -8,6 +8,7 @@ import { publishStepReporter, stepReport } from "./step-report.ts";
 import { stepSpeak } from "./step-speak.ts";
 import { stepTranscribePoll } from "./step-transcribe.ts";
 import { stepUploadInfo } from "./step-uploads.ts";
+import { stepWriteUpload } from "./step-uploads-write.ts";
 import { deployedAgent } from "./testing-discovery.ts";
 import {
   describeAgent,
@@ -304,19 +305,23 @@ describe("installStubWorld", () => {
   test("speech, uploads and the reporter are installed when named", async () => {
     const world = installStubWorld({
       speech: true,
-      uploads: { upl_1: new Uint8Array([1, 2, 3]) },
+      uploads: { files: { upl_1: new Uint8Array([1, 2, 3]) }, writable: true, idPrefix: "w_" },
     });
     await stepSpeak("Three findings.");
     expect(world.speech.map((call) => call.text)).toEqual(["Three findings."]);
     await expect(stepUploadInfo("upl_1")).resolves.toMatchObject({ size: 3 });
-    expect(world.files).toBeDefined();
+    // The store's options rode in beside the files: a write lands, under the prefix.
+    await expect(stepWriteUpload(new Uint8Array([4]), { name: "n.txt" })).resolves.toMatchObject({
+      id: "w_1",
+    });
+    expect(world.files?.writes.map((write) => write.id)).toEqual(["w_1"]);
     await stepReport("working");
     expect(world.reported.lines).toEqual(["working"]);
   });
 
   test("names nothing, installs nothing but the reporter", async () => {
     const world = installStubWorld({ apiKey: false });
-    expect(world).toMatchObject({ model: [], provider: [], speech: [], uploads: [] });
+    expect(world).toMatchObject({ model: [], provider: [], speech: [] });
     expect(world.files).toBeUndefined();
     await expect(stepSpeak("Anything.")).rejects.toThrow();
   });

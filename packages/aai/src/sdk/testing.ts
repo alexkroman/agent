@@ -55,6 +55,12 @@ export {
   type TestToolContext,
   type ToolContextOverrides,
 } from "./_testing-context.ts";
+// The `RouteContext` a spec hands an `agent({ routes })` handler, every field
+// supplied — the route-side twin of `createToolContext`.
+export {
+  createRouteContext,
+  type RouteContextOverrides,
+} from "./_testing-route-context.ts";
 export {
   parseSchemaInput,
   parseToolInput,

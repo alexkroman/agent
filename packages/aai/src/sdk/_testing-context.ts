@@ -18,7 +18,7 @@ import { clientEventDropMessage, decideClientEvent } from "./client-event.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "./constants.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { createSeededRandom } from "./random.ts";
-import type { SessionCallInput } from "./session-call.ts";
+import type { SessionCall } from "./session-call.ts";
 import { claimDtmfSender } from "./session-dtmf.ts";
 import { claimSessionEnder } from "./session-end.ts";
 import { createDetachedSlotStore, type SlotStore } from "./session-state.ts";
@@ -292,7 +292,7 @@ export type ToolContextOverrides = {
    * `WS /phone` stream's `start` frame. Omitted, `sessionCall` answers
    * `undefined`, which is what a browser tab gets.
    */
-  call?: SessionCallInput | undefined;
+  call?: SessionCall | undefined;
 };
 
 /**

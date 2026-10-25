@@ -58,6 +58,7 @@ export {
   type RecordedSleep,
   type RecordedStart,
   type RecordedStep,
+  type RouteContextOverrides,
   type RunSnapshotOverrides,
   runGuardrail,
   runTool,

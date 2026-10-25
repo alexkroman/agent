@@ -54,9 +54,8 @@ import { spawnSync } from "node:child_process";
 import { encodeWav } from "@alexkroman1/aai/step";
 import {
   describeWorkflowEval,
-  installStubTranscribe,
   installStubUploads,
-  stubGatewayRoute,
+  installStubWorld,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { assert, describe, expect, test } from "vitest";
 import agentDef, { audit } from "./agent.ts";
@@ -214,22 +213,17 @@ function publish(bytes: Uint8Array, name: string, type: string) {
 /**
  * Answer the sync transcription endpoint and the model in memory.
  *
- * ONE fake, because publishing a `stepFetch` REPLACES — a flow that transcribes
- * AND calls a model cannot install two, which is what `otherwise` is for. BOTH
- * halves are the SDK's own fakes rather than this file's hand-typed wire, and
- * for the same reason: each routes off the SDK's own endpoint constant, so a
- * case cannot pass because the fake and the step agree on a typo. The gateway
- * envelope is the half where that matters most — it is a WIRE shape, so getting
- * a field wrong does not fail: `stepGenerate` reads no content, reports an empty
+ * ONE published `stepFetch`, because publishing REPLACES — a flow that
+ * transcribes AND calls a model cannot install two. `installStubWorld` composes
+ * the SDK's own two fakes in the order that works and leaves the eval's
+ * reporter in place; both route off the SDK's own endpoint constants, so a case
+ * cannot pass because a fake and a step agree on a typo. The gateway envelope
+ * is the half where that matters most — it is a WIRE shape, so getting a field
+ * wrong does not fail: `stepGenerate` reads no content, reports an empty
  * completion, and the case blames the desk.
- *
- * `route` answers `undefined` for anything that is not a completion request, so
- * it drops straight into `otherwise` and the transcription legs still reach the
- * fake below it.
  */
 function scriptProvider(text: readonly string[]) {
-  const model = stubGatewayRoute(JSON.stringify(REPLY));
-  return installStubTranscribe({ text, otherwise: (request) => model.route(request) });
+  return installStubWorld({ model: JSON.stringify(REPLY), transcribe: { text } }).provider;
 }
 
 describeWorkflowEvalWithFfmpeg(
@@ -277,7 +271,7 @@ describeWorkflowEvalWithFfmpeg(
 
       // And the cut is at the pause's MIDPOINT, second 61 — not at 110, which
       // is where a desk with no decoder would have had to cut.
-      const sync = provider.calls.filter((call) => call.leg === "sync");
+      const sync = provider.filter((call) => call.leg === "sync");
       expect(sync).toHaveLength(2);
       const first = sync[0]?.body?.length ?? 0;
       const second = sync[1]?.body?.length ?? 0;
@@ -349,7 +343,7 @@ describeWorkflowEvalWithFfmpeg(
       // The cut is at the cap exactly, which is what "no candidate in range"
       // means — and the first request is therefore 110 seconds of audio.
       expect(run.reported).toContain("Transcribing 0:00–1:50.");
-      const sync = provider.calls.filter((call) => call.leg === "sync");
+      const sync = provider.filter((call) => call.leg === "sync");
       const first = sync[0]?.body?.length ?? 0;
       expect(first).toBeGreaterThan(MAX_SEGMENT_SECONDS * BYTES_PER_SECOND);
       expect(first).toBeLessThan(MAX_SEGMENT_SECONDS * BYTES_PER_SECOND + 2000);
@@ -422,7 +416,8 @@ describeWorkflowEvalWithFfmpeg(
       expect(output.elapsedMs).toBeGreaterThanOrEqual(0);
       // And the DECODER's share of it. Only a case that really spawns ffmpeg can
       // claim this is a measurement rather than a zero: `runFfmpeg` times each
-      // invocation, and three of them ran here.
+      // invocation, and four ran here — ffprobe, both `loudnorm` passes, and
+      // the mastering pass under the spoken audit.
       expect(output.ffmpegMs).toBeGreaterThan(0);
       expect(output.ffmpegMs).toBeLessThanOrEqual(output.elapsedMs);
     });

@@ -31,8 +31,7 @@
  */
 
 import { globalSlot, type SlotName } from "./_boundary.ts";
-import { readCallBrief } from "./call-brief.ts";
-import type { SessionCall, SessionCallInput } from "./session-call.ts";
+import type { SessionCall } from "./session-call.ts";
 
 /** Longer than any session; this only reaps abandoned entries. */
 const SESSION_IDENTITY_TTL_MS = 86_400_000;
@@ -182,8 +181,8 @@ export type SessionIdentity = {
   location?: string | undefined;
   /** The client's number — stored in E.164; one that is not is not recorded. */
   phone?: string | undefined;
-  /** The carrier call — stored frozen, parameters too, with its `brief` reader attached. */
-  call?: SessionCallInput | undefined;
+  /** The carrier call — stored frozen, parameters too. */
+  call?: SessionCall | undefined;
 };
 
 function recordLocation(sessionId: string, raw: string): void {
@@ -231,17 +230,13 @@ export function recordSessionIdentity(sessionId: string, identity: SessionIdenti
   }
   if (call !== undefined) {
     // Frozen, parameters too, so the object `sessionContext`, `onSessionEnd` and
-    // every tool see is one value no reader can change under another. The
-    // `brief` reader is attached NON-ENUMERABLE: the call is logged and
-    // compared as data, and a function on it would print as `[Function]` in
-    // the one place and defeat a plain equality in the other.
-    const parameters = Object.freeze({ ...call.parameters });
-    const record = { ...call, parameters } as SessionCall;
-    Object.defineProperty(record, "brief", {
-      value: (secret: string | undefined) => readCallBrief(record, secret),
-      enumerable: false,
+    // every tool see is one value no reader can change under another. Plain
+    // data: it is logged and compared as such, and the brief it may carry is
+    // read off it by `readCallBrief`.
+    const frozen: SessionCall = Object.freeze({
+      ...call,
+      parameters: Object.freeze({ ...call.parameters }),
     });
-    const frozen: SessionCall = Object.freeze(record);
     writeSessionEntry(
       sessionCallEntries(),
       sessionId,

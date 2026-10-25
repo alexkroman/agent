@@ -23,6 +23,7 @@
 
 export {
   createRecordingWorkflows,
+  createRouteContext,
   createRunSnapshot,
   createSlotStore,
   createStubWorkflows,
@@ -57,6 +58,7 @@ export {
   type RecordedStep,
   type RecordingWorkflows,
   type RecordingWorkflowsOptions,
+  type RouteContextOverrides,
   type RunSnapshotOverrides,
   routeHandlerOf,
   routeOf,

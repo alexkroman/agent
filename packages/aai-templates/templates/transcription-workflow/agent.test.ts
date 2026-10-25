@@ -750,7 +750,7 @@ describe("transcribeSegment", () => {
    */
   function world(bytes: number, transcribe: StubTranscribeOptions = { text: "hello there" }) {
     return installStubWorld({
-      uploads: { [UPLOAD_ID]: { bytes: new Uint8Array(bytes), name: "standup.wav" } },
+      uploads: { files: { [UPLOAD_ID]: { bytes: new Uint8Array(bytes), name: "standup.wav" } } },
       transcribe,
     });
   }
@@ -909,7 +909,9 @@ describe("transcribeSegment", () => {
   test("fails FATALLY with no API key rather than retrying", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     installStubWorld({
-      uploads: { [UPLOAD_ID]: { bytes: new Uint8Array(FORMAT.dataEnd), name: "standup.wav" } },
+      uploads: {
+        files: { [UPLOAD_ID]: { bytes: new Uint8Array(FORMAT.dataEnd), name: "standup.wav" } },
+      },
       transcribe: { text: "hello there" },
       apiKey: false,
     });
@@ -964,7 +966,7 @@ describe("transcribeSegment", () => {
     // The policy is an argument to `ctx.step`, so it is observable only at the
     // CALL. `runSteps: false` with a skeleton of results: no provider, no
     // ffmpeg, no bytes. The fan-out waits out a rate limit with `maxWaits`
-    // instead of a raised budget, which the recorder does not report.
+    // instead of a raised budget.
     const ctx = createWorkflowContext({
       runSteps: false,
       results: {
@@ -996,6 +998,12 @@ describe("transcribeSegment", () => {
     for (const name of ["mergeTranscript", "splitRecording", "transcribeSegment"]) {
       expect(budgets.has(name)).toBe(true);
       expect(budgets.get(name)).toBeUndefined();
+    }
+    // The segment step's rate limit is a WAIT budget — on that step alone.
+    const waits = new Map(ctx.steps.map((step) => [step.name, step.maxWaits]));
+    expect(waits.get("transcribeSegment")).toBe(3);
+    for (const name of ["normalizeRecording", "mergeTranscript", "splitRecording"]) {
+      expect(waits.get(name)).toBeUndefined();
     }
   });
 });
@@ -1494,7 +1502,8 @@ describe("the conversion, up to the spawn", () => {
     // The `finally`, on the path that matters: a guest's disk is small, and a step
     // that leaked a directory per failed run would fill it.
     vi.stubEnv("AAI_FFPROBE_PATH", "/nonexistent/aai-test/ffprobe");
-    const leaked = (names: string[]) => names.filter((n) => n.startsWith("aai-normalize-"));
+    // `transcodeUpload`'s own temp directory, under the SDK's prefix.
+    const leaked = (names: string[]) => names.filter((n) => n.startsWith("aai-step-"));
     const before = leaked(await readdir(tmpdir()));
     publishRecording(new Uint8Array([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70]), "standup.m4a");
     installStubReporter();
@@ -1778,7 +1787,7 @@ describe("the batch run is DURABLE", () => {
   /** The store holding the recording, and the async API answering for it. */
   function world(transcribe: StubTranscribeOptions) {
     return installStubWorld({
-      uploads: { [UPLOAD_ID]: { bytes: new Uint8Array(4096), name: "standup.wav" } },
+      uploads: { files: { [UPLOAD_ID]: { bytes: new Uint8Array(4096), name: "standup.wav" } } },
       transcribe,
     }).provider;
   }

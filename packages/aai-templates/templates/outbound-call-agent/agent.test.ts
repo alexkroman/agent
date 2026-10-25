@@ -18,16 +18,16 @@
 
 import agentDef from "virtual:aai/agent";
 import {
-  type RouteContext,
   type RouteRequest,
   readCallBrief,
   type SessionCall,
+  type SessionEndContext,
   sessionCall,
   signCallBrief,
 } from "@alexkroman1/aai";
 import { sentDtmfCalls } from "@alexkroman1/aai/experimental";
-import { DEFAULT_SIGNAL_HOLD_MS } from "@alexkroman1/aai/workflow-api";
 import {
+  createRouteContext,
   createRunSnapshot,
   createToolContext,
   endSessionCalls,
@@ -35,11 +35,13 @@ import {
   runWorkflow,
   stubGatewayRoute,
   stubPlaceCall,
+  type TestToolContext,
 } from "@alexkroman1/aai-runtime/testing";
 import { describeAgent, installStubWorkflows } from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, onTestFinished, test, vi } from "vitest";
 import { createCall, getCall, listCalls, newCallId } from "./api.ts";
 import type { CallRecord } from "./api-types.ts";
+import { voicemailSlot } from "./shared.ts";
 import endCall from "./tools/end_call.ts";
 import pressKeys from "./tools/press_keys.ts";
 import call, {
@@ -48,7 +50,6 @@ import call, {
   RING_BUDGET_MS,
   RING_POLL_MS,
 } from "./workflows/call.ts";
-import { callEndedToken } from "./workflows/tokens.ts";
 
 const SECRET = "test-calls-key";
 const PROMPT =
@@ -72,14 +73,8 @@ function request(over: Partial<RouteRequest> = {}): RouteRequest {
 function routeContext(
   workflows = installStubWorkflows({ agent: agentDef }),
   env: Record<string, string> = { CALLS_API_KEY: SECRET },
-): RouteContext {
-  return {
-    env,
-    workflows,
-    clientTranscript: vi.fn(),
-    speech: () => undefined,
-    signal: new AbortController().signal,
-  };
+) {
+  return createRouteContext({ env, workflows });
 }
 
 /** What a thrown `routeError` carries, without naming its class. */
@@ -104,6 +99,27 @@ async function placedCall(id: string, prompt = PROMPT, secret = SECRET): Promise
   const placed = sessionCall(ctx);
   if (placed === undefined) throw new Error("the context was given a call");
   return placed;
+}
+
+/**
+ * What `onSessionEnd` is handed when the session `ctx` was on ends: the
+ * session's own id and slots (so a fact a tool wrote during the call is
+ * readable), the stubbed workflow client, and the lines said. Built over a
+ * tool context rather than as a literal, so the next field the runtime adds to
+ * `SessionEndContext` lands here once.
+ */
+function sessionEnd(
+  ctx: TestToolContext,
+  over: Partial<SessionEndContext> & Pick<SessionEndContext, "workflows">,
+): SessionEndContext {
+  return {
+    sessionId: ctx.sessionId,
+    env: { CALLS_API_KEY: SECRET },
+    slots: ctx.slots,
+    transcript: [],
+    lastEventIndex: -1,
+    ...over,
+  };
 }
 
 describeAgent(agentDef, (run) => {
@@ -211,11 +227,12 @@ describeAgent(agentDef, (run) => {
       const workflows = installStubWorkflows({
         agent: agentDef,
         runs: [
-          // `createRunSnapshot` keeps no `label`, so the number is spread on.
-          {
-            ...createRunSnapshot(call, { key: "call_live", status: "running", createdAt: 5 }),
+          createRunSnapshot(call, {
+            key: "call_live",
+            status: "running",
+            createdAt: 5,
             label: "+14155550132",
-          },
+          }),
         ],
       });
       expect(
@@ -274,6 +291,15 @@ describeAgent(agentDef, (run) => {
 
       expect(result).toMatchObject({ ended: expect.any(Boolean) });
       expect(endSessionCalls(ctx)).toHaveLength(1);
+      expect(voicemailSlot.get(ctx)).toBe(false);
+    });
+
+    test("end_call after a voicemail message records the fact for the session's end", async () => {
+      const ctx = createToolContext({ sessionId: "s_1" });
+      await run(endCall, { voicemail: true }, ctx);
+
+      expect(endSessionCalls(ctx)).toHaveLength(1);
+      expect(voicemailSlot.get(ctx)).toBe(true);
     });
 
     test("press_keys plays the keys into the call", async () => {
@@ -307,45 +333,62 @@ describeAgent(agentDef, (run) => {
       });
     });
 
-    test("hands the transcript to the call's run as the session ends, held for it", async () => {
-      const signal = vi.fn(async () => true);
-      const workflows = { ...installStubWorkflows({ agent: agentDef }), signal };
+    test("hands the transcript to the call's run as the session ends, by the call's key", async () => {
+      const workflows = installStubWorkflows({ agent: agentDef });
+      const ctx = createToolContext({ sessionId: "s_1" });
 
-      await agentDef.onSessionEnd?.({
-        sessionId: "s_1",
-        env: { CALLS_API_KEY: SECRET },
-        call: await placedCall("call_42"),
-        workflows,
-        transcript: [
-          { role: "user", text: "Hello?", at: 1000 },
-          { role: "assistant", text: "Hi, is this Maria?", at: 75_000 },
-        ],
-        lastEventIndex: 1,
-      });
-
-      expect(signal).toHaveBeenCalledWith(
-        callEndedToken("call_42"),
-        {
+      await agentDef.onSessionEnd?.(
+        sessionEnd(ctx, {
+          call: await placedCall("call_42"),
+          workflows,
           transcript: [
-            { role: "callee", text: "Hello?" },
-            { role: "agent", text: "Hi, is this Maria?" },
+            { role: "user", text: "Hello?", at: 1000 },
+            { role: "assistant", text: "Hi, is this Maria?", at: 75_000 },
           ],
-          duration_seconds: 74,
-        },
-        { holdMs: DEFAULT_SIGNAL_HOLD_MS },
+          lastEventIndex: 1,
+        }),
+      );
+
+      // `signalRun` holds the payload for the run by default, so a call shorter
+      // than one ring poll still reaches a run not yet parked on it.
+      expect(workflows.signalRun).toHaveBeenCalledWith(call, "call_42", "callEnded", {
+        transcript: [
+          { role: "callee", text: "Hello?" },
+          { role: "agent", text: "Hi, is this Maria?" },
+        ],
+        duration_seconds: 74,
+        voicemail: false,
+      });
+    });
+
+    test("the voicemail fact end_call wrote rides on the signal", async () => {
+      const workflows = installStubWorkflows({ agent: agentDef });
+      const ctx = createToolContext({ sessionId: "s_vm" });
+      await run(endCall, { voicemail: true }, ctx);
+
+      await agentDef.onSessionEnd?.(
+        sessionEnd(ctx, {
+          call: await placedCall("call_43"),
+          workflows,
+          transcript: [{ role: "assistant", text: "Hi Maria, please call us back.", at: 1000 }],
+          lastEventIndex: 0,
+        }),
+      );
+
+      expect(workflows.signalRun).toHaveBeenCalledWith(
+        call,
+        "call_43",
+        "callEnded",
+        expect.objectContaining({ voicemail: true }),
       );
     });
 
     test("a session that was never a placed call hands nothing over", async () => {
-      const signal = vi.fn(async () => true);
-      await agentDef.onSessionEnd?.({
-        sessionId: "s_none",
-        env: { CALLS_API_KEY: SECRET },
-        workflows: { ...installStubWorkflows({ agent: agentDef }), signal },
-        transcript: [],
-        lastEventIndex: -1,
-      });
-      expect(signal).not.toHaveBeenCalled();
+      const workflows = installStubWorkflows({ agent: agentDef });
+      await agentDef.onSessionEnd?.(
+        sessionEnd(createToolContext({ sessionId: "s_none" }), { workflows }),
+      );
+      expect(workflows.signalRun).not.toHaveBeenCalled();
     });
   });
 
@@ -365,6 +408,7 @@ describeAgent(agentDef, (run) => {
         { role: "callee", text: "Thursday at 10 works." },
       ],
       duration_seconds: 74,
+      voicemail: false,
     };
     const SUMMARY = "Maria rebooked for Thursday at 10am.";
 
@@ -377,11 +421,8 @@ describeAgent(agentDef, (run) => {
     });
 
     /** Twilio, the model and the webhook behind the one published `stepFetch`. */
-    function stubWorld(
-      options: Parameters<typeof stubPlaceCall>[0] = {},
-      written = { summary: SUMMARY, voicemail: false },
-    ) {
-      const model = stubGatewayRoute(JSON.stringify(written));
+    function stubWorld(options: Parameters<typeof stubPlaceCall>[0] = {}, summary = SUMMARY) {
+      const model = stubGatewayRoute(JSON.stringify({ summary }));
       const webhook = vi.fn((_body: unknown) => ({ status: 204, body: "" }));
       const twilio = stubPlaceCall({
         status: (placed) => (placed.polls === 1 ? "ringing" : "in-progress"),
@@ -399,8 +440,10 @@ describeAgent(agentDef, (run) => {
       return { twilio, model: model.calls, webhook };
     }
 
+    // Keyed by the call id, as `POST /v1/calls` starts it: the key is what the
+    // body's `waitForSignal` and the session's `signalRun` derive the token from.
     function start(options?: RunWorkflowOptions) {
-      return runWorkflow(agentDef, "call", INPUT, options);
+      return runWorkflow(agentDef, "call", INPUT, { key: INPUT.id, ...options });
     }
 
     test("rings, parks on the call, and resumes on the session's signal into the finished record", async () => {
@@ -422,7 +465,7 @@ describeAgent(agentDef, (run) => {
       await handle.advanceSleep(); // answered — now parked on the call
       expect(handle.status).toBe("running");
 
-      await handle.signal(callEndedToken(INPUT.id), ENDED);
+      await handle.signalRun("callEnded", ENDED);
       expect(handle.signalled).toBe(true);
       expect(handle.status).toBe("completed");
 
@@ -448,17 +491,17 @@ describeAgent(agentDef, (run) => {
       const handle = await start({ crashAt: "ring" }); // dies in the first ring poll
       await handle.restart(); // a new worker: the dial is journaled, the poll runs again
       await handle.advanceSleep();
-      await handle.signal(callEndedToken(INPUT.id), ENDED);
+      await handle.signalRun("callEnded", ENDED);
 
       expect(handle.status).toBe("completed");
       expect(world.twilio.calls).toHaveLength(1);
     });
 
-    test("voicemail is the outcome when the write-up says the call reached a machine", async () => {
-      stubWorld({}, { summary: "Left a message asking Maria to call back.", voicemail: true });
+    test("voicemail is the outcome when the session said it reached a machine", async () => {
+      stubWorld({}, "Left a message asking Maria to call back.");
       const handle = await start();
       await handle.advanceSleep();
-      await handle.signal(callEndedToken(INPUT.id), ENDED);
+      await handle.signalRun("callEnded", { ...ENDED, voicemail: true });
       expect(handle.output).toMatchObject({ outcome: "voicemail" });
     });
 

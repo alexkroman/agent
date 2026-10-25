@@ -25,7 +25,7 @@
  * @module
  */
 
-import type { AgentDef, SessionCallInput } from "@alexkroman1/aai";
+import type { AgentDef, SessionCall } from "@alexkroman1/aai";
 import { normalizeE164, recordSessionIdentity } from "@alexkroman1/aai/host-internal";
 import { answeredGreeting } from "../session/index.ts";
 
@@ -33,7 +33,7 @@ import { answeredGreeting } from "../session/index.ts";
 export type EvalSessionIdentity = {
   readonly clientId?: string;
   readonly phone?: string;
-  readonly call?: SessionCallInput;
+  readonly call?: SessionCall;
 };
 
 /**

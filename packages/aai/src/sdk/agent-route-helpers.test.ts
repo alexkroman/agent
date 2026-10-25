@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod";
+import { createRouteContext } from "./_testing-route-context.ts";
 import {
   apiKeyRoute,
   RouteError,
@@ -8,16 +9,9 @@ import {
   route,
   routeError,
 } from "./agent-route-helpers.ts";
-import { type RouteContext, type RouteRequest, readRouteResponse } from "./agent-routes.ts";
-import { createStubWorkflows } from "./testing-workflows.ts";
+import { type RouteRequest, readRouteResponse } from "./agent-routes.ts";
 
-const ctx: RouteContext = {
-  env: {},
-  workflows: createStubWorkflows(),
-  clientTranscript: async () => ({ sessions: [] }),
-  speech: () => undefined,
-  signal: new AbortController().signal,
-};
+const ctx = createRouteContext();
 
 function req(over: Partial<RouteRequest> = {}): RouteRequest {
   return {

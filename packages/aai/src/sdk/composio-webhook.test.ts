@@ -1,7 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { RouteContext, RouteRequest } from "./agent-routes.ts";
+import { createRouteContext } from "./_testing-route-context.ts";
+import type { RouteRequest } from "./agent-routes.ts";
 import { readRouteResponse } from "./agent-routes.ts";
 import { COMPOSIO_BASE_URL } from "./composio-api.ts";
 import {
@@ -30,13 +31,8 @@ function delivery(body: unknown, secret = SECRET): RouteRequest {
   };
 }
 
-const ctx = (env: Record<string, string> = { COMPOSIO_WEBHOOK_SECRET: SECRET }): RouteContext => ({
-  env,
-  workflows: createStubWorkflows(),
-  clientTranscript: async () => ({ sessions: [] }),
-  speech: () => undefined,
-  signal: new AbortController().signal,
-});
+const ctx = (env: Record<string, string> = { COMPOSIO_WEBHOOK_SECRET: SECRET }) =>
+  createRouteContext({ env, workflows: createStubWorkflows() });
 
 const EVENT: ComposioTriggerEvent = {
   id: "evt_1",

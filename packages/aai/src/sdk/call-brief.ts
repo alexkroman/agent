@@ -55,7 +55,7 @@ const BRIEF_PARAMETER_RE = /^(?:call|sig|p\d+)$/;
 /**
  * What a placed call tells the session that answers it, once verified.
  *
- * Sealed as a ROUND TRIP: `readCallBrief` and `ctx.call.brief` build it, and
+ * Sealed as a ROUND TRIP: `readCallBrief` builds it, and
  * `stepPlaceCall({ brief })` is handed one back.
  *
  * @sealed
@@ -130,18 +130,18 @@ export async function signCallBrief(
  * signed by this app — a stranger, a stale secret, a truncated stream, or no
  * secret at all (an unset env is a refusal, never an open door).
  *
- * `call.brief(secret)` on the `SessionCall` `sessionContext` receives is this,
- * bound to that call's parameters.
+ * The one reader: `call` is the `SessionCall` `sessionContext` and
+ * `onSessionEnd` receive, or `sessionCall(ctx)` in a tool.
  *
  * @example Refuse a stream the app did not dial
  * ```ts
- * import { agent } from "@alexkroman1/aai";
+ * import { agent, readCallBrief } from "@alexkroman1/aai";
  *
  * agent({
  *   name: "Errand calls",
  *   telephony: ["twilio"],
  *   async sessionContext({ call, env }) {
- *     const brief = await call?.brief(env.CALLS_API_KEY);
+ *     const brief = call && (await readCallBrief(call, env.CALLS_API_KEY));
  *     if (!brief) return { refuse: "not a call this app placed" };
  *     return { instructions: `Your task on this call: ${brief.prompt}` };
  *   },

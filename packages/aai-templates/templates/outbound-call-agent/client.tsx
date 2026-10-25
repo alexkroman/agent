@@ -105,7 +105,7 @@ function Transcript({ call }: { call: CallRecord }): ReactNode {
 
 function CallDetail({ id, apiKey }: { id: string; apiKey: string }): ReactNode {
   const { data: call, error } = useRoute<CallRecord>(`/v1/calls/${encodeURIComponent(id)}`, {
-    every: LIVE_POLL_MS,
+    pollMs: LIVE_POLL_MS,
     until: isFinished,
     headers: { authorization: apiKey },
   });
@@ -272,7 +272,7 @@ export function App(): ReactNode {
   const [selected, setSelected] = useState<string | undefined>(undefined);
   // `null` while there is no key: the list is not read until there is one.
   const list = useRoute<CallList>(apiKey === "" ? null : "/v1/calls", {
-    every: LIST_POLL_MS,
+    pollMs: LIST_POLL_MS,
     headers: { authorization: apiKey },
   });
 

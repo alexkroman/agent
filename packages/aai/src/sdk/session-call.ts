@@ -36,11 +36,16 @@ import {
   recordSessionIdentity,
   sessionCallEntries,
 } from "./_session-identity-store.ts";
-import type { CallBrief } from "./call-brief.ts";
 import type { ToolContext } from "./tool-context.ts";
 
 /**
  * A phone session's call identity, as the carrier's `start` frame reported it.
+ *
+ * Plain data, and the same shape on both sides of the wire: what the runtime's
+ * phone bridge, an eval and `createToolContext({ call })` hand in is what
+ * `sessionContext`, `onSessionEnd` and `sessionCall(ctx)` read back, frozen.
+ * The brief `stepPlaceCall({ brief })` signed onto the parameters is read
+ * with `readCallBrief(call, secret)`, the one reader.
  *
  * @sealed
  * @public
@@ -61,35 +66,6 @@ export type SessionCall = {
    * under 500 characters (Twilio's own limit), non-string values dropped.
    */
   readonly parameters: Readonly<Record<string, string>>;
-  /**
-   * The signed brief these parameters carry — what `stepPlaceCall({ brief })`
-   * put on the call — verified under `secret` and reassembled, or `undefined`
-   * when they were not signed with it: a stranger, a stale secret, a
-   * truncated stream, or no secret at all. `readCallBrief(call, secret)` bound
-   * to this call; the same check, so a session refusing on `undefined` is
-   * refusing exactly the streams this app did not dial.
-   */
-  readonly brief: (secret: string | undefined) => Promise<CallBrief | undefined>;
-};
-
-/**
- * A call as the carrier's `start` frame reported it — {@link SessionCall}
- * without the {@link SessionCall.brief} reader, which the record attaches.
- * What the runtime's phone bridge, an eval and `createToolContext({ call })`
- * hand in. Declared on its own rather than cut from `SessionCall` so each side
- * of the wire is probed in its own direction; the three fields mean what
- * {@link SessionCall}'s do.
- *
- * @input
- * @public
- */
-export type SessionCallInput = {
-  /** See {@link SessionCall.carrier}. */
-  readonly carrier: string;
-  /** See {@link SessionCall.callId}. */
-  readonly callId?: string;
-  /** See {@link SessionCall.parameters}. */
-  readonly parameters: Readonly<Record<string, string>>;
 };
 
 /**
@@ -99,7 +75,7 @@ export type SessionCallInput = {
  *
  * @internal — the runtime's half; `recordSessionIdentity` records every field at once.
  */
-export function setSessionCall(sessionId: string, call: SessionCallInput): void {
+export function setSessionCall(sessionId: string, call: SessionCall): void {
   recordSessionIdentity(sessionId, { call });
 }
 

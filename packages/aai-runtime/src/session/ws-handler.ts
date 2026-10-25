@@ -11,7 +11,7 @@
  * Audio validation is handled at the host transport layer (see server.ts).
  */
 
-import type { SessionCallInput } from "@alexkroman1/aai";
+import type { SessionCall } from "@alexkroman1/aai";
 import {
   LOG_PREVIEW_CHARS,
   recordSessionIdentity,
@@ -61,7 +61,7 @@ type WsSessionOptions = Omit<AttachSessionOptions, "closeAfterFailure"> & {
   /** The client's number (`?phone=`, E.164), for `sessionClientPhone`. PII, never logged. */
   clientPhone?: string;
   /** The phone call (`WS /phone`'s `start` frame), for `sessionCall` and the lifecycle hooks. */
-  call?: SessionCallInput;
+  call?: SessionCall;
 };
 
 const WS_CLOSE_INTERNAL = 1011;

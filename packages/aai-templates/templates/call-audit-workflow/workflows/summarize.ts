@@ -26,6 +26,7 @@ import { orFail } from "@alexkroman1/aai/step-errors";
 import { stepSpeakToUpload } from "@alexkroman1/aai/step-files";
 import { formatBytes, formatDuration, omitUndefined, plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
+import { LOUDNESS_RANGE_LU, LOUDNESS_TARGET_LUFS, LOUDNESS_TRUE_PEAK_DB } from "./media.ts";
 
 /** Risks the summary is reduced to. Enough to be useful, few enough to act on. */
 const MAX_RISKS = 4;
@@ -136,10 +137,12 @@ export async function summarize(
 export async function narrate(
   script: string,
   voice?: string,
-): Promise<{ audio: string; durationMs: number; bytes: number }> {
+): Promise<{ audio: string; durationMs: number; bytes: number; ffmpegMs: number }> {
   const stored = await stepSpeakToUpload(script, {
     ...omitUndefined({ voice }),
-    master: "mp3",
+    // Mastered to the SAME loudness the call was levelled to (`media.ts`), so
+    // the spoken audit and the recording it is about play at one level.
+    master: { format: "mp3", args: ["-af", masterLoudnorm()] },
     // Named, because this is what a person sees on the download link rather than
     // an opaque id; the type follows the master.
     name: "audit.mp3",
@@ -149,5 +152,15 @@ export async function narrate(
     `Recorded a ${Math.round(stored.durationMs / 1000)}s audit with voice ${stored.voice} — ` +
       `${formatBytes(stored.size)} of MP3.`,
   );
-  return { audio: stored.id, durationMs: stored.durationMs, bytes: stored.size };
+  return {
+    audio: stored.id,
+    durationMs: stored.durationMs,
+    bytes: stored.size,
+    ffmpegMs: stored.ffmpegMs,
+  };
+}
+
+/** The one-pass `loudnorm` the mastering pass applies — the ingest's targets, no measurement. */
+export function masterLoudnorm(): string {
+  return `loudnorm=I=${LOUDNESS_TARGET_LUFS}:TP=${LOUDNESS_TRUE_PEAK_DB}:LRA=${LOUDNESS_RANGE_LU}`;
 }

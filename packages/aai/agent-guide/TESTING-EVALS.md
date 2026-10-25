@@ -131,7 +131,7 @@ builder it wraps. **It also seeds `ASSEMBLYAI_API_KEY`** for the test, so a spec
 never writes `vi.stubEnv` for it; the one spec whose subject is the missing-key
 refusal passes `apiKey: false`. A workflow that calls a model AND fetches a page
 AND transcribes installs them all at once:
-`installStubWorld({ model, pages, transcribe, speech, uploads })` composes the
+`installStubWorld({ model, pages, transcribe, speech, uploads: { files, writable } })` composes the
 seams in the one order that works and hands back every fake's call log
 (`world.model`, `world.provider`, `world.reported`, …).
 
