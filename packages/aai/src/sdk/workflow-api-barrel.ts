@@ -149,6 +149,7 @@ export {
   createWorkflowApiClient,
   type UploadBody,
   type UploadInfo,
+  type UploadRecord,
   type UploadOptions,
   type UploadParallelOption,
   type UploadPartsOptions,

@@ -14,7 +14,7 @@
  * Nothing in here is a value, so this module is erased entirely at build time.
  */
 
-import type { UploadInfo } from "./step-uploads.ts";
+import type { UploadRecord } from "./step-uploads.ts";
 import type { WorkflowSummary } from "./workflow.ts";
 import type { WakeUpOptions } from "./workflow-options.ts";
 import type { WorkflowRunSnapshot } from "./workflow-run.ts";
@@ -346,7 +346,7 @@ export type WorkflowApi = {
    * on — a `size` that stopped growing means only that nothing arrived recently,
    * which a slow link and a dead client both produce.
    */
-  uploadInfo(id: string, options?: WorkflowApiCallOptions): Promise<UploadInfo>;
+  uploadInfo(id: string, options?: WorkflowApiCallOptions): Promise<UploadRecord>;
   /**
    * Read an upload's BYTES, as a `Blob` — the other end of a run that PRODUCED
    * a file (`stepWriteUpload` stores it, the output carries the id). A `Blob`

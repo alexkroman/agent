@@ -87,7 +87,7 @@ export { WORKFLOW_API_PREFIX } from "./_workflow-api-envelope.ts";
 // The record a caller reads back. Declared beside the STEP reader, because a body
 // and a browser look at the same thing from two sides and a second shape for it is
 // how the two would come to disagree about `complete`.
-export type { UploadInfo, UploadRange } from "./step-uploads.ts";
+export type { UploadInfo, UploadRange, UploadRecord } from "./step-uploads.ts";
 // The call set and its options are declared in `workflow-api-types.ts` — see that
 // module for why. They are re-exported here, so `@alexkroman1/aai/workflow-api`
 // stays the one import path for the whole surface.
