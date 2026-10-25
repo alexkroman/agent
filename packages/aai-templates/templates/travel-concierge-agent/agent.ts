@@ -1,5 +1,4 @@
 import { agent } from "@alexkroman1/aai";
-import { callEvents } from "./call-events.ts";
 import { gateFlow, tripSlot } from "./shared.ts";
 
 /**
@@ -8,55 +7,32 @@ import { gateFlow, tripSlot } from "./shared.ts";
  * two mechanisms worth reading for are the dialog stack (`routing.ts`) and the
  * confirmation gate (`stageAction` / `confirm_action`).
  *
- * **Every tool in `tools/` belongs to this one agent, and the delegation is
- * ENFORCED anyway.** Their graph gives each specialist node its own bound tool
- * set, so a specialist physically cannot call another desk's tools. A voice
- * session has one model with one tool list for its whole life, so a list cannot
- * be narrowed here — but a TOOL can refuse, which is the same guarantee by a
- * route that works mid-call: every desk tool is declared through `deskTool` /
- * `deskUpdateTool` (`shared.ts`), which checks the stack before the body runs
- * and answers a `ToolFailure` naming the `to_…_assistant` to call. So the position the sidebar renders is always the
- * position the work is being done at, and the specialist's brief has always
- * been read before that desk's first search.
- *
- * This used to be asked for in the prompt instead, described here as the honest
- * limit of the port. It was measured and the prompt lost — 0 of 5 live runs, the
- * model searching hotels from the concierge desk every time — so the eval case
- * that predicted it (`agent.eval.test.ts`, "a hotel request goes to the hotel
- * desk") is what turned the narrowing into a mechanism. `complete_or_escalate`
- * is still described the way it is for the other half of the reason: the stack
- * is what the caller and the sidebar can both see.
+ * Their graph gives each specialist node its own bound tool set. A voice
+ * session has one model with one tool list for its whole life, so every desk
+ * tool declares `require: deskGate(id)` instead — it refuses from any other
+ * desk with the `to_…_assistant` to call, so the position the sidebar renders
+ * is always the position the work is being done at. The prompt alone was
+ * measured losing 0 of 5 live runs (`agent.eval.test.ts`, "a hotel request goes
+ * to the hotel desk").
  */
 export default agent({
   name: "Swiss Air Concierge",
-  // What the desk does, for whoever is reading a list of agents. It names the
-  // four specialists as the four things a caller can ask for, which is how a
-  // caller would say it and how the dialog stack is organised.
-  description: "Changes flights, hotels, car rentals and excursions for a booked traveller",
-  // The stack, the ticket and the itinerary exist before the first tool call,
-  // so a resumed connection has something to project.
-  // One projection replaces a `ctx.send` in each of eleven tools — and is the
-  // single place that decides the caller's record leaves the server trimmed.
-  syncState: tripSlot.projected,
-  /**
-   * Declared so the CALL can move the gate, not only a tool.
-   *
-   * The one thing it buys this template is `"@session.timedOut"`: a caller who
-   * hangs up while a booking change is staged leaves a confirmation gate that
-   * would otherwise stay open for the rest of the session, with every sensitive
-   * tool still legal in it.
-   */
+  listing: "Changes flights, hotels, car rentals and excursions for a booked traveller",
+  // Declared so the CALL can move the gate: a caller who hangs up with a
+  // change staged leaves the gate on `abandoned`, where nothing may apply it.
   dialogs: [gateFlow],
-  /**
-   * The other half of the same hang-up, and of everything else that happens to
-   * a call rather than in it.
-   *
-   * A dialog moves the POSITION; a hook writes a LINE. `call-events.ts` carries
-   * why both are declared for `"session.timedOut"` and why neither covers the
-   * other — and it is the only route by which the sidebar's call log can end
-   * with how the call ended rather than with whatever the model last did.
-   */
-  events: callEvents,
+  // The hang-up's line on the call log is `abandoned`'s own `onEnter`; this
+  // is the other thing that happens TO a call rather than in it.
+  events: {
+    "error.reported": (event, ctx) =>
+      tripSlot.update(ctx, (trip) => {
+        trip.log.push(
+          event.fatal
+            ? `Call failed (${event.code}): ${event.message}`
+            : `Trouble on the call (${event.code}): ${event.message}`,
+        );
+      }),
+  },
   greeting:
     "Swiss Air Travel, this is the concierge desk. I can see your booking — what can I do for you today?",
 });

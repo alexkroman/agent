@@ -1,13 +1,14 @@
 import { formatMoney } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { CAR_RENTALS, deskTool } from "../shared.ts";
+import { CAR_RENTALS, deskGate, tripSlot } from "../shared.ts";
 
 /** Their `search_car_rentals`, by city and tier. */
-export default deskTool("car_rental", {
+export default tripSlot.tool({
   description:
     "The CAR RENTAL DESK's search: cars by city, and optionally by tier (compact, midsize, " +
     "suv). Only usable while the call is at that desk — from anywhere else it refuses, so " +
     "call to_car_rental_assistant first.",
+  require: deskGate("car_rental"),
   inputSchema: z.object({
     city: z.string().max(80).describe("City to search, e.g. 'Boston'"),
     tier: z.string().max(40).describe("compact, midsize or suv").optional(),
