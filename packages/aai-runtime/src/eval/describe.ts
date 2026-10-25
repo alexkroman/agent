@@ -32,6 +32,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { afterAll, beforeAll, describe, test } from "vitest";
 import { announceEvalMode, closeEvalSuite, type EvalMode } from "./_announce.ts";
+import type { EvalSteps, EvalStepsOptions } from "./_case-steps.ts";
 import { announceToollessAgent, checkStubReplyTools } from "./_declared-tools.ts";
 import { evalOnlySelects, evalRepeat } from "./_env.ts";
 import { suiteNetwork, wantsNetwork } from "./_network-install.ts";
@@ -241,7 +242,18 @@ export type EvalTestContext = {
    * `undefined` at runtime unless the case passed one.
    */
   readonly network: EvalNetwork | undefined;
+  /**
+   * The case's scripted step HTTP, when the suite passed `steps`: its request
+   * log, whether a request is held, and `release()` — which the harness calls
+   * at case end anyway, before draining the workflow app. `undefined` in a
+   * suite given none.
+   */
+  readonly steps: EvalSteps | undefined;
 };
+
+// Declared in `_case-steps.ts` beside the install; re-exported here because
+// both are on this package's `/eval/vitest` barrel.
+export type { EvalSteps, EvalStepsOptions } from "./_case-steps.ts";
 
 /**
  * What {@link describeEval} takes beyond the agent.
@@ -284,6 +296,17 @@ export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
    * `fetch`, which it replaces.
    */
   readonly network?: EvalNetwork | (() => EvalNetwork);
+  /**
+   * The STEP fetch every case's workflow steps dial, scripted — routes, an
+   * optional hold on the first answer, and a drain at case end: the harness
+   * releases the hold and `settleAll()`s the case's workflow app before the
+   * routes are unpublished, so no run outlives its fakes. See
+   * {@link EvalStepsOptions}. Installed afresh per case and per repeat; the
+   * session's own model traffic stays on the global `fetch`, so a live case
+   * still measures the agent. Mutually exclusive with `network` and
+   * `workflowOptions.stepFetch`, which answer the same requests.
+   */
+  readonly steps?: EvalStepsOptions;
 };
 
 /**

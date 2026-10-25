@@ -40,9 +40,33 @@
 // `StandardSchemaV1` from the SDK ROOT, where it is contracted, rather than
 // `/host-internal`: these readers are published, and a non-semver import in their
 // signatures hashed only the name.
-import type { SessionEvent, StandardSchemaV1 } from "@alexkroman1/aai";
+import type {
+  ClientEventMap,
+  InferToolInput,
+  InferToolOutput,
+  SessionEvent,
+  StandardSchemaV1,
+  StateProjection,
+  ToolDef,
+  ToolInputSchema,
+} from "@alexkroman1/aai";
 import { formatSchemaIssues } from "@alexkroman1/aai/host-internal";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+// The name a deployed agent registered a def under: what lets every reader
+// below take the DEF, typed, where it takes the string. Runner-free, like
+// everything on that subpath, so `/eval` stays importable without vitest.
+import { toolNameOf } from "@alexkroman1/aai/testing";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+
+/**
+ * A tool as a reader may name it: the string the model calls, or the DEF the
+ * tool file exports — which carries the result type the string cannot.
+ */
+type ToolName = string | ToolDef<ToolInputSchema>;
+
+/** The wire name of `tool`, however it was named. */
+function nameOf(tool: ToolName): string {
+  return typeof tool === "string" ? tool : toolNameOf(tool);
+}
 
 /** One tool call, paired with its result when the stream carries one. */
 export type EvalToolCall = {
@@ -197,7 +221,19 @@ export function describeToolCalls(calls: readonly EvalToolCall[]): string {
  * Filtered by name when one is given. A nudge that must arrive ONCE is the shape
  * that wants this: "exactly one `wind_down` on the third pick, none on the
  * fourth" is a claim about this list and about nothing else.
+ *
+ * **Typed by `ClientEventMap` when the agent declared the name there**: an
+ * augmented map types `data` as the declared payload, so a case reads a field
+ * off it with no cast. A name nobody declared still answers `unknown`.
  */
+export function customEventsIn<K extends keyof ClientEventMap & string>(
+  events: readonly SessionEvent[],
+  name: K,
+): readonly { readonly event: K; readonly data: ClientEventMap[K] }[];
+export function customEventsIn(
+  events: readonly SessionEvent[],
+  name?: string,
+): readonly { readonly event: string; readonly data: unknown }[];
 export function customEventsIn(
   events: readonly SessionEvent[],
   name?: string,
@@ -218,7 +254,19 @@ export function customEventsIn(
  * **Pass the SCHEMA.** A frame is JSON off the wire, and a cast is silent exactly
  * when the projection changed shape underneath the eval; with a schema, a value
  * that stopped matching FAILS naming the field. Without a slot: the whole frame.
+ *
+ * **Or pass the PROJECTION** — `slot.projected`, the very object
+ * `agent({ syncState })` and the page's `useAgentState` take. It carries the
+ * slot key, so the case names nothing the agent does not, and its result type,
+ * so the frame comes back as the page's `V`. It is checked STRUCTURALLY
+ * against what the projection renders for the default (`projected()`): a
+ * frame whose keys differ — a field the view gained or lost since the eval
+ * was written — fails naming them, which is the drift a cast would hide.
  */
+export function lastStateIn<V>(
+  events: readonly SessionEvent[],
+  projection: StateProjection<V>,
+): V | undefined;
 export function lastStateIn<T>(
   events: readonly SessionEvent[],
   slot: string,
@@ -230,13 +278,16 @@ export function lastStateIn(
 ): Readonly<Record<string, unknown>> | undefined;
 export function lastStateIn<T>(
   events: readonly SessionEvent[],
-  slot?: string,
+  slot?: string | StateProjection<T>,
   schema?: StandardSchemaV1<unknown, T>,
 ): T | unknown {
   const frames = events.filter((e) => e.type === "state.updated");
   const last = frames.at(-1);
   if (last === undefined) return undefined;
   if (slot === undefined) return last.state;
+  if (typeof slot === "function") {
+    return projected(slot, last.state[slot.key], "the last state frame");
+  }
   const value = last.state[slot];
   if (schema === undefined) return value;
   return validate(schema, value, `the last state frame's "${slot}"`);
@@ -323,11 +374,21 @@ function requireCallsTo(calls: readonly EvalToolCall[], name: string): readonly 
  * }
  * ```
  */
+export function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(
+  calls: readonly EvalToolCall[],
+  tool: D,
+): InferToolOutput<D>;
 export function lastToolResultIn<T = unknown>(
   calls: readonly EvalToolCall[],
   name: string,
   schema?: StandardSchemaV1<unknown, T>,
+): T;
+export function lastToolResultIn<T = unknown>(
+  calls: readonly EvalToolCall[],
+  tool: ToolName,
+  schema?: StandardSchemaV1<unknown, T>,
 ): T {
+  const name = nameOf(tool);
   const matching = requireCallsTo(calls, name);
   // Hand the single last call to the reader that already parses one, so the
   // parse, the never-completed check and the schema path have one spelling.
@@ -344,12 +405,30 @@ export function lastToolResultIn<T = unknown>(
  * hand — five files had written the same helper. What matters more than the
  * parse is the THROW: a `find` that misses answers `undefined`, and a case then
  * asserts against nothing and passes. This names what was called instead.
+ *
+ * **Handed the tool's DEF, the result is TYPED** — `InferToolOutput<typeof
+ * placeOrder>`, the type its `execute` declares — and the wire name is read off
+ * the def (`toolNameOf`), so a renamed file fails here by name. For a
+ * `dialog.tool` the envelope type is known (`DialogToolResult<R> | ToolFailure`),
+ * so `dialogResultSchema` is no longer needed to read one; `expectToolOk`
+ * unwraps it. The def form parses JSON and claims the shape; a result whose
+ * shape has to be PROVED still takes the string and a schema.
  */
+export function toolResultIn<D extends ToolDef<ToolInputSchema>>(
+  calls: readonly EvalToolCall[],
+  tool: D,
+): InferToolOutput<D>;
 export function toolResultIn<T = unknown>(
   calls: readonly EvalToolCall[],
   name: string,
   schema?: StandardSchemaV1<unknown, T>,
+): T;
+export function toolResultIn<T = unknown>(
+  calls: readonly EvalToolCall[],
+  tool: ToolName,
+  schema?: StandardSchemaV1<unknown, T>,
 ): T {
+  const name = nameOf(tool);
   const matching = requireCallsTo(calls, name);
   if (matching.length > 1) {
     throw new Error(`${matching.length} calls to "${name}" — read them off toolCalls yourself`);
@@ -385,6 +464,10 @@ export function toolResultIn<T = unknown>(
  * (`expect(toolArgsIn(calls, "run_code")).toHaveLength(0)`), where for the
  * singular it can only be a mistake.
  */
+export function toolArgsIn<D extends ToolDef<ToolInputSchema>>(
+  calls: readonly EvalToolCall[],
+  tool: D,
+): readonly InferToolInput<D>[];
 export function toolArgsIn<T>(
   calls: readonly EvalToolCall[],
   name: string,
@@ -396,9 +479,10 @@ export function toolArgsIn(
 ): readonly Record<string, unknown>[];
 export function toolArgsIn<T>(
   calls: readonly EvalToolCall[],
-  name: string,
+  tool: ToolName,
   schema?: StandardSchemaV1<unknown, T>,
 ): readonly (T | Record<string, unknown>)[] {
+  const name = nameOf(tool);
   return callsTo(calls, name).map((call, at) =>
     schema === undefined ? call.args : validate(schema, call.args, `"${name}" call ${at}'s args`),
   );
@@ -418,11 +502,21 @@ export function toolArgsIn<T>(
  *
  * ZERO calls answers `[]`, for the reason {@link toolArgsIn} gives.
  */
+export function toolResultsIn<D extends ToolDef<ToolInputSchema>>(
+  calls: readonly EvalToolCall[],
+  tool: D,
+): readonly InferToolOutput<D>[];
 export function toolResultsIn<T = unknown>(
   calls: readonly EvalToolCall[],
   name: string,
   schema?: StandardSchemaV1<unknown, T>,
+): readonly T[];
+export function toolResultsIn<T = unknown>(
+  calls: readonly EvalToolCall[],
+  tool: ToolName,
+  schema?: StandardSchemaV1<unknown, T>,
 ): readonly T[] {
+  const name = nameOf(tool);
   return callsTo(calls, name).map((call, at) => {
     if (call.result === undefined) {
       throw new Error(`the ${ordinal(at)} call to "${name}" never completed`);
@@ -438,9 +532,14 @@ export function toolResultsIn<T = unknown>(
  * Every state frame the agent pushed (`AgentDef.syncState`), oldest first — or
  * one SLOT's value in each. The SEQUENCE is a stronger claim than
  * {@link lastStateIn}'s: "the cart was never shown as placed before the tool
- * ran". Pass the schema for its reason. A case wanting the frames only up to
- * some point slices `events` first, which is why this takes events.
+ * ran". Pass the schema for its reason, or the PROJECTION for
+ * {@link lastStateIn}'s. A case wanting the frames only up to some point
+ * slices `events` first, which is why this takes events.
  */
+export function statesIn<V>(
+  events: readonly SessionEvent[],
+  projection: StateProjection<V>,
+): readonly V[];
 export function statesIn<T>(
   events: readonly SessionEvent[],
   slot: string,
@@ -452,11 +551,14 @@ export function statesIn(
 ): readonly Readonly<Record<string, unknown>>[];
 export function statesIn<T>(
   events: readonly SessionEvent[],
-  slot?: string,
+  slot?: string | StateProjection<T>,
   schema?: StandardSchemaV1<unknown, T>,
 ): readonly (T | unknown)[] {
   const frames = events.flatMap((e) => (e.type === "state.updated" ? [e.state] : []));
   if (slot === undefined) return frames;
+  if (typeof slot === "function") {
+    return frames.map((frame, at) => projected(slot, frame[slot.key], `state frame ${at}`));
+  }
   const values = frames.map((frame) => frame[slot]);
   return schema === undefined
     ? values
@@ -477,6 +579,56 @@ export function ordinal(index: number): string {
   const n = index + 1;
   const suffix = n % 100 >= 11 && n % 100 <= 13 ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th");
   return `${n}${suffix}`;
+}
+
+/**
+ * One slot's value in a frame, checked STRUCTURALLY against what the projection
+ * renders for the default — or a throw naming the keys that differ.
+ *
+ * The frame already IS the projected value (the server pushed `projected(stored)`),
+ * so the check is of the shape rather than a second projection: the frame's
+ * keys must be the default's, a key whose default is `undefined` excepted
+ * (JSON drops it). A projection to a primitive is checked by type. This is
+ * what makes the def-typed read honest where a cast would not be: a view that
+ * gained or lost a field since the eval was written fails by field name.
+ */
+function projected<V>(projection: StateProjection<V>, value: unknown, what: string): V {
+  const expected: unknown = projection();
+  const where = `${what}'s "${projection.key}"`;
+  if (isRecord(expected)) {
+    if (!isRecord(value)) {
+      throw new Error(
+        `${where} is ${describeFrameValue(value)}, and the projection renders an object with ` +
+          `keys ${Object.keys(expected).join(", ") || "(none)"}`,
+      );
+    }
+    const missing = Object.keys(expected).filter((k) => !(k in value) && expected[k] !== undefined);
+    const extra = Object.keys(value).filter((k) => !(k in expected));
+    if (missing.length > 0 || extra.length > 0) {
+      throw new Error(
+        `${where} does not match the projection: ` +
+          [
+            missing.length > 0 ? `missing ${missing.join(", ")}` : "",
+            extra.length > 0 ? `unexpected ${extra.join(", ")}` : "",
+          ]
+            .filter(Boolean)
+            .join("; "),
+      );
+    }
+  } else if (typeof value !== typeof expected || Array.isArray(value) !== Array.isArray(expected)) {
+    throw new Error(
+      `${where} is ${describeFrameValue(value)}, and the projection renders ${describeFrameValue(expected)}`,
+    );
+  }
+  return value as V;
+}
+
+/** A frame value's kind, for a message — never the whole value. */
+function describeFrameValue(value: unknown): string {
+  if (value === null) return "null";
+  if (Array.isArray(value)) return "an array";
+  if (isRecord(value)) return `an object with keys ${Object.keys(value).join(", ") || "(none)"}`;
+  return `a ${typeof value}`;
 }
 
 /**

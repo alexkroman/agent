@@ -49,6 +49,14 @@
  * `agent.ts` is an error naming the directory it looked in, rather than a
  * silent climb to some other agent's.
  *
+ * It does not TYPE the module per agent either, although it knows the files.
+ * The ambient declaration (`presets/agent-env.d.ts`) is one per program while
+ * the module is one per importing directory, so a program with two agents
+ * cannot have two types under the specifier; and the alternative — writing a
+ * `.d.ts` into each agent directory — is a build artifact in the source tree.
+ * The typed path is the tool's DEF, resolved by identity
+ * (`toolRunner(agentDef).run(addItem, …)`), which needs no name to type.
+ *
  * ## Why it lives in `host/`
  *
  * It reads a directory, and `sdk/` is checked by a program with `types: []` and

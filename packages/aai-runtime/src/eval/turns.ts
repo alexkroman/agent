@@ -33,8 +33,9 @@
  * @module
  */
 
+import type { AnyWorkflowDef } from "@alexkroman1/aai/workflow-api";
 import { describeToolCalls, type EvalToolCall } from "./events.ts";
-import type { EvalTurn } from "./session.ts";
+import type { EvalTurn, EvalWorkflowStart } from "./session.ts";
 
 /**
  * How much of a reply a failure message carries.
@@ -301,4 +302,61 @@ export function turnCalling(
       ? "no turns were driven"
       : turns.map((turn, at) => `turn ${at + 1} ${describeToolCalls(turn.toolCalls)}`).join("; ");
   throw new Error(`${missed}: ${shape}`);
+}
+
+/**
+ * The id of the ONE run of `workflow` a tool started during `turn` — read off
+ * the session's recorded `ctx.workflows.start`, not off the tool's answer.
+ *
+ * Every hand-off eval needed the run id to read the run back
+ * (`workflows.settle(runId, def)`), and each parsed it out of the tool's
+ * serialized result with a schema of its own: `toolResultsIn(calls,
+ * "request_recap", RecapStart)[0].runId`, behind a helper explaining why the
+ * singular reader would refuse a second call. That reads the id through the
+ * MODEL's copy of what the tool said, which is one translation away from the
+ * fact: the session handed the tool a client, and the client knows what was
+ * started. {@link EvalTurn.workflowStarts} is that record; this is its reader.
+ *
+ * By DEF or by the declared name, either way matched against what the agent
+ * declares — so a tool that started by name and a case that asks by def agree.
+ * EXACTLY one, like `toolResultIn`: zero is a tool that answered without
+ * starting anything, two is the finding a dedupe check exists to prevent, and
+ * both throw naming what the turn did start.
+ *
+ * ```ts no-check
+ * const started = await session.say("Can you write up that recording for me?");
+ * const runId = evalRunOf(started, recap);
+ * const run = await workflows.settle(runId, recap);
+ * ```
+ */
+export function evalRunOf(turn: EvalTurn, workflow: string | AnyWorkflowDef): string {
+  const starts = turn.workflowStarts;
+  if (starts === undefined) {
+    throw new Error(
+      "evalRunOf: this turn carries no record of workflow starts — only a turn `openEvalSession`'s " +
+        "`say()` built records them, and a turn built by a `SimulationTarget` of your own does not.",
+    );
+  }
+  const matching = starts.filter((start) =>
+    typeof workflow === "string" ? start.workflow === workflow : start.def === workflow,
+  );
+  const asked =
+    typeof workflow === "string"
+      ? JSON.stringify(workflow)
+      : `the def described as ${JSON.stringify(workflow.description ?? "")}`;
+  if (matching.length === 0) {
+    const did =
+      starts.length === 0
+        ? "started no runs"
+        : `started ${starts.map((start) => `${start.workflow} (${start.runId})`).join(", ")}`;
+    throw new Error(`evalRunOf: no run of ${asked} was started in this turn; it ${did}`);
+  }
+  if (matching.length > 1) {
+    throw new Error(
+      `evalRunOf: ${matching.length} runs of ${asked} were started in this turn ` +
+        `(${matching.map((start) => start.runId).join(", ")}) — read them off turn.workflowStarts yourself`,
+    );
+  }
+  const [only] = matching as [EvalWorkflowStart];
+  return only.runId;
 }

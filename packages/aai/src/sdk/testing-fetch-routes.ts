@@ -171,7 +171,14 @@ export type StubFetchRoutes = {
   restore(): void;
 };
 
-function toRouteRequest(recorded: StubStepRequest): FetchRouteRequest {
+/**
+ * A recorded step request as a route sees it — the URL's parts and the JSON
+ * body decoded. Shared with `installStubWorld`, which hands a `pages` handler
+ * the request a transcription fake's `otherwise` was given.
+ *
+ * @internal
+ */
+export function toRouteRequest(recorded: StubStepRequest): FetchRouteRequest {
   const url = new URL(recorded.url);
   const { body } = recorded;
   const text =

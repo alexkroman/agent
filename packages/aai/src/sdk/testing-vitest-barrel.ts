@@ -22,6 +22,8 @@
  */
 
 export {
+  describeAgent,
+  type InstallStubGatewayOptions,
   installStubClientInbox,
   installStubGateway,
   installStubReporter,
@@ -31,5 +33,8 @@ export {
   installStubTranscribe,
   installStubUploads,
   installStubWorkflows,
+  installStubWorld,
   type StubWorkflowsOptions,
+  type StubWorld,
+  type StubWorldOptions,
 } from "./testing-vitest.ts";

@@ -20,9 +20,13 @@ import type { DialogToolResult } from "./dialog-types.ts";
 import type { StubDelegateScript } from "./testing-delegate.ts";
 import type { DeployedConfig } from "./testing-deployable.ts";
 import type { StubGenerateScript } from "./testing-generate.ts";
-import { runTool } from "./testing-tools.ts";
+import { type fireEvent, sessionEvent } from "./testing-session-events.ts";
+import { runTool, toolRunner } from "./testing-tools.ts";
+import { createRunSnapshot } from "./testing-workflows.ts";
 import type { ToolContext } from "./types.ts";
 import { type ToolFailure, toolFailure } from "./utils.ts";
+import { workflow } from "./workflow.ts";
+import type { WorkflowRunSnapshot } from "./workflow-run.ts";
 
 test("a script names its shape: one `reply`, or a table of `routes`", () => {
   expectTypeOf<{ reply: string }>().toExtend<StubGenerateScript>();
@@ -124,4 +128,63 @@ test("expectDeployable's config names only what the specs read — not the confi
   >();
   expectTypeOf<DeployedConfig["name"]>().toEqualTypeOf<string>();
   expectTypeOf<DeployedConfig["systemPrompt"]>().toEqualTypeOf<string>();
+});
+
+test("a runner handed the DEF is typed end to end; by name it still answers unknown", async () => {
+  const addItem = tool({
+    description: "Add an item",
+    inputSchema: z.object({ item: z.string() }),
+    execute: async ({ item }) => ({ added: item, count: 1 }),
+  });
+  const run = toolRunner({ tools: { add_item: addItem } });
+  expectTypeOf(await run(addItem, { item: "apple" })).toEqualTypeOf<{
+    added: string;
+    count: number;
+  }>();
+  // The context may stand in for the arguments.
+  expectTypeOf(run(addItem, createToolContext())).resolves.toEqualTypeOf<{
+    added: string;
+    count: number;
+  }>();
+  // A dialog-shaped def keeps its envelope type.
+  const gated = {
+    execute: async (_args: {
+      id: string;
+    }): Promise<DialogToolResult<{ quoted: number }> | ToolFailure> => toolFailure("no"),
+  };
+  expectTypeOf(expectToolOk(await run(gated, { id: "o1" }))).toEqualTypeOf<{ quoted: number }>();
+  // The name form is unchanged.
+  expectTypeOf(run("add_item", { item: "apple" })).resolves.toBeUnknown();
+});
+
+test("createRunSnapshot handed the def types `output` by it", () => {
+  const recap = workflow({
+    description: "Recap",
+    run: async () => ({ headline: "H" }),
+  });
+  const done = createRunSnapshot(recap, { status: "completed", output: { headline: "H" } });
+  expectTypeOf(done).toExtend<WorkflowRunSnapshot<{ headline: string }>>();
+  expectTypeOf<Extract<typeof done, { status: "completed" }>["output"]>().toEqualTypeOf<{
+    headline: string;
+  }>();
+  // An output the def's body does not return is a compile error in the fixture.
+  expectTypeOf<{ status: "completed"; output: { headline: number } }>().not.toExtend<
+    Parameters<typeof createRunSnapshot<{ headline: string }>>[0]
+  >();
+  // The bare form still infers `R` from the overrides alone.
+  const bare = createRunSnapshot({ status: "completed", output: 1 });
+  expectTypeOf<Extract<typeof bare, { status: "completed" }>["output"]>().toEqualTypeOf<number>();
+});
+
+test("sessionEvent types the fields by the name, and an envelope-only event takes none", () => {
+  const committed = sessionEvent("userTranscript.committed", { text: "hi" });
+  expectTypeOf(committed.type).toEqualTypeOf<"userTranscript.committed">();
+  expectTypeOf(committed.text).toEqualTypeOf<string>();
+  expectTypeOf(sessionEvent("reply.completed").type).toEqualTypeOf<"reply.completed">();
+  // A field the event does not declare is a compile error at the call.
+  expectTypeOf<Parameters<typeof sessionEvent<"userTranscript.committed">>[1]>().not.toExtend<{
+    toolName: string;
+  }>();
+  // And a tool context is a session event context, so the handler reads a slot through it.
+  expectTypeOf(createToolContext()).toExtend<Parameters<typeof fireEvent>[2]>();
 });

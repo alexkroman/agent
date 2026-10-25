@@ -160,6 +160,7 @@ export {
   type EvalSession,
   type EvalSessionOptions,
   type EvalTurn,
+  type EvalWorkflowStart,
   evalCredentials,
   openEvalSession,
 } from "./eval/session.ts";
@@ -235,6 +236,7 @@ export { transcriptOf } from "./eval/transcript.ts";
 // in place of the tool it skipped.
 export {
   describeTurn,
+  evalRunOf,
   expectCalled,
   expectToolBeforeSpeech,
   toolCallsInTurns,
