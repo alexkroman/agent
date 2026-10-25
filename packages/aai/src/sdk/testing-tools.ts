@@ -281,8 +281,66 @@ function isToolContext(value: unknown): value is ToolContext {
 }
 
 /**
+ * The tool `def` resolves to in the agent's table, by IDENTITY — the mirror of
+ * {@link resolveTool}, for a caller holding the def rather than the name.
+ *
+ * Identity rather than a structural match, because the registry's entry IS the
+ * file's default export (`toolRegistry` stores the exported object, never a
+ * copy): the def a spec imported from `tools/add_item.ts` is the very object the
+ * deployed agent runs under `add_item`. A def that is not in the table is
+ * therefore one the agent does not declare — a tool built inline in the spec, or
+ * a file the agent was not imported as DEPLOYED with — and the throw names the
+ * tools that are.
+ */
+function resolveToolByDef(
+  agent: ToolBearingAgent,
+  def: { readonly execute: (...args: never[]) => unknown },
+): { name: string; call: ToolDef["execute"] } {
+  const table = composeToolsets(agentToolsets(agent as ToolBearingDef));
+  const found = table.tools.find((one) => one.entry.def === def);
+  if (found === undefined) {
+    const declared = table.tools.map((one) => one.name);
+    const given: unknown = def;
+    const described =
+      isRecord(given) && typeof given.description === "string"
+        ? ` (described as ${JSON.stringify(given.description.slice(0, 60))})`
+        : "";
+    throw new Error(
+      `The agent declares no tool that IS this def${described}. It declares: ${
+        declared.length > 0 ? declared.join(", ") : "(none)"
+      }. A tool is matched by IDENTITY — import the tool FILE's default export, which is the ` +
+        "object the deployed agent registered; a def built inline in a spec is not in the " +
+        `table, so call its \`execute\` directly. ${declared.length > 0 ? "" : AUTHORED_DEF_HINT}`,
+    );
+  }
+  const { name, toolset } = found;
+  return {
+    name,
+    call: (args, ctx) => toolset.gate(name, ctx) ?? toolset.execute(name, args, ctx),
+  };
+}
+
+/**
  * What {@link toolRunner} hands back: {@link runTool} with the agent already
  * supplied.
+ *
+ * Two call shapes, told apart by the first argument:
+ *
+ * - **The tool DEF — typed end to end.** `run(addItem, { item: "apple" })`
+ *   checks the arguments against what `execute` takes and answers what it
+ *   returns, so a spec reads fields off the result with no cast. The def is
+ *   resolved in the agent's table by IDENTITY (a `tools/<name>.ts` default
+ *   export IS the registered object), so the call still goes through the
+ *   toolset's GATE — a dialog out of state refuses it, a roster entry not on
+ *   the line refuses it — exactly as the name form does. A def the agent does
+ *   not declare throws naming the tools it does.
+ * - **The NAME — answers `unknown`.** `run("add_item", …)` is the form the
+ *   model's own call takes; a name is a string, so nothing can type what it
+ *   looks up. Claim the shape with `expectToolOk<T>(…)`, or reach for the def
+ *   form.
+ *
+ * Both take the arguments-or-context union {@link runTool} documents: a tool
+ * that takes none may be handed the context in their place.
  *
  * Named so a caller can annotate a helper that takes one, and so the union in
  * the second position is written down once here rather than at every call site
@@ -290,11 +348,18 @@ function isToolContext(value: unknown): value is ToolContext {
  *
  * @public
  */
-export type ToolRunner = (
-  name: string,
-  argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext,
-  ctx?: ToolContext,
-) => Promise<unknown>;
+export interface ToolRunner {
+  <T extends { readonly execute: (...args: never[]) => unknown }>(
+    tool: T,
+    argsOrCtx?: Parameters<T["execute"]>[0] | ToolContext,
+    ctx?: ToolContext,
+  ): Promise<Awaited<ReturnType<T["execute"]>>>;
+  (
+    name: string,
+    argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext,
+    ctx?: ToolContext,
+  ): Promise<unknown>;
+}
 
 /**
  * {@link runTool} bound to one agent — the `run(...)` a spec actually calls.
@@ -343,6 +408,17 @@ export type ToolRunner = (
  * expect(await run("view_order", ctx)).toEqual({ items: ["apple"] });
  * ```
  *
+ * **Handed the tool's DEF instead of its name, the run is TYPED.** The def is
+ * the tool file's default export — the object the deployed agent registered —
+ * so it is found in the table by identity and the result keeps the type its
+ * `execute` declares, gate included:
+ *
+ * ```ts no-check
+ * import addItem from "./tools/add_item.ts";
+ *
+ * const { added } = await run(addItem, { item: "apple" }); // typed: `added` is a string
+ * ```
+ *
  * **A runner over an agent with NO tools is refused HERE**, rather than at the
  * first `run(...)`. A tool is a file, so `agent.ts`'s default export declares an
  * empty table and every call through such a runner fails identically — the
@@ -368,5 +444,27 @@ export function toolRunner(agent: ToolBearingAgent): ToolRunner {
         `would fail the same way. ${AUTHORED_DEF_HINT}`,
     );
   }
-  return async (name, argsOrCtx, ctx) => await runTool(agent, name, argsOrCtx, ctx);
+  // One implementation behind the two signatures: a string is the name form,
+  // anything else is a def resolved by identity. Both reach the toolset's gate.
+  const run = async (target: unknown, argsOrCtx?: unknown, ctx?: ToolContext): Promise<unknown> => {
+    if (typeof target === "string") {
+      // The name form's own union, restated at the one erased seam.
+      return await runTool(
+        agent,
+        target,
+        argsOrCtx as InferSchemaOutput<ToolInputSchema> | ToolContext | undefined,
+        ctx,
+      );
+    }
+    if (!(isRecord(target) && typeof target.execute === "function")) {
+      throw new Error(
+        `run(…) was handed ${target === undefined ? "undefined" : `a ${typeof target} with no \`execute\``} ` +
+          "rather than a tool name or a tool def. Pass the name the model calls, or the tool " +
+          "FILE's default export.",
+      );
+    }
+    const { call } = resolveToolByDef(agent, target as { execute: (...args: never[]) => unknown });
+    return await execute({ execute: call }, argsOrCtx, ctx);
+  };
+  return run as ToolRunner;
 }

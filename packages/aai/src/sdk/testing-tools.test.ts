@@ -3,7 +3,9 @@
 import { describe, expect, test } from "vitest";
 import { createToolContext } from "./testing.ts";
 import { runTool, toolOf, toolRunner } from "./testing-tools.ts";
+import { toolset } from "./toolset.ts";
 import type { ToolDef } from "./types.ts";
+import { toolRefusal } from "./utils.ts";
 
 const add: ToolDef = {
   description: "Add an item",
@@ -161,5 +163,46 @@ describe("toolRunner", () => {
     const runTwo = toolRunner({ tools: { add_item: other } });
     expect(await runOne("add_item")).toMatchObject({ added: undefined });
     expect(await runTwo("add_item")).toEqual({ from: "other" });
+  });
+});
+
+describe("toolRunner handed the tool DEF", () => {
+  test("runs the def the agent registered, resolved by identity", async () => {
+    const run = toolRunner(agentDef);
+    const ctx = createToolContext();
+    expect(await run(add, { item: "apple" }, ctx)).toEqual({
+      added: "apple",
+      session: ctx.sessionId,
+    });
+  });
+
+  test("the context may stand in for the arguments, as in the name form", async () => {
+    const run = toolRunner(agentDef);
+    const ctx = createToolContext();
+    expect(await run(add, ctx)).toEqual({ added: undefined, session: ctx.sessionId });
+  });
+
+  test("goes through the toolset's GATE, exactly as the name form does", async () => {
+    const gated: ToolDef = { description: "Gated", execute: () => "ran" };
+    const refused = toolRefusal("roster", "not on the line");
+    const def = {
+      tools: {},
+      toolsets: [toolset("roster", { gated }, () => refused)],
+    };
+    const run = toolRunner(def);
+    expect(await run(gated, {})).toBe(refused);
+    expect(await run("gated", {})).toBe(refused);
+  });
+
+  test("a def the agent does not declare throws naming the tools it does", async () => {
+    const inline: ToolDef = { description: "Built inline", execute: () => "ok" };
+    await expect(toolRunner(agentDef)(inline, {})).rejects.toThrow(
+      'The agent declares no tool that IS this def (described as "Built inline"). It declares: add_item.',
+    );
+  });
+
+  test("neither a name nor a def is refused by shape", async () => {
+    const run = toolRunner(agentDef) as unknown as (target: unknown) => Promise<unknown>;
+    await expect(run(undefined)).rejects.toThrow("was handed undefined rather than a tool name");
   });
 });

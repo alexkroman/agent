@@ -1,12 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
+import { agent } from "./define.ts";
 import { stepFetch } from "./step-fetch.ts";
+import { stepGenerate } from "./step-generate.ts";
 import { stepNotifyClient } from "./step-notify-client.ts";
 import { stepReport } from "./step-report.ts";
 import { stepSpeak } from "./step-speak.ts";
 import { stepTranscribePoll } from "./step-transcribe.ts";
 import { stepUploadInfo } from "./step-uploads.ts";
+import { deployedAgent } from "./testing-discovery.ts";
 import {
+  describeAgent,
   installStubClientInbox,
   installStubGateway,
   installStubReporter,
@@ -15,8 +19,10 @@ import {
   installStubTranscribe,
   installStubUploads,
   installStubWorkflows,
+  installStubWorld,
 } from "./testing-vitest.ts";
 import { createRunSnapshot } from "./testing-workflows.ts";
+import type { ToolDef } from "./types.ts";
 
 /**
  * Each fake is asserted twice: once that it is INSTALLED, and once — from the
@@ -165,5 +171,133 @@ describe("installStubWorkflows", () => {
     await expect(workflows.cancelAll("digest", "caller-1")).resolves.toBe(2);
     await expect(workflows.cancel("a")).resolves.toBe(true);
     await expect(workflows.wakeUp("a")).resolves.toBe(0);
+  });
+});
+
+describe("installStubGateway seeds the credential", () => {
+  test("seeds ASSEMBLYAI_API_KEY when the process holds none", () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", undefined);
+    installStubGateway("ok");
+    expect(process.env.ASSEMBLYAI_API_KEY).toBe("sk-aai-stub");
+  });
+
+  test("keeps a value the spec set itself", () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-mine");
+    installStubGateway("ok");
+    expect(process.env.ASSEMBLYAI_API_KEY).toBe("sk-mine");
+  });
+
+  test("`apiKey: false` seeds nothing, for the spec whose subject is the refusal", () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", undefined);
+    installStubGateway("ok", { apiKey: false });
+    expect(process.env.ASSEMBLYAI_API_KEY).toBeUndefined();
+  });
+
+  test("and the seed is gone by the next test", () => {
+    // `unstubEnvs` would do this too; the explicit restore is for a project
+    // whose config does not set it.
+    expect(process.env.ASSEMBLYAI_API_KEY).not.toBe("sk-aai-stub");
+  });
+});
+
+describe("installStubWorkflows derives the listing from the agent", () => {
+  test("reports the agent's declared workflows", () => {
+    const def = { workflows: { recap: {}, digest: {} } };
+    expect(installStubWorkflows({ agent: def }).listing()).toEqual([
+      { name: "recap" },
+      { name: "digest" },
+    ]);
+  });
+
+  test("an explicit `names` wins over the agent", () => {
+    const def = { workflows: { recap: {} } };
+    expect(installStubWorkflows({ agent: def, names: ["other"] }).listing()).toEqual([
+      { name: "other" },
+    ]);
+  });
+});
+
+describe("installStubWorld", () => {
+  test("routes the model FIRST, then the pages, through one published step fetch", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", undefined);
+    const world = installStubWorld({
+      model: '{"headline":"Otters"}',
+      pages: { "https://example.test/otters": { body: "<p>otters</p>" } },
+    });
+    // The credential the gateway step refuses without is seeded.
+    expect(process.env.ASSEMBLYAI_API_KEY).toBe("sk-aai-stub");
+    expect(await stepGenerate("Summarize the otters.")).toBe('{"headline":"Otters"}');
+    expect(world.model[0]?.prompt).toBe("Summarize the otters.");
+    const page = await stepFetch("https://example.test/otters");
+    expect(await page.text()).toBe("<p>otters</p>");
+    // A leg nobody named is a finding, never an empty 200.
+    await expect(stepFetch("https://example.test/elsewhere")).rejects.toThrow(
+      /no fetch route for GET https:\/\/example.test\/elsewhere/,
+    );
+  });
+
+  test("a `pages` handler is the last leg, and an unanswered request throws naming it", async () => {
+    installStubWorld({ pages: () => undefined });
+    await expect(stepFetch("https://example.test/none")).rejects.toThrow(
+      "installStubWorld: no leg answers GET https://example.test/none",
+    );
+  });
+
+  test("with `transcribe`, the provider owns the slot and the model is its `otherwise`", async () => {
+    const world = installStubWorld({
+      model: '{"summary":"shipped"}',
+      transcribe: { text: "we ship tuesday" },
+    });
+    await expect(stepTranscribePoll("job_a")).resolves.toMatchObject({
+      transcript: { text: "we ship tuesday" },
+    });
+    expect(await stepGenerate("Summarize.")).toBe('{"summary":"shipped"}');
+    // The provider logs what fell through to its `otherwise` too, as `other`.
+    expect(world.provider.map((call) => call.leg)).toEqual(["poll", "other"]);
+    expect(world.model).toHaveLength(1);
+  });
+
+  test("speech, uploads and the reporter are installed when named", async () => {
+    const world = installStubWorld({
+      speech: true,
+      uploads: { upl_1: new Uint8Array([1, 2, 3]) },
+    });
+    await stepSpeak("Three findings.");
+    expect(world.speech.map((call) => call.text)).toEqual(["Three findings."]);
+    await expect(stepUploadInfo("upl_1")).resolves.toMatchObject({ size: 3 });
+    expect(world.files).toBeDefined();
+    await stepReport("working");
+    expect(world.reported.lines).toEqual(["working"]);
+  });
+
+  test("names nothing, installs nothing but the reporter", async () => {
+    const world = installStubWorld({ apiKey: false });
+    expect(world).toMatchObject({ model: [], provider: [], speech: [], uploads: [] });
+    expect(world.files).toBeUndefined();
+    await expect(stepSpeak("Anything.")).rejects.toThrow();
+  });
+});
+
+const addItem: ToolDef = {
+  description: "Add an item",
+  execute: (args) => ({ added: args.item }),
+};
+
+describeAgent(
+  deployedAgent(agent({ name: "Desk" }), {
+    tools: { "./tools/add_item.ts": { default: addItem } },
+  }),
+  (run, def) => {
+    test("hands the body the typed runner and the agent", async () => {
+      expect(def.name).toBe("Desk");
+      expect(await run(addItem, { item: "apple" })).toEqual({ added: "apple" });
+      expect(await run("add_item", { item: "pear" })).toEqual({ added: "pear" });
+    });
+  },
+);
+
+describeAgent(agent({ name: "Mute" }), (run) => {
+  test("a tool-less agent keeps its deployable case, and the runner refuses at the call", async () => {
+    await expect(run("anything")).rejects.toThrow("declares no tools");
   });
 });

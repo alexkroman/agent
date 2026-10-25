@@ -68,6 +68,9 @@ export {
   type StubStepRequest,
   stubStepFetch,
 } from "./_testing-step-fetch.ts";
+// The name a deployed agent registered a def under, by identity — what lets a
+// reader take the def (typed) where it used to take the string.
+export { toolNameOf } from "./_testing-tool-names.ts";
 export {
   dialogResultSchema,
   expectDialogOk,
@@ -163,6 +166,16 @@ export {
   type RecordingWorkflows,
   type RecordingWorkflowsOptions,
 } from "./testing-recording-workflows.ts";
+// One session event, envelope stamped, and an agent's `events` handlers driven
+// with it — the two halves of a hook's unit spec.
+export {
+  type FiredEvent,
+  fireEvent,
+  type SessionEventFields,
+  sessionEvent,
+} from "./testing-session-events.ts";
+// The three invariants of a slot's DECLARATION, asserted in one call.
+export { expectSlotContract, type SlotContractOptions } from "./testing-slot-contract.ts";
 export {
   STUB_SPEECH_PCM_BYTES,
   type StubSpeech,

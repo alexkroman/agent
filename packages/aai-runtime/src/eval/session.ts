@@ -60,6 +60,7 @@ import { claimDtmfSender, type ProviderEnv } from "@alexkroman1/aai/host-interna
 import { invariant, sleep } from "@alexkroman1/aai/internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { AnyWorkflowDef, StartOptions, WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { silentLogger } from "../logger.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
@@ -74,6 +75,7 @@ import type {
   EvalSession,
   EvalSessionOptions,
   EvalTurn,
+  EvalWorkflowStart,
   HostEvalSessionOptions,
 } from "./session-types.ts";
 import { installStubSpeechProviders, type StubSpeechProviders } from "./stub-speech.ts";
@@ -84,6 +86,7 @@ export type {
   EvalSession,
   EvalSessionOptions,
   EvalTurn,
+  EvalWorkflowStart,
   HostEvalSessionOptions,
 } from "./session-types.ts";
 
@@ -218,6 +221,13 @@ async function openWithFakes(
 
   const turnTimeoutMs = options.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
   const providerEnv = options.providerEnv ?? withHostCredentialFallback({ ...options.env });
+  // Every `ctx.workflows.start` a tool makes, so a turn can report the run it
+  // started — read off the client the tools reach, like `pressed` below.
+  const starts: EvalWorkflowStart[] = [];
+  const workflows =
+    options.workflows === undefined
+      ? undefined
+      : recordingStarts(options.workflows, options.agent.workflows, starts);
   // The agent's own hook, watched rather than replaced — see `_session-identity.ts`.
   const observed = observeSessionContext(options.agent);
   // And its `onSessionEnd`, so the turn that hung up can wait for what it
@@ -242,7 +252,7 @@ async function openWithFakes(
     // One `omitUndefined` over the four optional seams rather than four
     // conditional spreads: `guard-invariants` rule 2.
     ...omitUndefined({
-      workflows: options.workflows,
+      workflows,
       runCode: options.runCode,
       fetch: options.fetch,
       toolTimeoutMs: options.toolTimeoutMs,
@@ -384,6 +394,7 @@ async function openWithFakes(
     invariant(stt !== undefined, "eval.session.stt.open", () => ({ sessionId }));
     const from = events.length;
     const pressedFrom = pressed.length;
+    const startsFrom = starts.length;
     // A push-to-talk agent answers only what was RELEASED: frame the utterance
     // as its client does, or the final is held and every case times out.
     const manual = options.agent.turnTaking?.detection === "manual";
@@ -407,6 +418,7 @@ async function openWithFakes(
       ...measuredTurn(what, events.slice(from), toolNames, "voice", options.agent),
       endedSession: ending.requested(),
       dtmf: pressed.slice(pressedFrom),
+      workflowStarts: starts.slice(startsFrom),
     };
   };
 
@@ -447,6 +459,53 @@ async function openWithFakes(
       fake.release();
     },
   };
+}
+
+/**
+ * `client` with its `start` RECORDED into `log`, everything else forwarded.
+ *
+ * A `Proxy` rather than a spread, so a client whose methods read their own
+ * object (the real one, over an engine) keeps working, and the recorder's own
+ * attachments (`started`, `seed`) stay reachable through it. The name is
+ * resolved the way the client resolves it — a def by IDENTITY against what the
+ * agent declares — so a start by def and a start by name record the same key,
+ * and `evalRunOf` can be asked with either.
+ */
+function recordingStarts(
+  client: WorkflowClient,
+  declared: AgentDef["workflows"],
+  log: EvalWorkflowStart[],
+): WorkflowClient {
+  // Spelled out: `WorkflowClient["start"]` is overloaded, which gives a
+  // function expression no contextual parameter types; the erased union is
+  // what both overloads reach, and the cast below is what the client itself
+  // does for its own `start`.
+  const start = async (
+    workflow: string | AnyWorkflowDef,
+    input?: unknown,
+    options?: StartOptions,
+  ): Promise<string> => {
+    const runId = await client.start(workflow as string, input, options);
+    const name =
+      typeof workflow === "string"
+        ? workflow
+        : (Object.entries(declared ?? {}).find(([, def]) => def === workflow)?.[0] ??
+          workflow.description ??
+          "(unnamed)");
+    log.push({
+      workflow: name,
+      def: typeof workflow === "string" ? declared?.[workflow] : workflow,
+      runId,
+    });
+    return runId;
+  };
+  return new Proxy(client, {
+    get(target, property) {
+      if (property === "start") return start as WorkflowClient["start"];
+      // Bound to the TARGET, so a getter on the real client reads its own state.
+      return Reflect.get(target, property, target);
+    },
+  });
 }
 
 /**

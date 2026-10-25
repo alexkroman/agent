@@ -16,6 +16,7 @@ import type { EvalToolCall } from "./events.ts";
 import type { EvalTurn } from "./session.ts";
 import {
   describeTurn,
+  evalRunOf,
   expectCalled,
   expectToolBeforeSpeech,
   toolCallsInTurns,
@@ -269,5 +270,52 @@ describe("expectCalled over a turn LIST", () => {
 
   test("an empty list is a scope that called nothing", () => {
     expect(() => expectCalled([], "open_email")).toThrow(/called no tools and said nothing/);
+  });
+});
+
+describe("evalRunOf", () => {
+  const recap = { run: async () => ({}) };
+  const digest = { description: "Digest a link", run: async () => ({}) };
+  const started = (
+    ...starts: { workflow: string; def?: typeof recap; runId: string }[]
+  ): EvalTurn => ({
+    text: "Started.",
+    events: [],
+    toolCalls: [],
+    completed: true,
+    errors: [],
+    workflowStarts: starts.map((start) => ({ ...start, def: start.def })),
+  });
+
+  test("the one run of the workflow this turn started, by name or by def", () => {
+    const turn = started({ workflow: "recap", def: recap, runId: "wrun_1" });
+    expect(evalRunOf(turn, "recap")).toBe("wrun_1");
+    expect(evalRunOf(turn, recap)).toBe("wrun_1");
+  });
+
+  test("none throws naming what the turn did start", () => {
+    expect(() => evalRunOf(started(), recap)).toThrow(
+      'no run of the def described as "" was started in this turn; it started no runs',
+    );
+    expect(() =>
+      evalRunOf(started({ workflow: "recap", def: recap, runId: "wrun_1" }), digest),
+    ).toThrow(
+      'no run of the def described as "Digest a link" was started in this turn; it started recap (wrun_1)',
+    );
+  });
+
+  test("two is the finding a dedupe check exists to prevent, and throws", () => {
+    const turn = started(
+      { workflow: "recap", runId: "wrun_1" },
+      { workflow: "recap", runId: "wrun_2" },
+    );
+    expect(() => evalRunOf(turn, "recap")).toThrow(
+      '2 runs of "recap" were started in this turn (wrun_1, wrun_2)',
+    );
+  });
+
+  test("a turn with no record at all says who records one", () => {
+    const bare: EvalTurn = { text: "", events: [], toolCalls: [], completed: true, errors: [] };
+    expect(() => evalRunOf(bare, "recap")).toThrow("carries no record of workflow starts");
   });
 });

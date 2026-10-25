@@ -45,6 +45,8 @@
 // SDK's own runner-flavoured subpath for the same reason this one is
 // (`published-testing-split`).
 export {
+  describeAgent,
+  type InstallStubGatewayOptions,
   installStubClientInbox,
   installStubGateway,
   installStubReporter,
@@ -54,7 +56,10 @@ export {
   installStubTranscribe,
   installStubUploads,
   installStubWorkflows,
+  installStubWorld,
   type StubWorkflowsOptions,
+  type StubWorld,
+  type StubWorldOptions,
 } from "@alexkroman1/aai/testing/vitest";
 // Everything the eval door carries, so an eval file needs no second import.
 // `testing-doors.test.ts` holds this list to `/eval/vitest`'s.
@@ -94,6 +99,8 @@ export {
   type EvalSimulationContext,
   type EvalSimulationOptions,
   type EvalSleep,
+  type EvalSteps,
+  type EvalStepsOptions,
   type EvalTest,
   type EvalTestContext,
   type EvalTextAgent,
@@ -104,6 +111,7 @@ export {
   type EvalTurn,
   type EvalWorkflowCaseOptions,
   type EvalWorkflowRun,
+  type EvalWorkflowStart,
   type EvalWorkflows,
   type EvalWorkflowsOptions,
   type EvalWorkflowTest,
@@ -111,6 +119,7 @@ export {
   errorsIn,
   evalCredentials,
   evalNetwork,
+  evalRunOf,
   evalSimulation,
   evalTextCredentials,
   evalWorkflowCredentials,

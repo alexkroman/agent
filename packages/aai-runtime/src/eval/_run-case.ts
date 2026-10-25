@@ -19,10 +19,11 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { createGenerateFn, GenerateSchemaMismatchError, type HostGenerateFn } from "../generate.ts";
 import type { EvalMode } from "./_announce.ts";
+import { type CaseSteps, drainCaseSteps, installCaseSteps } from "./_case-steps.ts";
 import { hasWorkflows } from "./_declared-tools.ts";
 import { type SuiteNetwork, stepFetchOver } from "./_network-install.ts";
 import { noteTranscript } from "./_spread.ts";
-import { stubbedEnv } from "./_stubbed-env.ts";
+import { stubbedEnv, stubProcessEnv } from "./_stubbed-env.ts";
 import type { DescribeEvalOptions, EvalCaseOptions, EvalTestContext } from "./describe.ts";
 import { openEvalSessionWithSeams } from "./session.ts";
 import { installStubLlm } from "./stub-llm.ts";
@@ -62,6 +63,9 @@ export async function runCase(run: CaseRun): Promise<void> {
   // First, so a conflicting option throws before anything is installed, and
   // per case AND per repeat, so no repeat reads another's requests.
   const net = caseNetwork(run);
+  // A declared credential nobody has, as a placeholder in the PROCESS env: what
+  // a tool calling a step helper outside a run reads. See `stubProcessEnv`.
+  stubProcessEnv(agent, mode);
   const stub =
     mode === "stub" ? installStubLlm(caseOptions?.stubReply ?? DEFAULT_STUB_REPLY) : undefined;
   // Its own kind, so its own cursor: see `EvalCaseOptions.stubGenerate`.
@@ -71,6 +75,9 @@ export async function runCase(run: CaseRun): Promise<void> {
       : undefined;
   // Opened BEFORE the session, because the session is handed its client.
   const { engine: workflows, client: workflowClient } = caseWorkflows(run, net?.stepFetch);
+  // AFTER the engine, which publishes a step fetch only when handed one, and
+  // before the session: the first tool call may start a run whose steps dial.
+  const steps = caseSteps(run);
   // The suite's identity comes OUT of the spread, so a case's `null` can
   // clear it: spreading it in and then overriding could only ever replace.
   // `workflows` too: a factory is not a client, and `caseWorkflows` built it.
@@ -99,22 +106,51 @@ export async function runCase(run: CaseRun): Promise<void> {
       ? {}
       : { llm: stub.llm, providerEnv: { ...options?.providerEnv, ...stub.env } }),
   });
+  let bodyFailed = false;
   try {
-    await body({ session, mode, workflows, workflowClient, network: net?.network });
+    await body({ session, mode, workflows, workflowClient, network: net?.network, steps });
   } catch (err) {
+    bodyFailed = true;
     // Taken NOW, before the close below adds its own events: this is the try
     // the `AAI_EVAL_REPEAT` summary prints under an UNSTABLE case.
     noteTranscript(err, transcriptOf(session, net?.network));
     throw err;
   } finally {
+    // FIRST, while the routes are still published: a held run is released and
+    // every run the case started settles against this case's own fakes.
+    if (steps !== undefined) await drainCaseSteps(steps, workflows, bodyFailed);
     await session.close();
     await workflows?.close();
+    steps?.restore();
     stub?.release();
     generateStub?.release();
     // Last: a hook the close set off may still be reaching for the network,
     // and is refused into this case's log rather than let out.
     if (net !== undefined) run.net.end();
   }
+}
+
+/**
+ * The case's scripted step fetch, or `undefined` when the suite passed none.
+ *
+ * @throws When `steps` was passed beside a `network` or a
+ *   `workflowOptions.stepFetch`: each would answer a step's requests, and
+ *   which one won would be an accident of install order.
+ */
+function caseSteps(run: CaseRun): CaseSteps | undefined {
+  const options = run.options?.steps;
+  if (options === undefined) return undefined;
+  if (
+    run.options?.network !== undefined ||
+    run.caseOptions?.network !== undefined ||
+    run.options?.workflowOptions?.stepFetch !== undefined
+  ) {
+    throw new Error(
+      "describeEval: `steps` answers a step's HTTP, as `network` and `workflowOptions.stepFetch` " +
+        "do — pass one of them, not two.",
+    );
+  }
+  return installCaseSteps(options);
 }
 
 /**

@@ -1,7 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import type { SessionEvent } from "@alexkroman1/aai";
+import { agent, type SessionEvent, sessionSlot, tool } from "@alexkroman1/aai";
 import type { StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
+import { deployedAgent } from "@alexkroman1/aai/testing";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
@@ -377,5 +378,81 @@ describe("lastToolResultIn", () => {
       /no call to "game_state_get"; this scope called: game_state_score, game_state_score/,
     );
     expect(() => lastToolResultIn([], "game_state_get")).toThrow(/this scope called: no tools/);
+  });
+});
+
+describe("the readers handed a tool DEF", () => {
+  const placeOrder = tool({
+    description: "Place the order",
+    inputSchema: z.object({ item: z.string() }),
+    execute: ({ item }) => ({ id: "o1", item }),
+  });
+  // Lowering is what pairs the def with its name, as `virtual:aai/agent` does.
+  deployedAgent(agent({ name: "Shop" }), {
+    tools: { "./tools/place_order.ts": { default: placeOrder } },
+  });
+  const calls = toolCallsInEvents([
+    called("c1", "place_order", { item: "pizza" }),
+    completed("c1", '{"id":"o1","item":"pizza"}'),
+    called("c2", "place_order", { item: "salad" }),
+    completed("c2", '{"id":"o2","item":"salad"}'),
+  ]);
+
+  test("resolve the wire name off the def and answer the result typed", () => {
+    const last = lastToolResultIn(calls, placeOrder);
+    // `item` is a string by the def's own type — no cast, no schema.
+    expect(last.item.toUpperCase()).toBe("SALAD");
+    expect(toolResultsIn(calls, placeOrder).map((one) => one.id)).toEqual(["o1", "o2"]);
+    expect(toolArgsIn(calls, placeOrder).map((args) => args.item)).toEqual(["pizza", "salad"]);
+    expect(toolResultIn(calls.slice(0, 1), placeOrder)).toEqual({ id: "o1", item: "pizza" });
+  });
+
+  test("keep the string readers' refusals: two calls for the singular, none for a miss", () => {
+    expect(() => toolResultIn(calls, placeOrder)).toThrow('2 calls to "place_order"');
+    expect(() => lastToolResultIn([], placeOrder)).toThrow('no call to "place_order"');
+  });
+
+  test("a def no deployed agent registered throws naming the remedy", () => {
+    const inline = tool({ description: "Inline", execute: () => "x" });
+    expect(() => toolResultIn(calls, inline)).toThrow(/import it as `virtual:aai\/agent`/);
+  });
+});
+
+describe("the state readers handed a PROJECTION", () => {
+  const cart = sessionSlot("cart", () => ({ items: [] as string[], total: 0 }), {
+    view: (value) => ({ count: value.items.length }),
+  });
+  const count = sessionSlot("count", () => 0, { view: (n) => n });
+  const frame = (state: Record<string, unknown>): SessionEvent => ({
+    type: "state.updated",
+    meta,
+    state,
+  });
+
+  test("read the slot's own key and answer the page's view, typed", () => {
+    const events = [frame({ cart: { count: 1 } }), frame({ cart: { count: 2 } })];
+    const last = lastStateIn(events, cart.projected);
+    expect(last?.count).toBe(2);
+    expect(statesIn(events, cart.projected).map((one) => one.count)).toEqual([1, 2]);
+    expect(lastStateIn([], cart.projected)).toBeUndefined();
+  });
+
+  test("a frame whose keys drifted from the view fails BY FIELD NAME", () => {
+    expect(() => lastStateIn([frame({ cart: { count: 1, extra: true } })], cart.projected)).toThrow(
+      'the last state frame\'s "cart" does not match the projection: unexpected extra',
+    );
+    expect(() => statesIn([frame({ cart: { items: [] } })], cart.projected)).toThrow(
+      'state frame 0\'s "cart" does not match the projection: missing count; unexpected items',
+    );
+  });
+
+  test("a projection to a primitive is checked by type", () => {
+    expect(lastStateIn([frame({ count: 3 })], count.projected)).toBe(3);
+    expect(() => lastStateIn([frame({ count: "3" })], count.projected)).toThrow(
+      "is a string, and the projection renders a number",
+    );
+    expect(() => lastStateIn([frame({ cart: "nope" })], cart.projected)).toThrow(
+      "is a string, and the projection renders an object with keys count",
+    );
   });
 });

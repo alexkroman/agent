@@ -11,11 +11,20 @@
  * route's shared state reached the case through a module-level `let`.
  */
 
-import { agent } from "@alexkroman1/aai";
+import { agent, type SessionEvent, sessionSlot, tool } from "@alexkroman1/aai";
 import { createStubWorkflows } from "@alexkroman1/aai/testing";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { expectTypeOf, test } from "vitest";
-import { describeEval } from "./describe.ts";
+import { z } from "zod";
+import { describeEval, type EvalSteps } from "./describe.ts";
+import {
+  customEventsIn,
+  type EvalToolCall,
+  lastStateIn,
+  statesIn,
+  toolArgsIn,
+  toolResultIn,
+} from "./events.ts";
 import { type EvalNetwork, evalNetwork } from "./network.ts";
 
 type Row = { status: string };
@@ -121,4 +130,36 @@ test("a suite's workflows FACTORY types ctx.workflowClient, its attachments incl
       expectTypeOf(workflowClient).toEqualTypeOf<WorkflowClient | undefined>();
     });
   });
+});
+
+test("ctx.steps is the case's scripted step fetch, or absent", () => {
+  describeEval(def, (it) => {
+    it("may have none", async ({ steps }) => {
+      expectTypeOf(steps).toEqualTypeOf<EvalSteps | undefined>();
+    });
+  });
+});
+
+test("a reader handed the tool DEF answers the def's own types", () => {
+  const placeOrder = tool({
+    description: "Place the order",
+    inputSchema: z.object({ item: z.string() }),
+    execute: async ({ item }) => ({ id: "o1", item }),
+  });
+  const calls: readonly EvalToolCall[] = [];
+  expectTypeOf(toolResultIn(calls, placeOrder)).toEqualTypeOf<{ id: string; item: string }>();
+  expectTypeOf(toolArgsIn(calls, placeOrder)).toEqualTypeOf<readonly { item: string }[]>();
+  // The string form is unchanged.
+  expectTypeOf(toolResultIn(calls, "place_order")).toBeUnknown();
+});
+
+test("a state reader handed the PROJECTION answers the page's view", () => {
+  const cart = sessionSlot("cart", () => ({ items: [] as string[] }), {
+    view: (value) => ({ count: value.items.length }),
+  });
+  const events: readonly SessionEvent[] = [];
+  expectTypeOf(lastStateIn(events, cart.projected)).toEqualTypeOf<{ count: number } | undefined>();
+  expectTypeOf(statesIn(events, cart.projected)).toEqualTypeOf<readonly { count: number }[]>();
+  // With no declared client events, a custom event's data stays unknown.
+  expectTypeOf(customEventsIn(events, "wind_down")[0]?.data).toBeUnknown();
 });

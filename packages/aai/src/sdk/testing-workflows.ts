@@ -13,7 +13,7 @@
  */
 
 import { omitUndefined } from "./omit-undefined.ts";
-import type { WorkflowClient } from "./workflow.ts";
+import type { AnyWorkflowDef, WorkflowClient } from "./workflow.ts";
 import type { WorkflowRunBase, WorkflowRunSnapshot } from "./workflow-run.ts";
 import { rejectingWorkflows } from "./workflow-unavailable.ts";
 
@@ -65,8 +65,47 @@ const DEFAULT_CREATED_AT = Date.UTC(2026, 0, 1);
  * @public
  */
 export function createRunSnapshot<R = unknown>(
-  overrides: RunSnapshotOverrides<R> = {},
+  overrides?: RunSnapshotOverrides<R>,
+): WorkflowRunSnapshot<R>;
+/**
+ * Build a {@link WorkflowRunSnapshot} of a run of `workflow`, with `output`
+ * TYPED by the def.
+ *
+ * The def carries `R` — what its body returns, or what its `output` schema
+ * declares — so `createRunSnapshot(recap, { status: "completed", output })`
+ * checks `output` against it, where the bare form takes whatever `R` the
+ * caller names. A fixture whose output stopped matching the body is then a
+ * compile error in the spec rather than a page that renders `undefined`.
+ *
+ * The def names nothing else: a workflow's NAME is the key in
+ * `agent({ workflows })`, which the def does not carry, so `workflow` still
+ * defaults to `"workflow"` unless the overrides name it.
+ *
+ * @example
+ * ```ts no-check
+ * import { recap } from "./shared.ts";
+ *
+ * const done = createRunSnapshot(recap, {
+ *   workflow: "recap",
+ *   status: "completed",
+ *   output: { headline: "…", points: [] }, // typed by `recap`
+ * });
+ * ```
+ *
+ * @public
+ */
+export function createRunSnapshot<R>(
+  workflow: AnyWorkflowDef<R>,
+  overrides?: RunSnapshotOverrides<R>,
+): WorkflowRunSnapshot<R>;
+export function createRunSnapshot<R = unknown>(
+  first?: RunSnapshotOverrides<R> | AnyWorkflowDef<R>,
+  second?: RunSnapshotOverrides<R>,
 ): WorkflowRunSnapshot<R> {
+  // A def is told from an overrides bag by its `run`: no snapshot field is a
+  // function, and every workflow def has one.
+  const overrides: RunSnapshotOverrides<R> =
+    first !== undefined && isWorkflowDef(first) ? (second ?? {}) : (first ?? {});
   const base: WorkflowRunBase = {
     runId: overrides.runId ?? DEFAULT_RUN_ID,
     workflow: overrides.workflow ?? DEFAULT_WORKFLOW,
@@ -85,6 +124,13 @@ export function createRunSnapshot<R = unknown>(
     default:
       return { ...base, status: overrides.status };
   }
+}
+
+/** Is this a workflow def rather than an overrides bag? Only a def has a `run`. */
+function isWorkflowDef<R>(
+  value: RunSnapshotOverrides<R> | AnyWorkflowDef<R>,
+): value is AnyWorkflowDef<R> {
+  return typeof (value as { run?: unknown }).run === "function";
 }
 
 /**
