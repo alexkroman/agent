@@ -48,6 +48,15 @@ const workflowParams = z.object({
 /** The sentence for a caller whose session has started nothing. */
 const NOTHING_STARTED = "Nothing has been started yet.";
 
+/** The sentence for a cancel that found its run already over. */
+const ALREADY_FINISHED = "That one had already finished.";
+
+/** How many of the session's newest runs `workflow_cancel` reads to find the live one. */
+const CANCEL_RUNS = 10;
+
+/** One of the three: the tool plus the prompt line the builtin surface adds for it. */
+type RunBuiltin = ToolDef<typeof workflowParams> & { guidance: string };
+
 /** One run as the model reads it: the snapshot's facts plus the spoken line. */
 type RunLine = {
   runId: string;
@@ -81,9 +90,37 @@ async function recentRuns(
   return ctx.workflows.findByKey(ctx.sessionId, { limit, withOutput: false });
 }
 
-function createWorkflowStatus(declared: Declared): ToolDef<typeof workflowParams> & {
-  guidance: string;
-} {
+/**
+ * The newest run of the session still going, read in one call over its newest
+ * {@link CANCEL_RUNS} runs — or `NOT_STARTED` when it has none, so the caller
+ * can tell "nothing to stop" from "nothing ever started" without a second read.
+ */
+async function newestLive(
+  ctx: ToolContext,
+): Promise<WorkflowRunSnapshot | undefined | typeof NOT_STARTED> {
+  const runs = await ctx.workflows.findByKey(ctx.sessionId, {
+    limit: CANCEL_RUNS,
+    withOutput: false,
+  });
+  if (runs.length === 0) return NOT_STARTED;
+  return runs.find((run) => run.status === "pending" || run.status === "running");
+}
+
+/** `newestLive`'s answer for a session that started nothing. */
+const NOT_STARTED = Symbol("not started");
+
+/**
+ * The note when nothing is live: finished and never-started are different
+ * answers to the caller, and for ONE workflow telling them apart takes the
+ * read `live` did not make.
+ */
+async function nothingLive(ctx: ToolContext, workflow: string | undefined): Promise<string> {
+  if (workflow === undefined) return ALREADY_FINISHED;
+  const [latest] = await recentRuns(ctx, workflow, 1);
+  return latest === undefined ? NOTHING_STARTED : ALREADY_FINISHED;
+}
+
+function createWorkflowStatus(declared: Declared): RunBuiltin {
   return {
     guidance:
       "When the caller asks how something they started is going, use workflow_status and " +
@@ -102,9 +139,7 @@ function createWorkflowStatus(declared: Declared): ToolDef<typeof workflowParams
   };
 }
 
-function createWorkflowProgress(declared: Declared): ToolDef<typeof workflowParams> & {
-  guidance: string;
-} {
+function createWorkflowProgress(declared: Declared): RunBuiltin {
   return {
     guidance:
       "When the caller asks what is happening right now with work in progress, use " +
@@ -128,9 +163,7 @@ function createWorkflowProgress(declared: Declared): ToolDef<typeof workflowPara
   };
 }
 
-function createWorkflowCancel(declared: Declared): ToolDef<typeof workflowParams> & {
-  guidance: string;
-} {
+function createWorkflowCancel(declared: Declared): RunBuiltin {
   return {
     guidance:
       "When the caller asks to stop or call off work they started, use workflow_cancel and " +
@@ -142,26 +175,18 @@ function createWorkflowCancel(declared: Declared): ToolDef<typeof workflowParams
     inputSchema: workflowParams,
     messages: builtinCover("Let me stop that."),
     async execute(args, ctx) {
-      // The newest LIVE run, which `live` answers for one workflow; across
-      // every workflow the status filter does the same over the merged list.
+      // The newest LIVE run. For one workflow `live` answers it; across every
+      // workflow ONE read of the session's newest runs is picked over locally,
+      // so "nothing started" and "already finished" cost no second round trip.
       const live =
         args.workflow !== undefined
           ? await ctx.workflows.live(args.workflow, ctx.sessionId)
-          : (
-              await ctx.workflows.findByKey(ctx.sessionId, {
-                statuses: ["pending", "running"],
-                limit: 1,
-                withOutput: false,
-              })
-            )[0];
-      if (live === undefined) {
-        // Finished and never-started are different answers to the caller.
-        const [latest] = await recentRuns(ctx, args.workflow, 1);
-        if (latest === undefined) return { cancelled: false, note: NOTHING_STARTED };
-        return { cancelled: false, note: "That one had already finished." };
-      }
+          : await newestLive(ctx);
+      if (live === NOT_STARTED) return { cancelled: false, note: NOTHING_STARTED };
+      if (live === undefined)
+        return { cancelled: false, note: await nothingLive(ctx, args.workflow) };
       const cancelled = await ctx.workflows.cancel(live.runId);
-      if (!cancelled) return { cancelled, note: "That one had already finished." };
+      if (!cancelled) return { cancelled, note: ALREADY_FINISHED };
       const note = declared?.[live.workflow]?.cancelNote ?? `Stopped the ${live.workflow} run.`;
       return { cancelled, runId: live.runId, workflow: live.workflow, note };
     },

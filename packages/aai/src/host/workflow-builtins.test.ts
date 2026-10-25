@@ -140,10 +140,18 @@ describe("workflow_cancel", () => {
     expect(live).toHaveBeenCalledWith("other", "sess-1");
   });
 
-  test("tells finished from never started", async () => {
+  test("across every workflow, ONE read finds the live run, and tells finished from never started", async () => {
+    const findByKey = vi.fn(async () =>
+      runs({ status: "completed", output: 1 }, { status: "failed", error: "x" }, {}),
+    );
+    const cancel = vi.fn(async () => true);
+    const { call } = harness({ findByKey, cancel });
+    expect(await call("workflow_cancel")).toMatchObject({ cancelled: true, runId: "wrun_2" });
+    expect(findByKey).toHaveBeenCalledTimes(1);
+    expect(findByKey).toHaveBeenCalledWith("sess-1", { limit: 10, withOutput: false });
+
     const finished = harness({
-      findByKey: async (_key, options) =>
-        options?.statuses ? [] : runs({ status: "completed", output: 1 }),
+      findByKey: async () => runs({ status: "completed", output: 1 }),
     });
     expect(await finished.call("workflow_cancel")).toEqual({
       cancelled: false,
