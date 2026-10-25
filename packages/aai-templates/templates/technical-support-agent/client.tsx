@@ -1,7 +1,7 @@
 import { plural } from "@alexkroman1/aai/utils";
 import "@alexkroman1/aai-ui/styles.css";
 import { AutoScroll, Facts, mountClient, useAgentState } from "@alexkroman1/aai-ui";
-import { PRODUCT, supportSlot } from "./shared.ts";
+import { supportSlot } from "./shared.ts";
 
 /**
  * The graph, as it ran for the last question.
@@ -110,23 +110,9 @@ function TraceSidebar() {
   );
 }
 
+// The name comes from the agent, so a knowledge base swapped for another
+// product cannot leave the browser tab advertising the old one.
 mountClient({
-  // Derived, not typed twice: `PRODUCT` comes off `knowledge.json`, which is
-  // what `agent.ts` names the agent and greets with. A knowledge base swapped
-  // for another product otherwise leaves the browser tab advertising the old
-  // one.
-  name: `${PRODUCT} Support`,
   sidebar: TraceSidebar,
-  theme: {
-    bg: "#0b1220",
-    primary: "#4ea8de",
-    text: "#e8eef6",
-    surface: "#141d2e",
-    border: "#1f2b3f",
-  },
-  tools: {
-    answer_question: { icon: "\u{1F50D}", label: "Checking the knowledge base" },
-    list_topics: { icon: "\u{1F4DA}", label: "Listing topics" },
-    log_ticket: { icon: "\u{1F4DD}", label: "Logging a ticket" },
-  },
+  theme: { primary: "#4ea8de", mode: "dark" },
 });
