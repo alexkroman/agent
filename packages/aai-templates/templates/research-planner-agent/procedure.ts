@@ -39,7 +39,13 @@ import type {
   TypedDelegateResult,
   TypedSpeakerDef,
 } from "@alexkroman1/aai";
-import { type DeepReadonly, isRecord, safeJsonParse, speaker } from "@alexkroman1/aai";
+import {
+  type DeepReadonly,
+  isRecord,
+  type SlotValueOf,
+  safeJsonParse,
+  speaker,
+} from "@alexkroman1/aai";
 import {
   actSchema,
   EXECUTOR_OUTPUT,
@@ -50,7 +56,7 @@ import {
   type StepAnswer,
   stepAnswerSchema,
 } from "./prompts.ts";
-import type { FrozenPlanState, PastStep } from "./shared.ts";
+import type { PastStep, planSlot } from "./shared.ts";
 import { readTool, searchTool } from "./shared.ts";
 
 /** Their `plan_step`. */
@@ -262,7 +268,7 @@ export function normalizeAct(
  *  equivalent, because a notebook has nobody to interrupt it. */
 export async function replanNode(
   generate: GenerateFn,
-  state: Pick<FrozenPlanState, "objective" | "plan" | "pastSteps">,
+  state: Pick<SlotValueOf<typeof planSlot>, "objective" | "plan" | "pastSteps">,
   options: { system?: string; instruction?: string } = {},
 ): Promise<ActDecision> {
   const { object } = await generate({

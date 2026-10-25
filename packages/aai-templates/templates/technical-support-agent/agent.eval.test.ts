@@ -25,8 +25,8 @@
 // product questions from its own knowledge and skips the tools the prompt exists
 // to route it through, so a case run that way measures nothing it claims to.
 
-/** The def a DEPLOYED agent runs — see `agent.test.ts` on why the glob is here. */
 import agentDef from "virtual:aai/agent";
+import { isToolFailure } from "@alexkroman1/aai/utils";
 import {
   describeEval,
   describeToolCalls,
@@ -36,71 +36,25 @@ import {
   toolResultIn,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
+import { supportSlot } from "./shared.ts";
+import answerQuestion from "./tools/answer_question.ts";
 
-/**
- * What the BROWSER is sent, as this eval reads it.
- *
- * Parsed rather than cast: `state.updated` carries `unknown`, so a projection
- * that stopped matching FAILS naming the field, where the cast this replaced
- * handed the assertions `undefined` and failed a line later on something else.
- * It names only the fields asserted below, so `supportView` may grow without
- * touching this.
- */
-const ProjectedSupport = z.object({
-  ticket: z.string().nullable(),
-  trace: z
-    .object({
-      exhausted: z.boolean(),
-      docs: z.array(z.object({ relevant: z.boolean() })),
-      steps: z.array(z.object({ node: z.string() })),
-    })
-    .nullable(),
-});
-
-/**
- * What `answer_question` answered, validated.
- *
- * All-optional, and that is the shape of the CONTRACT rather than laxness: the
- * tool has three legal outcomes — a graded answer, a withheld one carrying
- * guidance, and a reported failure — so a required field would fail two of the
- * three. What the schema still buys is that a field the case reads is the type
- * the case thinks it is.
- */
-const Lookup = z.object({
-  answer: z.string().nullable().optional(),
-  sources: z.array(z.string()).optional(),
-  grounded: z.boolean().optional(),
-  answersTheQuestion: z.boolean().optional(),
-  rewrites: z.number().optional(),
-  guidance: z.string().optional(),
-  error: z.string().optional(),
-});
-
-/**
- * Every `syncState` frame, in stream order.
- *
- * `statesIn` reads an EVENT LIST rather than a session, which is what lets a
- * case slice the stream first; the schema above is what it takes one for.
- */
+/** Every frame the page was sent, in stream order, as `client.tsx` renders them. */
 function frames(session: EvalSession) {
-  return statesIn(session.events(), "support", ProjectedSupport);
+  return statesIn(session.events(), supportSlot.projected);
 }
 
 /**
- * What `answer_question` answered, in call order.
- *
- * `toolResultIn` over a ONE-CALL list per call: the name is that call's own, so
- * the reader's "no such call" and "two calls" throws are unreachable and what is
- * left is the parse, the schema, and its "never completed" failure — which is
- * the half the hand-rolled `JSON.parse(call.result ?? "null")` this replaced got
- * wrong, reading `null` for a tool that never came back.
+ * What `answer_question` answered, in call order — typed by the tool's own
+ * def: a graded answer, a withheld one (`answer: null`), or a reported
+ * failure. The instruction a withheld answer carries for the model is not on
+ * the wire; `agent.test.ts` reads it through `instructionOf`.
  */
 function lookups(session: EvalSession) {
   return session
     .toolCalls()
     .filter((call) => call.name === "answer_question")
-    .map((call) => toolResultIn([call], call.name, Lookup));
+    .map((call) => toolResultIn([call], answerQuestion));
 }
 
 describeEval(agentDef, (test) => {
@@ -126,8 +80,7 @@ describeEval(agentDef, (test) => {
         // caller is given is an answer the hallucination grader passed. `grounded:
         // false` reaching the model is the one thing the whole apparatus exists
         // to prevent — and a broken lookup is REPORTED rather than worked around.
-        if (payload.error !== undefined) continue;
-        if (payload.answer === null) continue;
+        if (isToolFailure(payload) || payload.answer === null) continue;
         expect(payload.grounded, `ungrounded answer handed to the model: ${payload.answer}`).toBe(
           true,
         );
@@ -193,13 +146,16 @@ describeEval(agentDef, (test) => {
 
       const [payload] = lookups(session);
       expect(payload, describeTurn(turn)).toBeDefined();
-      // The whole verdict in the message: `grounded: undefined` on its own does
-      // not say whether the lookup failed, or ran and refused.
+      // The whole verdict in the message: a lookup that failed, or ran and
+      // refused, is a different finding from an ungrounded answer.
+      if (payload === undefined || isToolFailure(payload) || payload.answer === null) {
+        throw new Error(`expected a graded answer, got ${JSON.stringify(payload)}`);
+      }
       const verdict = JSON.stringify(payload);
-      expect(payload?.grounded, verdict).toBe(true);
-      expect(payload?.answersTheQuestion, verdict).toBe(true);
+      expect(payload.grounded, verdict).toBe(true);
+      expect(payload.answersTheQuestion, verdict).toBe(true);
 
-      const sources = payload?.sources ?? [];
+      const sources = payload.sources;
       expect(sources).toContain("Cancelling your contract");
       // THE claim, and the reason the knowledge base is built the way it is:
       // "cancelling your contract" and "cancelling an engineer visit" are two
@@ -209,8 +165,8 @@ describeEval(agentDef, (test) => {
       expect(sources).not.toContain("Cancelling or rebooking an engineer visit");
       // Either spelling: the claim is that the notice period came out of D5, not
       // how the answer prompt chose to write a numeral.
-      expect(String(payload?.answer)).toMatch(/thirty days|30 days/i);
-      expect(String(payload?.answer)).not.toMatch(/sixty pound|abortive/i);
+      expect(payload.answer).toMatch(/thirty days|30 days/i);
+      expect(payload.answer).not.toMatch(/sixty pound|abortive/i);
       expect(turn.text).not.toMatch(/sixty|abortive/i);
     },
     // Live only: the grader's verdict IS the measurement.
@@ -240,15 +196,18 @@ describeEval(agentDef, (test) => {
       const [payload] = lookups(session);
       expect(payload, describeTurn(turn)).toBeDefined();
       // Withheld, not softened: `answer: null` is the tool refusing to hand the
-      // model something to read out, and the guidance is the exit the grading
-      // apparatus needs — a support line that can only answer will answer wrong.
-      // A lookup that BROKE and one that ran and found nothing are different
-      // findings, and neither is readable from "answer is not null".
-      expect(payload?.answer, JSON.stringify(payload)).toBeNull();
-      expect(String(payload?.guidance)).toMatch(/log_ticket/);
+      // model something to read out (its instruction then points at the ticket,
+      // the exit the grading apparatus needs — a support line that can only
+      // answer will answer wrong). A lookup that BROKE and one that ran and
+      // found nothing are different findings, and neither is readable from
+      // "answer is not null".
+      if (payload === undefined || isToolFailure(payload)) {
+        throw new Error(`expected a withheld answer, got ${JSON.stringify(payload)}`);
+      }
+      expect(payload.answer, JSON.stringify(payload)).toBeNull();
       // The corrective edge really ran: nothing relevant means the RETRIEVAL was
       // wrong, so the query is rewritten and retried before the loop gives up.
-      expect(payload?.rewrites).toBeGreaterThanOrEqual(1);
+      expect(payload.rewrites).toBeGreaterThanOrEqual(1);
 
       const trace = frames(session).at(-1)?.trace;
       expect(trace?.exhausted).toBe(true);

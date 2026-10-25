@@ -1,6 +1,5 @@
-/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import type { SessionEvent } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai/utils";
 // An EVAL: does the order-taker actually take the order?
 //
 // `agent.test.ts` drives the six tools directly, which settles what each one
@@ -23,43 +22,9 @@ import {
   toolResultIn,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
-import { MENU } from "./shared.ts";
-
-/**
- * What the BROWSER is sent, as this eval reads it.
- *
- * Parsed rather than cast: `state.updated` carries `unknown`, so a projection
- * that stopped matching FAILS naming the field, where the cast this replaced
- * handed the assertions `undefined` and failed a line later on something else.
- * It names only the fields asserted below, so `orderView` may grow without
- * touching this.
- */
-const ProjectedOrder = z.object({
-  pizzas: z.array(z.object({ id: z.number(), size: z.string(), toppings: z.array(z.string()) })),
-  orderPlaced: z.boolean(),
-});
-
-/**
- * The last cart `syncState` pushed to the browser, i.e. what the page shows.
- *
- * The frame is keyed by slot name, so the `order` key is `orderView`'s
- * result — the same value `useAgentState(orderSlot.projected)` selects in
- * `client.tsx`, which is why an eval can assert on it: it is the cart the
- * customer is looking at. `lastStateIn` is the SDK's
- * reader for exactly this.
- */
-const lastPushedView = (events: readonly SessionEvent[]) =>
-  lastStateIn(events, "order", ProjectedOrder);
-
-/**
- * Every cart the session pushed, in stream order — `statesIn` is `lastStateIn`'s
- * plural half, and takes the schema for the same reason.
- *
- * The SEQUENCE is the stronger claim: not "the cart is not placed now" but "no
- * frame the customer ever saw showed it placed".
- */
-const pushedViews = (events: readonly SessionEvent[]) => statesIn(events, "order", ProjectedOrder);
+import { MENU, orderSlot } from "./shared.ts";
+import addPizza from "./tools/add_pizza.ts";
+import placeOrder from "./tools/place_order.ts";
 
 describeEval(agentDef, (test) => {
   test(
@@ -90,9 +55,7 @@ describeEval(agentDef, (test) => {
         MENU.crusts[args.crust as keyof typeof MENU.crusts] +
         MENU.toppings.pepperoni +
         MENU.toppings.extra_cheese;
-      expect(
-        toolResultIn(turn.toolCalls, "add_pizza", z.object({ orderTotal: z.string() })).orderTotal,
-      ).toBe(`$${expected.toFixed(2)}`);
+      expect(toolResultIn(turn.toolCalls, addPizza).orderTotal).toBe(`$${expected.toFixed(2)}`);
     },
     {
       stubReply: [
@@ -125,7 +88,9 @@ describeEval(agentDef, (test) => {
 
       // And the cart the page renders is the same one: still one pizza, resized
       // rather than replaced, with the mushrooms from the first turn intact.
-      const view = lastPushedView(turn.events);
+      // `lastStateIn` over the slot's own projection is the frame
+      // `useAgentState(orderSlot.projected)` renders in `client.tsx`.
+      const view = lastStateIn(turn.events, orderSlot.projected);
       expect(view?.pizzas).toHaveLength(1);
       expect(view?.pizzas[0]).toMatchObject({ id: 1, size: "large", toppings: ["mushrooms"] });
     },
@@ -152,17 +117,15 @@ describeEval(agentDef, (test) => {
       // place_order call on an empty cart has to come back refused, which is
       // what stops the agent reading out a confirmation for nothing.
       for (const call of turn.toolCalls.filter((c) => c.name === "place_order")) {
-        // `toolResultIn` over a ONE-CALL list: the name is this call's own, so
-        // the reader's "no such call" and "two calls" throws are unreachable and
-        // what is left is the parse plus the schema. The schema requires
-        // `error`, which is the claim — a call that SUCCEEDED fails here.
-        expect(toolResultIn([call], call.name, z.object({ error: z.string() })).error).toContain(
-          "Cannot place an empty order",
-        );
+        const placed = toolResultIn([call], placeOrder);
+        if (!isToolFailure(placed)) throw new Error(`placed order #${placed.orderNumber}`);
+        expect(placed.error).toContain("Cannot place an empty order");
       }
       expect(turn.completed).toBe(true);
-      // Nothing the session pushed to the page may claim an order was placed.
-      expect(pushedViews(session.events()).filter((view) => view.orderPlaced)).toEqual([]);
+      // Nothing the session pushed to the page may claim an order was placed —
+      // the SEQUENCE, not only the last frame.
+      const views = statesIn(session.events(), orderSlot.projected);
+      expect(views.filter((view) => view.orderPlaced)).toEqual([]);
     },
     { stubReply: [{ tool: "place_order" }, "There's nothing in your order yet."] },
   );
@@ -202,8 +165,9 @@ describeEval(agentDef, (test) => {
       const added = calls.filter((c) => c.name === "add_pizza");
       expect(added.length, call.transcript()).toBeGreaterThan(0);
       expect(added.at(-1)?.args).toMatchObject({ size: "large" });
-      const placed = z.object({ orderNumber: z.number(), pizzas: z.number(), total: z.string() });
-      expect(lastToolResultIn(calls, "place_order", placed).pizzas).toBe(1);
+      const placed = lastToolResultIn(calls, placeOrder);
+      if (isToolFailure(placed)) throw new Error(placed.error);
+      expect(placed.pizzas).toBe(1);
 
       // What the tool results cannot show is what the caller HEARD. The prompt
       // says every price comes from a tool and every change is confirmed.

@@ -20,9 +20,13 @@ export const MAX_NOTES = 50;
  * once it is full, and a length-derived id would then hand out a number a
  * surviving note already has.
  */
-export const notebookSlot = sessionSlot("notebook", () => ({ notes: [] as Note[], nextId: 1 }), {
-  // What the browser sees: newest first, which is how the panel reads best.
-  // The slot itself stays chronological.
-  view: (notebook) => ({ notes: [...notebook.notes].reverse() }),
-  caps: { notes: MAX_NOTES },
-});
+export const notebookSlot = sessionSlot(
+  "notebook",
+  { notes: [] as Note[], nextId: 1 },
+  {
+    // What the browser sees: newest first, which is how the panel reads best.
+    // The slot itself stays chronological.
+    view: (notebook) => ({ notes: [...notebook.notes].reverse() }),
+    caps: { notes: MAX_NOTES },
+  },
+);

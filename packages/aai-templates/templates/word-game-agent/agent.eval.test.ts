@@ -1,4 +1,3 @@
-/** The def a DEPLOYED agent runs: authored, plus what `tools/` and the prompt add. */
 import agentDef from "virtual:aai/agent";
 // An EVAL: does the host run the game, or play it?
 //
@@ -12,26 +11,34 @@ import agentDef from "virtual:aai/agent";
 // which still boots this agent, still resolves `tools/`, still arms the dialog
 // and still executes the tool a script names — so a stub run proves the wiring
 // and proves nothing about what the agent chose.
+import { isToolFailure } from "@alexkroman1/aai/utils";
 import {
   describeEval,
-  dialogResultSchema,
+  type EvalToolCall,
   lastStateIn,
   toolNames,
   toolResultIn,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
 import { isCorrectGuess } from "./guess.ts";
+import { gameSlot } from "./shared.ts";
+import relayDescription from "./tools/relay_description.ts";
+import startGame from "./tools/start_game.ts";
 import { allWords } from "./words.ts";
 
-/** The scoreboard, as these cases read it. */
-const Board = z.object({
-  phase: z.string(),
-  word: z.string().nullable(),
-  score: z.number(),
-  fouls: z.number(),
-  wrongGuesses: z.array(z.string()),
-});
+/** What `start_game` answered — typed by the def, the envelope unwrapped. */
+function started(calls: readonly EvalToolCall[]) {
+  const result = toolResultIn(calls, startGame);
+  if (isToolFailure(result)) throw new Error(result.error);
+  return result;
+}
+
+/** What `relay_description` answered, likewise. */
+function relayed(calls: readonly EvalToolCall[]) {
+  const result = toolResultIn(calls, relayDescription);
+  if (isToolFailure(result)) throw new Error(result.error);
+  return result;
+}
 
 /**
  * A scripted player who is always wrong.
@@ -63,18 +70,14 @@ describeEval(agentDef, (test) => {
     async ({ session }) => {
       const turn = await session.say("Ready!");
       expect(toolNames(turn.toolCalls)).toEqual(["start_game"]);
-      const started = toolResultIn(
-        turn.toolCalls,
-        "start_game",
-        dialogResultSchema(z.object({ word: z.string(), intro: z.string() })),
-      );
-      expect(started.state).toBe("playing");
-      expect(started.result.intro).toMatch(/^Welcome to Word Wrangler!/);
-      expect(started.result.intro).toContain(`Here's your first word: ${started.result.word}.`);
+      const opened = started(turn.toolCalls);
+      expect(opened.state).toBe("playing");
+      expect(opened.result.intro).toMatch(/^Welcome to Word Wrangler!/);
+      expect(opened.result.intro).toContain(`Here's your first word: ${opened.result.word}.`);
       // The describer's screen shows the word and the running round.
-      expect(lastStateIn(turn.events, "game", Board)).toMatchObject({
+      expect(lastStateIn(turn.events, gameSlot.projected)).toMatchObject({
         phase: "playing",
-        word: started.result.word,
+        word: opened.result.word,
         score: 0,
       });
     },
@@ -90,37 +93,26 @@ describeEval(agentDef, (test) => {
       );
 
       expect(toolNames(turn.toolCalls)).toEqual(["relay_description"]);
-      const relayed = toolResultIn(
-        turn.toolCalls,
-        "relay_description",
-        dialogResultSchema(
-          z.object({
-            verdict: z.string(),
-            playerSaid: z.string(),
-            guess: z.string(),
-            score: z.number(),
-          }),
-        ),
-      );
+      const { state, result } = relayed(turn.toolCalls);
       // The player really answered, and the host relayed rather than ruling on
       // the guess itself — the claim in this case's name, and the half that
-      // holds in either mode.
-      expect(relayed.result.playerSaid.length).toBeGreaterThan(0);
-      // WHICH verdict came back is the game's business, not this case's: the
-      // word is drawn at random and `zebra` is in the pool, so live — where a
-      // real model plays the player — this description is right about as often
-      // as the draw allows. What holds either way is that the verdict and the
-      // score agree, and that a wrong guess leaves the round standing.
-      if (relayed.result.verdict === "wrong") {
-        expect(relayed.result.score).toBe(0);
-        expect(relayed.state).toBe("playing");
-        expect(lastStateIn(turn.events, "game", Board)).toMatchObject({
+      // holds in either mode. WHICH verdict came back is the game's business,
+      // not this case's: the word is drawn at random and `zebra` is in the
+      // pool, so live — where a real model plays the player — this description
+      // is right about as often as the draw allows. What holds either way is
+      // that the verdict and the score agree, and that a wrong guess leaves the
+      // round standing.
+      if (result.verdict === "wrong") {
+        expect(result.playerSaid.length).toBeGreaterThan(0);
+        expect(result.score).toBe(0);
+        expect(state).toBe("playing");
+        expect(lastStateIn(turn.events, gameSlot.projected)).toMatchObject({
           score: 0,
-          wrongGuesses: [relayed.result.guess],
+          wrongGuesses: [result.guess],
         });
       } else {
-        expect(relayed.result.verdict).toBe("correct");
-        expect(relayed.result.score).toBe(1);
+        expect(result.verdict).toBe("correct");
+        expect(result.score).toBe(1);
       }
       // Only a SCRIPT can pin the player's exact words. `WRONG_PLAYER` is what
       // makes them predictable, so asserting them against a live model asserts
@@ -130,7 +122,7 @@ describeEval(agentDef, (test) => {
         // The claim this case rests on, checked rather than assumed — see
         // WRONG_GUESS for the run that proved assuming it is not enough.
         expect(wrongEverywhere()).toEqual([]);
-        expect(relayed.result).toMatchObject({
+        expect(result).toMatchObject({
           verdict: "wrong",
           playerSaid: `Is it a ${WRONG_GUESS}?`,
           guess: WRONG_GUESS,
@@ -156,11 +148,7 @@ describeEval(agentDef, (test) => {
     "saying the word is a foul the TOOL calls, from the describer's own transcript",
     async ({ session }) => {
       const first = await session.say("Ready!");
-      const { word } = toolResultIn(
-        first.toolCalls,
-        "start_game",
-        dialogResultSchema(z.object({ word: z.string() })),
-      ).result;
+      const { word } = started(first.toolCalls).result;
       // A DESCRIPTION that happens to contain the word, not a question about it.
       // "How would I even describe that?" is the describer asking for help, and
       // a host that answered it in words — or reached for `repeat_word` — was
@@ -171,14 +159,10 @@ describeEval(agentDef, (test) => {
         `Okay, so ${word} — it's the sort of thing you would find around a house.`,
       );
 
-      const relayed = toolResultIn(
-        turn.toolCalls,
-        "relay_description",
-        dialogResultSchema(z.object({ verdict: z.string(), word: z.string(), score: z.number() })),
-      );
-      expect(relayed.result).toMatchObject({ verdict: "foul", word, score: 0 });
-      expect(lastStateIn(turn.events, "game", Board)).toMatchObject({ fouls: 1, score: 0 });
-      expect(lastStateIn(turn.events, "game", Board)?.word).not.toBe(word);
+      expect(relayed(turn.toolCalls).result).toMatchObject({ verdict: "foul", word, score: 0 });
+      const board = lastStateIn(turn.events, gameSlot.projected);
+      expect(board).toMatchObject({ fouls: 1, score: 0 });
+      expect(board?.word).not.toBe(word);
     },
     {
       stubReply: [
@@ -198,14 +182,10 @@ describeEval(agentDef, (test) => {
     "'skip' is a new word and no point",
     async ({ session }) => {
       const first = await session.say("Ready!");
-      const { word } = toolResultIn(
-        first.toolCalls,
-        "start_game",
-        dialogResultSchema(z.object({ word: z.string() })),
-      ).result;
+      const { word } = started(first.toolCalls).result;
       const turn = await session.say("Ugh, skip this one.");
       expect(toolNames(turn.toolCalls)).toEqual(["skip_word"]);
-      const board = lastStateIn(turn.events, "game", Board);
+      const board = lastStateIn(turn.events, gameSlot.projected);
       expect(board?.score).toBe(0);
       expect(board?.word).not.toBe(word);
       expect(board?.phase).toBe("playing");

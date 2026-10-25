@@ -1,7 +1,7 @@
-/** The def a DEPLOYED agent runs: authored, plus the `system-prompt.md` beside it. */
 import agentDef from "virtual:aai/agent";
 import { expectDeployable, expectPromptBuiltinsDeclared } from "@alexkroman1/aai-runtime/testing";
-import { describe, expect, test } from "vitest";
+import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
+import { expect, test } from "vitest";
 
 /**
  * What this starter's spec may assert.
@@ -12,7 +12,7 @@ import { describe, expect, test } from "vitest";
  * template's own identity turns the first customization into a build failure in
  * a file the author never wrote. Every test here asserts a property that
  * survives those edits, on the RESOLVED config rather than on the def's empty
- * fields; the three every starter owes are `expectDeployable`'s.
+ * fields; the three every starter owes are `describeAgent`'s built-in case.
  *
  * What it may NOT assert is whether `run_code` actually RUNS: the builtin is
  * sandbox-only, so off-platform it declines rather than evaluating
@@ -22,20 +22,7 @@ import { describe, expect, test } from "vitest";
  * in memory is the pairing the template is built on — the builtin it asks for
  * and the prompt that commands it — and that is what the last two tests are.
  */
-describe("code-interpreter-agent template", () => {
-  test("is deployable: validates, is nameable, and some stage can call the tool", () => {
-    // A builtin is something a MODEL reaches for, so this template is only
-    // itself while some stage can issue a tool call. `expectDeployable` asserts
-    // the cascade per MODE, so it survives the swaps above: declare
-    // `stt`/`llm`/`tts` and the rest still default to the all-AssemblyAI
-    // cascade (which is why the def declares no provider at all and still
-    // runs); declare `s2s` and there is no cascade to fill, which is the one
-    // thing that must never happen by fallthrough. `not.toThrow()` because the
-    // helper's throw IS the finding: vitest quotes the message, which names the
-    // invariant that went.
-    expect(() => expectDeployable(agentDef)).not.toThrow();
-  });
-
+describeAgent(agentDef, () => {
   test("run_code survives into the config a deploy carries", () => {
     // The template's whole capability, asserted on the CONFIG rather than the
     // def because that is what a deploy ships. `DEFAULT_BUILTIN_TOOLS` is

@@ -67,9 +67,7 @@ export interface SupportState {
   ticketCounter: number;
 }
 
-export function emptySupportState(): SupportState {
-  return { trace: null, asked: [], ticket: null, ticketCounter: 0 };
-}
+const EMPTY_SUPPORT: SupportState = { trace: null, asked: [], ticket: null, ticketCounter: 0 };
 
 /**
  * How many of this call's questions the slot keeps.
@@ -90,21 +88,7 @@ export const ASKED_CAP = 20;
  */
 const caps: SlotCaps<SupportState> = { asked: ASKED_CAP };
 
-export const supportSlot = sessionSlot("support", emptySupportState, { view: supportView, caps });
-
-/**
- * The call as a READ hands it out: deep-frozen, and typed to say so.
- *
- * {@link supportView} takes this rather than {@link SupportState}, which is the
- * widening a deep-readonly slot forces and the reason it is worth doing: a
- * mutable state still satisfies it, so a call with an `update` draft is
- * unaffected, while a projection that WOULD have mutated stops compiling
- * instead of throwing at its first call.
- */
-export type FrozenSupportState = DeepReadonly<SupportState>;
-
-// ─── The projection ──────────────────────────────────────────────────────────
-
+/** What the browser sees. */
 export interface SupportView {
   product: string;
   trace: DeepReadonly<AnswerTrace> | null;
@@ -114,15 +98,17 @@ export interface SupportView {
 }
 
 /**
- * What the browser sees. The `ticket` field is why this is a projection rather
- * than the state itself: a ticket carries the caller's phone number, and
- * `syncState` is where you decide what leaves the server.
+ * The call's state, and the `view` `agent.ts` syncs. The `ticket` field is why
+ * that is a projection rather than the state itself: a ticket carries the
+ * caller's phone number, and the view is where you decide what leaves the
+ * server.
  */
-export function supportView(state: FrozenSupportState): SupportView {
-  return {
+export const supportSlot = sessionSlot("support", EMPTY_SUPPORT, {
+  view: (state): SupportView => ({
     product: PRODUCT,
     trace: state.trace,
     asked: state.asked,
     ticket: state.ticket?.reference ?? null,
-  };
-}
+  }),
+  caps,
+});

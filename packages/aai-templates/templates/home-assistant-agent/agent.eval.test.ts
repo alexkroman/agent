@@ -1,9 +1,3 @@
-/**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` and
- * `system-prompt.md` declare. `./agent.ts` would be the wrong import: the
- * authored export has NO tools and the framework-default prompt, so an eval
- * driving it would measure a different agent than the one that deploys.
- */
 import agentDef from "virtual:aai/agent";
 import type { SessionEvent } from "@alexkroman1/aai";
 import {
@@ -18,6 +12,7 @@ import {
   toolResultIn,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
+import cancelReminders from "./tools/cancel_reminders.ts";
 
 // EVALS: does the home assistant hand the after-the-conversation jobs to the right tool,
 // and say what system-prompt.md says it should? Run with `aai eval`.
@@ -119,7 +114,7 @@ describeEval(
 
         expect(names(turn)).toEqual(["cancel_reminders"]);
         expect(workflowClient.cancelled).toHaveLength(1);
-        expect(toolResultIn(turn.toolCalls, "cancel_reminders")).toEqual({ cancelled: 1 });
+        expect(toolResultIn(turn.toolCalls, cancelReminders)).toEqual({ cancelled: 1 });
       },
       {
         stubReply: [

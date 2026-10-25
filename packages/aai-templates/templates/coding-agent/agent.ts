@@ -31,7 +31,7 @@ import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "Coding Agent",
-  description: "Reads, edits and runs a codebase from a terminal chat",
+  listing: "Reads, edits and runs a codebase from a terminal chat",
   // No `llm` declared, so it runs the default AssemblyAI LLM gateway on
   // ASSEMBLYAI_API_KEY. Swap in `llm({ provider: "anthropic", model: "claude-opus-5" })` (or
   // any provider from `@alexkroman1/aai/llm`) when a task needs a stronger

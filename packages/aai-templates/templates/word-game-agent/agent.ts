@@ -30,10 +30,9 @@ import { GAME_EVENTS, gameSlot } from "./shared.ts";
  */
 export default agent({
   name: "Word Wrangler",
-  // The listing line — a registry row, the studio's picker, never the model.
   // Three participants in one sentence, because that is the whole shape of the
   // thing and what makes it worth reading `shared.ts` for.
-  description: "Hosts a two-minute word game between the caller and an A.I. guesser",
+  listing: "Hosts a two-minute word game between the caller and an A.I. guesser",
   // The scoreboard: the word the describer is looking at, the score, the clock.
   syncState: gameSlot.projected,
   /**

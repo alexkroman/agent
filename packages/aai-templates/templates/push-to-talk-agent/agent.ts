@@ -12,7 +12,7 @@ import { notebookSlot } from "./shared.ts";
 // turns a button into the three commands the runtime listens for.
 export default agent({
   name: "Field Notes",
-  description: "A hold-to-talk notebook: dictate across pauses, answered only when you let go",
+  listing: "A hold-to-talk notebook: dictate across pauses, answered only when you let go",
   greeting:
     "Hold the button, or the space bar, and tell me what to write down. Take your time, I won't jump in until you let go.",
   turnTaking: { detection: "manual" },

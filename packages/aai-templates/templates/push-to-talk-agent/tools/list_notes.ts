@@ -11,5 +11,6 @@ import { notebookSlot } from "../shared.ts";
  */
 export default notebookSlot.tool({
   description: "List every note saved so far, oldest first, when the caller asks to hear them.",
+  ui: { icon: "\u{1F4D6}", label: "Reading the notebook" },
   execute: (_args, notebook) => ({ notes: notebook.notes }),
 });

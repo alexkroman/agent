@@ -3,10 +3,9 @@ import { nightSlot } from "./shared.ts";
 
 export default agent({
   name: "Night Owl",
-  description: "Recommends films, music and books for the evening, and works out when to go to bed",
-  // The night's recommendation log, pushed to the client after every tool
-  // call. The page renders `useAgentState(nightSlot.projected)` and keeps no copy
-  // of its own, so a reload resumes with the list intact.
+  listing: "Recommends films, music and books for the evening, and works out when to go to bed",
+  // The night's recommendation log, pushed to the page after every tool call;
+  // the page renders `useAgentState(nightSlot.projected)` and keeps no copy.
   syncState: nightSlot.projected,
   greeting:
     "Hey there, night owl. Try asking me for a cozy movie recommendation, or tell me what time you need to wake up and I'll calculate the best time to fall asleep.",

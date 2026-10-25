@@ -73,9 +73,13 @@ export const MAX_PAST_STEPS = 20;
 /** Growth cap on the revision trail, which rides in every `syncState` frame. */
 export const MAX_REVISIONS = 20;
 
-export function emptyPlan(): PlanState {
-  return { objective: null, plan: [], pastSteps: [], response: null, revisions: [] };
-}
+const EMPTY_PLAN: PlanState = {
+  objective: null,
+  plan: [],
+  pastSteps: [],
+  response: null,
+  revisions: [],
+};
 
 /**
  * Both bounds, in one annotated value.
@@ -88,7 +92,26 @@ export function emptyPlan(): PlanState {
  */
 const planCaps: SlotCaps<PlanState> = { pastSteps: MAX_PAST_STEPS, revisions: MAX_REVISIONS };
 
-export const planSlot = sessionSlot("plan", emptyPlan, { view: planView, caps: planCaps });
+/**
+ * The plan, and the `view` `agent.ts` syncs after every tool call: nearly the state — a plan has nothing private in it — with `progress`
+ * derived there so the bar and any spoken "two of four" can never disagree
+ * about what fraction means.
+ */
+export const planSlot = sessionSlot("plan", EMPTY_PLAN, {
+  view: (state): PlanView => {
+    const done = state.pastSteps.length;
+    const total = done + state.plan.length;
+    return {
+      objective: state.objective,
+      plan: state.plan,
+      done: state.pastSteps,
+      response: state.response,
+      revisions: state.revisions,
+      progress: total === 0 ? 0 : done / total,
+    };
+  },
+  caps: planCaps,
+});
 
 /**
  * The plan's LIFECYCLE, as a declared machine rather than a guard per tool.
@@ -151,17 +174,6 @@ export function stageLabel(at: DialogPosition): string {
   if (at.state === "idle") return "no plan yet";
   return at.state === "answered" ? "finished" : "in progress";
 }
-
-/**
- * The plan as a READ hands it out: deep-frozen, and typed to say so.
- *
- * The projection and both graph nodes take this rather than {@link PlanState},
- * which is the widening a deep-readonly slot forces and the reason it is worth
- * doing: a mutable plan still satisfies it, so a call with an `update` draft is
- * unaffected, while a helper that WOULD have mutated stops compiling instead of
- * throwing at its first call.
- */
-export type FrozenPlanState = DeepReadonly<PlanState>;
 
 // ─── The search seam ─────────────────────────────────────────────────────────
 
@@ -318,6 +330,7 @@ export const { searchTool, readTool } = createWebTools();
 
 // ─── The projection ──────────────────────────────────────────────────────────
 
+/** What the browser sees — the shape `planSlot`'s `view` projects. */
 export interface PlanView {
   objective: string | null;
   /** Steps still to do. */
@@ -335,22 +348,4 @@ export interface PlanView {
    * pathological case; an unbounded prompt is the one that costs money.
    */
   progress: number;
-}
-
-/**
- * What the browser sees. Nearly the state — a plan has nothing private in it —
- * with `progress` derived here so the bar and any spoken "two of four" can
- * never disagree about what fraction means.
- */
-export function planView(state: FrozenPlanState): PlanView {
-  const done = state.pastSteps.length;
-  const total = done + state.plan.length;
-  return {
-    objective: state.objective,
-    plan: state.plan,
-    done: state.pastSteps,
-    response: state.response,
-    revisions: state.revisions,
-    progress: total === 0 ? 0 : done / total,
-  };
 }

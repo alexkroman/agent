@@ -16,8 +16,9 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import agentDef from "virtual:aai/agent";
-import { expectDeployable, toolRunner } from "@alexkroman1/aai-runtime/testing";
-import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { expectDeployable } from "@alexkroman1/aai-runtime/testing";
+import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
+import { afterAll, beforeEach, expect, test, vi } from "vitest";
 import { WORKSPACE_DIR } from "./shared.ts";
 
 const workspace = vi.hoisted(() => {
@@ -34,15 +35,13 @@ afterAll(() => {
   rmSync(workspace, { recursive: true, force: true });
 });
 
-const run = toolRunner(agentDef);
-
 beforeEach(() => {
   mkdirSync(workspace, { recursive: true });
   writeFileSync(path.join(workspace, "cart.ts"), "export const total = 1;\n", "utf-8");
 });
 
-describe("coding-agent template", () => {
-  test("is deployable, and is a TEXT agent — no audio stage anywhere", () => {
+describeAgent(agentDef, (run) => {
+  test("is a TEXT agent — no audio stage anywhere", () => {
     const config = expectDeployable(agentDef);
     // The mode is the template's point: `createRuntime` refuses a text agent by
     // name, so this is what says it runs on `createTextAgent` instead. A

@@ -80,30 +80,17 @@ export const DIALOGS: readonly AnyDialog[] = [gameFlow];
  * `STARTED`, `TIME_UP`, `WORDS_DONE`.
  *
  * {@link DialogEvent} is what makes it one declaration instead of a union a
- * tool re-spells every time it names an event, and what makes a tool that
- * returns `next: "WORDS_DUNE"` a compile error where the RESULT is built rather
- * than only where `sendFrom` reads it.
+ * tool re-spells every time it names an event. The two tools that can END a
+ * round decide the move inside their window — they know whether that was the
+ * last word — and carry it as a `next` field of this type, which their
+ * `sendFrom: "next"` reads; `undefined` there means STAY PUT, which is the
+ * property the clock rests on: a move re-arms `playing`'s two minutes, so a
+ * tool that moved on every guess would make the round endless.
  */
 export type GameEvent = DialogEvent<typeof gameSpec>;
 
-/**
- * The `sendFrom` the two tools that can END a round share.
- *
- * Both `relay_description` and `skip_word` decide the move inside their
- * `slot.update` window — they know whether that was the last word — and carry
- * it out as a `next` field. Nothing else in the result is the dialog's business,
- * and `undefined` there means STAY PUT, which is the property the clock rests
- * on: a move re-arms `playing`'s two minutes, so a tool that moved on every
- * guess would make the round endless.
- */
-export function endsRound(result: {
-  // `| undefined` and not just `?`: under `exactOptionalPropertyTypes` a result
-  // that WRITES `next: undefined` — which both callers do, in the ternary that
-  // decides whether that was the last word — is not an absent property.
-  next?: GameEvent["type"] | undefined;
-}): GameEvent | undefined {
-  return result.next === undefined ? undefined : { type: result.next };
-}
+/** The event a round-ending tool carries on its result, or nothing. */
+export type RoundEnd = GameEvent["type"] | undefined;
 
 /** What the host says, verbatim, the moment the clock runs out. */
 export const TIME_UP_LINE = "Time's up! Pens down.";
@@ -114,13 +101,14 @@ export const TIME_UP_LINE = "Time's up! Pens down.";
  * `bargeIn: { minWords: 1 }` lets the describer talk over every remark, which
  * is right for a remark and wrong for the line that ends the round.
  *
- * The round is identified by its `startedAt`, so a timer armed by an earlier
- * round says nothing into a later one. It stays silent when the WORDS ran out
- * first (every word settled, `WORDS_DONE` already moved the dialog), since
- * "time's up" would then be false, and once `final_score` has closed the round.
+ * The round is identified by its `startedAt` — handed in, since `start_game`
+ * arms this from inside its window, before the round is stored — so a timer
+ * armed by an earlier round says nothing into a later one. It stays silent when
+ * the WORDS ran out first (every word settled, `WORDS_DONE` already moved the
+ * dialog), since "time's up" would then be false, and once `final_score` has
+ * closed the round.
  */
-export function armTimeUpLine(ctx: ToolContext): void {
-  const round = gameSlot.get(ctx).startedAt;
+export function armTimeUpLine(ctx: ToolContext, round: number): void {
   setTimeout(() => {
     const game = gameSlot.get(ctx);
     const clockRanOut =

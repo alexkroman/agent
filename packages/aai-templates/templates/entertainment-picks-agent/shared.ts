@@ -42,9 +42,13 @@ export const MAX_RECS = 12;
  *   `at(-1)`; the sidebar's newest-first painting is a display choice, and it
  *   is the view on the slot below that makes it.
  */
-export const nightSlot = sessionSlot("night", () => ({ recs: [] as Rec[] }), {
-  // What the browser sees: newest first, over a copy — the slot stays
-  // chronological, and reversing here keeps both ends agreeing which end is new.
-  view: (night) => ({ recs: [...night.recs].reverse() }),
-  caps: { recs: MAX_RECS },
-});
+export const nightSlot = sessionSlot(
+  "night",
+  { recs: [] as Rec[] },
+  {
+    // What the browser sees: newest first, over a copy — the slot stays
+    // chronological, and reversing here keeps both ends agreeing which end is new.
+    view: (night) => ({ recs: [...night.recs].reverse() }),
+    caps: { recs: MAX_RECS },
+  },
+);
