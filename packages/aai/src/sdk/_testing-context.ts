@@ -186,8 +186,11 @@ export function createSlotStore(): SlotStore {
  * undefined` could not pass it, and the workaround it reached for instead was a
  * conditional spread:
  *
- * ```ts no-check
- * createToolContext({ generate, ...(sessionId ? { sessionId } : {}) });
+ * ```ts
+ * import { createToolContext } from "@alexkroman1/aai/testing";
+ *
+ * declare const sessionId: string | undefined;
+ * createToolContext({ ...(sessionId ? { sessionId } : {}) });
  * ```
  *
  * Two shipped templates had that line byte-identical, and it is the exact shape
@@ -385,8 +388,26 @@ const NO_ROUTES = { routes: {} } as const;
  * the slot back is how a spec asserts what a tool wrote.
  *
  * @example
- * ```ts no-check
- * // `no-check`: the tool under test is in another file, which is the point.
+ * ```ts
+ * // file: shared.ts
+ * import { sessionSlot } from "@alexkroman1/aai";
+ *
+ * export const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }));
+ *
+ * // file: tools/add_item.ts
+ * import { z } from "zod";
+ * import { cartSlot } from "../shared.ts";
+ *
+ * export default cartSlot.updateTool({
+ *   description: "Add an item to the cart",
+ *   inputSchema: z.object({ item: z.string() }),
+ *   execute: ({ item }, cart) => {
+ *     cart.items.push(item);
+ *     return { count: cart.items.length };
+ *   },
+ * });
+ *
+ * // file: agent.test.ts
  * import { createToolContext } from "@alexkroman1/aai/testing";
  * import { expect, test } from "vitest";
  * import { cartSlot } from "./shared.ts";
@@ -400,10 +421,24 @@ const NO_ROUTES = { routes: {} } as const;
  * ```
  *
  * @example Asserting on what a tool sent
- * ```ts no-check
+ * ```ts
+ * // file: tools/recommend.ts
+ * import { tool } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
+ * export default tool({
+ *   description: "Recommend something for a mood",
+ *   inputSchema: z.object({ mood: z.string() }),
+ *   execute: ({ mood }, ctx) => {
+ *     ctx.send("recommendations", { mood, picks: ["a walk by the river"] });
+ *     return { picks: 1 };
+ *   },
+ * });
+ *
+ * // file: agent.test.ts
  * import { createToolContext } from "@alexkroman1/aai/testing";
  * import { expect, test } from "vitest";
- * import { recommend } from "./tools/recommend.ts";
+ * import recommend from "./tools/recommend.ts";
  *
  * test("recommend pushes its picks to the client", async () => {
  *   const ctx = createToolContext();

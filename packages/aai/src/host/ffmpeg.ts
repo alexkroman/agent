@@ -294,15 +294,17 @@ export type WavEncodeOptions = {
  * a long recording, and a caller writing file → file should not have to
  * re-derive which of ffmpeg's codec names is uncompressed:
  *
- * ```ts no-check
+ * ```ts
  * import { runFfmpeg, wavEncodeArgs } from "@alexkroman1/aai/ffmpeg";
  *
- * await runFfmpeg([
- *   "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
- *   "-i", inputPath,
- *   ...wavEncodeArgs({ sampleRate: 16_000, channels: 1 }),
- *   outputPath,
- * ]);
+ * export async function toWav(inputPath: string, outputPath: string) {
+ *   await runFfmpeg([
+ *     "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+ *     "-i", inputPath,
+ *     ...wavEncodeArgs({ sampleRate: 16_000, channels: 1 }),
+ *     outputPath,
+ *   ]);
+ * }
  * ```
  */
 export function wavEncodeArgs(options: WavEncodeOptions = {}): string[] {

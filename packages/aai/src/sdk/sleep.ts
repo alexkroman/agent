@@ -6,7 +6,7 @@
  * (`sleepms` in its `src/utils.ts`, plus two abort-aware variants beside it),
  * found **six** here across five packages, at 22 call sites:
  *
- * ```ts no-check
+ * ```text
  * new Promise((resolve) => setTimeout(resolve, ms))            // ×13, inline
  * function sleep(ms) { setTimeout(resolve, ms).unref?.() }     // aai-server/_sleep.ts
  * function delay(ms) { setTimeout(resolve, ms).unref?.() }     // workflow/api/wait.ts

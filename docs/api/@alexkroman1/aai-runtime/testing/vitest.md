@@ -120,8 +120,15 @@ Completion contents, in order; the last repeats — see
 
 #### Example
 
-```ts no-check
-// `no-check`: the step under test is in another file, which is the point.
+```ts
+// file: workflows/digest.ts
+import { stepGenerateJson } from "@alexkroman1/aai/step";
+import { z } from "zod";
+
+export const summarize = (article: string) =>
+  stepGenerateJson(`One headline for: ${article}`, { schema: z.object({ headline: z.string() }) });
+
+// file: digest.test.ts
 import { installStubGateway } from "@alexkroman1/aai/testing/vitest";
 import { expect, test } from "vitest";
 import { summarize } from "./workflows/digest.ts";

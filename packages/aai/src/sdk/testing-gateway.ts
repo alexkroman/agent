@@ -99,8 +99,15 @@ export interface StubGateway {
  * @param replies - Completion contents, in order. A bare string is one reply.
  *
  * @example
- * ```ts no-check
- * // `no-check`: the step under test is in another file, which is the point.
+ * ```ts
+ * // file: workflows/digest.ts
+ * import { stepGenerateJson } from "@alexkroman1/aai/step";
+ * import { z } from "zod";
+ *
+ * export const summarize = (article: string) =>
+ *   stepGenerateJson(`One headline for: ${article}`, { schema: z.object({ headline: z.string() }) });
+ *
+ * // file: digest.test.ts
  * import { stubGateway } from "@alexkroman1/aai/testing";
  * import { expect, test, vi } from "vitest";
  * import { summarize } from "./workflows/digest.ts";
@@ -202,15 +209,19 @@ export interface StubGatewayRoute {
  * request; one eval asserted its prompts that way and was really asserting
  * against the serialized `model` and `temperature` too.
  *
- * ```ts no-check
- * // `no-check`: the step under test is in another file, which is the point.
+ * ```ts
  * import { stubGatewayRoute } from "@alexkroman1/aai/testing";
  * import { installStubStepFetch } from "@alexkroman1/aai/testing/vitest";
+ * import { expect, test } from "vitest";
  *
- * const model = stubGatewayRoute(['{"verdict":"ship"}']);
- * installStubStepFetch((request) => model.route(request) ?? { body: PAGE_HTML });
- * // … run the workflow …
- * expect(model.calls[0]?.prompt).toContain("the brief");
+ * const PAGE_HTML = "<html><body>the brief</body></html>";
+ *
+ * test("the reviewer is asked about the brief", async () => {
+ *   const model = stubGatewayRoute(['{"verdict":"ship"}']);
+ *   installStubStepFetch((request) => model.route(request) ?? { body: PAGE_HTML });
+ *   // … run the workflow …
+ *   expect(model.calls[0]?.prompt).toContain("the brief");
+ * });
  * ```
  *
  * @param replies - Completion contents, in order; the last repeats. A bare

@@ -212,28 +212,60 @@ const STUB_AUDIO_URL = "https://cdn.assemblyai.test/upload/stub";
  * one with `stubUploads`. The two fakes fill different slots and compose.
  *
  * @example A whole async job, in one line of setup
- * ```ts no-check
- * // `no-check`: the workflow under test is in another file, which is the point.
+ * ```ts
+ * // file: workflows/transcribe.ts
+ * import {
+ *   stepReadUpload,
+ *   stepTranscribePoll,
+ *   stepTranscribeSubmit,
+ *   stepTranscribeSync,
+ *   stepTranscribeUpload,
+ * } from "@alexkroman1/aai/step";
+ * import { orFail } from "@alexkroman1/aai/step-errors";
+ *
+ * export async function transcribeRecording(uploadId: string) {
+ *   const { audioUrl } = await stepTranscribeUpload(uploadId);
+ *   const { id } = await stepTranscribeSubmit(audioUrl);
+ *   let progress = await stepTranscribePoll(id);
+ *   while (!progress.done) progress = await stepTranscribePoll(id);
+ *   return progress.transcript.text;
+ * }
+ *
+ * export async function transcribeSegment(uploadId: string, segment: { start: number; end: number }) {
+ *   const { bytes } = await stepReadUpload(uploadId, segment);
+ *   return orFail(stepTranscribeSync)(bytes);
+ * }
+ *
+ * // file: transcribe.test.ts
+ * import { RetryableError } from "@alexkroman1/aai/step-errors";
  * import { stubTranscribe, stubUploads } from "@alexkroman1/aai/testing";
+ * import { expect, test } from "vitest";
+ * import { transcribeRecording, transcribeSegment } from "./workflows/transcribe.ts";
  *
- * const uploads = stubUploads({ upl_1: new Uint8Array(5000) });
- * const provider = stubTranscribe({ text: "we ship tuesday", durationSec: 42 });
+ * test("a whole async job, in one line of setup", async () => {
+ *   const uploads = stubUploads({ upl_1: new Uint8Array(5000) });
+ *   const provider = stubTranscribe({ text: "we ship tuesday", durationSec: 42 });
  *
- * expect(await transcribeRecording("upl_1")).toBe("we ship tuesday");
- * // The file really streamed: `stubStepFetch` drains the body into bytes.
- * expect(provider.calls.find((call) => call.leg === "upload")?.body).toBeInstanceOf(Uint8Array);
+ *   expect(await transcribeRecording("upl_1")).toBe("we ship tuesday");
+ *   // The file really streamed: `stubStepFetch` drains the body into bytes.
+ *   expect(provider.calls.find((call) => call.leg === "upload")?.body).toBeInstanceOf(Uint8Array);
  *
- * provider.restore();
- * uploads.restore();
- * ```
- *
- * @example A rate limit, classified by the SDK rather than by the fake
- * ```ts no-check
- * const provider = stubTranscribe({
- *   failure: { leg: "sync", status: 429, retryAfterSeconds: 30 },
+ *   provider.restore();
+ *   uploads.restore();
  * });
- * // `toStepError` reads `retryable` and `retryAfter` off the real TranscribeError.
- * await expect(transcribeSegment("upl_1", segment)).rejects.toBeInstanceOf(RetryableError);
+ *
+ * test("a rate limit, classified by the SDK rather than by the fake", async () => {
+ *   const uploads = stubUploads({ upl_1: new Uint8Array(5000) });
+ *   const provider = stubTranscribe({
+ *     failure: { leg: "sync", status: 429, retryAfterSeconds: 30 },
+ *   });
+ *   // `toStepError` reads `retryable` and `retryAfter` off the real TranscribeError.
+ *   await expect(transcribeSegment("upl_1", { start: 0, end: 1000 })).rejects.toBeInstanceOf(
+ *     RetryableError,
+ *   );
+ *   provider.restore();
+ *   uploads.restore();
+ * });
  * ```
  *
  * @public

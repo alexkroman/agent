@@ -8,9 +8,13 @@
  * So `{ name: maybeName }` is a type error whenever `maybeName` can be
  * `undefined`, and the only spelling that compiles is a conditional spread:
  *
- * ```ts no-check
- * ...(name !== undefined ? { name } : {}),
- * ...(greeting !== undefined ? { greeting } : {}),
+ * ```ts
+ * declare const name: string | undefined;
+ * declare const greeting: string | undefined;
+ * const fields: { name?: string; greeting?: string } = {
+ *   ...(name !== undefined ? { name } : {}),
+ *   ...(greeting !== undefined ? { greeting } : {}),
+ * };
  * ```
  *
  * Which is correct, and was written by hand 44 times across five packages —

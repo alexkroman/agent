@@ -9,13 +9,19 @@
  * `.value` — and eighteen sites across ten shipped templates had written them
  * out, the worst at twelve lines and carrying its file's only cast:
  *
- * ```ts no-check
- * const schema = toolOf(agentDef, "add_pizza").inputSchema;
- * if (!schema) throw new Error("add_pizza has no input schema");
- * const validate = (value: unknown) => schema["~standard"].validate(value);
- * const ok = await validate({ size: "small" });
- * if (ok.issues) throw new Error("expected valid input");
- * expect((ok.value as { quantity: number }).quantity).toBe(1);
+ * ```ts
+ * import agentDef from "virtual:aai/agent";
+ * import { toolOf } from "@alexkroman1/aai/testing";
+ * import { expect, test } from "vitest";
+ *
+ * test("add_pizza defaults the quantity", async () => {
+ *   const schema = toolOf(agentDef, "add_pizza").inputSchema;
+ *   if (!schema) throw new Error("add_pizza has no input schema");
+ *   const validate = (value: unknown) => schema["~standard"].validate(value);
+ *   const ok = await validate({ size: "small" });
+ *   if (ok.issues) throw new Error("expected valid input");
+ *   expect((ok.value as { quantity: number }).quantity).toBe(1);
+ * });
  * ```
  *
  * The vendor interface is a wire contract, not an authoring surface: a spec
@@ -56,14 +62,25 @@ import { type ToolBearingAgent, toolOf } from "./testing-tools.ts";
  *   failure readable at all, since a raw issue array prints as `[Object]`.
  *
  * @example
- * ```ts no-check
+ * ```ts
+ * import { workflow } from "@alexkroman1/aai";
  * import { parseSchemaInput } from "@alexkroman1/aai/testing";
+ * import { expect, test } from "vitest";
+ * import { z } from "zod";
  *
- * const parsed = await parseSchemaInput<{ voice: string }>(myWorkflow.input, {
- *   recording: "upl_1",
- *   voice: "jane",
+ * const myWorkflow = workflow({
+ *   description: "Read a recording aloud",
+ *   input: z.object({ recording: z.string(), voice: z.string().default("jane") }),
+ *   run: async (input) => input,
  * });
- * expect(parsed.voice).toBe("jane");
+ *
+ * test("the voice survives parsing", async () => {
+ *   const parsed = await parseSchemaInput<{ voice: string }>(myWorkflow.input, {
+ *     recording: "upl_1",
+ *     voice: "jane",
+ *   });
+ *   expect(parsed.voice).toBe("jane");
+ * });
  * ```
  *
  * @public
@@ -94,10 +111,21 @@ export async function parseSchemaInput<T = Record<string, unknown>>(
  * @param what - How the schema is named in that error.
  *
  * @example
- * ```ts no-check
+ * ```ts
+ * import { workflow } from "@alexkroman1/aai";
  * import { schemaInputIssues } from "@alexkroman1/aai/testing";
+ * import { expect, test } from "vitest";
+ * import { z } from "zod";
  *
- * expect(await schemaInputIssues(myWorkflow.input, { voice: "not-a-voice" })).toBeDefined();
+ * const myWorkflow = workflow({
+ *   description: "Read a recording aloud",
+ *   input: z.object({ recording: z.string(), voice: z.enum(["jane", "paul"]) }),
+ *   run: async (input) => input,
+ * });
+ *
+ * test("an unknown voice is refused", async () => {
+ *   expect(await schemaInputIssues(myWorkflow.input, { voice: "not-a-voice" })).toBeDefined();
+ * });
  * ```
  *
  * @public
@@ -160,10 +188,14 @@ export async function parseToolInput<T = Record<string, unknown>>(
  *   so out loud beats answering `undefined` — which reads as "accepted".
  *
  * @example
- * ```ts no-check
+ * ```ts
+ * import agentDef from "virtual:aai/agent";
  * import { toolInputIssues } from "@alexkroman1/aai/testing";
+ * import { expect, test } from "vitest";
  *
- * expect(await toolInputIssues(agentDef, "recommend", { mood: "melancholy" })).toBeDefined();
+ * test("recommend refuses a mood off its list", async () => {
+ *   expect(await toolInputIssues(agentDef, "recommend", { mood: "melancholy" })).toBeDefined();
+ * });
  * ```
  *
  * @public

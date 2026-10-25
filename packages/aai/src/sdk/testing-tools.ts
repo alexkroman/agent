@@ -303,7 +303,11 @@ export type ToolRunner = (
  * is the thing that varies. Every shipped template therefore opened with the
  * same wrapper:
  *
- * ```ts no-check
+ * ```ts
+ * import agentDef from "virtual:aai/agent";
+ * import type { ToolContext } from "@alexkroman1/aai";
+ * import { runTool } from "@alexkroman1/aai/testing";
+ *
  * const run = (name: string, argsOrCtx?: Record<string, unknown> | ToolContext, ctx?: ToolContext) =>
  *   runTool(agentDef, name, argsOrCtx, ctx);
  * ```

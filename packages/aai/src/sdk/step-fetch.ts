@@ -57,8 +57,8 @@
  * exported step callable from a spec that stubs the global — the same rule
  * {@link stepEnv} follows for `process.env`.
  *
- * ```ts no-check
- * import { multipartBody, stepFetch } from "@alexkroman1/aai/step";
+ * ```ts
+ * import { multipartBody, requireStepEnv, stepFetch } from "@alexkroman1/aai/step";
  *
  * export async function transcribe(bytes: Uint8Array) {
  *   const part = multipartBody({ name: "audio", filename: "clip.wav", type: "audio/wav", bytes });
@@ -67,6 +67,7 @@
  *     headers: { Authorization: requireStepEnv("ASSEMBLYAI_API_KEY"), ...part.headers },
  *     body: part.body,
  *   });
+ *   return response.json();
  * }
  * ```
  */

@@ -150,7 +150,7 @@ export async function stepReport(line: string): Promise<void> {
  * way to hand any of them over. Emitting each one as it lands means a page renders
  * the answer growing instead of a spinner:
  *
- * ```ts no-check
+ * ```ts
  * import { stepEmit } from "@alexkroman1/aai/step";
  *
  * export async function transcribeSegment(index: number) {
@@ -158,13 +158,26 @@ export async function stepReport(line: string): Promise<void> {
  *   await stepEmit("transcript", { index, text });
  *   return { index, text };
  * }
+ *
+ * declare function transcribe(index: number): Promise<string>; // your own step
  * ```
  *
- * ```tsx no-check
+ * ```tsx
  * // The reader, which the SDK already had: one stream per namespace.
- * const { progress } = useWorkflowProgress<{ index: number; text: string }>(runId, {
- *   namespace: "transcript",
- * });
+ * import { useWorkflowProgress } from "@alexkroman1/aai-ui";
+ *
+ * export function Transcript({ runId }: { runId: string }) {
+ *   const { progress } = useWorkflowProgress<{ index: number; text: string }>(runId, {
+ *     namespace: "transcript",
+ *   });
+ *   return (
+ *     <ol>
+ *       {progress.map((chunk) => (
+ *         <li key={chunk.index}>{chunk.text}</li>
+ *       ))}
+ *     </ol>
+ *   );
+ * }
  * ```
  *
  * **The namespace is REQUIRED, and that is the point of the argument.** The
