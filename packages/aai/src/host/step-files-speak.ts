@@ -30,20 +30,37 @@
 
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { omitUndefined } from "../sdk/omit-undefined.ts";
-import { throwFfmpegStepError } from "../sdk/step-errors.ts";
 import { type SpeakOptions, type SpokenAudio, stepSpeak } from "../sdk/step-speak.ts";
 import type { UploadInfo } from "../sdk/step-uploads.ts";
 import { stepWriteUpload } from "../sdk/step-uploads-write.ts";
-import { ffmpegBaseArgs, runFfmpeg } from "./ffmpeg.ts";
-import { withTempDir, writeUploadFromFile } from "./step-files.ts";
+import { runFfmpegToUpload } from "./_ffmpeg-to-upload.ts";
+import { withTempDir } from "./step-files.ts";
 
 /**
  * The container {@link stepSpeakToUpload} stores.
  *
  * @public
  */
-export type SpeakMaster = "mp3" | "wav";
+export type SpeakMasterFormat = "mp3" | "wav";
+
+/**
+ * What {@link stepSpeakToUpload} masters to: the format alone, or the format
+ * with the ffmpeg flags to apply on the way — a `loudnorm` pass, a sample
+ * rate, a bitrate — inserted between `-i <source>` and the encoder's own.
+ *
+ * `format: "wav"` with `args` still runs ffmpeg (the WAV is re-encoded with the
+ * flags applied); without `args` it stores `stepSpeak`'s WAV as it is.
+ *
+ * @input
+ * @public
+ */
+export type SpeakMaster =
+  | SpeakMasterFormat
+  | {
+      format: SpeakMasterFormat;
+      /** Filter and encoder flags, e.g. `["-af", "loudnorm=I=-16:TP=-1.5:LRA=11"]`. */
+      args?: readonly string[] | undefined;
+    };
 
 /**
  * What {@link stepSpeakToUpload} accepts: `stepSpeak`'s options, plus the
@@ -55,7 +72,7 @@ export type SpeakMaster = "mp3" | "wav";
 export type SpeakToUploadOptions = SpeakOptions & {
   /**
    * `"wav"` stores the synthesized WAV as it is; `"mp3"` masters it with ffmpeg
-   * first. Defaults to `"wav"`.
+   * first; the object form adds ffmpeg flags to either. Defaults to `"wav"`.
    */
   master?: SpeakMaster | undefined;
   /**
@@ -81,15 +98,29 @@ export type SpokenUpload = UploadInfo & {
   durationMs: number;
   /** The voice that actually spoke, with the default filled in. */
   voice: string;
+  /** Wall-clock milliseconds the mastering run took — `0` when no ffmpeg ran. */
+  ffmpegMs: number;
 };
 
 /**
  * The MIME type each master is stored as — the field the byte route serves as
  * `Content-Type`, and the one a browser will not play a file without.
  */
-const MASTER_TYPES: Readonly<Record<SpeakMaster, string>> = {
+const MASTER_TYPES: Readonly<Record<SpeakMasterFormat, string>> = {
   wav: "audio/wav",
   mp3: "audio/mpeg",
+};
+
+/**
+ * The encoder flags per format. MP3 at VBR quality 2 (~190 kbps for stereo,
+ * less for this mono source): the encoder's own recommended setting for
+ * speech that has to survive a phone speaker, and a constant rather than an
+ * option because nothing a step knows would change it. A WAV re-encode names
+ * no codec: the container decides, and the caller's `args` carry the rest.
+ */
+const ENCODER_ARGS: Readonly<Record<SpeakMasterFormat, readonly string[]>> = {
+  mp3: ["-c:a", "libmp3lame", "-q:a", "2"],
+  wav: [],
 };
 
 /**
@@ -110,39 +141,49 @@ export async function stepSpeakToUpload(
   options: SpeakToUploadOptions,
 ): Promise<SpokenUpload> {
   const { master = "wav", name, timeoutMs, ...speak } = options;
+  const { format, args = [] } = typeof master === "string" ? { format: master } : master;
   const spoken = await stepSpeak(text, speak);
-  const stored =
-    master === "mp3"
-      ? await masterToMp3(spoken, { name, type: MASTER_TYPES.mp3 }, timeoutMs)
-      : await stepWriteUpload(spoken.audio, { name, type: MASTER_TYPES.wav });
-  return { ...stored, durationMs: spoken.durationMs, voice: spoken.voice };
+  const output = { name, type: MASTER_TYPES[format] };
+  const needsFfmpeg = format === "mp3" || args.length > 0;
+  const mastered = needsFfmpeg
+    ? await masterWav(spoken, [...args, ...ENCODER_ARGS[format]], format, output, timeoutMs)
+    : { upload: await stepWriteUpload(spoken.audio, output), ffmpegMs: 0 };
+  return {
+    ...mastered.upload,
+    durationMs: spoken.durationMs,
+    voice: spoken.voice,
+    ffmpegMs: mastered.ffmpegMs,
+  };
 }
 
 /**
- * The WAV through `libmp3lame` and into the store, file → file.
+ * The WAV through ffmpeg and into the store, file → file.
  *
  * A temp file rather than `pipe:0`, even though a WAV is seekable from a pipe,
- * so this and `transcodeUpload` are one shape and the same rule covers both; and
- * because the synthesized WAV of a long script is the largest thing this step
- * holds, which the piped output's 64 MiB cap would eventually meet.
+ * so this and `transcodeUpload` are one shape and the same rule covers both
+ * (`_ffmpeg-to-upload.ts`, which also refuses an empty encode); and because the
+ * synthesized WAV of a long script is the largest thing this step holds, which
+ * the piped output's 64 MiB cap would eventually meet.
  */
-async function masterToMp3(
+async function masterWav(
   spoken: SpokenAudio,
+  encode: readonly string[],
+  format: SpeakMasterFormat,
   output: { name: string; type: string },
   timeoutMs: number | undefined,
-): Promise<UploadInfo> {
+): Promise<{ upload: UploadInfo; ffmpegMs: number }> {
   return await withTempDir(async (dir) => {
     const source = join(dir, "spoken.wav");
-    const out = join(dir, "mastered.mp3");
+    const out = join(dir, `mastered.${format}`);
     await writeFile(source, spoken.audio);
-    // VBR quality 2 (~190 kbps for stereo, less for this mono source): the
-    // encoder's own recommended setting for speech that has to survive a phone
-    // speaker, and a constant rather than an option because nothing a step
-    // knows would change it.
-    await runFfmpeg(
-      [...ffmpegBaseArgs(), "-i", source, "-vn", "-c:a", "libmp3lame", "-q:a", "2", out],
-      { cwd: dir, ...omitUndefined({ timeoutMs }) },
-    ).catch(throwFfmpegStepError);
-    return await writeUploadFromFile(out, output);
+    const { upload, run } = await runFfmpegToUpload(["-i", source, "-vn", ...encode, out], {
+      dir,
+      out,
+      output,
+      label: "the spoken audio",
+      inputBytes: spoken.audio.byteLength,
+      timeoutMs,
+    });
+    return { upload, ffmpegMs: run.durationMs };
   });
 }

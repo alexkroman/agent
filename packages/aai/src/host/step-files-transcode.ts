@@ -29,7 +29,8 @@
  * ## One materialization, whatever the step asks for
  *
  * The recording is read out of the store ONCE, and the probe, when asked for,
- * runs over the same file the transcode reads. On a deployed guest the read is
+ * runs over the same file the transcode reads — BEFORE it, so the argv may be
+ * built from what the probe found. On a deployed guest the read is
  * the expensive leg by an order of magnitude (`FFMPEG-CLAUDE.md` in the
  * templates package carries the measurement), which is why `probe` is an option
  * here rather than a separate step a body calls first: a body that probed in one
@@ -48,14 +49,13 @@
  * @module step-files-transcode
  */
 
-import { stat } from "node:fs/promises";
 import { extname, join } from "node:path";
-import { formatBytes } from "../sdk/format.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
-import { throwFatalStepError, throwFfmpegStepError } from "../sdk/step-errors.ts";
+import { throwFfmpegStepError } from "../sdk/step-errors.ts";
 import { stepRequireCompleteUpload } from "../sdk/step-uploads-complete.ts";
-import { ffmpegBaseArgs, type MediaInfo, probeMedia, runFfmpeg } from "./ffmpeg.ts";
-import { readUploadToFile, withTempDir, writeUploadFromFile } from "./step-files.ts";
+import { runFfmpegToUpload } from "./_ffmpeg-to-upload.ts";
+import { type MediaInfo, probeMedia } from "./ffmpeg.ts";
+import { readUploadToFile, withTempDir } from "./step-files.ts";
 
 /**
  * What {@link transcodeUpload} accepts.
@@ -66,7 +66,10 @@ import { readUploadToFile, withTempDir, writeUploadFromFile } from "./step-files
 export type TranscodeUploadOptions = {
   /**
    * The argv AFTER the standing flags — `-i <source>`, the filter and encoder
-   * flags, and `<out>` last — given the two paths this call chose.
+   * flags, and `<out>` last — given the two paths this call chose and, when
+   * `probe` was asked for, what ffprobe made of the source: an argv that
+   * depends on the probed rate or channel count reads `info` rather than
+   * probing again in a step of its own.
    *
    * `ffmpegBaseArgs()` (`-hide_banner -loglevel error -nostats -nostdin -y`)
    * is prepended by this call and is not the caller's to spell: `-nostdin` is
@@ -74,7 +77,7 @@ export type TranscodeUploadOptions = {
    * most often left out. A filter that reports through the LOG needs
    * `loglevel: "info"` instead.
    */
-  args: (source: string, out: string) => readonly string[];
+  args: (source: string, out: string, info: MediaInfo | undefined) => readonly string[];
   /**
    * What to store the result as. Both fields are stored verbatim and neither is
    * inferred (`writeUploadFromFile` says why `type` matters); the name's
@@ -85,9 +88,10 @@ export type TranscodeUploadOptions = {
   /** Wall-clock budget for the ffmpeg run. Defaults to `DEFAULT_FFMPEG_TIMEOUT_MS`. */
   timeoutMs?: number | undefined;
   /**
-   * Also run `ffprobe` over the materialized source, and answer its
-   * {@link MediaInfo} as `info`. Off by default — a probe is a second subprocess,
-   * and most transcodes do not need to know what they were handed.
+   * Also run `ffprobe` over the materialized source FIRST, hand its
+   * {@link MediaInfo} to `args`, and answer it as `info`. Off by default — a
+   * probe is a second subprocess, and most transcodes do not need to know what
+   * they were handed.
    */
   probe?: boolean | undefined;
   /** `ffmpegBaseArgs`'s `loglevel`. Defaults to `"error"`. */
@@ -153,31 +157,18 @@ export async function transcodeUpload(
             throwFfmpegStepError,
           )
         : undefined;
-    const run = await runFfmpeg(
-      [
-        ...ffmpegBaseArgs(omitUndefined({ loglevel: options.loglevel })),
-        ...options.args(source, out),
-      ],
-      { cwd: dir, ...omitUndefined({ timeoutMs: options.timeoutMs, signal: options.signal }) },
-    ).catch(throwFfmpegStepError);
-    // A zero exit with an empty output is ffmpeg saying "no stream matched the
-    // request" — `-vn` over a video-only file, a filter that dropped everything.
-    // Storing it hands the next step a file that reads as silence, which is the
-    // failure that is hardest to tell from a real one. Fatal, for the reason an
-    // exit is: the same argv over the same bytes writes the same nothing.
-    const written = await stat(out).catch((err: unknown) =>
-      throwFatalStepError(
-        err,
-        `ffmpeg exited 0 but wrote no ${options.output.name} for ${stored.label}.`,
-      ),
-    );
-    if (written.size === 0) {
-      throwFatalStepError(
-        new Error(run.stderr),
-        `ffmpeg wrote an empty ${options.output.name} for ${stored.label} (${formatBytes(bytes)} in).`,
-      );
-    }
-    const upload = await writeUploadFromFile(out, options.output);
+    // The run, the empty-output refusal and the store are `_ffmpeg-to-upload.ts`'s,
+    // shared with `stepSpeakToUpload`.
+    const { upload, run } = await runFfmpegToUpload(options.args(source, out, info), {
+      dir,
+      out,
+      output: options.output,
+      label: stored.label,
+      inputBytes: bytes,
+      loglevel: options.loglevel,
+      timeoutMs: options.timeoutMs,
+      signal: options.signal,
+    });
     return {
       id: upload.id,
       size: upload.size,
