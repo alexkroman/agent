@@ -110,6 +110,7 @@ interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
     slots: SlotStore;
+    turn: number;
 }
 
 // @public
@@ -643,6 +644,9 @@ export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
 // @internal
 export const DEAD_AIR_TOOL_COVER_MS = 1200;
 
+// @internal
+export function declaredWorkflowName(declared: Readonly<Record<string, AnyWorkflowDef>>, def: AnyWorkflowDef): string | undefined;
+
 // @public
 export const DEEPGRAM_API_KEY_ENV: string;
 
@@ -936,6 +940,11 @@ export function labelUpload(record: UploadRecord): UploadInfo;
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
+// @internal
+export function liveSessionEntry<E extends {
+    expiresAt: number;
+}>(map: Map<string, E>, sessionId: string): E | undefined;
+
 // @public
 export const LLM_PROVIDERS: {
     readonly anthropic: ProviderDefinition<"anthropic", "llm">;
@@ -1095,6 +1104,15 @@ interface ModelTuning {
     temperature?: number;
 }
 
+// @public
+export function nearestNames(wanted: string, names: Iterable<string>, options?: NearestNamesOptions): string[];
+
+// @public
+export interface NearestNamesOptions {
+    maxDistance?: number;
+    maxNames?: number;
+}
+
 // @internal
 export function normalizeClientLocation(raw: string | null | undefined): string | undefined;
 
@@ -1153,7 +1171,7 @@ export function planDelayedLadder(list: readonly ToolDelayedMessage[] | undefine
 
 // @public @input
 type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -1189,9 +1207,6 @@ export function pollWorkflow<T>(host: PollHost, name: string, check: () => Promi
 
 // @internal
 export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
-
-// @internal
-export function promptContextResolver(context: AgentPromptContext | undefined): Exclude<AgentPromptContext, string> | undefined;
 
 // @internal
 export const PROVIDER_CATALOG: readonly ProviderDefinition[];
@@ -1309,6 +1324,9 @@ export function recordFetchRequest(request: Request): Promise<RequestRecord>;
 export function recordSessionIdentity(sessionId: string, identity: SessionIdentity): void;
 
 // @internal
+export function recordWorkflowNames(workflows: Readonly<Record<string, AnyWorkflowDef>>): void;
+
+// @internal
 export type ReportHost = {
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
 };
@@ -1323,6 +1341,12 @@ export type RequestRecord = {
     readonly headers: Record<string, string>;
     readonly text: string | undefined;
 };
+
+// @internal
+export function resolveAgentInstructions(agent: {
+    readonly systemPrompt?: AgentSystemPrompt | undefined;
+    readonly promptContext?: AgentPromptContext | undefined;
+}, ctx: AgentSessionContext): string | undefined;
 
 // @public
 export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;
@@ -1549,8 +1573,8 @@ export const SESSION_KEY = "session";
 // @internal
 export const SESSION_RESUME_GRACE_MS = 120000;
 
-// @public @input
-type SessionCallInput = {
+// @public @sealed
+type SessionCall = {
     readonly carrier: string;
     readonly callId?: string;
     readonly parameters: Readonly<Record<string, string>>;
@@ -1566,7 +1590,7 @@ export type SessionIdentity = {
     clientId?: string | undefined;
     location?: string | undefined;
     phone?: string | undefined;
-    call?: SessionCallInput | undefined;
+    call?: SessionCall | undefined;
 };
 
 // @public
@@ -1579,7 +1603,7 @@ interface SessionSpeech {
 }
 
 // @internal
-export function setSessionCall(sessionId: string, call: SessionCallInput): void;
+export function setSessionCall(sessionId: string, call: SessionCall): void;
 
 // @internal
 export function setSessionClient(sessionId: string, clientId: string): void;

@@ -20,8 +20,12 @@
  */
 
 export {
+  // `isEvent(e, type)` and `eventsOf(events, type)`: the narrowing reads over a
+  // recorded event list, declared in the same module as `sessionEvent`.
+  eventsOf,
   type FiredEvent,
   fireEvent,
+  isEvent,
   type SessionEventFields,
   type SessionEventRest,
   sessionEvent,

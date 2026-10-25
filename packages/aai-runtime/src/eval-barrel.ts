@@ -100,6 +100,7 @@ export {
   customEventsIn,
   describeToolCalls,
   type EvalToolCall,
+  type EvalToolOutput,
   errorsIn,
   lastStateIn,
   lastToolResultIn,

@@ -30,6 +30,7 @@ export {
 // the encoder in reach, which `/step` may not name.
 export {
   type SpeakMaster,
+  type SpeakMasterFormat,
   type SpeakToUploadOptions,
   type SpokenUpload,
   stepSpeakToUpload,

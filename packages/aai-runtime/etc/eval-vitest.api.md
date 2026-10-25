@@ -5,7 +5,7 @@
 ```ts
 
 import type { AgentDef } from '@alexkroman1/aai';
-import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
+import { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { ClientEventMap } from '@alexkroman1/aai';
 import { createRecordingWorkflows } from '@alexkroman1/aai/testing';
 import { dialogRefusalPattern } from '@alexkroman1/aai/testing';
@@ -23,12 +23,13 @@ import { installStubStepDelegate } from '@alexkroman1/aai/testing/vitest';
 import { installStubStepFetch } from '@alexkroman1/aai/testing/vitest';
 import { installStubTranscribe } from '@alexkroman1/aai/testing/vitest';
 import { installStubUploads } from '@alexkroman1/aai/testing/vitest';
+import { INSTRUCTION_KEY } from '@alexkroman1/aai/utils';
 import { isEvent } from '@alexkroman1/aai/testing';
 import { LlmProvider } from '@alexkroman1/aai/llm';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RecordingWorkflows } from '@alexkroman1/aai/testing';
 import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
-import type { SessionCallInput } from '@alexkroman1/aai';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { StandardSchemaV1 } from '@alexkroman1/aai';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
@@ -152,7 +153,7 @@ export type EvalCaseOptions = {
     readonly scripted?: boolean;
     readonly clientId?: string | null;
     readonly phone?: string | null;
-    readonly call?: SessionCallInput | null;
+    readonly call?: SessionCall | null;
     readonly network?: EvalNetwork | (() => EvalNetwork);
 };
 
@@ -241,7 +242,7 @@ export type EvalSession = {
 
 // @public @input
 export interface EvalSessionOptions extends HostAgentOptions {
-    readonly call?: SessionCallInput;
+    readonly call?: SessionCall;
     readonly clientId?: string;
     readonly env?: Record<string, string>;
     readonly llm?: LlmProvider;
@@ -354,6 +355,9 @@ export type EvalToolCall = {
     readonly args: Record<string, unknown>;
     readonly result?: string;
 };
+
+// @public
+export type EvalToolOutput<D extends ToolDef<ToolInputSchema>> = InferToolOutput<D> extends infer O ? O extends Record<string, unknown> ? Omit<O, typeof INSTRUCTION_KEY> : O : never;
 
 // @public
 export type EvalTurn = {
@@ -512,7 +516,7 @@ export function lastStateIn(events: readonly SessionEvent[], slot: string): unkn
 export function lastStateIn(events: readonly SessionEvent[]): Readonly<Record<string, unknown>> | undefined;
 
 // @public
-export function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): InferToolOutput<D>;
+export function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 
 // @public (undocumented)
 export function lastToolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
@@ -813,13 +817,13 @@ export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolC
 export function toolNames(calls: readonly EvalToolCall[]): readonly string[];
 
 // @public
-export function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): InferToolOutput<D>;
+export function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 
 // @public (undocumented)
 export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
 
 // @public
-export function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly InferToolOutput<D>[];
+export function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly EvalToolOutput<D>[];
 
 // @public (undocumented)
 export function toolResultsIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): readonly T[];

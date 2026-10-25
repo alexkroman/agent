@@ -402,7 +402,7 @@ interface PipelineTuning {
 
 // @public @input
 type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -1089,7 +1089,9 @@ export interface DeepResearchNote {
 // @public
 export interface DeepResearchOptions<P extends DeepResearchInputSchema, R> {
     readonly budget?: DeepResearchBudget;
+    readonly cancelNote?: string | undefined;
     readonly deliver?: (result: DeepResearchResult, input: InferSchemaOutput<P>, ctx: WorkflowContext) => Promise<R> | R;
+    readonly describeRun?: ((run: WorkflowRunSnapshot<R>) => string) | undefined;
     readonly description?: string;
     readonly generate?: Pick<StepGenerateOptions, "model" | "apiKeyEnv" | "gatewayUrl">;
     readonly input: P;
@@ -1364,7 +1366,7 @@ interface PipelineTuning {
 
 // @public @input
 type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -1408,7 +1410,7 @@ type RandomSource = () => number;
 interface RouteContext {
     clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
     env: Readonly<Partial<Record<string, string>>>;
-    sessionTranscript?(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
+    sessionTranscript(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
     signal: AbortSignal;
     speech(sessionId: string): SessionSpeech | undefined;
     workflows: WorkflowClient;
@@ -2138,6 +2140,7 @@ interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
     slots: SlotStore;
+    turn: number;
 }
 
 // @public
@@ -2671,6 +2674,9 @@ export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
 // @internal
 export const DEAD_AIR_TOOL_COVER_MS = 1200;
 
+// @internal
+export function declaredWorkflowName(declared: Readonly<Record<string, AnyWorkflowDef>>, def: AnyWorkflowDef): string | undefined;
+
 // @public
 export const DEEPGRAM_API_KEY_ENV: string;
 
@@ -2964,6 +2970,11 @@ export function labelUpload(record: UploadRecord): UploadInfo;
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
+// @internal
+export function liveSessionEntry<E extends {
+    expiresAt: number;
+}>(map: Map<string, E>, sessionId: string): E | undefined;
+
 // @public
 export const LLM_PROVIDERS: {
     readonly anthropic: ProviderDefinition<"anthropic", "llm">;
@@ -3123,6 +3134,15 @@ interface ModelTuning {
     temperature?: number;
 }
 
+// @public
+export function nearestNames(wanted: string, names: Iterable<string>, options?: NearestNamesOptions): string[];
+
+// @public
+export interface NearestNamesOptions {
+    maxDistance?: number;
+    maxNames?: number;
+}
+
 // @internal
 export function normalizeClientLocation(raw: string | null | undefined): string | undefined;
 
@@ -3181,7 +3201,7 @@ export function planDelayedLadder(list: readonly ToolDelayedMessage[] | undefine
 
 // @public @input
 type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -3217,9 +3237,6 @@ export function pollWorkflow<T>(host: PollHost, name: string, check: () => Promi
 
 // @internal
 export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
-
-// @internal
-export function promptContextResolver(context: AgentPromptContext | undefined): Exclude<AgentPromptContext, string> | undefined;
 
 // @internal
 export const PROVIDER_CATALOG: readonly ProviderDefinition[];
@@ -3337,6 +3354,9 @@ export function recordFetchRequest(request: Request): Promise<RequestRecord>;
 export function recordSessionIdentity(sessionId: string, identity: SessionIdentity): void;
 
 // @internal
+export function recordWorkflowNames(workflows: Readonly<Record<string, AnyWorkflowDef>>): void;
+
+// @internal
 export type ReportHost = {
     step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
 };
@@ -3351,6 +3371,12 @@ export type RequestRecord = {
     readonly headers: Record<string, string>;
     readonly text: string | undefined;
 };
+
+// @internal
+export function resolveAgentInstructions(agent: {
+    readonly systemPrompt?: AgentSystemPrompt | undefined;
+    readonly promptContext?: AgentPromptContext | undefined;
+}, ctx: AgentSessionContext): string | undefined;
 
 // @public
 export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;
@@ -3577,8 +3603,8 @@ export const SESSION_KEY = "session";
 // @internal
 export const SESSION_RESUME_GRACE_MS = 120000;
 
-// @public @input
-type SessionCallInput = {
+// @public @sealed
+type SessionCall = {
     readonly carrier: string;
     readonly callId?: string;
     readonly parameters: Readonly<Record<string, string>>;
@@ -3594,7 +3620,7 @@ export type SessionIdentity = {
     clientId?: string | undefined;
     location?: string | undefined;
     phone?: string | undefined;
-    call?: SessionCallInput | undefined;
+    call?: SessionCall | undefined;
 };
 
 // @public
@@ -3607,7 +3633,7 @@ interface SessionSpeech {
 }
 
 // @internal
-export function setSessionCall(sessionId: string, call: SessionCallInput): void;
+export function setSessionCall(sessionId: string, call: SessionCall): void;
 
 // @internal
 export function setSessionClient(sessionId: string, clientId: string): void;
@@ -4358,16 +4384,24 @@ import { z } from 'zod';
 export function addDays(iso: string, days: number): string;
 
 // @public
-export function agent(def: PipelineAgentParams): ModeAgentDef<"pipeline">;
+export function agent<W extends WorkflowsMap = WorkflowsMap>(def: PipelineAgentParams & {
+    workflows?: W;
+}): AgentDefWith<"pipeline", W>;
 
 // @public
-export function agent(def: S2sAgentParams): ModeAgentDef<"s2s">;
+export function agent<W extends WorkflowsMap = WorkflowsMap>(def: S2sAgentParams & {
+    workflows?: W;
+}): AgentDefWith<"s2s", W>;
 
 // @public
-export function agent(def: TextAgentParams): ModeAgentDef<"text">;
+export function agent<W extends WorkflowsMap = WorkflowsMap>(def: TextAgentParams & {
+    workflows?: W;
+}): AgentDefWith<"text", W>;
 
 // @public
-export function agent(def: WorkflowAppAgentParams): ModeAgentDef<"workflow-app">;
+export function agent<W extends WorkflowsMap = WorkflowsMap>(def: Omit<WorkflowAppAgentParams, "workflows"> & {
+    workflows: W;
+}): AgentDefWith<"workflow-app", W>;
 
 // @public
 export function agent(def: AgentParams): AgentDef;
@@ -4405,6 +4439,12 @@ export interface AgentDef extends Omit<AgentDeclaration, "syncState"> {
     syncState?: Readonly<Record<string, StateProjection>>;
     tools: ToolMap;
 }
+
+// @public @sealed
+export type AgentDefWith<M extends AgentMode, W extends WorkflowsMap> = string extends keyof W ? ModeAgentDef<M> : // `Omit` first: intersecting `W` onto the open map would leave `keyof`
+Omit<ModeAgentDef<M>, "workflows"> & {
+    readonly workflows: W;
+};
 
 // @public
 export type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdict | Promise<GuardrailVerdict>;
@@ -4458,6 +4498,7 @@ export interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
     slots: SlotStore;
+    turn: number;
 }
 
 // @public @input
@@ -4661,6 +4702,9 @@ export type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T ex
 export const DEFAULT_GUARDRAIL_MAX_REVISIONS: number;
 
 // @public
+export const DEFAULT_SIGNAL_HOLD_MS: number;
+
+// @public
 export const DEFAULT_STEP_MAX_ATTEMPTS: number;
 
 // @public
@@ -4724,7 +4768,7 @@ export interface Dialog<E = {
     reset(ctx: SlotHolder): DialogPosition;
     send(ctx: SlotHolder, event: E): DialogPosition;
     timeout(ctx: SlotHolder): DialogTimeout | undefined;
-    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>, options?: DialogSendOptions<R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K>, options?: DialogSendOptions<R, E, K>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
@@ -4749,10 +4793,10 @@ export type DialogEventNames<M> = M extends Record<string, unknown> ? M[keyof M]
 } ? DialogEventNames<N> : never) : never : never : never;
 
 // @public @input
-export interface DialogGate<R, E> {
+export interface DialogGate<R, E, K extends string = string> {
     reset?: true;
     send?: E;
-    sendFrom?: DialogSendFrom<R, E>;
+    sendFrom?: DialogSendFrom<R, E, K>;
     when?: string | readonly string[];
 }
 
@@ -4782,16 +4826,25 @@ export interface DialogPosition {
 }
 
 // @public
-export type DialogSendFrom<R, E> = ((result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined) | DialogSendFromKey<Exclude<NoInfer<R>, ToolFailure>, E>;
+export type DialogSendFrom<R, E, K extends string = string> = ((result: NoInfer<Exclude<R, ToolFailure>>) => E | undefined) | K;
+
+// @public
+export type DialogSendFromChecked<K extends string, R, E, T> = string extends K ? T : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? T : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
 
 // @public
 export type DialogSendFromKey<S, E> = keyof {
     [K in keyof S as S[K] extends EventNameOf<E> | undefined ? K : never]: never;
 } & string;
 
+// @public @sealed
+export type DialogSendFromMisuse<K extends string, Keys extends string> = {
+    readonly "sendFrom names a result field that holds no event name of this dialog": K;
+    readonly "the fields that do": Keys;
+};
+
 // @public @input
-export interface DialogSendOptions<R, E> {
-    sendFrom: DialogSendFrom<R, E>;
+export interface DialogSendOptions<R, E, K extends string = string> {
+    sendFrom: DialogSendFrom<R, E, K>;
 }
 
 // @public
@@ -4834,7 +4887,7 @@ export interface DialogTimeoutSpec {
 }
 
 // @public @input
-export interface DialogToolDef<P extends ToolInputSchema | undefined, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
+export interface DialogToolDef<P extends ToolInputSchema | undefined, R, E, K extends string = string> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E, K> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
 }
 
@@ -5212,7 +5265,7 @@ export interface PipelineTuning {
 
 // @public @input
 export type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -5350,7 +5403,7 @@ export function route<S extends StandardSchemaV1 = StandardSchemaV1<unknown, unk
 export interface RouteContext {
     clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
     env: Readonly<Partial<Record<string, string>>>;
-    sessionTranscript?(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
+    sessionTranscript(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
     signal: AbortSignal;
     speech(sessionId: string): SessionSpeech | undefined;
     workflows: WorkflowClient;
@@ -5443,18 +5496,10 @@ export type SessionCall = {
     readonly carrier: string;
     readonly callId?: string;
     readonly parameters: Readonly<Record<string, string>>;
-    readonly brief: (secret: string | undefined) => Promise<CallBrief | undefined>;
 };
 
 // @public
 export function sessionCall(ctx: Pick<ToolContext, "sessionId">): SessionCall | undefined;
-
-// @public @input
-export type SessionCallInput = {
-    readonly carrier: string;
-    readonly callId?: string;
-    readonly parameters: Readonly<Record<string, string>>;
-};
 
 // @public
 export function sessionClientId(ctx: Pick<ToolContext, "sessionId">): string | undefined;
@@ -5490,6 +5535,7 @@ export interface SessionEndContext {
     env: Readonly<Partial<Record<string, string>>>;
     lastEventIndex: number;
     sessionId: string;
+    slots: SlotStore;
     transcript: readonly ClientTranscriptMessage[];
     workflows: WorkflowClient;
 }
@@ -5690,8 +5736,10 @@ export type SessionEventType = Extract<keyof SessionEventMap, string>;
 
 // @public @sealed
 export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
+    readonly caps?: Readonly<Partial<Record<string, number>>>;
     create(): T;
     readonly durable: boolean;
+    readonly empty?: () => T;
     get(ctx: SlotHolder): DeepReadonly<T>;
     readonly key: K;
     readonly projected: StateProjection<V>;
@@ -5702,7 +5750,7 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
         type: string;
     } = {
         type: string;
-    }>(def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E>, options?: DialogSendOptions<Awaited<R>, E>): ToolDef<P, GatedOutput<R>>;
+    }, K extends string = string>(def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E, K>, options?: DialogSendOptions<Awaited<R>, E, K>): DialogSendFromChecked<K, Awaited<R>, E, ToolDef<P, GatedOutput<R>>>;
     // (undocumented)
     tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
     transact<Prep, R>(ctx: SlotHolder, tx: SlotTransaction<T, Prep, R>): Promise<R | ToolFailure>;
@@ -5711,7 +5759,7 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
         type: string;
     } = {
         type: string;
-    }>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E> & RejectThenable<R>, options?: DialogSendOptions<R2, E>): ToolDef<P, GatedOutput<R2>>;
+    }, K extends string = string>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
     // (undocumented)
     updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unknown, R = unknown, R2 = R>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & RejectThenable<R>): ToolDef<P, Promise<R2 | ToolFailure>>;
     // (undocumented)
@@ -5719,7 +5767,7 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
         type: string;
     } = {
         type: string;
-    }>(def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E> & RejectThenable<R>, options?: DialogSendOptions<R2, E>): ToolDef<P, GatedOutput<R2>>;
+    }, K extends string = string>(def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
     // (undocumented)
     updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R>(def: SlotUpdateToolDef<P, T, R, R2> & RejectThenable<R>): ToolDef<P, R2 | Extract<R, ToolFailure>>;
 }
@@ -5784,7 +5832,7 @@ export type SlotCaps<T> = T extends object ? {
 // @public @input
 export interface SlotDialogGate<R, E extends {
     type: string;
-}> extends DialogGate<Awaited<R>, NoInfer<E>> {
+}, K extends string = string> extends DialogGate<Awaited<R>, NoInfer<E>, K> {
     dialog: Dialog<E>;
 }
 
@@ -5826,7 +5874,7 @@ export interface SlotTransaction<T, Prep, R> {
 
 // @public @input
 export interface SlotUpdateToolDef<P extends ToolInputSchema | undefined, T, R, R2 = R> extends SlotToolDef<P, T, R> {
-    report?: (stored: DeepReadonly<T>, partial: Exclude<NoInfer<R>, ToolFailure>) => R2;
+    report?: (stored: DeepReadonly<T>, partial: NoInfer<Exclude<R, ToolFailure>>) => R2;
 }
 
 // @public
@@ -6238,7 +6286,9 @@ export function workflow<P extends ToolInputSchema = ToolInputSchema>(def: Omit<
 export const WORKFLOW_APP_REQUIRED_ENV: readonly string[];
 
 // @public
-export function workflowApp(def: Omit<WorkflowAppAgentParams, "mode">): AgentDef;
+export function workflowApp<W extends WorkflowsMap>(def: Omit<WorkflowAppAgentParams, "mode" | "workflows"> & {
+    workflows: W;
+}): AgentDefWith<"workflow-app", W>;
 
 // @public @input
 export type WorkflowAppAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"> & {
@@ -6395,6 +6445,9 @@ type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 
 // @public
 type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+// @public
+export type WorkflowsMap = NonNullable<AgentDef["workflows"]>;
 
 // @public @sealed
 type WorkflowSummary = {
@@ -6963,7 +7016,7 @@ export const PLAYBACK_PROGRESS_INTERVAL_MS = 500;
 
 // @public @input
 type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -7809,6 +7862,7 @@ interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
     slots: SlotStore;
+    turn: number;
 }
 
 // @public @input
@@ -7861,12 +7915,6 @@ type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-202
 
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | "workflow_status" | "workflow_progress" | "workflow_cancel" | (string & {});
-
-// @public @sealed
-type CallBrief = {
-    id: string;
-    prompt: string;
-};
 
 // @public @input
 interface ClientEventMap {
@@ -7958,15 +8006,15 @@ interface Dialog<E = {
     reset(ctx: SlotHolder): DialogPosition;
     send(ctx: SlotHolder, event: E): DialogPosition;
     timeout(ctx: SlotHolder): DialogTimeout | undefined;
-    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>, options?: DialogSendOptions<R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K>, options?: DialogSendOptions<R, E, K>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
 // @public @input
-interface DialogGate<R, E> {
+interface DialogGate<R, E, K extends string = string> {
     reset?: true;
     send?: E;
-    sendFrom?: DialogSendFrom<R, E>;
+    sendFrom?: DialogSendFrom<R, E, K>;
     when?: string | readonly string[];
 }
 
@@ -7979,16 +8027,25 @@ interface DialogPosition {
 }
 
 // @public
-type DialogSendFrom<R, E> = ((result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined) | DialogSendFromKey<Exclude<NoInfer<R>, ToolFailure>, E>;
+type DialogSendFrom<R, E, K extends string = string> = ((result: NoInfer<Exclude<R, ToolFailure>>) => E | undefined) | K;
+
+// @public
+type DialogSendFromChecked<K extends string, R, E, T> = string extends K ? T : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? T : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
 
 // @public
 type DialogSendFromKey<S, E> = keyof {
     [K in keyof S as S[K] extends EventNameOf<E> | undefined ? K : never]: never;
 } & string;
 
+// @public @sealed
+type DialogSendFromMisuse<K extends string, Keys extends string> = {
+    readonly "sendFrom names a result field that holds no event name of this dialog": K;
+    readonly "the fields that do": Keys;
+};
+
 // @public @input
-interface DialogSendOptions<R, E> {
-    sendFrom: DialogSendFrom<R, E>;
+interface DialogSendOptions<R, E, K extends string = string> {
+    sendFrom: DialogSendFrom<R, E, K>;
 }
 
 // @public @input
@@ -8000,7 +8057,7 @@ interface DialogTimeout {
 }
 
 // @public @input
-interface DialogToolDef<P extends ToolInputSchema | undefined, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
+interface DialogToolDef<P extends ToolInputSchema | undefined, R, E, K extends string = string> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E, K> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
 }
 
@@ -8176,7 +8233,7 @@ interface PipelineTuning {
 
 // @public @input
 type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -8257,7 +8314,7 @@ interface Roster<N extends string = string> {
 interface RouteContext {
     clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
     env: Readonly<Partial<Record<string, string>>>;
-    sessionTranscript?(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
+    sessionTranscript(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
     signal: AbortSignal;
     speech(sessionId: string): SessionSpeech | undefined;
     workflows: WorkflowClient;
@@ -8310,7 +8367,6 @@ type SessionCall = {
     readonly carrier: string;
     readonly callId?: string;
     readonly parameters: Readonly<Record<string, string>>;
-    readonly brief: (secret: string | undefined) => Promise<CallBrief | undefined>;
 };
 
 // @public @sealed
@@ -8338,6 +8394,7 @@ interface SessionEndContext {
     env: Readonly<Partial<Record<string, string>>>;
     lastEventIndex: number;
     sessionId: string;
+    slots: SlotStore;
     transcript: readonly ClientTranscriptMessage[];
     workflows: WorkflowClient;
 }
@@ -10161,7 +10218,7 @@ export type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed
 
 // @public @input
 type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -11156,8 +11213,14 @@ export type ReadUploadToFileOptions = {
     concurrency?: number | undefined;
 };
 
+// @public @input
+export type SpeakMaster = SpeakMasterFormat | {
+    format: SpeakMasterFormat;
+    args?: readonly string[] | undefined;
+};
+
 // @public
-export type SpeakMaster = "mp3" | "wav";
+export type SpeakMasterFormat = "mp3" | "wav";
 
 // @public @input
 type SpeakOptions = {
@@ -11179,6 +11242,7 @@ export type SpeakToUploadOptions = SpeakOptions & {
 export type SpokenUpload = UploadInfo & {
     durationMs: number;
     voice: string;
+    ffmpegMs: number;
 };
 
 // @public
@@ -11205,7 +11269,7 @@ export function transcodeUpload(uploadId: string, options: TranscodeUploadOption
 
 // @public @input
 export type TranscodeUploadOptions = {
-    args: (source: string, out: string) => readonly string[];
+    args: (source: string, out: string, info: MediaInfo | undefined) => readonly string[];
     output: {
         name: string;
         type: string;
@@ -11371,6 +11435,7 @@ interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
     slots: SlotStore;
+    turn: number;
 }
 
 // @public
@@ -11456,6 +11521,9 @@ type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected" | 
 
 // @public
 export function createRecordingWorkflows(options?: RecordingWorkflowsOptions): RecordingWorkflows;
+
+// @public
+export function createRouteContext(overrides?: RouteContextOverrides): RouteContext;
 
 // @public
 export function createRunSnapshot<R = unknown>(overrides?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
@@ -11557,15 +11625,15 @@ interface Dialog<E = {
     reset(ctx: SlotHolder): DialogPosition;
     send(ctx: SlotHolder, event: E): DialogPosition;
     timeout(ctx: SlotHolder): DialogTimeout | undefined;
-    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>, options?: DialogSendOptions<R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K>, options?: DialogSendOptions<R, E, K>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
 // @public @input
-interface DialogGate<R, E> {
+interface DialogGate<R, E, K extends string = string> {
     reset?: true;
     send?: E;
-    sendFrom?: DialogSendFrom<R, E>;
+    sendFrom?: DialogSendFrom<R, E, K>;
     when?: string | readonly string[];
 }
 
@@ -11589,16 +11657,25 @@ export function dialogResultSchema<T extends z.ZodType>(result: T): z.ZodObject<
 }, z.core.$strip>;
 
 // @public
-type DialogSendFrom<R, E> = ((result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined) | DialogSendFromKey<Exclude<NoInfer<R>, ToolFailure>, E>;
+type DialogSendFrom<R, E, K extends string = string> = ((result: NoInfer<Exclude<R, ToolFailure>>) => E | undefined) | K;
+
+// @public
+type DialogSendFromChecked<K extends string, R, E, T> = string extends K ? T : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? T : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
 
 // @public
 type DialogSendFromKey<S, E> = keyof {
     [K in keyof S as S[K] extends EventNameOf<E> | undefined ? K : never]: never;
 } & string;
 
+// @public @sealed
+type DialogSendFromMisuse<K extends string, Keys extends string> = {
+    readonly "sendFrom names a result field that holds no event name of this dialog": K;
+    readonly "the fields that do": Keys;
+};
+
 // @public @input
-interface DialogSendOptions<R, E> {
-    sendFrom: DialogSendFrom<R, E>;
+interface DialogSendOptions<R, E, K extends string = string> {
+    sendFrom: DialogSendFrom<R, E, K>;
 }
 
 // @public @input
@@ -11610,7 +11687,7 @@ interface DialogTimeout {
 }
 
 // @public @input
-interface DialogToolDef<P extends ToolInputSchema | undefined, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
+interface DialogToolDef<P extends ToolInputSchema | undefined, R, E, K extends string = string> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E, K> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
 }
 
@@ -11651,6 +11728,9 @@ export function expectDeployable<const D extends {
     readonly llm?: unknown;
     readonly tts?: unknown;
 }>(def: D): DeployedConfig;
+
+// @public
+export function expectDialogOk<R>(result: R): R extends DialogToolResult<infer V> ? DialogToolResult<V> : DialogToolResult<unknown>;
 
 // @public
 export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
@@ -11721,12 +11801,14 @@ type FindOptions = {
 export type FiredEvent = {
     readonly typed: boolean;
     readonly wildcard: boolean;
+    readonly dialogs: readonly string[];
 };
 
 // @public
 export function fireEvent(agent: {
     readonly name?: string | undefined;
     readonly events?: SessionEventHandlers | undefined;
+    readonly dialogs?: readonly AnyDialog[] | undefined;
 }, event: SessionEvent, ctx?: SessionEventContext): Promise<FiredEvent>;
 
 // @public @sealed
@@ -11838,7 +11920,7 @@ type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed" | "bu
 
 // @public @input
 type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -11881,6 +11963,15 @@ interface ProviderDescriptor<Kind extends string, Options> {
 type RandomSource = () => number;
 
 // @public @sealed
+export type RecordedSignal = {
+    workflow: string;
+    key: string;
+    label: string;
+    payload: unknown;
+    options: SignalOptions | undefined;
+};
+
+// @public @sealed
 export type RecordedSleep = {
     label: string;
     until: number | Date;
@@ -11900,11 +11991,13 @@ export type RecordedStart = {
 export type RecordedStep = {
     name: string;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
 };
 
 // @public @sealed
 export type RecordingWorkflows = WorkflowClient & {
     readonly starts: RecordedStart[];
+    readonly signals: RecordedSignal[];
     started(workflow?: string | AnyWorkflowDef): RecordedStart[];
     readonly cancelled: string[];
     seed(...runs: WorkflowRunSnapshot[]): void;
@@ -11936,6 +12029,27 @@ interface RestoredToolCall {
     result?: string | undefined;
     status: "pending" | "done";
 }
+
+// @public @sealed
+interface RouteContext {
+    clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
+    env: Readonly<Partial<Record<string, string>>>;
+    sessionTranscript(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
+    signal: AbortSignal;
+    speech(sessionId: string): SessionSpeech | undefined;
+    workflows: WorkflowClient;
+}
+
+// @public @input
+export type RouteContextOverrides = {
+    [K in keyof RouteContext]?: RouteContext[K] | undefined;
+};
+
+// @public
+export function routeHandlerOf(value: FetchRouteHandler | StubStepAnswer): FetchRouteHandler;
+
+// @public
+export function routeOf(routes: FetchRouteTable | readonly FetchRouteHandler[]): FetchRouteHandler;
 
 // @public
 export function runGuardrail(def: SpeakerDef, text: string, answer?: Partial<DelegateAnswer>): GuardrailVerdict;
@@ -11994,8 +12108,8 @@ export interface SentEvent {
     event: string;
 }
 
-// @public @input
-type SessionCallInput = {
+// @public @sealed
+type SessionCall = {
     readonly carrier: string;
     readonly callId?: string;
     readonly parameters: Readonly<Record<string, string>>;
@@ -12203,8 +12317,10 @@ type SessionEventType = Extract<keyof SessionEventMap, string>;
 
 // @public @sealed
 interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
+    readonly caps?: Readonly<Partial<Record<string, number>>>;
     create(): T;
     readonly durable: boolean;
+    readonly empty?: () => T;
     get(ctx: SlotHolder): DeepReadonly<T>;
     readonly key: K;
     readonly projected: StateProjection<V>;
@@ -12215,7 +12331,7 @@ interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
         type: string;
     } = {
         type: string;
-    }>(def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E>, options?: DialogSendOptions<Awaited<R>, E>): ToolDef<P, GatedOutput<R>>;
+    }, K extends string = string>(def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E, K>, options?: DialogSendOptions<Awaited<R>, E, K>): DialogSendFromChecked<K, Awaited<R>, E, ToolDef<P, GatedOutput<R>>>;
     // (undocumented)
     tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
     transact<Prep, R>(ctx: SlotHolder, tx: SlotTransaction<T, Prep, R>): Promise<R | ToolFailure>;
@@ -12224,7 +12340,7 @@ interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
         type: string;
     } = {
         type: string;
-    }>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E> & RejectThenable<R>, options?: DialogSendOptions<R2, E>): ToolDef<P, GatedOutput<R2>>;
+    }, K extends string = string>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
     // (undocumented)
     updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unknown, R = unknown, R2 = R>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & RejectThenable<R>): ToolDef<P, Promise<R2 | ToolFailure>>;
     // (undocumented)
@@ -12232,7 +12348,7 @@ interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
         type: string;
     } = {
         type: string;
-    }>(def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E> & RejectThenable<R>, options?: DialogSendOptions<R2, E>): ToolDef<P, GatedOutput<R2>>;
+    }, K extends string = string>(def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
     // (undocumented)
     updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R>(def: SlotUpdateToolDef<P, T, R, R2> & RejectThenable<R>): ToolDef<P, R2 | Extract<R, ToolFailure>>;
 }
@@ -12274,7 +12390,7 @@ export type SlotContractOptions<T> = {
 // @public @input
 interface SlotDialogGate<R, E extends {
     type: string;
-}> extends DialogGate<Awaited<R>, NoInfer<E>> {
+}, K extends string = string> extends DialogGate<Awaited<R>, NoInfer<E>, K> {
     dialog: Dialog<E>;
 }
 
@@ -12313,7 +12429,7 @@ interface SlotTransaction<T, Prep, R> {
 
 // @public @input
 interface SlotUpdateToolDef<P extends ToolInputSchema | undefined, T, R, R2 = R> extends SlotToolDef<P, T, R> {
-    report?: (stored: DeepReadonly<T>, partial: Exclude<NoInfer<R>, ToolFailure>) => R2;
+    report?: (stored: DeepReadonly<T>, partial: NoInfer<Exclude<R, ToolFailure>>) => R2;
 }
 
 // @public @input
@@ -12839,7 +12955,7 @@ export type ToolContextOverrides = {
     clientId?: string | undefined;
     clientPhone?: string | undefined;
     clientLocation?: string | undefined;
-    call?: SessionCallInput | undefined;
+    call?: SessionCall | undefined;
 };
 
 // @public @input
@@ -13261,15 +13377,15 @@ interface Dialog<E = {
     reset(ctx: SlotHolder): DialogPosition;
     send(ctx: SlotHolder, event: E): DialogPosition;
     timeout(ctx: SlotHolder): DialogTimeout | undefined;
-    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>, options?: DialogSendOptions<R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K>, options?: DialogSendOptions<R, E, K>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
 // @public @input
-interface DialogGate<R, E> {
+interface DialogGate<R, E, K extends string = string> {
     reset?: true;
     send?: E;
-    sendFrom?: DialogSendFrom<R, E>;
+    sendFrom?: DialogSendFrom<R, E, K>;
     when?: string | readonly string[];
 }
 
@@ -13282,16 +13398,25 @@ interface DialogPosition {
 }
 
 // @public
-type DialogSendFrom<R, E> = ((result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined) | DialogSendFromKey<Exclude<NoInfer<R>, ToolFailure>, E>;
+type DialogSendFrom<R, E, K extends string = string> = ((result: NoInfer<Exclude<R, ToolFailure>>) => E | undefined) | K;
+
+// @public
+type DialogSendFromChecked<K extends string, R, E, T> = string extends K ? T : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? T : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
 
 // @public
 type DialogSendFromKey<S, E> = keyof {
     [K in keyof S as S[K] extends EventNameOf<E> | undefined ? K : never]: never;
 } & string;
 
+// @public @sealed
+type DialogSendFromMisuse<K extends string, Keys extends string> = {
+    readonly "sendFrom names a result field that holds no event name of this dialog": K;
+    readonly "the fields that do": Keys;
+};
+
 // @public @input
-interface DialogSendOptions<R, E> {
-    sendFrom: DialogSendFrom<R, E>;
+interface DialogSendOptions<R, E, K extends string = string> {
+    sendFrom: DialogSendFrom<R, E, K>;
 }
 
 // @public @input
@@ -13303,7 +13428,7 @@ interface DialogTimeout {
 }
 
 // @public @input
-interface DialogToolDef<P extends ToolInputSchema | undefined, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
+interface DialogToolDef<P extends ToolInputSchema | undefined, R, E, K extends string = string> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E, K> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
 }
 
@@ -13417,7 +13542,7 @@ export function installStubTranscribe(options?: StubTranscribeOptions): StubTran
 // @public
 export function installStubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
 
-// @public
+// @public (undocumented)
 export function installStubWorkflows(options?: StubWorkflowsOptions): WorkflowClient;
 
 // @public
@@ -13474,7 +13599,7 @@ interface PipelineTuning {
 
 // @public @input
 type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -14044,9 +14169,7 @@ type StubUploadWrite = {
 export type StubWorkflowsOptions = {
     runs?: readonly WorkflowRunSnapshot[];
     names?: readonly string[];
-    agent?: {
-        readonly workflows?: Readonly<Record<string, unknown>> | undefined;
-    } | undefined;
+    agent?: WorkflowAppLike | undefined;
     runId?: string;
     lastLine?: unknown;
 };
@@ -14056,7 +14179,6 @@ export type StubWorld = {
     readonly model: StubGatewayCall[];
     readonly provider: StubTranscribeCall[];
     readonly speech: StubSpeechCall[];
-    readonly uploads: StubUploadWrite[];
     readonly files: StubUploads | undefined;
     readonly reported: StubReporter;
 };
@@ -14065,11 +14187,13 @@ export type StubWorld = {
 export type StubWorldOptions = {
     readonly model?: string | readonly string[] | undefined;
     readonly transcribe?: StubTranscribeOptions | undefined;
-    readonly pages?: FetchRouteTable | FetchRouteHandler | undefined;
+    readonly pages?: FetchRouteTable | readonly FetchRouteHandler[] | FetchRouteHandler | undefined;
     readonly speech?: StubSpeechOptions | true | undefined;
-    readonly uploads?: Readonly<Record<string, StubUpload>> | undefined;
-    readonly uploadsOptions?: StubUploadsOptions | undefined;
+    readonly uploads?: (StubUploadsOptions & {
+        readonly files?: Readonly<Record<string, StubUpload>> | undefined;
+    }) | undefined;
     readonly apiKey?: string | false | undefined;
+    readonly reporter?: boolean | undefined;
 };
 
 // @public @input
@@ -14225,6 +14349,11 @@ type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
 // @public @input
 type WakeUpOptions = {
     correlationIds?: string[];
+};
+
+// @public @input
+type WorkflowAppLike = {
+    readonly workflows?: Readonly<Record<string, AnyWorkflowDef>> | undefined;
 };
 
 // @public
@@ -14768,7 +14897,7 @@ type Literal<S extends string> = string extends S ? never : S;
 
 // @public @input
 export type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -15001,6 +15130,11 @@ export type WorkflowApiClientOptions = {
     timeoutMs?: number | undefined;
 };
 
+// @public @input
+export type WorkflowAppLike = {
+    readonly workflows?: Readonly<Record<string, AnyWorkflowDef>> | undefined;
+};
+
 // @public
 export type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
@@ -15083,6 +15217,9 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
     cancelNote?: string | undefined;
 };
 
+// @public
+export type WorkflowDefOf<App, Name extends string> = WorkflowsOf<App>[Name & keyof WorkflowsOf<App>];
+
 // @public @sealed
 export type WorkflowFailureContext<I = unknown> = {
     readonly runId: string;
@@ -15118,6 +15255,12 @@ export type WorkflowInputOf<D> = D extends {
 } ? I : D extends StandardSchemaV1<unknown, infer O> ? O : D extends {
     readonly body: (run: (input: infer I, ctx: unknown) => unknown) => unknown;
 } ? I : never;
+
+// @public
+export type WorkflowNameOf<App> = [WorkflowsOf<App>] extends [never] ? never : keyof WorkflowsOf<App> & string;
+
+// @public
+export function workflowNameOf(def: AnyWorkflowDef): string | undefined;
 
 // @public
 export type WorkflowOutputOf<D> = D extends {
@@ -15166,6 +15309,11 @@ export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 
 // @public
 export type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+// @public
+export type WorkflowsOf<App> = App extends {
+    readonly workflows?: infer W;
+} ? Extract<W, Record<string, unknown>> : never;
 
 // @public @input
 export type WorkflowStartAndWaitOptions = {
@@ -15459,14 +15607,15 @@ export type VerifySessionTokenOptions = {
 
 ```ts
 import type { AgentDef } from '@alexkroman1/aai';
-import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
+import { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { ClientEventMap } from '@alexkroman1/aai';
 import type { InferSchemaOutput } from '@alexkroman1/aai';
 import type { InferToolInput } from '@alexkroman1/aai';
 import type { InferToolOutput } from '@alexkroman1/aai';
+import { INSTRUCTION_KEY } from '@alexkroman1/aai/utils';
 import { LlmProvider } from '@alexkroman1/aai/llm';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
-import type { SessionCallInput } from '@alexkroman1/aai';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { StandardSchemaV1 } from '@alexkroman1/aai';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
@@ -15627,7 +15776,7 @@ export type EvalSession = {
 
 // @public @input
 export interface EvalSessionOptions extends HostAgentOptions {
-    readonly call?: SessionCallInput;
+    readonly call?: SessionCall;
     readonly clientId?: string;
     readonly env?: Record<string, string>;
     readonly llm?: LlmProvider;
@@ -15697,6 +15846,9 @@ export type EvalToolCall = {
     readonly args: Record<string, unknown>;
     readonly result?: string;
 };
+
+// @public
+export type EvalToolOutput<D extends ToolDef<ToolInputSchema>> = InferToolOutput<D> extends infer O ? O extends Record<string, unknown> ? Omit<O, typeof INSTRUCTION_KEY> : O : never;
 
 // @public
 export type EvalTurn = {
@@ -15826,7 +15978,7 @@ export function lastStateIn(events: readonly SessionEvent[], slot: string): unkn
 export function lastStateIn(events: readonly SessionEvent[]): Readonly<Record<string, unknown>> | undefined;
 
 // @public
-export function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): InferToolOutput<D>;
+export function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 
 // @public (undocumented)
 export function lastToolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
@@ -16088,13 +16240,13 @@ export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolC
 export function toolNames(calls: readonly EvalToolCall[]): readonly string[];
 
 // @public
-export function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): InferToolOutput<D>;
+export function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 
 // @public (undocumented)
 export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
 
 // @public
-export function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly InferToolOutput<D>[];
+export function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly EvalToolOutput<D>[];
 
 // @public (undocumented)
 export function toolResultsIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): readonly T[];
@@ -16179,7 +16331,7 @@ export type WalkPhoneTreeOptions = {
 
 ```ts
 import type { AgentDef } from '@alexkroman1/aai';
-import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
+import { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { ClientEventMap } from '@alexkroman1/aai';
 import { createRecordingWorkflows } from '@alexkroman1/aai/testing';
 import { dialogRefusalPattern } from '@alexkroman1/aai/testing';
@@ -16197,12 +16349,13 @@ import { installStubStepDelegate } from '@alexkroman1/aai/testing/vitest';
 import { installStubStepFetch } from '@alexkroman1/aai/testing/vitest';
 import { installStubTranscribe } from '@alexkroman1/aai/testing/vitest';
 import { installStubUploads } from '@alexkroman1/aai/testing/vitest';
+import { INSTRUCTION_KEY } from '@alexkroman1/aai/utils';
 import { isEvent } from '@alexkroman1/aai/testing';
 import { LlmProvider } from '@alexkroman1/aai/llm';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RecordingWorkflows } from '@alexkroman1/aai/testing';
 import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
-import type { SessionCallInput } from '@alexkroman1/aai';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { StandardSchemaV1 } from '@alexkroman1/aai';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
@@ -16326,7 +16479,7 @@ export type EvalCaseOptions = {
     readonly scripted?: boolean;
     readonly clientId?: string | null;
     readonly phone?: string | null;
-    readonly call?: SessionCallInput | null;
+    readonly call?: SessionCall | null;
     readonly network?: EvalNetwork | (() => EvalNetwork);
 };
 
@@ -16415,7 +16568,7 @@ export type EvalSession = {
 
 // @public @input
 export interface EvalSessionOptions extends HostAgentOptions {
-    readonly call?: SessionCallInput;
+    readonly call?: SessionCall;
     readonly clientId?: string;
     readonly env?: Record<string, string>;
     readonly llm?: LlmProvider;
@@ -16528,6 +16681,9 @@ export type EvalToolCall = {
     readonly args: Record<string, unknown>;
     readonly result?: string;
 };
+
+// @public
+export type EvalToolOutput<D extends ToolDef<ToolInputSchema>> = InferToolOutput<D> extends infer O ? O extends Record<string, unknown> ? Omit<O, typeof INSTRUCTION_KEY> : O : never;
 
 // @public
 export type EvalTurn = {
@@ -16686,7 +16842,7 @@ export function lastStateIn(events: readonly SessionEvent[], slot: string): unkn
 export function lastStateIn(events: readonly SessionEvent[]): Readonly<Record<string, unknown>> | undefined;
 
 // @public
-export function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): InferToolOutput<D>;
+export function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 
 // @public (undocumented)
 export function lastToolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
@@ -16987,13 +17143,13 @@ export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolC
 export function toolNames(calls: readonly EvalToolCall[]): readonly string[];
 
 // @public
-export function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): InferToolOutput<D>;
+export function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 
 // @public (undocumented)
 export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
 
 // @public
-export function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly InferToolOutput<D>[];
+export function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly EvalToolOutput<D>[];
 
 // @public (undocumented)
 export function toolResultsIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): readonly T[];
@@ -17089,7 +17245,7 @@ import type { ModelMessage } from 'ai';
 import type { PrepareStepFunction } from 'ai';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { ReadyConfig } from '@alexkroman1/aai/protocol';
-import type { SessionCallInput } from '@alexkroman1/aai';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { StepResult } from 'ai';
@@ -17553,7 +17709,7 @@ export type SessionStartOptions = {
     clientLocation?: string;
     clientId?: string;
     clientPhone?: string;
-    call?: SessionCallInput;
+    call?: SessionCall;
     logContext?: Record<string, string>;
     onOpen?: () => void;
     onClose?: () => void;
@@ -17816,6 +17972,7 @@ import type { AgentEnv } from '@alexkroman1/aai/host-internal';
 import type { ClientNotifier } from '@alexkroman1/aai/host-internal';
 import { ClientSink } from '@alexkroman1/aai/protocol';
 import { ClientToolCall } from '@alexkroman1/aai/internal';
+import type { ClientTranscriptMessage } from '@alexkroman1/aai/step';
 import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
 import type { Db as Db_2 } from '@alexkroman1/aai/internal';
 import type { DelegateOptions } from '@alexkroman1/aai';
@@ -17842,7 +17999,7 @@ import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { safeFetch } from '@alexkroman1/aai/host-internal';
 import type { SayOptions } from '@alexkroman1/aai';
 import type { ServerResponse } from 'node:http';
-import type { SessionCallInput } from '@alexkroman1/aai';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { SessionEventBody } from '@alexkroman1/aai';
@@ -18571,6 +18728,7 @@ export type SessionDirectory = {
     emitter(sessionId: string): SessionEmitter | undefined;
     meter(sessionId: string): UsageMeter | undefined;
     turn(sessionId: string): number;
+    workflows(sessionId: string): WorkflowClient | undefined;
     readonly speech: SpeechDirectory;
     live(): IterableIterator<ServerSession>;
     ids(): IterableIterator<string>;
@@ -18590,6 +18748,7 @@ export type SessionEventLog = SessionEventStream & {
         final?: boolean;
     }): Promise<void>;
     hydrate(sessionId: string): Promise<void>;
+    transcript(sessionId: string): readonly ClientTranscriptMessage[];
     discard(sessionId: string): void;
     clear(): void;
 };
@@ -18628,7 +18787,7 @@ type SessionStartOptions = {
     clientLocation?: string;
     clientId?: string;
     clientPhone?: string;
-    call?: SessionCallInput;
+    call?: SessionCall;
     logContext?: Record<string, string>;
     onOpen?: () => void;
     onClose?: () => void;
@@ -18710,6 +18869,7 @@ export type SessionWiring = {
     emitter: SessionEmitter;
     meter: UsageMeter;
     turns: TurnCounter;
+    workflows: WorkflowClient | undefined;
 };
 
 // @internal
@@ -18989,7 +19149,7 @@ type WsSessionOptions = Omit<AttachSessionOptions, "closeAfterFailure"> & {
     clientLocation?: string;
     clientId?: string;
     clientPhone?: string;
-    call?: SessionCallInput;
+    call?: SessionCall;
 };
 ```
 
@@ -19064,6 +19224,7 @@ export function registerMetricsSink(sink: MetricsSink): () => void;
 import type { AgentDef } from '@alexkroman1/aai';
 import type { AgentEnv } from '@alexkroman1/aai/host-internal';
 import { createRecordingWorkflows } from '@alexkroman1/aai/testing';
+import { createRouteContext } from '@alexkroman1/aai/testing';
 import { createRunSnapshot } from '@alexkroman1/aai/testing';
 import { createSlotStore } from '@alexkroman1/aai/testing';
 import { createStubWorkflows } from '@alexkroman1/aai/testing';
@@ -19097,11 +19258,15 @@ import { parseToolInput } from '@alexkroman1/aai/testing';
 import type { PrepareStepFunction } from 'ai';
 import { ProjectFiles } from '@alexkroman1/aai/testing';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import { RecordedSignal } from '@alexkroman1/aai/testing';
 import { RecordedSleep } from '@alexkroman1/aai/testing';
 import { RecordedStart } from '@alexkroman1/aai/testing';
 import { RecordedStep } from '@alexkroman1/aai/testing';
 import { RecordingWorkflows } from '@alexkroman1/aai/testing';
 import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
+import { RouteContextOverrides } from '@alexkroman1/aai/testing';
+import { routeHandlerOf } from '@alexkroman1/aai/testing';
+import { routeOf } from '@alexkroman1/aai/testing';
 import { runGuardrail } from '@alexkroman1/aai/testing';
 import { RunSnapshotOverrides } from '@alexkroman1/aai/testing';
 import { runTool } from '@alexkroman1/aai/testing';
@@ -19185,17 +19350,22 @@ import { ToolRunner } from '@alexkroman1/aai/testing';
 import { toolRunner } from '@alexkroman1/aai/testing';
 import type { ToolSet } from 'ai';
 import { WORKFLOW_CONTEXT_NOW } from '@alexkroman1/aai/testing';
+import { WorkflowAppLike } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import { WorkflowContextOptions } from '@alexkroman1/aai/testing';
 import { WorkflowContextRecorder } from '@alexkroman1/aai/testing';
 import type { WorkflowDef } from '@alexkroman1/aai';
-import type { WorkflowOutputOf } from '@alexkroman1/aai';
+import { WorkflowDefOf } from '@alexkroman1/aai/workflow-api';
+import { WorkflowNameOf } from '@alexkroman1/aai/workflow-api';
+import { WorkflowOutputOf } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
 export function createMemoryJournal(): WorkflowJournal;
 
 export { createRecordingWorkflows }
+
+export { createRouteContext }
 
 export { createRunSnapshot }
 
@@ -19292,6 +19462,8 @@ export { parseToolInput }
 
 export { ProjectFiles }
 
+export { RecordedSignal }
+
 export { RecordedSleep }
 
 export { RecordedStart }
@@ -19301,6 +19473,12 @@ export { RecordedStep }
 export { RecordingWorkflows }
 
 export { RecordingWorkflowsOptions }
+
+export { RouteContextOverrides }
+
+export { routeHandlerOf }
+
+export { routeOf }
 
 // @public
 type RunCodeExecutor = (code: string) => Promise<string | {
@@ -19325,11 +19503,12 @@ export { runTool }
 export function runWorkflow<P extends ToolInputSchema, R>(def: WorkflowDef<P, R>, input: Record<string, unknown>, options?: RunWorkflowOptions): Promise<WorkflowTestHandle<R>>;
 
 // @public (undocumented)
-export function runWorkflow<App extends WorkflowBearingAgent, Name extends WorkflowNameOf<App>>(agent: App, name: Name, input: Record<string, unknown>, options?: Omit<RunWorkflowOptions, "name">): Promise<WorkflowTestHandle<WorkflowOutputOf<NonNullable<App["workflows"]>[Name]>>>;
+export function runWorkflow<App extends WorkflowAppLike, Name extends WorkflowNameOf<App>>(agent: App, name: Name, input: Record<string, unknown>, options?: Omit<RunWorkflowOptions, "name">): Promise<WorkflowTestHandle<WorkflowOutputOf<WorkflowDefOf<App, Name>>>>;
 
 // @public @input
 export type RunWorkflowOptions = {
     name?: string;
+    key?: string;
     journal?: WorkflowJournal;
     logger?: Logger;
     crashAt?: string;
@@ -19543,11 +19722,6 @@ export { toolRunner }
 
 export { WORKFLOW_CONTEXT_NOW }
 
-// @public @input
-export type WorkflowBearingAgent = {
-    readonly workflows?: Readonly<Record<string, WorkflowDef>> | undefined;
-};
-
 export { WorkflowContextOptions }
 
 export { WorkflowContextRecorder }
@@ -19560,13 +19734,12 @@ export type WorkflowJournal = {
 // @public
 export const workflowJournalBrand: unique symbol;
 
-// @public
-export type WorkflowNameOf<App extends WorkflowBearingAgent> = keyof NonNullable<App["workflows"]> & string;
-
 // @public @sealed
 export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
+    readonly key: string;
     advanceSleep(correlationIds?: readonly string[]): Promise<WorkflowTestHandle<R>>;
     signal(token: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
+    signalRun(label: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
     readonly signalled: boolean;
     expireWaits(): Promise<WorkflowTestHandle<R>>;
     restart(): Promise<WorkflowTestHandle<R>>;
@@ -19620,7 +19793,7 @@ export type WorkflowTestWait = {
 
 ```ts
 import type { AgentDef } from '@alexkroman1/aai';
-import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
+import { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
 import type { ClientEventMap } from '@alexkroman1/aai';
 import { createRecordingWorkflows } from '@alexkroman1/aai/testing';
 import { describeAgent } from '@alexkroman1/aai/testing/vitest';
@@ -19645,12 +19818,13 @@ import { installStubTranscribe } from '@alexkroman1/aai/testing/vitest';
 import { installStubUploads } from '@alexkroman1/aai/testing/vitest';
 import { installStubWorkflows } from '@alexkroman1/aai/testing/vitest';
 import { installStubWorld } from '@alexkroman1/aai/testing/vitest';
+import { INSTRUCTION_KEY } from '@alexkroman1/aai/utils';
 import { isEvent } from '@alexkroman1/aai/testing';
 import { LlmProvider } from '@alexkroman1/aai/llm';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import { RecordingWorkflows } from '@alexkroman1/aai/testing';
 import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
-import type { SessionCallInput } from '@alexkroman1/aai';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { StandardSchemaV1 } from '@alexkroman1/aai';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
@@ -19779,7 +19953,7 @@ export type EvalCaseOptions = {
     readonly scripted?: boolean;
     readonly clientId?: string | null;
     readonly phone?: string | null;
-    readonly call?: SessionCallInput | null;
+    readonly call?: SessionCall | null;
     readonly network?: EvalNetwork | (() => EvalNetwork);
 };
 
@@ -19868,7 +20042,7 @@ export type EvalSession = {
 
 // @public @input
 export interface EvalSessionOptions extends HostAgentOptions {
-    readonly call?: SessionCallInput;
+    readonly call?: SessionCall;
     readonly clientId?: string;
     readonly env?: Record<string, string>;
     readonly llm?: LlmProvider;
@@ -19981,6 +20155,9 @@ export type EvalToolCall = {
     readonly args: Record<string, unknown>;
     readonly result?: string;
 };
+
+// @public
+export type EvalToolOutput<D extends ToolDef<ToolInputSchema>> = InferToolOutput<D> extends infer O ? O extends Record<string, unknown> ? Omit<O, typeof INSTRUCTION_KEY> : O : never;
 
 // @public
 export type EvalTurn = {
@@ -20151,7 +20328,7 @@ export function lastStateIn(events: readonly SessionEvent[], slot: string): unkn
 export function lastStateIn(events: readonly SessionEvent[]): Readonly<Record<string, unknown>> | undefined;
 
 // @public
-export function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): InferToolOutput<D>;
+export function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 
 // @public (undocumented)
 export function lastToolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
@@ -20458,13 +20635,13 @@ export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolC
 export function toolNames(calls: readonly EvalToolCall[]): readonly string[];
 
 // @public
-export function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): InferToolOutput<D>;
+export function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 
 // @public (undocumented)
 export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
 
 // @public
-export function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly InferToolOutput<D>[];
+export function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly EvalToolOutput<D>[];
 
 // @public (undocumented)
 export function toolResultsIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): readonly T[];
@@ -20608,10 +20785,14 @@ import type { TextareaHTMLAttributes } from 'react';
 import type { UploadParallelOption } from '@alexkroman1/aai/workflow-api';
 import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
 import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
+import { WorkflowAppLike } from '@alexkroman1/aai/workflow-api';
+import { WorkflowDefOf } from '@alexkroman1/aai/workflow-api';
 import { WorkflowInputOf } from '@alexkroman1/aai/workflow-api';
+import { WorkflowNameOf } from '@alexkroman1/aai/workflow-api';
 import { WorkflowOutputOf } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
+import { WorkflowsOf } from '@alexkroman1/aai/workflow-api';
 import { WorkflowSummary } from '@alexkroman1/aai/workflow-api';
 
 // @public
@@ -21540,7 +21721,6 @@ export type UseRouteMutationResult = {
 // @public @input
 export type UseRouteOptions<T = unknown> = {
     pollMs?: number | undefined;
-    every?: number | undefined;
     until?: ((value: T) => boolean) | undefined;
     client?: string | undefined;
     headers?: Readonly<Record<string, string>> | undefined;
@@ -21692,7 +21872,7 @@ export type UseWorkflowRunResult<R = unknown> = {
 };
 
 // @public
-export function useWorkflowRuns<App extends WorkflowAppLike, Name extends WorkflowNameOf<App> = WorkflowNameOf<App>>(workflow: Name | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<WorkflowOutputOf<WorkflowDefOf<App, Name>>>;
+export function useWorkflowRuns<App extends WorkflowAppLike = never, Name extends WorkflowNameOf<App> = WorkflowNameOf<App>>(workflow: [App] extends [never] ? never : Name | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<WorkflowOutputOf<WorkflowDefOf<App, Name>>>;
 
 // @public (undocumented)
 export function useWorkflowRuns<R = unknown>(workflow: [WorkflowNameOf<R>] extends [never] ? string | undefined : never, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
@@ -21793,13 +21973,9 @@ export type WorkflowApiOptions = {
     token?: string;
 };
 
-// @public @input
-export type WorkflowAppLike = {
-    readonly workflows?: Readonly<Record<string, AnyWorkflowDef>> | undefined;
-};
+export { WorkflowAppLike }
 
-// @public
-export type WorkflowDefOf<App, Name extends string> = WorkflowsOf<App>[Name & keyof WorkflowsOf<App>];
+export { WorkflowDefOf }
 
 // @public
 export type WorkflowFieldKind = "text" | "number" | "select" | "checkbox" | "file" | "lines" | "namedText" | "none" | (string & {});
@@ -21818,8 +21994,7 @@ export type WorkflowFieldsProps<App extends WorkflowAppLike = WorkflowAppLike> =
 
 export { WorkflowInputOf }
 
-// @public
-export type WorkflowNameOf<App> = [WorkflowsOf<App>] extends [never] ? never : keyof WorkflowsOf<App> & string;
+export { WorkflowNameOf }
 
 export { WorkflowOutputOf }
 
@@ -21877,10 +22052,7 @@ export type WorkflowRunPanelProps<O> = {
 
 export { WorkflowRunStatus }
 
-// @public
-export type WorkflowsOf<App> = App extends {
-    readonly workflows?: infer W;
-} ? Extract<W, Record<string, unknown>> : never;
+export { WorkflowsOf }
 
 // @public
 export type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmission<R, I>;

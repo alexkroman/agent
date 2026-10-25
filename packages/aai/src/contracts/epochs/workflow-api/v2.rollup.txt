@@ -69,7 +69,7 @@ type Literal<S extends string> = string extends S ? never : S;
 
 // @public @input
 type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -229,7 +229,7 @@ type UploadRange = {
     end: number;
 };
 
-// @public
+// @public @sealed
 type UploadRecord = {
     id: string;
     name: string;
@@ -338,19 +338,6 @@ export type WorkflowGetOptions = {
     signal?: AbortSignal;
 };
 
-// @public
-export type WorkflowInputOf<D> = D extends {
-    readonly run: (input: infer I, ctx: never) => unknown;
-} ? I : D extends StandardSchemaV1<unknown, infer O> ? O : D extends {
-    readonly body: (run: (input: infer I, ctx: unknown) => unknown) => unknown;
-} ? I : never;
-
-// @public
-export type WorkflowOutputOf<D> = D extends {
-    readonly run: (input: never, ctx: never) => infer R;
-    readonly output?: StandardSchemaV1<unknown, infer O> | undefined;
-} ? Awaited<unknown extends O ? R : O> : never;
-
 // @public @sealed
 export type WorkflowRunBase = {
     runId: string;
@@ -367,9 +354,6 @@ export type WorkflowRunListOptions = {
     limit?: number;
     signal?: AbortSignal;
 };
-
-// @public
-export type WorkflowRunOf<D> = WorkflowRunSnapshot<WorkflowOutputOf<D>>;
 
 // @public
 export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {

@@ -973,7 +973,7 @@ What [describeTextEval](#describetexteval) takes beyond the agent.
 
 ```ts
 type EvalCaseOptions = {
-  call?: SessionCallInput | null;
+  call?: SessionCall | null;
   clientId?: string | null;
   live?: boolean;
   network?:   | EvalNetwork
@@ -994,7 +994,7 @@ What a case gets to say about how it should be run.
 ##### call?
 
 ```ts
-readonly optional call?: SessionCallInput | null;
+readonly optional call?: SessionCall | null;
 ```
 
 This case's placed phone call, over the suite's — what `sessionContext`
@@ -1626,6 +1626,7 @@ The case's scripted step HTTP, when the suite passed `steps` — see
 ```ts
 type RecordingWorkflows = WorkflowClient & {
   cancelled: string[];
+  signals: RecordedSignal[];
   starts: RecordedStart[];
   seed: void;
   started: RecordedStart[];
@@ -1654,6 +1655,14 @@ readonly cancelled: string[];
 ```
 
 Every run id `cancel` was called with, in order, whatever it resolved.
+
+##### signals
+
+```ts
+readonly signals: RecordedSignal[];
+```
+
+Every `signalRun`, in order — delivered (`true`) without a run to deliver to.
 
 ##### starts
 
@@ -2385,6 +2394,12 @@ Re-exports [evalTextCredentials](../eval.md#evaltextcredentials)
 ### EvalToolCall
 
 Re-exports [EvalToolCall](../eval.md#evaltoolcall)
+
+***
+
+### EvalToolOutput
+
+Re-exports [EvalToolOutput](../eval.md#evaltooloutput)
 
 ***
 

@@ -1,0 +1,18 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "workflow-readings",
+  "epoch": 1,
+  "rule": 3,
+  "sha256": "341e8b3b2e35df26bd8b42094b5a05c065142b73e6ec1d864af11ceb74d9422d",
+  "exports": [
+    "WorkflowAppLike",
+    "WorkflowDefOf",
+    "WorkflowInputOf",
+    "WorkflowNameOf",
+    "WorkflowOutputOf",
+    "WorkflowRunOf",
+    "WorkflowsOf",
+    "workflowNameOf"
+  ],
+  "rollup": "7b00cda4ab36ffd973ff061b3cdf782f483fd5d6b3d7bf0275660d46a38c4ea2"
+}

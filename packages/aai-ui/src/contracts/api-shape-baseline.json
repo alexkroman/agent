@@ -9,7 +9,7 @@
   "closedLiterals": [],
   "nonAuthoringImports": [],
   "thirdPartyTypes": [],
-  "orphans": [],
+  "orphans": ["forms: NamedTextValue", "workflow: WorkflowSubmissionOf"],
   "unexportedShared": [],
   "budgets": {},
   "isolatedDeclarations": {}

@@ -53,6 +53,65 @@ console.log((await workflows.find("remind", "kitchen")).length); // 2
 
 ***
 
+### createRouteContext()
+
+```ts
+function createRouteContext(overrides?: RouteContextOverrides): RouteContext;
+```
+
+Build a [RouteContext](index.md#routecontext) for calling a route handler in isolation.
+
+Defaults are inert: an empty `env`, a `workflows` client whose every method
+rejects naming itself (`createStubWorkflows`), a `clientTranscript` that
+answers no sessions, a `sessionTranscript` that answers no lines, a `speech`
+that finds no live session, and a `signal` that never aborts. Override any of
+them — most specs pass `env` and a `workflows` fake of their own.
+
+A hand-built literal has to restate every field, and it is the field the
+runtime gained LAST that it leaves out: five shipped specs each carried one,
+and `sessionTranscript` was missing from all five.
+
+#### Parameters
+
+##### overrides?
+
+[`RouteContextOverrides`](#routecontextoverrides)
+
+#### Returns
+
+[`RouteContext`](index.md#routecontext)
+
+#### Example
+
+```ts
+import { type RouteHandler, type RouteRequest, routeError } from "@alexkroman1/aai";
+import { createRouteContext, createStubWorkflows } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+
+const getCall: RouteHandler = async (req, ctx) => {
+  const [run] = await ctx.workflows.find("call", req.params.id ?? "", { limit: 1 });
+  if (run === undefined) throw routeError(404, `No call ${req.params.id}.`);
+  return run;
+};
+
+const request: RouteRequest = {
+  method: "GET",
+  path: "/calls/c_1",
+  params: { id: "c_1" },
+  query: {},
+  headers: {},
+  body: undefined,
+};
+
+test("GET /calls/:id is a 404 for a call nobody placed", async () => {
+  const workflows = createStubWorkflows({ find: () => Promise.resolve([]) });
+  const ctx = createRouteContext({ env: { CALLS_API_KEY: "k" }, workflows });
+  await expect(getCall(request, ctx)).rejects.toMatchObject({ status: 404 });
+});
+```
+
+***
+
 ### createRunSnapshot()
 
 #### Call Signature
@@ -108,9 +167,10 @@ checks `output` against it, where the bare form takes whatever `R` the
 caller names. A fixture whose output stopped matching the body is then a
 compile error in the spec rather than a page that renders `undefined`.
 
-The def names nothing else: a workflow's NAME is the key in
-`agent({ workflows })`, which the def does not carry, so `workflow` still
-defaults to `"workflow"` unless the overrides name it.
+The def names the run too, when it can: `workflow` is the key the def was
+declared under (`workflowNameOf`, recorded when the agent is lowered — a
+`virtual:aai/agent` import, `withWorkflows`, `workflowRegistry`), the
+overrides' `workflow` winning, and `"workflow"` for a def no agent declares.
 
 ##### Type Parameters
 
@@ -138,10 +198,9 @@ defaults to `"workflow"` unless the overrides name it.
 import { recap } from "./shared.ts";
 
 const done = createRunSnapshot(recap, {
-  workflow: "recap",
   status: "completed",
   output: { headline: "…", points: [] }, // typed by `recap`
-});
+}); // `workflow` is "recap" once the agent declaring it has been imported
 ```
 
 ***
@@ -723,8 +782,10 @@ Naming the invariant that failed, and — for the validation one — the
 
 ### expectDialogOk()
 
+#### Call Signature
+
 ```ts
-function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
+function expectDialogOk<R>(result: R): R extends DialogToolResult<V> ? DialogToolResult<V> : DialogToolResult<unknown>;
 ```
 
 The dialog envelope a gated tool answered, keeping WHERE the dialog landed.
@@ -736,34 +797,39 @@ than about the tool's own value — that a call advanced the machine into
 on anything that is not a dialog envelope: keeping a position claims there is
 one.
 
-#### Type Parameters
+**Typed by INFERENCE**, as [expectToolOk](#expecttoolok) is: handed a typed envelope
+(`runTool(theTool, …)`, `theTool.execute(…)`) it keeps the type under
+`result`; the name form answers `unknown`, where the claimed overload below
+takes the type the spec asserts.
 
-##### T
+##### Type Parameters
 
-`T`
+###### R
 
-What the tool's `execute` returns, under `result`.
+`R`
 
-#### Parameters
+What was handed in, inferred — never written.
 
-##### result
+##### Parameters
 
-`unknown`
+###### result
 
-#### Returns
+`R`
 
-[`DialogToolResult`](index.md#dialogtoolresult)\<`T`\>
+##### Returns
 
-#### Throws
+`R` *extends* [`DialogToolResult`](index.md#dialogtoolresult)\<`V`\> ? [`DialogToolResult`](index.md#dialogtoolresult)\<`V`\> : [`DialogToolResult`](index.md#dialogtoolresult)\<`unknown`\>
+
+##### Throws
 
 When the tool refused, quoting the refusal, as [expectToolOk](#expecttoolok) does.
 
-#### Throws
+##### Throws
 
 When the value is not a dialog envelope — a plain `tool()` has no
   position to keep; use [expectToolOk](#expecttoolok) for it.
 
-#### Example
+##### Example
 
 ```ts no-check
 import { expectDialogOk, runTool } from "@alexkroman1/aai/testing";
@@ -774,6 +840,35 @@ const answered = expectDialogOk<{ quoted: number }>(
 expect(answered.state).toBe("quote.pending");
 expect(answered.result.quoted).toBe(42);
 ```
+
+#### Call Signature
+
+```ts
+function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
+```
+
+The dialog envelope a gated tool answered — the CLAIMED form, for a result
+typed `unknown` (`runTool(agent, "name", …)`, a `toolRunner`): `T` is what
+the spec says is under `result`, unchecked at runtime, as
+[expectToolOk](#expecttoolok)'s claimed form is.
+
+##### Type Parameters
+
+###### T
+
+`T`
+
+The type the spec claims for the tool's own value.
+
+##### Parameters
+
+###### result
+
+`unknown`
+
+##### Returns
+
+[`DialogToolResult`](index.md#dialogtoolresult)\<`T`\>
 
 ***
 
@@ -1124,6 +1219,7 @@ const order = expectToolOk<{ id: string }>(await run("place_order", { item: "piz
 ```ts
 function fireEvent(
    agent: {
+  dialogs?: readonly AnyDialog[];
   events?: SessionEventHandlers;
   name?: string;
 }, 
@@ -1132,9 +1228,13 @@ function fireEvent(
 ): Promise<FiredEvent>;
 ```
 
-Drive the agent's `events` handlers with one event, the way the session
-dispatches it: the handler declared for `event.type` first, then `"*"`, each
-handed the same context.
+Drive the agent's dialogs and `events` handlers with one event, the way the
+session dispatches it: every declared dialog is offered the event FIRST
+(`dialog.receive`, so a `"@session.timedOut"` transition fires), then the
+handler declared for `event.type`, then `"*"`, each handed the same context.
+Dialogs first because a dialog is part of the session's state and moves
+before any observer sees the effect — the order `aai-runtime`'s session
+keeps (`session-controls.ts`).
 
 Two deliberate differences from the runtime's dispatch, both because a SPEC
 is reading the outcome rather than a live call surviving it:
@@ -1155,6 +1255,10 @@ explicitly wherever a second event is meant to see the first's writes.
 #### Parameters
 
 ##### agent
+
+###### dialogs?
+
+readonly [`AnyDialog`](index.md#anydialog)[]
 
 ###### events?
 
@@ -1178,8 +1282,9 @@ explicitly wherever a second event is meant to see the first's writes.
 
 #### Throws
 
-When the agent declares no `events` at all — there is nothing to
-  drive, and a spec that fired into nothing would pass against nothing.
+When the agent declares neither `events` nor `dialogs` — there is
+  nothing to drive, and a spec that fired into nothing would pass against
+  nothing.
 
 #### Example
 
@@ -1387,6 +1492,61 @@ const parsed = await parseToolInput<{ quantity: number }>(agentDef, "add_pizza",
 // The schema's own default, which is the thing worth asserting here.
 expect(parsed.quantity).toBe(1);
 ```
+
+***
+
+### routeHandlerOf()
+
+```ts
+function routeHandlerOf(value: 
+  | FetchRouteHandler
+  | StubStepAnswer): FetchRouteHandler;
+```
+
+A table's value as a handler: a handler is itself; a fixed answer is given
+to every request it is asked, a `Response` CLONED per request — a body is
+read once, and the second request would otherwise find it consumed.
+
+#### Parameters
+
+##### value
+
+  \| [`FetchRouteHandler`](#fetchroutehandler)
+  \| [`StubStepAnswer`](#stubstepanswer)
+
+#### Returns
+
+[`FetchRouteHandler`](#fetchroutehandler)
+
+***
+
+### routeOf()
+
+```ts
+function routeOf(routes: 
+  | Readonly<Record<string, 
+  | FetchRouteHandler
+  | StubStepAnswer>>
+  | readonly FetchRouteHandler[]): FetchRouteHandler;
+```
+
+`routes` as ONE handler — a table matched by specificity, a list tried in
+order — that DECLINES (`undefined`) a request no route answers, so it can be
+one leg of a list or the `otherwise` of another fake. The same matching
+[stubFetchRoutes](#stubfetchroutes-1) does, without installing anything.
+
+#### Parameters
+
+##### routes
+
+  \| `Readonly`\<`Record`\<`string`, 
+  \| [`FetchRouteHandler`](#fetchroutehandler)
+  \| [`StubStepAnswer`](#stubstepanswer)\>\>
+  \| readonly [`FetchRouteHandler`](#fetchroutehandler)[]
+
+#### Returns
+
+[`FetchRouteHandler`](#fetchroutehandler)
 
 ***
 
@@ -1717,7 +1877,7 @@ import { sessionEvent } from "@alexkroman1/aai/testing";
 const committed = sessionEvent("userTranscript.committed", { text: "two pizzas" });
 committed.type; // "userTranscript.committed"
 committed.meta.id.startsWith("evt_"); // true
-sessionEvent("reply.completed").text; // compile error: the event has no `text`
+// `sessionEvent("reply.completed").text` is a compile error: the event has no `text`.
 ```
 
 ***
@@ -2536,7 +2696,8 @@ The tool `name` is declared under, or a throw naming the ones that are.
 Three names for three jobs: `toolOf` hands back the DEF, to assert on what
 the agent declares (its description, its schema); [runTool](#runtool) CALLS a
 tool, gated as the runtime gates it; [toolRunner](#toolrunner-1) is `runTool` with the
-agent bound, the `run(name, …)` a spec calls throughout.
+agent bound, the `run(name, …)` a spec calls throughout. All three resolve
+through one lookup (`resolveEntry`), by name or by the def's identity.
 
 A tool is a FILE, so `agent.ts`'s default export declares no tools at all —
 import the agent as DEPLOYED, exactly as this example does and as every
@@ -3598,6 +3759,7 @@ matches.
 
 ```ts
 type FiredEvent = {
+  dialogs: readonly string[];
   typed: boolean;
   wildcard: boolean;
 };
@@ -3608,6 +3770,17 @@ type FiredEvent = {
 What [fireEvent](#fireevent) reports: how many handlers the event reached.
 
 #### Properties
+
+##### dialogs
+
+```ts
+readonly dialogs: readonly string[];
+```
+
+The keys of the declared dialogs the event MOVED — one whose `on` map
+names it (`"@session.timedOut": "abandoned"`) and whose active state
+handles it. Every declared dialog is offered the event, before the
+handlers, as the session offers it.
 
 ##### typed
 
@@ -3690,6 +3863,58 @@ call site like `tools`. A module default-exporting a `workflow()` def is
 registered under its file name, an explicit `agent({ workflows })` entry
 winning a clash; the rest of the directory (a body's helpers) is skipped,
 so unlike `tools` an empty or helper-only result is not an error.
+
+***
+
+### RecordedSignal
+
+```ts
+type RecordedSignal = {
+  key: string;
+  label: string;
+  options: SignalOptions | undefined;
+  payload: unknown;
+  workflow: string;
+};
+```
+
+**`Sealed`**
+
+One `signalRun` as a tool made it.
+
+#### Properties
+
+##### key
+
+```ts
+key: string;
+```
+
+##### label
+
+```ts
+label: string;
+```
+
+##### options
+
+```ts
+options: SignalOptions | undefined;
+```
+
+##### payload
+
+```ts
+payload: unknown;
+```
+
+##### workflow
+
+```ts
+workflow: string;
+```
+
+The workflow's declared name.
 
 ***
 
@@ -3800,6 +4025,7 @@ The declared name — the key in `agent({ workflows })` — or the string passed
 ```ts
 type RecordedStep = {
   maxAttempts?: number;
+  maxWaits?: number;
   name: string;
 };
 ```
@@ -3818,6 +4044,14 @@ optional maxAttempts?: number;
 
 What the body asked for, or `undefined` when it passed no options.
 
+##### maxWaits?
+
+```ts
+optional maxWaits?: number;
+```
+
+The step's wait budget (`StepOptions.maxWaits`), or `undefined` when none was asked for.
+
 ##### name
 
 ```ts
@@ -3831,6 +4065,7 @@ name: string;
 ```ts
 type RecordingWorkflows = WorkflowClient & {
   cancelled: string[];
+  signals: RecordedSignal[];
   starts: RecordedStart[];
   seed: void;
   started: RecordedStart[];
@@ -3859,6 +4094,14 @@ readonly cancelled: string[];
 ```
 
 Every run id `cancel` was called with, in order, whatever it resolved.
+
+##### signals
+
+```ts
+readonly signals: RecordedSignal[];
+```
+
+Every `signalRun`, in order — delivered (`true`) without a run to deliver to.
 
 ##### starts
 
@@ -3950,6 +4193,19 @@ The agent's declared workflows — pass `agentDef.workflows` — so a start
 by DEF is recorded under its declared name, and `listing()` reports them.
 A def not in it is refused, as the real client refuses it. Without it, a
 def is recorded under its `description` and matched by identity.
+
+***
+
+### RouteContextOverrides
+
+```ts
+type RouteContextOverrides = { [K in keyof RouteContext]?: RouteContext[K] };
+```
+
+**`Input`**
+
+What [createRouteContext](#createroutecontext) accepts: a field per [RouteContext](index.md#routecontext)
+field, each also taking `undefined` for one the caller does not have.
 
 ***
 
@@ -4046,9 +4302,10 @@ What [expectSlotContract](#expectslotcontract) may be told.
 readonly optional caps?: Readonly<Record<string, number>>;
 ```
 
-The caps the slot DECLARED, restated — each top-level array key and the
-most entries it keeps. Each is driven past its bound and the surviving
-entries must be the NEWEST ones.
+The caps to check — each top-level array key and the most entries it
+keeps. Defaults to what the slot DECLARED (`slot.caps`); given, each is
+driven past its bound and the surviving entries must be the NEWEST ones,
+and a bound that differs from the declared one fails naming both.
 
 ##### write?
 
@@ -5855,7 +6112,7 @@ readonly tools: Readonly<Record<string, ToolDef>>;
 
 ```ts
 type ToolContextOverrides = {
-  call?: SessionCallInput;
+  call?: SessionCall;
   clientId?: string;
   clientLocation?: string;
   clientPhone?: string;
@@ -5918,7 +6175,7 @@ their own docs below.
 ##### call?
 
 ```ts
-optional call?: SessionCallInput;
+optional call?: SessionCall;
 ```
 
 The phone call this session is, as `sessionCall(ctx)` will read it —
@@ -6081,7 +6338,7 @@ See [ToolContext.signal](index.md#signal-5). Defaults to a signal that never abo
 optional slots?: ToolContext["slots"];
 ```
 
-See [ToolContext.slots](index.md#slots-3). Defaults to a fresh, empty, REAL slot store.
+See [ToolContext.slots](index.md#slots-4). Defaults to a fresh, empty, REAL slot store.
 
 ##### speech?
 
@@ -6097,7 +6354,7 @@ See [ToolContext.speech](index.md#speech-2). Defaults to the recorder behind `Te
 optional turn?: ToolContext["turn"];
 ```
 
-See [ToolContext.turn](index.md#turn). Defaults to `0` — a context that belongs to no turn.
+See [ToolContext.turn](index.md#turn-1). Defaults to `0` — a context that belongs to no turn.
 
 ##### workflows?
 

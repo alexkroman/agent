@@ -338,7 +338,58 @@ Bytes per read. Defaults to [STEP\_FILE\_WINDOW\_BYTES](#step_file_window_bytes)
 ### SpeakMaster
 
 ```ts
-type SpeakMaster = "mp3" | "wav";
+type SpeakMaster = 
+  | SpeakMasterFormat
+  | {
+  args?: readonly string[];
+  format: SpeakMasterFormat;
+};
+```
+
+**`Input`**
+
+What [stepSpeakToUpload](#stepspeaktoupload) masters to: the format alone, or the format
+with the ffmpeg flags to apply on the way — a `loudnorm` pass, a sample
+rate, a bitrate — inserted between `-i <source>` and the encoder's own.
+
+`format: "wav"` with `args` still runs ffmpeg (the WAV is re-encoded with the
+flags applied); without `args` it stores `stepSpeak`'s WAV as it is.
+
+#### Union Members
+
+[`SpeakMasterFormat`](#speakmasterformat)
+
+***
+
+##### Type Literal
+
+```ts
+{
+  args?: readonly string[];
+  format: SpeakMasterFormat;
+}
+```
+
+###### args?
+
+```ts
+optional args?: readonly string[];
+```
+
+Filter and encoder flags, e.g. `["-af", "loudnorm=I=-16:TP=-1.5:LRA=11"]`.
+
+###### format
+
+```ts
+format: SpeakMasterFormat;
+```
+
+***
+
+### SpeakMasterFormat
+
+```ts
+type SpeakMasterFormat = "mp3" | "wav";
 ```
 
 The container [stepSpeakToUpload](#stepspeaktoupload) stores.
@@ -369,7 +420,7 @@ optional master?: SpeakMaster;
 ```
 
 `"wav"` stores the synthesized WAV as it is; `"mp3"` masters it with ffmpeg
-first. Defaults to `"wav"`.
+first; the object form adds ffmpeg flags to either. Defaults to `"wav"`.
 
 ##### name
 
@@ -397,6 +448,7 @@ Wall-clock budget for the mastering run. Defaults to `DEFAULT_FFMPEG_TIMEOUT_MS`
 ```ts
 type SpokenUpload = UploadInfo & {
   durationMs: number;
+  ffmpegMs: number;
   voice: string;
 };
 ```
@@ -415,6 +467,14 @@ durationMs: number;
 ```
 
 How long the audio lasts — `stepSpeak`'s own measurement, from the byte count.
+
+##### ffmpegMs
+
+```ts
+ffmpegMs: number;
+```
+
+Wall-clock milliseconds the mastering run took — `0` when no ffmpeg ran.
 
 ##### voice
 
@@ -500,7 +560,7 @@ The tail of ffmpeg's log, on success too: it carries the encode summary.
 
 ```ts
 type TranscodeUploadOptions = {
-  args: (source: string, out: string) => readonly string[];
+  args: (source: string, out: string, info: MediaInfo | undefined) => readonly string[];
   loglevel?: string;
   output: {
      name: string;
@@ -521,11 +581,14 @@ What [transcodeUpload](#transcodeupload) accepts.
 ##### args
 
 ```ts
-args: (source: string, out: string) => readonly string[];
+args: (source: string, out: string, info: MediaInfo | undefined) => readonly string[];
 ```
 
 The argv AFTER the standing flags — `-i <source>`, the filter and encoder
-flags, and `<out>` last — given the two paths this call chose.
+flags, and `<out>` last — given the two paths this call chose and, when
+`probe` was asked for, what ffprobe made of the source: an argv that
+depends on the probed rate or channel count reads `info` rather than
+probing again in a step of its own.
 
 `ffmpegBaseArgs()` (`-hide_banner -loglevel error -nostats -nostdin -y`)
 is prepended by this call and is not the caller's to spell: `-nostdin` is
@@ -542,6 +605,10 @@ most often left out. A filter that reports through the LOG needs
 ###### out
 
 `string`
+
+###### info
+
+[`MediaInfo`](ffmpeg.md#mediainfo) \| `undefined`
 
 ###### Returns
 
@@ -587,9 +654,10 @@ type: string;
 optional probe?: boolean;
 ```
 
-Also run `ffprobe` over the materialized source, and answer its
-[MediaInfo](ffmpeg.md#mediainfo) as `info`. Off by default — a probe is a second subprocess,
-and most transcodes do not need to know what they were handed.
+Also run `ffprobe` over the materialized source FIRST, hand its
+[MediaInfo](ffmpeg.md#mediainfo) to `args`, and answer it as `info`. Off by default — a
+probe is a second subprocess, and most transcodes do not need to know what
+they were handed.
 
 ##### signal?
 

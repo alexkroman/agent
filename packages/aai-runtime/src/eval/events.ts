@@ -70,10 +70,10 @@ type ToolName = string | ToolDef<ToolInputSchema>;
  * wire value a reader parses never has it, and a spec must not be able to
  * read a field that is not there. Distributes over a union, so a
  * `ToolFailure` arm and a plain (non-record) result come through untouched.
- * Spelled inline below rather than named, because a named type in a published
- * signature would need its own place on every barrel.
+ *
+ * @public
  */
-type EvalToolOutput<D extends ToolDef<ToolInputSchema>> =
+export type EvalToolOutput<D extends ToolDef<ToolInputSchema>> =
   InferToolOutput<D> extends infer O
     ? O extends Record<string, unknown>
       ? Omit<O, typeof INSTRUCTION_KEY>

@@ -78,7 +78,7 @@ export { EMPTY_PARAMS } from "./sdk/_internal-types.ts";
 export { mapStream } from "./sdk/_map-stream.ts";
 // Closest-name suggestions for a refusal naming an unknown workflow, tool or
 // field — the one edit-distance ranking every "did you mean" here uses.
-export { nearestNames } from "./sdk/_nearest-names.ts";
+export { type NearestNamesOptions, nearestNames } from "./sdk/_nearest-names.ts";
 // The route-key matcher `stubFetchRoutes` is built on, shared with the eval
 // harness's `evalNetwork` so both fake networks read one key vocabulary (host,
 // `*.suffix`, URL prefix, optional METHOD) with one specificity order.

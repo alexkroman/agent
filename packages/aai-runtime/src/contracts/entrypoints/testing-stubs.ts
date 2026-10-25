@@ -30,6 +30,7 @@
  */
 
 export {
+  createRouteContext,
   createRunSnapshot,
   createSlotStore,
   createStubWorkflows,
@@ -55,11 +56,14 @@ export {
   type ProjectFiles,
   parseSchemaInput,
   parseToolInput,
+  type RecordedSignal,
   type RecordedSleep,
   type RecordedStart,
   type RecordedStep,
   type RouteContextOverrides,
   type RunSnapshotOverrides,
+  routeHandlerOf,
+  routeOf,
   runGuardrail,
   runTool,
   type SaidLine,

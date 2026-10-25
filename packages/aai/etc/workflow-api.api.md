@@ -78,7 +78,7 @@ type Literal<S extends string> = string extends S ? never : S;
 
 // @public @input
 export type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -311,6 +311,11 @@ export type WorkflowApiClientOptions = {
     timeoutMs?: number | undefined;
 };
 
+// @public @input
+export type WorkflowAppLike = {
+    readonly workflows?: Readonly<Record<string, AnyWorkflowDef>> | undefined;
+};
+
 // @public
 export type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
@@ -393,6 +398,9 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
     cancelNote?: string | undefined;
 };
 
+// @public
+export type WorkflowDefOf<App, Name extends string> = WorkflowsOf<App>[Name & keyof WorkflowsOf<App>];
+
 // @public @sealed
 export type WorkflowFailureContext<I = unknown> = {
     readonly runId: string;
@@ -428,6 +436,12 @@ export type WorkflowInputOf<D> = D extends {
 } ? I : D extends StandardSchemaV1<unknown, infer O> ? O : D extends {
     readonly body: (run: (input: infer I, ctx: unknown) => unknown) => unknown;
 } ? I : never;
+
+// @public
+export type WorkflowNameOf<App> = [WorkflowsOf<App>] extends [never] ? never : keyof WorkflowsOf<App> & string;
+
+// @public
+export function workflowNameOf(def: AnyWorkflowDef): string | undefined;
 
 // @public
 export type WorkflowOutputOf<D> = D extends {
@@ -476,6 +490,11 @@ export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
 
 // @public
 export type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+// @public
+export type WorkflowsOf<App> = App extends {
+    readonly workflows?: infer W;
+} ? Extract<W, Record<string, unknown>> : never;
 
 // @public @input
 export type WorkflowStartAndWaitOptions = {

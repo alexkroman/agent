@@ -170,6 +170,7 @@ export { expectPromptBuiltinsDeclared } from "./testing-prompt-builtins.ts";
 // A `ctx.workflows` that records starts and runs nothing — an eval's client.
 export {
   createRecordingWorkflows,
+  type RecordedSignal,
   type RecordedStart,
   type RecordingWorkflows,
   type RecordingWorkflowsOptions,

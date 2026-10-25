@@ -237,7 +237,9 @@ export interface DeepResearchNote {
 // @public
 export interface DeepResearchOptions<P extends DeepResearchInputSchema, R> {
     readonly budget?: DeepResearchBudget;
+    readonly cancelNote?: string | undefined;
     readonly deliver?: (result: DeepResearchResult, input: InferSchemaOutput<P>, ctx: WorkflowContext) => Promise<R> | R;
+    readonly describeRun?: ((run: WorkflowRunSnapshot<R>) => string) | undefined;
     readonly description?: string;
     readonly generate?: Pick<StepGenerateOptions, "model" | "apiKeyEnv" | "gatewayUrl">;
     readonly input: P;
@@ -512,7 +514,7 @@ interface PipelineTuning {
 
 // @public @input
 type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -556,7 +558,7 @@ type RandomSource = () => number;
 interface RouteContext {
     clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
     env: Readonly<Partial<Record<string, string>>>;
-    sessionTranscript?(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
+    sessionTranscript(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
     signal: AbortSignal;
     speech(sessionId: string): SessionSpeech | undefined;
     workflows: WorkflowClient;

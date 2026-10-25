@@ -134,7 +134,7 @@ export function tool<P extends ToolInputSchema | undefined = ToolInputSchema, R 
  * @public
  */
 export function agent<W extends WorkflowsMap = WorkflowsMap>(
-  def: PipelineAgentParams & WithWorkflows<W>,
+  def: PipelineAgentParams & { workflows?: W },
 ): AgentDefWith<"pipeline", W>;
 /**
  * Define a speech-to-speech agent: `mode: "s2s"` and its `s2s` descriptor. See
@@ -150,7 +150,7 @@ export function agent<W extends WorkflowsMap = WorkflowsMap>(
  * @public
  */
 export function agent<W extends WorkflowsMap = WorkflowsMap>(
-  def: S2sAgentParams & WithWorkflows<W>,
+  def: S2sAgentParams & { workflows?: W },
 ): AgentDefWith<"s2s", W>;
 /**
  * Define a text agent: `mode: "text"`, driven over a message list by
@@ -170,7 +170,7 @@ export function agent<W extends WorkflowsMap = WorkflowsMap>(
  * @public
  */
 export function agent<W extends WorkflowsMap = WorkflowsMap>(
-  def: TextAgentParams & WithWorkflows<W>,
+  def: TextAgentParams & { workflows?: W },
 ): AgentDefWith<"text", W>;
 /**
  * Define a workflow app: `mode: "workflow-app"`. {@link workflowApp} is the
@@ -200,13 +200,6 @@ export function agent(def: AgentParams): AgentDef {
  * @public
  */
 export type WorkflowsMap = NonNullable<AgentDef["workflows"]>;
-
-/**
- * The `workflows` an {@link agent} overload infers `W` from — optional, as the
- * declaration's is, and typed open so a literal map's keys and def types are
- * what `W` becomes.
- */
-type WithWorkflows<W extends WorkflowsMap> = { workflows?: W };
 
 /**
  * What `agent()` and `workflowApp()` return for a declaration in mode `M`

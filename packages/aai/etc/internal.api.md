@@ -558,7 +558,7 @@ export const PLAYBACK_PROGRESS_INTERVAL_MS = 500;
 
 // @public @input
 type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };

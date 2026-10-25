@@ -237,6 +237,7 @@ export type WorkflowRunOf<D> = WorkflowRunSnapshot<WorkflowOutputOf<D>>;
  * `runWorkflow` is parameterized by (`useWorkflowSubmit<typeof
  * agentDef>("digest")`, `runWorkflow(agentDef, "digest", input)`).
  *
+ * @input
  * @public
  */
 export type WorkflowAppLike = {

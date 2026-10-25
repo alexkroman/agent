@@ -98,6 +98,9 @@ export {
   type AgentClientInbox,
   type AgentDeclaration,
   type AgentDef,
+  // `agent()`'s return for a declaration with a literal `workflows` map, and the
+  // constraint `W` is inferred under.
+  type AgentDefWith,
   type AgentGuardrail,
   type AgentGuardrails,
   // `agent({ promptContext })` and `agent({ listing })`: the two halves `AgentDef` is
@@ -134,5 +137,6 @@ export {
   type VoicePresetName,
   WORKFLOW_APP_REQUIRED_ENV,
   type WorkflowAppAgentParams,
+  type WorkflowsMap,
   workflowApp,
 } from "../../index.ts";

@@ -23,6 +23,7 @@ export {
   createRunSnapshot,
   createStubWorkflows,
   createWorkflowContext,
+  type RecordedSignal,
   type RecordedSleep,
   type RecordedStart,
   type RecordedStep,

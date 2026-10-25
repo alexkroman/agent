@@ -21,7 +21,7 @@ import { isRecord } from "./is-record.ts";
 import type { WorkflowDef } from "./workflow.ts";
 
 /** Extensions a registry module may be authored in. */
-export const MODULE_EXT_RE = /\.(?:m?[jt]s|tsx)$/;
+export const MODULE_EXT_RE: RegExp = /\.(?:m?[jt]s|tsx)$/;
 
 /**
  * A co-located spec or type test is never a registry module, whatever tier
@@ -29,7 +29,7 @@ export const MODULE_EXT_RE = /\.(?:m?[jt]s|tsx)$/;
  * `foo.integration.test` / `foo.scenario.test` / `foo.eval.test` all end in one
  * of the three. Tested against the name with {@link MODULE_EXT_RE} stripped.
  */
-export const SPEC_RE = /\.(?:test|spec|test-d)$/;
+export const SPEC_RE: RegExp = /\.(?:test|spec|test-d)$/;
 
 /** The directories that are registries. */
 export type RegistryDir = "tools" | "workflows";

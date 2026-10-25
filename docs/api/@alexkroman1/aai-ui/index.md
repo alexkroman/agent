@@ -3099,7 +3099,7 @@ function useRoute<T = unknown>(path: string | null, options?: UseRouteOptions<T>
 ```
 
 `GET` one of the agent's own routes, on mount, on `reload()` and every
-`pollMs`/`every` until `until` says so — see this module's doc.
+`pollMs` until `until` says so — see this module's doc.
 
 #### Type Parameters
 
@@ -3121,7 +3121,7 @@ The route's path as declared, without `/api`. `null` reads nothing.
 
 [`UseRouteOptions`](#userouteoptions)\<`T`\>
 
-`pollMs`/`every`, `until`, `client` and `headers`; see [UseRouteOptions](#userouteoptions).
+`pollMs`, `until`, `client` and `headers`; see [UseRouteOptions](#userouteoptions).
 
 #### Returns
 
@@ -3169,7 +3169,7 @@ type Call = { status: string; transcript: { role: string; text: string }[] };
 
 function LiveCall({ id }: { id: string }) {
   const { data } = useRoute<Call>(`/calls/${id}`, {
-    every: 2000,
+    pollMs: 2000,
     until: (call) => call.status === "completed",
   });
   return <ol>{data?.transcript.map((line, i) => <li key={String(i)}>{line.text}</li>)}</ol>;
@@ -4170,7 +4170,7 @@ function RunPanel({ runId }: { runId: string | undefined }) {
 #### Call Signature
 
 ```ts
-function useWorkflowRuns<App extends WorkflowAppLike, Name extends string = WorkflowNameOf<App>>(workflow: Name | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<WorkflowOutputOf<WorkflowDefOf<App, Name>>>;
+function useWorkflowRuns<App extends WorkflowAppLike = never, Name extends string = WorkflowNameOf<App>>(workflow: [App] extends [never] ? never : Name | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<WorkflowOutputOf<WorkflowDefOf<App, Name>>>;
 ```
 
 Read a workflow's recent runs.
@@ -4179,7 +4179,7 @@ Read a workflow's recent runs.
 
 ###### App
 
-`App` *extends* [`WorkflowAppLike`](#workflowapplike)
+`App` *extends* [`WorkflowAppLike`](#workflowapplike) = `never`
 
 ###### Name
 
@@ -4189,7 +4189,7 @@ Read a workflow's recent runs.
 
 ###### workflow
 
-`Name` \| `undefined`
+\[`App`\] *extends* \[`never`\] ? `never` : `Name` \| `undefined`
 
 ###### options?
 
@@ -10401,7 +10401,6 @@ never rejects.
 ```ts
 type UseRouteOptions<T = unknown> = {
   client?: string;
-  every?: number;
   headers?: Readonly<Record<string, string>>;
   pollMs?: number;
   until?: (value: T) => boolean;
@@ -10430,14 +10429,6 @@ The `?client=` to send. Default: the session's client
 (`session.identity.clientId()`, read per request) inside `mountClient()`,
 none on a page with no session.
 
-##### every?
-
-```ts
-optional every?: number;
-```
-
-Read again every this many ms, while mounted — see `pollMs`.
-
 ##### headers?
 
 ```ts
@@ -10454,9 +10445,7 @@ re-trigger the read.
 optional pollMs?: number;
 ```
 
-Read again every this many ms, while mounted. Default: never. `every`
-is the same option under the name a sentence wants (`every: 5000`); when
-both are given `every` wins.
+Read again every this many ms, while mounted. Default: never.
 
 ##### until?
 
@@ -12289,8 +12278,9 @@ type WorkflowAppLike = {
 **`Input`**
 
 An agent with a `workflows` map — what `agent({ workflows })` and
-`workflowApp()` return, and what the agent form of the workflow hooks is
-parameterized by (`useWorkflowSubmit<typeof agentDef>("digest")`).
+`workflowApp()` return, and what the agent form of the workflow hooks and of
+`runWorkflow` is parameterized by (`useWorkflowSubmit<typeof
+agentDef>("digest")`, `runWorkflow(agentDef, "digest", input)`).
 
 #### Properties
 
@@ -12311,10 +12301,10 @@ type WorkflowDefOf<App, Name extends string> = WorkflowsOf<App>[Name & keyof Wor
 The def `App` declares under `Name` — what the agent form of a hook derives
 its input and output from: `WorkflowOutputOf<WorkflowDefOf<App, Name>>`.
 
-With `Name` left to its default (the whole [WorkflowNameOf](#workflownameof) union) it
-is the union of the agent's defs, so an app with ONE workflow — most of them
-— gets exactly that workflow's types from `<typeof agentDef>` alone, and an
-app with several names the one it means as a second type argument:
+With `Name` the whole [WorkflowNameOf](#workflownameof) union it is the union of the
+agent's defs, so an app with ONE workflow — most of them — gets exactly that
+workflow's types from `<typeof agentDef>` alone, and an app with several
+names the one it means as a second type argument:
 `useWorkflowSubmit<typeof agentDef, "digest">("digest")`.
 
 #### Type Parameters
@@ -12405,7 +12395,11 @@ Props for [WorkflowFields](#workflowfields).
 
 The agent, when the page names it
   (`<WorkflowFields<typeof agentDef> workflow="digest" />`): `workflow` is
-  then a name the agent declares, checked. Left to its default, any string.
+  then a name the agent declares, checked. Left to its default, any string:
+  `WorkflowNameOf<WorkflowAppLike>` is `string`. The default is the
+  constraint rather than the hooks' `never` because this is ONE signature —
+  a form has no def form to fall to, so there is no second overload for a
+  `never` to hand the call on to.
 
 #### Properties
 
@@ -12528,7 +12522,7 @@ type WorkflowNameOf<App> = [WorkflowsOf<App>] extends [never] ? never : keyof Wo
 
 The names `App` declares under `workflows` — the literal union a page passes
 to `useWorkflowSubmit<typeof agentDef>(…)`, `useWorkflowStream`,
-`useWorkflowRuns` and `<WorkflowFields>`.
+`useWorkflowRuns` and `<WorkflowFields>`, and a spec to `runWorkflow`.
 
 `never` for a type with no `workflows` map (a def, an unrelated object), so
 the agent form of each overloaded hook declines it and the def form is tried.
@@ -12921,11 +12915,10 @@ type WorkflowsOf<App> = App extends {
 } ? Extract<W, Record<string, unknown>> : never;
 ```
 
-The `workflows` map of `App`, or `never` for a type that has none — a
-workflow DEF, say, which is the other thing a hook's type argument may be.
+The `workflows` map of an app def, or `never` when it declares none — the
+reading [WorkflowNameOf](#workflownameof) and [WorkflowDefOf](#workflowdefof) are spelled in.
 `Extract` rather than `NonNullable`: an absent key infers `unknown`, which
-`NonNullable` would keep. Exported because [WorkflowNameOf](#workflownameof) and
-[WorkflowDefOf](#workflowdefof) are spelled in it.
+`NonNullable` would keep.
 
 #### Type Parameters
 

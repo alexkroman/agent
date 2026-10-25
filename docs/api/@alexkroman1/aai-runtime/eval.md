@@ -1076,7 +1076,7 @@ readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
 #### Call Signature
 
 ```ts
-function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): InferToolOutput<D>;
+function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 ```
 
 The result of the LAST call to `name` in `calls`, parsed.
@@ -1129,7 +1129,7 @@ readonly [`EvalToolCall`](#evaltoolcall)[]
 
 ##### Returns
 
-[`InferToolOutput`](../aai/index.md#infertooloutput)\<`D`\>
+[`EvalToolOutput`](#evaltooloutput)\<`D`\>
 
 #### Call Signature
 
@@ -1840,7 +1840,7 @@ readonly `string`[]
 #### Call Signature
 
 ```ts
-function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): InferToolOutput<D>;
+function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 ```
 
 The result of the ONE call to `name` in `calls`, parsed — zero calls or two
@@ -1854,7 +1854,9 @@ parse is the THROW: a `find` that misses answers `undefined`, and a case then
 asserts against nothing and passes. This names what was called instead.
 
 **Handed the tool's DEF, the result is TYPED** — `InferToolOutput<typeof
-placeOrder>`, the type its `execute` declares — and the wire name is read off
+placeOrder>`, the type its `execute` declares, minus the `$instruction` key
+a `withInstruction` result carries (the runtime strips it before the frame
+is recorded, so the wire value never has it) — and the wire name is read off
 the def (`toolNameOf`), so a renamed file fails here by name. For a
 `dialog.tool` the envelope type is known (`DialogToolResult<R> | ToolFailure`),
 so `dialogResultSchema` is no longer needed to read one; `expectToolOk`
@@ -1879,7 +1881,7 @@ readonly [`EvalToolCall`](#evaltoolcall)[]
 
 ##### Returns
 
-[`InferToolOutput`](../aai/index.md#infertooloutput)\<`D`\>
+[`EvalToolOutput`](#evaltooloutput)\<`D`\>
 
 #### Call Signature
 
@@ -1902,7 +1904,9 @@ parse is the THROW: a `find` that misses answers `undefined`, and a case then
 asserts against nothing and passes. This names what was called instead.
 
 **Handed the tool's DEF, the result is TYPED** — `InferToolOutput<typeof
-placeOrder>`, the type its `execute` declares — and the wire name is read off
+placeOrder>`, the type its `execute` declares, minus the `$instruction` key
+a `withInstruction` result carries (the runtime strips it before the frame
+is recorded, so the wire value never has it) — and the wire name is read off
 the def (`toolNameOf`), so a renamed file fails here by name. For a
 `dialog.tool` the envelope type is known (`DialogToolResult<R> | ToolFailure`),
 so `dialogResultSchema` is no longer needed to read one; `expectToolOk`
@@ -1940,7 +1944,7 @@ readonly [`EvalToolCall`](#evaltoolcall)[]
 #### Call Signature
 
 ```ts
-function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly InferToolOutput<D>[];
+function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly EvalToolOutput<D>[];
 ```
 
 Every call to `name` in `calls`, with its RESULT parsed — what each answered,
@@ -1974,7 +1978,7 @@ readonly [`EvalToolCall`](#evaltoolcall)[]
 
 ##### Returns
 
-readonly [`InferToolOutput`](../aai/index.md#infertooloutput)\<`D`\>[]
+readonly [`EvalToolOutput`](#evaltooloutput)\<`D`\>[]
 
 #### Call Signature
 
@@ -2254,7 +2258,7 @@ The agent to run — an ordinary `agent()` definition.
 ##### call?
 
 ```ts
-readonly optional call?: SessionCallInput;
+readonly optional call?: SessionCall;
 ```
 
 The placed phone call this session IS — what `sessionContext` and
@@ -4548,6 +4552,27 @@ The serialized result, or undefined when the call never completed.
 ```ts
 readonly toolCallId: string;
 ```
+
+***
+
+### EvalToolOutput
+
+```ts
+type EvalToolOutput<D extends ToolDef<ToolInputSchema>> = InferToolOutput<D> extends infer O ? O extends Record<string, unknown> ? Omit<O, typeof INSTRUCTION_KEY> : O : never;
+```
+
+The result `D`'s `execute` declares, WITHOUT the `$instruction` key a
+`withInstruction` result carries: the runtime strips it before the
+`tool.completed` frame is recorded (`tools/result-instruction.ts`), so the
+wire value a reader parses never has it, and a spec must not be able to
+read a field that is not there. Distributes over a union, so a
+`ToolFailure` arm and a plain (non-record) result come through untouched.
+
+#### Type Parameters
+
+##### D
+
+`D` *extends* [`ToolDef`](../aai/index.md#tooldef)\<[`ToolInputSchema`](../aai/index.md#toolinputschema)\>
 
 ***
 

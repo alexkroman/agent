@@ -3622,7 +3622,7 @@ optional brief?: CallBrief;
 The call's BRIEF — the app's own call id and the task prompt — signed
 with the secret in `briefSecretEnv` and carried on the call as the
 parameters `call`, `sig` and `p0…pN` (`signCallBrief`), so the answering
-session reads it back with `call.brief(secret)` and refuses a stream that
+session reads it back with `readCallBrief(call, secret)` and refuses a stream that
 was not signed by this app. `parameters` may not use those names. The
 prompt is at most `MAX_CALL_BRIEF_PROMPT_CHARS`.
 
