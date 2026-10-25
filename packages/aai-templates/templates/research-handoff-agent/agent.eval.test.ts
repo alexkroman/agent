@@ -1,59 +1,29 @@
 // An EVAL: does this desk actually behave? Run it with `aai eval`.
 //
-// `agent.test.ts` drives the four tools against a STUBBED `ctx.workflows` and
-// the five steps against a stubbed `fetch`. Neither can say whether the AGENT —
-// a model, reading this system prompt, holding these four tools — hands the
-// work off at all, or whether the run it starts is findable afterwards. That is
-// what this file is for, and it is only possible because `describeEval` opens a
-// real workflow engine per case and hands its client to the session: before
-// that, a tool calling `ctx.workflows.start` was a tool an eval could not
-// execute.
+// `agent.test.ts` drives the tools against a STUBBED `ctx.workflows` and the
+// run against a stubbed gateway. Neither can say whether the AGENT — a model,
+// reading this system prompt, holding these tools — hands the work off at all,
+// or whether the run it starts is findable afterwards. That is what this file
+// is for: `describeEval` opens a real workflow engine per case and hands its
+// client to the session.
 //
-// Two boundaries this file is careful about, because a case that implied either
-// would be the worse failure:
-//
-//   * **The engine is not durable.** No journal, no replay, no retry, and a
-//     `sleep()` is RECORDED rather than taken (which is why the review wait
-//     below is an assertion about what the body ASKED for). Nothing here says
-//     anything about resume, and `aai-cli`'s `dev-workflow.scenario.test.ts` is
-//     the tier that does.
-//   * **A step's HTTP is scripted, in BOTH modes.** The live half of an eval is
-//     the SESSION's model — which tool the desk reaches for, and when. The
-//     run's own five-to-twelve model calls and its web searches are answered
-//     from `MODEL_SCRIPT` through the published `stepFetch` slot, so a case is
-//     deterministic, free, and cannot fail on a DuckDuckGo 403 or a rate limit
-//     the engine's inert `maxRetries` could not ride out. What the researcher's
-//     search loop does with what it finds is `agent.test.ts`'s subject.
-//
-// And what no eval here can see at all: anything below the audio boundary —
-// endpointing, barge-in, whether two sentences merged into one turn.
+// Two boundaries: the engine is not durable (a `sleep()` is RECORDED, not
+// taken, so the review wait is an assertion about what the body ASKED for),
+// and a step's HTTP is scripted in BOTH modes through `steps` — the run's own
+// model calls are answered from `MODEL_SCRIPT`, so a case is deterministic and
+// free while the SESSION's model stays live.
 
 import agentDef from "virtual:aai/agent";
-import { stubFetchRoutes } from "@alexkroman1/aai-runtime/testing";
 import {
   describeEval,
   type EvalToolCall,
-  type EvalWorkflows,
+  evalRunOf,
   installStubStepDelegate,
+  type StubGatewayRoute,
   stubGatewayRoute,
-  toolResultIn,
 } from "@alexkroman1/aai-runtime/testing/vitest";
-import { expect, onTestFinished } from "vitest";
-import { z } from "zod";
-import { research } from "./shared.ts";
-/**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` declares.
- *
- * Load-bearing, and not applied by `agent()` — the BUILD is what enumerates
- * `tools/`, so an eval driving the raw default export would measure a desk with
- * no tools at all and every assertion below would mean nothing. This template
- * declares its prompt inline in `agent.ts`, so there is no `system-prompt.md`
- * to layer on with `withSystemPrompt`.
- *
- * The glob is written here rather than reached for from a shared helper because
- * this file SHIPS — see `agent.test.ts`.
- */
-import { REVIEW_DELAY_MS } from "./workflows/review.ts";
+import { expect } from "vitest";
+import research, { REVIEW_DELAY_MS } from "./workflows/research.ts";
 
 /** The one angle the scripted planner comes back with. */
 const ANGLE = "What second-hand cargo bikes actually sell for";
@@ -72,17 +42,9 @@ const SPOKEN_SUMMARY =
   "Second-hand cargo bikes in Amsterdam mostly go for between one and two and a half thousand euros.";
 
 /**
- * What the run's model calls are answered with, in the order the body asks.
- *
- * Six calls, and the ORDER is the assertion: brief, angles, the researcher's
- * one action, the gap pass, the report, the spoken summary. A stage that
- * disappeared or moved would hand a later stage an earlier reply, which is
- * exactly what the two content assertions in "writes the report" catch.
- *
- * The researcher's action is `stop` on purpose: `search` and `read` go through
- * `webSearch`/`visitWebpage`, whose fetch is the global one and not the step
- * slot, so scripting them is not available here — a case that let them run
- * would really search the web.
+ * What the run's model calls are answered with, in the order the body asks:
+ * brief, angles, the gap pass, the report, the spoken summary. The researcher's
+ * own loop goes through the DELEGATE slot, not the gateway.
  */
 const MODEL_SCRIPT: readonly string[] = [
   JSON.stringify({
@@ -90,98 +52,24 @@ const MODEL_SCRIPT: readonly string[] = [
     criteria: ["typical asking prices", "where people buy them"],
   }),
   JSON.stringify({ angles: [ANGLE] }),
-  // No researcher turn here: `investigate` delegates, so its model calls go
-  // through the DELEGATE slot rather than the gateway. See `scriptSteps`.
   JSON.stringify({ angles: [] }),
   REPORT_BODY,
   SPOKEN_SUMMARY,
 ];
 
-/** A scripted step HTTP surface, and the gate that holds its first answer. */
-type ScriptedSteps = {
-  /** Every step request, in order — the gateway calls the run really made. */
-  readonly calls: readonly { url: string; method: string }[];
-  /** Let a held first answer through. Idempotent. */
-  readonly release: () => void;
-};
+/** The gateway, re-scripted per case: its cursor is the case's, not the suite's. */
+let model: StubGatewayRoute = stubGatewayRoute(MODEL_SCRIPT);
 
-/**
- * Answer the run's model calls from {@link MODEL_SCRIPT}.
- *
- * Through `stepFetch`'s published slot rather than `vi.stubGlobal("fetch")`,
- * which is what a step really dials — and which leaves the SESSION's own model
- * on the live path, so a live case still measures the agent. Anything that is
- * not the gateway THROWS rather than answering 200: an unexpected request from
- * a step is a finding, and a silent empty body would be read as a model that
- * said nothing. `stubGatewayRoute` is what decides which is which, and it
- * decides on the SDK's own completions PATH — so the script cannot come unstuck
- * from the step by the two agreeing on a typo, and the envelope it answers with
- * is the SDK's rather than this file's. That last part is the one worth having:
- * the envelope is a WIRE shape, so a field typed one off does not fail —
- * `stepGenerate` reads no content, reports an empty completion, and the case
- * blames the run.
- *
- * The CURSOR is the reader's too: the last reply repeats, which is what a stage
- * that legitimately calls the model twice needs and what stops a script running
- * out mid-run and failing on itself.
- *
- * `hold` keeps the FIRST answer pending, which is the only way to observe a run
- * that is still going: a durable `sleep` is skipped here, so an unheld run
- * finishes in milliseconds.
- */
-function scriptSteps(options: { hold?: boolean } = {}): ScriptedSteps {
-  const gate = Promise.withResolvers<void>();
-  const model = stubGatewayRoute(MODEL_SCRIPT);
-  // Throwing on an unrecognised request is `stubFetchRoutes`' default and is
-  // what this file wants: every step here is a model call. The STEP fetch only:
-  // a live run's own model traffic goes over the global and must stay real.
-  const net = stubFetchRoutes(
-    [
-      async (request) => {
-        const answered = model.route(request);
-        // `model.calls` has already recorded this one, so a length of 1 IS the
-        // first answer — and holding after the route rather than before it keeps
-        // the reply this returns the one the script owed that call.
-        if (answered !== undefined && options.hold === true && model.calls.length === 1) {
-          await gate.promise;
-        }
-        return answered;
-      },
-    ],
-    { globalFetch: false },
-  );
-  onTestFinished(net.restore);
-  // The researcher's own loop, which does NOT go through `stepFetch`: a subagent
-  // resolves a provider client, so the seam a step reaches it through is the
-  // delegate slot. Unstubbed it THROWS, which is why a converted template's eval
-  // cannot silently keep passing over research that never ran.
+/** A fresh script for this case, and the researcher that answers off-gateway. */
+function scriptSteps(): StubGatewayRoute {
+  model = stubGatewayRoute(MODEL_SCRIPT);
   installStubStepDelegate({ routes: { researcher: RESEARCH_FINDINGS } });
-  return { calls: net.hits, release: () => gate.resolve() };
-}
-
-/** `request_research`'s answer when it really started something. */
-const Started = z.object({
-  started: z.literal(true),
-  runId: z.string().min(1),
-  topic: z.string().min(1),
-});
-
-/**
- * The run id the `request_research` call reported.
- *
- * `toolResultIn` rather than a `find` and a parse: a tool result reaches the
- * event stream as a serialized string, and a shape that stopped matching should
- * fail HERE naming the field instead of handing the next assertion `undefined`.
- * It throws for the two other ways this can go wrong as well, each naming what
- * was really called — no such call, and a call that never returned.
- */
-function startedRunId(calls: readonly EvalToolCall[]): string {
-  return toolResultIn(calls, "request_research", Started).runId;
+  return model;
 }
 
 /** Every tool call in this turn that READS a run, whichever the model picked. */
 function readbacks(calls: readonly EvalToolCall[]): readonly EvalToolCall[] {
-  return calls.filter((one) => one.name === "research_status" || one.name === "research_progress");
+  return calls.filter((one) => one.name === "workflow_status" || one.name === "workflow_progress");
 }
 
 /** The one utterance every case that starts work opens with. */
@@ -193,156 +81,139 @@ const START_TURN = [
   "I've started looking into that — I'll let you know when it lands.",
 ] as const;
 
-/**
- * Let the run finish before the case ends.
- *
- * Not tidiness: the scripted `stepFetch` is unpublished when the test that
- * installed it finishes, so a body still mid-flight would make its next model
- * call against whatever the next case publishes — or against the real gateway.
- * `close()` reports that on stderr (`EvalRunAbandoned`) rather than fixing it:
- * the wait is `settleAll`'s, and the RELEASE stays here, because what holds the
- * run in flight is this file's own gate and nothing in the harness can open one.
- */
-async function drain(workflows: EvalWorkflows | undefined, steps: ScriptedSteps): Promise<void> {
-  steps.release();
-  await workflows?.settleAll();
-}
+describeEval(
+  agentDef,
+  (test) => {
+    test(
+      "hands the topic to a run and answers the turn without waiting for it",
+      async ({ session, workflows }) => {
+        // The first gateway answer is HELD by the suite's `steps`, so the run
+        // cannot possibly have finished by the time the desk replies — which is
+        // the whole claim of the handoff shape.
+        scriptSteps();
 
-describeEval(agentDef, (test) => {
-  test(
-    "hands the topic to a run and answers the turn without waiting for it",
-    async ({ session, workflows }) => {
-      // Held, so the run cannot possibly have finished by the time the desk
-      // replies — which is the whole claim of the handoff shape.
-      const steps = scriptSteps({ hold: true });
+        const turn = await session.say(ASK);
 
-      const turn = await session.say(ASK);
+        const runId = evalRunOf(turn, research);
+        expect(turn.completed).toBe(true);
+        // The topic it passed is the caller's, not a paraphrase of the prompt.
+        const asked = turn.toolCalls.find((one) => one.name === "request_research");
+        expect(String(asked?.args.topic)).toMatch(/cargo bike/i);
 
-      const runId = startedRunId(turn.toolCalls);
-      expect(turn.completed).toBe(true);
-      // The topic it passed is the caller's, not a paraphrase of the prompt.
-      const asked = turn.toolCalls.find((one) => one.name === "request_research");
-      expect(String(asked?.args.topic)).toMatch(/cargo bike/i);
+        // The run is REAL: the engine started it, under the name the file
+        // declares, and it is still going now that the turn has ended.
+        const runs = await (workflows?.runs() ?? []);
+        const started = runs.find((one) => one.runId === runId);
+        expect(started?.workflow).toBe("research");
+        expect(started?.status).toBe("running");
+        // And it really began work — the brief stage narrated before its model
+        // call, which is the request being held.
+        expect(started?.reported.join("\n")).toMatch(/really asking/);
+      },
+      { stubReply: [...START_TURN] },
+    );
 
-      // The run is REAL: the engine started it, under the name the agent
-      // declares, and it is still going now that the turn has ended.
-      const runs = await (workflows?.runs() ?? []);
-      const started = runs.find((one) => one.runId === runId);
-      expect(started?.workflow).toBe("research");
-      expect(started?.status).toBe("running");
-      // And it really began work — the brief stage narrated before its model
-      // call, which is the request this case is holding.
-      expect(started?.reported.join("\n")).toMatch(/really asking/);
+    test(
+      "the run really writes the report, and asks for the review wait",
+      async ({ session, workflows, steps }) => {
+        const model = scriptSteps();
+        // Nothing to observe mid-flight here, so let the run go.
+        steps?.release();
 
-      await drain(workflows, steps);
-    },
-    { stubReply: [...START_TURN] },
-  );
+        const turn = await session.say(ASK);
+        const run = await workflows?.settle(evalRunOf(turn, research), research);
 
-  test(
-    "the run really writes the report, and asks for the review wait",
-    async ({ session, workflows }) => {
-      const steps = scriptSteps();
+        // What a completed run reports as `output` is what the agent reads back
+        // and what the announcement is built from, so every field is asserted.
+        expect(run?.status).toBe("completed");
+        expect(run?.output?.report).toBe(REPORT_BODY);
+        expect(run?.output?.summary).toBe(SPOKEN_SUMMARY);
+        expect(run?.output?.angles).toEqual([ANGLE]);
+        // A real timestamp: the filing step answers with when it filed.
+        expect(Number.isNaN(Date.parse(run?.output?.filedAt ?? ""))).toBe(false);
 
-      const turn = await session.say(ASK);
-      const runId = startedRunId(turn.toolCalls);
-      const run = await workflows?.settle(runId, research);
+        // The stages, in order, off the run's own narration — which is also
+        // what `workflow_progress` reads back down the phone.
+        const narration = run?.reported.join("\n") ?? "";
+        expect(narration).toMatch(/really asking/);
+        expect(narration).toMatch(/Researching 1 angle/);
+        expect(narration).toMatch(new RegExp(`Looking into: ${ANGLE}`));
+        expect(narration).toMatch(/writing it up/);
+        expect(narration).toMatch(/Writing up 1 angle/);
+        // No `RESEARCH_SLACK_WEBHOOK_URL` in an eval, so the last line is the
+        // arm that says the report stayed on the run.
+        expect(run?.reported.at(-1)).toMatch(/^Filing the findings/);
 
-      // What a completed run reports as `output` is what the agent reads back
-      // and what the announcement is built from, so every field is asserted.
-      expect(run?.status).toBe("completed");
-      expect(run?.output?.report).toBe(REPORT_BODY);
-      expect(run?.output?.summary).toBe(SPOKEN_SUMMARY);
-      expect(run?.output?.angles).toEqual([ANGLE]);
-      // A real timestamp: the filing step posts to a channel when one is
-      // configured (none is here) and answers with when it filed, where it
-      // used to answer with the literal string "filed".
-      expect(Number.isNaN(Date.parse(run?.output?.filedAt ?? ""))).toBe(false);
+        // The review wait, ASKED FOR and not taken: this engine records a
+        // durable `sleep` rather than suspending.
+        expect(run?.slept).toEqual([{ label: "reviewWindow", duration: REVIEW_DELAY_MS }]);
 
-      // The five stages, in order, off the run's own narration — which is
-      // also what `research_progress` reads back down the phone. A stage that
-      // stopped reporting is a caller who is told nothing for minutes.
-      const narration = run?.reported.join("\n") ?? "";
-      expect(narration).toMatch(/really asking/);
-      expect(narration).toMatch(/Researching 1 angle/);
-      expect(narration).toMatch(new RegExp(`Looking into: ${ANGLE}`));
-      expect(narration).toMatch(/writing it up/);
-      expect(narration).toMatch(/Writing up 1 angle/);
-      // No `RESEARCH_SLACK_WEBHOOK_URL` in an eval, so the last line is the
-      // arm that says the report stayed on the run — which is a filing that
-      // happened, not one that was skipped.
-      expect(run?.reported.at(-1)).toMatch(/^Filing the findings/);
+        // Every model call went through the step slot, and the fan-out's width
+        // came from a journaled stage rather than anything the body recomputed.
+        expect(model.calls).toHaveLength(MODEL_SCRIPT.length);
+      },
+      { stubReply: [...START_TURN] },
+    );
 
-      // The review wait, ASKED FOR and not taken: this engine records a
-      // durable `sleep` rather than suspending, so what a case can honestly
-      // claim is that the body asked — and that is the assertion that fails
-      // if the suspension is ever deleted.
-      expect(run?.slept).toEqual([{ label: "reviewWindow", duration: REVIEW_DELAY_MS }]);
+    test(
+      "reads the live run back rather than guessing at it",
+      async ({ session, workflows }) => {
+        scriptSteps();
 
-      // Six model calls, all through the step slot: the fan-out's width came
-      // from a journaled stage rather than from anything the body recomputed.
-      expect(steps.calls).toHaveLength(MODEL_SCRIPT.length);
-    },
-    { stubReply: [...START_TURN] },
-  );
+        const started = await session.say(ASK);
+        const runId = evalRunOf(started, research);
+        const turn = await session.say("What's it doing right now?");
 
-  test(
-    "reads the live run back rather than guessing at it",
-    async ({ session, workflows }) => {
-      const steps = scriptSteps({ hold: true });
+        // WHICH of the two readback builtins the model picks is its business —
+        // so the claim is about what it was told: either the run's own latest
+        // progress line or its status line, and never an answer the desk
+        // invented.
+        const read = readbacks(turn.toolCalls);
+        expect(read.length).toBeGreaterThan(0);
+        const answered = read.map((one) => one.result ?? "").join("\n");
+        expect(answered).toMatch(/really asking|still working on it/);
+        expect(answered).not.toMatch(/Nothing has been started/);
 
-      const started = await session.say(ASK);
-      const runId = startedRunId(started.toolCalls);
-      const turn = await session.say("What's it doing right now?");
+        // The load-bearing half: that readback happened while the run was
+        // genuinely in flight.
+        const runs = await (workflows?.runs() ?? []);
+        expect(runs.find((one) => one.runId === runId)?.status).toBe("running");
+      },
+      {
+        stubReply: [
+          ...START_TURN,
+          { tool: "workflow_progress", args: {} },
+          "It's still working out what the question really is.",
+        ],
+      },
+    );
 
-      // WHICH of the two readback tools the model picks is its business —
-      // the prompt offers both — so the claim is about what it was told:
-      // either the run's own latest progress line or its status, and never
-      // an answer the desk invented.
-      const read = readbacks(turn.toolCalls);
-      expect(read.length).toBeGreaterThan(0);
-      const answered = read.map((one) => one.result ?? "").join("\n");
-      expect(answered).toMatch(/really asking|Still working on it/);
-      expect(answered).not.toMatch(/Nothing started yet/);
+    test(
+      "says nothing is running when nothing is, and starts nothing to find out",
+      async ({ session, workflows, steps }) => {
+        scriptSteps();
 
-      // The load-bearing half: that readback happened while the run was
-      // genuinely in flight, which is the only state these two tools exist
-      // for.
-      const runs = await (workflows?.runs() ?? []);
-      expect(runs.find((one) => one.runId === runId)?.status).toBe("running");
+        const turn = await session.say("Any news on that research I asked for?");
 
-      await drain(workflows, steps);
-    },
-    {
-      stubReply: [
-        ...START_TURN,
-        { tool: "research_progress", args: {} },
-        "It's still working out what the question really is.",
-      ],
-    },
-  );
-
-  test(
-    "says nothing is running when nothing is, and starts nothing to find out",
-    async ({ session, workflows }) => {
-      const steps = scriptSteps();
-
-      const turn = await session.say("Any news on that research I asked for?");
-
-      const read = readbacks(turn.toolCalls);
-      expect(read.length).toBeGreaterThan(0);
-      expect(read.map((one) => one.result ?? "").join("\n")).toMatch(/Nothing started yet/);
-      // A question is not a request: asking after work nobody asked for must
-      // not put a run — and a research pass's worth of model calls — on the
-      // account.
-      expect(await (workflows?.runs() ?? [])).toEqual([]);
-      expect(steps.calls).toEqual([]);
-    },
-    {
-      stubReply: [
-        { tool: "research_status", args: {} },
-        "Nothing has been started yet — want me to look into something?",
-      ],
-    },
-  );
-});
+        const read = readbacks(turn.toolCalls);
+        expect(read.length).toBeGreaterThan(0);
+        expect(read.map((one) => one.result ?? "").join("\n")).toMatch(/Nothing has been started/);
+        // A question is not a request: asking after work nobody asked for must
+        // not put a run — and a research pass's worth of model calls — on the
+        // account.
+        expect(await (workflows?.runs() ?? [])).toEqual([]);
+        expect(steps?.requests).toEqual([]);
+      },
+      {
+        stubReply: [
+          { tool: "workflow_status", args: {} },
+          "Nothing has been started yet — want me to look into something?",
+        ],
+      },
+    );
+  },
+  // The run's model calls, scripted on the STEP fetch only, with the first
+  // answer held until the case releases it (or ends): a durable `sleep` is
+  // skipped here, so an unheld run finishes in milliseconds.
+  { steps: { routes: [(request) => model.route(request)], hold: "first" } },
+);

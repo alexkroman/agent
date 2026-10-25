@@ -4,28 +4,20 @@
  * message has been left.
  *
  * `endSession` lets the current reply finish speaking first, so the goodbye the
- * model writes alongside this call is heard before the line drops. Saying
- * whether it was VOICEMAIL is the one fact about the call only the agent can
- * judge, so it is recorded here and reported as the call's `outcome`.
+ * model writes alongside this call is heard before the line drops.
  */
 
-import { endSession, tool } from "@alexkroman1/aai";
-import { z } from "zod";
-import { markVoicemail } from "../live-calls.ts";
+import { endSession, tool, withInstruction } from "@alexkroman1/aai";
 
 export default tool({
   description:
     "Hang up the call, in the same reply as your goodbye — a silent hang-up sounds like a " +
     "dropped line. Call it once the task is finished or they say goodbye, and in the same " +
     "reply as a voicemail message. Not right after answering one of their questions.",
-  inputSchema: z.object({
-    reached: z
-      .enum(["person", "voicemail"])
-      .describe("Who you ended up talking to: a person, or an answering machine / voicemail"),
-  }),
-  execute({ reached }, ctx) {
-    if (reached === "voicemail") markVoicemail(ctx.sessionId);
-    const ending = endSession(ctx);
-    return { ended: ending, say: "Finish your last sentence; the line closes after it." };
+  execute(_args, ctx) {
+    return withInstruction(
+      { ended: endSession(ctx) },
+      "Finish your last sentence; the line closes after it.",
+    );
   },
 });

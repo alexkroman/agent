@@ -5,6 +5,7 @@ import { assistantSlot } from "../shared.ts";
  * "what else is there?" is a fair question from anywhere on the call.
  */
 export default assistantSlot.tool({
+  ui: { icon: "\u{1F4CB}", label: "Inbox status" },
   description:
     "Where the inbox stands: what is open, what is still queued, and what has been sent " +
     "or filed. Use it when the executive asks what is left or what has been done.",

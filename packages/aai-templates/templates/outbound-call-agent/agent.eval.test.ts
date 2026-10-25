@@ -17,11 +17,8 @@
 // What no eval here can see: anything below the audio boundary, the carrier,
 // or the run that dialled. Those are the specs' and a real call's.
 
-/**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` and
- * `system-prompt.md` declare — `./agent.ts` alone has no `end_call`.
- */
 import agentDef from "virtual:aai/agent";
+import { signCallBrief } from "@alexkroman1/aai";
 import {
   describeEval,
   toolArgsIn,
@@ -29,7 +26,6 @@ import {
   walkPhoneTree,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { signCall } from "./call-params.ts";
 import { NO_FIT_CALL, PHARMACY_CALL } from "./phone-trees.ts";
 
 const SECRET = "eval-calls-key";
@@ -38,7 +34,7 @@ const PROMPT =
   "If she needs to reschedule, offer Thursday at 10am or Friday at 4pm. " +
   "If you get voicemail, ask her to call 415-555-0100.";
 
-const parameters = await signCall({ id: "call_eval", prompt: PROMPT }, SECRET);
+const parameters = await signCallBrief({ id: "call_eval", prompt: PROMPT }, SECRET);
 
 const DIGIT_WORDS = [
   "zero",
@@ -94,14 +90,13 @@ describeEval(
 
         const done = await session.say("Thursday at 10 works. Thanks, bye!");
         expect(toolNames(done.toolCalls)).toContain("end_call");
-        expect(toolArgsIn(done.toolCalls, "end_call")[0]).toMatchObject({ reached: "person" });
         expect(done.endedSession).toBe(true);
       },
       {
         stubReply: [
           "Hi, is this Maria? I'm calling from Mission Dental about your cleaning tomorrow at 2:30.",
           "No problem. I have Thursday at 10am or Friday at 4pm.",
-          { tool: "end_call", args: { reached: "person" } },
+          { tool: "end_call", args: {} },
           "You're booked for Thursday at 10am. Goodbye!",
         ],
       },
@@ -132,12 +127,12 @@ describeEval(
         );
         // However it is read out: "415-555-0100", "4-1-5…", "four-one-five…".
         expect(spokenDigits(turn.text), turn.text).toContain("4155550100");
-        expect(toolArgsIn(turn.toolCalls, "end_call")[0]).toMatchObject({ reached: "voicemail" });
+        expect(toolNames(turn.toolCalls)).toContain("end_call");
         expect(turn.endedSession).toBe(true);
       },
       {
         stubReply: [
-          { tool: "end_call", args: { reached: "voicemail" } },
+          { tool: "end_call", args: {} },
           "Hi Maria, this is Mission Dental about your cleaning tomorrow at 2:30. Please call us at 415-555-0100.",
         ],
       },
@@ -204,7 +199,7 @@ describeEval(
     call: {
       carrier: "twilio",
       callId: "CA_tree",
-      parameters: await signCall({ id: "call_tree", prompt: PHARMACY_CALL.task }, SECRET),
+      parameters: await signCallBrief({ id: "call_tree", prompt: PHARMACY_CALL.task }, SECRET),
     },
   },
 );

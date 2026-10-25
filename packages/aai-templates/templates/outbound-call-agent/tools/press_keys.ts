@@ -5,18 +5,14 @@
  *
  * `sendDtmf` plays each key's tone pair into the call's audio, behind anything
  * the agent is still saying, and the carrier carries it to the menu like the
- * agent's voice. Each press is also written into the call's transcript, so the
- * record shows how the menu was navigated and the summary can say so.
- *
- * A barge-in drops tones not yet played, as it does speech — and a menu talks
- * over everything — so the prompt has the model press keys in a turn that
- * says nothing.
+ * agent's voice. A barge-in drops tones not yet played, as it does speech — and
+ * a menu talks over everything — so the prompt has the model press keys in a
+ * turn that says nothing.
  */
 
-import { tool } from "@alexkroman1/aai";
+import { tool, withInstruction } from "@alexkroman1/aai";
 import { sendDtmf } from "@alexkroman1/aai/experimental";
 import { z } from "zod";
-import { recordTurn } from "../live-calls.ts";
 
 export default tool({
   description:
@@ -35,10 +31,9 @@ export default tool({
   }),
   execute({ keys }, ctx) {
     if (!sendDtmf(ctx, keys)) return { pressed: null, error: "The call has ended." };
-    recordTurn(ctx.sessionId, "agent", `[pressed ${keys}]`);
-    return {
-      pressed: keys,
-      next: "Wait silently for the next menu. If a person or a question answers instead, speak.",
-    };
+    return withInstruction(
+      { pressed: keys },
+      "Wait silently for the next menu. If a person or a question answers instead, speak.",
+    );
   },
 });

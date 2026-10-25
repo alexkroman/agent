@@ -1,14 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * What this desk does with a finished deep-research pass — the one part of the
- * run that is the desk's own.
+ * The research workflow — the declaration, and the one part of the run that is
+ * the desk's own.
  *
- * The pass itself is `deepResearchWorkflow()` (`@alexkroman1/aai/experimental`),
- * declared in `shared.ts`. It used to be written out here, and it is the SDK's
- * now because a second agent copied it nearly verbatim and differed in exactly
- * three places — the prompts, the search builtin, and what happens to the
- * report. Those are that factory's options, and this template is their worked
- * example:
+ * `deepResearchWorkflow()` (`@alexkroman1/aai/experimental`) is the whole pass:
  *
  * ```text
  *   writeBrief      1 step    →  the request as something a researcher is held to
@@ -21,33 +16,38 @@
  *   sleep + file    1 step    →  the review wait, then filing (`filing.ts`)
  * ```
  *
- * The step names above are the ones this file journaled under before the move,
- * so a run in flight across the upgrade resumes rather than re-researching.
+ * What is written here is only what this desk decides: who the brief and the
+ * summary are for (`prompts.ts`), what happens to the report once it is
+ * written ({@link deliverResearch}), and what the desk SAYS about a run
+ * ({@link describeRun}). The researcher keeps the keyless
+ * `web_search`/`visit_webpage` default and the default budget.
  *
- * ## What the SDK owns, and what that bought
- *
- * The budget is MECHANISM, not prompt: each researcher is a `subagent()` whose
- * `maxSteps` is `budget.researcherSteps`, so past the cap it answers with its
- * tools withheld instead of stopping mid-chain. The whole loop is ONE step
- * result — what the researcher concluded — because replaying a negotiation with
- * a search engine turn by turn would pin a run to decisions that were only ever
- * provisional. Every stage narrates through `stepReport`, which is what
- * `research_progress` reads back down the phone.
- *
- * ## What `deliver` is allowed to do
- *
- * It runs in the BODY, with the run's `ctx`, after `writeReport`. So it obeys the
- * body's rules — anything non-deterministic inside a `ctx.step` of its own
- * naming — and it may SUSPEND: the review wait below is a `ctx.sleep`, and on
- * resume every research step above it answers from the journal. Whatever it
- * returns is the run's output: what `research_status` reads back and what the
- * `notify` announcement is built from.
+ * The default export is the declaration: `workflows/research.ts` registers the
+ * workflow as `research`, the name the run builtins and the run API know it by.
  */
 
-import type { SleepOptions, WorkflowContext } from "@alexkroman1/aai";
-import type { DeepResearchResult } from "@alexkroman1/aai/experimental";
+import type { WorkflowContext, WorkflowDef, WorkflowRunOf } from "@alexkroman1/aai";
+import { type DeepResearchResult, deepResearchWorkflow } from "@alexkroman1/aai/experimental";
+import { plural } from "@alexkroman1/aai/utils";
+import { isTerminal } from "@alexkroman1/aai/workflow-api";
+import { z } from "zod";
 import { file } from "./filing.ts";
-import { REVIEW_DELAY_MS, REVIEW_SLEEP_ID } from "./review.ts";
+import { BRIEF_SUMMARY_SYSTEM, BRIEF_SYSTEM } from "./prompts.ts";
+
+/**
+ * How long the desk sits on a finished report before filing it.
+ *
+ * Short enough to watch in `aai dev`. Nothing about the body changes if it is
+ * `"6 hours"` — the run is SUSPENDED rather than blocked, so the sandbox is free
+ * to exit and the run resumes when it comes due. `file_it_now` ends the wait
+ * early by its label, `reviewWindow`.
+ */
+export const REVIEW_DELAY_MS = 30_000;
+
+const input = z.object({
+  topic: z.string().min(3).describe("What to research"),
+  requestedBy: z.string().describe("Who asked — used when filing the result"),
+});
 
 /** What one research pass answers with — the run's output. */
 export type Findings = {
@@ -66,17 +66,19 @@ export type Findings = {
 /**
  * The review wait, then filing — `deepResearchWorkflow`'s `deliver`.
  *
- * The wait is NAMED, and the name is the whole reason `file_it_now` cannot end
- * a suspension it was not asked about; `review.ts` carries the argument.
+ * It runs in the BODY, with the run's `ctx`, after `writeReport`, so it obeys
+ * the body's rules and it may SUSPEND: on resume every research step above it
+ * answers from the journal. What it returns is the run's output — what the
+ * status line reads back and what the `notify` announcement is built from.
  */
 export async function deliverResearch(
   result: DeepResearchResult,
   input: { topic: string; requestedBy: string },
   ctx: WorkflowContext,
 ): Promise<Findings> {
-  await ctx.sleep("reviewWindow", REVIEW_DELAY_MS, {
-    correlationId: REVIEW_SLEEP_ID,
-  } satisfies SleepOptions);
+  // The label is also what `file_it_now` wakes, so "send it now" ends THIS
+  // wait and not an approval window a later body might open.
+  await ctx.sleep("reviewWindow", REVIEW_DELAY_MS);
 
   return {
     topic: result.topic,
@@ -84,10 +86,9 @@ export async function deliverResearch(
     report: result.report,
     sources: result.sources.length,
     angles: result.notes.map((note) => note.angle),
-    // The step's ARGUMENT is serialized, so what crosses is data rather than
-    // the notes themselves — which is also why the report does not travel: a
-    // filed message says what was found and where to read it, not the whole of
-    // it. See `filing.ts`.
+    // A step's ARGUMENT is serialized, so what crosses is data rather than the
+    // notes themselves — and the report does not travel: a filed message says
+    // what was found and where to read it. See `filing.ts`.
     filedAt: await ctx.step("file", () =>
       file({
         topic: result.topic,
@@ -98,3 +99,52 @@ export async function deliverResearch(
     ),
   };
 }
+
+const pass = deepResearchWorkflow({
+  description:
+    "Research a topic properly — brief, angles, web search per angle, a gap pass, then a written report",
+  input,
+  prompts: { brief: BRIEF_SYSTEM, summary: BRIEF_SUMMARY_SYSTEM },
+  deliver: deliverResearch,
+});
+
+/** When the caller asked for it, in words a phone can carry. */
+function askedAt(createdAt: number): string {
+  // Baselined for guard rule 30: this clock read is in `describeRun`, which the
+  // HOST runs when a builtin reads the run back — never in the replayed body.
+  const minutes = Math.round((Date.now() - createdAt) / 60_000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes} ${plural(minutes, "minute")} ago`;
+  const hours = Math.round(minutes / 60);
+  return `${hours} ${plural(hours, "hour")} ago`;
+}
+
+/**
+ * One line a voice agent reads aloud about a run — what `workflow_status`
+ * says per run. It leads with WHEN the caller asked, because that is the only
+ * thing distinguishing two of their requests.
+ */
+function describeRun(run: WorkflowRunOf<typeof pass>): string {
+  const when = askedAt(run.createdAt);
+  if (!isTerminal(run)) return `${when}: still working on it.`;
+  switch (run.status) {
+    case "completed":
+      return `${when}: done — ${run.output.summary} (${run.output.sources} ${plural(run.output.sources, "source")})`;
+    case "failed":
+      return `${when}: that one failed: ${run.error}`;
+    default:
+      return `${when}: that one was cancelled.`;
+  }
+}
+
+/**
+ * The declaration: the pass, plus the two spoken lines the run builtins read
+ * off it. (`deepResearchWorkflow` takes neither, so they ride a spread.)
+ */
+const research: WorkflowDef<typeof input, Findings> = {
+  ...pass,
+  describeRun,
+  cancelNote: "Dropped that research. Nothing was filed.",
+};
+
+export default research;

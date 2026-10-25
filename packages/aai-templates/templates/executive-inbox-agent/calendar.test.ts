@@ -3,7 +3,6 @@ import agentDef from "virtual:aai/agent";
 import { isClockTime, isIsoDate, isToolFailure, spokenDate } from "@alexkroman1/aai";
 import {
   createToolContext,
-  expectDialogOk,
   expectToolOk,
   parseToolInput,
   runGuardrail,
@@ -13,15 +12,18 @@ import { describe, expect, test } from "vitest";
 import { CALENDAR, TODAY } from "./inbox.ts";
 import { calendarTool, clashOn, meetingAssistant, statesAvailability } from "./meeting.ts";
 import { CHOOSE_MEMORY_SYSTEM, TRIAGE_SYSTEM } from "./prompts.ts";
+import edit from "./tools/edit.ts";
+import meetingAssistantTool from "./tools/meeting_assistant.ts";
+import openEmail from "./tools/open_email.ts";
+import sendCalendarInvite from "./tools/send_calendar_invite.ts";
 
 /**
  * The calendar half: the days the meeting assistant reads, the slot an invite
  * books, and the two rules that hold them together — a civil date and a
  * zero-padded clock time, on both sides of the comparison.
  *
- * It sits beside `agent.test.ts` rather than in it because that file is at the
- * package's 700-line spec cap; the split is by SUBJECT, so everything here is
- * about time and everything there is about the gate.
+ * It sits beside `agent.test.ts` because the split is by SUBJECT: everything
+ * here is about time and everything there is about the gate.
  */
 
 const run = toolRunner(agentDef);
@@ -44,7 +46,7 @@ const desk = () =>
 
 const openM4 = async () => {
   const ctx = desk();
-  await run("open_email", { which: "m4" }, ctx);
+  await run(openEmail, { which: "m4" }, ctx);
   return ctx;
 };
 
@@ -122,13 +124,13 @@ describe("the meeting assistant's calendar tool", () => {
         },
       },
     });
-    await run("open_email", { which: "m4" }, ctx);
-    const found = expectDialogOk<{ availability: string; usable: boolean }>(
-      await run("meeting_assistant", { request: "Tuesday or Wednesday" }, ctx),
+    await run(openEmail, { which: "m4" }, ctx);
+    const found = expectToolOk(
+      await run(meetingAssistantTool, { request: "Tuesday or Wednesday" }, ctx),
     );
     // Not a `ToolFailure`: there IS an answer and the executive is on the line.
-    expect(found.result.usable).toBe(false);
-    expect(found.result.availability).toContain("looked at her calendar");
+    expect(found.usable).toBe(false);
+    expect(found.availability).toContain("looked at her calendar");
   });
 });
 
@@ -152,9 +154,7 @@ describe("send_calendar_invite", () => {
 
   test("stages a free slot, and reads it back in words rather than in ISO", async () => {
     const ctx = await openM4();
-    const staged = expectToolOk<{ proposal: { body: string } }>(
-      await run("send_calendar_invite", INVITE, ctx),
-    );
+    const staged = expectToolOk(await run(sendCalendarInvite, INVITE, ctx));
     // The body is what the assistant says out loud, and a TTS engine handed
     // `2026-03-18T13:00:00` spells the digits.
     expect(staged.proposal.body).toBe(
@@ -168,7 +168,7 @@ describe("send_calendar_invite", () => {
     // has said the slot is free" is in the description, and a rule the model
     // can skip is not a rule.
     const refused = await run(
-      "send_calendar_invite",
+      sendCalendarInvite,
       { ...INVITE, startTime: "11:00", endTime: "11:30" },
       ctx,
     );
@@ -181,14 +181,14 @@ describe("send_calendar_invite", () => {
 
   test("edit changes one end of the slot, and is refused when that inverts it", async () => {
     const ctx = await openM4();
-    await run("send_calendar_invite", INVITE, ctx);
+    await run(sendCalendarInvite, INVITE, ctx);
     // The executive's own words, so the calendar clash is NOT re-checked —
     // they may double-book themselves. The ordering still is.
-    expect(await run("edit", { startTime: "14:00" }, ctx)).toMatchObject({
+    expect(await run(edit, { startTime: "14:00" }, ctx)).toMatchObject({
       error: expect.stringContaining("ends before it starts"),
     });
-    const sent = expectToolOk<{ sent: string }>(
-      await run("edit", { date: "2026-03-19", startTime: "09:00", endTime: "09:30" }, ctx),
+    const sent = expectToolOk(
+      await run(edit, { date: "2026-03-19", startTime: "09:00", endTime: "09:30" }, ctx),
     );
     expect(sent.sent).toContain("Thursday, March 19 at 9 AM");
   });

@@ -19,29 +19,28 @@
  * words back to the drafting model — as the answer to a question, or as the
  * "interrupted and gave this feedback" a draft comes back with — and reflects on
  * them. A reflection is two model calls or more, so the two tools that run one
- * are async and re-check the gate inside their write window: the executive's
- * answer may have been settled by a concurrent call while the model reflected.
+ * declare it as `prepare`; `require` re-runs before their write window, because
+ * the executive's answer may have been settled by a concurrent call while the
+ * model reflected.
  */
 
 import {
   clockTime,
   type DeepReadonly,
-  failable,
   type InferSchemaOutput,
   isoDate,
   isToolFailure,
-  orFail,
   spokenDate,
   spokenTime,
-  type ToolContext,
-  type ToolDef,
   type ToolFailure,
   toolFailure,
+  withInstruction,
 } from "@alexkroman1/aai";
 import { z } from "zod";
 import { EXECUTIVE } from "./inbox.ts";
 import { applyReflection, describeUpdates, reflect } from "./nodes.ts";
 import type { MemoryType } from "./prompts.ts";
+import { threadText } from "./prompts.ts";
 import {
   ALLOWED,
   type AssistantState,
@@ -64,6 +63,17 @@ import {
 const { name } = EXECUTIVE;
 
 // ─── Staging ─────────────────────────────────────────────────────────────────
+
+/** The precondition every drafting tool declares as `require`: a thread is open. */
+export function requireOpenEmail(state: FrozenAssistantState): ToolFailure | undefined {
+  return openEmail(state) ? undefined : toolFailure("No email is open — call open_email first.");
+}
+
+/** The open thread as every prompt quotes it. Empty only where `requireOpenEmail` has not run. */
+export function openThread(state: FrozenAssistantState): string {
+  const email = openEmail(state);
+  return email ? threadText(email) : "";
+}
 
 /** What the assistant should SAY once a proposal is waiting — read aloud, so a question's worth. */
 export function readBackFor(proposal: DeepReadonly<Proposal>): string {
@@ -92,8 +102,6 @@ export function readBackFor(proposal: DeepReadonly<Proposal>): string {
  * replace the first while both read back as staged.
  */
 export function propose(state: AssistantState, proposal: Proposal) {
-  const email = openEmail(state);
-  if (!email) return toolFailure("No email is open. Call open_email first.");
   if (state.proposal) {
     return toolFailure(
       `Something is already waiting for ${name}'s answer: ${describeProposal(state.proposal).title}. ` +
@@ -104,12 +112,14 @@ export function propose(state: AssistantState, proposal: Proposal) {
   const { title, body } = describeProposal(proposal);
   state.exchange.push(`Assistant proposed — ${title}: ${body}`);
   state.log.push(`Waiting on ${name}: ${title}`);
-  return {
-    awaitingDecision: true as const,
-    proposal: { kind: proposal.kind, title, body },
-    allowed: ALLOWED[proposal.kind],
-    readBack: readBackFor(proposal),
-  };
+  return withInstruction(
+    {
+      awaitingDecision: true as const,
+      proposal: { kind: proposal.kind, title, body },
+      allowed: ALLOWED[proposal.kind],
+    },
+    readBackFor(proposal),
+  );
 }
 
 // ─── Applying ────────────────────────────────────────────────────────────────
@@ -186,8 +196,8 @@ export const REFLECTION_SCOPE: Record<
   notify: { edit: [], respond: NO_TONE },
 };
 
-/** What is waiting, or the refusal every settling tool starts with. */
-function waiting(state: FrozenAssistantState) {
+/** What is waiting for `response`, or the refusal: nothing staged, or an answer not offered for it. */
+function answerable(state: FrozenAssistantState, response: HumanResponse) {
   const email = openEmail(state);
   const proposal = state.proposal;
   if (!(email && proposal)) {
@@ -195,30 +205,39 @@ function waiting(state: FrozenAssistantState) {
       `Nothing is waiting for ${name}'s answer. Open an email and stage something first.`,
     );
   }
-  return { email, proposal };
+  return requireAllowed(proposal, response) ?? { email, proposal };
+}
+
+/** {@link answerable} as a `require`: the refusal, or nothing. */
+function requireAnswer(response: HumanResponse) {
+  return (state: FrozenAssistantState): ToolFailure | undefined => {
+    const it = answerable(state, response);
+    return isToolFailure(it) ? it : undefined;
+  };
 }
 
 // ─── The four answers ────────────────────────────────────────────────────────
 
 /** `accept` — their `accept`: send it as proposed. */
-export function acceptTool(): ToolDef {
-  return reviewFlow.tool({
+export function acceptTool() {
+  return assistantSlot.updateTool({
     description:
       `${name} said yes to what you just read back — send it as it is. Only after a clear ` +
       "yes; this is the one tool that actually sends. Not an answer to a question or a heads-up.",
+    ui: { icon: "\u{2705}", label: "Sending" },
+    dialog: reviewFlow,
     when: AWAITING,
     send: { type: "SETTLED" },
-    execute: (_args, ctx) =>
-      assistantSlot.update(ctx, (state) => {
-        const it = waiting(state);
-        if (isToolFailure(it)) return it;
-        const denied = requireAllowed(it.proposal, "accept");
-        if (denied) return denied;
-        const sent = applyProposal(state, it.email, it.proposal);
-        if (isToolFailure(sent)) return sent;
-        rememberExample(state, it.email, "email");
-        return { sent, next: `Tell ${name} it went out, then open_email for the next one.` };
-      }),
+    prepare: (_args, state) => answerable(state, "accept"),
+    execute: (_args, state, { email, proposal }) => {
+      const sent = applyProposal(state, email, proposal);
+      if (isToolFailure(sent)) return sent;
+      rememberExample(state, email, "email");
+      return withInstruction(
+        { sent },
+        `Tell ${name} it went out, then open_email for the next one.`,
+      );
+    },
   });
 }
 
@@ -276,79 +295,71 @@ function editProposal(
 }
 
 /**
- * The `edit` path, as one function that answers with the thing or a sentence.
- *
- * Three guards run before anything is written, and `failable` is what lets each
- * be the lookup it is rather than the lookup plus a line forwarding its
- * failure. Not extended over the write window below: a mutator that RETURNS a
- * failure keeps what it wrote, where `orFail` throws and would discard the
- * draft — which is why the re-check inside it stays an `isToolFailure`.
- */
-const applyEdit = failable(async (args: InferSchemaOutput<typeof EDIT_ARGS>, ctx: ToolContext) => {
-  const before = assistantSlot.get(ctx);
-  const it = orFail(waiting(before));
-  orFail(requireAllowed(it.proposal, "edit"));
-  const edited = orFail(editProposal(it.proposal, args));
-  const feedback =
-    edited.kind === "invite"
-      ? `${name} interrupted and gave these instructions: ${describeProposal(edited).body}`
-      : `A better response would have been: ${describeProposal(edited).body}`;
-  const updates = await reflect(ctx.generate, {
-    memory: before.memory,
-    trajectory: trajectoryOf(before),
-    feedback,
-    promptTypes: REFLECTION_SCOPE[it.proposal.kind].edit,
-  });
-  return assistantSlot.update(ctx, (state) => {
-    const now = waiting(state);
-    if (isToolFailure(now)) return now;
-    const sent = applyProposal(state, now.email, edited);
-    if (isToolFailure(sent)) return sent;
-    rememberExample(state, now.email, "email");
-    applyReflection(state, updates);
-    return { sent, learned: describeUpdates(updates) };
-  });
-});
-
-/**
  * `edit` — their `edit`: send the executive's own version, and learn from the
  * difference. The feedback string is theirs: "A better response would have been".
  */
-export function editTool(): ToolDef {
-  return reviewFlow.tool({
+export function editTool() {
+  return assistantSlot.updateTool({
     description:
       `${name} dictated changes to the draft or the invite — send THEIR version. Only when ` +
       "their words CHANGE what you read back; a restatement of it is not an edit, so ask " +
       "whether to send. Give the " +
       "whole corrected email text, not the change; for an invite, the fields that change. " +
       "Use respond instead when they want you to redraft it yourself.",
+    ui: { icon: "\u{1F58A}", label: "Sending your version" },
+    dialog: reviewFlow,
     when: AWAITING,
     send: { type: "SETTLED" },
     inputSchema: EDIT_ARGS,
-    execute: (args, ctx) => applyEdit(args, ctx),
+    require: requireAnswer("edit"),
+    prepare: async (args, state, ctx) => {
+      const it = answerable(state, "edit");
+      if (isToolFailure(it)) return it;
+      const edited = editProposal(it.proposal, args);
+      if (isToolFailure(edited)) return edited;
+      const feedback =
+        edited.kind === "invite"
+          ? `${name} interrupted and gave these instructions: ${describeProposal(edited).body}`
+          : `A better response would have been: ${describeProposal(edited).body}`;
+      const updates = await reflect(ctx.generate, {
+        memory: state.memory,
+        trajectory: trajectoryOf(state),
+        feedback,
+        promptTypes: REFLECTION_SCOPE[it.proposal.kind].edit,
+      });
+      return { email: it.email, edited, updates };
+    },
+    execute: (_args, state, { email, edited, updates }) => {
+      const sent = applyProposal(state, email, edited);
+      if (isToolFailure(sent)) return sent;
+      rememberExample(state, email, "email");
+      applyReflection(state, updates);
+      return { sent, learned: describeUpdates(updates) };
+    },
   });
 }
 
 /** `ignore` — their `ignore`, and their drafting model's `Ignore` tool: mark it read and move on. */
-export function ignoreTool(): ToolDef {
-  return reviewFlow.tool({
+export function ignoreTool() {
+  return assistantSlot.updateTool({
     description:
       `${name} wants to skip the open email — no reply, no invite. Marks it read and drops ` +
       "anything staged for it. Only when they have said so.",
+    ui: { icon: "\u{1F5D1}", label: "Skipping" },
+    dialog: reviewFlow,
     when: [DRAFTING, AWAITING],
     send: { type: "SETTLED" },
-    execute: (_args, ctx) =>
-      assistantSlot.update(ctx, (state) => {
-        const email = openEmail(state);
-        if (!email) return toolFailure("No email is open — there is nothing to ignore.");
-        const dropped = state.proposal ? describeProposal(state.proposal).title : null;
-        const closedAs = state.proposal?.kind === "notify" ? "notified" : "ignored";
-        state.proposal = null;
-        closeEmail(state, email.id, closedAs);
-        rememberExample(state, email, "no");
-        state.log.push(`Ignored: ${email.subject}`);
-        return { ignored: email.subject, dropped, next: "open_email for the next one." };
-      }),
+    prepare: (_args, state) =>
+      openEmail(state) ?? toolFailure("No email is open — there is nothing to ignore."),
+    execute: (_args, state, email) => {
+      const dropped = state.proposal ? describeProposal(state.proposal).title : null;
+      const closedAs = state.proposal?.kind === "notify" ? "notified" : "ignored";
+      state.proposal = null;
+      closeEmail(state, email.id, closedAs);
+      rememberExample(state, email, "no");
+      state.log.push(`Ignored: ${email.subject}`);
+      return withInstruction({ ignored: email.subject, dropped }, "open_email for the next one.");
+    },
   });
 }
 
@@ -379,49 +390,46 @@ function respondPlan(proposal: DeepReadonly<Proposal>, feedback: string) {
   }
 }
 
-/** The `respond` path — {@link applyEdit}'s shape, with two guards instead of three. */
-const applyResponse = failable(async (feedback: string, ctx: ToolContext) => {
-  const before = assistantSlot.get(ctx);
-  const it = orFail(waiting(before));
-  orFail(requireAllowed(it.proposal, "respond"));
-  const plan = respondPlan(it.proposal, feedback);
-  const updates = await reflect(ctx.generate, {
-    memory: before.memory,
-    trajectory: trajectoryOf(before),
-    feedback: plan.line,
-    promptTypes: REFLECTION_SCOPE[it.proposal.kind].respond,
-  });
-  return assistantSlot.update(ctx, (state) => {
-    const now = waiting(state);
-    if (isToolFailure(now)) return now;
-    state.proposal = null;
-    state.exchange.push(plan.line);
-    rememberExample(state, now.email, "email");
-    applyReflection(state, updates);
-    state.log.push(`${name}: ${feedback}`);
-    return {
-      feedback: plan.line,
-      instructions: plan.instructions,
-      learned: describeUpdates(updates),
-    };
-  });
-});
-
 /**
  * `respond` — their `response`: words for the drafting model, not a decision.
  * The answer to a question, or feedback that sends a draft back for another go.
  */
-export function respondTool(): ToolDef {
-  return reviewFlow.tool({
+export function respondTool() {
+  return assistantSlot.updateTool({
     description:
       `${name} answered your question, or gave feedback or instructions instead of a plain ` +
       "yes or no — hand their words back so you can draft again. Not for a yes (accept), " +
       "a dictated replacement (edit), or a skip (ignore).",
+    ui: { icon: "\u{1F501}", label: "Taking your feedback" },
+    dialog: reviewFlow,
     when: AWAITING,
     send: { type: "REDRAFT" },
     inputSchema: z.object({
       feedback: z.string().min(1).max(1000).describe(`What ${name} said, in their words`),
     }),
-    execute: (args, ctx) => applyResponse(args.feedback, ctx),
+    require: requireAnswer("respond"),
+    prepare: async ({ feedback }, state, ctx) => {
+      const it = answerable(state, "respond");
+      if (isToolFailure(it)) return it;
+      const plan = respondPlan(it.proposal, feedback);
+      const updates = await reflect(ctx.generate, {
+        memory: state.memory,
+        trajectory: trajectoryOf(state),
+        feedback: plan.line,
+        promptTypes: REFLECTION_SCOPE[it.proposal.kind].respond,
+      });
+      return { email: it.email, plan, updates };
+    },
+    execute: ({ feedback }, state, { email, plan, updates }) => {
+      state.proposal = null;
+      state.exchange.push(plan.line);
+      rememberExample(state, email, "email");
+      applyReflection(state, updates);
+      state.log.push(`${name}: ${feedback}`);
+      return withInstruction(
+        { feedback: plan.line, learned: describeUpdates(updates) },
+        plan.instructions,
+      );
+    },
   });
 }

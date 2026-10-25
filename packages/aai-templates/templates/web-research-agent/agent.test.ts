@@ -2,6 +2,7 @@
 import agentDef from "virtual:aai/agent";
 import { MCP_TOOL_PREFIX, mcpToolName } from "@alexkroman1/aai";
 import { expectDeployable, expectPromptBuiltinsDeclared } from "@alexkroman1/aai-runtime/testing";
+import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ARCHIVE_KEY, ARCHIVE_TOKEN_ENV, ARCHIVE_URL_ENV } from "./agent.ts";
 import promptFile from "./system-prompt.md?raw";
@@ -14,7 +15,10 @@ import promptFile from "./system-prompt.md?raw";
  * model — turns a user's first customization into a build failure in a file
  * they never wrote. Every test here therefore asserts a property that survives
  * those edits, on the RESOLVED config rather than on the def's empty fields; the
- * three every starter owes are `expectDeployable`'s.
+ * three every starter owes are `describeAgent`'s built-in deployable case —
+ * asserted per MODE, so a provider swap survives it. This template declares no
+ * provider at all: the whole voice pipeline is the injected all-AssemblyAI
+ * default, which is what lets the starter run the moment it is deployed.
  *
  * What is left to `agent.eval.test.ts` is everything that needs a model: that
  * Scout SEARCHES before answering a fact it is sure of, that the outlet it
@@ -32,19 +36,7 @@ import promptFile from "./system-prompt.md?raw";
  * import is also the file's existence check — `deployedAgent` is handed the
  * prompt and nothing else, and refuses a call with no project files at all.
  */
-describe("web-research-agent template", () => {
-  test("is deployable: validates, is nameable, and every stage its mode needs is filled", () => {
-    // This template declares no provider at all — the whole voice pipeline is
-    // the injected all-AssemblyAI default, which is what lets the starter run
-    // the moment it is deployed. `expectDeployable` asserts that per MODE, so
-    // it survives a swap: declare `stt`/`llm`/`tts` and the rest still
-    // default; declare `s2s` and there is no cascade to fill, which is the one
-    // thing that must never happen by fallthrough. `not.toThrow()` because the
-    // helper's throw IS the finding: vitest quotes the message, which names the
-    // invariant that went.
-    expect(() => expectDeployable(agentDef)).not.toThrow();
-  });
-
+describeAgent(agentDef, () => {
   test("system-prompt.md is the prompt a deploy carries", () => {
     // The build discovers the file; nothing imports it. So the failure this
     // catches is "I edited the prompt and nothing changed" — and here it is the

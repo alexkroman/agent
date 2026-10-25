@@ -7,6 +7,7 @@ import { assistantSlot } from "../shared.ts";
  * picked up about how I write?" is answerable at any point.
  */
 export default assistantSlot.tool({
+  ui: { icon: "\u{1F9E0}", label: "What I've learned" },
   description:
     `Read back what you currently believe about how ${EXECUTIVE.name} likes emails written, ` +
     "what to include, how to schedule, and the background you are working from — plus what " +
