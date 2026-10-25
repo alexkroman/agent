@@ -20,6 +20,7 @@
 
 import type { AgentConfig } from "./_internal-types.ts";
 import { warnDuplicatedDefaultPrompt } from "./_prompt-duplicate-warning.ts";
+import { appendPromptContext } from "./agent-instructions.ts";
 import {
   PROMPT_LISTENING,
   PROMPT_PERSONALITY,
@@ -170,7 +171,12 @@ export function buildSystemPrompt(
     sections.push(`Built-in tool usage:\n${options.toolGuidance.join("\n")}`);
   }
 
-  if (custom !== undefined) sections.push(agentInstructionsSection(custom));
+  // The static `promptContext` under the author's own text, blank-line
+  // separated — the one place the two static halves meet. A resolver on either
+  // side is appended per session by the runtime instead (`appendPromptContext`
+  // is the shared spelling), and `toAgentConfig` put nothing here for one.
+  const own = appendPromptContext(custom, config.promptContext);
+  if (own !== undefined) sections.push(agentInstructionsSection(own));
 
   return sections.join("\n\n");
 }
@@ -225,6 +231,19 @@ export function agentInstructionsSection(instructions: string): string {
  */
 function stripDefaultPrefix(systemPrompt: string | undefined): string | undefined {
   if (systemPrompt === undefined || systemPrompt === "") return undefined;
+  return authorInstructions(systemPrompt);
+}
+
+/**
+ * The author's own instructions out of a `systemPrompt` string — the
+ * prefix-stripping half of `stripDefaultPrefix`, exported for the runtime's
+ * per-session resolver, which has to compose a STATIC prompt with a DYNAMIC
+ * `promptContext` under one header and so cannot take the agent section from
+ * the cached base. `undefined` when nothing is left (the default, or nothing).
+ *
+ * @internal
+ */
+export function authorInstructions(systemPrompt: string): string | undefined {
   const leading = systemPrompt.startsWith(DEFAULT_SYSTEM_PROMPT);
   if (leading || systemPrompt.includes(DEFAULT_SYSTEM_PROMPT)) {
     warnDuplicatedDefaultPrompt(systemPrompt, {

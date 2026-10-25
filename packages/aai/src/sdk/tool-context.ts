@@ -24,7 +24,7 @@ import type { WorkflowClient } from "./workflow.ts";
 /**
  * Context passed to tool `execute` functions.
  *
- * Eleven fields, grouped by what a tool reaches for:
+ * The fields, grouped by what a tool reaches for:
  *
  * - **Its own configuration** — `env`, the agent's secrets and settings.
  * - **The session** — `slots` (its state; reach for {@link sessionSlot} rather
@@ -41,6 +41,8 @@ import type { WorkflowClient } from "./workflow.ts";
  * - **The connected page** — `send`, one custom event to the browser client.
  * - **Randomness** — `random`, the seam a spec can pin instead of
  *   `Math.random`.
+ * - **Where the session is** — `turn`, how many user turns have been
+ *   committed, and `now()`, the clock; both pinnable the way `random` is.
  *
  * There is no `ctx.db` and no `ctx.state`: the platform hands tool code no
  * database, and a session's state lives in {@link sessionSlot}s.
@@ -301,4 +303,57 @@ export type ToolContext = {
    * ```
    */
   random: RandomSource;
+  /**
+   * How many user turns this session has COMMITTED so far, counting the one
+   * this call answers — `1` for a tool called while the first reply is being
+   * composed, `0` only from a context that belongs to no turn (a sessionless
+   * caller, a workflow step's `stepDelegate`).
+   *
+   * A turn is a `userTranscript.committed` event, the same unit a
+   * `sessionSlot` hook or an eval counts, so "ask once, on the third turn" is
+   * `ctx.turn === 3` rather than a counter a tool keeps in a slot. A resume
+   * restores the count from the session's history, so it is a property of the
+   * SESSION and not of the socket. A typed turn (`sendText`) commits like a
+   * spoken one.
+   *
+   * Pinned in a spec with `createToolContext({ turn })`, which defaults to `0`.
+   *
+   * @remarks
+   * The THIRTEENTH field on this type, and one of the two that raised
+   * `guard-invariants` rule 24 from twelve. It passes the rule's test: it is
+   * per-CALL (the count at the instant the call runs, which the next call of
+   * the same reply may already have moved past) and it cannot be reached any
+   * other way — `ctx.messages` is a token-bounded WINDOW of the conversation
+   * (`transports/pipeline/history/retention.ts`), so counting its user
+   * messages reads a number that stops growing once the oldest turns are
+   * evicted, and the session's own counter lives in the runtime's session
+   * directory, which no tool body can see. Before it existed the shipped
+   * answer was a slot holding a counter a tool incremented by hand, which
+   * counted CALLS rather than turns.
+   */
+  turn: number;
+  /**
+   * The current time as epoch milliseconds — the SEAM a tool reaches for
+   * instead of `Date.now()`, on the terms `random` sets: in production it IS
+   * `Date.now`, and what it buys is a spec that can say what time it is.
+   * `createToolContext({ now: () => 1_700_000_000_000 })` makes a deadline, an
+   * opening-hours check or a "how long since" an exact assertion rather than a
+   * window around the wall clock.
+   *
+   * Not journaled either: a WORKFLOW body replays, and `WorkflowContext.now()`
+   * is the different mechanism that makes a run re-read the same instant.
+   *
+   * @remarks
+   * The FOURTEENTH field, and the other that raised rule 24 from twelve. It
+   * does NOT pass the rule's "unreachable any other way" test — `Date.now()`
+   * is right there — and is admitted on the argument `random` was: a seam is
+   * worth a field when the alternative is a tool whose behaviour a spec cannot
+   * state. Every opening-hours check, booking cutoff and "how long ago" in the
+   * shipped templates read the wall clock directly and none could be pinned
+   * without fake timers over the whole runtime; the `deadlineAt` budget
+   * example on this very type subtracts `Date.now()` and is untestable for the
+   * same reason. The cost the rule prices — a promise every host and double
+   * must keep — is one line in each (`now: Date.now`).
+   */
+  now(): number;
 };

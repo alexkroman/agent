@@ -32,6 +32,8 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     deadlineAt: Date.now() + TOOL_EXECUTION_TIMEOUT_MS,
     // Seeded, so a spec that never mentions randomness stays deterministic.
     random: createSeededRandom(20_260_101),
+    turn: 0,
+    now: () => Date.now(),
     messages: [],
     sessionId: "test-session",
     send: vi.fn(),

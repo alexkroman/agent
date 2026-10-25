@@ -2,7 +2,15 @@
 
 /** @jsxImportSource react */
 
-import { type ComponentType, createElement, type ReactNode, useEffect, useState } from "react";
+import { omitUndefined } from "@alexkroman1/aai/utils";
+import {
+  type ComponentType,
+  createElement,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { pageBaseUrl, setPageTitle } from "./_utils.ts";
@@ -11,8 +19,8 @@ import { ChatView } from "./components/chat-view.tsx";
 import { SidebarLayout } from "./components/sidebar-layout.tsx";
 import { StartScreen } from "./components/start-screen.tsx";
 import { ToolConfigContext, type ToolDisplayConfig } from "./components/tool-config-context.ts";
-import { SessionProvider, ThemeProvider } from "./context.ts";
-import type { BrowserSession } from "./session/index.ts";
+import { SessionProvider, ThemeProvider, useSessionSelector } from "./context.ts";
+import type { BrowserSession, SessionSnapshot } from "./session/index.ts";
 import { createBrowserSession } from "./session/index.ts";
 import type { ClientTheme, VoiceSessionOptions } from "./types.ts";
 
@@ -52,8 +60,22 @@ export type ClientConfig = Pick<
   target?: string | HTMLElement;
   /** Base URL of the AAI platform server. Derived from `location.href` by default. */
   platformUrl?: string;
-  /** Theme color overrides. */
+  /**
+   * Theme colors — the five tokens, or `{ primary, mode: "dark" | "light" }`
+   * with the rest derived. See {@link ClientTheme}.
+   */
   theme?: ClientTheme;
+  /**
+   * A stylesheet for the PAGE, injected into `<head>` for the life of the
+   * mount and removed on dispose.
+   *
+   * For the rules a custom chrome has that no component prop reaches — a
+   * `@keyframes`, a scrollbar palette, a font face — which otherwise meant a
+   * `<style>` element written into `index.html` beside the mount, in the one
+   * file the scaffold's CSP is strict about. The five theme tokens are already
+   * on `:root` as `--aai-*` when these rules run, so a sheet may use them.
+   */
+  css?: string;
   /**
    * Full custom component to render instead of the default shell.
    *
@@ -98,7 +120,12 @@ export type ClientConfig = Pick<
   /** Label of the start CTA. Defaults to `"Start Conversation"`. */
   buttonText?: string;
   /**
-   * Tool display config: icon and label overrides keyed by tool name.
+   * Tool display OVERRIDES: icon and label keyed by tool name.
+   *
+   * The base is what each tool declared with `tool({ ui })`, served in the
+   * agent's `GET /client-config` body and merged underneath this per key — so
+   * a page that declares nothing here still shows every tool the way its
+   * author drew it, and this map is for the page that disagrees.
    *
    * Honoured with a custom `component` too: {@link mountClient} installs it into
    * `ToolConfigContext`, and the consumer is `ToolCallBlock` — which a custom
@@ -252,29 +279,25 @@ function DefaultShell({ name, icon, subtitle, buttonText, Sidebar, ...layout }: 
 }
 
 /**
- * Config-tier root: fetches the server-declared display name via
- * `GET client-config` and renders the chat shell. The shell renders
- * immediately — optimistically — while the lookup is in flight; servers
- * without the endpoint (every lookup failure resolves to the empty default)
- * work exactly as before.
+ * The session-config lookup the mount makes, and WHEN.
  *
- * **The lookup is SKIPPED when the caller already named the agent.** The
- * response's only consumer here is the fallback below, so with an explicit
- * `mountClient({ name })` the request was issued and its answer thrown away — and on
- * the platform this endpoint is the BROKER, so the discarded request is one that
- * can boot a sandbox. The session's own per-attempt lookup
- * (`session/browser-session.ts`'s URL provider) is a different question and deliberately
- * left alone: it re-brokers on every connection attempt, which is what makes a
- * reconnect land on a REPLACEMENT sandbox, so it may not be served from
- * anything this render already has.
+ * The response feeds two things: the shell's title when the caller named no
+ * agent, and every tool's declared icon and label (`tools`), which a custom
+ * component's `ToolCallBlock` reads too. The timing rule is the one this file
+ * has always had, kept because on the platform this endpoint is the BROKER
+ * and a request to it can boot a sandbox: the lookup is issued at mount only
+ * when the shell needs the name; otherwise it waits until the session has
+ * STARTED — at which point the session's own per-attempt lookup is booting
+ * that sandbox anyway, so the second request costs no boot. Either way it is
+ * issued once; the session's own lookup stays separate (it re-brokers per
+ * attempt, which this must not interfere with — see `session/dial.ts`).
  */
-function DefaultRoot({ platformUrl, ...display }: { platformUrl: string } & ShellDisplay) {
-  const { name } = display;
+function useMountLookup(platformUrl: string, eager: boolean): ClientConfigResponse | null {
+  const started = useSessionSelector(selectStarted);
+  const wanted = eager || started;
   const [resolved, setResolved] = useState<ClientConfigResponse | null>(null);
-  const needsLookup = name === undefined;
-
   useEffect(() => {
-    if (!needsLookup) return;
+    if (!wanted || resolved !== null) return;
     let cancelled = false;
     void fetchClientConfig({ platformUrl }).then((cfg) => {
       if (!cancelled) setResolved(cfg);
@@ -282,10 +305,75 @@ function DefaultRoot({ platformUrl, ...display }: { platformUrl: string } & Shel
     return () => {
       cancelled = true;
     };
-  }, [platformUrl, needsLookup]);
+  }, [platformUrl, wanted, resolved]);
+  return resolved;
+}
 
-  // An explicit mountClient({ name }) wins; otherwise use the server-declared name.
-  return <DefaultShell {...display} name={name ?? resolved?.name} />;
+/** Module-scope, for the reason `context.ts` hoists its own two selectors. */
+const selectStarted = (snapshot: SessionSnapshot): boolean => snapshot.started;
+
+/**
+ * The agent's declared hints under the page's overrides, per key.
+ *
+ * Per KEY rather than per map, so `tools: { add_pizza: { label: "Adding" } }`
+ * keeps the icon the tool declared; and the override goes through
+ * `omitUndefined` first, so a present-but-undefined field (an options bag) is
+ * "no override" rather than "no icon".
+ */
+function mergeToolDisplay(
+  declared: ClientConfigResponse["tools"],
+  overrides: ToolDisplayConfig | undefined,
+): ToolDisplayConfig {
+  const merged: ToolDisplayConfig = { ...declared };
+  for (const [name, entry] of Object.entries(overrides ?? {})) {
+    merged[name] = { ...merged[name], ...omitUndefined(entry) };
+  }
+  return merged;
+}
+
+/**
+ * The page-level stylesheet `mountClient({ css })` injects — see that field.
+ * A `<style>` in `<head>` rather than inline on an element, so `@keyframes`,
+ * `@font-face` and pseudo-element rules all work; removed on unmount so a
+ * client disposed mid-page leaves the page as it found it.
+ */
+function PageCss({ css }: { css: string | undefined }): null {
+  useEffect(() => {
+    if (css === undefined || css === "" || typeof document === "undefined") return;
+    const style = document.createElement("style");
+    style.setAttribute("data-aai-css", "");
+    style.textContent = css;
+    document.head.appendChild(style);
+    return () => {
+      style.remove();
+    };
+  }, [css]);
+  return null;
+}
+
+/**
+ * Everything under the session provider: the lookup, the two display
+ * contexts, the page stylesheet, then the caller's component or the default
+ * shell. Inside `SessionProvider` because the lookup's timing reads the
+ * session (`useMountLookup`).
+ */
+function ClientRoot({ config, platformUrl }: { config: ClientConfig; platformUrl: string }) {
+  const resolved = useMountLookup(
+    platformUrl,
+    config.component === undefined && config.name === undefined,
+  );
+  const toolConfig = useMemo(
+    () => mergeToolDisplay(resolved?.tools, config.tools),
+    [resolved?.tools, config.tools],
+  );
+  return (
+    <ToolConfigContext.Provider value={toolConfig}>
+      <ThemeProvider value={config.theme}>
+        <PageCss css={config.css} />
+        {rootFor(config, resolved?.name)}
+      </ThemeProvider>
+    </ToolConfigContext.Provider>
+  );
 }
 
 /**
@@ -296,15 +384,18 @@ function DefaultRoot({ platformUrl, ...display }: { platformUrl: string } & Shel
  * `mountClient({ component, sidebar })` names one pane and one aside, which is
  * exactly what it renders. Honouring the combination rather than ignoring it is
  * the same call this file already made for `name` and `tools`.
+ *
+ * The default shell renders immediately — optimistically — with whatever name
+ * it has; `serverName` arrives from the mount's lookup when the caller named
+ * none, and an explicit `mountClient({ name })` wins over it.
  */
-function rootFor(config: ClientConfig, platformUrl: string) {
+function rootFor(config: ClientConfig, serverName: string | undefined) {
   const Custom = config.component;
   const Sidebar = config.sidebar;
   if (!Custom) {
     return (
-      <DefaultRoot
-        platformUrl={platformUrl}
-        name={config.name}
+      <DefaultShell
+        name={config.name ?? serverName}
         icon={config.icon}
         subtitle={config.subtitle}
         buttonText={config.buttonText}
@@ -408,22 +499,14 @@ export function mountClientWith(
   // header, so the page title is where it goes.
   setPageTitle(config.name);
 
-  const rootNode = rootFor(config, platformUrl);
-
-  const toolConfig: ToolDisplayConfig = config.tools ?? {};
-
   return {
     session,
     ...mountRoot(
       container,
       createElement(
-        ToolConfigContext.Provider,
-        { value: toolConfig },
-        createElement(
-          ThemeProvider,
-          { value: config.theme },
-          createElement(SessionProvider, { value: session }, rootNode),
-        ),
+        SessionProvider,
+        { value: session },
+        createElement(ClientRoot, { config, platformUrl }),
       ),
       // Baselined under `guard-invariants` rule 27: a teardown THUNK handed to
       // the React root, which calls it on unmount. A callback is not a scope,

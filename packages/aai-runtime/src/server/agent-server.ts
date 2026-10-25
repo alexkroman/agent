@@ -55,7 +55,7 @@ import {
   publishStepEnv,
   publishStepPublicUrl,
 } from "@alexkroman1/aai/host-internal";
-import { frontDoorOf } from "@alexkroman1/aai/internal";
+import { frontDoorOf, toolUiMap } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { RunCodeExecutor } from "../host-agent-options.ts";
 import { consoleLogger } from "../logger.ts";
@@ -381,6 +381,9 @@ export function createAgentServer(options: AgentServerOptions): AgentServer {
       page: effectivePage,
       clientDir,
       uploadBroker,
+      // Each tool's `ui`, by name, for the same front door `name`/`greeting`
+      // reach a page through.
+      tools: toolUiMap(agent),
     }),
     // The hook bag, SPREAD — legal only because every field on
     // `SharedServerOptions` accepts `undefined`. Naming the three by hand

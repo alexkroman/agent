@@ -229,6 +229,10 @@ export type ToolContextOverrides = {
   workflows?: ToolContext["workflows"] | undefined;
   /** See {@link ToolContext.random}. Defaults to a SEEDED source. */
   random?: ToolContext["random"] | undefined;
+  /** See {@link ToolContext.turn}. Defaults to `0` — a context that belongs to no turn. */
+  turn?: ToolContext["turn"] | undefined;
+  /** See {@link ToolContext.now}. Defaults to `Date.now`. */
+  now?: ToolContext["now"] | undefined;
   /** See {@link ToolContext.speech}. Defaults to the recorder behind `TestToolContext.said`. */
   speech?: ToolContext["speech"] | undefined;
   /**
@@ -487,6 +491,14 @@ export function createToolContext(overrides: ToolContextOverrides = {}): TestToo
     // rather than constant because a constant source is degenerate: `shuffled`
     // would return a fixed permutation and `mintCode` would re-draw one code.
     random: createSeededRandom(TEST_RANDOM_SEED),
+    // No turn: a spec drives one tool, and the session around it is whatever
+    // the spec says it is. A tool that branches on the turn is tested by
+    // passing one, which is the whole reason the field is a seam.
+    turn: 0,
+    // The wall clock, which is what the runtime hands a tool too — pinned by a
+    // spec that cares, left real for one that does not (a tool budgeting under
+    // `deadlineAt`, which is also wall-clock here).
+    now: () => Date.now(),
     /**
      * Records what the client would RECEIVE, which is not everything a tool
      * sends: `decideClientEvent` is the runtime's own rule, so an event over

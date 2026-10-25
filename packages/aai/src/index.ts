@@ -423,6 +423,8 @@ export {
   createKeyedLock,
   errorDetail,
   errorMessage,
+  INSTRUCTION_KEY,
+  instructionOf,
   isRecord,
   isToolFailure,
   type KeyedLock,
@@ -432,11 +434,14 @@ export {
   pushCapped,
   responseErrorMessage,
   safeJsonParse,
+  stripInstruction,
   type ToolFailure,
   type ToolRefusal,
   type ToolRefusalReason,
   toolFailure,
   toolRefusal,
+  type WithInstruction,
+  withInstruction,
   withLock,
 } from "./sdk/utils.ts";
 export {

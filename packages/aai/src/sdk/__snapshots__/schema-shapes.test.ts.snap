@@ -9,6 +9,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "greeting",
   "idleTimeoutMs",
   "interruption",
+  "listing",
   "llm",
   "maxOutputTokens",
   "maxRetries",
@@ -16,6 +17,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "mcpServers",
   "mode",
   "name",
+  "promptContext",
   "requiredEnv",
   "resetToolChoice",
   "s2s",
@@ -41,6 +43,7 @@ exports[`manifest schema shapes > ToolSchemaSchema shape 1`] = `
   "name",
   "parameters",
   "type",
+  "ui",
 ]
 `;
 

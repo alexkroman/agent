@@ -11,10 +11,11 @@
  * 2. **Field legality** (`assertModeFields`) — every field the mode's member
  *    does not have, refused by name. Against the AUTHORED fields, so
  *    `turnTaking` on an S2S agent is reported as `turnTaking`.
- * 3. **The conveniences** — a model-id string for `llm`, and
+ * 3. **The conveniences** — a model-id string for `llm`,
  *    `turnTaking.minSilenceMs`/`maxSilenceMs` lowered onto the same two
- *    options of `assemblyAIStt()`. A TTS voice has no shorthand: it is the
- *    descriptor's option (`assemblyAITts({ voice })`), so it has one owner.
+ *    options of `assemblyAIStt()`, and the deprecated `description` folded
+ *    onto `listing` (`agent-listing.ts`). A TTS voice has no shorthand: it is
+ *    the descriptor's option (`assemblyAITts({ voice })`), so it has one owner.
  *
  * **There is no `system` alias.** `agent({ system: "…" })` reaches
  * `assertNoStrayFields` and is refused BY NAME, which is the better error: two
@@ -48,6 +49,7 @@ export function normalizeAgentParams(input: unknown): unknown {
   rest.mode = mode;
   if (typeof rest.llm === "string") rest.llm = normalizeLlm(rest.llm);
   if (rest.syncState !== undefined) rest.syncState = normalizeSyncState(rest.syncState);
+  normalizeListing(rest);
   normalizeEndpointing(rest);
   // AFTER the desugaring, and over `rest.stt` rather than over the two
   // shorthands: the same contradiction is expressible on an explicit
@@ -86,6 +88,19 @@ function normalizeEndpointing(rest: Record<string, unknown>): void {
     );
   }
   rest.stt = assemblyAIStt(omitUndefined({ [minKey]: min, [maxKey]: max }));
+}
+
+/**
+ * `description` → `listing`, in place: the deprecated alias is removed so the
+ * resolved definition and the wire carry ONE field, and a reader never has to
+ * check both. When both are written `listing` wins — it is the current name,
+ * and an author who wrote it meant it.
+ */
+function normalizeListing(rest: Record<string, unknown>): void {
+  if (!("description" in rest)) return;
+  const { description } = rest;
+  delete rest.description;
+  if (rest.listing === undefined && description !== undefined) rest.listing = description;
 }
 
 /** Read a numeric field off a group and REMOVE it, so `AgentDef` stays canonical. */

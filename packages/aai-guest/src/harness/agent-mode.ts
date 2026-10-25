@@ -26,7 +26,7 @@
  */
 
 import { readFile, rm } from "node:fs/promises";
-import { frontDoorOf, globalSlot } from "@alexkroman1/aai/internal";
+import { frontDoorOf, globalSlot, toolUiMap } from "@alexkroman1/aai/internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { emptyHarnessState, lazyRuntime, loadBundle } from "aai-guest-core/bundle";
 import { AGENT_IDLE_EXIT_MS, AGENT_IDLE_POLL_MS } from "aai-guest-core/limits";
@@ -267,6 +267,10 @@ export async function mainAgent(port: number, host: string, token: string): Prom
     ...omitUndefined({
       name: state.agent?.name,
       greeting: state.agent?.greeting,
+      // And each tool's `ui`, read off the same live definition: the toolsets
+      // are plain data and `toolUiMap` converts no schema, so this copy of the
+      // SDK can read them across the bundle seam the way it reads `name`.
+      tools: state.agent ? toolUiMap(state.agent) : undefined,
       // The workflow-app declaration, honoured identically to `aai dev`: the
       // voice surfaces are declined with a reason.
       page: frontDoorOf(state.agent?.mode),

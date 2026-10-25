@@ -11,7 +11,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
-import { frontDoorOf } from "@alexkroman1/aai/internal";
+import { frontDoorOf, toolUiMap } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 // One static import: the runtime barrel is already loaded for the helpers
 // below, so a dynamic import inside startDevServer would defer nothing.
@@ -291,10 +291,14 @@ export async function startDevServer(
     // `_dev-session-ticket.ts`. Read from the env the gate itself reads.
     const serverEnv = hostModeEnv(providerEnv);
     const page = frontDoorOf(agentDef.mode);
+    // Each tool's `ui`, by name — the same hints a deployed guest serves, so a
+    // page renders a call identically here and after a deploy.
+    const tools = toolUiMap(agentDef);
     const ticketing = devSessionTicketing(serverEnv, {
       name: agentDef.name,
       greeting: agentDef.greeting,
       page,
+      tools,
     });
 
     return serve(runtimeOptions, (runtime) => ({
@@ -314,6 +318,7 @@ export async function startDevServer(
       hostBaseAgent: agentDef,
       // Served pre-connection via GET /client-config.
       greeting: agentDef.greeting,
+      tools,
       // A workflow app's declaration, honoured by the dev server exactly as the
       // deployed guest honours it: `/websocket` is declined with a reason.
       // Parity matters more here than usual, because a page mounted with

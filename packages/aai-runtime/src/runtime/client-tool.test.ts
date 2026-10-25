@@ -53,6 +53,7 @@ describe("clientTool over a session socket", () => {
       sessions: {
         emitter: () => undefined,
         meter: () => undefined,
+        turn: () => 0,
         speech: { of: () => makeSpeech() },
       },
       clientTools,

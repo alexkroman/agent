@@ -181,6 +181,11 @@ type ExecuteToolCallOptions = {
    */
   workflows?: WorkflowClient | undefined;
   /**
+   * How many user turns the issuing session has committed (`ctx.turn`).
+   * Absent — a sessionless caller — reads as `0`.
+   */
+  turn?: number | undefined;
+  /**
    * Per-call deadline. Defaults to `TOOL_EXECUTION_TIMEOUT_MS` (30s),
    * which is sized for a VOICE turn — past it the caller is listening to
    * silence, so a slow tool is already a failed turn.
@@ -269,6 +274,10 @@ function buildToolContext(
     // existed — the field buys testability, not different numbers. A spec
     // substitutes it through `createToolContext({ random })`.
     random: Math.random,
+    // The same shape as `random`: the global, so the field costs nothing at run
+    // time and a spec can pin the clock through `createToolContext({ now })`.
+    now: Date.now,
+    turn: options.turn ?? 0,
     send(event: string, data: unknown): void {
       send?.(event, data);
     },

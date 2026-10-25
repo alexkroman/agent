@@ -1,8 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 import type { Message } from "@alexkroman1/aai";
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
+import { withInstruction } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
 import { FatalToolError } from "./error-policy.ts";
+import { TOOL_INSTRUCTION_LABEL } from "./result-instruction.ts";
 import { runToolCall, type ToolCallContext } from "./run-tool-call.ts";
 
 const PARAMS = {
@@ -23,6 +25,20 @@ function context(executeTool: ExecuteTool, history: Message[] = []) {
 }
 
 describe("runToolCall", () => {
+  test("a withInstruction result is recorded stripped, and the model's copy carries the sentence", async () => {
+    const raw = JSON.stringify(withInstruction({ steps: ["a"] }, "Read it back."));
+    const { ctx, recorded } = context(vi.fn<ExecuteTool>(async () => raw));
+    const settled = await runToolCall({ name: "plan", args: {}, toolCallId: "c9" }, ctx);
+    expect(settled.result).toBe('{"steps":["a"]}');
+    expect(settled.instruction).toBe("Read it back.");
+    expect(settled.forModel).toBe(`{"steps":["a"]}\n\n${TOOL_INSTRUCTION_LABEL} Read it back.`);
+    // What a later tool reads, and what the client's frame is built from: the
+    // tool's own data, with the reserved key gone.
+    expect(recorded).toEqual([
+      { role: "tool", content: '{"steps":["a"]}', toolName: "plan", toolCallId: "c9" },
+    ]);
+  });
+
   test("coerces, executes on a history snapshot, records, and returns both copies", async () => {
     const history: Message[] = [{ role: "user", content: "hi" }];
     const executeTool = vi.fn<ExecuteTool>(async (_n, _a, _s, messages) => {

@@ -29,6 +29,21 @@ describe("normalizeAgentParams", () => {
     }
   });
 
+  test("folds the deprecated description onto listing, and listing wins when both are written", () => {
+    expect(normalizeAgentParams({ name: "a", description: "Books tables" })).toMatchObject({
+      listing: "Books tables",
+    });
+    expect(normalizeAgentParams({ name: "a", description: "x" })).not.toHaveProperty("description");
+    const both = normalizeAgentParams({ name: "a", description: "old", listing: "new" });
+    expect(both).toMatchObject({ listing: "new" });
+    expect(both).not.toHaveProperty("description");
+    // Present-and-undefined is dropped the same way, so a spread options bag
+    // never leaves the alias on the definition.
+    expect(normalizeAgentParams({ name: "a", description: undefined })).not.toHaveProperty(
+      "description",
+    );
+  });
+
   test("passes a non-record through untouched, for the schema to refuse", () => {
     expect(normalizeAgentParams("not a def")).toBe("not a def");
   });

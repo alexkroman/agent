@@ -13,6 +13,7 @@ import {
   composeSessionGreeting,
   createResumeFindings,
   createSessionCore,
+  createTurnCounter,
   type ServerSession,
   type SessionDirectory,
 } from "../session/index.ts";
@@ -73,7 +74,7 @@ export function createSessionFactory(
       speech: sessions.speech.of(sessionOpts.id),
       ...omitUndefined({ commitSessionState: tools.commitSessionState }),
     });
-    const wiring = { sink: sessionOpts.client, emitter, meter: usage };
+    const wiring = { sink: sessionOpts.client, emitter, meter: usage, turns: createTurnCounter() };
     const releaseWiring = sessions.claimWiring(sessionOpts.id, wiring);
 
     // Late-bound: callbacks are built before the ServerSession, filled in below.
@@ -129,6 +130,7 @@ export function createSessionFactory(
       logger,
       ...omitUndefined({ onToolResult: deps.relayToolResult }),
       clientTools: deps.clientTools,
+      turns: wiring.turns,
     });
 
     // Hydration in, reclamation out — `attachSessionState` owns both orderings

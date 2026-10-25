@@ -13,20 +13,9 @@ import {
 // The non-shim entry point delegates to React's native useSyncExternalStore
 // (guaranteed by the React 18+ peer) instead of bundling the userland shim.
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
+import { DEFAULT_THEME, resolveClientTheme } from "./_theme.ts";
 import type { BrowserSession, SendTextOptions, SessionSnapshot } from "./session/index.ts";
 import type { AgentState, ClientTheme, ResolvedClientTheme, SessionError } from "./types.ts";
-
-// A neutral blank canvas: near-white ground, white cards, zinc borders and a
-// near-black primary. Deliberately NOT the studio's cream/indigo palette, so an
-// unthemed agent previewed inside the studio reads as the user's own app rather
-// than more studio chrome. Overridable per client via `mountClient({ theme })`.
-const DEFAULT_THEME: Required<ClientTheme> = {
-  bg: "#FAFAFA",
-  primary: "#18181B",
-  text: "#18181B",
-  surface: "#FFFFFF",
-  border: "#E4E4E7",
-};
 
 const SessionCtx = createContext<BrowserSession | null>(null);
 
@@ -366,7 +355,7 @@ export function useSessionError(): SessionError | null {
   return useSessionSelector(selectError);
 }
 
-const ThemeCtx = createContext<Required<ClientTheme>>(DEFAULT_THEME);
+const ThemeCtx = createContext<ResolvedClientTheme>(DEFAULT_THEME);
 
 /**
  * Provides the theme the components read via `useTheme`. `mountClient()` installs
@@ -385,7 +374,7 @@ export function ThemeProvider({
   // Identity-stable merge: `MessageList`'s memoized rows take the theme as a
   // dependency and `MessageBubble` is `memo()`-wrapped on it, so a fresh object
   // per render would rebuild every message row.
-  const merged = useMemo(() => (value ? { ...DEFAULT_THEME, ...value } : DEFAULT_THEME), [value]);
+  const merged = useMemo(() => resolveClientTheme(value), [value]);
   useThemeStyles(merged);
   return createElement(ThemeCtx.Provider, { value: merged }, children);
 }
@@ -406,7 +395,7 @@ const THEME_VARS = {
   text: "--aai-text",
   border: "--aai-border",
   primary: "--aai-primary",
-} as const satisfies Record<keyof Required<ClientTheme>, `--aai-${string}`>;
+} as const satisfies Record<keyof ResolvedClientTheme, `--aai-${string}`>;
 
 /**
  * Publish the theme to CSS, and paint the page with it.
@@ -434,12 +423,12 @@ const THEME_VARS = {
  * it, and the two elements this is about are the two nothing in this package
  * renders.
  */
-function useThemeStyles(theme: Required<ClientTheme>): void {
+function useThemeStyles(theme: ResolvedClientTheme): void {
   const { bg, surface, text, border, primary } = theme;
   useEffect(() => {
     if (typeof document === "undefined") return;
     const { body, documentElement: html } = document;
-    const values: Required<ClientTheme> = { bg, surface, text, border, primary };
+    const values: ResolvedClientTheme = { bg, surface, text, border, primary };
     const previousVars = Object.entries(THEME_VARS).map(
       ([field, prop]) =>
         [

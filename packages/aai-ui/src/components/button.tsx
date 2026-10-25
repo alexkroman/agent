@@ -5,7 +5,7 @@
 import clsx from "clsx";
 import type { ButtonHTMLAttributes, CSSProperties, JSX, ReactNode } from "react";
 import { useTheme } from "../context.ts";
-import type { ClientTheme } from "../types.ts";
+import type { ResolvedClientTheme } from "../types.ts";
 import { FOCUS_RING, focusRingStyle, INK_SURFACE_PCT, inkTint, primaryTint } from "./_colors.ts";
 
 /**
@@ -61,7 +61,7 @@ export type ButtonVariant = "default" | "secondary" | "ghost";
 export type ButtonSize = "default" | "lg";
 
 /** One variant's rest and hover colors, derived from the theme. */
-function variantColors(variant: ButtonVariant, theme: Required<ClientTheme>): VariantColors {
+function variantColors(variant: ButtonVariant, theme: ResolvedClientTheme): VariantColors {
   switch (variant) {
     case "default":
       return {

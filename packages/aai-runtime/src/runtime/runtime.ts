@@ -259,6 +259,7 @@ export function createRuntimeWithSeams(options: HostRuntimeOptions): HostRuntime
     // `toAgentConfig` put nothing on the wire for it and this is what fills the
     // agent-specific section per request — see `system-prompt.ts`.
     ...omitUndefined({ instructions: systemPromptResolver(agent.systemPrompt) }),
+    ...omitUndefined({ promptContext: agent.promptContext }),
   });
 
   const recall = { agent, env, workflows, logger, history: sessionState.history, speech };

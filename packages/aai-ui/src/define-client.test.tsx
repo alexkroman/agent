@@ -167,6 +167,87 @@ describe("mountClient", () => {
     handle.dispose();
   });
 
+  it("merges the agent's declared tool hints under the page's overrides, per key", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              name: "Server Name",
+              page: "voice",
+              tools: { add_pizza: { icon: "🍕", label: "Adding pizza" }, lookup: { icon: "🔎" } },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+      ),
+    );
+    let seen: ToolDisplayConfig | undefined;
+    function Probe() {
+      seen = useToolConfig();
+      return null;
+    }
+    // No `name`, so the lookup is issued at mount; the sidebar (rendered once
+    // the shell is past its start card) reads the merged map, because the
+    // provider wraps whichever root renders.
+    createSession.mockReturnValueOnce(startedCore());
+    const handle = mountClient({
+      sidebar: Probe,
+      target: "#app",
+      platformUrl: "http://localhost:3000",
+      tools: { add_pizza: { label: "Pizza!", icon: undefined } },
+    });
+    await vi.waitFor(() =>
+      expect(seen).toEqual({
+        add_pizza: { icon: "🍕", label: "Pizza!" },
+        lookup: { icon: "🔎" },
+      }),
+    );
+    handle.dispose();
+  });
+
+  it("with a name, looks the hints up once the session has STARTED, not before", async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ page: "voice", tools: { lookup: { label: "Looking" } } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const core = createMockSessionCore({ running: false, started: false });
+    createSession.mockReturnValueOnce(core);
+    let seen: ToolDisplayConfig | undefined;
+    function Probe() {
+      seen = useToolConfig();
+      return null;
+    }
+    const handle = mountClient({
+      name: "Named",
+      component: Probe,
+      target: "#app",
+      platformUrl: "http://localhost:3000",
+    });
+    await flushEffects();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(seen).toEqual({});
+    // Starting is what boots the sandbox on the platform, so the lookup
+    // riding behind it costs no boot of its own.
+    core.update({ started: true });
+    await vi.waitFor(() => expect(seen).toEqual({ lookup: { label: "Looking" } }));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    handle.dispose();
+  });
+
+  it("injects `css` into the head for the life of the mount, and removes it on dispose", () => {
+    const css = ".aai-glow { box-shadow: 0 0 6px var(--aai-primary); }";
+    const handle = mountClient({ name: "Styled", css, target: container });
+    const sheet = document.head.querySelector("style[data-aai-css]");
+    expect(sheet?.textContent).toBe(css);
+    handle.dispose();
+    expect(document.head.querySelector("style[data-aai-css]")).toBeNull();
+  });
+
   it("derives platformUrl from location.href when not provided", () => {
     vi.stubGlobal("location", {
       origin: "https://example.com",

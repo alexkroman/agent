@@ -56,6 +56,28 @@ test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
   expect(schemas[1]?.parameters).toMatchObject({ required: ["time"] });
 });
 
+test("agentToolsToSchemas - a tool's `ui` rides the wire declaration, undeclared fields omitted", () => {
+  const noop = async () => "ok";
+  const schemas = agentToolsToSchemas(
+    files({
+      add_pizza: { description: "Add", execute: noop, ui: { icon: "🍕", label: "Adding pizza" } },
+      lookup: { description: "Look", execute: noop, ui: { label: "Looking up", icon: undefined } },
+      plain: { description: "Plain", execute: noop },
+      empty: { description: "Empty", execute: noop, ui: {} },
+    }),
+  );
+  expect(schemas.map((one) => one.ui)).toEqual([
+    { icon: "🍕", label: "Adding pizza" },
+    { label: "Looking up" },
+    undefined,
+    undefined,
+  ]);
+  // Omitted, never set to `undefined`: the declaration is what a stored config
+  // round-trips through.
+  expect(schemas[2]).not.toHaveProperty("ui");
+  expect(schemas[3]).not.toHaveProperty("ui");
+});
+
 // The surface that decides what an LLM asks the user for. A `.default()` field
 // is one the tool would have filled in on its own, so advertising it as
 // `required` changes what the model emits — and it is the only one of the three

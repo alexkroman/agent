@@ -120,7 +120,13 @@ export { runAgentGuardrails } from "./sdk/agent-guardrails.ts";
  * string before it can do anything with either, and getting that wrong puts a
  * function's source text into the model's instructions.
  */
-export { staticSystemPrompt, systemPromptResolver } from "./sdk/agent-instructions.ts";
+export {
+  appendPromptContext,
+  promptContextResolver,
+  staticPromptContext,
+  staticSystemPrompt,
+  systemPromptResolver,
+} from "./sdk/agent-instructions.ts";
 // …and of `routeError`: a thrown refusal, read by the same kind of brand.
 export { readRouteError } from "./sdk/agent-route-helpers.ts";
 // The runtime's half of `routeResponse`: a route's answer crosses from the agent
@@ -404,7 +410,11 @@ export {
   STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE,
   type StepWebhookMinter,
 } from "./sdk/step-webhook.ts";
-export { agentInstructionsSection, buildSystemPrompt } from "./sdk/system-prompt.ts";
+export {
+  agentInstructionsSection,
+  authorInstructions,
+  buildSystemPrompt,
+} from "./sdk/system-prompt.ts";
 // The tool-message DECLARATION is authoring API (`ToolDef.messages`, on the
 // root); choosing which line a given call gets is the runtime's, so the two
 // budgets and the three selectors come out here. The runner that speaks them

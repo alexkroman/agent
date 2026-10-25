@@ -90,6 +90,14 @@ import type { AgentDef } from "./types.ts";
  * match a string. Every resolver reaches outcome 2, which is why that arm has
  * to be a decision rather than a fallthrough.
  *
+ * **`promptContext` is not part of the comparison.** It is the field for an
+ * author who has a file AND a line to add under it — the whole point of it is
+ * that the file stays undeclared — so a def carrying one still reaches outcome
+ * 1, and the context rides through untouched for `buildSystemPrompt` to append
+ * under the file. Folding the context into `systemPrompt` here would make the
+ * next comparison (a rebuild, `deployedAgent` over the same def) outcome 3 by
+ * accident and `aai build`'s prompt-source report wrong.
+ *
  * Generic in the def so a caller gets back the type it passed in —
  * `deployedAgent` (`@alexkroman1/aai/testing`) composes this with the tools
  * lowering beside it, which is generic for the same reason, and a widened

@@ -17,7 +17,7 @@
 import { expectTypeOf, test } from "vitest";
 import type { AgentAccepts } from "./_test-utils.ts";
 import type { AgentGuardrail, GuardrailVerdict } from "./agent-guardrails.ts";
-import type { AgentSystemPrompt } from "./agent-instructions.ts";
+import type { AgentPromptContext, AgentSystemPrompt } from "./agent-instructions.ts";
 import type { AgentSessionContext } from "./agent-session-context.ts";
 import { agent } from "./define.ts";
 import type { S2sProvider } from "./providers.ts";
@@ -88,8 +88,16 @@ test("the model-tuning knobs and the guardrails are session-arm fields", () => {
     }>
   >().toEqualTypeOf<false>();
 
-  // `description` is deliberately NOT refused there: a listing wants one
-  // whatever the front door is.
+  // `listing` (and its deprecated alias `description`) is deliberately NOT
+  // refused there: a listing wants one whatever the front door is.
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "workflow-app";
+      workflows: NonNullable<AgentDef["workflows"]>;
+      listing: string;
+    }>
+  >().toEqualTypeOf<true>();
   expectTypeOf<
     AgentAccepts<{
       name: string;
@@ -98,6 +106,42 @@ test("the model-tuning knobs and the guardrails are session-arm fields", () => {
       description: string;
     }>
   >().toEqualTypeOf<true>();
+});
+
+/**
+ * `promptContext` (`agent-instructions.ts`) is declarable in every session
+ * mode, in both forms, and refused by the workflow-app member beside
+ * `systemPrompt`: nothing there reads a prompt.
+ */
+test("promptContext takes a string or a session resolver on every session arm, and no workflow app", () => {
+  expectTypeOf<AgentAccepts<{ name: string; promptContext: string }>>().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; promptContext: (ctx: AgentSessionContext) => string }>
+  >().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; promptContext: string }>
+  >().toEqualTypeOf<true>();
+  expectTypeOf<
+    AgentAccepts<{
+      name: string;
+      mode: "workflow-app";
+      workflows: NonNullable<AgentDef["workflows"]>;
+      promptContext: string;
+    }>
+  >().toEqualTypeOf<false>();
+  // `agent()` hands the function back unchanged, like a `systemPrompt` resolver.
+  const def = agent({ name: "a", promptContext: (ctx) => ctx.sessionId });
+  expectTypeOf(def.promptContext).toEqualTypeOf<AgentPromptContext | undefined>();
+});
+
+/**
+ * The context a tool is handed carries where the session is — the committed
+ * turn count and the clock — both plain, both pinnable through
+ * `createToolContext`.
+ */
+test("ToolContext carries turn and now()", () => {
+  expectTypeOf<ToolContext["turn"]>().toEqualTypeOf<number>();
+  expectTypeOf<ReturnType<ToolContext["now"]>>().toEqualTypeOf<number>();
 });
 
 /**

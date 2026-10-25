@@ -14,6 +14,8 @@
 import { z } from "zod";
 import { MAX_TRANSCRIPT_CHARS } from "./constants.ts";
 import { omitUndefined } from "./omit-undefined.ts";
+import type { ToolUi } from "./tool-def.ts";
+import { ToolUiSchema } from "./tool-schema.ts";
 
 // The endpoint's path lives in a leaf module and is re-exported here, so this
 // module stays the one place a caller reads it from while the zod-free half of
@@ -67,6 +69,15 @@ export const ClientConfigResponseSchema: z.ZodType<ClientConfigResponse> = z.obj
    * login, which a ticket anyone could fetch here would not.
    */
   sessionToken: z.string().optional(),
+  /**
+   * Each tool's display hint, keyed by the name the model calls — the icon
+   * and label a `tool({ ui })` declared, so the default client and a custom
+   * chrome render a call the way the tool said to before the first call
+   * arrives. Built by `toolUiMap` from the agent's own toolsets; absent for an
+   * agent whose tools declare none. `mountClient({ tools })` overrides it per
+   * key.
+   */
+  tools: z.record(z.string(), ToolUiSchema).optional(),
 });
 
 /**
@@ -87,6 +98,8 @@ export interface ClientConfigResponse {
   page: "voice" | "static";
   /** A ticket the session socket presents, when the server mints one. */
   sessionToken?: string | undefined;
+  /** Each tool's declared icon and label, by name — see `ToolDef.ui`. */
+  tools?: Record<string, ToolUi> | undefined;
 }
 
 /**
@@ -102,6 +115,7 @@ export function buildClientConfig(source: {
   sessionUrl?: string | undefined;
   page?: "voice" | "static" | undefined;
   sessionToken?: string | undefined;
+  tools?: Record<string, ToolUi> | undefined;
 }): ClientConfigResponse {
   return {
     ...omitUndefined({
@@ -109,6 +123,7 @@ export function buildClientConfig(source: {
       greeting: source.greeting,
       sessionUrl: source.sessionUrl,
       sessionToken: source.sessionToken,
+      tools: source.tools,
     }),
     page: source.page ?? "voice",
   };

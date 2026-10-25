@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 import { AGENT_STATE_LABELS } from "../agent-state-labels.ts";
 import { useSessionStatus, useTheme } from "../context.ts";
 import type { AgentState } from "../types.ts";
-import { ERROR_COLOR, INK_FAINT_PCT, inkTint, THINKING_COLOR } from "./_colors.ts";
+import { ERROR_COLOR, inkTint, THINKING_COLOR } from "./_colors.ts";
 
 /**
  * Indicator dot colour per state, from the theme — `ConsoleShell`'s dot, and
@@ -89,6 +89,51 @@ export function StateDot({
 }
 
 /**
+ * The coarse colour groups {@link SessionStateDotColors} accepts beside the
+ * exact states: `idle` (disconnected, connecting, and any state this version
+ * does not know), `live` (ready, listening, speaking) and `busy` (thinking).
+ * `error` has no group: its red is semantic and is only replaced by name.
+ *
+ * @public
+ */
+export type SessionStateDotGroup = "idle" | "live" | "busy";
+
+/**
+ * What {@link SessionStateDot} takes as `colors`: a colour per
+ * {@link AgentState}, per {@link SessionStateDotGroup}, or any mix. An exact
+ * state wins over its group; a state neither names is painted from the theme.
+ *
+ * @input
+ * @public
+ */
+export type SessionStateDotColors = Partial<
+  Readonly<Record<AgentState | SessionStateDotGroup, string>>
+>;
+
+/** Which coarse group a state belongs to — `error` deliberately none. */
+function groupOf(state: AgentState): SessionStateDotGroup | undefined {
+  switch (state) {
+    case "ready":
+    case "listening":
+    case "speaking":
+      return "live";
+    case "thinking":
+      return "busy";
+    case "error":
+      return undefined;
+    default:
+      return "idle";
+  }
+}
+
+/**
+ * The idle dot's ink step: the theme's text at half strength over its ground.
+ * Lighter than `INK_FAINT_PCT` (the text steps) on purpose — a dot is a
+ * 8px disc, not a word, and at 65% it read as "on" beside a live one.
+ */
+const INK_IDLE_PCT = 50;
+
+/**
  * Props of {@link SessionStateDot}.
  *
  * @input
@@ -96,12 +141,14 @@ export function StateDot({
  */
 export type SessionStateDotProps = {
   /**
-   * The dot's colour per {@link AgentState} — the chrome's own palette. Any
-   * state not named (including one a later release adds) is painted the way
-   * `ConsoleShell` paints it, from the theme: the primary colour while live, a
-   * fixed amber while thinking, red on error, a faint ink otherwise.
+   * The dot's colour per {@link AgentState}, per coarse group (`idle`, `live`,
+   * `busy`), or both — the chrome's own palette, see
+   * {@link SessionStateDotColors}. Any state not named either way (including
+   * one a later release adds) is painted from the mounted theme: the primary
+   * colour while live, the text colour at half strength while idle, a fixed
+   * amber while thinking, red on error.
    */
-  colors?: Partial<Readonly<Record<AgentState, string>>> | undefined;
+  colors?: SessionStateDotColors | undefined;
   /**
    * The words this chrome has a better term for. Anything not named falls back
    * to {@link AGENT_STATE_LABELS}, so a page overrides one member (`speaking:
@@ -145,31 +192,23 @@ export type SessionStateDotProps = {
  *
  * Must be rendered inside the providers `mountClient()` installs.
  *
- * @example A dispatch board's readout: its own colours, three of its own words
+ * @example A dispatch board's readout: coarse colours, three of its own words
  * ```tsx
- * import type { AgentState } from "@alexkroman1/aai-ui";
  * import { SessionStateDot } from "@alexkroman1/aai-ui";
- *
- * const STATE_COLORS = {
- *   disconnected: "#6b7280",
- *   connecting: "#6b7280",
- *   ready: "#22c55e",
- *   listening: "#22c55e",
- *   thinking: "#eab308",
- *   speaking: "#3b82f6",
- *   error: "#6b7280",
- * } satisfies Record<AgentState, string>;
  *
  * function StatusReadout() {
  *   return (
  *     <SessionStateDot
- *       colors={STATE_COLORS}
+ *       colors={{ idle: "#6b7280", live: "#22c55e", busy: "#eab308", speaking: "#3b82f6" }}
  *       labels={{ listening: "LISTENING", thinking: "PROCESSING", speaking: "TRANSMITTING" }}
  *       labelClassName="text-[11px] uppercase"
  *     />
  *   );
  * }
  * ```
+ *
+ * With no `colors` at all the dot follows the mounted theme — a chrome that
+ * sets `mountClient({ theme })` gets a matching dot for free.
  *
  * @param props - See {@link SessionStateDotProps}.
  *
@@ -186,9 +225,11 @@ export function SessionStateDot({
   const state = useSessionStatus();
   const theme = useTheme();
   const pulseMs = pulse ? (PULSE_MS[state] ?? null) : null;
+  const group = groupOf(state);
   const color =
     colors?.[state] ??
-    stateColor(state, theme.primary, inkTint(theme.text, theme.bg, INK_FAINT_PCT));
+    (group === undefined ? undefined : colors?.[group]) ??
+    stateColor(state, theme.primary, inkTint(theme.text, theme.bg, INK_IDLE_PCT));
   return (
     <span className={clsx("inline-flex items-center gap-2", className)} data-state={state}>
       <StateDot

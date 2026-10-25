@@ -128,3 +128,102 @@ export function systemPromptResolver(
 ): Exclude<AgentSystemPrompt, string> | undefined {
   return typeof prompt === "function" ? prompt : undefined;
 }
+
+/**
+ * What `agent({ promptContext })` accepts: text APPENDED under the agent's
+ * own instructions, or a function that answers it per session.
+ *
+ * The field exists because a `system-prompt.md` is the right home for a
+ * prompt and the wrong home for a value: an author with a file AND a line of
+ * context to add ("Today's specials: …", "The caller's account tier") had to
+ * import the file with `?raw` and compose a full {@link AgentSystemPrompt}
+ * resolver — at which point `withSystemPrompt` could no longer check that the
+ * file was read, and the file was declared twice. `promptContext` is the
+ * sentence on its own: the file stays undeclared and discovered, the override
+ * form of `systemPrompt` is reserved for an author taking over the whole
+ * prompt, and the context lands under whichever of the two is in force,
+ * separated by a blank line.
+ *
+ * A string is serialized into the agent's config like `systemPrompt` is, so a
+ * listing or a build sees it; a function is resolved per session exactly as a
+ * `systemPrompt` resolver is — synchronous, from the same
+ * {@link AgentSessionContext}, re-asked per model request on the pipeline and
+ * per connection on S2S.
+ *
+ * ```ts
+ * import { agent, sessionSlot } from "@alexkroman1/aai";
+ *
+ * const caller = sessionSlot("caller", () => ({ tier: "standard" }));
+ *
+ * export default agent({
+ *   name: "Concierge",
+ *   // `system-prompt.md` beside this file stays the prompt; this is appended.
+ *   promptContext: (ctx) => `The caller is on the ${caller.get(ctx).tier} tier.`,
+ * });
+ * ```
+ *
+ * @public
+ */
+export type AgentPromptContext = string | ((ctx: AgentSessionContext) => string);
+
+/**
+ * The field group `promptContext` is declared in — one field, its own
+ * interface for the reason every group has one: `AgentDeclaration` extends
+ * it, and the rule it carries (appended under the prompt, static half on the
+ * wire, function half resolved per session) is this module's.
+ *
+ * @input
+ * @public
+ */
+export interface AgentInstructions {
+  /**
+   * Context appended under the agent's instructions — the discovered
+   * `system-prompt.md`, or a `systemPrompt` override — separated by a blank
+   * line. See {@link AgentPromptContext} for the two forms and when each is
+   * resolved. A workflow app refuses it: nothing there reads a prompt.
+   */
+  promptContext?: AgentPromptContext;
+}
+
+/**
+ * The static half of an {@link AgentPromptContext}, or `undefined` for a
+ * resolver — the narrowing `staticSystemPrompt` makes, for the same wire.
+ *
+ * @internal
+ */
+export function staticPromptContext(context: AgentPromptContext | undefined): string | undefined {
+  return typeof context === "string" ? context : undefined;
+}
+
+/**
+ * The resolver half of an {@link AgentPromptContext}, or `undefined` for a
+ * plain string.
+ *
+ * @internal
+ */
+export function promptContextResolver(
+  context: AgentPromptContext | undefined,
+): Exclude<AgentPromptContext, string> | undefined {
+  return typeof context === "function" ? context : undefined;
+}
+
+/**
+ * The agent's instructions with its context appended under them — the ONE
+ * spelling of "separated by a blank line", shared by `buildSystemPrompt` (the
+ * static pair) and the runtime's per-session resolver (either half dynamic).
+ * Blank text on either side contributes nothing, not even the separator, so
+ * an agent with no context produces the byte-identical prompt it did before
+ * the field existed; both blank answers `undefined`.
+ *
+ * @internal
+ */
+export function appendPromptContext(
+  instructions: string | undefined,
+  context: string | undefined,
+): string | undefined {
+  const own = instructions?.trim() === "" ? undefined : instructions;
+  const extra = context?.trim() === "" ? undefined : context;
+  if (own === undefined) return extra;
+  if (extra === undefined) return own;
+  return `${own}\n\n${extra}`;
+}

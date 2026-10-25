@@ -22,6 +22,19 @@ describe("withSystemPrompt", () => {
     expect(def.systemPrompt).toBe(FILE);
   });
 
+  test("a promptContext does not trip the comparison, and rides through for the builder", () => {
+    // Static or a resolver, the context is not the prompt: the file still
+    // becomes the prompt (outcome 1) and the context stays its own field, so
+    // the file is not declared twice and `buildSystemPrompt` appends it.
+    const withText = withSystemPrompt(agent({ name: "T", promptContext: "Specials: soup." }), FILE);
+    expect(withText.systemPrompt).toBe(FILE);
+    expect(withText.promptContext).toBe("Specials: soup.");
+    const resolver = (_ctx: AgentSessionContext) => "live";
+    const withFn = withSystemPrompt(agent({ name: "T", promptContext: resolver }), FILE);
+    expect(withFn.systemPrompt).toBe(FILE);
+    expect(withFn.promptContext).toBe(resolver);
+  });
+
   test("a NEW def, so the shared module export is not rewritten under a spec", () => {
     // Same reason `withTools` returns a new object: the def a module
     // default-exports is shared, and a loader mutating it makes the order of two
