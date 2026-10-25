@@ -1,4 +1,4 @@
-import { type InferToolInput, isToolFailure } from "@alexkroman1/aai";
+import { type InferToolInput, instructionOf, isToolFailure } from "@alexkroman1/aai";
 import {
   createToolContext,
   expectDeployable,
@@ -7,6 +7,7 @@ import {
   runTool,
   toolInputIssues,
 } from "@alexkroman1/aai-runtime/testing";
+import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { excerptAround, type FdaLabel, type LabelLookup, toDrugInfo } from "./fda.ts";
 import type CheckDrugInteraction from "./tools/check_drug_interaction.ts";
@@ -29,24 +30,10 @@ const label = vi.fn<LabelLookup>();
 import agentDef from "virtual:aai/agent";
 
 /**
- * The two tools, reached through their OWN input types.
- *
- * Every tool here takes arguments and none of them touches session state, so no
- * call passes a context: `runTool` builds a fresh one per call, which is a
- * distinct session — right for a stateless tool, and never what two calls
- * sharing state want.
- *
- * By NAME, `runTool` takes `Record<string, unknown>`, so a call with `{ drug:
- * "advil" }` compiles and fails at run time as a schema rejection — in the one
- * spec that is supposed to be the worked example of calling this tool.
- * `InferToolInput` reads the argument type off the tool's `execute`, which is
- * the zod schema the tool really declares, so a renamed or retyped field breaks
- * the BUILD here and the two files cannot drift apart quietly.
- *
- * Handed the tool FILE's own factory — the one its default export, the very
- * object `agentDef` registers under that name, is built by — over the fake
- * lookup, `runTool` types the result as the tool's own return, so a spec
- * reading a field needs no cast.
+ * The two tools, built over the fake lookup and reached through their OWN
+ * input types. A tool built here is not the object `agentDef` registers, so
+ * `runTool` on the def rather than the agent's typed runner; `InferToolInput`
+ * keeps a renamed field a BUILD failure rather than a schema rejection.
  */
 const lookUp = (args: InferToolInput<typeof MedicationLookup>) =>
   runTool(medicationLookup(label), args);
@@ -74,30 +61,13 @@ beforeEach(() => {
   label.mockReset();
 });
 
-describe("medication-safety-agent template", () => {
+describeAgent(agentDef, () => {
   test("both tools are discovered from tools/", () => {
-    // `agent()` takes no `tools` field: a file in `tools/` IS the tool. A
-    // template whose tools are never resolved ships a model with none.
     // `arrayContaining` rather than an exact list: a tool you add is the edit
-    // this template invites, and it must not redden a test you did not write.
-    // Losing one of these two still fails, which is the regression worth
-    // catching — discovery silently finding nothing looks exactly like a
-    // template with no tools.
+    // this template invites. Losing one of these two still fails.
     expect(Object.keys(agentDef.tools ?? {})).toEqual(
       expect.arrayContaining(["check_drug_interaction", "medication_lookup"]),
     );
-  });
-
-  test("is deployable: validates, is nameable, and every stage its mode needs is filled", () => {
-    // The same conversion `aai build`/`aai deploy` run, and the only thing that
-    // checks the three builtin NAMES against the SDK's own enum — so a typo in
-    // `builtinTools` fails here rather than shipping an agent whose prompt
-    // commands a tool the platform never resolved. This template declares no
-    // provider at all, so the default all-AssemblyAI cascade is what makes it
-    // run the moment it is deployed; `expectDeployable` asserts that per MODE,
-    // so it survives a swap. `not.toThrow()` because the helper's throw IS the
-    // finding: vitest quotes the message, which names the invariant that went.
-    expect(() => expectDeployable(agentDef)).not.toThrow();
   });
 
   test("all three builtins survive into the config a deploy carries", () => {
@@ -219,8 +189,9 @@ describe("check_drug_interaction", () => {
     const result = expectToolOk(await check({ drugs: ["warfarin", "aspirin"] }));
     expect(result.interactions_found).toBe(0);
     // The caveat is the point of the zero case: "no cross-mention" is not
-    // "safe", and this tool must never be read as saying it was.
-    expect(result.note).toContain("does not guarantee");
+    // "safe" — said to the MODEL, per outcome, and stripped from what a page
+    // or a later tool reads.
+    expect(instructionOf(result)).toContain("does not guarantee");
   });
 
   test("every drug in the fan-out is looked up under the caller's signal", async () => {

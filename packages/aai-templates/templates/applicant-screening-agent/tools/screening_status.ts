@@ -1,4 +1,3 @@
-import { z } from "zod";
 import {
   describeRanked,
   hiringFlow,
@@ -10,25 +9,17 @@ import {
 
 /**
  * Where the screening stands — and the one tool here that spends no model.
- *
- * The STAGE comes off the flow's own position, never off the data: "is there a
- * job" and "are there drafts" are what the three removed guards would have
- * asked, and deriving the stage from them a second time is exactly the drift
- * the dialog exists to end.
- *
- * **Legal in every state, which is why it is not a `hiringFlow.tool` — and a
- * `hiringSlot.tool` rather than a `tool()` opening with `hiringSlot.get(ctx)`.**
- * The declaration is what makes "does this write?" visible: the body is handed
- * the state already frozen, so a line that tried to mutate it stops compiling
- * instead of throwing on the first live call. `research-planner-agent`'s `plan_status`
- * is the same tool in the same position.
+ * Legal in every state (no `when`), and it answers the dialog's own envelope,
+ * so the STAGE comes off the flow's position rather than being derived from
+ * the data a second time.
  */
 export default hiringSlot.tool({
   description:
     "Where things stand: the role, how many were screened, the current top three, the " +
     "feedback rounds used, and whether emails are drafted. Use it when the caller asks " +
     "where you are, or to pick the thread back up.",
-  inputSchema: z.object({}),
+  ui: { icon: "\u{2139}", label: "Checking where things stand" },
+  dialog: hiringFlow,
   execute(_args, state, ctx) {
     const at = hiringFlow.position(ctx);
     const top = topCandidates(state);
@@ -45,7 +36,6 @@ export default hiringSlot.tool({
         at.state === "idle"
           ? "Nothing screened yet — confirm the role and offer to screen the applicants."
           : "Say where things stand in one breath, then what the caller can do next.",
-      ...at,
     };
   },
 });

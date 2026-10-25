@@ -14,10 +14,7 @@ const refuseDoses: AgentGuardrail = (text) =>
 
 export default agent({
   name: "Dr. Sage",
-  // Read by whoever is looking at a LIST of agents — a registry page, the
-  // studio's picker — and never by the model. The model's brief is
-  // `system-prompt.md`.
-  description: "Answers medication questions from openFDA labels, and never gives dosing advice",
+  listing: "Answers medication questions from openFDA labels, and never gives dosing advice",
   greeting:
     "Hey, I'm Dr. Sage. Try asking me something like, what are the side effects of ibuprofen, can I take aspirin and warfarin together, or calculate my BMI. Just remember, I'm not a real doctor, so always check with your healthcare provider.",
   // Three builtins, and `fetch_json` is the one worth explaining: `fda.ts`

@@ -8,7 +8,7 @@ export default tool({
     incidentType: z.enum(INCIDENT_TYPES).describe("Type of incident"),
     severity: z.enum(SEVERITIES).describe("Severity level"),
   }),
-  async execute(args) {
+  execute(args) {
     const protocols = getApplicableProtocols(args.incidentType, args.severity);
     if (protocols.length === 0) {
       return {

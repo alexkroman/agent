@@ -1,9 +1,9 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { requireOwnUser, retailTool } from "../store.ts";
+import { callFlow, requireOwnUser, retailSlot } from "../store.ts";
 
-export default retailTool({
-  name: "get_user_details",
+export default retailSlot.updateTool({
+  dialog: callFlow,
   when: "serving",
   description:
     "Get the authenticated customer's profile: name, email, default address, payment methods " +
@@ -33,5 +33,4 @@ export default retailTool({
       })),
     };
   },
-  summary: (_args, result) => `read profile ${result.user_id}`,
 });

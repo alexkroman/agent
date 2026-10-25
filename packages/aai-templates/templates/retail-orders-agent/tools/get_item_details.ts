@@ -1,9 +1,9 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { BEFORE_TRANSFER, findItem, retailTool } from "../store.ts";
+import { BEFORE_TRANSFER, callFlow, findItem, retailSlot } from "../store.ts";
 
-export default retailTool({
-  name: "get_item_details",
+export default retailSlot.updateTool({
+  dialog: callFlow,
   description:
     "Get one specific item's options, price and availability. Takes an ITEM id, which is not the " +
     "same as a product id.",
@@ -23,5 +23,4 @@ export default retailTool({
       available: found.variant.available,
     };
   },
-  summary: (_args, result) => `read item ${result.item_id}`,
 });

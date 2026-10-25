@@ -12,7 +12,7 @@ const COUNT_KEY = {
 export default dispatchSlot.tool({
   description:
     "Get the full operational dashboard: alert level, resource utilization, active incidents, and available resources.",
-  execute(_args, state) {
+  execute(_args, state, ctx) {
     // The incidents, split in one pass rather than filtered twice over the same
     // record: every incident is either active or resolved.
     type Incident = (typeof state.incidents)[string];
@@ -63,7 +63,7 @@ export default dispatchSlot.tool({
         location: i.location,
         triageScore: i.triageScore,
         assignedResourceCount: i.assignedResources.length,
-        ageMinutes: incidentAgeMinutes(i),
+        ageMinutes: incidentAgeMinutes(i, ctx.now()),
         casualties: i.casualties,
       })),
       availableResources,

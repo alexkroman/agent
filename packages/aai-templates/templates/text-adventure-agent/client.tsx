@@ -61,25 +61,6 @@ const GREEN_DIM = "#00aa2a";
 const GREEN_DARK = "#003300";
 const CYAN = "#00ccff";
 
-// The cursor dot's colour per session state, as an EXHAUSTIVE map rather than an
-// if-chain with a grey default.
-//
-// The palette is this template's own — every client here paints the same six
-// states in its own colours, so it is the one prop `<SessionStateDot>` cannot
-// default. What the SDK does own is `AgentState`, and `satisfies
-// Record<AgentState, string>` is what borrows it: a state added there stops
-// compiling here, where the `state === "…"` chain this replaced answered a new
-// state with a silent grey badge in three separate files and no way to notice.
-const STATE_COLORS = {
-  disconnected: GREEN_DARK,
-  connecting: GREEN_DARK,
-  ready: GREEN_DARK,
-  listening: GREEN,
-  thinking: CYAN,
-  speaking: "#ffaa00",
-  error: GREEN_DARK,
-} satisfies Record<AgentState, string>;
-
 /** One line of the exchange, in the CRT's two inks. */
 function Line({ role, content }: ChatMessage) {
   return (
@@ -96,25 +77,12 @@ function Line({ role, content }: ChatMessage) {
 }
 
 /**
- * The exchange, in the CRT idiom.
- *
- * `<ConversationView>` rather than `session.messages`: the four decisions
- * `<MessageList>` makes — the message/tool-call interleave, the streaming
- * narrator line, the transcript's `null`-vs-`""` distinction and the thinking
- * rule — are the view's now, so this fills its slots instead of shipping a
- * conversation missing all four. The old list read `messages` alone, so the
- * eight `game_state_*` calls and every partial of the narrator's reply were
- * invisible: the screen sat still until a whole utterance finalized.
- *
- * It also subscribes per FIELD, so a partial transcript no longer re-renders
- * the status bar, the footer and the CRT overlays with it.
+ * The exchange, in the CRT idiom. `<ConversationView>` owns the interleave,
+ * the streaming narrator line and the thinking rule; this fills its slots.
  */
 function Transcript() {
-  // The one theme read left in this file, and the case `useTheme()` is still
-  // for: the scrollbar takes TWO colours and no utility class carries two, so
-  // they travel as the custom properties `.aai-scroll` reads — and reading them
-  // off the theme beats re-pinning the two hex codes the `mountClient({ theme })`
-  // block below already declares.
+  // The scrollbar takes two colours and no utility class carries two, so they
+  // travel as the custom properties `.aai-scroll` reads.
   const theme = useTheme();
   const scrollbar = {
     "--aai-scrollbar-thumb": theme.primary,
@@ -128,8 +96,7 @@ function Transcript() {
       style={scrollbar}
       renderMessage={(message) => <Line {...message} />}
       // The game engine's own bookkeeping, in the idiom the machine would have
-      // printed it in. Dim, because it is beneath the narration and not instead
-      // of it — so not the SDK's tool row, which is a chip.
+      // printed it in: dim, beneath the narration rather than a chip.
       renderTool={(toolCall) => (
         <div className="mb-4 text-[13px]" style={{ color: GREEN_DIM }}>
           {`[ ${toolCall.name.replace(/^game_state_/, "").replace(/_/g, " ")}${
@@ -145,8 +112,7 @@ function Transcript() {
           {text}
         </div>
       )}
-      // The blinking block is the only sign the parser is working, and to a
-      // screen reader it is one unpronounceable glyph — hence the label.
+      // The blinking block is one unpronounceable glyph to a screen reader.
       thinkingLabel="The parser is thinking"
       thinkingClassName="animate-pulse text-[#00aa2a]"
       thinkingIndicator={<>&#9612;</>}
@@ -156,15 +122,8 @@ function Transcript() {
 
 /**
  * The status line the printed games put across the top of the screen: the room
- * you are in on the left, the score and the turn count on the right.
- *
- * Every number here is the GAME's, arriving through `syncState` — the projection
- * `shared.ts` declares and `agent.ts` sends. What stood here counted the turns
- * in the browser, by reducing over the message list for `role === "user"`, and
- * that count is a different quantity from the `moves` the narrator is told: the
- * transcript hook counts a committed utterance, while the message list also
- * moves on a resumed session and on turns the runtime merges. The room and the
- * score it could not show at all.
+ * on the left, the score and the turn count on the right — every number the
+ * game's own, through the slot's synced view.
  */
 function StatusBar() {
   const { currentRoom, score, rank, moves } = useAgentState(gameSlot.projected);
@@ -184,27 +143,20 @@ function StatusBar() {
   );
 }
 
-/*
- * The narrator's one word for each state. Only `speaking` gets a CRT word; the
- * rest are `<SessionStateDot>`'s defaults, so a state added upstream reads as
- * something rather than falling through to whichever arm a ternary chain ended
- * on — which is what the chain this replaced did, answering every unlisted
- * state with "Idle".
- */
+/** Only `speaking` gets a CRT word; the rest are the dot's own defaults. */
 const STATE_LABELS: Partial<Record<AgentState, string>> = {
   speaking: "Narrating",
 };
 
 /**
- * The live state dot and its label, on its own subscription. A CRT dot GLOWS
- * rather than beats, so `pulse` is off and the glow is a `currentColor` shadow
- * — the dot writes its colour to `color` for exactly this. On the dark states
- * the glow is the same near-black as the ground and reads as none.
+ * The live state dot and its label. A CRT dot GLOWS rather than beats, so
+ * `pulse` is off and the glow is a `currentColor` shadow. The theme gives the
+ * dot its green; only the three states a CRT paints differently are named.
  */
 function StatusDot() {
   return (
     <SessionStateDot
-      colors={STATE_COLORS}
+      colors={{ ready: GREEN_DARK, thinking: CYAN, speaking: "#ffaa00" }}
       labels={STATE_LABELS}
       pulse={false}
       className="gap-2.5 text-xs uppercase tracking-wider text-[#00aa2a]"
@@ -230,15 +182,10 @@ function crtButton({ label, onClick }: SessionControlButton) {
   );
 }
 
-/*
- * Pause/resume, new game and hang-up.
- *
- * `<SessionControls>` is the row `<Controls>` never had — Start, Pause/Resume,
- * New Conversation, End — and here that is a new GAME: its `restart` is `end()`
- * then `start()`, so the session-scoped game state starts over and the player
- * is dealt straight into it, and its `end` alone flips `started` back so the
- * title screen returns. The Start branch never renders here because this
- * footer only exists once the title screen's own button has dialled.
+/**
+ * Pause/resume, new game and hang-up. `<SessionControls>`' restart is `end()`
+ * then `start()`, so the session-scoped game starts over and the player is
+ * dealt straight into it; its `end` alone brings the title screen back.
  */
 function Footer() {
   return (
@@ -255,32 +202,28 @@ function Footer() {
   );
 }
 
-/** The CRT itself: the flicker, the scanlines and the vignette every screen
- *  sits inside. */
+/** The CRT itself: the flicker, the scanlines and the vignette every screen sits inside. */
 function Crt({ children }: { children: ReactNode }) {
   return (
-    <>
-      <style>{CSS}</style>
+    <div
+      className="ic-crt fixed inset-0 overflow-hidden"
+      style={{
+        background: CRT_BG,
+        color: GREEN,
+        fontFamily: "monospace",
+        fontSize: "15px",
+        lineHeight: 1.6,
+        animation: "ic-flicker 4s infinite",
+      }}
+    >
+      {children}
       <div
-        className="ic-crt fixed inset-0 overflow-hidden"
+        className="fixed inset-0 pointer-events-none z-12"
         style={{
-          background: CRT_BG,
-          color: GREEN,
-          fontFamily: "monospace",
-          fontSize: "15px",
-          lineHeight: 1.6,
-          animation: "ic-flicker 4s infinite",
+          background: "radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%)",
         }}
-      >
-        {children}
-        <div
-          className="fixed inset-0 pointer-events-none z-12"
-          style={{
-            background: "radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%)",
-          }}
-        />
-      </div>
-    </>
+      />
+    </div>
   );
 }
 
@@ -332,13 +275,8 @@ function InfocomAdventure() {
     <Crt>
       <div className="flex flex-col h-full">
         <StatusBar />
-
-        {/* The SDK's announced banner, not a CRT-coloured copy: once `session-core`
-            latches a fatal error the state eyebrow goes back to reading like a
-            live session, so this is the only remaining signal — and the two
-            sibling chromes had already drifted on whether to print the code.
-            The frame's own square corners, the way `emergency-dispatch-agent` and
-            `retail-orders-agent` take it. */}
+        {/* The SDK's announced banner: once a fatal error latches, the state
+            eyebrow reads like a live session again, so this is the one signal. */}
         <SessionErrorBanner className="rounded-none border-x-0 border-b-0 font-mono" />
         <Transcript />
         <Footer />
@@ -349,6 +287,7 @@ function InfocomAdventure() {
 
 mountClient({
   component: InfocomAdventure,
+  // A CRT is its own palette, so the five tokens rather than a light/dark preset.
   theme: {
     bg: CRT_BG,
     primary: GREEN,
@@ -356,4 +295,5 @@ mountClient({
     surface: "#001a00",
     border: GREEN_DARK,
   },
+  css: CSS,
 });

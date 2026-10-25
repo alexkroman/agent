@@ -5,6 +5,7 @@ import {
   type RandomSource,
   randomInt,
   type SlotCaps,
+  type SlotValueOf,
   sessionSlot,
   shuffled,
   spokenOrdinal,
@@ -338,35 +339,29 @@ export const DEFAULT_STATE: GameState = {
 };
 
 // ── Live game state (one session slot) ───────────────────────────────────────
-// The in-play game lives in one `sessionSlot`, keyed per session — concurrent
-// players get independent games by construction. The clone is load-bearing:
-// `DEFAULT_STATE` is one module-level object shared by every session in the
-// process, so a factory without it would let one player's game show up in
-// another's.
 /**
- * The bounds the slot enforces, hoisted so the number is a named constant like
- * every other limit in this file.
- *
- * `SlotCaps<GameState>` is what says only an ARRAY field may appear here — the
- * mapped type drops every scalar key, so `chaosFactor: 5` (a plausible typo for
- * a limit that is enforced in `updateChaosFactor` instead) is a compile error
- * rather than a cap on nothing. The session log rides in every `syncState` frame
- * and the client renders its tail, so the slot holds the bound and
- * `update_state` need not.
+ * The bounds the slot enforces. `SlotCaps<GameState>` admits only an ARRAY
+ * field, so a cap on `chaosFactor` is a compile error rather than a cap on
+ * nothing. The session log rides in every synced frame and the client renders
+ * its tail, so the slot holds the bound and `update_state` need not.
  */
 const GAME_CAPS: SlotCaps<GameState> = { sessionLog: MAX_LOG_ENTRIES };
 
-export const gameSlot = sessionSlot("game", () => structuredClone(DEFAULT_STATE), {
+/**
+ * The in-play game, one per session. `gameView` withholds the seven fields the
+ * sidebar never reads and every unplayed act's goal and mood with them — the
+ * only defence there is against a spoiler leak — and `agent.ts`'s `syncState`
+ * is what sends it. `after` restores `gameOver`/`crisisMode` on every store, so no
+ * mutating tool can leave a stale flag for the `DOWNED` transition to read.
+ */
+export const gameSlot = sessionSlot("game", DEFAULT_STATE, {
   view: gameView,
-  // The derived-field recalculation every mutating tool used to have to
-  // remember. It was written out by hand in `applyConsequences`,
-  // `revertConsequences` and `update_state`, which is the shape `after` exists
-  // to replace: a new tool that empties a track now cannot store a stale
-  // `gameOver`, and `gameOver` is what the story flow's `DOWNED` transition
-  // reads. `emergency-dispatch-agent`'s board is the same pattern one template over.
   after: updateCrisisFlags,
   caps: GAME_CAPS,
 });
+
+/** The campaign as a read hands it out — what every pure helper below takes. */
+export type FrozenGameState = SlotValueOf<typeof gameSlot>;
 
 /**
  * The story arc as the CLIENT needs it: how far along, which phase, and whether
@@ -393,7 +388,8 @@ export interface StoryArcView {
  * spoiler leak is invisible in the UI and permanent once someone opens
  * devtools.
  */
-export function gameView(game: FrozenGameState) {
+// Spelled out rather than `FrozenGameState`: the slot's own type is derived from this view.
+export function gameView(game: DeepReadonly<GameState>) {
   const {
     settingTone,
     settingArchetype,
@@ -507,17 +503,6 @@ const storySpec = {
  */
 export const storyFlow = dialog("story", storySpec);
 
-/**
- * The game as a READ hands it out: deep-frozen, and typed to say so.
- *
- * Every pure helper below takes this rather than {@link GameState}, which is
- * the widening a deep-readonly slot forces and the reason it is worth doing:
- * a mutable `GameState` still satisfies it, so a helper called with an
- * `updateTool` draft is unaffected, while a helper that WOULD have mutated
- * stops compiling instead of throwing at its first call in production.
- */
-export type FrozenGameState = DeepReadonly<GameState>;
-
 // ── No cross-session saves, and why ─────────────────────────────────────────
 // `save_game` / `load_game` stood here, keyed by slot name and backed by an
 // `app_state` table through `ctx.db`. Both are gone with `ctx.db` itself: the
@@ -624,28 +609,18 @@ export function clockSummary(c: DeepReadonly<Clock>) {
 }
 
 /**
- * Single source of truth for the state snapshot returned to the LLM by
- * setup_character, update_state, and check_state. Includes the player's
- * content boundaries (contentLines) so they survive past the setup turn.
+ * The state snapshot `setup_character`, `update_state` and `check_state`
+ * answer with — always built from a STORED value (a read, or `report`), so the
+ * derived flags are current. Includes the player's content boundaries
+ * (contentLines) so they survive past the setup turn.
  */
 export function stateSummary(state: FrozenGameState) {
-  // The scalars go through UNCHANGED, so they are spread rather than re-listed:
-  // what the names pulled out below do to them is the whole content of this
-  // function, and it was buried in twenty-six lines of `x: state.x`. A field
-  // added to `GameState` now reaches the model without a second edit here.
-  //
-  // `lastRoll` is destructured to WITHHOLD it — the dice are narrated by the
-  // tool that rolled them, not inspected; `crisisMode` and `gameOver` are
-  // pulled out because the stored flags are stale here and recomputed below.
-  const { npcs, clocks, storyBlueprint, sessionLog, lastRoll, crisisMode, gameOver, ...scalars } =
-    state;
+  // The scalars are spread rather than re-listed, so a field added to
+  // `GameState` reaches the model without a second edit here. `lastRoll` is
+  // WITHHELD: the dice are narrated by the tool that rolled them.
+  const { npcs, clocks, storyBlueprint, sessionLog, lastRoll, ...scalars } = state;
   return {
     ...scalars,
-    // DERIVED here rather than copied off the state: `after` restores the
-    // stored flags only once the calling body has returned, so a summary built
-    // inside that body would report the tracks it just emptied as survivable.
-    crisisMode: inCrisis(state),
-    gameOver: isGameOver(state),
     // NPCs go to the LLM whole (nothing withheld) — copied so a mutation of
     // the summary can't reach live state.
     npcs: npcs.filter((n) => n.status !== "deceased").map((n) => ({ ...n })),
@@ -668,29 +643,15 @@ export function stateSummary(state: FrozenGameState) {
 /**
  * The campaign sheet as the NARRATOR is given it, before every reply.
  *
- * `agent.ts` appends this to the system prompt through a `systemPrompt`
- * resolver, so every number the narrator must not invent — the tracks, the
- * momentum, the chaos factor, the clocks, who is in the scene — is in front of
- * the model on each request.
+ * `agent.ts` appends this under the rules through `promptContext`, so every
+ * number the narrator must not invent — the tracks, the momentum, the chaos
+ * factor, the clocks, who is in the scene — is in front of the model on each
+ * request instead of behind a "call check_state first" rule. `check_state`
+ * stays for the chronicle, the whole NPC records and the blueprint.
  *
- * **This is what retired the FLOW rule that opened every turn with a tool
- * call.** `system-prompt.md` used to say "Call check_state as your FIRST tool
- * call every turn, before narrating or rolling … NEVER remember or guess stats
- * from prior turns": an instruction that bought a full model round trip on every
- * turn of a live voice game when it was obeyed, and a desynced sheet when it was
- * not. A number the model may not guess belongs in the prompt, not behind a rule
- * telling it to go and fetch one.
- *
- * `check_state` is NOT retired. It answers with the chronicle, the whole NPC
- * records and the story blueprint as well, and it is the tool for a turn where
- * the narrator wants the full board or the position restated. What went is the
- * compulsory read-back.
- *
- * Prose rather than {@link stateSummary}'s JSON, because this is read as
- * instructions rather than as a tool result — and deliberately SHORTER than that
- * summary: it lands on every request, where a tool result lands once. The
- * position (`state`/`instruction`) is not here either, since `storyFlow` is
- * declared in `agent({ dialogs })` and the runtime already puts the active
+ * Prose rather than {@link stateSummary}'s JSON, and deliberately SHORTER: it
+ * lands on every request. The position is not here either — `storyFlow` is
+ * declared in `agent({ dialogs })`, so the runtime already puts the active
  * state's `instruction` in the same prompt.
  */
 export function liveSheet(game: FrozenGameState): string {
@@ -728,12 +689,9 @@ export function liveSheet(game: FrozenGameState): string {
     );
   }
 
-  // DERIVED, for the reason `stateSummary` derives them: `after` restores the
-  // stored flags only once a mutating body has returned, so a sheet rendered
-  // from the fields would report a just-emptied track as survivable.
-  if (isGameOver(game)) {
+  if (game.gameOver) {
     lines.push("- GAME OVER: nothing can be rolled or updated. Narrate the ending.");
-  } else if (inCrisis(game)) {
+  } else if (game.crisisMode) {
     lines.push("- CRISIS: a track is empty. Every miss now is more dangerous.");
   }
   if (game.kidMode) lines.push("- Kid mode is on.");
@@ -834,18 +792,7 @@ function changeMomentum(game: GameState, amount: number, deltas: ConsequenceDelt
   deltas.momentum += game.momentum - old;
 }
 
-/**
- * The one rule that ends a story: both tracks empty.
- *
- * A PREDICATE beside the writer, because the same fact is wanted at two
- * different moments. {@link gameSlot}'s `after` writes
- * {@link GameState.gameOver} from it, which is what keeps the stored flag right
- * for every mutating tool — including one that never thinks about it. A tool
- * that REPORTS the flag in its own result reads the predicate directly, because
- * `after` runs only once the body has already built that result: a copy taken
- * from `state.gameOver` would be one mutation behind, and that copy is exactly
- * what `sendFrom` turns into the `DOWNED` transition.
- */
+/** The one rule that ends a story: both tracks empty. */
 export function isGameOver(game: FrozenGameState): boolean {
   return game.health <= 0 && game.spirit <= 0;
 }
@@ -855,14 +802,7 @@ export function inCrisis(game: FrozenGameState): boolean {
   return game.health <= 0 || game.spirit <= 0;
 }
 
-/**
- * Restore the two derived flags from the tracks they are derived FROM.
- *
- * Called by nothing but {@link gameSlot}'s `after` — it used to be called by
- * hand from three places, which is a rule every future mutating tool has to
- * remember and one of them eventually will not. A stale `gameOver` is not a
- * cosmetic miss: it is what the `DOWNED` transition reads.
- */
+/** The two derived flags, restored by {@link gameSlot}'s `after` on every store. */
 function updateCrisisFlags(game: GameState): void {
   game.gameOver = isGameOver(game);
   game.crisisMode = inCrisis(game);
@@ -993,7 +933,7 @@ export function revertConsequences(game: GameState, deltas: ConsequenceDeltas): 
  * rank comparison says, where four flat `if`s said it as a truth table.
  */
 export function canBurnMomentum(
-  game: GameState,
+  game: Pick<FrozenGameState, "momentum">,
   roll: Pick<RollResult, "result" | "c1" | "c2">,
 ): "STRONG_HIT" | "WEAK_HIT" | null {
   if (game.momentum <= 0) return null;

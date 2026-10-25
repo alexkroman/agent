@@ -19,60 +19,58 @@ import {
 } from "../shared.ts";
 
 /**
- * Gated on `playing`: there is nothing to sync before a character exists (that
- * is `setup_character`'s whole job, and the prompt says not to call this after
- * it), and nothing to sync after the story has ended.
- *
- * It sends `SETTLED`, because moving the scene on is what SPENDS a standing
- * roll: once the narrator has changed the location or logged the scene, the
- * player's window to burn momentum on the last roll has closed.
+ * Gated on `playing`: there is nothing to sync before a character exists, and
+ * nothing after the story has ended. It sends `SETTLED`, because moving the
+ * scene on is what SPENDS a standing roll: once the narrator has changed the
+ * location or logged the scene, the window to burn momentum has closed.
  */
-export default storyFlow.tool({
-  description:
-    "Lightweight state sync for during gameplay. Handles location changes, NPC additions, clock additions, time changes, and session log entries. Resource changes (health/spirit/supply/momentum) are auto-applied by action_roll — only use those fields here for manual adjustments like resting or trading. Pass only what changed.",
-  when: "playing",
-  inputSchema: z.object({
-    location: z.string().max(200).describe("New location name").optional(),
-    locationDesc: z.string().max(500).describe("Short location description").optional(),
-    timeOfDay: z.enum(TIME_PHASES).describe("New time of day").optional(),
-    health: z.number().int().optional(),
-    spirit: z.number().int().optional(),
-    supply: z.number().int().optional(),
-    momentum: z.number().int().optional(),
-    addNpcName: z.string().max(100).describe("New NPC name").optional(),
-    addNpcDesc: z.string().max(300).describe("New NPC one-line description").optional(),
-    addNpcDisposition: z.enum(DISPOSITIONS).describe("New NPC disposition").optional(),
-    addNpcAgenda: z.string().max(300).describe("New NPC agenda").optional(),
-    updateNpcId: z.string().max(32).describe("NPC id to update").optional(),
-    updateNpcDisposition: z.enum(DISPOSITIONS).optional(),
-    updateNpcBond: z.number().int().min(0).max(MAX_BOND).optional(),
-    updateNpcStatus: z.enum(["active", "background", "deceased"]).optional(),
-    addClockName: z.string().max(100).describe("New clock name").optional(),
-    addClockType: z.enum(["threat", "progress", "scheme"]).optional(),
-    addClockSegments: z
-      .number()
-      .int()
-      .min(MIN_CLOCK_SEGMENTS)
-      .max(MAX_CLOCK_SEGMENTS)
-      .describe(`Number of segments, default ${DEFAULT_CLOCK_SEGMENTS}`)
-      .optional(),
-    addClockTrigger: z.string().max(300).describe("What happens when clock fills").optional(),
-    advanceClockName: z
-      .string()
-      .max(100)
-      .describe('Clock to advance by 1, by name or by what the player called it ("the second")')
-      .optional(),
-    removeClockName: z
-      .string()
-      .max(100)
-      .describe('Clock to remove, by name or by what the player called it ("the first clock")')
-      .optional(),
-    advanceAct: z.boolean().describe("Move to next story act").optional(),
-    storyComplete: z.boolean().describe("Mark story as complete").optional(),
-    logEntry: z.string().max(500).describe("Short log entry for this scene").optional(),
-  }),
-  execute: (args, ctx) =>
-    gameSlot.update(ctx, (state) => {
+export default gameSlot.updateTool(
+  {
+    description:
+      "Lightweight state sync for during gameplay. Handles location changes, NPC additions, clock additions, time changes, and session log entries. Resource changes (health/spirit/supply/momentum) are auto-applied by action_roll — only use those fields here for manual adjustments like resting or trading. Pass only what changed.",
+    dialog: storyFlow,
+    when: "playing",
+    inputSchema: z.object({
+      location: z.string().max(200).describe("New location name").optional(),
+      locationDesc: z.string().max(500).describe("Short location description").optional(),
+      timeOfDay: z.enum(TIME_PHASES).describe("New time of day").optional(),
+      health: z.number().int().optional(),
+      spirit: z.number().int().optional(),
+      supply: z.number().int().optional(),
+      momentum: z.number().int().optional(),
+      addNpcName: z.string().max(100).describe("New NPC name").optional(),
+      addNpcDesc: z.string().max(300).describe("New NPC one-line description").optional(),
+      addNpcDisposition: z.enum(DISPOSITIONS).describe("New NPC disposition").optional(),
+      addNpcAgenda: z.string().max(300).describe("New NPC agenda").optional(),
+      updateNpcId: z.string().max(32).describe("NPC id to update").optional(),
+      updateNpcDisposition: z.enum(DISPOSITIONS).optional(),
+      updateNpcBond: z.number().int().min(0).max(MAX_BOND).optional(),
+      updateNpcStatus: z.enum(["active", "background", "deceased"]).optional(),
+      addClockName: z.string().max(100).describe("New clock name").optional(),
+      addClockType: z.enum(["threat", "progress", "scheme"]).optional(),
+      addClockSegments: z
+        .number()
+        .int()
+        .min(MIN_CLOCK_SEGMENTS)
+        .max(MAX_CLOCK_SEGMENTS)
+        .describe(`Number of segments, default ${DEFAULT_CLOCK_SEGMENTS}`)
+        .optional(),
+      addClockTrigger: z.string().max(300).describe("What happens when clock fills").optional(),
+      advanceClockName: z
+        .string()
+        .max(100)
+        .describe('Clock to advance by 1, by name or by what the player called it ("the second")')
+        .optional(),
+      removeClockName: z
+        .string()
+        .max(100)
+        .describe('Clock to remove, by name or by what the player called it ("the first clock")')
+        .optional(),
+      advanceAct: z.boolean().describe("Move to next story act").optional(),
+      storyComplete: z.boolean().describe("Mark story as complete").optional(),
+      logEntry: z.string().max(500).describe("Short log entry for this scene").optional(),
+    }),
+    execute(args, state) {
       const warnings: string[] = [];
       const clockEvents: { clock: string; trigger: string }[] = [];
 
@@ -182,13 +180,12 @@ export default storyFlow.tool({
         });
       }
 
-      return {
-        success: true,
-        ...(warnings.length > 0 ? { warnings } : {}),
-        clockEvents,
-        ...stateSummary(state),
-      };
-    }),
-  sendFrom: (result) =>
-    result.gameOver ? { type: "DOWNED" as const } : { type: "SETTLED" as const },
-});
+      return { success: true, ...(warnings.length > 0 ? { warnings } : {}), clockEvents };
+    },
+    report: (stored, partial) => ({ ...partial, ...stateSummary(stored) }),
+  },
+  {
+    sendFrom: (result) =>
+      result.gameOver ? { type: "DOWNED" as const } : { type: "SETTLED" as const },
+  },
+);

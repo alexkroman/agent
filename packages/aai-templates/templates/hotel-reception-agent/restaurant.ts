@@ -16,7 +16,7 @@
 import type { ToolFailure } from "@alexkroman1/aai";
 import { toolFailure } from "@alexkroman1/aai";
 import { DINNER_SLOTS, digitsOf, mintCode, normalizeCode, type Reservation } from "./records.ts";
-import { type FrozenHotelState, type HotelState, note, takenCodes } from "./shared.ts";
+import { type FrozenHotelState, type HotelState, takenCodes } from "./shared.ts";
 
 /** Their `list_restaurant_availability`: the open slots for a date and party. */
 export function openDinnerSlots(
@@ -91,8 +91,7 @@ export function reserveTable(
     status: "confirmed",
   };
   state.reservations.push(reservation);
-  note(
-    state,
+  state.log.push(
     `Reserved ${reservation.code}: ${input.date} ${input.time}, party of ${input.partySize}`,
   );
   return reservation;
@@ -119,7 +118,7 @@ export function modifyReservation(
   reservation.partySize = party;
   reservation.date = date;
   reservation.time = time;
-  note(state, `Moved ${code} to ${date} ${time}, party of ${party}`);
+  state.log.push(`Moved ${code} to ${date} ${time}, party of ${party}`);
   return reservation;
 }
 

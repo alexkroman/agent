@@ -1,10 +1,10 @@
 import { isToolFailure, omitUndefined } from "@alexkroman1/aai";
 import { z } from "zod";
 import { OrderIdField, resolveOrder } from "../resolve.ts";
-import { retailTool, setFocus } from "../store.ts";
+import { callFlow, retailSlot, setFocus } from "../store.ts";
 
-export default retailTool({
-  name: "get_order_details",
+export default retailSlot.updateTool({
+  dialog: callFlow,
   when: "serving",
   description:
     "Get the status and full details of one of the authenticated customer's orders. Accepts the " +
@@ -33,5 +33,4 @@ export default retailTool({
       ...omitUndefined({ cancel_reason: order.cancel_reason }),
     };
   },
-  summary: (_args, result) => `read ${result.order_id}`,
 });

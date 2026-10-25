@@ -1,5 +1,7 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` and the prompt add. */
 import agentDef from "virtual:aai/agent";
+import { type DialogToolResult, isToolFailure } from "@alexkroman1/aai";
+import type { ToolFailure } from "@alexkroman1/aai/utils";
 // An EVAL: does the receptionist route the call the way the desk has to?
 //
 // `agent.test.ts` drives the forty-one tools and the booking dialog directly,
@@ -17,7 +19,6 @@ import agentDef from "virtual:aai/agent";
 import {
   describeEval,
   describeToolCalls,
-  dialogResultSchema,
   expectCalled,
   lastStateIn,
   lastToolResultIn,
@@ -26,13 +27,17 @@ import {
   toolResultIn,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
+import { hotelSlot } from "./session.ts";
+import cancelRoomBooking from "./tools/cancel_room_booking.ts";
+import dispatchEmergency from "./tools/dispatch_emergency.ts";
+import setStay from "./tools/set_stay.ts";
+import takeGuestMessage from "./tools/take_guest_message.ts";
 
-/** What `syncState` pushes — the fields these cases read off the receptionist's screen. */
-const ProjectedDesk = z.object({
-  verified: z.object({ code: z.string(), status: z.string() }).nullable(),
-  ledger: z.array(z.object({ kind: z.string() })),
-});
+/** A gated tool's envelope, position kept, or a throw quoting the refusal. */
+function landed<R>(answer: DialogToolResult<R> | ToolFailure): DialogToolResult<R> {
+  if (isToolFailure(answer)) throw new Error(`tool refused: ${answer.error}`);
+  return answer;
+}
 
 describeEval(agentDef, (test) => {
   test(
@@ -74,11 +79,7 @@ describeEval(agentDef, (test) => {
       // `lastToolResultIn` over a multi-turn scope: a desk that recorded the
       // stay and then corrected it has called this twice, and the SETTLED one is
       // what the caller was offered. `toolResultIn` refuses the scope outright.
-      const stay = lastToolResultIn(
-        calls,
-        "set_stay",
-        dialogResultSchema(z.object({ options: z.string() })),
-      );
+      const stay = landed(lastToolResultIn(calls, setStay));
       expect(stay.state).toBe("booking.room");
       expect(stay.result.options).toContain("garden view");
     },
@@ -118,17 +119,13 @@ describeEval(agentDef, (test) => {
       );
       // The settled cancellation. Exactly-once is asserted above, on its own,
       // so this read does not also have to carry it.
-      const cancelled = lastToolResultIn(
-        calls,
-        "cancel_room_booking",
-        z.object({ cancelled: z.literal(true), withinWindow: z.boolean(), refund: z.number() }),
-      );
+      const cancelled = lastToolResultIn(calls, cancelRoomBooking);
+      if (isToolFailure(cancelled)) throw new Error(`cancel refused: ${cancelled.error}`);
       // Five days out: outside the 48-hour window, so the whole total comes back.
-      expect(cancelled.withinWindow).toBe(false);
-      expect(cancelled.refund).toBe(59_360);
+      expect(cancelled).toMatchObject({ cancelled: true, withinWindow: false, refund: 59_360 });
 
       // And the screen shows it: the verification was cleared by the cancel.
-      const desk = lastStateIn(session.events(), "hotel", ProjectedDesk);
+      const desk = lastStateIn(session.events(), hotelSlot.projected);
       expect(desk?.verified).toBeNull();
     },
     {
@@ -166,23 +163,9 @@ describeEval(agentDef, (test) => {
         names.filter((n) => n !== "take_guest_message"),
         describeToolCalls(calls),
       ).toEqual([]);
-      const taken = lastToolResultIn(
-        calls,
-        "take_guest_message",
-        z
-          .object({ recorded: z.literal(true), reference: z.string() })
-          .strict()
-          .or(
-            z
-              .object({
-                recorded: z.literal(true),
-                reference: z.string(),
-                spokenReference: z.string(),
-                next: z.string(),
-              })
-              .strict(),
-          ),
-      );
+      const taken = lastToolResultIn(calls, takeGuestMessage);
+      if (isToolFailure(taken)) throw new Error(`take_guest_message refused: ${taken.error}`);
+      expect(taken.recorded).toBe(true);
       expect(JSON.stringify(taken)).not.toMatch(/delivered|undeliverable|303/);
       expect(turns.at(-1)?.completed).toBe(true);
     },
@@ -212,21 +195,12 @@ describeEval(agentDef, (test) => {
       );
 
       expect(toolNames(turn.toolCalls)[0]).toBe("dispatch_emergency");
-      const sent = toolResultIn(
-        turn.toolCalls,
-        "dispatch_emergency",
-        z.object({
-          dispatched: z.literal(true),
-          kind: z.string(),
-          room: z.string(),
-          next: z.string(),
-        }),
-      );
-      expect(sent.kind).toBe("medical");
-      expect(sent.room).toBe("401");
+      const sent = toolResultIn(turn.toolCalls, dispatchEmergency);
+      if (isToolFailure(sent)) throw new Error(`dispatch refused: ${sent.error}`);
+      expect(sent).toMatchObject({ dispatched: true, kind: "medical", room: "401" });
       expect(sent.next).toMatch(/9-1-1/);
       // The ledger's first line is the dispatch — the desk's own people first.
-      expect(lastStateIn(turn.events, "hotel", ProjectedDesk)?.ledger[0]?.kind).toBe("emergency");
+      expect(lastStateIn(turn.events, hotelSlot.projected)?.ledger[0]?.kind).toBe("emergency");
     },
     {
       stubReply: [

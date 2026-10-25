@@ -1,14 +1,15 @@
 import { formatMoney } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { deskTool, EXCURSIONS } from "../shared.ts";
+import { deskGate, EXCURSIONS, tripSlot } from "../shared.ts";
 
 /** Their `search_trip_recommendations` — city plus a loose keyword, matched
  *  against the name and the kind so "boat" and "sail" both land. */
-export default deskTool("excursion", {
+export default tripSlot.tool({
   description:
     "The EXCURSIONS DESK's search: things to do in a city, with an optional keyword matched " +
     "loosely. Only usable while the call is at that desk — from anywhere else it refuses, so " +
     "call to_excursion_assistant first.",
+  require: deskGate("excursion"),
   inputSchema: z.object({
     city: z.string().max(80).describe("City to search, e.g. 'Boston'"),
     keyword: z

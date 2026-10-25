@@ -9,7 +9,7 @@ function makeState(authenticatedUserId: string | null): RetailState {
     store: seedStore(),
     authenticatedUserId,
     callSeq: 3,
-    activity: [{ seq: 3, tool: "get_order_details", summary: "read #W5866402", at: 0 }],
+    activity: [{ seq: 3, tool: "get_order_details", summary: "done", at: 0, callId: "call_3" }],
     focus: { orderId: "#W5866402" },
     pending: null,
   };

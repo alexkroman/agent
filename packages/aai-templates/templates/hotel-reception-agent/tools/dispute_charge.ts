@@ -9,7 +9,7 @@ import {
 import { invoiceFor } from "../hotel.ts";
 import { DISPUTE_CATEGORIES, mintCode } from "../records.ts";
 import { hotelSlot } from "../session.ts";
-import { note, requireVerified, takenCodes } from "../shared.ts";
+import { takenCodes, verified, verifiedBooking } from "../shared.ts";
 
 /**
  * Handle a dispute on a line item — their `dispute_charge`.
@@ -32,6 +32,7 @@ export default hotelSlot.updateTool({
     'their words - a label, part of one, or "the second one". Set acceptsOfferedResolution true ' +
     "ONLY after the caller has actually accepted what you offered (a waiver, a credit); false if they " +
     "pushed back, asked for a manager, or haven't been offered anything yet.",
+  require: verified,
   inputSchema: z.object({
     category: z
       .enum(DISPUTE_CATEGORIES)
@@ -46,8 +47,7 @@ export default hotelSlot.updateTool({
     acceptsOfferedResolution: z.boolean(),
   }),
   execute({ category, lineItemLabel, callerNote, acceptsOfferedResolution }, hotel) {
-    const booking = requireVerified(hotel);
-    if (isToolFailure(booking)) return booking;
+    const booking = verifiedBooking(hotel);
     const invoice = invoiceFor(hotel, booking.code);
     if (invoice === undefined) return toolFailure(`no invoice on file for ${booking.code}`);
     const item = resolveOne(invoice.lineItems, lineItemLabel, LINE_ITEM_PICK);
@@ -79,7 +79,7 @@ export default hotelSlot.updateTool({
       const live = hotel.invoices.find((i) => i.bookingCode === booking.code);
       if (live) live.total -= verdict.refund;
     }
-    note(hotel, `Dispute ${caseNumber} on ${item.label}: ${verdict.outcome}`);
+    hotel.log.push(`Dispute ${caseNumber} on ${item.label}: ${verdict.outcome}`);
     return {
       caseNumber,
       outcome: verdict.outcome,

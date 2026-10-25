@@ -15,7 +15,7 @@
  * | --- | --- |
  * | `HotelDB` over apsw/SQLite, seeded by `fake_data/seed.py` | {@link HotelState}, one `sessionSlot` (in `session.ts`) seeded from `seed.ts` per session |
  * | `Userdata` (verified booking, turn counters, transferred_to) | the same fields on {@link HotelState} |
- * | `VerifyBookingTask` (last name + code, or + card last four; three strikes) | `tools/verify_booking.ts` + {@link requireVerified}, checked by every booking tool |
+ * | `VerifyBookingTask` (last name + code, or + card last four; three strikes) | `tools/verify_booking.ts` + {@link verified}, the `require` of every booking tool |
  * | `BookRoomTask` + `ModifyBookingTask` (one `AgentTask` each, `_step()` derived from captured values) | ONE `booking` dialog in `desk.ts`, `nextStep` in `booking.ts`, a `mode` on the draft |
  * | `_Owed` (speech owed before a tool may run, discharged by the caller's next turn) | `offering` and `readBack` states leaving on `@userTranscript.committed` |
  * | `GetNameTask` / `GetEmailTask` / `GetPhoneNumberTask` | `tools/record_guest_details.ts` |
@@ -26,9 +26,9 @@
  * | `policies/*.md` + `build_lookup_policy_tool` | `policies.ts` + `tools/lookup_policy.ts` |
  * | `TOURS` / `SPA_SERVICES` / `BUSINESS_CENTER_SERVICES` / `FLORIST_ARRANGEMENTS` | `catalogs.ts`, and `concierge.ts` makes one tool of each |
  * | `record_followup`, `take_guest_message`, `dispatch_emergency`, … (write-only tables) | {@link Ticket}s on the slot, rendered by `client.tsx` |
- * | a caller who rings off mid-booking (their `abandoned_booking` followup) | `events.ts`, on `agent({ events })` — the one write no tool can make |
+ * | a caller who rings off mid-booking (their `abandoned_booking` followup) | `hungUp`'s `onEnter` in `desk.ts` — the one write no tool can make |
  * | `HOTEL_TODAY=2026-06-08` (the simulation pin) | {@link TODAY}, fixed |
- * | `ui_view.py` (SQLite changesets streamed to the playground) | `deskView`, pushed by `syncState` via `session.ts`'s `hotelSlot.projected` |
+ * | `ui_view.py` (SQLite changesets streamed to the playground) | `deskView`, the slot's synced projection |
  *
  * **The LLM never owns a money value**, which is their README's first
  * sentence and this port's too: every total comes out of {@link computeInvoice},
@@ -51,7 +51,7 @@
  * for the same reason.
  */
 
-import type { DeepReadonly, Message, ToolFailure } from "@alexkroman1/aai";
+import type { DeepReadonly, ToolFailure } from "@alexkroman1/aai";
 import { toolFailure } from "@alexkroman1/aai";
 import {
   type Dispute,
@@ -161,13 +161,10 @@ export interface HotelState {
 }
 
 /**
- * The hotel's shape with nothing in it — no seed.
- *
- * `session.ts`'s {@link createHotelState} builds the real seeded state on top
- * of this, so the shape is declared once. It lives HERE, apart from that,
- * because `client.tsx` needs a `HotelState` for its pre-first-call fallback and
- * must not import `session.ts`: that module pulls `seed.ts`, which would then
- * land in the browser bundle.
+ * The hotel's shape with nothing in it — no seed: the slot's `empty` frame,
+ * and what `client.tsx` projects for itself before the first push. It lives
+ * here rather than in `session.ts` because that module pulls `seed.ts`, which
+ * must not land in the browser bundle.
  */
 export function emptyHotelState(): HotelState {
   return {
@@ -192,11 +189,6 @@ export function emptyHotelState(): HotelState {
 /** The hotel as a READ hands it out: deep-frozen, and typed to say so. */
 export type FrozenHotelState = DeepReadonly<HotelState>;
 
-/** One line of the call log — the slot's `caps` keep it to the newest forty. */
-export function note(state: HotelState, line: string): void {
-  state.log.push(line);
-}
-
 /** Every reference this hotel has issued — what {@link mintCode} avoids. */
 export function takenCodes(state: FrozenHotelState): Set<string> {
   return new Set([
@@ -217,20 +209,8 @@ export function addTicket(
 ): Ticket {
   const ticket: Ticket = { code: mintCode(prefix, takenCodes(state)), kind, summary, details };
   state.tickets.push(ticket);
-  note(state, `${kind}: ${summary}`);
+  state.log.push(`${kind}: ${summary}`);
   return ticket;
-}
-
-/**
- * How many times the caller has spoken — their `_count_caller_turns`.
- *
- * Typed `readonly Message[]` rather than the structural `{ role: string }[]` it
- * used to take: the argument is always `ctx.messages`, and naming the SDK's own
- * shape is what makes a spec's hand-built history fail HERE (a bad `role`, a
- * missing `content`) rather than compile against a stand-in this file invented.
- */
-export function callerTurns(messages: readonly Message[]): number {
-  return messages.filter((m) => m.role === "user").length;
 }
 
 // ─── Verification ────────────────────────────────────────────────────────────
@@ -248,29 +228,36 @@ export function bookingByCode<S extends FrozenHotelState | HotelState>(
   return state.bookings.find((b) => normalizeCode(b.code) === wanted);
 }
 
+/** The refusal every tool behind {@link verified} answers until `verify_booking` has run. */
+export const NOT_VERIFIED = `Not verified yet. ${VERIFY_HINT}`;
+
 /**
- * The booking this call has verified against — or the refusal naming the tool.
+ * The `require` of every tool that needs a verified booking.
  *
  * Their `_verified_booking` ran a `VerifyBookingTask` on demand from inside
  * every tool that needed one. A voice tool cannot open a sub-conversation, so
  * the check is a gate: the tool refuses with the sentence that says what to do,
- * and `verify_booking` is what fills the slot. Generic over the state so a
- * mutating tool gets a draft's booking back and a read gets the frozen one.
- *
- * It answers a {@link ToolFailure}, not a `{ error: string }` of its own. The
- * two are the same object, and that was the problem: eleven tools narrowed with
- * `"error" in booking` and then RE-WRAPPED the sentence with
- * `toolFailure(booking.error)`, building a second failure out of a perfectly
- * good one. A failure PROPAGATES — `if (isToolFailure(b)) return b;` — and the
- * SDK's guard is what makes the narrowing safe on a value that could be
- * anything.
+ * and `verify_booking` is what fills the slot.
  */
-export function requireVerified<S extends FrozenHotelState | HotelState>(
+export function verified(state: FrozenHotelState): ToolFailure | undefined {
+  return state.verifiedCode !== null && bookingByCode(state, state.verifiedCode) !== undefined
+    ? undefined
+    : toolFailure(NOT_VERIFIED);
+}
+
+/**
+ * The booking {@link verified} proved is there — for a body behind
+ * `require: verified`, which is why a miss is a throw and not a refusal.
+ * Generic over the state so a mutating tool gets a draft's booking back and a
+ * read gets the frozen one.
+ */
+export function verifiedBooking<S extends FrozenHotelState | HotelState>(
   state: S,
-): S["bookings"][number] | ToolFailure {
-  if (state.verifiedCode === null) return toolFailure(`Not verified yet. ${VERIFY_HINT}`);
-  const booking = bookingByCode(state, state.verifiedCode);
-  if (booking === undefined) return toolFailure(`Not verified yet. ${VERIFY_HINT}`);
+): S["bookings"][number] {
+  const booking =
+    state.verifiedCode === null ? undefined : bookingByCode(state, state.verifiedCode);
+  if (booking === undefined)
+    throw new Error("verifiedBooking: the tool declares no `require: verified`");
   return booking;
 }
 
@@ -328,7 +315,7 @@ export function deskView(state: FrozenHotelState): DeskView {
       : null,
     // `slice(-12)` before the reverse, not after: `tickets` carries no cap (only
     // `log` does), so copying the whole list to show twelve of it grew with the
-    // call — and this runs on every tool call, being what `syncState` sends.
+    // call — and this runs on every tool call, being what the slot pushes.
     ledger: state.tickets
       .slice(-LEDGER_ENTRIES)
       .reverse()

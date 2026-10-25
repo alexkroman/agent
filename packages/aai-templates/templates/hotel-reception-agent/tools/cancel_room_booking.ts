@@ -2,7 +2,7 @@ import { isToolFailure, toolFailure } from "@alexkroman1/aai";
 import { cancelBooking } from "../hotel.ts";
 import { daysBetween, PRICING, speakUsd, TODAY } from "../records.ts";
 import { hotelSlot } from "../session.ts";
-import { callerTurns, requireVerified } from "../shared.ts";
+import { verified, verifiedBooking } from "../shared.ts";
 
 /**
  * Cancel the verified booking and say what comes back — their
@@ -12,12 +12,14 @@ import { callerTurns, requireVerified } from "../shared.ts";
  * handed to the model as a sentence: inside the window one room-night is kept,
  * outside it the refund is the whole total. The model never computes either.
  *
- * **Idempotent on the caller's turn count.** After a cancellation the model
- * sometimes re-invokes this with no new caller input; re-verifying then finds
- * the booking cancelled and dead-ends in "did you mean a different reservation"
+ * **Idempotent on `ctx.turn`.** After a cancellation the model sometimes
+ * re-invokes this with no new caller input; re-verifying then finds the
+ * booking cancelled and dead-ends in "did you mean a different reservation"
  * while the refund answer it already produced never gets relayed. If a cancel
  * just happened and the caller has not spoken since, the outcome is re-surfaced
- * instead. A genuine second cancellation always has a caller turn first.
+ * instead — which is why the verification check is in the body here, after
+ * that, rather than a `require`. A genuine second cancellation always has a
+ * caller turn first.
  */
 export default hotelSlot.updateTool({
   description:
@@ -25,8 +27,7 @@ export default hotelSlot.updateTool({
     "(abandon_booking first). Returns the refund outcome: relay it exactly, never guess a refund " +
     'or a "deposit". If the caller asks whether they lose money by cancelling, this result IS the answer.',
   execute(_args, hotel, ctx) {
-    const turns = callerTurns(ctx.messages);
-    if (hotel.lastCancel !== null && turns <= hotel.lastCancel.callerTurns) {
+    if (hotel.lastCancel !== null && ctx.turn <= hotel.lastCancel.callerTurns) {
       return {
         alreadyCancelled: true,
         message:
@@ -34,8 +35,9 @@ export default hotelSlot.updateTool({
           `the outcome and answer any refund question from it: ${hotel.lastCancel.message}`,
       };
     }
-    const booking = requireVerified(hotel);
-    if (isToolFailure(booking)) return booking;
+    const unverified = verified(hotel);
+    if (unverified) return unverified;
+    const booking = verifiedBooking(hotel);
     if (booking.checkIn < TODAY)
       return toolFailure("this booking's check-in has already passed; can't cancel a past stay");
     const room = hotel.rooms.find((r) => r.id === booking.roomId);
@@ -51,7 +53,7 @@ export default hotelSlot.updateTool({
         `(${speakUsd(forfeit)}) is forfeited; I'll refund ${speakUsd(booking.total - forfeit)} to the card on file.`
       : `Cancelled - well outside the ${PRICING.cancellationWindowHours}-hour window, so there's no penalty and no ` +
         `deposit is lost. I'll refund the full ${speakUsd(booking.total)} to the card on file - usually two to five business days.`;
-    hotel.lastCancel = { message, callerTurns: turns };
+    hotel.lastCancel = { message, callerTurns: ctx.turn };
     return {
       cancelled: true,
       code: booking.code,

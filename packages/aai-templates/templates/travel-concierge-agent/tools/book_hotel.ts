@@ -1,21 +1,24 @@
 import { z } from "zod";
-import { deskUpdateTool, stageAction } from "../shared.ts";
+import { deskGate, gateFlow, stageAction, tripSlot } from "../shared.ts";
 
 /** SENSITIVE — their `book_hotel`, staged rather than applied. */
-export default deskUpdateTool("hotel", {
+export default tripSlot.updateTool({
   description:
     "The HOTEL DESK's booking tool: hold a hotel room. Only usable while the call is at " +
     "that desk. This does NOT book anything yet — it stages the booking so you can read " +
     "the total back and hear a yes.",
+  ui: { icon: "\u{1F6CF}", label: "Staging hotel" },
+  dialog: gateFlow,
+  send: { type: "STAGED" },
+  require: deskGate("hotel"),
   inputSchema: z.object({
     hotelId: z.string().max(20).describe("The hotel id from search_hotels, e.g. 'H1'"),
     nights: z.number().int().min(1).max(30).describe("How many nights"),
   }),
-  execute(args, trip, ctx) {
-    return stageAction(ctx, trip, {
+  execute: (args, trip) =>
+    stageAction(trip, {
       kind: "book_hotel",
       hotelId: args.hotelId.toUpperCase(),
       nights: args.nights,
-    });
-  },
+    }),
 });

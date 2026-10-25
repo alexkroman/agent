@@ -108,6 +108,7 @@ table and the allowlist — "the last remover pays".
 | Primitive                                                                                   | Demonstrated by                                                                                                                                                                                                                                           |
 | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `useAgentState(projection)`                                                                 | eight templates passing the projection itself; `entertainment-picks-agent` also shows a slot beside `useEvent`/`useToolCallStart` (rule in `packages/aai-ui/CLAUDE.md`)                                                                                   |
+| `useAgentState("slot", fallback)`                                                           | `retail-orders-agent`, `hotel-reception-agent` — importing the slot would ship their seeds (107 KB / 18.5 KB) to the browser; the fallback is the slot's `empty` frame, projected in the client                                                           |
 | `mountClient({ theme: { primary, mode }, css })`                                            | every themed page; the four neutrals are derived, and a chrome's `@keyframes` or scrollbar palette is `css`, not a `<style>` element                                                                                                                      |
 | `AutoScroll`, `useUserTranscript`, `SessionStateDot`, `SessionControls`, `ConversationView` | the three custom chromes: `emergency-dispatch-agent`, `retail-orders-agent`, `text-adventure-agent` (`SessionControls`'s Start branch unused there by design); the dot takes its palette from the theme. `useSessionControls`: `push-to-talk-agent` alone |
 | `SessionErrorBanner` + `AGENT_STATE_LABELS` + `useSessionStatus`                            | `text-adventure-agent`, `retail-orders-agent`; the dot now calls the latter two, so their direct exercisers are gone                                                                                                                                      |
@@ -179,14 +180,14 @@ nested confirmation gate), `tabletop-rpg-agent` (nested, plus `final`),
   `IDENTIFIED` is not handled on `serving`, since that self-transition would
   re-enter and strand the pending change. Plans hold ids and amounts, not store
   references, so a persisted session can carry them. `registry.test.ts` pins
-  seventeen tool names. Its wrapper's activity log does not record a gated
-  refusal (stated at the wrapper).
+  seventeen tool names. The activity feed is written by `tool.called` and
+  `tool.completed`, so a gated refusal is on it too.
 - **`tabletop-rpg-agent`**: `gameOver` is `final`; `setup_character` declares
   `reset: true`. The `after` hook owns `gameOver`/`inCrisis` and the tools that
   speak them `report` off the stored value.
-- **`research-planner-agent`**: `work_next_step` is the `prepare` shape — the
-  model call first, then the synchronous window — with `sendFrom` deciding the
-  transition off the reported result.
+- **`research-planner-agent`**: `start_plan` and `revise_plan` are the `prepare`
+  shape — the model call first, then the synchronous window; `work_next_step`
+  keeps claim-then-await and takes `sendFrom` as the second argument.
 - **`word-game-agent`**: `playing` declares no transition except its two exits,
   and its three in-round tools send nothing, so the round timer is not re-armed.
 

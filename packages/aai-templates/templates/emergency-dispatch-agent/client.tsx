@@ -63,25 +63,6 @@ const statusColors: Record<string, string> = {
   escalated: "#ef4444",
 } satisfies Record<Status, string>;
 
-// The dot's colour per session state, as an EXHAUSTIVE map rather than an
-// if-chain with a grey default.
-//
-// The palette is this template's own — every client here paints the same six
-// states in its own colours, so it is the one prop `<SessionStateDot>` cannot
-// default. What the SDK does own is `AgentState`, and `satisfies
-// Record<AgentState, string>` is what borrows it: a state added there stops
-// compiling here, where the `state === "…"` chain this replaced answered a new
-// state with a silent grey badge in three separate files and no way to notice.
-const STATE_COLORS = {
-  disconnected: "#6b7280",
-  connecting: "#6b7280",
-  ready: "#22c55e",
-  listening: "#22c55e",
-  thinking: "#eab308",
-  speaking: "#3b82f6",
-  error: "#6b7280",
-} satisfies Record<AgentState, string>;
-
 /*
  * The board's own vocabulary — only three of the seven states get a dispatch
  * word. The rest are `<SessionStateDot>`'s defaults (`AGENT_STATE_LABELS`), so a
@@ -262,7 +243,7 @@ function Conversation() {
 function StatusReadout() {
   return (
     <SessionStateDot
-      colors={STATE_COLORS}
+      colors={{ idle: "#6b7280", live: "#22c55e", busy: "#eab308", speaking: "#3b82f6" }}
       labels={STATE_LABELS}
       dotClassName="w-2.5 h-2.5"
       labelClassName="text-[11px] font-normal normal-case text-[#64748b]"
@@ -335,119 +316,104 @@ function App() {
   const alertTextColor = alertLevel === "yellow" ? "#000" : "#fff";
 
   return (
-    <>
-      <style>{CSS}</style>
+    <div
+      className="flex flex-col min-h-screen m-0 p-0 font-mono"
+      style={{ background: "#0a0a0f", color: "#e2e8f0" }}
+    >
+      {/* Header */}
       <div
-        className="flex flex-col min-h-screen m-0 p-0 font-mono"
-        style={{ background: "#0a0a0f", color: "#e2e8f0" }}
+        className="flex items-center justify-between px-6 py-4 gap-4 flex-wrap shrink-0"
+        style={{
+          background: "linear-gradient(135deg, #1a1a2e, #16213e)",
+          borderBottom: "1px solid #1e293b",
+        }}
       >
-        {/* Header */}
         <div
-          className="flex items-center justify-between px-6 py-4 gap-4 flex-wrap shrink-0"
-          style={{
-            background: "linear-gradient(135deg, #1a1a2e, #16213e)",
-            borderBottom: "1px solid #1e293b",
-          }}
+          className="flex items-center gap-2.5 text-lg font-bold uppercase tracking-wider"
+          style={{ color: "#f1f5f9" }}
         >
-          <div
-            className="flex items-center gap-2.5 text-lg font-bold uppercase tracking-wider"
-            style={{ color: "#f1f5f9" }}
-          >
-            <span style={{ color: "#3b82f6" }}>&#9670;</span>
-            Dispatch Command Center
-            <StatusReadout />
-          </div>
-          <div className="flex gap-2 items-center">
-            <span className="text-[10px] tracking-wider" style={{ color: "#64748b" }}>
-              SYSTEM ALERT:
-            </span>
-            <span
-              style={{
-                background: alertBg,
-                color: alertTextColor,
-              }}
-              // Tailwind's own opacity pulse rather than `aai-pulse`, which also
-              // SCALES — right for a dot, wrong for a badge carrying a word.
-              className={`px-3 py-1 rounded text-[11px] font-bold uppercase tracking-wider${
-                alertLevel === "red" ? " animate-pulse" : ""
-              }`}
-            >
-              {alertLevel.toUpperCase()}
-            </span>
-          </div>
+          <span style={{ color: "#3b82f6" }}>&#9670;</span>
+          Dispatch Command Center
+          <StatusReadout />
         </div>
-
-        {/* Main content */}
-        <div
-          className="dc-main flex-1 grid overflow-hidden"
-          style={{ gridTemplateColumns: "1fr 320px" }}
-        >
-          {/* Left: conversation feed */}
-          <div
-            className="flex flex-col overflow-hidden"
-            style={{ borderRight: "1px solid #1e293b" }}
+        <div className="flex gap-2 items-center">
+          <span className="text-[10px] tracking-wider" style={{ color: "#64748b" }}>
+            SYSTEM ALERT:
+          </span>
+          <span
+            style={{
+              background: alertBg,
+              color: alertTextColor,
+            }}
+            // Tailwind's own opacity pulse rather than `aai-pulse`, which also
+            // SCALES — right for a dot, wrong for a badge carrying a word.
+            className={`px-3 py-1 rounded text-[11px] font-bold uppercase tracking-wider${
+              alertLevel === "red" ? " animate-pulse" : ""
+            }`}
           >
-            <Conversation />
-            <SessionErrorBanner className="rounded-none border-x-0 border-b-0" />
-            <ShiftControls logged={incidentList.length} />
-          </div>
-
-          {/* Right: sidebar dashboard */}
-          <div
-            className="aai-scroll overflow-y-auto p-4 flex flex-col gap-4"
-            style={{ background: "#111827" }}
-          >
-            <Panel title="Operations Summary">
-              <StatRow
-                label="Active Incidents"
-                value={activeIncidents.length}
-                color={activeIncidents.length > 3 ? "#ef4444" : "#e2e8f0"}
-              />
-              <StatRow label="Resolved" value={resolvedCount} color="#22c55e" />
-              <StatRow label="Total Logged" value={incidentList.length} />
-            </Panel>
-
-            <Panel title="Active Incidents">
-              {activeIncidents.length === 0 ? (
-                <div className="text-xs text-center py-2" style={{ color: "#475569" }}>
-                  No active incidents
-                </div>
-              ) : (
-                activeIncidents.map((inc) => <IncidentCard key={inc.id} inc={inc} />)
-              )}
-            </Panel>
-
-            <Panel title="Severity Legend">
-              {Object.entries(severityColors).map(([sev, color]) => (
-                <div key={sev} className="flex items-center gap-2 py-0.5">
-                  <span className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />
-                  <span className="text-[11px] capitalize" style={{ color: "#94a3b8" }}>
-                    {sev}
-                  </span>
-                </div>
-              ))}
-            </Panel>
-
-            <Panel title="Training Scenarios">
-              <div className="text-[11px] leading-relaxed" style={{ color: "#64748b" }}>
-                Say "run mass casualty scenario" or "simulate active shooter" to test dispatch
-                operations with complex multi-incident drills.
-              </div>
-            </Panel>
-          </div>
+            {alertLevel.toUpperCase()}
+          </span>
         </div>
       </div>
-    </>
+
+      {/* Main content */}
+      <div
+        className="dc-main flex-1 grid overflow-hidden"
+        style={{ gridTemplateColumns: "1fr 320px" }}
+      >
+        {/* Left: conversation feed */}
+        <div className="flex flex-col overflow-hidden" style={{ borderRight: "1px solid #1e293b" }}>
+          <Conversation />
+          <SessionErrorBanner className="rounded-none border-x-0 border-b-0" />
+          <ShiftControls logged={incidentList.length} />
+        </div>
+
+        {/* Right: sidebar dashboard */}
+        <div
+          className="aai-scroll overflow-y-auto p-4 flex flex-col gap-4"
+          style={{ background: "#111827" }}
+        >
+          <Panel title="Operations Summary">
+            <StatRow
+              label="Active Incidents"
+              value={activeIncidents.length}
+              color={activeIncidents.length > 3 ? "#ef4444" : "#e2e8f0"}
+            />
+            <StatRow label="Resolved" value={resolvedCount} color="#22c55e" />
+            <StatRow label="Total Logged" value={incidentList.length} />
+          </Panel>
+
+          <Panel title="Active Incidents">
+            {activeIncidents.length === 0 ? (
+              <div className="text-xs text-center py-2" style={{ color: "#475569" }}>
+                No active incidents
+              </div>
+            ) : (
+              activeIncidents.map((inc) => <IncidentCard key={inc.id} inc={inc} />)
+            )}
+          </Panel>
+
+          <Panel title="Severity Legend">
+            {Object.entries(severityColors).map(([sev, color]) => (
+              <div key={sev} className="flex items-center gap-2 py-0.5">
+                <span className="w-2.5 h-2.5 rounded-sm" style={{ background: color }} />
+                <span className="text-[11px] capitalize" style={{ color: "#94a3b8" }}>
+                  {sev}
+                </span>
+              </div>
+            ))}
+          </Panel>
+
+          <Panel title="Training Scenarios">
+            <div className="text-[11px] leading-relaxed" style={{ color: "#64748b" }}>
+              Say "run mass casualty scenario" or "simulate active shooter" to test dispatch
+              operations with complex multi-incident drills.
+            </div>
+          </Panel>
+        </div>
+      </div>
+    </div>
   );
 }
 
-mountClient({
-  component: App,
-  theme: {
-    bg: "#0a0a0f",
-    primary: "#3b82f6",
-    text: "#e2e8f0",
-    surface: "#1a1a2e",
-    border: "#1e293b",
-  },
-});
+mountClient({ component: App, theme: { primary: "#3b82f6", mode: "dark" }, css: CSS });

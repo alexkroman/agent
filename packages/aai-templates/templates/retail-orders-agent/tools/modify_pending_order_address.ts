@@ -3,10 +3,10 @@ import { z } from "zod";
 import { AddressFields, planOrderAddress } from "../address.ts";
 import { stageAction } from "../pending.ts";
 import { OrderIdField } from "../resolve.ts";
-import { retailTool, setFocus } from "../store.ts";
+import { callFlow, retailSlot, setFocus } from "../store.ts";
 
-export default retailTool({
-  name: "modify_pending_order_address",
+export default retailSlot.updateTool({
+  dialog: callFlow,
   when: "serving",
   send: { type: "STAGED" },
   description:
@@ -23,5 +23,4 @@ export default retailTool({
     setFocus(state, { orderId: plan.orderId });
     return stageAction(state, { kind: "modify_pending_order_address", plan });
   },
-  summary: (_args, result) => `staged: ${result.read_back}`,
 });

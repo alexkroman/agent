@@ -29,8 +29,8 @@ import { hiringSlot } from "./shared.ts";
  */
 export default agent({
   name: "Hiring Desk",
-  description:
-    "Screens a stack of applicants against a role and drafts each of them a follow-up email",
+  listing: "Screens a stack of applicants against a role and drafts each of them a follow-up email",
+  syncState: hiringSlot.projected,
   /**
    * A ceiling on what one hiring call may spend.
    *
@@ -57,9 +57,6 @@ export default agent({
    * `mapSettled` reports per candidate rather than losing the whole fan-out.
    */
   usageLimits: { totalTokens: 750_000 },
-  // The ranking, the feedback trail and the drafts' subject lines, pushed after
-  // every tool call — a leaderboard is the one thing here nobody can hold by ear.
-  syncState: hiringSlot.projected,
   greeting:
     "Hiring desk. I've got the applicants for the Junior React Developer contract in front " +
     "of me — want me to screen them, or are you hiring for something else?",

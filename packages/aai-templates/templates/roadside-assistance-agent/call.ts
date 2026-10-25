@@ -1,5 +1,6 @@
-import type { AnyDialog, DialogTimeoutSpec, PipelineTuning } from "@alexkroman1/aai";
+import type { DialogSpec, DialogTimeoutSpec, PipelineTuning } from "@alexkroman1/aai";
 import { dialog } from "@alexkroman1/aai";
+import { roadsideSlot } from "./shared.ts";
 
 /**
  * Where a roadside call IS, as a dialog — and the one place in this template
@@ -24,9 +25,9 @@ import { dialog } from "@alexkroman1/aai";
  * | `abandoned` | nothing acts on a call whose caller is gone | `final: true` |
  *
  * All six of those reach a session only because `agent({ dialogs })` lists this
- * dialog — see {@link DIALOGS}. An undeclared dialog still gates its tools and
- * still moves on `send`; what it does not get is a clock, a session event, or a
- * knob, because every one of those happens when no tool is running.
+ * dialog. An undeclared dialog still gates its tools and still moves on `send`;
+ * what it does not get is a clock, a session event, or a knob, because every
+ * one of those happens when no tool is running.
  */
 
 // ─── The two deadlines ───────────────────────────────────────────────────────
@@ -86,11 +87,10 @@ const UNINTERRUPTIBLE: PipelineTuning["interruption"] = "off";
 /**
  * `as const` is load-bearing: the event union is synthesized from the `on` keys,
  * so widening them to `string` gives every `send` below nothing to check
- * against. It is also why this is not annotated `DialogSpec` — an annotation
- * would widen those keys to `string` and take the union with it. A spec that
- * wants the shape reads it the other way, walking the exported literal AS
- * `DialogStateSpec`; `agent.test.ts` does exactly that, which is how the knob
- * audit below reaches `abandoned` and any state added after it.
+ * against — which is why this is `satisfies DialogSpec` and not annotated. A
+ * spec that wants the shape walks the exported literal AS `DialogStateSpec`;
+ * `agent.test.ts` does exactly that, which is how the knob audit reaches
+ * `abandoned` and any state added after it.
  *
  * **The hang-up is declared ONCE, on the parent.** Being in a state is being in
  * all of them, so `@session.timedOut` on `onCall` reaches all five phases —
@@ -182,9 +182,15 @@ export const CALL_SPEC = {
       instruction:
         "The caller is gone. Do nothing further on this call — no dispatch, no lookup, no " +
         "callback promise.",
+      // The one line on the desk's log no tool can write: the move lands and
+      // the record is made in the same window.
+      onEnter: (ctx) =>
+        roadsideSlot.update(ctx, (state) => {
+          state.log.push("Caller gone — no dispatch, no lookup, no callback promised.");
+        }),
     },
   },
-} as const;
+} as const satisfies DialogSpec;
 
 /**
  * The call's position, on its own slot key beside `roadsideSlot`.
@@ -196,18 +202,6 @@ export const CALL_SPEC = {
  * is `roadsideCall.reset`, not an event.
  */
 export const roadsideCall = dialog("call", CALL_SPEC);
-
-/**
- * What `agent({ dialogs })` is handed.
- *
- * Typed as `readonly AnyDialog[]` rather than left to inference, because that
- * erasure is the reason the field can hold more than one dialog at all: two
- * dialogs have different event unions by construction, so the only type an
- * array of them has is the one with `E` erased. Writing it here is also where a
- * second dialog would be added, which is a better place to find out than the
- * `agent()` call.
- */
-export const DIALOGS: readonly AnyDialog[] = [roadsideCall];
 
 /**
  * Both rungs of the silence ladder, for the one tool that ends it.

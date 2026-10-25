@@ -1,62 +1,47 @@
 import { agent } from "@alexkroman1/aai";
-import { DISPATCH_EVENTS } from "./events.ts";
 import { DISPATCH_GUARDRAILS } from "./guardrails.ts";
-import { callFlow, dispatchSlot } from "./shared.ts";
+import { callFlow, callInHand, dispatchSlot, logEvent } from "./shared.ts";
 
 export default agent({
   name: "Dispatch Command Center",
-  description: "Runs a 911 dispatch shift: logs incidents, triages them, and assigns units",
-
-  /**
-   * Declaring the flow is what makes its instructions reach a turn that calls
-   * nothing.
-   *
-   * `callFlow` gated its six tools without this line and still would — what the
-   * declaration adds is the half no tool call can reach: the active state's
-   * `instruction` is appended to the system prompt on EVERY turn. That matters
-   * here more than the gate does, because this template moved the sequencing
-   * out of `system-prompt.md` and into the states ("confirm the severity",
-   * "never leave a critical incident without at least one unit"). A dispatcher
-   * spends most turns talking to a caller rather than calling tools, and
-   * without this those sentences reached the model only on the turns that
-   * happened to run a gated tool — which is to say, only after it had already
-   * decided what to do.
-   */
-  dialogs: [callFlow],
-  // The board exists before the first tool call, so a resumed connection has
-  // something to project rather than an empty state object.
-  // One projection replaces eleven `ctx.send("incidents", ...)` calls, and
-  // is the single place that decides caller PII stays server-side.
+  listing: "Runs a 911 dispatch shift: logs incidents, triages them, and assigns units",
   syncState: dispatchSlot.projected,
+  // The flow gates its tools whether or not it is declared here. Declaring it
+  // puts the active state's instruction in front of the model on EVERY turn —
+  // and a dispatcher spends most turns talking to a caller, not calling tools.
+  dialogs: [callFlow],
   // A dispatcher reads addresses and unit numbers in bursts with pauses inside
   // one message ("unit twelve … respond to"). The default pipeline's
   // `max_turn_silence` already tolerates that; reach for
   // `assemblyAIStt({ maxTurnSilenceMs })` only if your callers pause longer.
   greeting:
     "Dispatch Command Center online. Restoring operational state. I'm ready to take incoming calls, manage active incidents, or run dispatch operations. Say 'dashboard' for a full status report. What do we have.",
-
   /**
-   * A dropped 911 call, written on the incident it belongs to.
+   * A dropped 911 call, written on the incident in hand.
    *
-   * The pairing with `dialogs` above is the contrast worth reading: on a phone
-   * desk the same event MOVES the dialog into a terminal state, and here it
-   * moves nothing — the shift outlives the caller. See `events.ts`.
+   * The dialog deliberately does NOT move on it — a phone desk carries a
+   * hang-up into a final state, but here the caller is one input to a shift:
+   * units are rolling and the dispatcher goes on working the board. A hook
+   * observes and may not speak; with nothing open there is nothing to write.
    */
-  events: DISPATCH_EVENTS,
-
-  /**
-   * The desk's own last check on itself, and the third of the three things
-   * `agent()` can declare about a turn — the gates decide which tools are
-   * LEGAL, `events` OBSERVES what happens, and this is the only one that can
-   * stop the desk speaking.
-   *
-   * One rule, and it is the one the tool gates structurally cannot hold: never
-   * say help is coming before a unit has been assigned. See `guardrails.ts`,
-   * which also carries what the hold costs and why a desk that talks in radio
-   * traffic can afford it.
-   */
+  events: {
+    "session.timedOut": (event, ctx) => {
+      dispatchSlot.update(ctx, (state) => {
+        const incident = callInHand(state);
+        if (incident === undefined) return;
+        logEvent(
+          incident,
+          "CALLER LOST — line dropped or went silent. Units stay committed; " +
+            "attempt callback on the number on file.",
+          event.meta.at,
+        );
+      });
+    },
+  },
+  // The gates decide which tools are LEGAL and `events` observes; this is the
+  // one that can stop the desk speaking — never say help is coming before a
+  // unit has been assigned. See `guardrails.ts`.
   outputGuardrails: DISPATCH_GUARDRAILS,
-
   // The system prompt instructs the model to use web_search and run_code, so
   // they must be enabled here — the default builtin set does not include them.
   builtinTools: ["think", "remember", "recall", "calculate", "web_search", "run_code"],

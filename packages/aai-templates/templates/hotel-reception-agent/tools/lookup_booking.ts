@@ -1,8 +1,7 @@
-import { isToolFailure } from "@alexkroman1/aai";
 import { roomConflict } from "../hotel.ts";
 import { daysBetween, speakUsd, spokenDate } from "../records.ts";
 import { hotelSlot } from "../session.ts";
-import { requireVerified } from "../shared.ts";
+import { verified, verifiedBooking } from "../shared.ts";
 
 /**
  * Read-only lookup of the verified booking — their `lookup_booking`, including
@@ -14,9 +13,9 @@ export default hotelSlot.tool({
   description:
     "Read the verified caller's booking back: dates, room, guests, extras, total, card. Changes " +
     "nothing. Verify first with verify_booking.",
+  require: verified,
   execute(_args, hotel) {
-    const b = requireVerified(hotel);
-    if (isToolFailure(b)) return b;
+    const b = verifiedBooking(hotel);
     const room = hotel.rooms.find((r) => r.id === b.roomId);
     const nights = daysBetween(b.checkIn, b.checkOut);
     const conflict = roomConflict(hotel, b.code);

@@ -45,7 +45,7 @@ import {
   TODAY,
   WALK_PARTNER_HOTEL,
 } from "./records.ts";
-import { addTicket, type FrozenHotelState, type HotelState, note, takenCodes } from "./shared.ts";
+import { addTicket, type FrozenHotelState, type HotelState, takenCodes } from "./shared.ts";
 
 // ─── Rooms ───────────────────────────────────────────────────────────────────
 
@@ -243,7 +243,7 @@ export function bookRoom(state: HotelState, input: BookRoomInput): RoomBooking |
   };
   state.bookings.push(booking);
   state.invoices.push({ bookingCode: booking.code, ...priced, paid: false });
-  note(state, `Booked ${booking.code}: room ${room.id}, ${input.checkIn} → ${input.checkOut}`);
+  state.log.push(`Booked ${booking.code}: room ${room.id}, ${input.checkIn} → ${input.checkOut}`);
   return booking;
 }
 
@@ -282,7 +282,7 @@ export const updateBooking = failable(
     booking.total = priced.total;
     const invoice = state.invoices.find((i) => i.bookingCode === code);
     if (invoice) Object.assign(invoice, priced);
-    note(state, `Updated ${code}: room ${room.id}, ${input.checkIn} → ${input.checkOut}`);
+    state.log.push(`Updated ${code}: room ${room.id}, ${input.checkIn} → ${input.checkOut}`);
     return booking;
   },
 );
@@ -291,7 +291,7 @@ export const updateBooking = failable(
 export const cancelBooking = failable((state: HotelState, code: string): RoomBooking => {
   const booking = orFail(requireConfirmedBooking(state, code));
   booking.status = "cancelled";
-  note(state, `Cancelled ${code}`);
+  state.log.push(`Cancelled ${code}`);
   return booking;
 });
 
@@ -307,7 +307,7 @@ export function reinstateBooking(state: HotelState, code: string): RoomBooking |
     return toolFailure("that room is no longer free for those dates");
   }
   booking.status = "confirmed";
-  note(state, `Reinstated ${code}`);
+  state.log.push(`Reinstated ${code}`);
   return booking;
 }
 
@@ -370,7 +370,7 @@ export const resolveRoomConflict = failable(
 
     if (candidate !== undefined) {
       booking.roomId = candidate.id;
-      note(state, `Conflict on ${code}: moved to ${candidate.id}`);
+      state.log.push(`Conflict on ${code}: moved to ${candidate.id}`);
       return {
         kind: "moved",
         roomId: candidate.id,

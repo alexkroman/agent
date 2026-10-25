@@ -1,13 +1,11 @@
-import { isToolFailure, type ToolContext } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai";
 import { formatMoney } from "@alexkroman1/aai/utils";
 import {
   createToolContext,
-  expectDialogOk,
   expectDialogRefused,
   expectToolOk,
 } from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
-import { z } from "zod";
 import {
   authenticatedUser,
   BEFORE_TRANSFER,
@@ -21,9 +19,10 @@ import {
   findVariant,
   isGiftCard,
   money,
+  record,
   requireOwnOrder,
   retailSlot,
-  retailTool,
+  summarize,
 } from "./store.ts";
 
 describe("session state", () => {
@@ -172,134 +171,55 @@ describe("ownership and authentication guards", () => {
   });
 });
 
-describe("retailTool", () => {
-  const echo = retailTool({
-    name: "echo",
-    description: "test tool",
-    inputSchema: z.object({ value: z.string() }),
-    when: BEFORE_TRANSFER,
-    summary: (args) => `echoed ${args.value}`,
-    execute: (args) => ({ echoed: args.value }),
-  });
-
-  const gated = retailTool({
-    name: "gated",
-    description: "test tool needing an identified customer",
-    inputSchema: z.object({}),
-    when: "serving",
-    summary: () => "ran",
-    execute: () => ({ ok: true }),
-  });
-
-  const failing = retailTool({
-    name: "failing",
-    description: "test tool that returns an error",
-    inputSchema: z.object({}),
-    when: BEFORE_TRANSFER,
-    summary: () => "should not be used",
-    execute: () => ({ error: "nope" }),
-  });
-
-  /** Put the call where a `when: "serving"` tool can run, through the flow
-   *  rather than by writing the store — the gate reads the machine. */
-  const serve = (ctx: ToolContext) => callFlow.send(ctx, { type: "IDENTIFIED" });
-
-  test("increments callSeq and logs activity on every call", async () => {
+describe("the activity feed", () => {
+  test("record bumps callSeq and opens a line the completed hook can find", () => {
     const ctx = createToolContext();
-    await echo.execute({ value: "a" }, ctx);
-    await echo.execute({ value: "b" }, ctx);
+    retailSlot.update(ctx, (state) => {
+      record(state, "get_order_details", 5, "call_1");
+      record(state, "get_order_details", 6, "call_2");
+    });
     const state = retailSlot.get(ctx);
     expect(state.callSeq).toBe(2);
-    expect(state.activity.map((a) => a.summary)).toEqual(["echoed a", "echoed b"]);
-    expect(state.activity.map((a) => a.tool)).toEqual(["echo", "echo"]);
+    expect(state.activity.map((line) => [line.callId, line.summary])).toEqual([
+      ["call_1", "running"],
+      ["call_2", "running"],
+    ]);
   });
 
-  test("a repeated identical call still changes the projection", async () => {
-    const ctx = createToolContext();
-    await echo.execute({ value: "same" }, ctx);
-    const first = retailSlot.get(ctx).callSeq;
-    await echo.execute({ value: "same" }, ctx);
-    expect(retailSlot.get(ctx).callSeq).toBeGreaterThan(first);
+  test("summarize reads the line off what the model was handed", () => {
+    expect(summarize(JSON.stringify({ error: "nope" }))).toBe("error: nope");
+    expect(
+      summarize(
+        JSON.stringify({
+          state: "serving.awaitingConfirmation",
+          done: false,
+          result: { read_back: "cancel #W1" },
+        }),
+      ),
+    ).toBe("staged: cancel #W1");
+    expect(
+      summarize(
+        JSON.stringify({
+          state: "serving.helping",
+          done: false,
+          result: { confirmed: "cancel_pending_order" },
+        }),
+      ),
+    ).toBe("confirmed cancel_pending_order");
+    expect(summarize(JSON.stringify({ result: { dropped: null } }))).toBe("dropped nothing");
+    expect(summarize(JSON.stringify({ result: { order_id: "#W1" } }))).toBe("done");
+    expect(summarize("not json")).toBe("done");
   });
 
-  test("a tool gated on serving refuses while the caller is unidentified", async () => {
+  test("activity is capped so a long call cannot grow the payload", () => {
     const ctx = createToolContext();
-    // The refusal is the SDK's, so it names the position and quotes the
-    // state's own instruction — where `requiresAuth` answered one fixed
-    // sentence that could not say where the call was. `expectDialogRefused`
-    // matches that sentence from the SDK's own template rather than from a
-    // `'"identifying"'` substring spelled here, so rewording the model-facing
-    // half of the gate cannot break this spec without breaking the gate.
-    const refusal = expectDialogRefused(await gated.execute({}, ctx), "identifying");
-    expect(refusal.error).toMatch(/user id/);
-  });
-
-  test("a refused call touches nothing, callSeq included", async () => {
-    const ctx = createToolContext();
-    await gated.execute({}, ctx);
-    const state = retailSlot.get(ctx);
-    // The gate short-circuits before the wrapper's body, so the EXECUTION path
-    // writes nothing at all — which is what makes a refusal unable to half-write
-    // the store. The sidebar line for a blocked call comes from `agent.ts`'s
-    // `tool.called` hook instead, which is a different path and not under test
-    // here: see `registry.test.ts`.
-    expect(state.callSeq).toBe(0);
-    expect(state.activity).toEqual([]);
-  });
-
-  test("runs once the flow says serving", async () => {
-    const ctx = createToolContext();
-    serve(ctx);
-    expect(expectToolOk(await gated.execute({}, ctx))).toEqual({ ok: true });
-  });
-
-  test("the result carries the position the call landed in", async () => {
-    const ctx = createToolContext();
-    serve(ctx);
-    // `expectDialogOk` rather than a cast to `{ instruction?: string }`: it keeps
-    // the envelope this test is about, and a refusal fails here naming what the
-    // flow said instead of reading `undefined` off a field nobody assigned.
-    const answered = expectDialogOk<{ ok: boolean }>(await gated.execute({}, ctx));
-    expect(answered).toMatchObject({ state: "serving.helping", done: false });
-    expect(answered.instruction).toMatch(/one identified customer/);
-  });
-
-  test("an error result is logged as an error, not through summary()", async () => {
-    const ctx = createToolContext();
-    await failing.execute({}, ctx);
-    expect(retailSlot.get(ctx).activity[0]?.summary).toBe("error: nope");
-  });
-
-  test("a body that failed does not move the call", async () => {
-    const ctx = createToolContext();
-    const moves = retailTool({
-      name: "moves",
-      description: "test tool that would identify the caller and fails instead",
-      inputSchema: z.object({}),
-      when: BEFORE_TRANSFER,
-      send: { type: "IDENTIFIED" },
-      summary: () => "moved",
-      execute: () => ({ error: "no such customer" }),
+    retailSlot.update(ctx, (state) => {
+      for (let i = 0; i < 15; i++) record(state, "echo", i, `call_${i}`);
     });
-    expect(isToolFailure(await moves.execute({}, ctx))).toBe(true);
-    expect(callFlow.position(ctx).state).toBe("identifying");
-  });
-
-  test("activity is capped so a long call cannot grow the payload", async () => {
-    const ctx = createToolContext();
-    for (let i = 0; i < 15; i++) await echo.execute({ value: String(i) }, ctx);
     const state = retailSlot.get(ctx);
     expect(state.callSeq).toBe(15);
     expect(state.activity).toHaveLength(10);
-    expect(state.activity[0]?.summary).toBe("echoed 5");
-  });
-
-  test("concurrent calls serialize — no lost increments", async () => {
-    const ctx = createToolContext();
-    await Promise.all(Array.from({ length: 8 }, (_, i) => echo.execute({ value: String(i) }, ctx)));
-    const state = retailSlot.get(ctx);
-    expect(state.callSeq).toBe(8);
-    expect(new Set(state.activity.map((a) => a.seq)).size).toBe(state.activity.length);
+    expect(state.activity[0]?.callId).toBe("call_5");
   });
 });
 
@@ -312,12 +232,10 @@ describe("the call flow", () => {
 
   test("transferred is final, so every tool refuses after the handoff", async () => {
     const ctx = createToolContext();
-    const anywhere = retailTool({
-      name: "anywhere",
+    const anywhere = retailSlot.updateTool({
       description: "legal in every state but the terminal one",
-      inputSchema: z.object({}),
+      dialog: callFlow,
       when: BEFORE_TRANSFER,
-      summary: () => "ran",
       execute: () => ({ ok: true }),
     });
     expect(expectToolOk(await anywhere.execute({}, ctx))).toEqual({ ok: true });

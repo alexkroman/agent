@@ -1,7 +1,7 @@
 import type { TelephonyAccess } from "@alexkroman1/aai";
 import { agent } from "@alexkroman1/aai";
-import { DIALOGS } from "./call.ts";
-import { DESK_EVENTS } from "./events.ts";
+import { roadsideCall } from "./call.ts";
+import { roadsideSlot } from "./shared.ts";
 
 /**
  * Who may put a call on this agent.
@@ -11,13 +11,8 @@ import { DESK_EVENTS } from "./events.ts";
  * `WS /phone` is not served at all unless an agent asks for it. `true` would
  * admit every carrier the runtime ships a codec for; the list is the honest
  * shape for a desk whose numbers are with known carriers, and it is an
- * ALLOW-LIST — adding a third carrier's number without adding it here is a
- * refused upgrade rather than a call that half works.
- *
- * Typed {@link TelephonyAccess} because the field takes a boolean OR a list and
- * the annotation is what says which of the two this is. What it is NOT is a
- * claim about credentials: a carrier does not sign the WebSocket upgrade, and
- * its webhook signature is checked where the webhook lands.
+ * ALLOW-LIST. It is not a claim about credentials: a carrier's webhook
+ * signature is checked where the webhook lands.
  */
 const PHONE_LINE: TelephonyAccess = ["twilio", "telnyx"];
 
@@ -26,63 +21,36 @@ const PHONE_LINE: TelephonyAccess = ["twilio", "telnyx"];
  * fee, send a truck.
  *
  * It exists to be the worked example of a `dialog()` describing a CALL rather
- * than a form. Every other flow template gates tools and moves on tool results;
- * this one also needs the things that only happen when no tool is running — a
- * caller who has gone quiet, a phase that must not be interrupted, a
- * verification step that has to give up on its own — and all of those arrive
- * through the one field below.
- *
- * Read `call.ts` first: it is the whole template. `shared.ts` is the rate card,
- * the fleet and the session slot, and it is deliberately boring. Two smaller
- * files carry what is NOT a fact about one call: `yard.ts` is the depot's own
- * board, which every session shares and which a keyed lock is what keeps
- * honest, and `events.ts` is the desk's log of the two outcomes no tool sees.
+ * than a form — a caller who has gone quiet, a phase that must not be
+ * interrupted, a verification step that has to give up on its own. Read
+ * `call.ts` first: it is the whole template. `shared.ts` is the rate card, the
+ * fleet and the session slot; `yard.ts` is the depot's own board, which every
+ * session shares and which a keyed lock keeps honest.
  */
 export default agent({
   name: "Roadside Assist",
-  // What this line does, for whoever is picking an agent out of a list. Written
-  // in the order the call goes in, because that order is the template — see
-  // `call.ts`.
-  description: "Verifies roadside coverage, reads the service fee and dispatches a tow truck",
-
-  // No provider spread: pipeline mode is the default and every stage is filled
-  // from the all-AssemblyAI pipeline at parse time.
-
+  listing: "Verifies roadside coverage, reads the service fee and dispatches a tow truck",
   /**
-   * **This is what wires the dialog to the session, and it is not a
-   * formality.** Without this line `roadsideCall` still gates its tools and
-   * still moves on `send` — and none of the five things this template is about
-   * would happen: `@session.timedOut` and `@userTranscript.committed` would
-   * reach nothing, the two `timeout` deadlines would never be armed, the active
-   * state's `instruction` would reach the model only on turns that happened to
-   * call a tool, and `interruption` and `toolChoice` would be declarations nothing
-   * read.
-   *
-   * The two knobs are a PIPELINE property. On either speech-to-speech
-   * transport the service owns turn-taking and assembles its own requests, so
-   * the runtime warns rather than pretending; the instruction, the deadlines
-   * and the session events work on every transport.
+   * What wires the dialog to the session. Without this line `roadsideCall`
+   * still gates its tools and still moves on `send` — and none of the things
+   * this template is about would happen: the session events would reach
+   * nothing, the two deadlines would never be armed, the active state's
+   * instruction would reach the model only on turns that called a tool, and
+   * `interruption`/`toolChoice` would be declarations nothing read (the two
+   * knobs are a PIPELINE property; a speech-to-speech transport warns).
    */
-  dialogs: DIALOGS,
-
+  dialogs: [roadsideCall],
   telephony: PHONE_LINE,
-
-  /**
-   * The desk's own record of what happened, for the two outcomes no tool sees.
-   *
-   * The pairing with `dialogs` above is the point: `@session.timedOut` MOVES
-   * the dialog to `abandoned`, and this WRITES the line saying so. A handler
-   * cannot change what the agent does — that is what keeps the event stream a
-   * log rather than a second control path — and a transition writes nothing to
-   * the slot, so a call that ends badly needs both. See `events.ts`.
-   */
-  events: DESK_EVENTS,
-
-  // No `syncState` and no `client.tsx`: what a caller of this line can see is
-  // the phone. The state worth rendering would be the POSITION rather than the
-  // slot, and `roadsideCall.projection((at) => at)` is how a custom chrome
-  // would take it — see `emergency-dispatch-agent` for a template that does.
-
+  // The one outcome no tool sees and the dialog does not move on: the line
+  // itself failing. Not always fatal, so the line says which it was.
+  events: {
+    "error.reported": (event, ctx) =>
+      roadsideSlot.update(ctx, (state) => {
+        const how = event.fatal ? "call dropped" : "recovered";
+        state.log.push(`Line trouble (${event.code}, ${how}): ${event.message}`);
+      }),
+  },
+  // No `client.tsx`: what a caller of this line can see is the phone.
   greeting:
     "Roadside assistance, you've reached the dispatch desk. First things first — are you " +
     "somewhere safe, out of traffic? And whereabouts are you?",

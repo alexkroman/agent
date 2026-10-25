@@ -267,7 +267,7 @@ the rationale.
 
 Everything a dialog does when no tool is running — session events, deadlines,
 the active `instruction` on every turn, per-state `interruption`/`toolChoice`/
-`temperature` — requires `agent({ dialogs: DIALOGS })`; without it the dialog
+`temperature` — requires `agent({ dialogs: [callFlow] })`; without it the dialog
 still gates and moves on `send`. `packages/aai-runtime/DIALOG-CLAUDE.md` owns
 the wiring; `roadside-assistance-agent` is the example.
 

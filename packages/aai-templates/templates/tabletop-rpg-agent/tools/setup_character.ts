@@ -1,4 +1,4 @@
-import { randomInt, tool } from "@alexkroman1/aai";
+import { randomInt } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
   ARCHETYPES,
@@ -20,21 +20,18 @@ import {
 } from "../shared.ts";
 
 /**
- * **Not a `storyFlow.tool`, deliberately.** Setting up is legal in every state —
- * a player may start over at any point, an ended story included — so a `when`
- * listing all of them would be a gate that gates nothing. It drives the flow
- * itself, which is what `dialog.reset` and `dialog.send` are public for, and reports
- * the position it landed in so the narrator reads what the opening turn expects.
- *
- * **`reset` before `send`, because a restart is not a transition.** This body
- * replaces the campaign with a pristine `DEFAULT_STATE`; resetting the flow is
- * the same statement on the other side, and it is what makes starting over work
- * from `gameOver` — a final state delivers no events, so a `SETUP` transition
- * out of it would be dead config.
+ * Legal in every state — a player may start over at any point, an ended story
+ * included — so no `when`. `reset: true` restarts the flow before the body
+ * runs (a `final` state delivers no events, so a `SETUP` transition out of
+ * `gameOver` would be dead config), and `SETUP` opens play in the same call
+ * that gives the roll tools stats to roll against.
  */
-export default tool({
+export default gameSlot.updateTool({
   description:
     "Set up the entire game in one call. Starts a completely fresh game (any previous unsaved game is replaced), generates stats, initializes state, and marks the game as ready. After this returns, just narrate the opening scene. No need to call update_state — everything is already done.",
+  dialog: storyFlow,
+  reset: true,
+  send: { type: "SETUP" },
   inputSchema: z.object({
     genre: z.string().max(100).describe("Chosen genre code or custom description"),
     tone: z.string().max(100).describe("Chosen tone code or custom description"),
@@ -67,12 +64,11 @@ export default tool({
     contentLines: z.string().max(1000).optional(),
     kidMode: z.boolean().optional(),
   }),
-  async execute(args, ctx) {
-    // Always start from a pristine state — re-running setup begins a new
-    // story instead of layering NPCs/clocks onto a stale one.
-    const state = structuredClone(DEFAULT_STATE);
+  execute(args, state, ctx) {
+    // Always start from a pristine campaign — re-running setup begins a new
+    // story instead of layering NPCs and clocks onto a stale one.
+    Object.assign(state, structuredClone(DEFAULT_STATE));
 
-    // Store creation choices
     state.settingGenre = args.genre;
     state.settingTone = args.tone;
     state.settingArchetype = args.archetype;
@@ -84,7 +80,7 @@ export default tool({
     state.contentLines = args.contentLines ?? "";
     state.kidMode = args.kidMode ?? false;
 
-    // Generate stats: one at 3, two at 2, two at 1 (total = 7)
+    // Stats: one at 3, two at 2, two at 1, with the archetype's stat at 3.
     const statValues = shuffle([3, 2, 2, 1, 1], ctx.random);
     const archetypeBias: Record<string, number> = {
       outsider_loner: 0,
@@ -108,12 +104,10 @@ export default tool({
     state.shadow = statValues[3]!;
     state.wits = statValues[4]!;
 
-    // Set location, time
     state.currentLocation = args.startingLocation;
     state.currentSceneContext = args.locationDesc;
     state.timeOfDay = args.timeOfDay;
 
-    // Add initial NPC
     state.npcs.push(
       makeNpc({
         id: "npc_1",
@@ -123,8 +117,6 @@ export default tool({
         agenda: args.npc1Agenda,
       }),
     );
-
-    // Add threat clock
     state.clocks.push({
       id: "clock_1",
       name: args.threatClockName,
@@ -134,7 +126,6 @@ export default tool({
       triggerDescription: args.threatClockDesc,
     });
 
-    // Story blueprint
     const structure = chooseStoryStructure(args.tone, ctx.random);
     state.storyBlueprint = {
       structureType: structure,
@@ -200,16 +191,9 @@ export default tool({
       storyComplete: false,
     };
 
-    // Mark initialized. `initialized` is the CLIENT's render flag; the flow is
-    // what gates the tools, and `SETUP` is what puts it in `playing` — so the
-    // roll tools become available in the same call that gives them stats to
-    // roll against.
+    // `initialized` is the CLIENT's render flag; the flow is what gates the tools.
     state.initialized = true;
     state.sceneCount = 1;
-
-    gameSlot.set(ctx, state);
-    storyFlow.reset(ctx);
-    const at = storyFlow.send(ctx, { type: "SETUP" });
 
     return {
       success: true,
@@ -219,10 +203,8 @@ export default tool({
       archetypeLabel: ARCHETYPES[args.archetype as keyof typeof ARCHETYPES] || args.archetype,
       openingSituation: args.openingSituation,
       creativitySeed: creativitySeed(3, ctx.random),
-      // The position spread verbatim — the same keys every gated tool reports.
-      ...at,
-      // The real saved state — never hardcoded values
-      ...stateSummary(state),
     };
   },
+  // The real saved state, never hardcoded values.
+  report: (stored, partial) => ({ ...partial, ...stateSummary(stored) }),
 });

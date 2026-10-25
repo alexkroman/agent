@@ -1,16 +1,14 @@
 import { agent } from "@alexkroman1/aai";
-import { DIALOGS } from "./desk.ts";
-import { DESK_EVENTS } from "./events.ts";
+import { deskFlow } from "./desk.ts";
 import { PRICING, spokenDate, TODAY, usd } from "./records.ts";
 import { hotelSlot } from "./session.ts";
-import systemPrompt from "./system-prompt.md?raw";
 
 /**
  * A boutique hotel's front desk, on the phone — LiveKit Agents'
  * `hotel_receptionist` example as a voice agent. `shared.ts` carries the
  * attribution and the their-name → our-name table; `session.ts` holds the slot
  * and the seeded factory, kept out of the browser's reach; `desk.ts` is the
- * booking flow and the reason this template needs `dialogs`.
+ * booking flow and the hang-up.
  *
  * Forty-one tools, and the interesting property is how few of them the model
  * can call WRONG: every booking tool refuses until `verify_booking` has filled
@@ -21,10 +19,8 @@ import systemPrompt from "./system-prompt.md?raw";
  */
 export default agent({
   name: "The Harborlight Hotel",
-  description:
+  listing:
     "Takes a hotel front desk's calls: room bookings, restaurant tables, folios and concierge requests",
-  // The receptionist's own screen: who is verified, what is being booked, and
-  // the ledger of everything this call wrote — their SQLite changeset stream.
   syncState: hotelSlot.projected,
   /**
    * Wires `@userTranscript.committed` and `@session.timedOut` to the desk
@@ -32,18 +28,11 @@ export default agent({
    * make the model SPEAK before the next tool is legal — could never be left,
    * and a caller who hung up mid-booking would leave the flow open.
    */
-  dialogs: DIALOGS,
-  /**
-   * The other half of the hang-up, and the pairing is the point: the dialog
-   * above MOVES to `hungUp` so nothing more is said, and this WRITES the
-   * `abandoned_booking` followup a dropped booking leaves behind. A transition
-   * stores nothing and a handler cannot speak, so a call that ends badly needs
-   * both. See `events.ts`.
-   */
-  events: DESK_EVENTS,
-  // The prose is the document; the numbers are the price list, rendered from
-  // `PRICING` so the receptionist can never quote a fee the tools don't charge.
-  systemPrompt: `${systemPrompt}\n${quickFacts()}`,
+  dialogs: [deskFlow],
+  // The prose is `system-prompt.md`; the numbers are the price list, rendered
+  // from `PRICING` so the receptionist can never quote a fee the tools don't
+  // charge.
+  promptContext: quickFacts(),
   greeting: "The Harborlight Hotel, front desk. What can I do for you?",
 });
 

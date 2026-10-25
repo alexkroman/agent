@@ -1,9 +1,9 @@
 import { z } from "zod";
 import { authenticateAs } from "../authenticate.ts";
-import { BEFORE_TRANSFER, retailTool } from "../store.ts";
+import { BEFORE_TRANSFER, callFlow, retailSlot } from "../store.ts";
 
-export default retailTool({
-  name: "find_user_id_by_email",
+export default retailSlot.updateTool({
+  dialog: callFlow,
   description:
     "Find a customer's user id by their email address. This is how you authenticate the caller — " +
     "do it before anything else, even if they volunteer their user id. Prefer this over " +
@@ -27,5 +27,4 @@ export default retailTool({
     }
     return authenticateAs(state, match);
   },
-  summary: (_args, result) => `identified ${result.user_id}`,
 });

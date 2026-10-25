@@ -31,6 +31,7 @@ import {
   dialog,
   type ResolveOneOptions,
   resolveOne,
+  type SlotValueOf,
   sessionSlot,
   type ToolContext,
   type ToolFailure,
@@ -249,14 +250,8 @@ export const hiringFlow = dialog("hiringFlow", hiringSpec);
 
 /**
  * The flow's alphabet — the events its tools send, which is the whole of what
- * can move this conversation.
- *
- * Named once because the two of them are sent two different ways, and reading
- * the same event in both spellings is what makes the pair legible: a
- * `hiringFlow.tool` declares `send: SCORED` and lets the dialog move it after a
- * successful body, while `screen_candidates` — an ordinary `tool()`, because
- * `SCORED` is legal in every state — calls `hiringFlow.send(ctx, SCORED)`
- * itself.
+ * can move this conversation. Each `hiringFlow.tool` declares one as its
+ * `send`, and the dialog moves after a successful body.
  */
 export type HiringEvent = DialogEvent<typeof hiringSpec>;
 
@@ -274,14 +269,8 @@ export function stageLabel(at: DialogPosition): string {
 
 // ─── Reads ───────────────────────────────────────────────────────────────────
 
-/**
- * The state as a READ hands it out: deep-frozen, and typed to say so.
- *
- * Every helper below takes this rather than {@link HiringState}: a mutable
- * value still satisfies it, so an `update` draft passes unchanged, while a
- * helper that WOULD have mutated stops compiling.
- */
-export type FrozenHiringState = DeepReadonly<HiringState>;
+/** The state as a read hands it out — what every helper below takes. */
+export type FrozenHiringState = SlotValueOf<typeof hiringSlot>;
 
 /** Their `ScoredCandidate` — the roster joined onto the score table, plus the
  *  position the join gives it, which is what a caller refers to ("the second
@@ -401,7 +390,7 @@ export interface HiringView {
 }
 
 /** What the browser sees: the ranking, the feedback trail, the drafts' subjects. */
-export function hiringView(state: FrozenHiringState): HiringView {
+export function hiringView(state: DeepReadonly<HiringState>): HiringView {
   const shortlisted = new Set(state.shortlist);
   const nameOf = new Map(state.candidates.map((candidate) => [candidate.id, candidate.name]));
   return {
@@ -435,7 +424,7 @@ export function hiringView(state: FrozenHiringState): HiringView {
  * Twelve model calls is a real wait — the desk is told to say so before it
  * calls the tool — and the leaderboard has nothing to show through it: that
  * table is written once, at the end, deliberately (see
- * `tools/screen_candidates.ts`, "the await comes first, then the mutation").
+ * `tools/screen_candidates.ts`: the fan-out is `prepare`, the table is `commit`).
  * Progress is the case for the OTHER mechanism a tool has for telling a page
  * something: re-rendering "scoring seven of twelve" after a reload would be a
  * lie, so it is a moment (`ctx.send` → `useEvent`) rather than state in the
