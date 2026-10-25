@@ -354,16 +354,27 @@ and replayed. Declare `uploads: [...]` and read windows with `stepReadUpload`.
 
 ### Transcribing an upload from a body is one call, and a poll is `ctx.poll`
 
-`transcribeUploadDurably(ctx, uploadId, opts)` (`@alexkroman1/aai/step`) is
-upload, submit and poll as three journaled steps under fixed names
-(`TRANSCRIBE_DURABLY_STEPS`), each classified, with the "not lost,
-`GET /v2/transcript/<id>`" refusal on budget expiry — a template writes no loop
-and no `MAX_POLLS` of its own. Any other submit-then-check shape is
+The async leg (upload, submit, poll on a durable sleep) is
+`transcribeUploadDurably(ctx, uploadId)` (`@alexkroman1/aai/step`): it journals
+`TRANSCRIBE_DURABLY_STEPS` as three steps of the body's own `ctx`, so a resumed
+run replays the upload and the submit and polls the same job (`batch.ts`,
+`spoken-summary-workflow`). Where the body owns the poll — a batch of jobs
+(`podcast-digest-workflow`) or the sync endpoint — use
+`stepTranscribeUpload`/`Submit`/`Poll` and `stepTranscribeSync` wrapped in
+`orFail` (`orFail(stepTranscribeSubmit)`, which turns `TranscribeError`'s
+`retryable`/`retryAfter` into the engine's verdict), and keep upload and submit
+as separate steps so a submit retry does not re-upload the file.
+
+- `stepTranscribePoll` returns the transcript; do not fetch it again.
+- `stepTranscribeUpload` resolves `{ audioUrl, source, size }`; report the
+  `source` (the upload's `label`), never the id.
+- `meeting-recap-agent` keeps its hand-written poll on purpose (its status is a
+  value its Query port and saga read); do not convert it.
+
+Any other submit-then-check shape is
 `ctx.poll(name, check, { everyMs, maxMs, done, first, slowAfterMs })`, never a
 hand-rolled `for (poll < MAX)` with a `ctx.sleep` inside; narration between
-steps is `ctx.report`. The primitives (`stepTranscribeUpload`/`Submit`/`Poll`,
-`stepTranscribeSync`) stay for a shape the composition does not fit —
-`transcription-workflow`'s sync fan-out — wrapped in `orFail`.
+steps is `ctx.report`.
 
 ### A run can be the SCHEDULE
 

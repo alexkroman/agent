@@ -48,6 +48,7 @@
 // exercised. `run.slept` below is the other half of that admission written as
 // an assertion. `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier that
 // really suspends and resumes a run.
+import { TRANSCRIBE_DURABLY_STEPS, TRANSCRIBE_POLL_EVERY_MS } from "@alexkroman1/aai/step";
 import {
   describeWorkflowEval,
   installStubSpeech,
@@ -57,7 +58,6 @@ import {
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { assert, expect } from "vitest";
 import agentDef, { spokenSummary } from "./agent.ts";
-import { POLL_INTERVAL_MS } from "./workflows/transcribe.ts";
 
 /** The id every case uploads the recording under. */
 const UPLOAD_ID = "upl_eval";
@@ -196,9 +196,9 @@ describeWorkflowEval(
       expect(output.points).toHaveLength(3);
       expect(speech.calls).toHaveLength(1);
 
-      // Four legs, four narrated lines, in order — which is what a page watching
-      // the run renders.
-      expect(run.reported[0]).toMatch(/^Uploading standup\.wav /);
+      // Three narrated lines, in order — which is what a page watching the
+      // run renders.
+      expect(run.reported[0]).toMatch(/^Transcribed standup\.wav: /);
       expect(run.reported).toContain("Summarizing the transcript.");
       expect(run.reported.at(-1)).toMatch(/^Recorded a 2s summary with voice [\w-]+\.$/);
       // The job finished on its first poll, so no durable wait was asked for.
@@ -232,11 +232,12 @@ describeWorkflowEval(
       expect(run.output?.points).toEqual(REPLY.points);
       expect(run.output?.spoken).toBe(REPLY.spoken);
 
-      // And the model was ASKED for both, over the transcript it was given. A
-      // prompt that stopped asking for a script is how the field goes missing.
+      // And the model was ASKED for both, over the transcript it was given: the
+      // schema the SDK appends to the system prompt is where the script is
+      // asked for, and a field dropped from it is how the field goes missing.
       const asked = model.calls[0];
       assert(asked !== undefined, "the run must have asked the model for a summary");
-      expect(asked.prompt).toContain("READ ALOUD");
+      expect(asked.system).toContain("READ ALOUD");
       expect(asked.prompt).toContain("The launch is on for Tuesday the fourth");
     });
 
@@ -281,8 +282,8 @@ describeWorkflowEval(
       // Two waits for three polls: asked for and — this being an eval rather
       // than a deployment — recorded rather than taken.
       expect(run.slept).toEqual([
-        { label: "poll", duration: POLL_INTERVAL_MS },
-        { label: "poll", duration: POLL_INTERVAL_MS },
+        { label: TRANSCRIBE_DURABLY_STEPS.poll, duration: TRANSCRIBE_POLL_EVERY_MS },
+        { label: TRANSCRIBE_DURABLY_STEPS.poll, duration: TRANSCRIBE_POLL_EVERY_MS },
       ]);
       expect(provider.calls.filter((call) => call.leg === "poll")).toHaveLength(3);
       // The expensive half happened ONCE, which is the whole reason the upload

@@ -112,17 +112,30 @@ gate short of a real build was green while every deployed run failed. When a
 rule depends on how a project's dependencies were INSTALLED, the in-tree run is
 not evidence.
 
-### A body names `WorkflowInputOf<typeof theDef>` through the two-phase def
+### A body names `WorkflowInputOf<typeof theInputSchema>`, never the def
 
-A workflow body takes `WorkflowInputOf<typeof theDef>` — `WorkflowBody` is
+A workflow body should take the schema's own output type — `WorkflowBody` is
 contravariant, so a body restating a WIDER shape is assignable and nothing
 warns, which is how `podcast-digest-workflow` came to re-implement six schema
-`.default()`s with `??`. The single-phase `workflow({ input, run })` cannot be
-named from its own body (`workflow<P, R>()` infers `R` from `run`, so
-`typeof theDef` needs the body's signature and vice versa — `TS7022`), so a
-template declares in two phases,
-`workflow({ description, input, output }).body(auditFlow)`, which fixes
-`typeof audit` from the declaration alone (`WorkflowDeclaration`,
-`packages/aai/src/sdk/workflow.ts`); the schema itself also reads, as
-`WorkflowInputOf<typeof auditInput>`. Declare `output`, or the completed run's
-result is `unknown`.
+`.default()`s with `??`. But **`WorkflowInputOf<typeof theDef>` does not
+compile**: `workflow()` infers the output from `run`, so `typeof theDef` needs
+the body's signature and vice versa — `TS7022` against `agent.ts`, plus
+`TS2456`/`TS2502` at the body — and annotating the def (`WorkflowDef<…>`) only
+buys it back by NAMING the output type by hand.
+
+`WorkflowInputOf` accepts the schema directly, so name the schema const and
+point the body at THAT:
+
+```ts
+// agent.ts
+export const auditInput = z.object({ /* … */ });
+export const audit = workflow({ input: auditInput, run: auditFlow });
+
+// workflows/audit.ts
+import type { auditInput } from "../agent.ts"; // erased at build: no runtime cycle
+export async function auditFlow(input: WorkflowInputOf<typeof auditInput>, ctx: WorkflowContext) { … }
+```
+
+The def stays unannotated, so `WorkflowOutputOf<typeof audit>` is still the
+body's inferred return — nothing is restated on either side. Every workflow-app
+template is in this form.

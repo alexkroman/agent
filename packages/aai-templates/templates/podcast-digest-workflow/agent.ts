@@ -28,24 +28,19 @@
  *
  * `ASSEMBLYAI_API_KEY` in the agent env — `.env` under `aai dev`, `aai secret
  * put ASSEMBLYAI_API_KEY` once deployed — because the run really transcribes
- * the episodes and really summarizes them. `requiredEnv` is what makes a deploy
- * check for it rather than letting the first run find out, and it is
- * load-bearing here in a way it is not for a voice agent: a workflow app
- * declares no providers, so nothing else in its config names a credential.
- *
- * A step is handed no `ToolContext`, so it reads that key with `requireStepEnv`
- * rather than `ctx.env` — which the SDK's transcription and model helpers do
- * for you, and which is why nothing in `workflows/` mentions the key by name.
+ * the episodes and really summarizes them. It is `workflowApp()`'s default
+ * `requiredEnv`, so a deploy checks for it; the SDK's transcription and model
+ * helpers read it for you, which is why nothing in `workflows/` names it.
  *
  * The Slack webhook is the other credential and is deliberately NOT env: it is
  * per-run input, so one deployed agent can post to whichever channel each run
  * names.
  */
 
-import { type WorkflowDef, workflow, workflowApp } from "@alexkroman1/aai";
+import { workflow, workflowApp } from "@alexkroman1/aai";
 import { isSlackWebhookUrl } from "@alexkroman1/aai/channels";
 import { z } from "zod";
-import { type DailyDigestOutput, dailyDigestFlow } from "./workflows/digest.ts";
+import { dailyDigestFlow } from "./workflows/digest.ts";
 
 /** Somebody pastes a list; anything not http(s) is a typo worth catching here. */
 function isHttpUrl(value: string): boolean {
@@ -69,9 +64,11 @@ function isHttpUrl(value: string): boolean {
  *
  * Every field carries `.describe()` for that second reason, and every optional
  * one carries `.default()` so the page and the body agree on the fallback
- * instead of each picking its own.
+ * instead of each picking its own. Exported so the body can take
+ * `WorkflowInputOf<typeof digestInput>` — the schema's OUTPUT, with every
+ * default already applied.
  */
-const digestInput = z.object({
+export const digestInput = z.object({
   podcastChannels: z
     .string()
     .trim()
@@ -121,7 +118,7 @@ const digestInput = z.object({
     .describe("How many digests to post before the run completes"),
 });
 
-export const dailyDigest: WorkflowDef<typeof digestInput, DailyDigestOutput> = workflow({
+export const dailyDigest = workflow({
   description:
     "Watch podcast feeds, transcribe new episodes with AssemblyAI, summarize them, " +
     "and post a digest to Slack on a repeating schedule",
@@ -137,7 +134,4 @@ export default workflowApp({
   description: "Posts a recurring digest of new podcast episodes to Slack",
   // The whole product. A workflow app is an agent whose work happens here.
   workflows: { dailyDigest },
-  // Checked at deploy time. A workflow app declares no providers, so this is
-  // the only thing that can name the credential its steps read.
-  requiredEnv: ["ASSEMBLYAI_API_KEY"],
 });

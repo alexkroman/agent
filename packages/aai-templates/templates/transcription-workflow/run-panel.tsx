@@ -9,8 +9,9 @@
  * `useWorkflowSubmit` or the history listing, which is exactly why `<RunPanel>`
  * serves both the live run and an expanded past one.
  *
- * Three components, in the order a reader meets them:
+ * Four components, in the order a reader meets them:
  *
+ * - **`<TotalLatency>`** — press to transcript, from the submission's own marks.
  * - **`<RunPanel>`** — the status, the narration, and the transcript once there
  *   is one: the SDK's `<WorkflowRunPanel>` with this desk's two slots filled.
  * - **`<LiveTranscript>`** — the transcript as it ARRIVES, which is what makes a
@@ -27,8 +28,9 @@ import {
   WORKFLOW_STATUS_LABELS,
   type WorkflowRun,
   WorkflowRunPanel,
+  type WorkflowSubmissionTiming,
 } from "@alexkroman1/aai-ui";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { transcribe } from "./agent.ts";
 import { stitchChunks, TRANSCRIPT_STREAM, type TranscriptChunk } from "./workflows/stitch.ts";
 
@@ -43,6 +45,67 @@ export type Transcript = WorkflowOutputOf<typeof transcribe>;
 
 /** Most past runs the history list shows. */
 export const HISTORY_LIMIT = 10;
+
+/** How often the running stopwatch re-renders — under a second, so the seconds turn over promptly. */
+const STOPWATCH_TICK_MS = 250;
+
+/**
+ * The one number the two bars cannot give: click to transcript.
+ *
+ * `timing` is the submission's own pair of `performance.now()` marks — the
+ * press, and the moment the run settled — so the clock covers the upload, the
+ * run, and the gap between them, which no server-side number can. Rendered
+ * above the run panel rather than inside it, because in two of the three modes
+ * the run does not exist until the upload finishes.
+ *
+ * `runMs` is the run's own elapsed, once it reports one. The remainder is
+ * everything the run could not see: storing the file, the `POST` that starts
+ * the run, and the poll that notices it finished. Clamped at zero, because the
+ * two numbers come from two clocks on two machines. The interval lives HERE so
+ * a running clock re-renders this section and nothing else; the elapsed is read
+ * from the clock at render, so a tick the tab throttled cannot make it lag.
+ */
+export function TotalLatency({
+  timing,
+  runMs,
+}: {
+  timing: WorkflowSubmissionTiming;
+  runMs: number | undefined;
+}) {
+  const { submittedAt, settledAt } = timing;
+  const [, tick] = useState(0);
+  const running = submittedAt !== undefined && settledAt === undefined;
+  useEffect(() => {
+    if (!running) return;
+    const id = setInterval(() => tick((n) => n + 1), STOPWATCH_TICK_MS);
+    return () => clearInterval(id);
+  }, [running]);
+
+  if (submittedAt === undefined) return null;
+  const elapsedMs = (settledAt ?? performance.now()) - submittedAt;
+  const outside = runMs === undefined ? undefined : Math.max(0, elapsedMs - runMs);
+  return (
+    <section className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 rounded-md border px-5 py-3">
+      <h2 className="text-sm font-medium uppercase tracking-[1.2px]">
+        {running ? "Elapsed" : "Total latency"}
+      </h2>
+      <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-sm tabular-nums">{formatDuration(elapsedMs)}</span>
+        {runMs !== undefined && outside !== undefined && (
+          <Facts
+            size="xs"
+            as="span"
+            className="tabular-nums"
+            items={[
+              `${formatDuration(outside)} before the run`,
+              `${formatDuration(runMs)} inside it`,
+            ]}
+          />
+        )}
+      </span>
+    </section>
+  );
+}
 
 /**
  * One line describing where a run has got to.

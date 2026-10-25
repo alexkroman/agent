@@ -1,19 +1,21 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The workflow body, and the two legs after the transcript: a model reads it,
- * and a voice reads the model back.
+ * The workflow body: a recording becomes text, a model reads it, and a voice
+ * reads the model back.
  *
  * ```text
- *   transcribe   (workflows/transcribe.ts)   →  the words
- *   summarize    one step, LLM Gateway       →  a headline, points, and a script
- *   speak        one step, streaming TTS     →  a WAV, stored, and its id
+ *   transcribeUploadDurably   three steps + a durable poll   →  the words
+ *   summarize                 one step, LLM Gateway          →  a headline, points, and a script
+ *   speak                     one step, streaming TTS        →  a WAV, stored, and its id
  * ```
  *
  * ## Audio in, audio out — and the second half is the part that needed the SDK
  *
  * Reading a file and transcribing it is what `transcription-workflow` already
- * shows. What this template is for is the return trip, which until recently a
- * workflow could not make at all:
+ * shows, and `transcribeUploadDurably` (`@alexkroman1/aai/step`) is that whole
+ * leg — upload, submit, poll on a durable sleep — under three journaled steps
+ * of this body's own `ctx`. What this template is for is the return trip, which
+ * until recently a workflow could not make at all:
  *
  * - **`stepSpeak`** synthesizes from inside a step. The session TTS surface
  *   cannot: a `TtsSession` is an event stream wired into a live pipeline's
@@ -23,10 +25,6 @@
  *   recording's bytes out of a run's INPUT, arriving at the other end of the
  *   run. The bytes go to the store, the output carries the id, and the page
  *   turns it back into something to play with `api.download(id)`.
- *
- * Both are on `@alexkroman1/aai/step`, imported from THERE rather than the
- * root: a `workflows/*.ts` module is bundled separately by the WDK builder, so
- * the root barrel's module graph would ride into the step bundle.
  *
  * ## The model is asked for TWO things, and the difference is the point
  *
@@ -44,14 +42,9 @@
  * provider's queue; the model call is seconds and rate-limited; the synthesis
  * is a socket. Splitting them means a rate-limited model call replays the
  * transcript from the journal instead of transcribing the recording again, and
- * a synthesis that failed does not re-run the model — which is the ordinary
- * reason to split steps, made sharp here because the first leg is the
- * expensive one.
+ * a synthesis that failed does not re-run the model.
  */
 
-// ERASED at build time, so the body can name the schema's own output type without
-// a runtime cycle back through `agent.ts` — the same mechanism `client.tsx` uses
-// for `WorkflowOutputOf`.
 import type { WorkflowContext, WorkflowInputOf } from "@alexkroman1/aai";
 import {
   type SpeakOptions,
@@ -60,20 +53,14 @@ import {
   stepReport,
   stepSpeak,
   stepWriteUpload,
-  TRANSCRIBE_API,
+  transcribeUploadDurably,
 } from "@alexkroman1/aai/step";
 import { orFail } from "@alexkroman1/aai/step-errors";
 import { countWords } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import type { spokenSummary } from "../agent.ts";
-import {
-  createJob,
-  MAX_POLLS,
-  POLL_INTERVAL_MS,
-  pollTranscript,
-  type Transcript,
-  uploadToProvider,
-} from "./transcribe.ts";
+// ERASED at build time: the body names the schema's own output type without a
+// runtime cycle back through `agent.ts`.
+import type { spokenSummaryInput } from "../agent.ts";
 
 /** Points the summary is reduced to. Enough to be a summary, few enough to scan. */
 const POINTS = 4;
@@ -91,17 +78,32 @@ const MAX_TRANSCRIPT_CHARS = 40_000;
 /**
  * The shape the model must answer in, as something that CHECKS.
  *
- * `stepGenerateJson` validates against this and throws plainly when the reply
- * misses, which is what a retry is for: a model that answered with prose may
- * well obey on the next attempt.
+ * `stepGenerateJson` renders it into the prompt as JSON Schema — the
+ * `.describe()` on each field is the whole instruction for it — validates the
+ * reply, and throws plainly when the reply misses, which is what a retry is
+ * for.
  */
 const SummaryReply = z.object({
-  headline: z.string().trim().min(1),
-  points: z.array(z.string().trim().min(1)).min(1),
+  headline: z.string().trim().min(1).describe("One line naming what the recording was about"),
+  points: z
+    .array(z.string().trim().min(1))
+    .min(1)
+    .describe(
+      `At most ${POINTS} short points, each a complete thought — concrete specifics: ` +
+        `decisions, numbers, names, what happens next — never "the speaker discussed several topics"`,
+    )
+    .transform((points) => points.slice(0, POINTS)),
   // NOT `.default("")` — the whole second half of this workflow has nothing to
   // say without it, and a default would turn a missing field into a silent
   // half-second of audio rather than a retry.
-  spoken: z.string().trim().min(1),
+  spoken: z
+    .string()
+    .trim()
+    .min(1)
+    .describe(
+      "The same summary written to be READ ALOUD: full sentences that flow, under 120 words, " +
+        "no bullet markers, no headings, no markdown — someone will hear this without seeing the points",
+    ),
 });
 
 /** What a finished run reports. Small and JSON-shaped, like every step result. */
@@ -134,10 +136,20 @@ export type SpokenSummary = {
 
 /** Transcribe a recording, summarize it, and read the summary back. */
 export async function spokenSummaryFlow(
-  input: WorkflowInputOf<typeof spokenSummary>,
+  input: WorkflowInputOf<typeof spokenSummaryInput>,
   ctx: WorkflowContext,
 ): Promise<SpokenSummary> {
-  const transcript = await transcribe(input.recording, ctx);
+  // The async API rather than the sync one, because this app's subject is the
+  // ROUND TRIP: cutting a long recording up is a whole subject with its own
+  // template (`transcription-workflow`), and here the transcription should be
+  // the boring leg. The SDK's composition journals it as three steps and a
+  // poll of this body's `ctx`, so a resumed run replays the upload and the
+  // submit and polls the same job.
+  const transcript = await transcribeUploadDurably(ctx, input.recording);
+  await ctx.report(
+    "transcribed",
+    `Transcribed ${transcript.source}: ${countWords(transcript.text)} words.`,
+  );
   const summary = await ctx.step("summarize", () => summarize(transcript.text));
   // The form's choice reaches the synthesizer as the SDK's OWN option bag, so
   // an app that later wants a different `sampleRate` (a phone line is 8 kHz)
@@ -157,69 +169,17 @@ export async function spokenSummaryFlow(
   };
 }
 
-/**
- * The whole first leg, factored out of the body.
- *
- * Part of the BODY rather than a step, and NOT because it is small: it CALLS
- * steps and it sleeps durably between polls, neither of which may happen inside
- * one. So it is replayed with the body — which is legal for the ordinary reason,
- * that everything it does is either a `ctx.step` or a `ctx.sleep`, so a replay
- * re-derives exactly the same sequence. It takes the `ctx` for that reason: a
- * helper that reaches the journal has to be handed the handle.
- */
-async function transcribe(recording: string, ctx: WorkflowContext): Promise<Transcript> {
-  // `maxAttempts: 6` was `uploadToProvider.maxRetries = 5` — five retries after
-  // the first attempt. It is the one step here worth extra patience: it streams
-  // the whole recording, so a transient failure is expensive to reach again.
-  const { audioUrl } = await ctx.step("uploadToProvider", () => uploadToProvider(recording), {
-    maxAttempts: 6,
-  });
-  const job = await ctx.step("createJob", () => createJob(audioUrl));
-
-  for (let poll = 0; poll < MAX_POLLS; poll += 1) {
-    // One call site in a loop, so each poll is its own journal entry
-    // (`pollTranscript#0`, `#1`, …) and a resume replays the polls already made
-    // rather than starting the wait over.
-    const progress = await ctx.step("pollTranscript", () => pollTranscript(recording, job.id));
-    if (progress.done) return progress.transcript;
-    await ctx.sleep("poll", POLL_INTERVAL_MS);
-  }
-  // A plain throw: this is the BODY, where the fatal/retryable distinction has
-  // nothing to apply to. The transcript is not lost, so the message says where
-  // it is rather than only that the wait ran out.
-  throw new Error(
-    `Transcript ${job.id} was still unfinished after ${MAX_POLLS} polls. It is not lost — ` +
-      `read it directly with GET ${TRANSCRIBE_API}/v2/transcript/${job.id}.`,
-  );
-}
-
 /** Reduce the transcript to a headline, {@link POINTS} points, and a script. */
 export async function summarize(
   text: string,
 ): Promise<{ headline: string; points: string[]; spoken: string }> {
   await stepReport("Summarizing the transcript.");
-  const reply = await orFail(stepGenerateJson)(
-    "Summarize this transcript of a recording.\n\n" +
-      "Answer with JSON only, in this shape:\n" +
-      `{"headline": "...", "points": ["..."], "spoken": "..."}\n\n` +
-      "- headline: one line naming what the recording was about.\n" +
-      `- points: at most ${POINTS} short points, each a complete thought. Concrete ` +
-      `specifics — decisions, numbers, names, what happens next — never "the ` +
-      `speaker discussed several topics".\n` +
-      "- spoken: the same summary written to be READ ALOUD. Full sentences that " +
-      "flow, under 120 words, no bullet markers, no headings, no markdown. " +
-      "Someone will hear this without seeing the points.\n\n" +
-      `Transcript:\n${text.slice(0, MAX_TRANSCRIPT_CHARS)}`,
-    {
-      system: "You summarize recordings. You answer with JSON and nothing else.",
-      schema: SummaryReply,
-    },
-    // The `OrFail` caller is `stepGenerateJson` plus `throwStepError`, which
-    // reads the gateway's own status: a 429 is worth another attempt and a 400
-    // is not, and that is what tells the DevKit which.
+  // `orFail`: a 429 is worth another attempt and a 400 is not, and the
+  // classification is what tells the engine which.
+  return await orFail(stepGenerateJson)(
+    `Summarize this transcript of a recording.\n\nTranscript:\n${text.slice(0, MAX_TRANSCRIPT_CHARS)}`,
+    { system: "You summarize recordings.", schema: SummaryReply },
   );
-
-  return { headline: reply.headline, points: reply.points.slice(0, POINTS), spoken: reply.spoken };
 }
 
 /**

@@ -224,14 +224,16 @@ segment 27 resumes having replayed 1–26.
 - The recording is UPLOADED (`uploads: ["recording"]`); each step reads its
   window with `stepReadUpload`. The template contains no upload code. The page
   shows `<UploadProgressBar>` and `<WorkflowProgress>` (two disjoint waits) and
-  one press-to-transcript clock off `submission.timing`, because
-  `output.elapsedMs` misses the upload.
+  one press-to-transcript clock (`<TotalLatency>` in `run-panel.tsx`, read off
+  `submission.timing`), because `output.elapsedMs` misses the upload.
 - Linear-PCM WAV only, named in the error with the `ffmpeg` line that fixes it;
   `workflows/wav.ts` is pure functions over journaled values.
 - Segments overlap by two seconds; `stitchTranscript` drops the longest repeated
   run at each seam on a punctuation-stripped key (a missed seam repeats words; a
   false one deletes speech).
 - `SEGMENT_CONCURRENCY`'s doc carries the concurrency measurements.
+- `batch.ts` is one `transcribeUploadDurably` call: the async leg's three steps
+  and durable poll are the SDK's, so the flow is the comparison baseline.
 - Its spec drives only `transcribeBatch` durably; the two ffmpeg flows'
   durability is the scenario tier's. No template covers the webhook waitpoint;
   `dev-workflow.scenario.test.ts` does.

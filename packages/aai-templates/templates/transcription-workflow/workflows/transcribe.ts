@@ -72,7 +72,7 @@ import {
   stepUploadInfo,
   wavHeader,
 } from "@alexkroman1/aai/step";
-import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
+import { orFatal } from "@alexkroman1/aai/step-errors";
 import { countWords, formatDuration, plural } from "@alexkroman1/aai/utils";
 import { downsampleSegment, requestFormat } from "./downsample.ts";
 import { normalizeRecording, requireWholeRecording } from "./normalize.ts";
@@ -257,11 +257,11 @@ export async function transcribeFlow(input: { recording: string }, ctx: Workflow
   // The clock starts before the conversion rather than after it, because a
   // reader comparing the three flows over one file is comparing what the desk
   // COST them, and re-encoding an m4a is part of that.
-  // `maxAttempts: 6` was `normalizeRecording.maxRetries = 5`. More than the
-  // default 3, and not because a conversion is flaky — a corrupt file fails
-  // identically forever, and `throwFfmpegStepError` is what stops the engine
-  // retrying that. It is the two I/O halves that are worth another attempt: this
-  // step reads a whole recording out of the store and writes a whole one back.
+  // `maxAttempts: 6`, and not because a conversion is flaky — a corrupt file
+  // fails identically forever, and `throwFfmpegStepError` is what stops the
+  // engine retrying that. It is the two I/O halves that are worth another
+  // attempt: this step reads a whole recording out of the store and writes a
+  // whole one back.
   const [startedAt, ready] = await Promise.all([
     ctx.now(),
     ctx.step("normalizeRecording", () => normalizeRecording(input.recording), { maxAttempts: 6 }),
@@ -278,11 +278,11 @@ export async function transcribeFlow(input: { recording: string }, ctx: Workflow
   // what is missing, where catching here to salvage a partial transcript would
   // return a recording with a silent hole in it and report success.
   const parts = await mapConcurrent(plan.segments, segmentConcurrency(plan.format), (segment) =>
-    // `maxAttempts: 6` was `transcribeSegment.maxRetries = 5` — more than the
-    // default 3 because a rate limit is the expected failure here, and a segment
-    // that 429s is not a segment that is wrong.
+    // `maxWaits`: a rate limit is the expected failure here, and a segment that
+    // 429s is not a segment that is wrong — so a `Retry-After` is waited out
+    // rather than charged as one of the default three attempts.
     ctx.step("transcribeSegment", () => transcribeSegment(ready.recording, plan.format, segment), {
-      maxAttempts: 6,
+      maxWaits: 3,
     }),
   );
 
@@ -447,7 +447,7 @@ export async function mergeTranscript(
 
   // The FILENAME, not the id: the page prints this, and `upl_9f3…` tells a
   // reader nothing about which recording they are looking at.
-  const source = (await stepUploadInfo(uploadId)).name || uploadId;
+  const { label: source } = await stepUploadInfo(uploadId);
   return {
     source,
     segments: parts.length,
@@ -464,16 +464,9 @@ export async function mergeTranscript(
 // ---- I/O helpers ------------------------------------------------------------
 
 /**
- * Run a `wav.ts` helper, turning its "cannot cut this" into a terminal failure.
- *
- * Exported because `stream.ts` plans with the same `wav.ts` helpers and owes the
- * same classification, and it had this byte for byte.
+ * Run a `wav.ts` helper, turning its "cannot cut this" into a terminal failure:
+ * the same bytes reach the same refusal on every attempt. Exported because
+ * `stream.ts` plans with the same helpers and owes the same classification.
  */
-export function fatalOnUnsupported<T>(read: () => T): T {
-  try {
-    return read();
-  } catch (err: unknown) {
-    if (err instanceof UnsupportedRecordingError) return throwFatalStepError(err);
-    throw err;
-  }
-}
+export const fatalOnUnsupported = <T>(read: () => T): T =>
+  orFatal(read, { when: UnsupportedRecordingError });

@@ -2,71 +2,53 @@
  * The redline desk's page: a form, the loop turning, and the piece it produced.
  *
  * `link-digest-workflow` shows the workflow primitives raw and `transcription-workflow` shows
- * the form layer over them; this page is the MIXED case, which is what most real
- * schemas need and what neither of those has.
+ * the form layer over a schema of scalars; this page is the MIXED case, which is
+ * what most real schemas need.
  *
- * ## Half of this form is declared and half is written
+ * ## The whole form is declared, non-scalars included
  *
- * `<WorkflowFields>` renders one control per SCALAR property of the workflow's
- * own input schema, read from `GET /workflows` — so the brief, the audience
- * picker (a `<SelectField>`, because `agent.ts` declares a `z.enum`) and the
- * rounds spinner exist here because of what the schema says, and adding a fourth
+ * `<WorkflowFields>` renders one control per property of the workflow's own
+ * input schema, read from `GET /workflows` — so the brief, the audience picker
+ * (a `<SelectField>`, because `agent.ts` declares a `z.enum`) and the rounds
+ * spinner exist here because of what the schema says, and adding a fourth
  * scalar adds a fourth control with no edit to this file.
  *
- * It renders nothing for `mustCover` or `source`, deliberately: one is an ARRAY
- * and the other an OBJECT, and there is no honest generic control for either. So
- * this page writes those two itself — a `<TextAreaField>` taking one required
- * point per line, and a `<FileField read="text">` taking a draft to mark up —
- * in the same `<Form>`, and maps them on submit. Every field in
- * `@alexkroman1/aai-ui` is a plain named control, which is what lets the declared
- * and the hand-written ones sit together and arrive as one object.
+ * Two of the properties are not scalars, and both still render, because each
+ * is one of the two non-scalar shapes with an honest generic control:
  *
- * The mapping is the other half of that: `<Form>` collects what the DOM holds,
- * and a textarea holds a string where the workflow's schema wants `string[]`,
- * while a file input holds a `FileValue` where it wants `{ name, text }`.
- * `toInput` is where all of that meets — and it is the only place, so the split
- * lives in one function rather than in the field, the submit handler and the
- * workflow. It sits in `form.ts` rather than here for one reason: this module
- * MOUNTS on import, so nothing declared in it can be reached by a spec, and the
- * mapping is the half of this page worth pinning.
+ * - `mustCover` is an array of strings → a `<TextAreaField split="lines">`,
+ *   one required point per line, contributing a `string[]`.
+ * - `source` is an object of exactly `{ name, text }` → a
+ *   `<FileField as="namedText">`, which reads the chosen file in the BROWSER
+ *   and contributes its name beside its text — no upload, no id, nothing for
+ *   the run to fetch. That is the right trade for a draft of a few kilobytes
+ *   and the wrong one for a recording; `transcription-workflow` is the other
+ *   case (`uploads: [...]` on the declaration, `stepReadUpload` at the far end).
  *
- * **A `<FileField>` does not imply an upload, and choosing wrong is the trap.**
- * `read="text"` reads the chosen file in the browser and contributes its text
- * with the rest of the form, so a draft is journaled with the run's input and
- * there is nothing to fetch, nothing to expire and nothing to clean up. The
- * upload path (`uploads: [...]` on the declaration, a `File` contributed unread,
- * `stepReadUpload` at the far end) exists because a two-hour recording cannot go
- * in a run's input at all — see `transcription-workflow`. A few kilobytes of
- * prose is the case that does not need it.
+ * So the values `<Form>` collects already match the input schema, and
+ * `submitForm` hands them over as they are. A shape outside those two — a
+ * nested object, an array of objects — is where a page writes its own control
+ * inside the same `<Form>`, since every field in `@alexkroman1/aai-ui` is a
+ * plain named control.
  *
  * ## A reload used to lose the loop, which is minutes of model calls
  *
  * A `runId` names a run for as long as something holds it, and this page held it
  * in React state — so a refresh lost it while the loop carried on writing,
- * grading and revising without anywhere to report to. On a desk whose whole
- * subject is a loop that runs several long-form model calls, that is the one
- * failure the hook now covers on its own: `useWorkflowSubmit` records every run
- * under a correlation KEY it mints for this page and asks for that key's newest
- * run as it mounts, so the draft, the critique trail and the Clear button are
- * all there again with nothing written here.
+ * grading and revising without anywhere to report to. `useWorkflowSubmit`
+ * records every run under a correlation KEY it mints for this page and asks for
+ * that key's newest run as it mounts, so the draft, the critique trail and the
+ * Clear button are all there again with nothing written here.
  *
  * **The key it mints is opaque and lives in `sessionStorage`, and the brief is
- * why this page wants exactly that one.** A
- * `?key=` parameter in the page's own URL would survive more — a new tab, a
- * bookmark, a link sent to the person who asked for the piece — and that is
- * exactly what it must not do here. There is no per-user filtering behind
- * `find`, so the key IS the scoping mechanism, and a brief is the most private
- * thing on this page: it is what somebody typed about their own product, their
- * own incident or their own customers, and the critique trail beside it is
- * working material nobody writes expecting an audience. The thing worth sending
- * a colleague is the DRAFT, which is text on the page and travels by being
- * copied; sending a run means sending the brief that produced it.
- *
- * Deriving the key from the brief is worse again: two people briefing the same
- * thing would recover each other's runs, and the key would then carry what they
- * typed into a lookup token the platform deliberately stopped logging. Both are
- * things a page could still ask for by passing its own `key`, and this one has
- * no reason to.
+ * why this page wants exactly that one.** A `?key=` parameter in the page's own
+ * URL would survive more — a new tab, a bookmark, a link sent to the person who
+ * asked for the piece — and that is exactly what it must not do here. There is
+ * no per-user filtering behind `find`, so the key IS the scoping mechanism, and
+ * a brief is the most private thing on this page: it is what somebody typed
+ * about their own product, their own incident or their own customers. The thing
+ * worth sending a colleague is the DRAFT, which is text on the page and travels
+ * by being copied.
  */
 
 import "@alexkroman1/aai-ui/styles.css";
@@ -75,19 +57,16 @@ import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
   BulletList,
   Facts,
-  FileField,
   Form,
   Markdown,
   mountPage,
   SubmitButton,
-  TextAreaField,
   useWorkflowSubmit,
   WorkflowFields,
   WorkflowPendingNote,
   WorkflowRunPanel,
 } from "@alexkroman1/aai-ui";
 import type { redline } from "./agent.ts";
-import { toInput } from "./form.ts";
 
 /**
  * What a finished run reports.
@@ -98,14 +77,11 @@ import { toInput } from "./form.ts";
  */
 type Redline = WorkflowOutputOf<typeof redline>;
 
-/** The workflow this page drives. Matches the key in `workflowApp({ workflows })`. */
-const WORKFLOW = "redline";
-
 function RedlineDesk() {
   // The reload is covered by the hook's own key — see the module doc for why
   // this desk wants the tab-scoped one it mints rather than a key of its own.
-  const submission = useWorkflowSubmit<typeof redline>(WORKFLOW);
-  const { submit, run, pending, error, reset } = submission;
+  const submission = useWorkflowSubmit<typeof redline>("redline");
+  const { submitForm, run, pending, error, reset } = submission;
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-8 p-8">
@@ -117,28 +93,9 @@ function RedlineDesk() {
         </p>
       </header>
 
-      <Form onSubmit={(values) => submit(toInput(values))} error={error}>
-        {/* The scalars: brief, audience, rounds. Declared, not written. */}
-        <WorkflowFields workflow={WORKFLOW} />
-        {/* The two the schema declares and no generic control can render: an
-            array, and an object. Written here, mapped in `toInput`. */}
-        <TextAreaField
-          name="mustCover"
-          label="Must cover"
-          hint="One point per line. Leave empty if nothing is required."
-          rows={3}
-        />
-        {/* `read="text"` reads the file in the BROWSER and contributes its text
-            with the rest of the form — no upload, no id, nothing for the run to
-            fetch. That is the right trade for a draft and the wrong one for a
-            recording; `transcription-workflow` is the other case. */}
-        <FileField
-          name="source"
-          label="Start from a draft"
-          hint="Optional. A .md or .txt file to redline instead of writing one from the brief."
-          read="text"
-          accept=".md,.markdown,.txt,text/plain,text/markdown"
-        />
+      <Form onSubmit={(values) => submitForm(values)} error={error}>
+        {/* Every control, non-scalars included — see the module doc. */}
+        <WorkflowFields workflow="redline" />
         <SubmitButton pending={pending}>Write it</SubmitButton>
       </Form>
 

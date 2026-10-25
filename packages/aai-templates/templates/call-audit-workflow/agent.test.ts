@@ -35,16 +35,9 @@ import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import {
   createWorkflowContext,
   runWorkflow,
-  stubSpeech,
   WORKFLOW_CONTEXT_NOW,
 } from "@alexkroman1/aai-runtime/testing";
-import {
-  installStubGateway,
-  installStubReporter,
-  installStubSpeech,
-  installStubTranscribe,
-  installStubUploads,
-} from "@alexkroman1/aai-runtime/testing/vitest";
+import { installStubWorld } from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { audit } from "./agent.ts";
 import {
@@ -53,7 +46,7 @@ import {
   SEGMENT_CONCURRENCY,
   transcribeSegment,
 } from "./workflows/audit.ts";
-import { analyse, ingestRecording } from "./workflows/ingest.ts";
+import { ingestRecording } from "./workflows/ingest.ts";
 import {
   ANALYSIS_FORMAT,
   BYTES_PER_SECOND,
@@ -62,7 +55,6 @@ import {
   MAX_SEGMENT_SECONDS,
   MediaAnalysisError,
   MIN_SILENCE_SECONDS,
-  masterArgs,
   measureLoudnessArgs,
   normalizeArgs,
   parseLoudness,
@@ -175,39 +167,7 @@ function pauses(...starts: number[]): Silence[] {
   return starts.map((startSec) => ({ startSec, endSec: startSec + MIN_SILENCE_SECONDS }));
 }
 
-beforeEach(() => {
-  // The step env, which is where `requireStepEnv`, `stepSpeak` and the gateway
-  // read the key. `vi.stubEnv` rather than an assignment: `unstubEnvs` (set by
-  // `defineAgentTestConfig`) undoes it after every test, so nothing here has to remember to put it back.
-  vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
-});
-
 describe("the declaration", () => {
-  test("is a workflow app with the one workflow the page starts by name", () => {
-    // The page calls `api.start("audit", …)`, so a rename here is a runtime 400
-    // rather than a compile error. This is what pins it.
-    // `toContain` rather than an exact key list: adding a second workflow is an
-    // invited edit and must not redden a test the author did not write. The
-    // NAME is still pinned, deliberately — the page starts a run by this
-    // string, so renaming the key is a runtime 400 rather than a compile
-    // error, and this pin is the only thing that says so. Rename it here and
-    // in `client.tsx` together.
-    expect(Object.keys(agentDef.workflows ?? {})).toContain("audit");
-    expect(agentDef.workflows?.audit).toBe(audit);
-  });
-
-  test("declares the credential its steps read, so a deploy checks for it", () => {
-    // A workflow app has no session, so nothing else in its config could name one
-    // — and one AssemblyAI key covers transcription, the model and the voice.
-    // Note what is NOT here: ffmpeg. `requiredEnv` checks the environment, and a
-    // binary on `PATH` is not an environment variable.
-    //
-    // `toContain` rather than an exact list: a step of your own that reads a
-    // second credential belongs in `requiredEnv` beside this one, and declaring
-    // it must not fail this test.
-    expect(agentDef.requiredEnv).toContain("ASSEMBLYAI_API_KEY");
-  });
-
   test("takes the recording as an UPLOAD, which is what makes the form a file picker", () => {
     expect(audit.uploads).toEqual(["recording"]);
   });
@@ -239,7 +199,6 @@ describe("the ffmpeg argv", () => {
     for (const argv of [
       measureLoudnessArgs("in.m4a"),
       normalizeArgs("in.m4a", MEASURED, "out.pcm", "silence.txt"),
-      masterArgs("spoken.wav", "out.mp3"),
     ]) {
       expect(argv).toEqual(expect.arrayContaining(["-hide_banner", "-nostats", "-nostdin", "-y"]));
     }
@@ -297,12 +256,6 @@ describe("the ffmpeg argv", () => {
     const filter = argv[argv.indexOf("-af") + 1] ?? "";
     expect(filter).toContain(",silencedetect=");
     expect(filter.startsWith("loudnorm=")).toBe(true);
-  });
-
-  test("the mastering pass encodes MP3, which is the point of running it", () => {
-    const argv = masterArgs("spoken.wav", "out.mp3");
-    expect(argv[argv.indexOf("-c:a") + 1]).toBe("libmp3lame");
-    expect(argv.at(-1)).toBe("out.mp3");
   });
 });
 
@@ -614,30 +567,24 @@ describe("joining the segments", () => {
 
 describe("transcribing one segment", () => {
   /**
-   * One second of stored PCM, and a sync endpoint that answers.
-   *
-   * A published `stepFetch`, not `vi.stubGlobal("fetch", …)`: the step calls
-   * `stepFetch`, which reaches a published slot rather than the global. Stubbing
-   * the global still passes, because an unpublished slot falls back to it, and
-   * would be asserting against a path production does not take.
+   * One second of stored PCM, and a sync endpoint that answers — a refusal
+   * staged as a STATUS, so the classification below is a test of the SDK's
+   * reading of it rather than of a `TranscribeError` a fake minted.
    */
   function stubProvider(failure?: { status: number; message: string }) {
-    installStubUploads({
-      [UPLOAD_ID]: {
-        bytes: new Uint8Array(BYTES_PER_SECOND),
-        name: "call.pcm",
-        type: "application/octet-stream",
+    return installStubWorld({
+      uploads: {
+        [UPLOAD_ID]: {
+          bytes: new Uint8Array(BYTES_PER_SECOND),
+          name: "call.pcm",
+          type: "application/octet-stream",
+        },
       },
-    });
-    installStubReporter();
-    // `installStubTranscribe` answers AssemblyAI's own endpoints off the SDK's
-    // endpoint constants, so this spec no longer re-types the wire — and a refusal
-    // is staged as a STATUS, which is what makes the classification below a test of
-    // the SDK's reading of it rather than of a `TranscribeError` a fake minted.
-    return installStubTranscribe({
-      text: "hello there",
-      failure: failure === undefined ? undefined : { leg: "sync", ...failure },
-    }).calls;
+      transcribe: {
+        text: "hello there",
+        failure: failure === undefined ? undefined : { leg: "sync", ...failure },
+      },
+    }).provider;
   }
 
   const SEGMENT = {
@@ -678,8 +625,7 @@ describe("transcribing one segment", () => {
 
   test("a rate limit is RETRYABLE, so one busy minute does not fail the run", async () => {
     // The expected failure of a 32-wide fan-out, and the reason the BODY calls
-    // this step with more attempts than the default — asserted where the policy
-    // now lives, in `the whole run` below.
+    // this step with `maxWaits`: a `Retry-After` is waited out, not charged.
     stubProvider({ status: 429, message: "slow down" });
     await expect(transcribeSegment(UPLOAD_ID, SEGMENT)).rejects.toBeInstanceOf(RetryableError);
   });
@@ -703,89 +649,59 @@ describe("auditing the transcript", () => {
   test("asks for a script as well as lists, and keeps both", async () => {
     // The two-summaries decision: a voice reading a bullet list says "one. two.
     // three." with no connective tissue, so the schema demands sentences too.
-    installStubReporter();
     // The stub answers with TEXT, because that is what a gateway returns — and
     // `stepGenerateJson` parsing it is part of what this exercises.
-    installStubGateway(
-      JSON.stringify({
+    const { model } = installStubWorld({
+      model: JSON.stringify({
         headline: "Renewal call with Northwind",
         risks: ["Nobody owns the migration date"],
         actions: ["Ana to send revised pricing"],
         spoken: "The renewal is close, but the migration date has no owner yet.",
       }),
-    );
+    });
 
     const summary = await summarize("… transcript …", "call.m4a", 600_000);
     expect(summary.headline).toBe("Renewal call with Northwind");
     expect(summary.risks).toEqual(["Nobody owns the migration date"]);
     expect(summary.spoken).toContain("migration date");
+    // The script is asked for by the schema the SDK appends to the system prompt.
+    expect(model[0]?.system).toContain("READ ALOUD");
   });
 
   test("an empty risk list is an ANSWER, not a retry", async () => {
     // A schema that demanded a risk would get an invented one, which is worse than
     // silence on a call that really had none.
-    installStubReporter();
-    installStubGateway(
-      JSON.stringify({
+    installStubWorld({
+      model: JSON.stringify({
         headline: "Weekly standup",
         risks: [],
         actions: [],
         spoken: "Nothing was decided and nothing is blocked.",
       }),
-    );
+    });
     await expect(summarize("…", "standup.wav", 60_000)).resolves.toMatchObject({ risks: [] });
+  });
+
+  test("caps the risks and actions at what the schema promises the page", async () => {
+    installStubWorld({
+      model: JSON.stringify({
+        headline: "A long call",
+        risks: ["a", "b", "c", "d", "e"],
+        actions: ["f", "g", "h", "i", "j"],
+        spoken: "Many things.",
+      }),
+    });
+    await expect(summarize("…", "call.m4a", 60_000)).resolves.toMatchObject({
+      risks: ["a", "b", "c", "d"],
+      actions: ["f", "g", "h", "i"],
+    });
   });
 
   test("a reply with no spoken script is a RETRY rather than silence", async () => {
     // `spoken` is required rather than defaulted precisely so this fails: a default
     // would turn a missing field into half a second of audio nobody notices.
-    installStubReporter();
-    installStubGateway(JSON.stringify({ headline: "A call", risks: [], actions: [] }));
+    installStubWorld({ model: JSON.stringify({ headline: "A call", risks: [], actions: [] }) });
     await expect(summarize("…", "call.m4a", 60_000)).rejects.toThrow();
-  });
-});
-
-describe("classifying a failure", () => {
-  /**
-   * The FFMPEG verdict is no longer tested here, and its absence is the change
-   * rather than a gap: `throwFfmpegStepError` on `@alexkroman1/aai/step-errors` owns
-   * it now, with both arms pinned in `sdk/step-errors.test.ts` — including the case
-   * this template contributed, a cause that is not an ffmpeg failure at all.
-   *
-   * What stays is what is still THIS desk's: `analyse`, which decides that an
-   * analysis `media.ts` cannot read is terminal.
-   */
-  test("an analysis this desk cannot read is fatal, because a retry reads it again", () => {
-    // ffmpeg SUCCEEDED and printed something unrecognized — a renamed key, a lost
-    // `-loglevel info`. Every retry runs the same binary and prints the same thing.
-    expect(() =>
-      analyse(() => {
-        throw new MediaAnalysisError("no JSON block");
-      }),
-    ).toThrow(FatalError);
-  });
-
-  test("an analysis helper's OTHER failures are not swallowed", () => {
-    // Only `MediaAnalysisError` is a verdict. Anything else is a bug in the parser,
-    // and turning that into a terminal step failure would hide it.
-    const bug = new TypeError("cannot read properties of undefined");
-    expect(() =>
-      analyse(() => {
-        throw bug;
-      }),
-    ).toThrow(bug);
-  });
-});
-
-describe("the mastered narration", () => {
-  test("is not driven here, and the spec says why rather than pretending", () => {
-    // `narrate` speaks, writes a temp file, spawns ffmpeg and stores the result. A
-    // unit test may do none of those, so what is covered is `masterArgs` above and
-    // the classification below — and `stubSpeech` is imported to make the omission
-    // deliberate rather than an oversight: filling only that slot would leave the
-    // step failing on the subprocess, which is a test of the tier, not the code.
-    expect(typeof stubSpeech).toBe("function");
-    expect(masterArgs("in.wav", "out.mp3").at(-1)).toBe("out.mp3");
   });
 });
 
@@ -813,41 +729,36 @@ describe("the ffmpeg steps, up to the spawn", () => {
   });
 
   test("ingestRecording materializes the upload, then fails fatally with no ffprobe", async () => {
-    installStubUploads({
-      [UPLOAD_ID]: { bytes: new Uint8Array(2048), name: "call.m4a", type: "audio/mp4" },
+    // The `finally` in `withTempDir`, on the path that matters: a guest's disk is
+    // small, and a step that leaked a directory per failed run would fill it.
+    const before = await readdir(tmpdir());
+    installStubWorld({
+      uploads: {
+        [UPLOAD_ID]: { bytes: new Uint8Array(2048), name: "call.m4a", type: "audio/mp4" },
+      },
     });
-    installStubReporter();
     // Fatal, not retryable: four more attempts find the same missing binary, and the
     // message already carries the install instructions.
     await expect(ingestRecording(UPLOAD_ID)).rejects.toBeInstanceOf(FatalError);
+    const after = await readdir(tmpdir());
+    expect(after.filter((name) => name.startsWith("aai-call-audit-"))).toEqual(
+      before.filter((name) => name.startsWith("aai-call-audit-")),
+    );
   });
 
   test("narrate speaks first, then fails fatally with no ffmpeg to master with", async () => {
     // `stepSpeak` runs — the synthesis is not what is broken here — so this also
     // pins the ORDER: a step that mastered before speaking would fail without ever
     // calling the voice service.
-    const speech = installStubSpeech();
-    installStubReporter();
-    installStubUploads({}, { writable: true });
+    const { speech } = installStubWorld({
+      speech: true,
+      uploads: {},
+      uploadsOptions: { writable: true },
+    });
 
     await expect(narrate("Read this back.", "aai-jane")).rejects.toBeInstanceOf(FatalError);
-    expect(speech.calls.length).toBe(1);
-    expect(speech.calls[0]?.text).toBe("Read this back.");
-  });
-
-  test("the temp directory is gone even though the mastering pass failed", async () => {
-    // The `finally` in `withTempDir`, on the path that matters: a guest's disk is
-    // small, and a step that leaked a directory per failed run would fill it.
-    const before = await readdir(tmpdir());
-    installStubSpeech();
-    installStubReporter();
-    installStubUploads({}, { writable: true });
-
-    await expect(narrate("Read this back.")).rejects.toBeInstanceOf(FatalError);
-    const after = await readdir(tmpdir());
-    expect(after.filter((name) => name.startsWith("aai-call-audit-"))).toEqual(
-      before.filter((name) => name.startsWith("aai-call-audit-")),
-    );
+    expect(speech.length).toBe(1);
+    expect(speech[0]?.text).toBe("Read this back.");
   });
 });
 
@@ -893,15 +804,16 @@ describe("the body's step policy", () => {
         },
         transcribeSegment: { index: 0, text: "hello" },
         summarize: { headline: "H", risks: [], actions: [], spoken: "S." },
-        narrate: { audio: "upl_wav", durationMs: 500, bytes: 32, ffmpegMs: 300 },
+        narrate: { audio: "upl_wav", durationMs: 500, bytes: 32 },
       },
     });
 
-  test("raises the attempt budget on both steps whose failure is transient I/O", async () => {
-    // The retry policy is an argument to `ctx.step` now rather than a
-    // `maxRetries` property, so the CALL is the only place it is observable —
-    // which is also the honest place for it, since the same function called from
-    // two sites may deserve different patience.
+  test("raises the attempt budget on the one step whose failure is transient I/O", async () => {
+    // The retry policy is an argument to `ctx.step`, so the CALL is the only
+    // place it is observable. The ingest reads a whole recording out of the
+    // store and writes a whole one back; every other step takes the default
+    // (the fan-out waits out a rate limit with `maxWaits` instead, which the
+    // recorder does not report).
     const ctx = walkedCtx();
 
     await auditFlow({ recording: UPLOAD_ID }, ctx);
@@ -910,12 +822,9 @@ describe("the body's step policy", () => {
     // The EXACT number, not `toBeGreaterThan(3)`: the value is a literal in the
     // body and a typo'd `maxAttempts: 4` is exactly what this should catch.
     expect(budgets.get("ingestRecording")).toBe(6);
-    expect(budgets.get("transcribeSegment")).toBe(6);
-    // The clock and the two model-shaped steps take the default, which is the
-    // other half of the claim: a raised budget is a decision about ONE step.
     // Asserted as PRESENT-with-no-budget rather than as `get(…) === undefined`,
     // which a step the body never reached at all would also satisfy.
-    for (const name of ["narrate", "summarize"]) {
+    for (const name of ["transcribeSegment", "narrate", "summarize"]) {
       expect(budgets.has(name)).toBe(true);
       expect(budgets.get(name)).toBeUndefined();
     }
@@ -934,10 +843,10 @@ describe("the body's step policy", () => {
     const output = await auditFlow({ recording: UPLOAD_ID }, ctx);
 
     expect(output.elapsedMs).toBe(3000);
-    // And the ffmpeg time is SUMMED from the two journaled step results rather
-    // than measured again — which is what makes a replay report what the passes
+    // And the ffmpeg time is read off the journaled ingest result rather than
+    // measured again — which is what makes a replay report what the passes
     // really cost instead of zero for work it did not redo.
-    expect(output.ffmpegMs).toBe(1500);
+    expect(output.ffmpegMs).toBe(1200);
     // And the clock is no longer a step, which is the other half of the claim: a
     // name here would mean the migration left one behind.
     expect(ctx.steps.map((step) => step.name)).not.toContain("clockStart");
@@ -975,11 +884,11 @@ describe("the body's step policy", () => {
  */
 describe("the run is DURABLE, as far as ffmpeg allows", () => {
   beforeEach(() => {
-    installStubUploads({
-      [UPLOAD_ID]: { bytes: new Uint8Array(2048), name: "call.m4a", type: "audio/mp4" },
+    installStubWorld({
+      uploads: {
+        [UPLOAD_ID]: { bytes: new Uint8Array(2048), name: "call.m4a", type: "audio/mp4" },
+      },
     });
-    installStubReporter();
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
     // Neither binary is this block's subject (see its doc), and a real
     // conversion here would make a developer with ffmpeg installed run a
     // slower, different test from CI, which has none.
@@ -988,7 +897,7 @@ describe("the run is DURABLE, as far as ffmpeg allows", () => {
   });
 
   test("a FatalError in the first step fails the run on ONE attempt, not six", async () => {
-    const run = await runWorkflow(audit, { recording: UPLOAD_ID }, { name: "audit" });
+    const run = await runWorkflow(agentDef, "audit", { recording: UPLOAD_ID });
 
     expect(run.status).toBe("failed");
     // Either member of the toolchain, for the reason this block's doc gives: the
@@ -1007,7 +916,7 @@ describe("the run is DURABLE, as far as ffmpeg allows", () => {
   });
 
   test("the failure is DURABLE: a redelivery reports it rather than trying again", async () => {
-    const run = await runWorkflow(audit, { recording: UPLOAD_ID }, { name: "audit" });
+    const run = await runWorkflow(agentDef, "audit", { recording: UPLOAD_ID });
     expect(run.status).toBe("failed");
 
     // A terminal run is done, and a redelivery of one is ordinary rather than an
@@ -1024,7 +933,7 @@ describe("the run is DURABLE, as far as ffmpeg allows", () => {
     // failing ingest must not lose the clock read that went out beside it. It is
     // journaled through the same append a step is, into a key space of its own —
     // which is why it reads back off `reads` rather than `steps`.
-    const run = await runWorkflow(audit, { recording: UPLOAD_ID }, { name: "audit" });
+    const run = await runWorkflow(agentDef, "audit", { recording: UPLOAD_ID });
 
     const clock = run.reads.find((read) => read.key === "now!0");
     expect(clock?.kind).toBe("now");
