@@ -239,6 +239,50 @@ describeEval(agentDef, (test) => { … }, { runCode: createVmRunCode() });
 
 ### customEventsIn()
 
+#### Call Signature
+
+```ts
+function customEventsIn<K extends never>(events: readonly SessionEvent[], name: K): readonly {
+  data: ClientEventMap[K];
+  event: K;
+}[];
+```
+
+An event the AGENT named, via `ctx.send` — `{ event, data }` pairs, in order.
+
+Filtered by name when one is given. A nudge that must arrive ONCE is the shape
+that wants this: "exactly one `wind_down` on the third pick, none on the
+fourth" is a claim about this list and about nothing else.
+
+**Typed by `ClientEventMap` when the agent declared the name there**: an
+augmented map types `data` as the declared payload, so a case reads a field
+off it with no cast. A name nobody declared still answers `unknown`.
+
+##### Type Parameters
+
+###### K
+
+`K` *extends* `never`
+
+##### Parameters
+
+###### events
+
+readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
+
+###### name
+
+`K`
+
+##### Returns
+
+readonly \{
+  `data`: [`ClientEventMap`](../aai/index.md#clienteventmap)\[`K`\];
+  `event`: `K`;
+\}[]
+
+#### Call Signature
+
 ```ts
 function customEventsIn(events: readonly SessionEvent[], name?: string): readonly {
   data: unknown;
@@ -252,17 +296,21 @@ Filtered by name when one is given. A nudge that must arrive ONCE is the shape
 that wants this: "exactly one `wind_down` on the third pick, none on the
 fourth" is a claim about this list and about nothing else.
 
-#### Parameters
+**Typed by `ClientEventMap` when the agent declared the name there**: an
+augmented map types `data` as the declared payload, so a case reads a field
+off it with no cast. A name nobody declared still answers `unknown`.
 
-##### events
+##### Parameters
+
+###### events
 
 readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
 
-##### name?
+###### name?
 
 `string`
 
-#### Returns
+##### Returns
 
 readonly \{
   `data`: `unknown`;
@@ -492,6 +540,52 @@ to a host named in `passthrough`, or refused and recorded.
 #### Returns
 
 [`EvalNetwork`](#evalnetwork)\<`State`\>
+
+***
+
+### evalRunOf()
+
+```ts
+function evalRunOf(turn: EvalTurn, workflow: string | AnyWorkflowDef): string;
+```
+
+The id of the ONE run of `workflow` a tool started during `turn` — read off
+the session's recorded `ctx.workflows.start`, not off the tool's answer.
+
+Every hand-off eval needed the run id to read the run back
+(`workflows.settle(runId, def)`), and each parsed it out of the tool's
+serialized result with a schema of its own: `toolResultsIn(calls,
+"request_recap", RecapStart)[0].runId`, behind a helper explaining why the
+singular reader would refuse a second call. That reads the id through the
+MODEL's copy of what the tool said, which is one translation away from the
+fact: the session handed the tool a client, and the client knows what was
+started. [EvalTurn.workflowStarts](#workflowstarts) is that record; this is its reader.
+
+By DEF or by the declared name, either way matched against what the agent
+declares — so a tool that started by name and a case that asks by def agree.
+EXACTLY one, like `toolResultIn`: zero is a tool that answered without
+starting anything, two is the finding a dedupe check exists to prevent, and
+both throw naming what the turn did start.
+
+```ts no-check
+const started = await session.say("Can you write up that recording for me?");
+const runId = evalRunOf(started, recap);
+const run = await workflows.settle(runId, recap);
+```
+
+#### Parameters
+
+##### turn
+
+[`EvalTurn`](#evalturn)
+
+##### workflow
+
+`string` \| [`AnyWorkflowDef`](../aai/workflow-api.md#anyworkflowdef)
+
+#### Returns
+
+`string`
 
 ***
 
@@ -814,6 +908,49 @@ if `criteria` is empty — a judge with nothing to rule on passes
 #### Call Signature
 
 ```ts
+function lastStateIn<V>(events: readonly SessionEvent[], projection: StateProjection<V>): V | undefined;
+```
+
+The LATEST state frame the agent pushed (`AgentDef.syncState`) — what the page
+is showing — or one SLOT's value in it. The frame is keyed by slot name, so a
+case names its slot exactly as the page does (`useAgentState(slot.projected)`
+reads `state[slot]`): not "the tool returned ok" but "the customer can see it".
+
+**Pass the SCHEMA.** A frame is JSON off the wire, and a cast is silent exactly
+when the projection changed shape underneath the eval; with a schema, a value
+that stopped matching FAILS naming the field. Without a slot: the whole frame.
+
+**Or pass the PROJECTION** — `slot.projected`, the very object
+`agent({ syncState })` and the page's `useAgentState` take. It carries the
+slot key, so the case names nothing the agent does not, and its result type,
+so the frame comes back as the page's `V`. It is checked STRUCTURALLY
+against what the projection renders for the default (`projected()`): a
+frame whose keys differ — a field the view gained or lost since the eval
+was written — fails naming them, which is the drift a cast would hide.
+
+##### Type Parameters
+
+###### V
+
+`V`
+
+##### Parameters
+
+###### events
+
+readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
+
+###### projection
+
+[`StateProjection`](../aai/index.md#stateprojection)\<`V`\>
+
+##### Returns
+
+`V` \| `undefined`
+
+#### Call Signature
+
+```ts
 function lastStateIn<T>(
    events: readonly SessionEvent[], 
    slot: string, 
@@ -829,6 +966,14 @@ reads `state[slot]`): not "the tool returned ok" but "the customer can see it".
 **Pass the SCHEMA.** A frame is JSON off the wire, and a cast is silent exactly
 when the projection changed shape underneath the eval; with a schema, a value
 that stopped matching FAILS naming the field. Without a slot: the whole frame.
+
+**Or pass the PROJECTION** — `slot.projected`, the very object
+`agent({ syncState })` and the page's `useAgentState` take. It carries the
+slot key, so the case names nothing the agent does not, and its result type,
+so the frame comes back as the page's `V`. It is checked STRUCTURALLY
+against what the projection renders for the default (`projected()`): a
+frame whose keys differ — a field the view gained or lost since the eval
+was written — fails naming them, which is the drift a cast would hide.
 
 ##### Type Parameters
 
@@ -869,6 +1014,14 @@ reads `state[slot]`): not "the tool returned ok" but "the customer can see it".
 when the projection changed shape underneath the eval; with a schema, a value
 that stopped matching FAILS naming the field. Without a slot: the whole frame.
 
+**Or pass the PROJECTION** — `slot.projected`, the very object
+`agent({ syncState })` and the page's `useAgentState` take. It carries the
+slot key, so the case names nothing the agent does not, and its result type,
+so the frame comes back as the page's `V`. It is checked STRUCTURALLY
+against what the projection renders for the default (`projected()`): a
+frame whose keys differ — a field the view gained or lost since the eval
+was written — fails naming them, which is the drift a cast would hide.
+
 ##### Parameters
 
 ###### events
@@ -898,6 +1051,14 @@ reads `state[slot]`): not "the tool returned ok" but "the customer can see it".
 when the projection changed shape underneath the eval; with a schema, a value
 that stopped matching FAILS naming the field. Without a slot: the whole frame.
 
+**Or pass the PROJECTION** — `slot.projected`, the very object
+`agent({ syncState })` and the page's `useAgentState` take. It carries the
+slot key, so the case names nothing the agent does not, and its result type,
+so the frame comes back as the page's `V`. It is checked STRUCTURALLY
+against what the projection renders for the default (`projected()`): a
+frame whose keys differ — a field the view gained or lost since the eval
+was written — fails naming them, which is the drift a cast would hide.
+
 ##### Parameters
 
 ###### events
@@ -911,6 +1072,66 @@ readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
 ***
 
 ### lastToolResultIn()
+
+#### Call Signature
+
+```ts
+function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): InferToolOutput<D>;
+```
+
+The result of the LAST call to `name` in `calls`, parsed.
+
+One of three result readers, told apart by how many calls the claim allows:
+[toolResultIn](#toolresultin) — EXACTLY one (zero or two throw); this — at least one,
+the settled last; [toolResultsIn](#toolresultsin) — every call, in order (zero is `[]`).
+
+[toolResultIn](#toolresultin) refuses a scope holding two calls to one tool, and that
+refusal is right for a single TURN: two calls there is usually the finding.
+Across turns it is ordinary — a caller nudges, the agent re-reads the state,
+and a case reading `toolCallsInTurns(turns)` meets a duplicate through no
+fault of the agent's — and a live model calls a median of one tool per reply
+(`DEFAULT_MAX_STEPS`), so the claims that survive it are read across turns.
+
+The LAST rather than the first, because a repeated call is the agent settling
+on an answer and the settled one is what the caller was told.
+
+```ts
+import {
+  type EvalTurn,
+  lastToolResultIn,
+  toolCallsInTurns,
+} from "@alexkroman1/aai-runtime/eval";
+import { z } from "zod";
+
+export function finalScore(turns: readonly EvalTurn[]): number {
+  const calls = toolCallsInTurns(turns);
+  // The score as it finally stood, even if the narrator awarded twice.
+  const scored = lastToolResultIn(calls, "game_state_score", z.object({ score: z.number() }));
+  return scored.score;
+}
+```
+
+##### Type Parameters
+
+###### D
+
+`D` *extends* [`ToolDef`](../aai/index.md#tooldef)\<[`ToolInputSchema`](../aai/index.md#toolinputschema)\>
+
+##### Parameters
+
+###### calls
+
+readonly [`EvalToolCall`](#evaltoolcall)[]
+
+###### tool
+
+`D`
+
+##### Returns
+
+[`InferToolOutput`](../aai/index.md#infertooloutput)\<`D`\>
+
+#### Call Signature
 
 ```ts
 function lastToolResultIn<T = unknown>(
@@ -952,27 +1173,27 @@ export function finalScore(turns: readonly EvalTurn[]): number {
 }
 ```
 
-#### Type Parameters
+##### Type Parameters
 
-##### T
+###### T
 
 `T` = `unknown`
 
-#### Parameters
+##### Parameters
 
-##### calls
+###### calls
 
 readonly [`EvalToolCall`](#evaltoolcall)[]
 
-##### name
+###### name
 
 `string`
 
-##### schema?
+###### schema?
 
 [`StandardSchemaV1`](../aai/index.md#standardschemav1)\<`unknown`, `T`\>
 
-#### Returns
+##### Returns
 
 `T`
 
@@ -1251,6 +1472,39 @@ same ownership every other door here keeps.
 #### Call Signature
 
 ```ts
+function statesIn<V>(events: readonly SessionEvent[], projection: StateProjection<V>): readonly V[];
+```
+
+Every state frame the agent pushed (`AgentDef.syncState`), oldest first — or
+one SLOT's value in each. The SEQUENCE is a stronger claim than
+[lastStateIn](#laststatein)'s: "the cart was never shown as placed before the tool
+ran". Pass the schema for its reason, or the PROJECTION for
+[lastStateIn](#laststatein)'s. A case wanting the frames only up to some point
+slices `events` first, which is why this takes events.
+
+##### Type Parameters
+
+###### V
+
+`V`
+
+##### Parameters
+
+###### events
+
+readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
+
+###### projection
+
+[`StateProjection`](../aai/index.md#stateprojection)\<`V`\>
+
+##### Returns
+
+readonly `V`[]
+
+#### Call Signature
+
+```ts
 function statesIn<T>(
    events: readonly SessionEvent[], 
    slot: string, 
@@ -1261,8 +1515,9 @@ function statesIn<T>(
 Every state frame the agent pushed (`AgentDef.syncState`), oldest first — or
 one SLOT's value in each. The SEQUENCE is a stronger claim than
 [lastStateIn](#laststatein)'s: "the cart was never shown as placed before the tool
-ran". Pass the schema for its reason. A case wanting the frames only up to
-some point slices `events` first, which is why this takes events.
+ran". Pass the schema for its reason, or the PROJECTION for
+[lastStateIn](#laststatein)'s. A case wanting the frames only up to some point
+slices `events` first, which is why this takes events.
 
 ##### Type Parameters
 
@@ -1297,8 +1552,9 @@ function statesIn(events: readonly SessionEvent[], slot: string): readonly unkno
 Every state frame the agent pushed (`AgentDef.syncState`), oldest first — or
 one SLOT's value in each. The SEQUENCE is a stronger claim than
 [lastStateIn](#laststatein)'s: "the cart was never shown as placed before the tool
-ran". Pass the schema for its reason. A case wanting the frames only up to
-some point slices `events` first, which is why this takes events.
+ran". Pass the schema for its reason, or the PROJECTION for
+[lastStateIn](#laststatein)'s. A case wanting the frames only up to some point
+slices `events` first, which is why this takes events.
 
 ##### Parameters
 
@@ -1323,8 +1579,9 @@ function statesIn(events: readonly SessionEvent[]): readonly Readonly<Record<str
 Every state frame the agent pushed (`AgentDef.syncState`), oldest first — or
 one SLOT's value in each. The SEQUENCE is a stronger claim than
 [lastStateIn](#laststatein)'s: "the cart was never shown as placed before the tool
-ran". Pass the schema for its reason. A case wanting the frames only up to
-some point slices `events` first, which is why this takes events.
+ran". Pass the schema for its reason, or the PROJECTION for
+[lastStateIn](#laststatein)'s. A case wanting the frames only up to some point
+slices `events` first, which is why this takes events.
 
 ##### Parameters
 
@@ -1339,6 +1596,55 @@ readonly `Readonly`\<`Record`\<`string`, `unknown`\>\>[]
 ***
 
 ### toolArgsIn()
+
+#### Call Signature
+
+```ts
+function toolArgsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly InferToolInput<D>[];
+```
+
+Every call to `name` in `calls`, with its ARGUMENTS — what the agent asked
+for, in call order.
+
+The plural half of [toolResultIn](#toolresultin), and the one that was missing: nine
+eval files wrote `calls.filter((c) => c.name === X).map((c) => c.args.…)` and
+three of them wrapped it in a local `codeIn`/`fetchedUrls`/`drugsIn` reader —
+twenty-two `.filter((c) => c.name === …)` sites across the corpus.
+
+**Pass the SCHEMA when the case reads a FIELD.** `args` is
+`Record<string, unknown>` on the wire — the model produced it and nothing
+validated it, since the tool executor is where a bad call is rejected — so the
+alternative is `String(c.args.code ?? "")`, which turns an argument the model
+renamed, or never sent, into `""`. That is a claim about the agent silently
+becoming a claim about nothing: an eval asserting `codeIn(turn)` contains
+`Math.PI` passes on an empty string only if the case ALSO asserted the call
+happened, and three of them did not. With a schema, arguments that stopped
+matching FAIL naming the field.
+
+ZERO calls answers `[]` rather than throwing, unlike [toolResultIn](#toolresultin) —
+"it never called this" is a claim the plural form is used to make
+(`expect(toolArgsIn(calls, "run_code")).toHaveLength(0)`), where for the
+singular it can only be a mistake.
+
+##### Type Parameters
+
+###### D
+
+`D` *extends* [`ToolDef`](../aai/index.md#tooldef)\<[`ToolInputSchema`](../aai/index.md#toolinputschema)\>
+
+##### Parameters
+
+###### calls
+
+readonly [`EvalToolCall`](#evaltoolcall)[]
+
+###### tool
+
+`D`
+
+##### Returns
+
+readonly [`InferToolInput`](../aai/index.md#infertoolinput)\<`D`\>[]
 
 #### Call Signature
 
@@ -1531,6 +1837,52 @@ readonly `string`[]
 
 ### toolResultIn()
 
+#### Call Signature
+
+```ts
+function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): InferToolOutput<D>;
+```
+
+The result of the ONE call to `name` in `calls`, parsed — zero calls or two
+throw. [lastToolResultIn](#lasttoolresultin) allows repeats; [toolResultsIn](#toolresultsin) reads
+them all.
+
+`EvalToolCall.result` is the serialized string the model was handed, so every
+eval that asserts on what a tool ANSWERED was parsing and indexing it by
+hand — five files had written the same helper. What matters more than the
+parse is the THROW: a `find` that misses answers `undefined`, and a case then
+asserts against nothing and passes. This names what was called instead.
+
+**Handed the tool's DEF, the result is TYPED** — `InferToolOutput<typeof
+placeOrder>`, the type its `execute` declares — and the wire name is read off
+the def (`toolNameOf`), so a renamed file fails here by name. For a
+`dialog.tool` the envelope type is known (`DialogToolResult<R> | ToolFailure`),
+so `dialogResultSchema` is no longer needed to read one; `expectToolOk`
+unwraps it. The def form parses JSON and claims the shape; a result whose
+shape has to be PROVED still takes the string and a schema.
+
+##### Type Parameters
+
+###### D
+
+`D` *extends* [`ToolDef`](../aai/index.md#tooldef)\<[`ToolInputSchema`](../aai/index.md#toolinputschema)\>
+
+##### Parameters
+
+###### calls
+
+readonly [`EvalToolCall`](#evaltoolcall)[]
+
+###### tool
+
+`D`
+
+##### Returns
+
+[`InferToolOutput`](../aai/index.md#infertooloutput)\<`D`\>
+
+#### Call Signature
+
 ```ts
 function toolResultIn<T = unknown>(
    calls: readonly EvalToolCall[], 
@@ -1549,33 +1901,82 @@ hand — five files had written the same helper. What matters more than the
 parse is the THROW: a `find` that misses answers `undefined`, and a case then
 asserts against nothing and passes. This names what was called instead.
 
-#### Type Parameters
+**Handed the tool's DEF, the result is TYPED** — `InferToolOutput<typeof
+placeOrder>`, the type its `execute` declares — and the wire name is read off
+the def (`toolNameOf`), so a renamed file fails here by name. For a
+`dialog.tool` the envelope type is known (`DialogToolResult<R> | ToolFailure`),
+so `dialogResultSchema` is no longer needed to read one; `expectToolOk`
+unwraps it. The def form parses JSON and claims the shape; a result whose
+shape has to be PROVED still takes the string and a schema.
 
-##### T
+##### Type Parameters
+
+###### T
 
 `T` = `unknown`
 
-#### Parameters
+##### Parameters
 
-##### calls
+###### calls
 
 readonly [`EvalToolCall`](#evaltoolcall)[]
 
-##### name
+###### name
 
 `string`
 
-##### schema?
+###### schema?
 
 [`StandardSchemaV1`](../aai/index.md#standardschemav1)\<`unknown`, `T`\>
 
-#### Returns
+##### Returns
 
 `T`
 
 ***
 
 ### toolResultsIn()
+
+#### Call Signature
+
+```ts
+function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly InferToolOutput<D>[];
+```
+
+Every call to `name` in `calls`, with its RESULT parsed — what each answered,
+in call order. The plural of [toolResultIn](#toolresultin) (exactly one) and
+[lastToolResultIn](#lasttoolresultin) (the last of several).
+
+[toolResultIn](#toolresultin) refuses more than one call on purpose: "the one call to
+X" is the common claim and two of them is usually a finding. The plural is the
+other half, and three eval files had written it as
+`.map((c) => c.result ?? "")` — which turns "the tool never returned" into an
+empty string, i.e. drops exactly the finding [toolResultIn](#toolresultin) throws to
+report. An incomplete call throws here too, naming its position.
+
+ZERO calls answers `[]`, for the reason [toolArgsIn](#toolargsin) gives.
+
+##### Type Parameters
+
+###### D
+
+`D` *extends* [`ToolDef`](../aai/index.md#tooldef)\<[`ToolInputSchema`](../aai/index.md#toolinputschema)\>
+
+##### Parameters
+
+###### calls
+
+readonly [`EvalToolCall`](#evaltoolcall)[]
+
+###### tool
+
+`D`
+
+##### Returns
+
+readonly [`InferToolOutput`](../aai/index.md#infertooloutput)\<`D`\>[]
+
+#### Call Signature
 
 ```ts
 function toolResultsIn<T = unknown>(
@@ -1598,27 +1999,27 @@ report. An incomplete call throws here too, naming its position.
 
 ZERO calls answers `[]`, for the reason [toolArgsIn](#toolargsin) gives.
 
-#### Type Parameters
+##### Type Parameters
 
-##### T
+###### T
 
 `T` = `unknown`
 
-#### Parameters
+##### Parameters
 
-##### calls
+###### calls
 
 readonly [`EvalToolCall`](#evaltoolcall)[]
 
-##### name
+###### name
 
 `string`
 
-##### schema?
+###### schema?
 
 [`StandardSchemaV1`](../aai/index.md#standardschemav1)\<`unknown`, `T`\>
 
-#### Returns
+##### Returns
 
 readonly `T`[]
 
@@ -1853,7 +2254,7 @@ The agent to run — an ordinary `agent()` definition.
 ##### call?
 
 ```ts
-readonly optional call?: SessionCall;
+readonly optional call?: SessionCallInput;
 ```
 
 The placed phone call this session IS — what `sessionContext` and
@@ -4161,6 +4562,7 @@ type EvalTurn = {
   events: readonly SessionEvent[];
   text: string;
   toolCalls: readonly EvalToolCall[];
+  workflowStarts?: readonly EvalWorkflowStart[];
 };
 ```
 
@@ -4257,6 +4659,21 @@ readonly toolCalls: readonly EvalToolCall[];
 This turn's tool calls, in call order, each with its result — minus the
 `think` builtin's scratchpad calls (an authored `think` stays). `events`
 still carries every call.
+
+##### workflowStarts?
+
+```ts
+readonly optional workflowStarts?: readonly EvalWorkflowStart[];
+```
+
+The workflow runs a tool STARTED during this turn, in order — one entry
+per `ctx.workflows.start`, as the session's client recorded it.
+
+Read off the client the session was handed, not off a tool's result, so
+it holds whatever the tool answered the model and names the run by the
+key `agent({ workflows })` declares it under. `evalRunOf(turn, def)` is
+the reader. Optional for the reason [endedSession](#endedsession) is;
+[openEvalSession](#openevalsession)'s `say()` always sets it.
 
 ***
 
@@ -4813,6 +5230,48 @@ readonly optional timeoutMs?: number;
 ```
 
 Overrides the default per-run timeout for every run of this app.
+
+***
+
+### EvalWorkflowStart
+
+```ts
+type EvalWorkflowStart = {
+  def: AnyWorkflowDef | undefined;
+  runId: string;
+  workflow: string;
+};
+```
+
+**`Sealed`**
+
+One `ctx.workflows.start` a turn made.
+
+#### Properties
+
+##### def
+
+```ts
+readonly def: AnyWorkflowDef | undefined;
+```
+
+The declared def, when the agent declares one under that key.
+
+##### runId
+
+```ts
+readonly runId: string;
+```
+
+The run id `start` resolved with.
+
+##### workflow
+
+```ts
+readonly workflow: string;
+```
+
+The key the workflow is declared under in `agent({ workflows })`.
 
 ***
 

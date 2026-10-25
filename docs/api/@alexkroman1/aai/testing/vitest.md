@@ -20,6 +20,73 @@ declares it. This subpath keeps working; it is where the names are declared.
 
 ## Functions
 
+### describeAgent()
+
+```ts
+function describeAgent<D extends ToolBearingAgent & {
+  llm?: unknown;
+  name: string;
+  stt?: unknown;
+  tts?: unknown;
+}>(agent: D, define: (run: ToolRunner, agent: D) => void): void;
+```
+
+Declare a suite for one deployed agent: the built-in "is deployable" case,
+then the body, handed the typed [ToolRunner](../testing.md#toolrunner) for the agent.
+
+Every shipped template's spec opened with the same two things — a
+`describe(agentDef.name, …)` whose first case was `expectDeployable(agentDef)`,
+and `const run = toolRunner(agentDef)` above it. The deployable case is the
+one no agent spec should be without (a config the platform refuses is a spec
+measuring nothing), and binding the runner is the line every file repeated.
+
+The body takes vitest's own `test`/`expect` from `vitest` as usual; only the
+runner is handed in, so a case reads `run(addItem, { … })` typed, or
+`run("add_item", …)` by name.
+
+#### Type Parameters
+
+##### D
+
+`D` *extends* [`ToolBearingAgent`](../testing.md#toolbearingagent) & \{
+  `llm?`: `unknown`;
+  `name`: `string`;
+  `stt?`: `unknown`;
+  `tts?`: `unknown`;
+\}
+
+#### Parameters
+
+##### agent
+
+`D`
+
+##### define
+
+(`run`: [`ToolRunner`](../testing.md#toolrunner), `agent`: `D`) => `void`
+
+#### Returns
+
+`void`
+
+#### Example
+
+```ts no-check
+import agentDef from "virtual:aai/agent";
+import { describeAgent } from "@alexkroman1/aai/testing/vitest";
+import { expect, test } from "vitest";
+import addItem from "./tools/add_item.ts";
+
+describeAgent(agentDef, (run) => {
+  test("adds the item", async () => {
+    const { added } = await run(addItem, { item: "apple" });
+    expect(added).toBe("apple");
+  });
+});
+```
+
+***
+
 ### installStubClientInbox()
 
 ```ts
@@ -61,7 +128,7 @@ console.log(inbox.calls[0]?.clientId); // "kitchen"
 ### installStubGateway()
 
 ```ts
-function installStubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGatewayCall[];
+function installStubGateway(replies: string | readonly string[], options?: InstallStubGatewayOptions): StubGatewayCall[];
 ```
 
 Install a fake LLM gateway as the global `fetch`, and return its call log.
@@ -81,6 +148,11 @@ before the next test. Install per test (the test body or a `beforeEach`);
 one installed in `beforeAll` is gone before the first test runs. Without
 `unstubGlobals`, `vi.unstubAllGlobals()` is the explicit undo.
 
+**It also seeds `ASSEMBLYAI_API_KEY`** for the test when the process holds
+none, since `stepGenerate` refuses by name without one and the fake never
+reads it — `apiKey: false` opts out. The seed is put back when the test
+finishes.
+
 #### Parameters
 
 ##### replies
@@ -92,7 +164,7 @@ Completion contents, in order; the last repeats — see
 
 ##### options?
 
-[`StubGatewayOptions`](../testing.md#stubgatewayoptions)
+[`InstallStubGatewayOptions`](#installstubgatewayoptions)
 
 #### Returns
 
@@ -331,12 +403,99 @@ const workflows = installStubWorkflows({
 const ctx = createToolContext({ workflows });
 ```
 
+***
+
+### installStubWorld()
+
+```ts
+function installStubWorld(options?: StubWorldOptions): StubWorld;
+```
+
+Install every seam a workflow step reaches through, composed in the one
+order that works, and seed the credential — restored when this test
+finishes.
+
+A step's HTTP goes through ONE published `stepFetch`, so a flow that calls a
+model AND fetches a page AND transcribes a recording cannot install three
+fakes: whichever published last answers everything. The composition every
+workflow spec therefore hand-wrote is the gateway route in FRONT of the page
+stub (`model.route(request) ?? page()`), and in front of both the
+transcription fake holding the slot with the pair as its `otherwise`. Get
+the order wrong and the page stub answers the gateway's request with HTML,
+which `stepGenerate` retries against until its budget runs out; a shipped
+template carries a paragraph warning about exactly this. Here the order is
+fixed, and a spec names only the legs it has.
+
+It also seeds `ASSEMBLYAI_API_KEY` (unless `apiKey: false`), because
+`stepGenerate` refuses by name without one and the fake never reads it; the
+previous value is put back when the test finishes. `stubGatewayRoute` itself
+cannot seed anything — it installs nothing and owns no lifetime — so the
+seeding lives with the installers.
+
+`installStubReporter` is always installed, so what the steps narrated is on
+`reported` without a second call.
+
+#### Parameters
+
+##### options?
+
+[`StubWorldOptions`](#stubworldoptions)
+
+#### Returns
+
+[`StubWorld`](#stubworld)
+
+#### Example
+
+```ts no-check
+import { installStubWorld } from "@alexkroman1/aai/testing/vitest";
+
+test("the digest reads the page and asks the model", async () => {
+  const world = installStubWorld({
+    model: '{"headline":"Otters use tools","points":["They do."]}',
+    pages: { "https://example.com/otters": { body: PAGE_HTML } },
+  });
+  await digest({ url: "https://example.com/otters" });
+  expect(world.model[0]?.prompt).toContain("Otters");
+});
+```
+
 ## Type Aliases
+
+### InstallStubGatewayOptions
+
+```ts
+type InstallStubGatewayOptions = StubGatewayOptions & {
+  apiKey?: string | false;
+};
+```
+
+**`Input`**
+
+Options for [installStubGateway](#installstubgateway): `stubGateway`'s, plus the credential.
+
+#### Type Declaration
+
+##### apiKey?
+
+```ts
+optional apiKey?: string | false;
+```
+
+The `ASSEMBLYAI_API_KEY` to seed for this test, when the process holds
+none — see [installStubWorld](#installstubworld). Defaults to a recognizable stub
+value; `false` seeds nothing, for the one spec whose subject IS the
+missing-key refusal.
+
+***
 
 ### StubWorkflowsOptions
 
 ```ts
 type StubWorkflowsOptions = {
+  agent?: {
+     workflows?: Readonly<Record<string, unknown>>;
+  };
   lastLine?: unknown;
   names?: readonly string[];
   runId?: string;
@@ -353,6 +512,24 @@ answer "nothing has run" — which is the arm a `*_status` tool branches on
 first and the one most specs of one want.
 
 #### Properties
+
+##### agent?
+
+```ts
+optional agent?: {
+  workflows?: Readonly<Record<string, unknown>>;
+};
+```
+
+The agent under test, whose declared `workflows` are what `listing()`
+reports — so a renamed workflow is read off the def rather than restated.
+Pass `agentDef`; an explicit `names` wins over it.
+
+###### workflows?
+
+```ts
+readonly optional workflows?: Readonly<Record<string, unknown>>;
+```
 
 ##### lastLine?
 
@@ -371,7 +548,8 @@ optional names?: readonly string[];
 ```
 
 Workflow names `listing()` reports, in order — normally the one the agent
-under test declares. Defaults to none, i.e. an agent declaring no workflow.
+under test declares. Defaults to the keys of [StubWorkflowsOptions.agent](#agent)'s
+`workflows`, else none, i.e. an agent declaring no workflow.
 
 ##### runId?
 
@@ -392,3 +570,166 @@ the other two with the whole list. One list rather than three, because a
 spec asserting what a tool REPORTS is describing one world, and three
 fixtures that can disagree about it is a way to write a passing test for a
 state the platform cannot produce. Build them with `createRunSnapshot`.
+
+***
+
+### StubWorld
+
+```ts
+type StubWorld = {
+  files: StubUploads | undefined;
+  model: StubGatewayCall[];
+  provider: StubTranscribeCall[];
+  reported: StubReporter;
+  speech: StubSpeechCall[];
+  uploads: StubUploadWrite[];
+};
+```
+
+**`Sealed`**
+
+What [installStubWorld](#installstubworld) returns: every fake's call log, live.
+
+#### Properties
+
+##### files
+
+```ts
+readonly files: StubUploads | undefined;
+```
+
+The upload store itself, for `read` — `undefined` when `uploads` was not named.
+
+##### model
+
+```ts
+readonly model: StubGatewayCall[];
+```
+
+Every completion request the gateway answered, decoded.
+
+##### provider
+
+```ts
+readonly provider: StubTranscribeCall[];
+```
+
+Every transcription request, by leg — empty when `transcribe` was not named.
+
+##### reported
+
+```ts
+readonly reported: StubReporter;
+```
+
+What the steps narrated and emitted (`installStubReporter`).
+
+##### speech
+
+```ts
+readonly speech: StubSpeechCall[];
+```
+
+Every line the synthesizer was asked to say — empty when `speech` was not named.
+
+##### uploads
+
+```ts
+readonly uploads: StubUploadWrite[];
+```
+
+Every file a step wrote — empty unless `uploads` was named with `writable`.
+
+***
+
+### StubWorldOptions
+
+```ts
+type StubWorldOptions = {
+  apiKey?: string | false;
+  model?: string | readonly string[];
+  pages?:   | FetchRouteTable
+     | FetchRouteHandler;
+  speech?: StubSpeechOptions | true;
+  transcribe?: StubTranscribeOptions;
+  uploads?: Readonly<Record<string, StubUpload>>;
+  uploadsOptions?: StubUploadsOptions;
+};
+```
+
+**`Input`**
+
+What [installStubWorld](#installstubworld) may be told: one entry per seam a step reaches
+through, each optional, each installed only when named.
+
+#### Properties
+
+##### apiKey?
+
+```ts
+readonly optional apiKey?: string | false;
+```
+
+The `ASSEMBLYAI_API_KEY` to seed for this test, when the process holds
+none. Defaults to a recognizable stub value; `false` seeds nothing.
+
+##### model?
+
+```ts
+readonly optional model?: string | readonly string[];
+```
+
+What the LLM gateway answers, in order, the last repeating — `stubGatewayRoute`'s
+replies. Routed FIRST, on the completions path, before every other leg:
+a page stub answering the gateway's request with HTML is the footgun this
+ordering exists for (the summarize step retries six times against it).
+Absent, a completion request falls through to the other legs.
+
+##### pages?
+
+```ts
+readonly optional pages?: 
+  | FetchRouteTable
+  | FetchRouteHandler;
+```
+
+Everything else a step fetches — a page, a vendor API — as a
+`stubFetchRoutes` table or one handler. The LAST leg: a request it does
+not answer is a finding and throws naming the method and URL, never an
+empty `200` a step would try to parse.
+
+##### speech?
+
+```ts
+readonly optional speech?: StubSpeechOptions | true;
+```
+
+Publish a recording synthesizer — `installStubSpeech`'s options, or `true` for the defaults.
+
+##### transcribe?
+
+```ts
+readonly optional transcribe?: StubTranscribeOptions;
+```
+
+Answer AssemblyAI's transcription endpoints — `installStubTranscribe`'s
+options. When present, the transcription fake OWNS the published step
+fetch and the gateway and `pages` legs are its `otherwise`, which is the
+only order that works: publishing replaces, so two fakes cannot both hold
+the slot. An `otherwise` of your own runs after both.
+
+##### uploads?
+
+```ts
+readonly optional uploads?: Readonly<Record<string, StubUpload>>;
+```
+
+Publish an in-memory upload store holding these files — `installStubUploads`'s.
+
+##### uploadsOptions?
+
+```ts
+readonly optional uploadsOptions?: StubUploadsOptions;
+```
+
+`installStubUploads`'s options (`writable`, `idPrefix`), beside the files.

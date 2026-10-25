@@ -40,6 +40,8 @@ it:
   [stepTranscribeUpload](#steptranscribeupload) / [stepTranscribeSubmit](#steptranscribesubmit) /
   [stepTranscribePoll](#steptranscribepoll) for the async job API or
   [stepTranscribeSync](#steptranscribesync) for the one-request one, back in.
+  [transcribeUploadDurably](#transcribeuploaddurably) is the async trio and the poll as ONE
+  body-side call over the body's `ctx` — the only name here that takes one.
 - **Phone calls, outbound** — [stepPlaceCall](#stepplacecall) dials through Twilio and
   streams the answered call to an agent's `WS /phone`, with `<Parameter>`s
   the answering session reads as `call.parameters`; [stepCallStatus](#stepcallstatus)
@@ -1565,6 +1567,11 @@ when the upload is still arriving — see this
 
 when the id names no upload, exactly as [stepUploadInfo](#stepuploadinfo) does.
 
+**From a step, prefer `orFail(stepRequireCompleteUpload)` (`orFail` is on
+`@alexkroman1/aai/step-errors`).** The refusal carries `retryable: false`, and
+`orFail` is what turns that into the `FatalError` the engine stops on; the raw
+call's throw is retried, against an upload no attempt can finish.
+
 ***
 
 ### stepSayOnClient()
@@ -1958,6 +1965,8 @@ export async function transcribeClip(uploadId: string): Promise<string> {
 ```ts
 function stepTranscribeUpload(uploadId: string, options?: TranscribeRequestOptions): Promise<{
   audioUrl: string;
+  size: number;
+  source: string;
 }>;
 ```
 
@@ -1993,7 +2002,16 @@ An upload in the agent's own store, as `stepWriteUpload` or a
 
 `Promise`\<\{
   `audioUrl`: `string`;
+  `size`: `number`;
+  `source`: `string`;
 \}\>
+
+The provider's URL, plus the upload's `label` as `source` and its
+  `size`. Both ride the JOURNALED result on purpose: a body that reports
+  "Transcribing `call.m4a` (12 MB)" after this step, or names the recording
+  in its output, reads them off the value it already has rather than paying a
+  second `stepUploadInfo` round trip — which on a deployed guest is a platform
+  call, and inside a step is one more thing to classify.
 
 #### Throws
 
@@ -2018,8 +2036,8 @@ retried until the attempts run out.
 function stepUploadInfo(id: string): Promise<UploadInfo>;
 ```
 
-Read one upload's metadata: its name, what has ARRIVED, and whether that is all
-of it.
+Read one upload's metadata: its name (and the `label` to show a person), what
+has ARRIVED, and whether that is all of it.
 
 The poll a body waiting on a streamed upload runs.
 
@@ -2049,6 +2067,8 @@ when the id names no upload — a step that reaches for one and finds
 ***
 
 ### stepWebhookUrl()
+
+#### Call Signature
 
 ```ts
 function stepWebhookUrl(token: string): string;
@@ -2084,22 +2104,22 @@ point a tunnel at the dev server's BACKEND port (the Vite port a developer
 opens does not proxy `/.well-known/`) and set `PUBLIC_URL` to the tunnel. A
 spec drives it by publishing a minter of its own.
 
-#### Parameters
+##### Parameters
 
-##### token
+###### token
 
 `string`
 
 The waitpoint's token, exactly as the body passes it to
   `ctx.waitFor`. Derived from the run's input, never random.
 
-#### Returns
+##### Returns
 
 `string`
 
 The absolute URL, encoded for the route's single token segment.
 
-#### Example
+##### Example
 
 Submit the work and hand the callback over in the same step, so the far side
 is told about the waitpoint before the body parks on it.
@@ -2120,16 +2140,88 @@ export async function submitRender(id: string): Promise<void> {
 }
 ```
 
-#### Throws
+##### Throws
 
 when this process cannot mint one — the message names the
   configuration and says what `aai dev` can and cannot do.
 
-#### Throws
+##### Throws
 
 when `token` is empty: that composes to the route's own
   prefix, which the parser refuses, so the failure would otherwise arrive at
-  the far end as a 404 on a URL nobody can re-issue.
+  the far end as a 404 on a URL nobody can re-issue. Refused under
+  `optional` too — a missing URL is a deployment's state, an empty token is a
+  bug.
+
+#### Call Signature
+
+```ts
+function stepWebhookUrl(token: string, options: {
+  optional: true;
+}): string | undefined;
+```
+
+The URL, or `undefined` when this process cannot mint one — for a step that
+has a callback-free path and wants to take it rather than fail.
+
+##### Parameters
+
+###### token
+
+`string`
+
+###### options
+
+###### optional
+
+`true`
+
+##### Returns
+
+`string` \| `undefined`
+
+##### Example
+
+```ts
+import { stepFetch, stepWebhookUrl } from "@alexkroman1/aai/step";
+
+export async function submitRender(id: string): Promise<void> {
+  // Under `aai dev` there is no public URL; the body polls instead, so the
+  // submit goes out without a callback rather than not at all.
+  const callbackUrl = stepWebhookUrl(`render:${id}`, { optional: true });
+  await stepFetch("https://renders.example.com/jobs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id, ...(callbackUrl === undefined ? {} : { callbackUrl }) }),
+  });
+}
+```
+
+#### Call Signature
+
+```ts
+function stepWebhookUrl(token: string, options?: {
+  optional?: boolean;
+}): string | undefined;
+```
+
+[stepWebhookUrl](#stepwebhookurl) with the options bag assembled elsewhere.
+
+##### Parameters
+
+###### token
+
+`string`
+
+###### options?
+
+###### optional?
+
+`boolean`
+
+##### Returns
+
+`string` \| `undefined`
 
 ***
 
@@ -2223,6 +2315,83 @@ Text that carries no fence is returned trimmed and otherwise untouched.
 #### Returns
 
 `string`
+
+***
+
+### transcribeUploadDurably()
+
+```ts
+function transcribeUploadDurably(
+   ctx: TranscribeDurablyHost, 
+   uploadId: string, 
+   options?: TranscribeDurablyOptions
+): Promise<DurableTranscript>;
+```
+
+Transcribe a stored upload through the async API, durably: upload it, create
+the job, and poll until the transcript is in, each phase a journaled step of
+`ctx`.
+
+Call it from the BODY, handing it the body's own `ctx` — it journals through
+that context exactly as the hand-written three-step loop did (`step-transcribe.ts`'s
+module doc shows that loop), so there is nothing to wrap it in. A resumed run
+replays the upload and the submit from the journal and polls the same job.
+
+#### Parameters
+
+##### ctx
+
+[`TranscribeDurablyHost`](#transcribedurablyhost)
+
+The workflow body's context, or anything with its `step` and
+  `poll` (the `/testing` recorder qualifies).
+
+##### uploadId
+
+`string`
+
+An upload in the agent's own store. Must be complete; one
+  still arriving is refused BEFORE the upload leg, as `stepTranscribeUpload`
+  refuses it, and that refusal is fatal.
+
+##### options?
+
+[`TranscribeDurablyOptions`](#transcribedurablyoptions)
+
+See [TranscribeDurablyOptions](#transcribedurablyoptions).
+
+#### Returns
+
+`Promise`\<[`DurableTranscript`](#durabletranscript)\>
+
+#### Throws
+
+/ {RetryableError} out of each step, by `throwStepError`'s
+  verdict — the engine reads them; a caller sees the run fail or retry.
+
+#### Throws
+
+from the body, `retryable: false`, when the budget
+  is spent with the job still running. The message carries the transcript id
+  and where to read it.
+
+#### Example
+
+```ts no-check
+import { stepReport, transcribeUploadDurably } from "@alexkroman1/aai/step";
+import type { WorkflowContext } from "@alexkroman1/aai/workflow-api";
+
+export async function transcribe(input: { recording: string }, ctx: WorkflowContext) {
+  const transcript = await transcribeUploadDurably(ctx, input.recording, {
+    params: { speaker_labels: true },
+    maxMs: 2 * 3_600_000,
+  });
+  await ctx.step("report", () =>
+    stepReport(`Transcribed ${transcript.source}: ${transcript.text.length} characters.`),
+  );
+  return transcript;
+}
+```
 
 ***
 
@@ -3144,6 +3313,33 @@ Why a notice was not taken.
 
 ***
 
+### DurableTranscript
+
+```ts
+type DurableTranscript = Transcript & {
+  source: string;
+};
+```
+
+**`Sealed`**
+
+What [transcribeUploadDurably](#transcribeuploaddurably) resolves with: the transcript, plus what
+the recording was CALLED.
+
+#### Type Declaration
+
+##### source
+
+```ts
+source: string;
+```
+
+The upload's `label` — its filename, or its id when the uploader gave none.
+Read off the journaled upload step, so a resumed run names the same file
+without a second look at the store.
+
+***
+
 ### EnvContext
 
 ```ts
@@ -3382,6 +3578,8 @@ The auth token. A credential: it never appears in an error.
 ```ts
 type PlaceCallOptions = {
   agentUrl?: string;
+  brief?: CallBrief;
+  briefSecretEnv?: string;
   carrier: "twilio";
   credentials?: PlaceCallCredentials;
   from: string;
@@ -3414,6 +3612,29 @@ Defaults to THIS agent's public URL, which the host publishes: the
 deployed agent's own URL on the managed platform, the tunnel under
 `aai dev --tunnel`, `PUBLIC_URL` for a self-hosted server. Pass it only to
 have a DIFFERENT agent answer.
+
+##### brief?
+
+```ts
+optional brief?: CallBrief;
+```
+
+The call's BRIEF — the app's own call id and the task prompt — signed
+with the secret in `briefSecretEnv` and carried on the call as the
+parameters `call`, `sig` and `p0…pN` (`signCallBrief`), so the answering
+session reads it back with `call.brief(secret)` and refuses a stream that
+was not signed by this app. `parameters` may not use those names. The
+prompt is at most `MAX_CALL_BRIEF_PROMPT_CHARS`.
+
+##### briefSecretEnv?
+
+```ts
+optional briefSecretEnv?: string;
+```
+
+The step-env variable holding the secret `brief` is signed with. Default
+`CALL_BRIEF_SECRET_ENV` (`"CALLS_API_KEY"`); the answering agent reads the
+same variable from its env. Unset with a `brief` is a non-retryable refusal.
 
 ##### carrier
 
@@ -4427,6 +4648,170 @@ shown to anyone but the owner.
 
 ***
 
+### TranscribeDurablyHost
+
+```ts
+type TranscribeDurablyHost = {
+  poll: Promise<PollResult<T>>;
+  step: Promise<T>;
+};
+```
+
+**`Input`**
+
+The two context methods the composition is made of, with the step NAMES
+unconstrained — the `PollHost` shape, for the same reason: `WorkflowContext`
+refuses a non-literal name at compile time, and the names here are this
+module's own literals. Method syntax, so a `WorkflowContext` is assignable.
+
+#### Methods
+
+##### poll()
+
+```ts
+poll<T>(
+   name: string, 
+   check: () => T | Promise<T>, 
+   options: PollOptions<T>
+): Promise<PollResult<T>>;
+```
+
+###### Type Parameters
+
+###### T
+
+`T`
+
+###### Parameters
+
+###### name
+
+`string`
+
+###### check
+
+() => `T` \| `Promise`\<`T`\>
+
+###### options
+
+[`PollOptions`](index.md#polloptions)\<`T`\>
+
+###### Returns
+
+`Promise`\<[`PollResult`](index.md#pollresult)\<`T`\>\>
+
+##### step()
+
+```ts
+step<T>(
+   name: string, 
+   fn: () => T | Promise<T>, 
+   options?: StepOptions
+): Promise<T>;
+```
+
+###### Type Parameters
+
+###### T
+
+`T`
+
+###### Parameters
+
+###### name
+
+`string`
+
+###### fn
+
+() => `T` \| `Promise`\<`T`\>
+
+###### options?
+
+[`StepOptions`](index.md#stepoptions)
+
+###### Returns
+
+`Promise`\<`T`\>
+
+***
+
+### TranscribeDurablyOptions
+
+```ts
+type TranscribeDurablyOptions = {
+  apiKeyEnv?: string;
+  everyMs?: number;
+  maxAttempts?: number;
+  maxMs?: number;
+  models?: readonly string[];
+  params?: Record<string, unknown>;
+};
+```
+
+**`Input`**
+
+What [transcribeUploadDurably](#transcribeuploaddurably) accepts.
+
+#### Properties
+
+##### apiKeyEnv?
+
+```ts
+optional apiKeyEnv?: string;
+```
+
+Env var holding the credential, replacing `ASSEMBLYAI_API_KEY`. Passed to every call.
+
+##### everyMs?
+
+```ts
+optional everyMs?: number;
+```
+
+Durable wait between polls, in milliseconds. Defaults to [TRANSCRIBE\_POLL\_EVERY\_MS](#transcribe_poll_every_ms).
+
+##### maxAttempts?
+
+```ts
+optional maxAttempts?: number;
+```
+
+The UPLOAD step's attempt budget. The submit and poll steps keep the
+engine's default: they are JSON round trips, and the upload is the one
+call here whose cost is the file.
+
+##### maxMs?
+
+```ts
+optional maxMs?: number;
+```
+
+The polling budget, in milliseconds. Defaults to [TRANSCRIBE\_POLL\_MAX\_MS](#transcribe_poll_max_ms).
+
+Spending it is a refusal naming the job, not a silent `undefined` — see the
+module doc.
+
+##### models?
+
+```ts
+optional models?: readonly string[];
+```
+
+Models to ask for. `stepTranscribeSubmit`'s own option, passed through.
+
+##### params?
+
+```ts
+optional params?: Record<string, unknown>;
+```
+
+Extra fields for the create-job body, VERBATIM — `speaker_labels`,
+`language_code`, and so on. `stepTranscribeSubmit`'s own option, passed
+through.
+
+***
+
 ### TranscribeProgress
 
 ```ts
@@ -4656,7 +5041,72 @@ What was said, trimmed. Never empty — see [stepTranscribePoll](#steptranscribe
 ### UploadInfo
 
 ```ts
-type UploadInfo = {
+type UploadInfo = UploadRecord & {
+  label: string;
+};
+```
+
+**`Sealed`**
+
+What a stored upload is, minus its bytes — as a STEP reads it.
+
+[UploadRecord](#uploadrecord) with one derived field on top, filled by every reader on
+`@alexkroman1/aai/step` (`stepUploadInfo`, `stepReadUpload`,
+`stepRequireCompleteUpload`, `stepWriteUpload`).
+
+#### Type Declaration
+
+##### label
+
+```ts
+label: string;
+```
+
+What to CALL this upload in a sentence: its `name`, or its `id` when the
+uploader named none.
+
+Derived here rather than at each call site because every step that narrates
+("Transcribing `call.m4a`") wrote `stored.name || uploadId` itself, and two
+templates had already diverged on the fallback (`"the recording"` against
+the id). It is the string a progress line and a run's output should show a
+person; `name` stays the raw declaration for a caller that needs to know the
+uploader gave none.
+
+***
+
+### UploadRange
+
+```ts
+type UploadRange = {
+  end: number;
+  start: number;
+};
+```
+
+**`Sealed`**
+
+A half-open window of an upload's bytes, `[start, end)`.
+
+#### Properties
+
+##### end
+
+```ts
+end: number;
+```
+
+##### start
+
+```ts
+start: number;
+```
+
+***
+
+### UploadRecord
+
+```ts
+type UploadRecord = {
   complete: boolean;
   id: string;
   name: string;
@@ -4668,7 +5118,11 @@ type UploadInfo = {
 
 **`Sealed`**
 
-What a stored upload is, minus its bytes.
+What a STORE answers about an upload: the record as stored, minus its bytes.
+
+[UploadInfo](#uploadinfo) is this plus `UploadInfo.label`, which the reader
+module derives; a store never writes it. See `labelUpload` (`/host-internal`)
+for why the two shapes are split.
 
 #### Properties
 
@@ -4765,35 +5219,6 @@ type: string;
 ```
 
 MIME type the uploader declared, or `""`. Never sniffed from the bytes.
-
-***
-
-### UploadRange
-
-```ts
-type UploadRange = {
-  end: number;
-  start: number;
-};
-```
-
-**`Sealed`**
-
-A half-open window of an upload's bytes, `[start, end)`.
-
-#### Properties
-
-##### end
-
-```ts
-end: number;
-```
-
-##### start
-
-```ts
-start: number;
-```
 
 ***
 
@@ -4999,6 +5424,44 @@ The async API's base.
 
 ***
 
+### TRANSCRIBE\_DURABLY\_STEPS
+
+```ts
+const TRANSCRIBE_DURABLY_STEPS: {
+  poll: "transcribePoll";
+  submit: "transcribeSubmit";
+  upload: "transcribeUpload";
+};
+```
+
+The three journal names [transcribeUploadDurably](#transcribeuploaddurably) writes under.
+
+Exported so a spec driving a body over the `/testing` recorder can assert the
+journal shape by these rather than by copying the strings — and so a
+`aai workflow` listing reads the same way as the code that produced it.
+
+#### Type Declaration
+
+##### poll
+
+```ts
+readonly poll: "transcribePoll";
+```
+
+##### submit
+
+```ts
+readonly submit: "transcribeSubmit";
+```
+
+##### upload
+
+```ts
+readonly upload: "transcribeUpload";
+```
+
+***
+
 ### TRANSCRIBE\_MODELS
 
 ```ts
@@ -5013,6 +5476,37 @@ which is exactly the fault that produced the retry measurement in the module
 doc. Omitting the field entirely is legal and routes to the service's
 default; naming it is what stops a default change silently moving a
 workflow's output.
+
+***
+
+### TRANSCRIBE\_POLL\_EVERY\_MS
+
+```ts
+const TRANSCRIBE_POLL_EVERY_MS: number;
+```
+
+How often [transcribeUploadDurably](#transcribeuploaddurably) polls when the caller names no
+interval: every 10 seconds.
+
+The async API finishes a recording in a fraction of its length, so a tighter
+interval buys seconds on a job that takes minutes and costs a journal entry
+per round; a looser one leaves a short recording waiting on the sleep rather
+than the provider.
+
+***
+
+### TRANSCRIBE\_POLL\_MAX\_MS
+
+```ts
+const TRANSCRIBE_POLL_MAX_MS: number;
+```
+
+The polling budget when the caller names none: one hour.
+
+Generous on purpose — a two-hour call transcribes in well under it — and
+sized so the failure it bounds is a job the provider never finishes rather
+than a long one. A COUNT of sleeps rather than a clock (`PollOptions.maxMs`
+says why), so `floor(maxMs / everyMs)` rounds of the default is 360.
 
 ***
 

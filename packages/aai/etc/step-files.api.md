@@ -4,6 +4,31 @@
 
 ```ts
 
+// @public @sealed
+type MediaInfo = {
+    durationSec?: number;
+    format?: string;
+    bitRate?: number;
+    sizeBytes?: number;
+    streams: MediaStreamInfo[];
+    audio?: MediaStreamInfo;
+    video?: MediaStreamInfo;
+    raw: unknown;
+};
+
+// @public @sealed
+type MediaStreamInfo = {
+    index: number;
+    kind: string;
+    codec?: string;
+    sampleRate?: number;
+    channels?: number;
+    sampleFormat?: string;
+    width?: number;
+    height?: number;
+    durationSec?: number;
+};
+
 // @public
 export function readUploadToFile(uploadId: string, path: string, options?: ReadUploadToFileOptions): Promise<number>;
 
@@ -15,25 +40,84 @@ export type ReadUploadToFileOptions = {
 };
 
 // @public
+export type SpeakMaster = "mp3" | "wav";
+
+// @public @input
+type SpeakOptions = {
+    voice?: string | undefined;
+    language?: string | undefined;
+    sampleRate?: number | undefined;
+    apiKeyEnv?: string | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public @input
+export type SpeakToUploadOptions = SpeakOptions & {
+    master?: SpeakMaster | undefined;
+    name: string;
+    timeoutMs?: number | undefined;
+};
+
+// @public @sealed
+export type SpokenUpload = UploadInfo & {
+    durationMs: number;
+    voice: string;
+};
+
+// @public
 export const STEP_FILE_READ_CONCURRENCY: number;
 
 // @public
 export const STEP_FILE_WINDOW_BYTES: number;
 
+// @public
+export function stepSpeakToUpload(text: string, options: SpeakToUploadOptions): Promise<SpokenUpload>;
+
 // @public @sealed
-type UploadInfo = {
+export type TranscodedUpload = {
     id: string;
-    name: string;
-    type: string;
     size: number;
-    complete: boolean;
-    ranges?: readonly UploadRange[];
+    bytes: number;
+    info?: MediaInfo;
+    ffmpegMs: number;
+    stderr: string;
+};
+
+// @public
+export function transcodeUpload(uploadId: string, options: TranscodeUploadOptions): Promise<TranscodedUpload>;
+
+// @public @input
+export type TranscodeUploadOptions = {
+    args: (source: string, out: string) => readonly string[];
+    output: {
+        name: string;
+        type: string;
+    };
+    timeoutMs?: number | undefined;
+    probe?: boolean | undefined;
+    loglevel?: string | undefined;
+    signal?: AbortSignal | undefined;
+};
+
+// @public @sealed
+type UploadInfo = UploadRecord & {
+    label: string;
 };
 
 // @public @sealed
 type UploadRange = {
     start: number;
     end: number;
+};
+
+// @public @sealed
+type UploadRecord = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+    complete: boolean;
+    ranges?: readonly UploadRange[];
 };
 
 // @public

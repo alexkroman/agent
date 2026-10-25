@@ -16,6 +16,7 @@ export function buildClientConfig(source: {
     sessionUrl?: string | undefined;
     page?: "voice" | "static" | undefined;
     sessionToken?: string | undefined;
+    tools?: Record<string, ToolUi> | undefined;
 }): ClientConfigResponse;
 
 // @public
@@ -37,6 +38,7 @@ export interface ClientConfigResponse {
     page: "voice" | "static";
     sessionToken?: string | undefined;
     sessionUrl?: string | undefined;
+    tools?: Record<string, ToolUi> | undefined;
 }
 
 // @public
@@ -139,6 +141,7 @@ export const HostConfigMessageSchema: z.ZodObject<{
                     }>>;
                 }, z.core.$strip>>>;
             }, z.core.$strip>>;
+            ui: z.ZodOptional<z.ZodType<ToolUi>>;
         }, z.core.$strip>>;
         sttPrompt: z.ZodOptional<z.ZodString>;
         credentials: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
@@ -232,6 +235,7 @@ export const HostConfigSchema: z.ZodObject<{
                 }>>;
             }, z.core.$strip>>>;
         }, z.core.$strip>>;
+        ui: z.ZodOptional<z.ZodType<ToolUi>>;
     }, z.core.$strip>>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     credentials: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
@@ -552,6 +556,12 @@ export const SessionEventSchema: z.ZodType<SessionEvent>;
 
 // @public
 type SessionEventType = Extract<keyof SessionEventMap, string>;
+
+// @public @input
+type ToolUi = {
+    icon?: string | undefined;
+    label?: string | undefined;
+};
 
 // (No @packageDocumentation comment for this package)
 
