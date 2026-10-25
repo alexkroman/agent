@@ -193,23 +193,28 @@ template's account: `EXEMPLARS-CLAUDE.md`, "Dialog templates".
 
 - **A tool legal in EVERY state is not a flow tool.** Keep it an ordinary
   `tool()`/`slot.updateTool` that calls `dialog.send` itself.
-- **`sendFrom` goes BELOW `execute`** (next section). It is also where "did this
-  actually do the thing" lives: send nothing when nothing happened.
+- **`sendFrom` goes in the SECOND argument** (next section). It is also where
+  "did this actually do the thing" lives: send nothing when nothing happened.
 - **A `final` state delivers no events**, so restarting is `dialog.reset`.
 - **A refusal short-circuits before the tool body**, including any bookkeeping a
   per-agent wrapper does; say so at the wrapper.
 - **A state with a `timeout` must not transition on chatter** unless you want
   every turn to re-arm it: the deadline runs from the dialog's last MOVE.
 
-### A `sendFrom` goes BELOW `execute`
+### A `sendFrom` goes in the second argument
 
-Declare `sendFrom` after `execute`. Real tool bodies are contextually typed
-inline arrows whose return type is inferred after `sendFrom` is checked, so
-written first, `result` is `unknown` and you get `TS18046` (the same for a body
-ending in a generic call like `planSlot.update`). `dialog.test-d.ts` uses an
-annotated function reference and so does not show this. With `NoInfer` it is a
-compile error, not silence: delete absorbing guards (`"x" in result &&`,
-`isToolFailure(result) ? … : …` in a `summary`) rather than adding them.
+Declare it as `dialog.tool(def, { sendFrom })` (`hotel-reception-agent`'s six
+recording arms, `tabletop-rpg-agent`'s rolls). Inline, it must come AFTER
+`execute`: real tool bodies are contextually typed inline arrows whose return
+type is inferred after an earlier `sendFrom` is checked, so written first,
+`result` is `unknown` and you get `TS18046`. The string form
+(`sendFrom: "next"`) is not usable on an inline body at all — the literal is
+checked before the body is inferred, in either position — and a gated
+`slot.updateTool({ dialog })` hands `sendFrom` the body's `ToolFailure` arm as
+well, which is why a flow tool whose body can refuse is `dialog.tool` around
+`slot.update`. With `NoInfer` it is a compile error, not silence: delete
+absorbing guards (`"x" in result &&`, `isToolFailure(result) ? … : …` in a
+`summary`) rather than adding them.
 
 - **A per-agent wrapper copies the SDK's signature, not its `Exclude`:** declare
   `execute: (…) => R | ToolFailure` and let union inference subtract the failure
@@ -237,7 +242,7 @@ the rationale.
 
 Everything a dialog does when no tool is running — session events, deadlines,
 the active `instruction` on every turn, per-state `interruption`/`toolChoice`/
-`temperature` — requires `agent({ dialogs: DIALOGS })`; without it the dialog
+`temperature` — requires `agent({ dialogs: [callFlow] })`; without it the dialog
 still gates and moves on `send`. `packages/aai-runtime/DIALOG-CLAUDE.md` owns
 the wiring; `roadside-assistance-agent` is the example.
 
@@ -404,9 +409,10 @@ stay fields. `withSystemPrompt` (`@alexkroman1/aai/manifest`) owns the rules and
 its module doc the argument. A `system-prompt.md` alongside a different prompt
 STRING in `agent.ts` is a build error, and so is an empty file — a silently
 ignored prompt produces an agent that behaves plausibly and wrongly. The check
-compares VALUES, so composing a string from the file passes, and a
-`systemPrompt` RESOLVER passes unchecked (it closes over its own `?raw` import).
-`_discovery.ts` resolves prompts for `templates.test.ts`.
+compares VALUES, so composing a string from the file passes. A block computed at
+run time goes under the file as `promptContext` (a string, or a resolver of the
+session) — never a `?raw` import composed into `systemPrompt`. `_discovery.ts`
+resolves prompts for `templates.test.ts`.
 
 **`coding-agent` is TEXT-mode** (`mode: "text"`), so `createRuntime` refuses it
 and it ships its own front door, `chat.ts` — the only entry point in
