@@ -16,7 +16,14 @@ import { type SpeakerDef, speaker } from "./speaker.ts";
 import type { StandardSchemaV1 } from "./standard-schema.ts";
 import type { TELEPHONY_CARRIERS, TelephonyCarrier } from "./telephony-config.ts";
 import { withTools } from "./tool-registry.ts";
-import type { AgentDef, InferToolInput, InferToolOutput, ToolContext, ToolDef } from "./types.ts";
+import type {
+  AgentDef,
+  InferToolInput,
+  InferToolOutput,
+  ToolContext,
+  ToolDef,
+  ToolUi,
+} from "./types.ts";
 import type { VoicePresetName } from "./voice-presets.ts";
 
 /** Every key ANY member of a union has — `keyof` of a union is only the shared ones. */
@@ -99,6 +106,23 @@ test("a tool reaches session state through a slot, with no annotation", () => {
   // type with an optional OBJECT-typed property" in `.agents/testing.md`.
   expectTypeOf(add).toExtend<ToolDef<z.ZodObject<{ item: z.ZodString }>, number>>();
   expectTypeOf<InferToolOutput<typeof add>>().toEqualTypeOf<number>();
+});
+
+/**
+ * `tool({ ui })` is the author's display hint, optional in both fields and
+ * taking an explicit `undefined` (an options-bag spread), and it changes
+ * neither inference helper.
+ */
+test("tool() takes a ui hint without touching its input or output types", () => {
+  const hinted = tool({
+    description: "add",
+    inputSchema: z.object({ item: z.string() }),
+    ui: { icon: "🍕", label: undefined },
+    execute: ({ item }) => item.length,
+  });
+  expectTypeOf<InferToolInput<typeof hinted>>().toEqualTypeOf<{ item: string }>();
+  expectTypeOf<InferToolOutput<typeof hinted>>().toEqualTypeOf<number>();
+  expectTypeOf(hinted.ui).toEqualTypeOf<ToolUi | undefined>();
 });
 
 /**

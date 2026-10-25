@@ -33,12 +33,15 @@ import type { UsageMeter } from "../usage-meter.ts";
 import type { ServerSession } from "./core-types.ts";
 import type { SessionEmitter } from "./emitter.ts";
 import { type SpeechDirectory, speechDirectory } from "./speech.ts";
+import type { TurnCounter } from "./turn-counter.ts";
 
 /** What one session claims under its id beside the session itself. @internal */
 export type SessionWiring = {
   sink: ClientSink;
   emitter: SessionEmitter;
   meter: UsageMeter;
+  /** The committed-turn count `ctx.turn` reads — see `turn-counter.ts`. */
+  turns: TurnCounter;
 };
 
 /** See this module's header. @internal */
@@ -62,6 +65,8 @@ export type SessionDirectory = {
   emitter(sessionId: string): SessionEmitter | undefined;
   /** The token meter of whichever session holds `sessionId` now. */
   meter(sessionId: string): UsageMeter | undefined;
+  /** How many user turns the session holding `sessionId` has committed; `0` for none. */
+  turn(sessionId: string): number;
   /** `say` / `interrupt` / `announce` by id — see `speech.ts`. */
   readonly speech: SpeechDirectory;
   /** Every live session, for shutdown. */
@@ -84,6 +89,7 @@ export function createSessionDirectory(): SessionDirectory {
     claimWiring: (sessionId, wiring) => wirings.claim(sessionId, wiring),
     emitter: (sessionId) => wirings.get(sessionId)?.emitter,
     meter: (sessionId) => wirings.get(sessionId)?.meter,
+    turn: (sessionId) => wirings.get(sessionId)?.turns.count ?? 0,
     speech: speechDirectory({ get: (sessionId) => sessions.get(sessionId) }),
     live: () => sessions.values(),
     ids: () => sessions.keys(),

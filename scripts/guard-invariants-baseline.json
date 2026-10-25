@@ -20,7 +20,7 @@
     "scripts/_property-floors-parse.mjs": 1
   },
   "rule24_toolContextField": {
-    "packages/aai/src/sdk/tool-context.ts": 12
+    "packages/aai/src/sdk/tool-context.ts": 14
   },
   "rule25_channelMessageField": {
     "packages/aai/src/sdk/channels/shared/channel-types.ts": 29

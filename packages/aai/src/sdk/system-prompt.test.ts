@@ -62,6 +62,24 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain(custom);
   });
 
+  test("a static promptContext lands under the author's instructions, blank-line separated", () => {
+    const withBoth = buildSystemPrompt(
+      makeConfig({ systemPrompt: "Custom rules.", promptContext: "Today's special is soup." }),
+      { hasTools: false },
+    );
+    expect(withBoth).toContain(`${AGENT_HEADER}\nCustom rules.\n\nToday's special is soup.`);
+    // With no instructions of its own the context IS the agent-specific
+    // section — the file-less case, where it is the author's only line.
+    const alone = buildSystemPrompt(makeConfig({ promptContext: "Today's special is soup." }), {
+      hasTools: false,
+    });
+    expect(alone).toContain(`${AGENT_HEADER}\nToday's special is soup.`);
+    // A blank context changes the prompt by not one byte.
+    expect(buildSystemPrompt(makeConfig({ promptContext: "  " }), { hasTools: false })).toBe(
+      buildSystemPrompt(makeConfig(), { hasTools: false }),
+    );
+  });
+
   // Position has to agree with the precedence PROMPT_ROLE states. When the
   // agent's own instructions sat mid-prompt with defaults after them, the
   // prompt told the model the later text loses.

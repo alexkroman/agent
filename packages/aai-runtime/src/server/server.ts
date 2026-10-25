@@ -229,6 +229,7 @@ export function createServerForRuntimeWithSeams(
         name,
         greeting: options.greeting,
         page: isStatic ? "static" : "voice",
+        tools: options.tools,
       }),
     );
   }

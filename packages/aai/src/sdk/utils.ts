@@ -81,6 +81,18 @@ export {
 } from "./keyed-lock.ts";
 export { omitUndefined } from "./omit-undefined.ts";
 export { safeJsonParse } from "./safe-json-parse.ts";
+/**
+ * A per-outcome instruction riding on a tool result, beside `toolFailure`
+ * because it is the other thing a tool says ABOUT its answer. Its own module
+ * (`tool-instruction.ts`) so the runtime's readers share the key.
+ */
+export {
+  INSTRUCTION_KEY,
+  instructionOf,
+  stripInstruction,
+  type WithInstruction,
+  withInstruction,
+} from "./tool-instruction.ts";
 
 /**
  * Extract an error message from an unknown thrown value.

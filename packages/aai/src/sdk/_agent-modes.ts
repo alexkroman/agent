@@ -81,6 +81,7 @@ const GUARDRAIL_CHECKS = {
  * The rest of the member's subtraction is the tables above.
  */
 const WORKFLOW_APP_EXCLUDED = {
+  promptContext: "prompt text appended under the system prompt",
   voicePresets: "prompt text",
   toolChoice: "the model's tool-choice policy",
   builtinTools: "tools the model chooses between",

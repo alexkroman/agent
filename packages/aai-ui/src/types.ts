@@ -389,12 +389,13 @@ export type WebSocketConstructor = {
 };
 
 /**
- * Theme color overrides for the AAI UI components.
+ * The five theme tokens, each optional — the long form of {@link ClientTheme},
+ * for a page that names its own ground and surfaces.
  *
  * @input
  * @public
  */
-export type ClientTheme = {
+export type ClientThemeTokens = {
   /** Background color, also painted on `html`/`body`. Default: `#FAFAFA`. */
   bg?: string;
   /** Primary accent color. Default: `#18181B`. */
@@ -406,6 +407,36 @@ export type ClientTheme = {
   /** Border color. Default: `#E4E4E7`. */
   border?: string;
 };
+
+/**
+ * The short form of {@link ClientTheme}: one accent and a light or dark
+ * ground, from which `bg`, `surface`, `text` and `border` are DERIVED.
+ *
+ * Most pages that themed at all set `primary` and nothing else — and the few
+ * that wanted a dark page had to look up four neutrals that go together.
+ * `{ primary: "#e55", mode: "dark" }` is that lookup done once
+ * (`resolveClientTheme`, `_theme.ts`); `mode` defaults to `"light"`, which is
+ * the default palette, so `{ primary }` means the same thing in both forms.
+ *
+ * @input
+ * @public
+ */
+export type ClientThemePreset = {
+  /** Primary accent color. */
+  primary: string;
+  /** The ground the neutrals are derived for. Default: `"light"`. */
+  mode?: "dark" | "light";
+};
+
+/**
+ * Theme color overrides for the AAI UI components: the five tokens
+ * ({@link ClientThemeTokens}), or an accent plus a light/dark mode
+ * ({@link ClientThemePreset}). Either resolves to a {@link ResolvedClientTheme}.
+ *
+ * @input
+ * @public
+ */
+export type ClientTheme = ClientThemeTokens | ClientThemePreset;
 
 /**
  * The theme a component reads back from `useTheme()`: every

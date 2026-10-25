@@ -172,6 +172,8 @@ export {
 // lookup, the label fallback, the pulse rule) from taking it hostage.
 export {
   SessionStateDot,
+  type SessionStateDotColors,
+  type SessionStateDotGroup,
   type SessionStateDotProps,
 } from "./components/session-state-dot.tsx";
 export { SidebarLayout } from "./components/sidebar-layout.tsx";
@@ -304,6 +306,8 @@ export type {
   AgentState,
   ChatMessage,
   ClientTheme,
+  ClientThemePreset,
+  ClientThemeTokens,
   ResolvedClientTheme,
   SessionError,
   SessionErrorCode,

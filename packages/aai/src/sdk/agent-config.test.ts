@@ -75,6 +75,23 @@ describe("toAgentConfig", () => {
     expect(typeof config.systemPrompt).toBe("string");
   });
 
+  test("a static promptContext rides the wire; a promptContext resolver is dropped unasked", () => {
+    expect(toAgentConfig({ ...base, promptContext: "The shop closes at six." }).promptContext).toBe(
+      "The shop closes at six.",
+    );
+    const promptContext = vi.fn(() => "computed");
+    const config = toAgentConfig({ ...base, promptContext });
+    expect(config).not.toHaveProperty("promptContext");
+    expect(promptContext).not.toHaveBeenCalled();
+  });
+
+  test("the listing crosses as `listing`, whichever name the author wrote", () => {
+    expect(toAgentConfig({ ...base, listing: "Books tables" }).listing).toBe("Books tables");
+    const aliased = toAgentConfig({ ...base, description: "Books tables" });
+    expect(aliased.listing).toBe("Books tables");
+    expect(aliased).not.toHaveProperty("description");
+  });
+
   test("the resolver is never CALLED on the way to a config", () => {
     // The other half, and the one that would fail silently: calling it here
     // would ask an author's function to answer with no session anywhere, which

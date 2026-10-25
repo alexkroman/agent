@@ -591,6 +591,28 @@ describe("createTextAgent", () => {
     expect(systemOf(1)).toMatchObject({ role: "system", content: "Phase: wrap-up." });
   });
 
+  test("promptContext is appended under the agent's prompt, either half resolved per turn", async () => {
+    const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
+    let tier = "standard";
+    const chat = createTextAgent({
+      agent: textAgent({
+        name: "Helper",
+        mode: "text",
+        systemPrompt: "Base.",
+        promptContext: () => `Tier: ${tier}.`,
+      }),
+      model,
+      logger: silentLogger,
+    });
+    await drain(chat.stream({ messages: [{ role: "user", content: "hi" }] }));
+    tier = "gold";
+    await drain(chat.stream({ messages: [{ role: "user", content: "and?" }] }));
+    const systemOf = (index: number): unknown =>
+      (model.calls[index]?.prompt as { role: string; content: unknown }[] | undefined)?.[0];
+    expect(systemOf(0)).toMatchObject({ role: "system", content: "Base.\n\nTier: standard." });
+    expect(systemOf(1)).toMatchObject({ role: "system", content: "Base.\n\nTier: gold." });
+  });
+
   test("a per-turn system prompt overrides the agent's", async () => {
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
     const chat = createTextAgent({

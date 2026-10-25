@@ -199,6 +199,7 @@ export type TextOnlyExcludedField = Exclude<keyof SharedAgentParams, keyof TextA
  */
 export type WorkflowAppOnlyField =
   | "systemPrompt"
+  | "promptContext"
   | "voicePresets"
   | "maxSteps"
   | "toolChoice"

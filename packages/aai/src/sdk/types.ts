@@ -5,7 +5,8 @@
 
 import type { AgentClientInbox } from "./agent-client-inbox.ts";
 import type { AgentGuardrails } from "./agent-guardrails.ts";
-import type { AgentSystemPrompt } from "./agent-instructions.ts";
+import type { AgentInstructions, AgentSystemPrompt } from "./agent-instructions.ts";
+import type { AgentListing } from "./agent-listing.ts";
 import type { AgentMode } from "./agent-mode.ts";
 import type { AgentModelTuning } from "./agent-model-tuning.ts";
 import type { AgentObservation } from "./agent-observation.ts";
@@ -43,7 +44,13 @@ export type { AgentGuardrail, AgentGuardrails, GuardrailVerdict } from "./agent-
  * A system prompt computed per request — see `agent-instructions.ts` for where
  * the resolved text lands and how often it is asked for.
  */
-export type { AgentSystemPrompt } from "./agent-instructions.ts";
+export type {
+  AgentInstructions,
+  AgentPromptContext,
+  AgentSystemPrompt,
+} from "./agent-instructions.ts";
+/** The one-line text for a LIST of agents, and its deprecated alias — see `agent-listing.ts`. */
+export type { AgentListing } from "./agent-listing.ts";
 /** The discriminant `agent()` is overloaded over — see `agent-mode.ts`. */
 export type { AgentMode } from "./agent-mode.ts";
 /**
@@ -129,6 +136,7 @@ export type {
   ToolMessages,
   ToolMessagesInput,
   ToolStartMessage,
+  ToolUi,
 } from "./tool-def.ts";
 /**
  * The opt-in prompt presets and the field that names them — the fifth field
@@ -162,9 +170,10 @@ export {
  * stop a turn), {@link AgentObservation} (the two that deliberately may not),
  * {@link AgentVoicePresets} (paid for on every model request),
  * {@link AgentSessionLifecycle} (once per session), {@link AgentRoutes} and
- * {@link AgentClientInbox} (no session at all). The `agent()` union and the
- * runtime refusal for an untyped caller are both cut from those groups, so no
- * field skips either.
+ * {@link AgentClientInbox} (no session at all), {@link AgentInstructions}
+ * (appended under the prompt) and {@link AgentListing} (read by a list, never
+ * the model). The `agent()` union and the runtime refusal for an untyped
+ * caller are both cut from those groups, so no field skips either.
  *
  * @input
  * @public
@@ -178,7 +187,9 @@ export interface AgentDeclaration
     AgentVoicePresets,
     AgentSessionLifecycle,
     AgentRoutes,
-    AgentClientInbox {
+    AgentClientInbox,
+    AgentInstructions,
+    AgentListing {
   /** Display name shown by the default client UI. */
   name: string;
   /**
@@ -193,23 +204,6 @@ export interface AgentDeclaration
    * is a consequence of that rather than a second flag.
    */
   mode?: AgentMode;
-  /**
-   * What this agent IS, in one line, for whoever is reading a LIST of them.
-   *
-   * Its audience is never the model — a registry page, an A2A card, the
-   * studio's agent picker, the CLI's `aai list`. Write it as the job the agent
-   * does ("Books and reschedules dental appointments"), not as instructions;
-   * the instructions are {@link AgentDeclaration.systemPrompt}.
-   *
-   * Serializable, unlike most of what an author declares, and that is the whole
-   * point: `tools`, `events` and `workflows` are host-only because a consumer
-   * of a stored config could not act on a function, but a description is
-   * exactly what such a consumer wants and could not get. Every peer SDK puts
-   * one on the agent (Anthropic's `AgentDefinition.description` is required);
-   * this SDK had one on {@link SpeakerDef}, {@link WorkflowDef} and
-   * {@link ToolDef} and none on the agent itself.
-   */
-  description?: string;
   /**
    * System prompt driving the LLM — the text, or a function that computes it
    * per request from {@link AgentSessionContext}.

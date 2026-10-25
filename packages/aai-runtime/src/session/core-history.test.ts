@@ -13,8 +13,25 @@ import type { SessionEvent } from "@alexkroman1/aai";
 import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { makeCore, makeTransport } from "./_core-harness.ts";
+import { createTurnCounter } from "./turn-counter.ts";
 
 describe("createSessionCore — history", () => {
+  test("the turn counter follows committed user turns, a restore, and a clear", async () => {
+    const turns = createTurnCounter();
+    const { core } = makeCore({ turns });
+    await core.start();
+    core.restoreHistory([
+      { role: "user", content: "prior" },
+      { role: "assistant", content: "sure" },
+    ]);
+    expect(turns.count).toBe(1);
+    core.report({ type: "userTranscript.committed", text: "now" });
+    core.report({ type: "agentTranscript.committed", text: "ok" });
+    expect(turns.count).toBe(2);
+    core.command({ type: "reset" });
+    expect(turns.count).toBe(0);
+  });
+
   // History is private state, but it is not unobservable: every tool call is
   // handed a snapshot of it (`executeTool`'s 4th argument), which is the same
   // view the agent's own tools get. Asserting through that seam is what makes

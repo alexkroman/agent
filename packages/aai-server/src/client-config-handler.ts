@@ -27,6 +27,7 @@
 
 import {
   buildClientConfig,
+  type ClientConfigResponse,
   ClientConfigResponseSchema,
   SESSION_TICKET_HEADER,
 } from "@alexkroman1/aai/protocol";
@@ -85,7 +86,13 @@ function memoKey(slug: string, version: number | undefined, guestOrigin: string)
  * instead. Without it the default client would render a start screen whose only
  * button opens a `/websocket` a `mode: "workflow-app"` agent declines.
  */
-type GuestClientConfig = { name?: string; greeting?: string; page?: "voice" | "static" };
+type GuestClientConfig = {
+  name?: string;
+  greeting?: string;
+  page?: "voice" | "static";
+  /** Each tool's declared icon and label — the guest's `ToolDef.ui`s, proxied like `name`. */
+  tools?: ClientConfigResponse["tools"];
+};
 
 /**
  * Build the broker's request handler. A factory so the memo and the injectable
@@ -153,8 +160,8 @@ export function createAgentClientConfigHandler(
       if (!res.ok) return {};
       const parsed = ClientConfigResponseSchema.safeParse(await res.json());
       if (!parsed.success) return {};
-      const { name, greeting, page } = parsed.data;
-      const config = omitUndefined({ name, greeting, page });
+      const { name, greeting, page, tools } = parsed.data;
+      const config = omitUndefined({ name, greeting, page, tools });
       memo.set(key, config);
       return config;
     } catch {

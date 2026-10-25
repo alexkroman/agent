@@ -56,6 +56,7 @@
 
 import type { AgentSessionContext, Message } from "@alexkroman1/aai";
 import {
+  appendPromptContext,
   createDetachedSlotStore,
   staticSystemPrompt,
   systemPromptResolver,
@@ -271,6 +272,10 @@ export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
       sessionId: call.sessionId || sessionId,
       workflows: options.workflows,
       messages: call.messages,
+      // One text agent is one conversation, and its turns ARE the user
+      // messages the caller hands each `stream()`: what a session counts as
+      // committed transcripts, this door counts off the history it was given.
+      turn: (call.messages ?? []).filter((message) => message.role === "user").length,
       generate,
       subagents,
       // A text agent's tools spend on the same meter its turns do — one
@@ -368,8 +373,12 @@ export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
         ...omitUndefined({
           system:
             turn.systemPrompt ??
-            instructions?.(sessionContext) ??
-            staticSystemPrompt(agent.systemPrompt),
+            appendPromptContext(
+              instructions?.(sessionContext) ?? staticSystemPrompt(agent.systemPrompt),
+              typeof agent.promptContext === "function"
+                ? agent.promptContext(sessionContext)
+                : agent.promptContext,
+            ),
         }),
         // PAIRED: a caller that appends each run's `response.messages` carries
         // forward whatever the last step left, and a tool call that step never

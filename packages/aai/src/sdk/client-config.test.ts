@@ -18,8 +18,18 @@ describe("buildClientConfig", () => {
       sessionUrl: "wss://agents.example/a/session",
       page: "static" as const,
       sessionToken: "t",
+      tools: { add_pizza: { icon: "🍕", label: "Adding pizza" } },
     };
     expect(buildClientConfig(source)).toEqual(source);
+  });
+
+  test("the tool hints parse back, and a misspelled hint field is refused", () => {
+    const config = buildClientConfig({ tools: { lookup: { label: "Looking up" } } });
+    expect(ClientConfigResponseSchema.parse(config)).toEqual(config);
+    expect(
+      ClientConfigResponseSchema.safeParse({ page: "voice", tools: { lookup: { lable: "x" } } })
+        .success,
+    ).toBe(false);
   });
 
   test("what it builds is what the schema parses", () => {

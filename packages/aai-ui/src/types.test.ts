@@ -2,7 +2,14 @@
 import { describe, expect, expectTypeOf, it, test } from "vitest";
 import type { Session } from "./context.ts";
 import type { BrowserSession, SessionSnapshot } from "./session/index.ts";
-import type { AgentState, ChatMessage, ClientTheme, SessionError, ToolCallInfo } from "./types.ts";
+import type {
+  AgentState,
+  ChatMessage,
+  ClientTheme,
+  ClientThemeTokens,
+  SessionError,
+  ToolCallInfo,
+} from "./types.ts";
 import { MIC_BUFFER_SECONDS } from "./types.ts";
 
 describe("types", () => {
@@ -67,12 +74,19 @@ describe("AgentState", () => {
 });
 
 describe("ClientTheme", () => {
-  it("has the expected color fields", () => {
-    expectTypeOf<ClientTheme>().toHaveProperty("bg");
-    expectTypeOf<ClientTheme>().toHaveProperty("primary");
-    expectTypeOf<ClientTheme>().toHaveProperty("text");
-    expectTypeOf<ClientTheme>().toHaveProperty("surface");
-    expectTypeOf<ClientTheme>().toHaveProperty("border");
+  it("has the expected color fields in its token form", () => {
+    expectTypeOf<ClientThemeTokens>().toHaveProperty("bg");
+    expectTypeOf<ClientThemeTokens>().toHaveProperty("primary");
+    expectTypeOf<ClientThemeTokens>().toHaveProperty("text");
+    expectTypeOf<ClientThemeTokens>().toHaveProperty("surface");
+    expectTypeOf<ClientThemeTokens>().toHaveProperty("border");
+  });
+
+  it("accepts the preset form, and `{ primary }` alone is both forms", () => {
+    expectTypeOf<{ primary: string; mode: "dark" }>().toExtend<ClientTheme>();
+    expectTypeOf<{ primary: string }>().toExtend<ClientTheme>();
+    expectTypeOf<{ bg: string }>().toExtend<ClientTheme>();
+    expectTypeOf<{ mode: "dark" }>().not.toExtend<ClientTheme>();
   });
 });
 

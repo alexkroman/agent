@@ -16,6 +16,7 @@ import { omitUndefined } from "./omit-undefined.ts";
 import { toToolJsonSchema } from "./schema.ts";
 import { normalizeToolMessages } from "./tool-messages.ts";
 import type { ToolSchema } from "./tool-schema.ts";
+import { normalizeToolUi } from "./tool-ui.ts";
 import { composeToolsets, type Toolset } from "./toolset.ts";
 
 export {
@@ -47,11 +48,14 @@ export function agentToolsToSchemas(toolsets: readonly Toolset[]): ToolSchema[] 
     // shorthands, and `omitUndefined` keeps the key off a tool that declares
     // nothing (an ordinary tool's schema is unchanged by this field existing).
     const messages = normalizeToolMessages(def.messages);
+    // The display hint rides the same way, for the same reason — see
+    // `ToolSchema.ui`.
+    const ui = normalizeToolUi(def.ui);
     return {
       type: "function",
       name,
       description: def.description,
-      ...omitUndefined({ messages }),
+      ...omitUndefined({ messages, ui }),
       // `"input"`, not the conversion default: this document is part of the
       // prompt a model is given, describing what it SENDS. A `.default()` field
       // is one the executor fills in when the call omits it (see

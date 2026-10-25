@@ -115,7 +115,9 @@ type ToolSetupDeps = {
    * - `ctx.speech`, resolved at each `say` — a tool that arms a timer speaks
    *   after a resume swapped the session in.
    */
-  sessions: Pick<SessionDirectory, "emitter" | "meter"> & { speech: Pick<SpeechDirectory, "of"> };
+  sessions: Pick<SessionDirectory, "emitter" | "meter" | "turn"> & {
+    speech: Pick<SpeechDirectory, "of">;
+  };
   /** Where a `clientTool` call waits for the page's answer (self-hosted mode only). */
   clientTools: ClientToolBroker;
   /**
@@ -200,6 +202,7 @@ function setupSandboxTools(
         generate,
         subagents,
         usage: deps.sessions.meter(sessionId ?? ""),
+        turn: deps.sessions.turn(sessionId ?? ""),
         ...omitUndefined({ speech: sessionId ? deps.sessions.speech.of(sessionId) : undefined }),
         logger,
         signal: callOptions?.signal,
@@ -340,6 +343,9 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSurface {
         // Resolved when the call STARTS rather than captured at setup: the
         // meter belongs to the session, and a resume mints a new one.
         usage: sessions.meter(sid),
+        // Read when the call STARTS, like the meter: the turn the model is
+        // answering has already committed by the time its tools run.
+        turn: sessions.turn(sid),
         speech: sessions.speech.of(sid),
         logger,
         // The frame exists so a throw is VISIBLE — see `onUncaught`. `fatal`

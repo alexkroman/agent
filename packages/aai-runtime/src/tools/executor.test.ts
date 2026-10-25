@@ -89,6 +89,22 @@ describe("executeToolCall", () => {
     expect(await run("test", {}, tool, { env: { API_KEY: "secret" } })).toBe("secret");
   });
 
+  test("ctx.turn is the issuing session's committed count, 0 for a sessionless call; ctx.now is the clock", async () => {
+    let seen: { turn: number; now: number } | undefined;
+    const tool = makeTool({
+      execute: (_args, ctx) => {
+        seen = { turn: ctx.turn, now: ctx.now() };
+        return "ok";
+      },
+    });
+    const before = Date.now();
+    await run("t", {}, tool, { turn: 3 });
+    expect(seen?.turn).toBe(3);
+    expect(seen?.now).toBeGreaterThanOrEqual(before);
+    await run("t", {}, tool);
+    expect(seen?.turn).toBe(0);
+  });
+
   test("passes messages to tool context", async () => {
     const tool = makeTool({ execute: (_args, ctx) => String(ctx.messages.length) });
     expect(await run("test", {}, tool, { messages: [{ role: "user", content: "hi" }] })).toBe("1");

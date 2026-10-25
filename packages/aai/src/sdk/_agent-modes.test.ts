@@ -74,6 +74,7 @@ describe("assertModeFields", () => {
 
   test.each([
     "silence",
+    "promptContext",
     "voicePresets",
     "toolChoice",
     "builtinTools",

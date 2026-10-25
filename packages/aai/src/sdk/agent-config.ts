@@ -17,7 +17,12 @@ import { normalizeAgentParams } from "./_author-conveniences.ts";
 import { assertNoStrayFields } from "./_stray-fields.ts";
 import { InterruptionSchema, SilenceSchema, TurnTakingSchema } from "./_tuning-schema.ts";
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
-import { type AgentSystemPrompt, staticSystemPrompt } from "./agent-instructions.ts";
+import {
+  type AgentPromptContext,
+  type AgentSystemPrompt,
+  staticPromptContext,
+  staticSystemPrompt,
+} from "./agent-instructions.ts";
 import { AGENT_MODES, type AgentMode } from "./agent-mode.ts";
 import {
   assertGuardrailScope,
@@ -177,11 +182,25 @@ const McpServersSchema = z.record(
 export const AgentConfigSchema = z.object({
   name: AgentName,
   /**
-   * What the agent IS, for a reader of a LIST — see `AgentDef.description`.
+   * What the agent IS, for a reader of a LIST — see `AgentListing.listing`.
    * Serializable because that reader is a registry, an A2A card or the studio's
    * picker, none of which runs the agent.
    */
+  listing: z.string().optional(),
+  /**
+   * The deprecated alias of `listing`. Never WRITTEN by `toAgentConfig`
+   * (`normalizeAgentParams` folds it onto `listing` first); declared so the
+   * type-level guard sees every `AgentDef` field accounted for, and so a config
+   * built by an older SDK still parses.
+   */
   description: z.string().optional(),
+  /**
+   * The static half of `AgentInstructions.promptContext`, appended under the
+   * agent's instructions by `buildSystemPrompt`. A resolver is dropped the way
+   * a `systemPrompt` resolver is — the runtime holds the agent's own module and
+   * asks the function per session.
+   */
+  promptContext: z.string().optional(),
   // Defaulted rather than required: `agent()` fills these in, but a raw
   // `export default {...}` agent.ts (no `agent()` wrapper) reaches
   // `toAgentConfig` without them — the old mapper shipped a config with
@@ -334,7 +353,10 @@ export const KNOWN_AGENT_FIELDS: ReadonlySet<string> = new Set([
  * spread call sites (`{...agent, stt: maybeUndefined}`) legal under
  * `exactOptionalPropertyTypes`.
  */
-export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt" | "mcpServers"> & {
+export type AgentConfigSource = Omit<
+  AgentConfig,
+  "mode" | "systemPrompt" | "promptContext" | "mcpServers"
+> & {
   /**
    * Wider than the config's own `string`, because `AgentDef.systemPrompt`
    * may be a RESOLVER — a function this layer cannot serialize and must not
@@ -345,6 +367,8 @@ export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt" | "mcp
    * the function per request.
    */
   systemPrompt?: AgentSystemPrompt;
+  /** The same widening for `promptContext`, whose function half is dropped the same way. */
+  promptContext?: AgentPromptContext | undefined;
   /**
    * Wider than the wire's record for the same reason: an `McpServerConfig` may
    * carry a `url` RESOLVER and `headers`, both host-only. `toAgentConfig`
@@ -426,6 +450,7 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   // `z.string()` a function, and the sentence an author gets names a field they
   // set correctly.
   if (staticSystemPrompt(src.systemPrompt) === undefined) delete wire.systemPrompt;
+  if (staticPromptContext(src.promptContext) === undefined) delete wire.promptContext;
   // The same shape of problem one level down: an MCP server is serializable
   // except for its `url` resolver and its `headers`.
   if (src.mcpServers) wire.mcpServers = wireMcpServers(src.mcpServers);

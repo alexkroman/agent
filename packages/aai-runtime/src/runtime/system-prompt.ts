@@ -26,8 +26,14 @@
  * with no symptom on a machine running one session at a time.
  */
 
-import type { AgentSessionContext, AgentSystemPrompt } from "@alexkroman1/aai";
-import { agentInstructionsSection, buildSystemPrompt } from "@alexkroman1/aai/host-internal";
+import type { AgentPromptContext, AgentSessionContext, AgentSystemPrompt } from "@alexkroman1/aai";
+import {
+  agentInstructionsSection,
+  appendPromptContext,
+  authorInstructions,
+  buildSystemPrompt,
+  staticPromptContext,
+} from "@alexkroman1/aai/host-internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 
 /**
@@ -147,8 +153,31 @@ export function createSystemPromptResolver(deps: {
    * last writer wins, and a session may legitimately have both.
    */
   instructions?: Exclude<AgentSystemPrompt, string> | undefined;
+  /**
+   * The agent's `promptContext`, either half — appended under its
+   * instructions, blank-line separated (`appendPromptContext` is the one
+   * spelling). With nothing dynamic on the agent the STRING is already on the
+   * wire and `buildSystemPrompt` bakes it into the base. With a resolver on
+   * either side the base is built with NO agent section, and `forSession`
+   * composes the two halves — static or dynamic each — under one header per
+   * request, so the context lands under the override rather than above it. A
+   * FUNCTION is never on the wire and is asked from the same session context
+   * a `systemPrompt` resolver gets.
+   */
+  promptContext?: AgentPromptContext | undefined;
 }): SystemPromptResolver {
   let promptCache: { day: string; text: string } | null = null;
+  // Either half asked per request means the whole agent section is composed
+  // per request — see `promptContext` above. The base then carries none of
+  // it: `""` rather than the default, which `stripDefaultPrefix` would report
+  // as a duplicated copy.
+  const composed = deps.instructions !== undefined || typeof deps.promptContext === "function";
+  const baseConfig = composed
+    ? { ...deps.agentConfig, systemPrompt: "", promptContext: undefined }
+    : deps.agentConfig;
+  // The static half of the author's prompt, for the composed case — read once,
+  // so the duplicate-default warning behaves as it did when the base read it.
+  const staticOwn = composed ? authorInstructions(deps.agentConfig.systemPrompt) : undefined;
 
   function base(): string {
     const day = new Date().toDateString();
@@ -160,7 +189,7 @@ export function createSystemPromptResolver(deps: {
     if (promptCache?.day !== day) {
       promptCache = {
         day,
-        text: buildSystemPrompt(deps.agentConfig, {
+        text: buildSystemPrompt(baseConfig, {
           hasTools: deps.hasTools,
           voice: true,
           toolGuidance: deps.toolGuidance,
@@ -170,6 +199,13 @@ export function createSystemPromptResolver(deps: {
     return promptCache.text;
   }
 
+  /** This session's context half, per request — the static one only when composed. */
+  function contextFor(context: AgentSessionContext): string | undefined {
+    const { promptContext } = deps;
+    if (typeof promptContext === "function") return promptContext(context);
+    return composed ? staticPromptContext(promptContext) : undefined;
+  }
+
   return {
     base,
     forSession(context: AgentSessionContext): SessionSystemPrompt {
@@ -177,11 +213,16 @@ export function createSystemPromptResolver(deps: {
       let sessionContext = "";
       return {
         resolve(): string {
-          const dynamic = deps.instructions?.(context) ?? "";
+          // Nothing composed: the base already holds the whole agent section
+          // and both halves answer `undefined` here.
+          const own = appendPromptContext(
+            deps.instructions?.(context) ?? staticOwn,
+            contextFor(context),
+          );
           const agentText =
-            dynamic === ""
+            own === undefined
               ? base()
-              : `${base()}${SUFFIX_SEPARATOR}${agentInstructionsSection(dynamic)}`;
+              : `${base()}${SUFFIX_SEPARATOR}${agentInstructionsSection(own)}`;
           // The same identity rule as the suffix below: no context, no bytes.
           const text =
             sessionContext === "" ? agentText : `${agentText}${SUFFIX_SEPARATOR}${sessionContext}`;

@@ -60,6 +60,18 @@ describe("the theme as CSS custom properties", () => {
     expect(vars["--aai-text"]).toBe("#18181B");
   });
 
+  test("the preset form publishes the derived neutrals, not the light defaults", () => {
+    mount({ primary: "#ff0000", mode: "dark" });
+    expect(varsOnRoot()).toEqual({
+      "--aai-bg": "#09090B",
+      "--aai-surface": "#18181B",
+      "--aai-text": "#FAFAFA",
+      "--aai-border": "#27272A",
+      "--aai-primary": "#ff0000",
+    });
+    expect(document.body).toHaveStyle({ background: "rgb(9, 9, 11)" });
+  });
+
   test("republishes when a field other than the background changes", () => {
     // `bg` had a repaint test all along; the other four had nothing watching
     // them, and a dependency array that named only `bg` would pass every other
