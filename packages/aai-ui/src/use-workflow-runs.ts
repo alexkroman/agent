@@ -91,15 +91,26 @@ export type UseWorkflowRunsResult<R = unknown> = {
  * @public
  */
 export function useWorkflowRuns<
-  App extends WorkflowAppLike,
+  // `never` by default, as on the two submit hooks: an un-parameterized call
+  // has no names to match here, so it lands on the output form below. (With
+  // the constraint as the default, `WorkflowNameOf<WorkflowAppLike>` is any
+  // string and this overload would take the call — harmless for the output,
+  // which is `unknown` either way, but a second path to the same answer.)
+  App extends WorkflowAppLike = never,
   Name extends WorkflowNameOf<App> = WorkflowNameOf<App>,
 >(
-  workflow: Name | undefined,
+  // `undefined` (a page that does not know its workflow yet) is admitted only
+  // once an app is named: `never | undefined` would otherwise take a bare
+  // `useWorkflowRuns(undefined)` here and type its output `never`.
+  workflow: [App] extends [never] ? never : Name | undefined,
   options?: UseWorkflowRunsOptions,
 ): UseWorkflowRunsResult<WorkflowOutputOf<WorkflowDefOf<App, Name>>>;
 export function useWorkflowRuns<R = unknown>(
   // An AGENT type in this position belongs to the overload above, so a name
-  // it does not declare is refused there rather than accepted here as a string.
+  // it does not declare is refused there rather than accepted here as a
+  // string. The submit hooks get the same refusal from `D extends
+  // AnyWorkflowDef`; `R` is an open output type, so it is read off the type
+  // argument instead: an app has names, an output has none.
   workflow: [WorkflowNameOf<R>] extends [never] ? string | undefined : never,
   options?: UseWorkflowRunsOptions,
 ): UseWorkflowRunsResult<R>;

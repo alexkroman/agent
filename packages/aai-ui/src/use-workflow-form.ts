@@ -41,13 +41,10 @@ import type {
   WorkflowOutputOf,
 } from "@alexkroman1/aai/workflow-api";
 import { useCallback } from "react";
-import { useRunControls } from "./_run-controls.ts";
-import { useSubmissionState } from "./_submission-state.ts";
-import { useSubmissionTiming } from "./_submission-timing.ts";
+import { type BeginSubmission, useSubmission } from "./_submission.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import { coalesceUploadReports, createUploadSession, uploadFiles } from "./upload/index.ts";
 import { useDefaultRunKey } from "./use-run-key.ts";
-import { useWorkflowRun } from "./use-workflow-run.ts";
 import type { WorkflowApi } from "./workflow-client.ts";
 import type {
   SubmitInputOf,
@@ -197,6 +194,9 @@ export function useWorkflowSubmit<
   WorkflowOutputOf<WorkflowDefOf<App, Name>>,
   SubmitInputOf<WorkflowDefOf<App, Name>>
 >;
+// The def form. `App = never` above declines an un-parameterized call, so it
+// lands here; an app type is refused by the constraint (no `run`), so a name
+// the app does not declare is an error rather than a string that 404s.
 export function useWorkflowSubmit<D extends AnyWorkflowDef>(
   workflow: string,
   options?: UseWorkflowSubmitOptions,
@@ -216,85 +216,51 @@ export function useWorkflowSubmit(
   // The caller's client through a ref — see `_workflow-api-ref.ts`.
   const getClient = useWorkflowApiRef(api);
 
-  // The run id, the submission's failure, the bar, `startedHere`, the supersede
-  // rule, `reset` and the pause pair — the form's statechart, shared with
-  // `useWorkflowStream`. See `_submission-state.ts`. The other half of "a run
-  // outlives the page" rides along: `key` records the handle, and the lookup
-  // reads it back once per mount — see `_recover-run.ts` for why, and why the
-  // answer can never displace a run the person has already started.
-  const form = useSubmissionState({ workflow, key, enabled: recover, getClient });
-  const { runId, actions } = form;
-
-  const tracked = useWorkflowRun<unknown>(runId, omitUndefined({ api, intervalMs }));
-  const { wake, cancel } = useRunControls(runId, getClient);
-  // `tracked.polling` rather than a second derivation from the snapshot, and
-  // that is the whole of it: `useWorkflowRun` gives up on an id the agent
-  // keeps reporting as unknown (`MAX_MISSING_READS`), which leaves `run`
-  // undefined — so `!isTerminal(tracked.run)` reads as "still waiting" and
-  // pinned the submit button disabled and reading "Working…" for the life of
-  // the page, with the correct error shown directly above it. That stop is
-  // exactly what `polling` exists to report, per its own doc: it cannot be
-  // derived from the snapshot. `busy` — submitting or looking the run up —
-  // covers the gap between the POST returning and the first read landing,
-  // and the same gap on a RELOAD, where a form that offered Submit while a
-  // live run was arriving would invite a second one.
-  const pending = form.busy || tracked.polling;
-  const stopwatch = useSubmissionTiming(pending);
-  const { markSubmitted, clear: clearTiming } = stopwatch;
-
-  const submit = useCallback(
-    (input: unknown) => {
-      markSubmitted();
-      const client = getClient();
+  // What this hook IS, as against its sibling: the files are stored first and
+  // the run started over their ids. Everything after the body — the watch,
+  // the controls, the stopwatch, the return — is `useSubmission`'s.
+  const begin = useCallback<BeginSubmission>(
+    (input, client) => {
       const session = createUploadSession(workflow);
-      return actions.submit(session.gate, async ({ progress, started }) => {
-        const options = omitUndefined({ key });
-        // Files first: a run input carries an upload ID, never bytes, and this
-        // is the one place that knows both the chosen file and the client that
-        // can store it. A form using `<FileField upload>` (which is what
-        // `<WorkflowFields>` renders for a declared upload property) therefore
-        // needs no upload code of its own.
-        // Coalesced: the parts uploader reports per XHR progress event across
-        // eight concurrent requests, which is far more often than the bar can
-        // render. See `upload/report.ts`.
-        const report = coalesceUploadReports(progress);
-        const stored = await uploadFiles(client, input, report, parallel, session);
-        // Both paths end in a run id — the difference is only whether the agent
-        // held the request open — so the watch below is identical either way.
-        // A failure simply rejects; an abandoned submission (`reset()`, the
-        // next `submit()`) reaches nobody, because leaving it stopped it.
-        started(
-          wait === undefined
-            ? await client.start(workflow, stored, options)
-            : (await client.startAndWait(workflow, stored, { ...options, wait })).runId,
-        );
-      });
+      return {
+        gate: session.gate,
+        work: async ({ progress, started }) => {
+          const options = omitUndefined({ key });
+          // Files first: a run input carries an upload ID, never bytes, and this
+          // is the one place that knows both the chosen file and the client that
+          // can store it. A form using `<FileField upload>` (which is what
+          // `<WorkflowFields>` renders for a declared upload property) therefore
+          // needs no upload code of its own.
+          // Coalesced: the parts uploader reports per XHR progress event across
+          // eight concurrent requests, which is far more often than the bar can
+          // render. See `upload/report.ts`.
+          const report = coalesceUploadReports(progress);
+          const stored = await uploadFiles(client, input, report, parallel, session);
+          // Both paths end in a run id — the difference is only whether the agent
+          // held the request open — so the watch is identical either way.
+          // A failure simply rejects; an abandoned submission (`reset()`, the
+          // next `submit()`) reaches nobody, because leaving it stopped it.
+          started(
+            wait === undefined
+              ? await client.start(workflow, stored, options)
+              : (await client.startAndWait(workflow, stored, { ...options, wait })).runId,
+          );
+        },
+      };
     },
-    [workflow, key, wait, parallel, getClient, actions, markSubmitted],
+    [workflow, key, wait, parallel],
   );
 
-  const reset = useCallback(() => {
-    clearTiming();
-    // `startedHere` is part of the state `reset()` puts back, and the machine
-    // clears it on the same edge — the six templates that kept it by hand each
-    // had to remember the mirror.
-    actions.reset();
-  }, [actions, clearTiming]);
-
-  return {
-    submit,
-    submitForm: submit,
-    reset,
-    wake,
-    cancel,
-    pauseUpload: actions.pauseUpload,
-    resumeUpload: actions.resumeUpload,
-    run: tracked.run,
-    startedHere: form.startedHere,
-    pending,
-    upload: form.upload,
-    error: form.startError ?? tracked.error,
-    timing: stopwatch.timing,
+  // The other half of "a run outlives the page" rides on the lookup: `key`
+  // records the handle, and `recover` reads it back once per mount — see
+  // `_recover-run.ts` for why, and why the answer can never displace a run
+  // the person has already started.
+  return useSubmission({
+    getClient,
+    api,
+    intervalMs,
+    recover: { workflow, key, enabled: recover, getClient },
     scope,
-  };
+    begin,
+  });
 }
