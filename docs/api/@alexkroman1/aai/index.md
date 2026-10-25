@@ -3628,6 +3628,11 @@ export default tool({
 });
 ```
 
+A result built from several arms (a union) keeps its event field only when
+EVERY arm spells it: the intersection this returns stops TypeScript's
+object-literal normalisation, so an arm that stays put writes
+`next: undefined` rather than omitting the key.
+
 ***
 
 ### workflow()

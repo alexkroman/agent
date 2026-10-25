@@ -309,7 +309,7 @@ export function expectDeployable<const D extends {
 }>(def: D): DeployedConfig;
 
 // @public
-export function expectDialogOk<R>(result: R): R extends DialogToolResult<infer V> ? DialogToolResult<V> : DialogToolResult<unknown>;
+export function expectDialogOk<R>(result: R): [Exclude<R, ToolFailure>] extends [DialogToolResult<infer V>] ? DialogToolResult<V> : DialogToolResult<unknown>;
 
 // @public
 export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;

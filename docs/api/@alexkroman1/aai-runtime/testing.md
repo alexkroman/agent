@@ -658,7 +658,7 @@ Naming the invariant that failed, and — for the validation one — the
 #### Call Signature
 
 ```ts
-function expectDialogOk<R>(result: R): R extends DialogToolResult<V> ? DialogToolResult<V> : DialogToolResult<unknown>;
+function expectDialogOk<R>(result: R): [Exclude<R, ToolFailure>] extends [DialogToolResult<V>] ? DialogToolResult<V> : DialogToolResult<unknown>;
 ```
 
 The dialog envelope a gated tool answered, keeping WHERE the dialog landed.
@@ -691,7 +691,7 @@ What was handed in, inferred — never written.
 
 ##### Returns
 
-`R` *extends* [`DialogToolResult`](../aai/index.md#dialogtoolresult)\<`V`\> ? [`DialogToolResult`](../aai/index.md#dialogtoolresult)\<`V`\> : [`DialogToolResult`](../aai/index.md#dialogtoolresult)\<`unknown`\>
+\[`Exclude`\<`R`, [`ToolFailure`](../aai/index.md#toolfailure)\>\] *extends* \[[`DialogToolResult`](../aai/index.md#dialogtoolresult)\<`V`\>\] ? [`DialogToolResult`](../aai/index.md#dialogtoolresult)\<`V`\> : [`DialogToolResult`](../aai/index.md#dialogtoolresult)\<`unknown`\>
 
 ##### Throws
 
