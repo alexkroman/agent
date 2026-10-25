@@ -158,6 +158,7 @@ export const EGRESS_KEEP_ALIVE_MS = 30_000;
  */
 let rpcPool: EgressPool | undefined;
 let blobPool: EgressPool | undefined;
+let modelPool: EgressPool | undefined;
 
 /**
  * What a pool is built from and what a request goes out through.
@@ -226,6 +227,21 @@ function blob(): EgressPool {
   return blobPool;
 }
 
+/**
+ * The model-provider pool (`providers/_llm-transport.ts` decides which requests
+ * reach it). Not one of the two shapes above: one streaming call per turn per
+ * session to a model provider, so NO connection cap — a cap is a queue a busy
+ * process's turns would wait in — and HTTP/1.1, as Node's bundled `fetch`.
+ */
+function model(): EgressPool {
+  modelPool ??= egressDeps.createPool({
+    keepAliveTimeout: EGRESS_KEEP_ALIVE_MS,
+    allowH2: false,
+    pipelining: 1,
+  });
+  return modelPool;
+}
+
 /** Put a request on `pool`, with this module's body contract. */
 function through(pool: EgressPool): typeof globalThis.fetch {
   return (input, init) => {
@@ -264,6 +280,13 @@ export const rpcFetch: typeof globalThis.fetch = (input, init) => through(rpc())
 export const blobFetch: typeof globalThis.fetch = (input, init) => through(blob())(input, init);
 
 /**
+ * The runtime's outbound `fetch` for a MODEL PROVIDER, kept alive across turns.
+ * Same body contract as {@link rpcFetch}; reached only through
+ * `providers/_llm-transport.ts`, which keeps any request that breaks it off.
+ */
+export const modelFetch: typeof globalThis.fetch = (input, init) => through(model())(input, init);
+
+/**
  * Drain and close whichever pools were built.
  *
  * Called from the server's own close so a rebuilt `aai dev` server does not
@@ -274,8 +297,9 @@ export const blobFetch: typeof globalThis.fetch = (input, init) => through(blob(
  * other, and neither failure is actionable at this point in a shutdown.
  */
 export async function closeEgressFetch(): Promise<void> {
-  const held = [rpcPool, blobPool];
+  const held = [rpcPool, blobPool, modelPool];
   rpcPool = undefined;
   blobPool = undefined;
+  modelPool = undefined;
   await Promise.allSettled(held.map((pool) => pool?.close()));
 }

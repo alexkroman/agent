@@ -24,6 +24,7 @@ import {
   CLIENT_ARTIFACT_REL,
   createProjectServer,
   DEFAULT_START_PORT,
+  executeStart,
   loadBuiltAgent,
 } from "./start.ts";
 
@@ -131,5 +132,15 @@ describe("createProjectServer", () => {
       await server.close();
     });
     expect(server.node).toBeDefined();
+  });
+});
+
+describe("executeStart", () => {
+  test("with --workers, a project with no build fails before a worker is forked", async ({
+    tmpDir: dir,
+  }) => {
+    // The primary path checks for the build first, so this exercises the real
+    // wiring without forking, binding or exiting.
+    await expect(executeStart({ cwd: dir, workers: 2 })).rejects.toThrow(/No built agent/);
   });
 });

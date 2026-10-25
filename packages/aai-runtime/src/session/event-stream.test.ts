@@ -9,6 +9,7 @@ import {
   type StoredSessionEvent,
 } from "../session-state/store.ts";
 import {
+  createPooledRandomFraction,
   createSessionEventStream,
   MAX_SESSION_EVENTS,
   SESSION_EVENT_FLUSH_THRESHOLD,
@@ -68,6 +69,30 @@ describe("session event stream — recording", () => {
     stream.append("s-2", { type: "speech.started" });
     expect(stream.tail(SID)).toBe(1);
     expect(stream.tail("s-2")).toBe(1);
+  });
+});
+
+describe("createPooledRandomFraction", () => {
+  test("draws one byte per call as byte / 256, refilling only when the pool is spent", () => {
+    let fills = 0;
+    const next = createPooledRandomFraction(4, (pool) => {
+      fills += 1;
+      pool.set([0, 64, 128, 255]);
+    });
+    const drawn = Array.from({ length: 8 }, () => next());
+    expect(drawn).toEqual([0, 0.25, 0.5, 255 / 256, 0, 0.25, 0.5, 255 / 256]);
+    // Two fills for eight draws: the per-character allocation and CSPRNG call
+    // ulid's default makes is what this exists to remove.
+    expect(fills).toBe(2);
+  });
+
+  test("the default source stays in [0, 1)", () => {
+    const next = createPooledRandomFraction(16);
+    for (let i = 0; i < 64; i++) {
+      const value = next();
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThan(1);
+    }
   });
 });
 

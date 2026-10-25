@@ -18,6 +18,7 @@ import { configDefaults, defineConfig, type ViteUserConfig } from "vitest/config
 export const sharedSetupFiles = [
   fileURLToPath(new URL("./scripts/fail-on-process-warning.mjs", import.meta.url)),
   fileURLToPath(new URL("./scripts/record-floor-samples.mjs", import.meta.url)),
+  fileURLToPath(new URL("./scripts/fast-check-seed.mjs", import.meta.url)),
 ];
 
 /**

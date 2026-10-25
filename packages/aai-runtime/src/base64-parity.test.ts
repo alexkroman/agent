@@ -42,6 +42,12 @@ const CASES = [
   "   ", // whitespace only: decodes to no bytes rather than failing
   "A", // one leftover character
   "AAAAA", // five characters: one leftover after a quad
+  // Whole quads that `Buffer.from` is LENIENT about — each re-encodes to
+  // something else, so the canonical fast path must hand it to validation.
+  "AAEC!!!!", // out-of-alphabet tail, length a multiple of 4
+  "AA-_", // base64URL in one quad
+  "AAAA====", // over-padding in whole quads
+  "AA=A", // padding mid-quad
   Buffer.from(new Uint8Array([0, 1, 2, 253, 254, 255])).toString("base64"),
   Buffer.alloc(3200, 7).toString("base64"), // an audio-frame-sized payload
 ] as const;
@@ -97,6 +103,27 @@ describe("the fallback decoder", () => {
     expect(bytes).toBeDefined();
     expect(bytes?.byteOffset).toBe(0);
     expect(bytes?.buffer.byteLength).toBe(64);
+  });
+
+  test("a canonical string takes the fast path and still returns a plain, owned Uint8Array", () => {
+    // The fast path decodes into a `Buffer`; what leaves must look exactly
+    // like the validate-first path's result — not a `Buffer` subclass, not a
+    // view into a larger allocation.
+    const frame = Buffer.alloc(4800, 9);
+    const decoded = decodeWithoutNative(frame.toString("base64"), "strict");
+    expect(decoded?.constructor).toBe(Uint8Array);
+    expect(decoded?.byteOffset).toBe(0);
+    expect(decoded?.buffer.byteLength).toBe(4800);
+    expect(decoded).toEqual(new Uint8Array(frame));
+  });
+
+  test("a whole-quad string `Buffer` would decode leniently is still refused", () => {
+    // Each is a multiple of four characters, so it reaches the canonical fast
+    // path; each re-encodes differently, so the fast path must decline it and
+    // the validation behind it refuses it.
+    for (const input of ["AAEC!!!!", "AA-_", "AAAA====", "AA=A"]) {
+      expect(decodeWithoutNative(input, "loose"), input).toBeUndefined();
+    }
   });
 
   test("a 3200-byte audio frame survives the round trip", () => {

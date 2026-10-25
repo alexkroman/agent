@@ -46,12 +46,14 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentDef } from "@alexkroman1/aai";
+import { sleep } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import {
   type AgentServer,
   createAgentServer,
   ensureSessionStateSchema,
   ensureWorkflowJournalSchema,
+  type Logger,
 } from "@alexkroman1/aai-runtime";
 import { consoleLogger, withHostCredentialFallback } from "@alexkroman1/aai-runtime/internal";
 import { startTracing } from "@alexkroman1/aai-runtime/tracing";
@@ -59,6 +61,17 @@ import { defaultClientDir } from "@alexkroman1/aai-ui/client-dir";
 import { CLIENT_ARTIFACT_REL, WORKER_ARTIFACT_REL } from "./_artifacts.ts";
 import { resolveDenoRunCode } from "./_run-code-deno.ts";
 import { DEPLOY_ENV_FILES, resolveServerEnv } from "./_server-common.ts";
+import { startLogger, workerLogger } from "./_start-log.ts";
+import { listenServer, runStart, type StartResult } from "./_start-run.ts";
+import { processLink } from "./_start-worker.ts";
+import {
+  DEFAULT_DRAIN_TIMEOUT_S,
+  isStartWorker,
+  loadCluster,
+  nodeCluster,
+  SLOT_ENV,
+  SLOTS_ENV,
+} from "./_start-workers.ts";
 import { stopProjectServer } from "./_stop-server.ts";
 import { defaultUi } from "./_ui.ts";
 
@@ -81,6 +94,35 @@ export interface ProjectServerOptions {
    * container says so. An EMPTY `HOST` means unset, not "every interface".
    */
   host?: string | undefined;
+  /**
+   * Processes to serve from, one per CPU core worth using (see
+   * `_start-workers.ts`). Defaults to 1. Only {@link executeStart} reads it.
+   */
+  workers?: number | undefined;
+  /** With `workers > 1`: how long a drain lets calls finish (ms). Default 300 s. */
+  drainTimeoutMs?: number | undefined;
+  /** With `workers > 1`: calls a worker may hold before new ones get 503. Default unlimited. */
+  maxCallsPerWorker?: number | undefined;
+}
+
+/** The built worker's path, or a throw saying what to run. */
+function builtAgentPath(cwd: string): string {
+  const workerPath = path.join(cwd, WORKER_ARTIFACT_REL);
+  if (!existsSync(workerPath)) {
+    throw new Error(
+      `No built agent at ${WORKER_ARTIFACT_REL}. ` +
+        "Run `aai build` first — the scaffold's `prestart` script normally does it for you.",
+    );
+  }
+  return workerPath;
+}
+
+/** The address `aai start` binds: the option, then `PORT`/`HOST`, then the defaults. */
+function listenAddress(options: ProjectServerOptions): { port: number; host: string | undefined } {
+  return {
+    port: options.port ?? Number(process.env.PORT ?? DEFAULT_START_PORT),
+    host: options.host ?? (process.env.HOST?.trim() || undefined),
+  };
 }
 
 /**
@@ -90,14 +132,7 @@ export interface ProjectServerOptions {
  * POSIX-looking path is not a valid module specifier.
  */
 export async function loadBuiltAgent(cwd: string): Promise<AgentDef> {
-  const workerPath = path.join(cwd, WORKER_ARTIFACT_REL);
-  if (!existsSync(workerPath)) {
-    throw new Error(
-      `No built agent at ${WORKER_ARTIFACT_REL}. ` +
-        "Run `aai build` first — the scaffold's `prestart` script normally does it for you.",
-    );
-  }
-  const worker = (await import(pathToFileURL(workerPath).href)) as { default: AgentDef };
+  const worker = (await import(pathToFileURL(builtAgentPath(cwd)).href)) as { default: AgentDef };
   return worker.default;
 }
 
@@ -112,7 +147,10 @@ function resolveClientDir(cwd: string): string {
   const built = path.join(cwd, CLIENT_ARTIFACT_REL);
   if (existsSync(path.join(built, "index.html"))) return built;
   if (existsSync(path.join(cwd, "client.tsx"))) {
-    defaultUi.log.warn("client.tsx is not built — serving the default UI. Run `aai build` first.");
+    defaultUi.notify(
+      "warn",
+      "client.tsx is not built — serving the default UI. Run `aai build` first.",
+    );
   }
   return defaultClientDir();
 }
@@ -142,13 +180,26 @@ function resolveClientDir(cwd: string): string {
  * ```
  */
 export async function createProjectServer(options: ProjectServerOptions): Promise<AgentServer> {
-  const { cwd } = options;
+  const { agent, env } = await loadProject(options.cwd);
+  return buildProjectServer(options.cwd, agent, env, consoleLogger);
+}
+
+/** The built agent and its env — what every way of serving a project starts from. */
+async function loadProject(cwd: string): Promise<{ agent: AgentDef; env: Record<string, string> }> {
   const agent = await loadBuiltAgent(cwd);
   // `.env.example` counts as a declaration here — see `DEPLOY_ENV_FILES`, which
   // is what lets a container ship no `.env` and supply the values as real
   // environment variables.
   const env = await resolveServerEnv(cwd, undefined, DEPLOY_ENV_FILES);
+  return { agent, env };
+}
 
+async function buildProjectServer(
+  cwd: string,
+  agent: AgentDef,
+  env: Record<string, string>,
+  logger: Logger,
+): Promise<AgentServer> {
   if (env.DATABASE_URL) {
     // A project with a `DATABASE_URL` puts session state and durable runs in
     // Postgres, and those tables come with whoever OWNS the database — which
@@ -158,15 +209,19 @@ export async function createProjectServer(options: ProjectServerOptions): Promis
     // starts, reports `durable: true`, and every session dies at start with the
     // real reason (`relation "aai_session_events" does not exist`) visible only
     // in this process's log.
-    await ensureSessionStateSchema({ url: env.DATABASE_URL, logger: console });
-    await ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger: console });
-  } else {
+    await ensureSessionStateSchema({ url: env.DATABASE_URL, logger });
+    await ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger });
+  } else if (!isStartWorker()) {
     // Say that this process is the only place the state lives, because the next
     // thing an operator does with a container is run two of them. It is not
     // only about restarts: the browser reconnects with `?sessionId=`, so a
     // reconnect landing on another replica resumes a session that replica has
     // never heard of, and the agent's context is gone mid-call.
-    defaultUi.log.warn(
+    // `notify`, not `log.warn`: JSON mode is auto-selected without a TTY, so a
+    // container — exactly where the second replica comes from — would
+    // otherwise never print it.
+    defaultUi.notify(
+      "warn",
       "No DATABASE_URL: session state and durable runs live in THIS process's memory.\n" +
         "One replica is fine. Behind a load balancer, enable sticky sessions so a reconnect " +
         "(the client re-dials with ?sessionId=) reaches the same process — or set DATABASE_URL " +
@@ -177,6 +232,7 @@ export async function createProjectServer(options: ProjectServerOptions): Promis
   return createAgentServer({
     agent,
     env,
+    logger,
     // Provider credentials may ALSO arrive straight from the environment
     // without being declared, and without becoming `ctx.env` — the ordinary way
     // to hand ASSEMBLYAI_API_KEY to a container. Anything in `env` still wins,
@@ -193,55 +249,73 @@ export async function createProjectServer(options: ProjectServerOptions): Promis
     ...(process.env.PUBLIC_URL?.trim() ? { publicUrl: process.env.PUBLIC_URL.trim() } : {}),
     // `AAI_RUN_CODE=deno` gives `run_code` a zero-permission Deno process to run
     // in (`_run-code-deno.ts`); unset, it refuses as it does under `aai dev`.
-    ...omitUndefined({ runCode: resolveDenoRunCode(consoleLogger) }),
+    ...omitUndefined({ runCode: resolveDenoRunCode(logger) }),
   });
 }
 
-/** What {@link executeStart} answers, for `--json` and for tests. */
-export interface StartResult {
-  ok: true;
-  data: { name: string; port: number | undefined };
-}
+export type { StartResult } from "./_start-run.ts";
 
 /**
  * Serve the built agent and keep serving it: bind, announce, and shut down
- * cleanly on a signal.
- *
- * The signal listeners are SYNCHRONOUS. An `async` one hands its promise to
- * `process`, which discards what a listener returns — so a `close()` that
- * rejected would surface as an unhandled rejection, i.e. a crash with a stack
- * trace on Ctrl-C, instead of the non-zero exit a failed shutdown should be.
+ * cleanly on a signal — from one process, or with `workers > 1` from a primary
+ * routing to that many (`_start-workers.ts`). The logic is `runStart`
+ * (`_start-run.ts`); this hands it the real process.
  */
 export async function executeStart(options: ProjectServerOptions): Promise<StartResult> {
-  // Before the server, so the first model call a request causes is already
-  // reported. Awaited rather than detached (the guest harness's trade): this
-  // boot has no sandbox cold-start budget to protect, and awaiting is what
-  // makes the first span deterministic instead of racing the dynamic import.
-  // Returns undefined unless a collector is configured — see
-  // `@alexkroman1/aai-runtime/tracing`.
-  const tracing = await startTracing();
-  const agent = await loadBuiltAgent(options.cwd);
-  const server = await createProjectServer(options);
-  const port = options.port ?? Number(process.env.PORT ?? DEFAULT_START_PORT);
-  const host = options.host ?? (process.env.HOST?.trim() || undefined);
-
-  await server.listen(port, host);
-  defaultUi.log.info(`${agent.name} listening on http://${host ?? "127.0.0.1"}:${server.port}`);
-
-  for (const signal of ["SIGINT", "SIGTERM"] as const) {
-    process.once(signal, () => {
-      // Close, then flush tracing either way — see `_stop-server.ts`.
-      stopProjectServer(server, tracing).then(
-        () => process.exit(0),
-        (error: unknown) => {
-          defaultUi.log.error(
-            `shutdown failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-          process.exit(1);
-        },
-      );
-    });
-  }
-
-  return { ok: true, data: { name: agent.name, port: server.port } };
+  const { cwd } = options;
+  const { port, host } = listenAddress(options);
+  const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+  // A worker's runtime lines are tagged with its slot and its boot dump left to
+  // slot 0 (`_start-log.ts`); `runStart` says when the boot is over.
+  const base = startLogger(defaultUi.silenced);
+  const isWorker = isStartWorker();
+  const tagged = isWorker ? workerLogger(base, Number(process.env[SLOT_ENV])) : undefined;
+  const logger = tagged?.logger ?? base;
+  const workers = options.workers ?? 1;
+  // Only a primary that will fork loads `node:cluster` (see `loadCluster`).
+  const forking = !isWorker && workers > 1 ? await loadCluster() : undefined;
+  return runStart(
+    {
+      port,
+      host,
+      workers,
+      drainTimeoutMs: options.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_S * 1000,
+      maxCallsPerWorker: options.maxCallsPerWorker ?? Number.POSITIVE_INFINITY,
+    },
+    {
+      isWorker,
+      slot: () => ({ slot: Number(process.env[SLOT_ENV]), slots: Number(process.env[SLOTS_ENV]) }),
+      load: () => loadProject(cwd),
+      build: ({ agent, env }) => buildProjectServer(cwd, agent, env, logger),
+      booted: () => tagged?.booted(),
+      readEnv: () => resolveServerEnv(cwd, undefined, DEPLOY_ENV_FILES),
+      assertBuilt: () => {
+        builtAgentPath(cwd);
+      },
+      startTracing,
+      cluster: () => {
+        if (!forking) throw new Error("node:cluster was not loaded: this process does not fork");
+        return nodeCluster(forking);
+      },
+      link: processLink,
+      listen: listenServer,
+      // SIGHUP too: the `--workers` primary reads it as a rolling restart, and a
+      // single process stops gracefully on it rather than dying mid-call.
+      onSignal: (handler) => {
+        for (const signal of signals) process.on(signal, () => handler(signal));
+      },
+      ignoreSignals: () => {
+        for (const signal of signals) process.on(signal, () => undefined);
+      },
+      sleep,
+      exit: (code) => process.exit(code),
+      stop: stopProjectServer,
+      forever: () => new Promise<never>(() => undefined),
+      ui: {
+        info: (message) => defaultUi.log.info(message),
+        error: (message) => defaultUi.log.error(message),
+        notify: (level, message) => defaultUi.notify(level, message),
+      },
+    },
+  );
 }

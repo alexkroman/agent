@@ -5,7 +5,12 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, expect, test } from "vitest";
 import { WebSocketServer } from "ws";
-import { defaultCreateHeaderWebSocket, PROVIDER_WS_OPTIONS } from "./_ws.ts";
+import {
+  CoalescingWebSocket,
+  createTickCorker,
+  defaultCreateHeaderWebSocket,
+  PROVIDER_WS_OPTIONS,
+} from "./_ws.ts";
 
 let cleanup: (() => Promise<void>) | null = null;
 afterEach(async () => {
@@ -58,5 +63,65 @@ test("defaultCreateHeaderWebSocket declines compression even when the peer offer
   // and ~4.5x CPU per socket, measured), so assert the wire result rather
   // than the option we passed in.
   expect(negotiated).toEqual(["none"]);
+  ws.close(1000);
+});
+
+test("createTickCorker corks once per tick and releases on the deferred callback", () => {
+  const calls: string[] = [];
+  const deferred: (() => void)[] = [];
+  const beforeWrite = createTickCorker(
+    { cork: () => calls.push("cork"), uncork: () => calls.push("uncork") },
+    (release) => deferred.push(release),
+  );
+  beforeWrite();
+  beforeWrite();
+  beforeWrite();
+  // Three writes in one tick share ONE cork: they leave together on release.
+  expect(calls).toEqual(["cork"]);
+  expect(deferred).toHaveLength(1);
+  deferred[0]?.();
+  expect(calls).toEqual(["cork", "uncork"]);
+  // The next tick's first write corks again.
+  beforeWrite();
+  expect(calls).toEqual(["cork", "uncork", "cork"]);
+});
+
+test("CoalescingWebSocket holds a tick's frames in one corked write and delivers them in order", async () => {
+  const server = http.createServer();
+  const wss = new WebSocketServer({ noServer: true });
+  const received: string[] = [];
+  const gotTwo = Promise.withResolvers<void>();
+  server.on("upgrade", (req, socket, head) => {
+    wss.handleUpgrade(req, socket, head, (peer) => {
+      peer.on("message", (data) => {
+        received.push(String(data));
+        if (received.length === 2) gotTwo.resolve();
+      });
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", () => r()));
+  cleanup = async () => {
+    for (const c of wss.clients) c.terminate();
+    await new Promise<void>((r) => server.close(() => r()));
+  };
+  const port = (server.address() as AddressInfo).port;
+
+  const ws = new CoalescingWebSocket(`ws://127.0.0.1:${port}/`, PROVIDER_WS_OPTIONS);
+  const upgraded = new Promise<{ writableCorked: number }>((r) =>
+    ws.once("upgrade", (res) => r(res.socket)),
+  );
+  await new Promise<void>((r) => ws.once("open", () => r()));
+  const socket = await upgraded;
+
+  ws.send(JSON.stringify({ type: "Generate", text: "hi." }));
+  ws.send(JSON.stringify({ type: "Flush" }));
+  // Still corked within the tick: nothing written yet, so both frames go out in
+  // one write instead of the second waiting on the TLS layer's deferred completion.
+  expect(socket.writableCorked).toBe(1);
+  await new Promise<void>((r) => process.nextTick(r));
+  expect(socket.writableCorked).toBe(0);
+
+  await gotTwo.promise;
+  expect(received).toEqual(['{"type":"Generate","text":"hi."}', '{"type":"Flush"}']);
   ws.close(1000);
 });

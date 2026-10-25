@@ -169,13 +169,23 @@
     // turbo.json: aai-cli, aai-server, aai-studio-server, aai-guest (+ its own
     // `build`), aai-guest-studio and aai-templates.
     "test": {
-      "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "../../vitest.shared.ts"],
-      "env": ["CI", "VITEST_POOL"]
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.md",
+        "../../vitest.shared.ts",
+        "../../scripts/fast-check-seed.mjs"
+      ],
+      "env": ["CI", "VITEST_POOL", "AAI_FC_SEED"]
     },
     "test:coverage": {
-      "inputs": ["$TURBO_DEFAULT$", "!**/*.md", "../../vitest.shared.ts"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "!**/*.md",
+        "../../vitest.shared.ts",
+        "../../scripts/fast-check-seed.mjs"
+      ],
       "outputs": ["coverage/**"],
-      "env": ["CI", "VITEST_POOL"]
+      "env": ["CI", "VITEST_POOL", "AAI_FC_SEED"]
     },
     // `dependsOn: ["build"]` is SCHEDULING, not a requirement: every package
     // type-checks with no `dist` present anywhere, because `@dev/source`

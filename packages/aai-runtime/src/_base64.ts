@@ -197,6 +197,38 @@ function trailingBitsZero(base64: string, padding: number): boolean {
 }
 
 /**
+ * The fast path of {@link decodeWithoutNative}: decode with `Buffer`, and keep
+ * the result only when re-encoding it reproduces the input EXACTLY.
+ *
+ * Every TTS frame on a Node 24/25 host comes through here (~10 a second per
+ * talking session), and the validate-first path scans each string twice in JS
+ * regex (whitespace strip, alphabet check) before `Buffer` decodes it — under
+ * load that regex alone was ~3% of a worker's CPU, the path ~4%. This is two
+ * native passes instead, ~6x cheaper on a 100 ms frame.
+ *
+ * It cannot accept anything the slow path refuses: a string equal to the
+ * canonical encoding of some bytes is padded, in-alphabet, whitespace-free and
+ * has zero trailing bits, so it passes both handlings with those same bytes.
+ * Anything `Buffer.from` was lenient about (a dropped character, base64URL,
+ * over-padding) re-encodes DIFFERENTLY, and so does every spelling the slow
+ * path accepts but this does not (whitespace, an unpadded final chunk,
+ * non-zero trailing bits) — `undefined` here hands all of those to the slow
+ * path, which decides exactly as before.
+ *
+ * Decoded straight into an unpooled, exactly-sized allocation, so the result
+ * owns its buffer (see the copy below) without a second copy.
+ */
+function decodeCanonical(base64: string): Uint8Array | undefined {
+  if (base64.length % 4 !== 0) return undefined;
+  const size = Buffer.byteLength(base64, "base64");
+  const buf = Buffer.allocUnsafeSlow(size);
+  // `written === size` too: an unwritten tail would be uninitialized memory.
+  if (buf.write(base64, "base64") !== size || buf.toString("base64") !== base64) return undefined;
+  // A plain `Uint8Array` view, like the slow path's result — not a `Buffer`.
+  return new Uint8Array(buf.buffer, buf.byteOffset, size);
+}
+
+/**
  * The decode without the native method: VALIDATE, then `Buffer.from`.
  *
  * Exported for `base64-parity.test.ts` only. It is the path every Node 24 and
@@ -212,6 +244,8 @@ export function decodeWithoutNative(
   base64: string,
   lastChunkHandling: LastChunkHandling,
 ): Uint8Array | undefined {
+  const canonical = decodeCanonical(base64);
+  if (canonical !== undefined) return canonical;
   const compact = base64.replace(ASCII_WHITESPACE, "");
   if (!STANDARD_BASE64.test(compact)) return undefined;
   const padding = compact.endsWith("==") ? 2 : Number(compact.endsWith("="));

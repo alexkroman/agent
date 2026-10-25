@@ -59,6 +59,7 @@
  */
 
 import { createActor, fromPromise, setup, stateIn, waitFor } from "xstate";
+import { memoOnSnapshot } from "../../_snapshot-memo.ts";
 import type { Logger } from "../../logger.ts";
 import type { SttError, TtsError } from "../../providers/openers.ts";
 import {
@@ -237,11 +238,12 @@ export function createPipelinePhase(effects: PipelinePhaseEffects): PipelinePhas
   };
   return {
     phase,
-    audible: () => {
-      const at = actor.getSnapshot();
-      return at.matches("ready") || at.matches({ opening: "audible" });
-    },
-    isTerminated: () => actor.getSnapshot().matches("terminated"),
+    // Both run for every audio frame in each direction — see `_snapshot-memo.ts`.
+    audible: memoOnSnapshot(
+      actor,
+      (at) => at.matches("ready") || at.matches({ opening: "audible" }),
+    ),
+    isTerminated: memoOnSnapshot(actor, (at) => at.matches("terminated")),
     send: (event) => actor.send(event),
     settled: async () => {
       await waitFor(actor, (at) => at.matches("ready") || at.matches("terminated"));

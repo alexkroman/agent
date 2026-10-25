@@ -22,6 +22,97 @@ a command, not a scaffolded file, so improvements reach existing projects. The
 custom-server opt-out is `createProjectServer` on `@alexkroman1/aai-cli/start` —
 builds the `AgentServer`, binds nothing (also what a serverless host wants).
 
+**`aai start --workers <n|auto>` (or `AAI_WORKERS`) is a routing primary plus
+`node:cluster` workers** (`_start-workers.ts` has the measurement and the
+shape):
+
+- **The primary owns the public port and routes by affinity**
+  (`_start-affinity.ts`): `?client=`, then a session ticket's `sid`, then
+  `?sessionId=`, else round-robin; a key hashes to a fixed SLOT. An upgrade is
+  handed to the slot's worker as the raw socket with its request head replayed
+  (`_start-router.ts`) — audio never crosses the primary again. Plain HTTP is
+  proxied PER REQUEST to the worker's private loopback port: per-connection
+  routing breaks behind a proxy that pools keep-alive connections.
+- **A worker mints session ids that hash to its own slot** (`mintIdForSlot`,
+  through the runtime's `setSessionIdMinter`), so a resume naming only the id
+  routes home with no table. A keyed request whose worker is restarting gets
+  `503 Retry-After`, never another worker.
+- **No database is required.** A client's call, `/inbox` and `/api` all reach
+  one worker. `DATABASE_URL` adds crash survival; an agent with workflows is
+  REFUSED on more than one worker without it (`workflowsNeedDatabase`). The one
+  cross-worker path, an `/inbox` notice from a step on another worker, goes
+  through the runtime's `setClientNotifyRelay` and the supervisor
+  (`aai-start:relay` IPC). Relays are keyed by PROCESS under a primary-assigned
+  id, never by slot (each worker numbers its own from 1, and across a respawn or
+  roll a slot is two processes); any exiting target, retired or not, answers its
+  relays `disconnected`.
+- **The primary binds the public port BEFORE forking** (a taken port fails as
+  `port N is in use; pass --port or set PORT`, `bindError`, with nothing forked)
+  and routes nothing until every slot listens: each request gets 503 meanwhile.
+  **It answers `GET`/`HEAD /health` itself with 503 while starting or draining**
+  (`notReady`), so a load balancer takes it out of rotation; otherwise `/health`
+  is proxied. That makes `/health` a READINESS probe — a Kubernetes LIVENESS
+  probe on it would kill the pod mid-drain.
+- **The primary owns every worker's lifecycle; workers IGNORE signals** (a
+  terminal's Ctrl-C reaches them too, which would end calls mid-drain). It acts
+  through IPC: first SIGINT/SIGTERM → `drain` (router refuses NEW calls with
+  503; reconnects, `/inbox` and HTTP still route; each worker waits for its call
+  count — the sockets the PRIMARY classified as calls (`isCallPath`, sent as the
+  handoff's `call` flag) — to reach 0 or `--drain-timeout`, then closes); a
+  second → `stop`; SIGHUP → `roll()` (per slot: fork the replacement, swap the
+  slot to it on `listening`, drain the old; refused until every slot has
+  listened once). Every command carries a SIGKILL deadline (`STOP_GRACE_MS`). A
+  worker still STARTING when the server ends is SIGKILLed at once: it has no IPC
+  listener yet, so the command would be dropped and it would sit out the whole
+  drain timeout.
+- **The router stops reading a socket before handing it off** (`stopReading`):
+  Node keeps the primary's copy of a sent handle reading until the IPC ack, and
+  bytes read there are lost — a corrupt WebSocket frame in the worker. A worker
+  that died since it was picked (`send` answers `false`) gets the socket refused
+  with 503, never left unread; `send`'s `true` means connected, since
+  `worker.send`'s own boolean is backpressure.
+- **Supervision:** "booted" is the worker's IPC `listening` report; a worker
+  dying before it is a boot failure (stop all, fail the command), after it is
+  respawned into the SAME slot; a failed replacement aborts a roll, leaving the
+  old worker serving. A worker not listening within `BOOT_TIMEOUT_MS` (120 s — a
+  boot hung on a database that never answers) is SIGKILLed, which is then one of
+  those failures, naming why. Workers print no CLI result (`--json` owes one
+  line). The primary never imports the agent. **Liveness:** pings every
+  `PING_INTERVAL_MS`; a pong slower than `SLOW_PONG_MS` is logged (throttled); a
+  worker silent for `LIVENESS_TIMEOUT_MS` (15 s — shorter than LiveKit's 60 s,
+  since a worker holds hundreds of calls, all already stalled) is SIGKILLed and
+  respawned. No orphan timeout: a `node:cluster` worker exits when its primary's
+  IPC channel closes.
+- **Load and admission:** each pong carries `{calls, elu, received}`; the
+  supervisor's `admit` both decides and counts each call socket (LiveKit's
+  reserved slots), and a report's count is `calls` plus the sockets admitted but
+  not yet `received`, so a pong never lowers it below what is in transit. Calls
+  and resumes are classified with the RUNTIME's own parsers — `routeMatches`
+  over `SERVER_ROUTES.session`/`phone` (a PREFIX match) and
+  `parseWsUpgradeParams` — because any other matcher is a parser differential (a
+  security review found `/websocket/x` skipping admission and the drain count).
+  The cap covers EVERY call socket: a resume is only a client's claim (the
+  runtime starts a fresh session under an unknown id), so it exempts a call from
+  the drain only. It never spills to another worker, which would split a
+  client's call from its `/inbox` and `/api` traffic. `GET /workers` (loopback
+  only) reports state.
+- **Logging:** a worker's runtime logger (`_start-log.ts`) tags every line
+  `[worker <slot>]` and drops slot ≠ 0's INFO until it is listening — the boot
+  dump is identical per slot. JSON mode (any non-TTY) sends the runtime log to
+  stderr in BOTH modes, keeping stdout to the one result line. A worker's boot
+  failure goes only to the primary (`aai-start:fatal`), which reports it once;
+  the primary's no-`DATABASE_URL` warning is a `notify` printed AFTER the
+  workers boot, so it never precedes a workflow refusal. Supervisor lines name
+  `worker <slot> (pid <pid>)`.
+- **Seams:** `StartRunDeps` (`_start-run.ts`, all three modes), `ClusterLike`
+  (`nodeCluster()` is the typed adapter), `PrimaryLink` and `WorkerRuntime` keep
+  the unit tier fork-free; the specs share their fakes via
+  `_start-test-utils.ts`; `_start-router.scenario.test.ts` drives the router
+  over real sockets.
+- **`ctx.speech` from `/api` reaches a call only when the request carries the
+  caller's `?client=`** — the published `RouteContext.speech` is synchronous, so
+  it is not relayed.
+
 **`--target` is Nitro's preset shape** (`_build-target.ts`): an entry file is
 EMITTED into build output, never committed. Per-host modules:
 `_vercel-target.ts`, `_deno-target.ts`, `_modal-target.ts`; `_target-entry.ts`
@@ -102,8 +193,8 @@ reverse — a new target is a new file plus two lines.
   `node_modules`, `/health` + `/client-config` + `/`, a `/websocket` dial (to
   `session.configured`, no key spent), and exit 0 on SIGTERM.
 - **The bundle's `node:` imports are pinned** to `PORTABLE_NODE_BUILTINS`
-  (`_target-bundle.ts`); `FEATURE_DETECTED_NODE_BUILTINS` (`node:sqlite`) must
-  never be a static import.
+  (`_target-bundle.ts`); `FEATURE_DETECTED_NODE_BUILTINS` (`node:sqlite`, and
+  `node:cluster`, which only `--workers` loads) must never be a static import.
 - **Bun floor is 1.4.0** (below it undici crashes on import and a bundled `ws`
   upgrade writes zero bytes). `minVersion` on the bun arm, CI pins 1.4.2, and
   `runtime-pins-gate.test.ts` fails if the pin drops below the floor. A binary

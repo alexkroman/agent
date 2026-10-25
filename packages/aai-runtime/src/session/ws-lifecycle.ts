@@ -52,6 +52,7 @@
  */
 
 import { createActor, fromPromise, setup } from "xstate";
+import { memoOnSnapshot } from "../_snapshot-memo.ts";
 
 /** Where one client socket's session is. */
 export type WsSessionPhase = "connecting" | "starting" | "ready" | "ended";
@@ -207,13 +208,13 @@ export type WsSessionLifecycle = {
 /** Create the lifecycle for one client socket. */
 export function createWsSessionLifecycle(effects: WsSessionLifecycleEffects): WsSessionLifecycle {
   const actor = createActor(wsSessionLifecycleMachine, { input: effects }).start();
-  const phase = (): WsSessionPhase => {
-    const at = actor.getSnapshot();
+  // `buffering`/`dispatches` read it for every inbound frame — see `_snapshot-memo.ts`.
+  const phase = memoOnSnapshot(actor, (at): WsSessionPhase => {
     if (at.matches("connecting")) return "connecting";
     if (at.matches("starting")) return "starting";
     if (at.matches("ready")) return "ready";
     return "ended";
-  };
+  });
   return {
     phase,
     buffering: () => phase() === "starting",

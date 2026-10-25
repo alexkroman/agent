@@ -149,16 +149,46 @@ const start = defineExec({
   args: {
     port: { type: "string", alias: "p", description: "Port to listen on" },
     host: { type: "string", description: "Address to bind (default: loopback)" },
+    workers: {
+      type: "string",
+      description:
+        "Worker processes behind one port: a number, or `auto` for one per CPU core (default: 1, or AAI_WORKERS)",
+    },
+    "drain-timeout": {
+      type: "string",
+      description:
+        "With --workers: seconds a shutdown lets live calls finish (default: 300, or AAI_DRAIN_TIMEOUT)",
+    },
+    "max-calls-per-worker": {
+      type: "string",
+      description:
+        "With --workers: calls per worker before new ones get 503 (default: unlimited, or AAI_MAX_CALLS_PER_WORKER)",
+    },
     json: sharedArgs.json,
   },
   // Like dev/build/publish: a directory with no `agent.ts` is not a project to
   // serve, and the alternative is a server that boots and answers 404 for the
   // one thing it exists for.
   cwd: "agent",
-  async run({ args, cwd }) {
+  async run({ args, cwd, ui }) {
     const { executeStart } = await import("./start.ts");
+    const workerOptions = await import("./_start-workers.ts");
     // Parsed here rather than in the executor, so a non-numeric value fails as
     // a CLI error naming the flag — the same rule `aai workflow --limit` follows.
+    const workers = workerOptions.resolveWorkers(args.workers);
+    // One process neither drains nor caps: it stops on the first signal. Said,
+    // because an operator who typed `--drain-timeout` is counting on live calls
+    // finishing. Only for a FLAG — a container's env sets these uniformly.
+    const workerOnly = ["drain-timeout", "max-calls-per-worker"] as const;
+    const ignored = workerOnly.filter((flag) => args[flag] !== undefined);
+    if (workers === 1 && ignored.length > 0) {
+      const named = ignored.map((flag) => `--${flag}`).join(" and ");
+      const verb = ignored.length > 1 ? "apply" : "applies";
+      ui.notify(
+        "warn",
+        `${named} only ${verb} with --workers 2 or more; a single process stops on the first signal.`,
+      );
+    }
     return executeStart({
       cwd,
       // `omitEmpty` on HOST rather than a truthiness guard: an empty `--host=`
@@ -168,6 +198,22 @@ const start = defineExec({
         port: args.port === undefined ? undefined : parsePort(args.port),
         host: args.host?.trim() || undefined,
       }),
+      workers,
+      drainTimeoutMs:
+        workerOptions.resolvePositiveInt(
+          args["drain-timeout"],
+          "--drain-timeout",
+          workerOptions.DRAIN_TIMEOUT_ENV,
+          workerOptions.DEFAULT_DRAIN_TIMEOUT_S,
+          process.env,
+          "seconds",
+        ) * 1000,
+      maxCallsPerWorker: workerOptions.resolvePositiveInt(
+        args["max-calls-per-worker"],
+        "--max-calls-per-worker",
+        workerOptions.MAX_CALLS_ENV,
+        Number.POSITIVE_INFINITY,
+      ),
     });
   },
 });

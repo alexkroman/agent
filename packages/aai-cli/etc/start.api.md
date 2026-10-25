@@ -25,8 +25,11 @@ export function loadBuiltAgent(cwd: string): Promise<AgentDef>;
 // @public
 export interface ProjectServerOptions {
     cwd: string;
+    drainTimeoutMs?: number | undefined;
     host?: string | undefined;
+    maxCallsPerWorker?: number | undefined;
     port?: number | undefined;
+    workers?: number | undefined;
 }
 
 // @public
@@ -35,6 +38,7 @@ export interface StartResult {
     data: {
         name: string;
         port: number | undefined;
+        workers: number;
     };
     // (undocumented)
     ok: true;

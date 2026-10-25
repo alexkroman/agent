@@ -267,6 +267,15 @@ Every randomized suite (the `aai-ui/fuzz-*.test.ts` harnesses,
 loop. Failures shrink to a minimal counterexample, and the `fc.scheduler`
 harnesses print a `schedulerFor()` template to paste into a regression test.
 
+- **Gating runs pin ONE fast-check seed; `pnpm test:fuzz` explores.**
+  `scripts/fast-check-seed.mjs` (a shared setup file) sets `GATING_SEED` for
+  every `pnpm test`, `check:local` and CI run, so a property and its floors are
+  decided by the code alone — with a fresh seed per run, floors set under a
+  20-run minimum failed by chance, and ~150 of them made red runs on untouched
+  code likely. `pnpm test:fuzz` (`AAI_FC_SEED=random`, uncached, never gating)
+  draws fresh inputs; replay a finding with `AAI_FC_SEED=<seed>`. A floor that
+  fails at the gating seed fails every time: lower it, never re-roll the seed to
+  pass one.
 - **Generate the whole world, not a seed.** For an unbounded number of decisions
   generate a SHORT list and consume it cyclically, so counterexamples stay
   readable.

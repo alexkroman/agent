@@ -50,6 +50,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import type { Db } from "@alexkroman1/aai/internal";
+import { withSchemaLock } from "../../_schema-lock.ts";
 import type { Logger } from "../../logger.ts";
 import { createPostgresDb } from "../../postgres-db.ts";
 import { createClientTouchThrottle } from "../client-touch.ts";
@@ -289,9 +290,16 @@ export async function ensureSessionStateSchema(options: {
   url: string;
   logger: Logger;
 }): Promise<boolean> {
+  // `max: 1`: the advisory lock's transaction must hold one connection — see
+  // `_schema-lock.ts`, which is what lets concurrent boots share a database.
   const db = createPostgresDb({ url: options.url, max: 1 });
   try {
-    return await applySessionStateDdl({ db, logger: options.logger });
+    return await withSchemaLock(db, () => applySessionStateDdl({ db, logger: options.logger }));
+  } catch (err) {
+    // `begin` or the lock itself failed (an unreachable database): the same
+    // best-effort warning the statements' own failure gives, never a throw.
+    warnSessionStateUnapplied(options.logger, err);
+    return false;
   } finally {
     await db.close().catch(() => undefined);
   }
@@ -318,14 +326,19 @@ export async function applySessionStateDdl(options: { db: Db; logger: Logger }):
     for (const statement of sessionStateDdl()) await options.db.query(statement);
     return true;
   } catch (err) {
-    options.logger.warn(
-      "could not ensure the session-state tables " +
-        `(${SESSION_STATE_TABLE}, ${SESSION_EVENT_TABLE}, ${SESSION_CLIENT_TABLE}) ` +
-        `in DATABASE_URL: ${errorMessage(err)}. Sessions will fail to start unless a migration ` +
-        "has already created them.",
-    );
+    warnSessionStateUnapplied(options.logger, err);
     return false;
   }
+}
+
+/** The one warning an unapplied session-state schema gives, whichever step failed. */
+function warnSessionStateUnapplied(logger: Logger, err: unknown): void {
+  logger.warn(
+    "could not ensure the session-state tables " +
+      `(${SESSION_STATE_TABLE}, ${SESSION_EVENT_TABLE}, ${SESSION_CLIENT_TABLE}) ` +
+      `in DATABASE_URL: ${errorMessage(err)}. Sessions will fail to start unless a migration ` +
+      "has already created them.",
+  );
 }
 
 const APPEND_EVENTS_SQL = `insert into ${SESSION_EVENT_TABLE} (session_id, event_index, event)

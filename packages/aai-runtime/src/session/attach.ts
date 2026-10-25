@@ -47,6 +47,7 @@ import type { ServerSession } from "./core-types.ts";
 import type { SessionDirectory } from "./directory.ts";
 import { dtmfSender } from "./dtmf.ts";
 import { stampSessionEvent } from "./event-stream.ts";
+import { mintSessionId } from "./session-id.ts";
 import { createWsSessionLifecycle } from "./ws-lifecycle.ts";
 
 /** Options for {@link attachSession}. */
@@ -176,7 +177,7 @@ function dispatchInput(input: Input, session: ServerSession, log: Logger, sid: s
  */
 export function attachSession(client: ClientSink, options: AttachSessionOptions): AttachedSession {
   const { sessions, logger: log = consoleLogger } = options;
-  const sessionId = options.resumeFrom ?? crypto.randomUUID();
+  const sessionId = options.resumeFrom ?? mintSessionId();
   const sid = sessionId.slice(0, 8);
   const ctx = options.logContext ?? {};
 

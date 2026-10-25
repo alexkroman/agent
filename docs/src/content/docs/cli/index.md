@@ -21,15 +21,15 @@ for; `--help` has the rest.
 
 ## Building
 
-| Command          | What it does                                                                                                                                                                          |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `aai init [dir]` | Scaffold a new project and install its dependencies with your package manager (pnpm, npm, bun or yarn). `--template <name>` picks a template, `--force` overwrites existing files.    |
-| `aai templates`  | List the templates `--template` accepts.                                                                                                                                              |
-| `aai dev`        | Start a local development server and print a URL to talk to. It rebuilds on save. `--port` sets the port (default 3000); `--watch=false`, or `AAI_DEV_WATCH=0`, stops the rebuilding. |
-| `aai test`       | Run every spec in the project except the evals. `--only` narrows it to `agent.test.ts`.                                                                                               |
-| `aai eval`       | Run `agent.eval.test.ts`. Each suite runs against a live model when a provider key resolves, and against the scripted model when none does — see [Evals](/agent/build/evals/).        |
-| `aai build`      | Bundle the project without deploying it. `--target node\|vercel\|deno\|modal` (detected when you omit it), `--skip-tests`, `--skip-typecheck`.                                        |
-| `aai start`      | Serve a build. `--port`, `--host` (loopback by default).                                                                                                                              |
+| Command          | What it does                                                                                                                                                                                                                  |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `aai init [dir]` | Scaffold a new project and install its dependencies with your package manager (pnpm, npm, bun or yarn). `--template <name>` picks a template, `--force` overwrites existing files.                                            |
+| `aai templates`  | List the templates `--template` accepts.                                                                                                                                                                                      |
+| `aai dev`        | Start a local development server and print a URL to talk to. It rebuilds on save. `--port` sets the port (default 3000); `--watch=false`, or `AAI_DEV_WATCH=0`, stops the rebuilding.                                         |
+| `aai test`       | Run every spec in the project except the evals. `--only` narrows it to `agent.test.ts`.                                                                                                                                       |
+| `aai eval`       | Run `agent.eval.test.ts`. Each suite runs against a live model when a provider key resolves, and against the scripted model when none does — see [Evals](/agent/build/evals/).                                                |
+| `aai build`      | Bundle the project without deploying it. `--target node\|vercel\|deno\|modal` (detected when you omit it), `--skip-tests`, `--skip-typecheck`.                                                                                |
+| `aai start`      | Serve a build. `--port`, `--host` (loopback by default), `--workers <n\|auto>` (one process per core), `--drain-timeout`, `--max-calls-per-worker` — see [Using every core](/agent/deploy/local/#using-every-core---workers). |
 
 ## Shipping
 

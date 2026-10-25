@@ -57,6 +57,7 @@
  */
 
 import { assign, createActor, setup } from "xstate";
+import { memoOnSnapshot } from "../../../_snapshot-memo.ts";
 
 /** Everything that happens to a turn. */
 type TurnEvent =
@@ -227,7 +228,10 @@ const turnStateMachine = setup({
 /** Create a {@link TurnMachine}; the gate starts open for the greeting. */
 export function createTurnMachine(): TurnMachine {
   const actor = createActor(turnStateMachine).start();
-  const inFlight = (): boolean => actor.getSnapshot().matches({ turn: "running" });
+  // `audioGateOpen` and `spoke` run per TTS frame — see `_snapshot-memo.ts`.
+  const inFlight = memoOnSnapshot(actor, (s) => s.matches({ turn: "running" }));
+  const gateOpen = memoOnSnapshot(actor, (s) => s.matches({ gate: "open" }));
+  const spoke = memoOnSnapshot(actor, (s) => s.matches({ voice: "spoken" }));
 
   function abortCurrent(): void {
     const snapshot = actor.getSnapshot();
@@ -243,8 +247,8 @@ export function createTurnMachine(): TurnMachine {
 
   return {
     inFlight,
-    spoke: () => actor.getSnapshot().matches({ voice: "spoken" }),
-    audioGateOpen: () => actor.getSnapshot().matches({ gate: "open" }),
+    spoke,
+    audioGateOpen: gateOpen,
     // Unrepresentable outside `running` now: `draining` is its substate.
     draining: () => actor.getSnapshot().matches({ turn: { running: "draining" } }),
     resumeInFlight: () => {
@@ -262,8 +266,15 @@ export function createTurnMachine(): TurnMachine {
       if (snapshot.matches({ turn: "running" })) snapshot.context.ctl?.abort();
       actor.send({ type: "INTERRUPT" });
     },
-    markSpoke: () => actor.send({ type: "MARK_SPOKE" }),
-    openAudioGate: () => actor.send({ type: "OPEN_GATE" }),
+    // Both run per TTS frame / per text delta, and each event is handled in ONE
+    // state only (`voice.unspoken`, `gate.closed`). Elsewhere it is a no-op
+    // that still costs a full macrostep, so skip the send when already there.
+    markSpoke: () => {
+      if (!spoke()) actor.send({ type: "MARK_SPOKE" });
+    },
+    openAudioGate: () => {
+      if (!gateOpen()) actor.send({ type: "OPEN_GATE" });
+    },
     setDraining: (draining: boolean) =>
       actor.send({ type: draining ? "DRAIN_START" : "DRAIN_END" }),
     setResumeScope: (resume: boolean) =>

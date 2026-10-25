@@ -38,6 +38,86 @@ auth. :::
 There is no server file in your project. When you need to own the startup — your
 own routes, your own auth — see [Self-hosting](/agent/more/self-hosting/).
 
+## Using every core: `--workers`
+
+One `aai start` process runs every call on a single thread, so it uses one CPU
+core however many the machine has. `--workers` serves the same build from
+several processes behind one port:
+
+```sh
+aai start --workers 4               # four processes
+aai start --workers auto            # one per CPU core
+AAI_WORKERS=auto npm start          # the same, for a container
+```
+
+Every request from one browser reaches the same worker. The browser's client id
+(sent by the default UI on every connection) decides which, so a call, its
+`/inbox` socket and its `/api` requests always land together. A reconnect
+resumes on the worker that holds the call, so **no database is needed** for
+voice. Audio goes straight to its worker; the process in front only routes.
+
+A `DATABASE_URL` adds two things memory cannot:
+
+- **A call survives its worker crashing.** A crashed worker is replaced, and a
+  reconnect resumes from Postgres. Without one, a crash loses that worker's
+  calls.
+- **Workflows.** A run must be readable from every worker, so an agent that
+  declares workflows refuses to start on more than one worker without a
+  `DATABASE_URL`. With one, a step that notifies a client's `/inbox` reaches it
+  whichever worker runs the step.
+
+The tables are created safely when several processes start at once.
+
+An `/api` request that speaks into a live call (`ctx.speech`) reaches it only
+when the request carries the caller's `?client=`. The default UI's route hooks
+send it; a webhook from another service, which knows only a session id, should
+look the call up some other way.
+
+### Restarts without dropping calls
+
+The process in front owns every worker's lifecycle:
+
+- **`SIGTERM` (or Ctrl-C) drains.** New calls are refused with `503`, while
+  reconnects, `/api` requests and run reads keep working. Each worker exits once
+  its calls end, or after `--drain-timeout` seconds (default 300, or
+  `AAI_DRAIN_TIMEOUT`). A second signal stops at once. Give your platform's
+  shutdown grace period the drain timeout plus about ten seconds, or it will
+  kill the calls first — the defaults are far shorter (`docker stop` waits 10s,
+  Kubernetes 30s), so set `docker stop -t 310` or
+  `terminationGracePeriodSeconds: 310` for the default drain. `/health` answers
+  `503` while draining (and while the workers are starting), so a load balancer
+  that health-checks it stops sending new calls; any that still arrive get `503`
+  with `Retry-After`. That makes `/health` a **readiness** check: on Kubernetes
+  use it as the `readinessProbe`, never the `livenessProbe` — a failing liveness
+  probe restarts the pod, ending the calls the drain was waiting for. Use a
+  `tcpSocket` probe for liveness.
+- **`SIGHUP` is a rolling restart.** Each worker is replaced in turn: a fresh
+  one starts, takes that worker's new calls, and the old one finishes its calls
+  before exiting. Live calls are not interrupted. A call that reconnects
+  mid-rollover resumes only with a `DATABASE_URL`.
+- **`--max-calls-per-worker <n>`** (or `AAI_MAX_CALLS_PER_WORKER`) refuses calls
+  with `503`, reconnects included, once a worker holds that many. Load is
+  refreshed every couple of seconds, so the limit can briefly lag a hang-up.
+
+Without `--workers` (or with `--workers 1`) there is no drain: the first signal
+stops the process, and `--drain-timeout` and `--max-calls-per-worker` have no
+effect.
+
+`curl localhost:3000/workers`, from the machine itself, shows each worker's
+state, live calls and event-loop load. Each worker's log lines start with
+`[worker N]`, N matching the `slot` there, and the startup lines that every
+worker would print identically are printed once, by worker 0. When the output is
+not a terminal (a container, or `--json`), these logs go to stderr and stdout
+carries only the one JSON line saying the server is up.
+
+A worker that fails while starting (an unreachable database, say) stops the
+whole server rather than restarting forever. A worker that stops responding for
+15 seconds is restarted, and one that is slow to respond is reported first.
+
+As a rough guide, one process holds on the order of a thousand concurrent
+browser calls on a modern core before latency rises. Measure your own agent:
+tools, long replies and big histories all cost more.
+
 ## Watching and restarts
 
 Watching is on when you run `aai dev` at a terminal. `--watch=false` (or

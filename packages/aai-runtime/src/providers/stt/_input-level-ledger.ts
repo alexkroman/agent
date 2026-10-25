@@ -66,9 +66,22 @@ export function createInputLevelLedger(sampleRate: number): InputLevelLedger {
 
   return {
     record(pcm: Int16Array): void {
-      for (const sample of pcm) {
-        pendingSumSquares += sample * sample;
-        pendingSamples += 1;
+      // Every sample sent to the provider passes through here (16k/s per
+      // session; ~9% of the main thread at 750 sessions as a per-sample
+      // `for…of`), so the loop runs block-wise over an index: no iterator and
+      // no per-sample block check. Same sums, same blocks, same levels.
+      const n = pcm.length;
+      let i = 0;
+      while (i < n) {
+        const end = Math.min(n, i + (blockSamples - pendingSamples));
+        let sum = pendingSumSquares;
+        for (let j = i; j < end; j++) {
+          const sample = pcm[j] as number;
+          sum += sample * sample;
+        }
+        pendingSumSquares = sum;
+        pendingSamples += end - i;
+        i = end;
         if (pendingSamples === blockSamples) {
           levels[completed % capacity] = rmsDbfs(pendingSumSquares, pendingSamples);
           completed += 1;

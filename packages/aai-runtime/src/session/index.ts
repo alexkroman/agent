@@ -48,6 +48,7 @@ export {
 export { createPacedClientSink } from "./paced-client-sink.ts";
 export type { ResumeFindings } from "./resume-found.ts";
 export { composeSessionGreeting, createResumeFindings } from "./resume-found.ts";
+export { setSessionIdMinter } from "./session-id.ts";
 export type { SpeechDirectory } from "./speech.ts";
 export type { SessionWebSocket } from "./ws-frames.ts";
 export { asSessionWebSocket, safeSend } from "./ws-frames.ts";

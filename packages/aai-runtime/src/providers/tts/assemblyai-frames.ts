@@ -17,7 +17,7 @@
  * server did not recognize, which is how to test whether a new one is real.
  */
 
-import { safeJsonParse } from "@alexkroman1/aai/utils";
+import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import type WebSocket from "ws";
 import { base64ToUint8 } from "../../_base64.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
@@ -58,6 +58,65 @@ function formatErrorFrame(msg: AssemblyAITtsMessage): string {
   return `(${msg.error_code ?? ""}): ${reason}`;
 }
 
+const AUDIO_KEY = Buffer.from('"audio":"', "latin1");
+const QUOTE = 0x22;
+const BACKSLASH = 0x5c;
+const OPEN_BRACE = 0x7b;
+const COMMA = 0x2c;
+
+/**
+ * Parse one server frame, lifting an `Audio` frame's payload out WITHOUT
+ * running it through `JSON.parse`.
+ *
+ * The base64 audio is nearly every byte of the frame, and the generic path
+ * decodes the whole frame to UTF-8 and then has the JSON parser scan and copy
+ * that payload a second time — `safeJsonParse` was the hottest function of our
+ * own in a 900-session profile, on the per-audio-frame path (2.1 µs vs 0.8 µs
+ * per 100 ms frame in isolation). So the payload is sliced out as latin1 (base64
+ * is ASCII, so that is a copy, not a decode) and only the small remainder is
+ * parsed, with `""` standing in for the payload.
+ *
+ * The lift is taken only where it provably reads the frame as `JSON.parse`
+ * would, and anything else falls back to the full parse:
+ * - the `"audio":"` match is preceded by `{` or `,`, so its quote is
+ *   structural — inside a JSON string every `"` is preceded by `\`;
+ * - the value holds no `\` (base64 never does, so an escape means this is not
+ *   a plain payload) and the key occurs once;
+ * - the remainder parses, and its TOP-LEVEL `audio` is the stand-in — a nested
+ *   `audio` key leaves the top-level one absent.
+ *
+ * @internal Exported for its spec.
+ */
+export function parseServerFrame(raw: WebSocket.Data): AssemblyAITtsMessage | undefined {
+  if (Buffer.isBuffer(raw)) {
+    const lifted = liftAudioPayload(raw);
+    if (lifted !== undefined) return lifted;
+  }
+  return safeJsonParse(typeof raw === "string" ? raw : raw.toString()) as
+    | AssemblyAITtsMessage
+    | undefined;
+}
+
+function liftAudioPayload(raw: Buffer): AssemblyAITtsMessage | undefined {
+  const key = raw.indexOf(AUDIO_KEY);
+  if (key < 1) return undefined;
+  const before = raw[key - 1];
+  if (before !== OPEN_BRACE && before !== COMMA) return undefined;
+  const start = key + AUDIO_KEY.length;
+  const end = raw.indexOf(QUOTE, start);
+  if (end === -1) return undefined;
+  // Within the value only (a view, not a copy): the scan for its end just passed it.
+  if (raw.subarray(start, end).includes(BACKSLASH)) return undefined;
+  if (raw.indexOf(AUDIO_KEY, end) !== -1) return undefined;
+  // `start - 1` keeps the value's opening quote out of the head; `""` replaces
+  // the whole quoted value.
+  const rest: unknown = safeJsonParse(
+    `${raw.toString("utf8", 0, start - 1)}""${raw.toString("utf8", end + 1)}`,
+  );
+  if (!isRecord(rest) || rest.audio !== "") return undefined;
+  return { ...rest, audio: raw.toString("latin1", start, end) } as AssemblyAITtsMessage;
+}
+
 /**
  * Handle one server frame. Extracted to keep `open()` under the cognitive
  * complexity limit; turn state is threaded through the callbacks.
@@ -74,9 +133,7 @@ export function handleMessage(
   onWords: (msg: AssemblyAITtsMessage) => void,
   cancels: CancelWindow,
 ): void {
-  const msg = safeJsonParse(typeof raw === "string" ? raw : raw.toString()) as
-    | AssemblyAITtsMessage
-    | undefined;
+  const msg = parseServerFrame(raw);
   if (msg === undefined) return;
 
   // `Cancelled` is the line between the abandoned turn and the next one — see

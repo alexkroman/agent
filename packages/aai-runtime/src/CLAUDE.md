@@ -75,6 +75,22 @@ files by NAME** (scans, `guard-invariants-scopes.mjs`, baseline JSONs) — see
   registered cross-copy slot ("The server and the sessions are ONE copy of this
   package" in `../CLAUDE.md`).
 
+## One agent on several PROCESSES: three seams, all on `/internal`
+
+`aai start --workers` (aai-cli's `SELF-HOSTING-CLAUDE.md`) spreads one agent
+over processes; the runtime keeps no knowledge of that beyond three seams:
+
+- **`setSessionIdMinter`** (`session/session-id.ts`) — who mints a fresh
+  session's id (`attach.ts`); a worker mints ids that route back to itself.
+- **`setClientNotifyRelay` / `notifyClientHere`** (`inbox/relay.ts`) — the
+  published step notifier is `routedClientNotifier(inbox.notify)`, so a notice
+  for a client another process holds is forwarded, and the owner delivers
+  locally. No relay installed means every client is local.
+- **`withSchemaLock`** (`_schema-lock.ts`) — both `ensure*Schema` wrappers run
+  their DDL in one transaction behind `pg_advisory_xact_lock`, so concurrent
+  boots serialize instead of racing the catalog. It needs a ONE-connection `Db`
+  (the wrappers' `max: 1` pool), never a caller's pool.
+
 ## Subagents: `ctx.delegate` is a second tool loop
 
 `subagent.ts` implements `ctx.delegate` (contract: `sdk/speaker.ts` in the SDK)
@@ -128,17 +144,17 @@ Rules:
 - The worked example is the `topic-briefing-agent` template (context isolation,
   parallel fan-out with `allSettled`, per-subagent tools and models).
 
-## Every call this runtime makes of its OWN goes through a POOL, and there are two
+## Every call this runtime makes of its OWN goes through a POOL, and there are three
 
 `_egress-fetch.ts` holds `rpcFetch` (platform routes — the fallback under the
 multiplexed platform socket, see
-[`PLATFORM-SOCKET-CLAUDE.md`](../../aai-server/PLATFORM-SOCKET-CLAUDE.md)) and
-`blobFetch` (window bytes); `_egress-pool.ts` builds them and `step-fetch.ts`
-takes a third. **`globalThis.fetch` is banned here by `guard-invariants`
-rule 29.** Both default to HTTP/1.1: under HTTP/2 concurrent requests share one
-flow-control window and a capacity limit arrives as a status-less reset
-(`sdk/step-fetch.ts` has the measurement). `AAI_EGRESS_RPC_HTTP2` switches the
-RPC pool only.
+[`PLATFORM-SOCKET-CLAUDE.md`](../../aai-server/PLATFORM-SOCKET-CLAUDE.md)),
+`blobFetch` (window bytes) and `modelFetch` (model providers, no connection
+cap); `_egress-pool.ts` builds them and `step-fetch.ts` takes a third.
+**`globalThis.fetch` is banned here by `guard-invariants` rule 29.** Both
+default to HTTP/1.1: under HTTP/2 concurrent requests share one flow-control
+window and a capacity limit arrives as a status-less reset (`sdk/step-fetch.ts`
+has the measurement). `AAI_EGRESS_RPC_HTTP2` switches the RPC pool only.
 
 - **Per PROCESS, a lazy singleton**; `closeEgressFetch()` RESETS rather than
   poisons it.
@@ -150,9 +166,11 @@ RPC pool only.
   published export.
 - **Bodies must be plain** (`Uint8Array` or string): through `pinnedFetch`, a
   global `FormData`/`Blob`/`Headers`/`Request` is silently stringified
-  (`host/_undici.ts`). Model-provider requests are the one exception: they ride
-  the ambient `fetch` through `providers/_llm-registry.ts`'s `providerFetch`,
-  which the provider wrappers take as a required argument.
+  (`host/_undici.ts`). Model-provider requests reach `modelFetch` through
+  `providers/_llm-transport.ts` (30 s idle, so a turn does not re-dial TCP +
+  TLS), which every LLM client is built with; it yields to the global whenever
+  the global is not Node's own (eval network, an interceptor, `vi.stubGlobal`)
+  or a request is not plain.
 
 ## A reply's metrics are ONE frame, and every reader takes it from there
 

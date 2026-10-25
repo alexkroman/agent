@@ -74,8 +74,8 @@ export type EgressPoolOptions = {
    * pool is built.
    */
   allowH2?: boolean | undefined;
-  /** Connections the pool may hold open per origin. */
-  connections: number;
+  /** Connections the pool may hold open per origin; omit for no cap (the model-provider pool). */
+  connections?: number | undefined;
   /** How long an idle connection is kept. */
   keepAliveTimeout: number;
   /** Requests queued on one connection — 1 everywhere, see {@link createEgressPool}. */
@@ -109,7 +109,6 @@ export function createEgressPool(opts: EgressPoolOptions): EgressPool {
   const agent = new Agent({
     // Defaulted rather than fixed — see the module doc.
     allowH2: opts.allowH2 ?? false,
-    connections: opts.connections,
     keepAliveTimeout: opts.keepAliveTimeout,
     pipelining: opts.pipelining,
     // Omitted rather than passed as `undefined`, because the two pools differ in
@@ -118,7 +117,11 @@ export function createEgressPool(opts: EgressPoolOptions): EgressPool {
     // runtime's egress leaves them at undici's defaults, which are the only bound
     // its own body reads have. `{ bodyTimeout: undefined }` is not the same
     // request as no key at all.
-    ...omitUndefined({ headersTimeout: opts.headersTimeout, bodyTimeout: opts.bodyTimeout }),
+    ...omitUndefined({
+      connections: opts.connections,
+      headersTimeout: opts.headersTimeout,
+      bodyTimeout: opts.bodyTimeout,
+    }),
   });
   // Memoized, because undici's `close()` is not: a second call on a closed
   // agent rejects with `ClientClosedError`, and the doc above promises otherwise.

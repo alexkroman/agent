@@ -14,9 +14,10 @@
 import { DEFAULT_SESSION_START_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
 import { WS_OPEN } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import WebSocket from "ws";
+import type WebSocket from "ws";
 import { createAudioSendGate } from "../_audio-gate.ts";
 import { pcm16ToBytes } from "../_pcm.ts";
+import { CoalescingWebSocket } from "../_ws.ts";
 import {
   closeOnAbort,
   connectOrThrow,
@@ -59,9 +60,12 @@ export type CreateProviderSocket = (
   options: WebSocket.ClientOptions,
 ) => ProviderSocket;
 
-/** The production {@link CreateProviderSocket}: a real `ws` client. */
+/**
+ * The production {@link CreateProviderSocket}: a real `ws` client that sends a
+ * tick's frames in one write (`CoalescingWebSocket` says why that is latency).
+ */
 export const createProviderSocket: CreateProviderSocket = (url, options) =>
-  new WebSocket(url, options);
+  new CoalescingWebSocket(url, options);
 
 /**
  * Construct a raw provider WebSocket, wrapping a constructor throw as a connect
