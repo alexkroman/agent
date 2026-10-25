@@ -1,100 +1,38 @@
 // An EVAL: does the game engine actually keep its world? Run it with `aai eval`.
 //
-// `agent.test.ts` drives the tools directly, one call at a time, against a
-// context it made itself. This drives the AGENT: a real session, the real tool
-// executor, the real event stream, and — the part no unit test can reach — MORE
-// THAN ONE TURN through the same session slot. Everything worth asserting here
-// is a claim about state that has to survive a turn boundary, or about the world
-// really being replaced when the player asks to start over.
-//
-// Two modes, and `describeEval` announces which it picked:
-//
-//   * with ASSEMBLYAI_API_KEY — a LIVE model. It really has to map "I pick up
-//     the rusted lantern" onto `game_state_take`, which is the behaviour the
-//     system prompt spends a whole section on.
-//   * without one — a SCRIPTED model, whose tool calls REALLY EXECUTE. The
-//     state changes for real, so a scripted take followed by a scripted read is
-//     a genuine two-turn state test with no model involved.
-//
-// What no eval here can see: anything below the audio boundary — endpointing,
-// barge-in, two commands merging into one turn. Those need real paced audio.
-
-/**
- * The def a DEPLOYED agent runs, assembled the way the build assembles it: the
- * authored export, plus what `tools/` declares, plus `system-prompt.md`.
- *
- * Both wrappers matter here in a way they do not in `agent.test.ts`. A tool
- * missing from the registry is a tool the model cannot call, and the prompt is
- * the only thing that tells a live model that "grab the rope" means
- * `game_state_take` — an eval run against the framework default prompt measures
- * an agent nobody deployed.
- *
- * The prompt is a RESOLVER (see `agent.ts`), so what a live run puts in front
- * of the narrator is the file plus the board as it stands on that turn. That is
- * what the state assertions below are really riding on: the narrator is never
- * asked to remember an inventory, so a wrong answer is a game bug rather than a
- * model lapse.
- */
+// `agent.test.ts` drives the tools one call at a time. This drives the AGENT —
+// a real session, the real tool executor, and MORE THAN ONE TURN through the
+// same session slot, which is the part no unit test can reach. With a key it
+// is a live model that has to map "I pick up the rusted lantern" onto
+// `game_state_take`; without one a scripted model whose tool calls really
+// execute, so a scripted take followed by a scripted read is still a two-turn
+// state test.
 import agentDef from "virtual:aai/agent";
+import { expectToolOk } from "@alexkroman1/aai-runtime/testing";
 import {
   describeEval,
-  type EvalTurn,
   lastToolResultIn,
   toolCallsInTurns,
   toolResultIn,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
 import { DEFAULT_GAME_STATE, rankFor } from "./shared.ts";
-
-/**
- * What each of the three tools this file drives answers, off the wire.
- *
- * `tool.completed` carries a tool result as a JSON STRING, so a case either
- * casts it or validates it — and a cast is silent exactly when a tool's result
- * changed shape underneath the eval, which is the regression an eval exists to
- * catch. `toolResultIn` takes a schema for that reason, and these name only the
- * fields asserted below.
- */
-const Carried = z.object({ inventory: z.array(z.string()) });
-const Restarted = z.object({ restarted: z.boolean() });
-const Scored = z.object({ score: z.number(), rank: z.string() });
-const Status = z.object({
-  inventory: z.array(z.string()),
-  score: z.number(),
-  rank: z.string(),
-  moves: z.number(),
-  currentRoom: z.string(),
-});
-
-/**
- * What the ONE call to `name` answered on this turn.
- *
- * `toolResultIn` is the SDK's reader: it throws rather than returning
- * undefined, and names what the agent called instead — "it called a different
- * tool" is the finding, and a case that read `undefined` off a missing call
- * would assert against nothing. A turn that called it TWICE is refused too,
- * rather than silently answered with the first.
- */
-const answerOf = <T>(turn: EvalTurn, name: string, schema: z.ZodType<T>): T =>
-  toolResultIn(turn.toolCalls, name, schema);
+import gameStateGet from "./tools/game_state_get.ts";
+import gameStateRestart from "./tools/game_state_restart.ts";
+import gameStateScore from "./tools/game_state_score.ts";
+import gameStateTake from "./tools/game_state_take.ts";
 
 describeEval(agentDef, (test) => {
   test(
     "an item taken on one turn is still carried on the next",
     async ({ session }) => {
       const taken = await session.say("I pick up the rusted lantern.");
-      // The write really wrote. `game_state_take` is a `gameSlot.updateTool`,
-      // and it shipped once as the READING half — pushing to a deep-frozen
-      // array, which throws on every call. A tool that threw answers with an
-      // error here, not an inventory.
-      expect(answerOf(taken, "game_state_take", Carried).inventory).toContain("rusted lantern");
+      expect(toolResultIn(taken.toolCalls, gameStateTake).inventory).toContain("rusted lantern");
 
-      // A SECOND turn, which is the whole point: the slot is keyed per session,
-      // so this is the only place the take can be shown to have outlived the
-      // turn that made it.
+      // A SECOND turn: the slot is keyed per session, so this is the only
+      // place the take can be shown to have outlived the turn that made it.
       const status = await session.say("Check the game state. What am I carrying?");
-      expect(answerOf(status, "game_state_get", Status).inventory).toContain("rusted lantern");
+      expect(toolResultIn(status.toolCalls, gameStateGet).inventory).toContain("rusted lantern");
       expect(status.completed).toBe(true);
     },
     {
@@ -111,24 +49,20 @@ describeEval(agentDef, (test) => {
     "starting over really empties the world",
     async ({ session }) => {
       const taken = await session.say("I pick up the rusted lantern.");
-      expect(answerOf(taken, "game_state_take", Carried).inventory).toContain("rusted lantern");
+      expect(toolResultIn(taken.toolCalls, gameStateTake).inventory).toContain("rusted lantern");
 
       const again = await session.say("Forget all that. Start a new game from the beginning.");
-      expect(answerOf(again, "game_state_restart", Restarted).restarted).toBe(true);
+      expect(toolResultIn(again.toolCalls, gameStateRestart).restarted).toBe(true);
 
-      // `game_state_restart` is the one tool that REPLACES the slot's value
-      // (`gameSlot.reset`), so what has to be checked is the state a LATER turn
-      // reads — a reset that only rebuilt the value it returned would satisfy
-      // the assertion above and leave the lantern in the player's hands.
+      // What a LATER turn reads: a reset that only rebuilt the value it
+      // returned would leave the lantern in the player's hands.
       const status = await session.say("Check the game state. What am I carrying, and where am I?");
-      const fresh = answerOf(status, "game_state_get", Status);
+      const fresh = toolResultIn(status.toolCalls, gameStateGet);
       expect(fresh.inventory).toEqual([]);
       expect(fresh.score).toBe(0);
       expect(fresh.currentRoom).toBe(DEFAULT_GAME_STATE.currentRoom);
-      // ONE, not zero — and this is the assertion that proves the turn counter
-      // is the framework's. The reset emptied it, then the player said the line
-      // above, and the `userTranscript.committed` hook counted it before the
-      // narrator took its turn. No tool call is involved anywhere in that.
+      // ONE, not zero: the reset emptied it, then the player said the line
+      // above and the hook counted it before the narrator took its turn.
       expect(fresh.moves).toBe(1);
     },
     {
@@ -146,45 +80,26 @@ describeEval(agentDef, (test) => {
   test(
     "the rank the score earned is still the player's rank a turn later",
     async ({ session }) => {
-      // The chalice has to be IN HAND first. The prompt's scoring rule is that a
-      // treasure CARRIED BACK to the pedestal earns points, and
-      // `game_state_drop` refuses an item the player is not holding — so asked
-      // cold, "I set the chalice down" is a drop, which is what a live model
-      // reached for twice (`game_state_drop`, then no tool at all) while this
-      // case blamed the score tool.
-      //
-      // And it has to be REACHABLE. Item locations are the prompt's, so the
-      // chalice is pinned to the Pine Forest there, beside the lantern's "at the
-      // entrance". Unpinned, a live narrator whose game state said "Cave Mouth,
-      // carrying nothing" refused the pickup outright — correctly — and a route
-      // into the cave to find it failed on the puzzles the model invented.
+      // The chalice has to be IN HAND first and REACHABLE: the prompt pins it
+      // to the Pine Forest, the one treasure above ground, so a live narrator
+      // can score a return without the puzzles it invents underground.
       const turns = await session.sayAll([
         "I walk into the Pine Forest.",
         "I pick up the golden chalice.",
         "I carry the chalice back to the Cave Mouth.",
         "I set the chalice on the stone pedestal. Award me the points for returning it.",
       ]);
-      // `lastToolResultIn` rather than `answerOf`, which is `toolResultIn` and
-      // refuses a scope holding two calls. Across three turns the narrator may
-      // well award twice — settling the return on the carry and again on the
-      // request — and the SETTLED total is the one the player was told. Reading
-      // one turn instead was the workaround, and it made this case depend on
-      // which turn the narrator chose to score on.
-      const earned = lastToolResultIn(toolCallsInTurns(turns), "game_state_score", Scored);
-      // Whatever the model awarded — a live run picks its own number — the rank
-      // that came back is the one the ladder says that score earns. The tool
-      // computes it from `rankFor` because the slot's `after` hook has not run
-      // when its result is built; if it read `game.rank` instead, this is the
-      // assertion that would catch the promotion arriving one call late.
+      // `lastToolResultIn`: across three turns a live narrator may award twice,
+      // and the SETTLED total is the one the player was told.
+      const earned = expectToolOk(lastToolResultIn(toolCallsInTurns(turns), gameStateScore));
+      // Whatever was awarded, the rank that came back is the one the ladder
+      // says that score earns — reported off the stored game, not the draft.
       expect(earned.rank).toBe(rankFor(earned.score));
 
-      // And the SECOND turn is the only place the hook's write can be seen: the
-      // field nothing assigns is read back off a later turn's state.
-      // "Check the game state", not "What is my score?" — the score is in the
-      // prompt now (see `statusBlock`), so a live narrator answers that one
-      // without a tool call, and this case is about the WRITE surviving the
-      // turn rather than about which question forces a read.
-      const later = answerOf(await session.say("Check the game state."), "game_state_get", Status);
+      const later = toolResultIn(
+        (await session.say("Check the game state.")).toolCalls,
+        gameStateGet,
+      );
       expect(later.score).toBe(earned.score);
       expect(later.rank).toBe(earned.rank);
     },
@@ -207,13 +122,9 @@ describeEval(agentDef, (test) => {
   test(
     "a restart is narrated, not merely recorded",
     async ({ session }) => {
-      // LIVE only: the claim is about what the narrator SAYS after the reset,
-      // and a scripted reply is a line this file wrote. The prompt asks for the
-      // opening scene again — a restart that answers "done" leaves a voice
-      // player with no idea where they are.
+      // LIVE only: the claim is about what the narrator SAYS after the reset.
       const again = await session.say("Start over. New game, please.");
-
-      expect(answerOf(again, "game_state_restart", Restarted).restarted).toBe(true);
+      expect(toolResultIn(again.toolCalls, gameStateRestart).restarted).toBe(true);
       expect(again.text).toMatch(/cave|cavern|forest|entrance|lantern/i);
       expect(again.completed).toBe(true);
     },
