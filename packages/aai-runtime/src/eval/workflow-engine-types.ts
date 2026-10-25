@@ -68,6 +68,8 @@ export type EvalRunRecord = {
    * — so a case can assert the line a tool wrote for the run list.
    */
   readonly label?: string;
+  /** The run's `StartOptions.key`, so `ctx.key` and `ctx.signalToken` answer here as deployed. */
+  readonly key?: string;
   output?: unknown;
   error?: { message: string };
   /** Lines this run's steps wrote with `stepReport()`, oldest first. */

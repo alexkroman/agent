@@ -30,24 +30,31 @@
  * `findByKey`/`cancelAll` are composed of `find`/`cancel` in `client-keyed.ts`.
  */
 
-import { formatSchemaIssues, toToolJsonSchema } from "@alexkroman1/aai/host-internal";
+import {
+  formatSchemaIssues,
+  SESSION_KEY,
+  toToolJsonSchema,
+  workflowSignalToken,
+} from "@alexkroman1/aai/host-internal";
 import { mapConcurrent } from "@alexkroman1/aai/step";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
-import type {
-  AnyWorkflowDef,
-  FindByKeyOptions,
-  FindOptions,
-  StartOptions,
-  StreamOptions,
-  WakeUpOptions,
-  WorkflowClient,
-  WorkflowDef,
-  WorkflowRunSnapshot,
-  WorkflowSummary,
+import {
+  type AnyWorkflowDef,
+  DEFAULT_SIGNAL_HOLD_MS,
+  type FindByKeyOptions,
+  type FindOptions,
+  type SignalOptions,
+  type StartOptions,
+  type StreamOptions,
+  type WakeUpOptions,
+  type WorkflowClient,
+  type WorkflowDef,
+  type WorkflowRunSnapshot,
+  type WorkflowSummary,
 } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "../logger.ts";
 import { WorkflowRequestError } from "./_request-error.ts";
-import { cancelAllByKey, findByKeyAcross, keyedFind } from "./client-keyed.ts";
+import { cancelAllByKey, findByKeyAcross, keyedFind, liveByKey } from "./client-keyed.ts";
 import { resolveFindLimit, type WorkflowKeyStore } from "./keys.ts";
 import { normalizeRunLabel } from "./run-label.ts";
 import { workflowWebhookUrl } from "./serve.ts";
@@ -215,7 +222,12 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       // `parseWorkflowName` takes.
       workflow: record.workflowName,
       createdAt: new Date(record.createdAt).getTime(),
-      ...omitUndefined({ key, label: record.label }),
+      ...omitUndefined({
+        key,
+        label: record.label,
+        startedAt: record.startedAt,
+        settledAt: record.settledAt,
+      }),
     };
     switch (record.status) {
       case "completed":
@@ -257,19 +269,26 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       // an unlabelled start calls the adapter exactly as it always did.
       const label = normalizeRunLabel(options?.label);
       const args = [validated];
+      // `"session"` means the session id, and THIS client has none — it is the
+      // per-runtime client a body, a route or a script holds. A session-scoped
+      // client (`workflow/client-session.ts`) has already resolved it, so what
+      // reaches here as the literal is a key nobody can look up: dropped, as
+      // `StartOptions.key` says, rather than indexed as five letters.
+      const key = options?.key === SESSION_KEY ? undefined : options?.key;
       // `dedupeKey` is the ENGINE's to honour — it derives the run id from it, so
-      // two racing starts meet at one `createRun` (`workflow/engine.ts`).
-      const startOptions = omitUndefined({ label, dedupeKey: options?.dedupeKey });
+      // two racing starts meet at one `createRun` (`workflow/engine.ts`) — and so
+      // is `key`, which it journals for the body to read back as `ctx.key`.
+      const startOptions = omitUndefined({ label, dedupeKey: options?.dedupeKey, key });
       const runId = await (Object.keys(startOptions).length === 0
         ? wdk.start(name, args)
         : wdk.start(name, args, startOptions));
-      if (options?.key !== undefined) {
+      if (key !== undefined) {
         // A failed key write must not fail the `start`: the run is already
         // created and running, so throwing here would tell the caller nothing
         // happened while the work proceeds unreachably. Losing the index entry
         // costs a later `find`, which is recoverable; losing the runId the caller
         // was about to be handed is not.
-        await keys.record(name, options.key, runId).catch((err: unknown) => {
+        await keys.record(name, key, runId).catch((err: unknown) => {
           logger.warn?.("Workflow correlation key not recorded", {
             workflow: name,
             runId,
@@ -290,6 +309,21 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       options?: FindOptions,
     ): Promise<WorkflowRunSnapshot[]> {
       return findOne(resolve(workflow).name, key, resolveFindLimit(options?.limit));
+    },
+
+    async latest(
+      workflow: AnyWorkflowDef | string,
+      key: string = SESSION_KEY,
+    ): Promise<WorkflowRunSnapshot | undefined> {
+      // `find` with a limit of one — newest first, so the head is the answer.
+      return (await findOne(resolve(workflow).name, key, 1))[0];
+    },
+
+    live(
+      workflow: AnyWorkflowDef | string,
+      key: string = SESSION_KEY,
+    ): Promise<WorkflowRunSnapshot | undefined> {
+      return liveByKey(resolve(workflow).name, findOne, key);
     },
 
     findByKey(key: string, options?: FindByKeyOptions): Promise<WorkflowRunSnapshot[]> {
@@ -323,13 +357,34 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       return wdk.wakeUp(runId, ids && ids.length > 0 ? ids : undefined);
     },
 
-    signal(token: string, payload?: unknown): Promise<boolean> {
+    signal(token: string, payload?: unknown, options?: SignalOptions): Promise<boolean> {
       // `payload` defaults to `{}` rather than passing `undefined` through: a
       // hook resolves WITH its payload, so a body awaiting one and reading a
       // field off it would throw on a signal sent for its arrival alone. An
       // empty object is the "I am only telling you it happened" value, and it
       // survives the serialization a hook payload crosses.
-      return wdk.signal(token, payload ?? {});
+      // The options bag reaches the adapter only when there is one, as `start`'s
+      // does — a signal with no hold is the call it always was.
+      const holdMs = options?.holdMs;
+      return holdMs === undefined
+        ? wdk.signal(token, payload ?? {})
+        : wdk.signal(token, payload ?? {}, { holdMs });
+    },
+
+    signalRun(
+      workflow: AnyWorkflowDef | string,
+      key: string,
+      label: string,
+      payload?: unknown,
+      options?: SignalOptions,
+    ): Promise<boolean> {
+      // The token the body derived — `ctx.waitForSignal(label)` — from the
+      // same three parts, so neither side spells it (`sdk/workflow-signals.ts`).
+      const token = workflowSignalToken(resolve(workflow).name, key, label);
+      // Held by default: the ordinary caller is a tool answering a run it has
+      // just started, which has not reached its wait yet.
+      const holdMs = options?.holdMs ?? DEFAULT_SIGNAL_HOLD_MS;
+      return wdk.signal(token, payload ?? {}, { holdMs });
     },
 
     streamTail(runId: string, options?: StreamOptions): Promise<number> {

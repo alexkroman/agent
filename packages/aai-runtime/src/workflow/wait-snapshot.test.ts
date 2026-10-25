@@ -118,7 +118,14 @@ describe("what the snapshot may NOT answer", () => {
     const runId = await world.engine.start("digest", [{}]);
     expect(await world.engine.execute(runId)).toBe("running");
     expect(await world.journal.readSleeps(runId)).toEqual([
-      { key: "sleep!nap#0", wakeAt: expect.any(Number), woken: false, kind: "sleep" },
+      // `correlationId` is the label by default — `SleepOptions.correlationId`.
+      {
+        key: "sleep!nap#0",
+        wakeAt: expect.any(Number),
+        woken: false,
+        kind: "sleep",
+        correlationId: "nap",
+      },
     ]);
     // Reachable BY NAME, which is the property a skipped claim destroys.
     expect(await world.engine.wakeUp(runId, undefined)).toBe(1);

@@ -35,6 +35,17 @@ export type StartOptions = {
    *
    * Not unique: starting twice with one key is legal and `find` returns the
    * newest first. To make a second start a no-op, pass {@link StartOptions.dedupeKey}.
+   *
+   * **Defaults to `"session"`, which means the SESSION ID** wherever the client
+   * is session-scoped — a tool's `ctx.workflows`, a session event hook — so a
+   * tool that passes nothing gets the key it was always told to pass. The same
+   * literal is accepted by every keyed read (`find`, `latest`, `live`,
+   * `cancelAll`, `signalRun`), so a `*_status` tool reads back what a start
+   * tool started with no key spelled on either side. A client with no session
+   * — a workflow body's, a route's, a script's — has no id to resolve it to,
+   * so there the default means NO key: a body or a route that wants a run
+   * findable passes one explicitly, and `"session"` passed there is likewise
+   * dropped rather than recorded as the five-letter string.
    */
   key?: string;
   /**
@@ -190,3 +201,49 @@ export type StreamOptions = {
    */
   startIndex?: number;
 };
+
+/**
+ * Options for `WorkflowClient.signal` and `WorkflowClient.signalRun`.
+ *
+ * @input
+ */
+export type SignalOptions = {
+  /**
+   * How long to HOLD the payload for a wait the run has not reached yet, in
+   * milliseconds.
+   *
+   * `signal` answers `false` when nothing holds the token, which is the right
+   * answer for a run that has moved past its wait — and the wrong one for a run
+   * that has not got there: a tool that starts a run and signals it in the same
+   * turn usually lands before the body reaches `ctx.waitFor`, and its answer
+   * was lost. With a hold, the payload is kept in this process and delivered
+   * the moment the run claims a wait on the token, and the call answers `true`
+   * for having been taken. A hold that expires unclaimed is dropped. `signalRun`
+   * holds for `DEFAULT_SIGNAL_HOLD_MS` unless told otherwise; `signal` holds
+   * only when asked.
+   *
+   * Held in PROCESS MEMORY, not the journal: a hold is a courtesy for the
+   * seconds between a start and the body's first wait, and a restart in that
+   * window loses it exactly as it would have been lost before.
+   */
+  holdMs?: number;
+};
+
+/**
+ * The `StartOptions.key` that means "the session id" — see there.
+ *
+ * @internal
+ */
+export const SESSION_KEY = "session";
+
+/**
+ * How long `WorkflowClient.signalRun` holds a payload for a wait the run has
+ * not reached yet — see `SignalOptions.holdMs`.
+ *
+ * Five minutes: long enough for a body that transcribes or uploads before it
+ * parks, and short enough that a payload for a run that never parks is not held
+ * for the life of the process.
+ *
+ * @public
+ */
+export const DEFAULT_SIGNAL_HOLD_MS: number = 5 * 60_000;

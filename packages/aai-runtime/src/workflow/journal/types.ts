@@ -164,6 +164,25 @@ export function isResumableJournal(store: JournalStore): store is ResumableJourn
  * it cannot reach, and mandating the answer would have memory invent a slot,
  * i.e. resurrect a run.
  */
+/**
+ * What {@link JournalStore.setStatus} may write beside the status.
+ *
+ * `output` and `error` are the terminal payloads and follow the additive rule
+ * stated on the method. The two instants are the run's TIMING
+ * (`RunRecord.startedAt`/`settledAt`): `startedAt` is first-write-wins, so a
+ * redelivery announcing `running` again leaves the first delivery's instant
+ * standing; `settledAt` rides the terminal write. A backend with no column for
+ * them IGNORES them rather than failing the write — the status is the
+ * contract, the instants are a courtesy — which is what the two databases do
+ * until their schemas carry them.
+ */
+export type RunStatusPatch = {
+  output?: unknown;
+  error?: { message: string };
+  startedAt?: number;
+  settledAt?: number;
+};
+
 export type JournalStore = {
   /**
    * Create the run record. Rejects if `runId` already exists — the id is minted
@@ -197,7 +216,7 @@ export type JournalStore = {
   setStatus(
     runId: string,
     next: RunStatus,
-    patch?: { output?: unknown; error?: { message: string } },
+    patch?: RunStatusPatch,
     expect?: readonly RunStatus[],
   ): Promise<boolean>;
   /**

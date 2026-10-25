@@ -66,6 +66,24 @@ export type RunRecord = {
    * (`conformance-cases.ts`).
    */
   label?: string | undefined;
+  /**
+   * When the FIRST delivery began walking the body, as epoch ms.
+   *
+   * Written by {@link JournalStore.setStatus}'s `running` compare-and-set, and
+   * FIRST WRITE WINS: every later delivery announces `running` again and must
+   * not move it. `createdAt` is `start`'s instant; the gap is queue latency.
+   * Absent until then — and absent for good on a backend whose table has no
+   * column for it, which today is the self-hosted Postgres journal and the
+   * platform's: the field is carried by the contract and stored where it can
+   * be, so a reader treats it as a courtesy.
+   */
+  startedAt?: number | undefined;
+  /**
+   * When the run reached its terminal status, as epoch ms. Written with the
+   * terminal `setStatus`; absent on a live run, and absent on the backends
+   * {@link RunRecord.startedAt} names.
+   */
+  settledAt?: number | undefined;
 };
 
 /**

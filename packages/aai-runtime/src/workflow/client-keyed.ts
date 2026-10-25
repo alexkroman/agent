@@ -148,3 +148,26 @@ export async function cancelAllByKey(
   }
   return cancelled;
 }
+
+/**
+ * The newest run of `workflow` started with `key` that is still `pending` or
+ * `running`, or `undefined` — `WorkflowClient.live`.
+ *
+ * Filtered on the raw record, so a finished run never becomes a snapshot and
+ * no output is read; `find` answers newest first, so the head is the answer.
+ * Reads to `MAX_WORKFLOW_FIND_LIMIT` for the reason `cancelAllByKey` does: the
+ * newest run may have finished while an older one is still parked.
+ *
+ * @internal
+ */
+export async function liveByKey(
+  workflow: string,
+  find: FindOne,
+  key: string,
+): Promise<WorkflowRunSnapshot | undefined> {
+  const runs = await find(workflow, key, MAX_WORKFLOW_FIND_LIMIT, {
+    keep: (record) => record.status === "pending" || record.status === "running",
+    withOutput: false,
+  });
+  return runs[0];
+}

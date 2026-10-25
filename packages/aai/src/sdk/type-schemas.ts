@@ -43,6 +43,9 @@ export const BuiltinToolSchema = z.enum([
   "brave_search",
   "google_places",
   "text_me",
+  "workflow_status",
+  "workflow_progress",
+  "workflow_cancel",
 ]);
 
 /**

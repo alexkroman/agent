@@ -150,6 +150,23 @@ export type WorkflowOutputOf<D> = D extends {
  * }
  * ```
  *
+ * ## It also reads a SCHEMA, and a bodyless declaration, for the cycle's sake
+ *
+ * `WorkflowInputOf<typeof def>` inside the body's own module is the obvious
+ * spelling and it is `TS7022`: `typeof def` needs the body's signature when the
+ * body is what `workflow({ run })` infers from, and the body's parameter names
+ * `typeof def`. Two spellings avoid it, and both are read here:
+ *
+ * - **The input schema itself** — `WorkflowInputOf<typeof digestInput>` for a
+ *   named `z.object(…)` const, which is the schema's OUTPUT type exactly as the
+ *   def reading answers it. The schema is what the def reads anyway, so the
+ *   body names the same declaration one step earlier.
+ * - **A two-phase declaration** — `workflow({ input, output }).body(digestFlow)`.
+ *   `typeof def` there is fixed by the declaration alone (see
+ *   `WorkflowDeclaration`), so a body annotated `WorkflowInputOf<typeof def>`
+ *   resolves; and the declaration BEFORE `.body` reads here too, as what its
+ *   `body` will accept.
+ *
  * Published from `@alexkroman1/aai` as well as `@alexkroman1/aai/workflow-api`.
  * The root is the one an author wants: this annotation lives in a
  * `workflows/*.ts` body, next to the `workflow()` that declared it.
@@ -160,7 +177,14 @@ export type WorkflowInputOf<D> = D extends {
   readonly run: (input: infer I, ctx: never) => unknown;
 }
   ? I
-  : never;
+  : D extends StandardSchemaV1<unknown, infer O>
+    ? O
+    : // `ctx: unknown` here where the `run` reading says `never`: nested one
+      // parameter deeper, the direction flips, and the context type must be
+      // ACCEPTED by this position rather than assignable to it.
+      D extends { readonly body: (run: (input: infer I, ctx: unknown) => unknown) => unknown }
+      ? I
+      : never;
 
 /**
  * A run of `D`, with its output already typed — `WorkflowRunSnapshot` and

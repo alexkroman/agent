@@ -129,6 +129,56 @@ function retryDelay(err: unknown): number {
 }
 
 /**
+ * Is this failure the far side asking the step to COME BACK LATER — a
+ * `RetryableError` whose `retryAfter` is still ahead of the clock?
+ *
+ * That is the one failure `StepOptions.maxWaits` counts separately: `orFail`
+ * mints it from a `Retry-After` on a 429/503, and a rate limit met by a
+ * fan-out is the case that spent a whole attempt budget on nobody's fault. A
+ * retryable error whose delay has already passed is a plain failure, as is
+ * one that named none — the class fills a one-second default, so the test is
+ * against the clock rather than against presence.
+ */
+function isRetryAfterWait(err: unknown): boolean {
+  return RetryableError.is(err) && err.retryAfter.getTime() > Date.now();
+}
+
+/**
+ * The two budgets one walk spends on one step: tries (`maxAttempts`) and
+ * waited-out delays (`maxWaits`). Both local to the walk — see {@link attemptLoop}.
+ */
+type Budgets = { tries: number; waits: number };
+
+/**
+ * Decide whether a failed attempt gets another go, and wait out the backoff
+ * if so. Resolves `true` when the loop should run the body again, `false`
+ * when the failure is the step's verdict.
+ *
+ * Two ways to go again. A far side's own "come back later", when the body
+ * opted in with `maxWaits` and has waits left, is a WAIT out of that budget:
+ * the try is handed back (`tries--` meets the loop's `tries++`, so the next
+ * run of the body is the same attempt number). Anything else retryable is a
+ * TRY while tries remain. Once the waits are spent a delay is a failure like
+ * any other, which is what stops a far side holding a step forever.
+ */
+async function recover(
+  options: StepAttemptOptions,
+  budgets: Budgets,
+  err: unknown,
+): Promise<boolean> {
+  const maxWaits = options.maxWaits;
+  if (maxWaits !== undefined && budgets.waits < maxWaits && isRetryAfterWait(err)) {
+    budgets.waits++;
+    budgets.tries--;
+    await backOff(options, budgets.tries + 1, err, { taken: budgets.waits, max: maxWaits });
+    return true;
+  }
+  if (FatalError.is(err) || budgets.tries >= options.maxAttempts) return false;
+  await backOff(options, budgets.tries, err);
+  return true;
+}
+
+/**
  * A failure's own message, plus the message of whatever CAUSED it.
  *
  * The `cause` is the half nothing downstream keeps. {@link stepFailure} rebuilds
@@ -210,10 +260,17 @@ async function reportRetry(
   maxAttempts: number,
   delayMs: number,
   err: unknown,
+  wait?: { taken: number; max: number },
 ): Promise<void> {
+  // A wait is narrated as what it is — the far side's own delay, spending
+  // nothing — so a reader does not count it against the budget the next line
+  // would otherwise report.
   await stepReport(
-    `Step ${name} failed on attempt ${attempt} of ${maxAttempts}, ` +
-      `retrying in ${delayMs}ms: ${withCause(err)}`,
+    wait === undefined
+      ? `Step ${name} failed on attempt ${attempt} of ${maxAttempts}, ` +
+          `retrying in ${delayMs}ms: ${withCause(err)}`
+      : `Step ${name} was asked to retry in ${delayMs}ms (wait ${wait.taken} of ${wait.max}, ` +
+          `attempt ${attempt} of ${maxAttempts} not spent): ${withCause(err)}`,
   );
 }
 
@@ -230,6 +287,12 @@ export type StepAttemptOptions = {
   name: string;
   key: string;
   maxAttempts: number;
+  /**
+   * `StepOptions.maxWaits`: how many far-side `Retry-After`s may be waited out
+   * without spending an attempt. Absent, none — every retryable failure is a
+   * try, as it always was.
+   */
+  maxWaits?: number | undefined;
   journal: JournalStore;
   /**
    * This WALK's id, which is who holds the attempt charges it takes.
@@ -325,12 +388,17 @@ export async function runStepAttempts(options: StepAttemptOptions): Promise<Step
  * when it reached the step, and an in-process retry is not a second attempt as
  * far as the journal is concerned — see {@link attemptLoop}.
  */
-async function backOff(options: StepAttemptOptions, tries: number, err: unknown): Promise<void> {
+async function backOff(
+  options: StepAttemptOptions,
+  tries: number,
+  err: unknown,
+  wait?: { taken: number; max: number },
+): Promise<void> {
   const delayMs = retryDelay(err);
   // BEFORE the wait, not after it: a `retryAfter` of half a minute is ordinary
   // (see MAX_IN_PROCESS_RETRY_MS), and a line explaining the wait is worth
   // nothing once the wait is over.
-  await reportRetry(options.name, tries, options.maxAttempts, delayMs, err);
+  await reportRetry(options.name, tries, options.maxAttempts, delayMs, err, wait);
   // Under the WALK's signal, which resolves the wait early rather than
   // rejecting it: the loop's own `throwIfAborted()` at the top of the next try
   // is what turns a cancel into the throw, with the reason `attemptLoop`
@@ -343,8 +411,9 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
   const { runId, name, key, maxAttempts, journal, signal, fn } = options;
 
   /**
-   * How many times THIS walk has run the body — the retry budget, and it is
-   * deliberately local.
+   * How many times THIS walk has run the body (`tries`) — the retry budget —
+   * and how many far-side delays it has waited out without one (`waits`,
+   * `StepOptions.maxWaits`). Both deliberately local.
    *
    * It used to be the journal's charge, so a duplicate delivery spent from the
    * author's retry budget: `workflow/platform-dispatch.ts` records that cost in
@@ -355,7 +424,7 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
    * The charge still bounds the case a local count cannot see — an attempt that
    * never ends; see {@link chargeAttempt}.
    */
-  let tries = 0;
+  const budgets: Budgets = { tries: 0, waits: 0 };
 
   /**
    * When this walk began working on the step, for the entry's `startedAt`.
@@ -388,7 +457,8 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
 
   for (;;) {
     signal?.throwIfAborted();
-    tries++;
+    budgets.tries++;
+    const tries = budgets.tries;
     try {
       // Inside the step's own context, so a `stepReport()` from the body or any
       // helper it calls is attributed to THIS step and this attempt — and so
@@ -460,10 +530,8 @@ async function attemptLoop(options: StepAttemptOptions): Promise<StepEntry> {
       // took `counts: {s0: 1}` to `{s0: 2}` on the resume property by throwing
       // the decision away.
       if (signal?.aborted && err === signal.reason) throw err;
-      if (!(FatalError.is(err) || tries >= maxAttempts)) {
-        await backOff(options, tries, err);
-        continue;
-      }
+      // A wait or a retry goes again; see `recover` for which spends what.
+      if (await recover(options, budgets, err)) continue;
       // Unawaited for the reason the `ok` arm above is — though here it is the
       // weaker half of the same rule, this `return` being outside any `try`. It
       // stays unawaited so both arms read the same and neither invites the

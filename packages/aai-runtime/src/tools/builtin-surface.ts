@@ -55,7 +55,9 @@ export function mergeBuiltinSurface(
       `builtinTools ${shadowed.map((name) => `"${name}"`).join(", ")} ${shadowed.length === 1 ? "is" : "are"} inert: a tools/ file of the same name is what the model will call. Rename the file if that was not the intent.`,
     );
   }
-  const builtins = resolveAllBuiltins(names, builtinOpts);
+  // The declared workflows ride along for the three run builtins, whose lines
+  // are the defs' own (`BuiltinToolOptions.workflows`).
+  const builtins = resolveAllBuiltins(names, { ...builtinOpts, workflows: agent.workflows });
   return {
     toolset: toolset("builtin", builtins.defs),
     schemas: [...provided.schemas, ...builtins.schemas],

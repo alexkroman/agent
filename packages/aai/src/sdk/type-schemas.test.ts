@@ -27,6 +27,9 @@ describe("type ↔ schema alignment", () => {
         "brave_search",
         "google_places",
         "text_me",
+        "workflow_status",
+        "workflow_progress",
+        "workflow_cancel",
       ]
     `);
   });

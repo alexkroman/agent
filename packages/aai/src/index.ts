@@ -443,7 +443,12 @@ export {
   DEFAULT_STEP_MAX_ATTEMPTS,
   // Deliberately no `isWorkflowSuspend`: a wait hands back a promise that never
   // settles, so a suspension cannot reach a `catch` (`workflow-replay-suspend.ts`).
+  // `describeRun(def, run)`: the one spoken line about a run, which a route
+  // handler answers beside the `workflow_status` builtin — written in `agent.ts`'s
+  // own vocabulary (`WorkflowDef.describeRun`).
+  describeRun,
   // `ctx.poll`'s option bag and what it resolves with: named in `WorkflowContext`.
+  type PollFirstWait,
   type PollOptions,
   type PollResult,
   // `ctx.sayOnClient`'s notice, likewise named in `WorkflowContext`.
@@ -460,6 +465,9 @@ export {
   // What a workflow BODY is handed. An author annotates a body's second
   // parameter with it, which is the membership test this barrel applies.
   type WorkflowContext,
+  // What `workflow({ input, output })` answers before `.body(fn)` — the two-phase
+  // declaration an `agent.ts` writes to keep `typeof def` out of the body's cycle.
+  type WorkflowDeclaration,
   type WorkflowDef,
   // `workflow({ onFailure })` — written in the same literal as `run`.
   type WorkflowFailureContext,

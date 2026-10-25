@@ -72,7 +72,9 @@ import type {
   WorkflowContext,
 } from "./workflow-ctx.ts";
 import { pollWorkflow } from "./workflow-poll.ts";
+import { reportWorkflow } from "./workflow-report.ts";
 import { sayOnClientWorkflow } from "./workflow-say-on-client.ts";
+import { signalTokenFor, waitForSignalWorkflow } from "./workflow-signals.ts";
 
 /**
  * The value a `schema` option passed, or a throw naming what it rejected.
@@ -152,6 +154,12 @@ export type WorkflowContextOptions = {
   runId?: string;
   /** The declared key. Defaults to `"test"`. */
   workflow?: string;
+  /**
+   * The run's `StartOptions.key` — what `ctx.key` answers and what
+   * `ctx.signalToken`/`ctx.waitForSignal` derive from. Defaults to none, so a
+   * body that signals is driven with the key it would be started with.
+   */
+  key?: string;
   /**
    * Run each step's `fn`, or only record that it was reached.
    *
@@ -257,6 +265,7 @@ export function createWorkflowContext(
   const ctx: WorkflowContextRecorder = {
     runId: options.runId ?? "wrun_test",
     workflow: options.workflow ?? "test",
+    key: options.key,
     steps,
     slept,
     waited,
@@ -293,6 +302,12 @@ export function createWorkflowContext(
     poll: (name, check, pollOptions) => pollWorkflow(ctx, name, check, pollOptions),
     // The same composition over `step`: recorded as the one step it journals.
     sayOnClient: (name, clientId, notice) => sayOnClientWorkflow(ctx, name, clientId, notice),
+    report: (name, line) => reportWorkflow(ctx, name, line),
+    // The derived token, so a spec's `hooks` is keyed by the same string a
+    // deployed run parks on — `<workflow>:<key>:<label>`.
+    signalToken: (label) => signalTokenFor(ctx, label),
+    waitForSignal: ((label: string, waitOptions?: WaitForOptions | WaitForSchemaOptions) =>
+      waitForSignalWorkflow(ctx, label, waitOptions)) as WorkflowContext["waitForSignal"],
 
     // The three journaled reads, answered from the options above. NOT recorded
     // the way `steps`/`slept`/`waited` are, and the asymmetry is deliberate: a

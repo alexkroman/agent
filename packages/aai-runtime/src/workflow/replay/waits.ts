@@ -107,6 +107,7 @@ import type {
   WorkflowContext,
 } from "@alexkroman1/aai";
 import type { StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
+import { takeHeldSignal } from "../held-signals.ts";
 import type { JournalStore, SleepRecord } from "../journal/types.ts";
 import { waitTokenDiverged } from "./divergence.ts";
 import { checkWorkflowValue, waitPayloadRefused } from "./schema.ts";
@@ -286,11 +287,13 @@ export function createWaitMethods(
     if (overInSnapshot(snapshot.get(key), Date.now())) return;
     const slot = suspend.enter();
     try {
+      // The label is the wait's name to a reader, so it is the id a targeted
+      // `wakeUp` addresses by default — `SleepOptions.correlationId`.
       const record = await journal.claimSleep(
         runId,
         key,
         wakeAtFrom(until),
-        sleepOptions?.correlationId,
+        sleepOptions?.correlationId ?? label,
       );
       // Woken early, or the moment has passed — either way the wait is over. A
       // deadline in the past is not an error: a run resuming after a long outage
@@ -372,6 +375,20 @@ export function createWaitMethods(
   }
 
   /**
+   * A signal that arrived BEFORE this wait was claimed, held for it
+   * (`workflow/held-signals.ts`), delivered now — through the journal, so what
+   * the body reads is the same journaled payload every later walk reads.
+   * `undefined` when nothing was held, or the delivery found no hook after all.
+   */
+  async function answerHeld(key: string, token: string): Promise<{ payload: unknown } | undefined> {
+    const held = takeHeldSignal(token);
+    if (held === undefined) return undefined;
+    if ((await journal.deliverHook(token, held.payload)) === undefined) return undefined;
+    const answered = await journal.claimHook(runId, key, token);
+    return answered.delivered ? { payload: answered.payload } : undefined;
+  }
+
+  /**
    * The payload a wait resolves: checked against the schema, or handed on.
    *
    * The ONE place a payload becomes a value the body sees, which is why both
@@ -429,6 +446,8 @@ export function createWaitMethods(
       // so a re-walk reads what was delivered rather than registering a second
       // wait.
       if (record.delivered) return await payloadOf<T>(token, record.payload, schema);
+      const early = await answerHeld(key, token);
+      if (early !== undefined) return await payloadOf<T>(token, early.payload, schema);
       // No deadline: nothing but a signal ends this, so the wait contributes no
       // wake time — `undefined` is what tells `earliestDeadline` to skip it.
       const timeoutMs = deadlineOf(waitOptions);
