@@ -63,12 +63,19 @@ export function recordWorkflowNames(workflows: Readonly<Record<string, AnyWorkfl
  * `withWorkflows` or `workflowRegistry` (`@alexkroman1/aai/manifest`).
  *
  * @example
- * ```ts no-check
- * import agentDef from "virtual:aai/agent";
- * import digest from "./workflows/digest.ts";
+ * ```ts
+ * import { agent, workflow } from "@alexkroman1/aai";
  * import { workflowNameOf } from "@alexkroman1/aai/workflow-api";
+ * import { z } from "zod";
  *
- * void agentDef; // importing the deployed agent is what records the names
+ * const digest = workflow({
+ *   description: "Summarise a page",
+ *   input: z.object({ url: z.string() }),
+ *   run: async (input) => ({ url: input.url }),
+ * });
+ * // Lowering the map is what records the names; a build or
+ * // `virtual:aai/agent` does the same for a discovered `workflows/digest.ts`.
+ * agent({ name: "Digest", workflows: { digest } });
  * workflowNameOf(digest); // "digest"
  * ```
  *
