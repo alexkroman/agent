@@ -12,6 +12,7 @@ import { describe, expect, test, vi } from "vitest";
 import { runToolDef } from "./_test-utils.ts";
 import { dialog } from "./dialog.ts";
 import { createToolContext } from "./testing.ts";
+import { instructionOf, withInstruction } from "./tool-instruction.ts";
 import { isToolFailure, toolFailure } from "./utils.ts";
 
 /** The reference flow, as a spec: two gated steps and an abandon arm. */
@@ -63,6 +64,59 @@ describe("`when` omitted", () => {
     });
     const ctx = createToolContext();
     expect(isToolFailure(await runToolDef(abandon, ctx))).toBe(true);
+    expect(claim.position(ctx).state).toBe("verifying");
+  });
+});
+
+describe("one read per gated call", () => {
+  test("a `when` over several states asks the handle's members nothing — one actor answers all of it", async () => {
+    const claim = claimFlow();
+    const tool = claim.tool({
+      description: "Multi",
+      when: ["verifying", "quoting", "settled"],
+      send: { type: "VERIFIED" },
+      execute: () => ({ ok: true }),
+    });
+    const matches = vi.spyOn(claim, "matches");
+    const position = vi.spyOn(claim, "position");
+    const ctx = createToolContext();
+    expect(await runToolDef(tool, ctx)).toMatchObject({ state: "quoting", result: { ok: true } });
+    expect(matches).not.toHaveBeenCalled();
+    expect(position).not.toHaveBeenCalled();
+  });
+});
+
+describe("a `withInstruction` result", () => {
+  test("is lifted onto the envelope, where the runtime reads it, and stripped from `result`", async () => {
+    const claim = claimFlow();
+    const tool = claim.tool({
+      description: "Verify",
+      when: "verifying",
+      send: { type: "VERIFIED" },
+      execute: () => withInstruction({ policy: "P-1" }, "Read the policy number back."),
+    });
+    const ctx = createToolContext();
+    const answered = await runToolDef(tool, ctx);
+    expect(answered).toEqual({
+      state: "quoting",
+      done: false,
+      instruction: "Read the excess disclosure, then quote.",
+      result: { policy: "P-1" },
+      $instruction: "Read the policy number back.",
+    });
+    expect(instructionOf(answered)).toBe("Read the policy number back.");
+  });
+
+  test("a failure carrying one is answered unchanged, and nothing is sent", async () => {
+    const claim = claimFlow();
+    const failed = withInstruction(toolFailure("No such policy."), "Ask for the number again.");
+    const tool = claim.tool({
+      description: "Verify",
+      send: { type: "VERIFIED" },
+      execute: () => failed,
+    });
+    const ctx = createToolContext();
+    expect(await runToolDef(tool, ctx)).toBe(failed);
     expect(claim.position(ctx).state).toBe("verifying");
   });
 });

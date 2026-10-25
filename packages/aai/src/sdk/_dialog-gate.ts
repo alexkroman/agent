@@ -18,12 +18,14 @@
  */
 
 import type { AnyStateMachine } from "xstate";
+import { type DialogReading, readDialog } from "./_dialog-reader.ts";
 import { dialogRefusalMessage } from "./_dialog-refusal.ts";
 import { statePaths } from "./_dialog-snapshot.ts";
 import type { AnyDialog } from "./dialog-handle.ts";
 import type { DialogToolResult } from "./dialog-types.ts";
 import { isRecord } from "./is-record.ts";
 import type { SlotHolder } from "./session-state.ts";
+import { INSTRUCTION_KEY, instructionOf, stripInstruction } from "./tool-instruction.ts";
 import { isToolFailure, type ToolFailure, type ToolRefusal, toolRefusal } from "./utils.ts";
 
 /** An event as the gate sends it: the machine form's `EventObject`. */
@@ -67,7 +69,10 @@ export type CompiledGate = {
   refuse(ctx: SlotHolder): ToolRefusal | undefined;
   /**
    * The body's settled result as the tool answers it: a failure unchanged and
-   * nothing sent; a success wrapped in the position after the transition.
+   * nothing sent; a success wrapped in the position after the transition. A
+   * `withInstruction` the body attached is LIFTED onto the envelope — the
+   * runtime reads `$instruction` off whatever a tool returned, so one buried
+   * under `result` would reach neither the model nor the stripper.
    */
   settle<S>(ctx: SlotHolder, result: S | ToolFailure): DialogToolResult<S> | ToolFailure;
 };
@@ -120,17 +125,20 @@ export function compileDialogGate(
     );
   };
 
-  const here = (ctx: SlotHolder): boolean =>
-    allowed === undefined || allowed.some((state) => dialog.matches(ctx, state));
+  // One read per call — position and the `when` test off one actor
+  // (`_dialog-reader.ts`), not one actor per allowed state.
+  const here = (at: DialogReading): boolean =>
+    allowed === undefined || allowed.some((state) => at.matches(state));
 
   return {
     refuse: (ctx) => {
       // The refusal says where the conversation IS and what it expects there —
       // what the model recovers from.
-      if (!here(ctx)) {
-        const at = dialog.position(ctx);
-        const expectation = at.instruction ?? `reach ${(allowed ?? []).join(" or ")} first`;
-        return toolRefusal("dialog", dialogRefusalMessage(at.state, expectation));
+      const at = readDialog(dialog, ctx);
+      if (!here(at)) {
+        const expectation =
+          at.position.instruction ?? `reach ${(allowed ?? []).join(" or ")} first`;
+        return toolRefusal("dialog", dialogRefusalMessage(at.position.state, expectation));
       }
       // AFTER the gate: `when` describes the position the call was made in.
       if (gate.reset === true) dialog.reset(ctx);
@@ -146,9 +154,16 @@ export function compileDialogGate(
       // this tool was never allowed in — see `DialogGate.when` — and the
       // position is re-READ, since the one at the refusal may describe a
       // conversation moved on.
-      const moved =
-        event === undefined || !here(ctx) ? dialog.position(ctx) : dialog.send(ctx, event);
-      return { ...moved, result };
+      const at = readDialog(dialog, ctx);
+      const moved = event === undefined || !here(at) ? at.position : dialog.send(ctx, event);
+      // The instruction travels on the ENVELOPE, where the runtime looks.
+      const instruction = instructionOf(result);
+      if (instruction === undefined) return { ...moved, result };
+      return {
+        ...moved,
+        result: stripInstruction(result) as typeof result,
+        [INSTRUCTION_KEY]: instruction,
+      };
     },
   };
 }

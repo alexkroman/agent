@@ -66,6 +66,7 @@ import {
 import { compileDialogGate } from "./_dialog-gate.ts";
 import { assertDialogGraph } from "./_dialog-graph.ts";
 import { toInstruction, toPersona, toTimeout, toVoiceConfig } from "./_dialog-meta.ts";
+import { type DialogReading, registerDialogReader } from "./_dialog-reader.ts";
 import {
   assertDialogSource,
   ENTER_ACTION,
@@ -406,6 +407,13 @@ export function dialog(
   const matches = (ctx: SlotHolder, state: string): boolean =>
     withActor(readState(slot.get(ctx)), (a) => a.getSnapshot().matches(state));
 
+  /** Position and `matches` off ONE snapshot — what a gated call reads (`_dialog-reader.ts`). */
+  const read = (ctx: SlotHolder): DialogReading =>
+    withActor(readState(slot.get(ctx)), (a) => {
+      const snapshot = a.getSnapshot();
+      return { position: positionOf(a), matches: (state) => snapshot.matches(state) };
+    });
+
   const handle: Dialog = {
     key,
     machine,
@@ -496,5 +504,6 @@ export function dialog(
       return minted;
     },
   };
+  registerDialogReader(handle, read);
   return handle;
 }
