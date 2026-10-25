@@ -218,7 +218,7 @@ default (threads, node, vitest's 5s `testTimeout`, the four tier excludes).
 
 | Package           | Pool      | Timeout | Setup / plugins                                             | Notes                                                                                        |
 | ----------------- | --------- | ------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| aai               | threads   | 5s      | —                                                           | `contracts/` out of coverage                                                                 |
+| aai               | threads   | 5s      | —                                                           | `contracts/` out of coverage; **`isolate: false`** (one module graph per worker, 4× faster)  |
 | aai-ui            | threads   | 5s      | `_jsdom-setup.ts` (stubs `scrollIntoView`)                  | `globals: true`; node by default, a file opts into jsdom with `// @vitest-environment jsdom` |
 | aai-runtime       | **forks** | 5s      | —                                                           | sockets, the workflow world and process-wide dispatchers                                     |
 | aai-cli           | threads   | 5s      | `_test-setup.ts` (temp `AAI_CONFIG_DIR`, scrubs `*API_KEY`) | also loaded by its scenario/e2e runs (`PACKAGE_SETUP_FILES`)                                 |
