@@ -9,6 +9,7 @@
  * dark surface, exactly as the light defaults do on a light one.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { ClientTheme, ClientThemePreset, ResolvedClientTheme } from "./types.ts";
 
 // A neutral blank canvas: near-white ground, white cards, zinc borders and a
@@ -50,12 +51,7 @@ export function resolveClientTheme(theme: ClientTheme | undefined): ResolvedClie
     const neutrals = theme.mode === "dark" ? DARK_NEUTRALS : DEFAULT_THEME;
     return { ...neutrals, primary: theme.primary };
   }
-  // `omitUndefined` by hand would be one more import for one object; an
-  // explicit `undefined` falls through to the default here the same way.
-  const merged: ResolvedClientTheme = { ...DEFAULT_THEME };
-  for (const key of ["bg", "primary", "text", "surface", "border"] as const) {
-    const value = theme[key];
-    if (value !== undefined) (merged as Record<string, string>)[key] = value;
-  }
-  return merged;
+  // `omitUndefined` rather than a bare spread: an explicit `undefined` token
+  // (an options bag) is a hole the default fills, not a value.
+  return { ...DEFAULT_THEME, ...omitUndefined(theme) };
 }
