@@ -213,6 +213,8 @@ export function useWorkflowStream<
   WorkflowOutputOf<WorkflowDefOf<App, Name>>,
   SubmitInputOf<WorkflowDefOf<App, Name>>
 >;
+// The def form, told apart as `useWorkflowSubmit`'s is: `App = never` above
+// declines an un-parameterized call, and the constraint refuses an app.
 export function useWorkflowStream<D extends AnyWorkflowDef>(
   workflow: string,
   options?: UseWorkflowStreamOptions,

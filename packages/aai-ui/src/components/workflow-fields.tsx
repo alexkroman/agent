@@ -65,7 +65,11 @@ type JsonObjectSchema = {
  *
  * @typeParam App - The agent, when the page names it
  *   (`<WorkflowFields<typeof agentDef> workflow="digest" />`): `workflow` is
- *   then a name the agent declares, checked. Left to its default, any string.
+ *   then a name the agent declares, checked. Left to its default, any string:
+ *   `WorkflowNameOf<WorkflowAppLike>` is `string`. The default is the
+ *   constraint rather than the hooks' `never` because this is ONE signature —
+ *   a form has no def form to fall to, so there is no second overload for a
+ *   `never` to hand the call on to.
  *
  * @input
  * @public

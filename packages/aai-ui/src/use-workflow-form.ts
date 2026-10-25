@@ -194,6 +194,9 @@ export function useWorkflowSubmit<
   WorkflowOutputOf<WorkflowDefOf<App, Name>>,
   SubmitInputOf<WorkflowDefOf<App, Name>>
 >;
+// The def form. `App = never` above declines an un-parameterized call, so it
+// lands here; an app type is refused by the constraint (no `run`), so a name
+// the app does not declare is an error rather than a string that 404s.
 export function useWorkflowSubmit<D extends AnyWorkflowDef>(
   workflow: string,
   options?: UseWorkflowSubmitOptions,

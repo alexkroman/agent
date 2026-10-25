@@ -358,8 +358,14 @@ Reports what the run WROTE (`useWorkflowRun` reports its state).
   `<WorkflowPendingNote>` reads. Both hooks, `useWorkflowRuns` and
   `<WorkflowFields>` are overloaded on the AGENT type too
   (`useWorkflowSubmit<typeof agentDef>("digest")`, `workflow-def-types.ts`): the
-  name is then a checked literal, and the def form is tried when the type
-  argument has no `workflows` map.
+  name is then a checked literal. ONE mechanism tells the pair apart: the agent
+  overload declares `App = never`, so an un-parameterized call has no names to
+  match and lands on the def/output overload, which refuses an app by its
+  constraint (`D extends AnyWorkflowDef`) or, over an open output type
+  (`useWorkflowRuns<R>`), by `WorkflowNameOf<R>` being `never`.
+  `<WorkflowFields>` is one signature with no def form, so its default is the
+  constraint (`WorkflowNameOf<WorkflowAppLike>` is `string`). `hooks.test-d.ts`
+  pins that each form lands on its own overload.
 - **The state between submit and run is a statechart**
   (`_workflow-form-state.ts`:
   `idle | recovering | submitting{active,paused} | following | failed`), bridged
