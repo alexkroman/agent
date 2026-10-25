@@ -9,6 +9,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { pEvent } from "p-event";
 import WsWebSocket from "ws";
 
+/** The slice of a `ws` client a header-authenticated provider transport drives. */
 export type HeaderWebSocket = {
   readonly readyState: number;
   /**
