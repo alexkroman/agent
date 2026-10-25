@@ -10,7 +10,14 @@
  * See `form.tsx`'s module doc for why the values come off the DOM at all.
  */
 
-import type { FileReadMode, FileValue, FormValues } from "./form-types.ts";
+import type {
+  FileReadMode,
+  FileValue,
+  FileValueShape,
+  FormValues,
+  NamedTextValue,
+  TextSplitMode,
+} from "./form-types.ts";
 
 /**
  * Read one `<form>`'s named controls into a plain object.
@@ -33,10 +40,33 @@ export async function collectValues(form: HTMLFormElement): Promise<FormValues> 
       !element.disabled
     ) {
       values[element.name] =
-        element instanceof HTMLSelectElement ? readSelect(element) : element.value;
+        element instanceof HTMLSelectElement ? readSelect(element) : readTextArea(element);
     }
   }
   return values;
+}
+
+/**
+ * One `<textarea>`: its string, or with `split="lines"` the non-blank lines
+ * trimmed — "one point per line", for a schema's `string[]`. Blank lines go, so
+ * a trailing newline is not a requirement to cover `""`.
+ */
+function readTextArea(textarea: HTMLTextAreaElement): string | string[] {
+  if (splitMode(textarea.dataset.aaiSplit) !== "lines") return textarea.value;
+  return textarea.value
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+}
+
+/** The `data-aai-split` attribute as a {@link TextSplitMode}, defaulting to `"none"`. */
+function splitMode(raw: string | undefined): TextSplitMode {
+  return raw === "lines" ? raw : "none";
+}
+
+/** The `data-aai-as` attribute as a {@link FileValueShape}, defaulting to `"file"`. */
+function valueShape(raw: string | undefined): FileValueShape {
+  return raw === "namedText" ? raw : "file";
 }
 
 /**
@@ -79,7 +109,11 @@ async function readInput(input: HTMLInputElement, values: FormValues): Promise<v
     case "file": {
       const files = Array.from(input.files ?? []);
       if (files.length === 0) return;
-      const chosen = await readFiles(files, readMode(input.dataset.aaiRead));
+      const chosen = await readFiles(
+        files,
+        readMode(input.dataset.aaiRead),
+        valueShape(input.dataset.aaiAs),
+      );
       values[input.name] = input.multiple ? chosen : chosen[0];
       return;
     }
@@ -96,8 +130,18 @@ async function readInput(input: HTMLInputElement, values: FormValues): Promise<v
  * the bytes is the upload request `useWorkflowSubmit` makes — which streams the
  * same `File` object straight to the agent.
  */
-function readFiles(files: readonly File[], read: FileReadMode): Promise<(File | FileValue)[]> {
+function readFiles(
+  files: readonly File[],
+  read: FileReadMode,
+  shape: FileValueShape,
+): Promise<(File | FileValue | NamedTextValue)[]> {
   if (read === "upload") return Promise.resolve([...files]);
+  if (shape === "namedText") {
+    // The text, whatever `read` said: the shape IS a reading of the text, and
+    // `<FileField>` sets `read="text"` for it, so this only covers a hand-set
+    // attribute that disagrees.
+    return Promise.all(files.map(async (file) => ({ name: file.name, text: await file.text() })));
+  }
   return Promise.all(files.map((file) => describeFile(file, read)));
 }
 

@@ -9,7 +9,6 @@ import {
 import { createStubWorkflows } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "../_logger-test-utils.ts";
-import { flush } from "../_timing-test-utils.ts";
 import { bindClientSession, createSessionEventStream } from "../session/index.ts";
 import { createMemoryStateBackend } from "../session-state/store.ts";
 import { openSessionMemory } from "./session-memory.ts";
@@ -94,9 +93,8 @@ describe("openSessionMemory", () => {
     const { memory, sessionId } = wire({ onSessionEnd });
     setSessionClient(sessionId, "porch");
 
-    memory.ended(7);
+    await memory.ended(7);
 
-    await vi.waitFor(() => expect(onSessionEnd).toHaveBeenCalled());
     const ctx = onSessionEnd.mock.calls[0]?.[0];
     expect(ctx).toMatchObject({
       sessionId,
@@ -121,9 +119,8 @@ describe("openSessionMemory", () => {
     });
     stream.append(sessionId, { type: "agentTranscript.committed", text: "Booked for seven." });
 
-    memory.ended(2);
+    await memory.ended(2);
 
-    await vi.waitFor(() => expect(onSessionEnd).toHaveBeenCalled());
     expect(onSessionEnd.mock.calls[0]?.[0].transcript).toEqual([
       { role: "user", text: "table for two", at: expect.any(Number) },
       { role: "assistant", text: "Booked for seven.", at: expect.any(Number) },
@@ -135,9 +132,8 @@ describe("openSessionMemory", () => {
     const { memory, backend, logger } = wire({ onSessionEnd });
     backend.readEvents = () => Promise.reject(new Error("store down"));
 
-    memory.ended(0);
+    await memory.ended(0);
 
-    await vi.waitFor(() => expect(onSessionEnd).toHaveBeenCalled());
     expect(onSessionEnd.mock.calls[0]?.[0].transcript).toEqual([]);
     expect(logger.warn).toHaveBeenCalledWith(
       "Session transcript not read for onSessionEnd",
@@ -159,8 +155,7 @@ describe("openSessionMemory", () => {
       sessionId: nextSid(),
       logger,
     });
-    memory.ended(-1);
-    await vi.waitFor(() => expect(onSessionEnd).toHaveBeenCalled());
+    await memory.ended(-1);
     expect(onSessionEnd.mock.calls[0]?.[0].workflows).toBe(workflows);
   });
 
@@ -170,16 +165,14 @@ describe("openSessionMemory", () => {
         throw new Error("boom");
       },
     });
-    expect(() => thrower.memory.ended(0)).not.toThrow();
-    await vi.waitFor(() =>
-      expect(thrower.logger.warn).toHaveBeenCalledWith(
-        "onSessionEnd failed",
-        expect.objectContaining({ error: "boom" }),
-      ),
+    await expect(thrower.memory.ended(0)).resolves.toBeUndefined();
+    expect(thrower.logger.warn).toHaveBeenCalledWith(
+      "onSessionEnd failed",
+      expect.objectContaining({ error: "boom" }),
     );
 
     const rejecter = wire({ onSessionEnd: () => Promise.reject(new Error("later")) });
-    rejecter.memory.ended(0);
+    await rejecter.memory.ended(0);
     await vi.waitFor(() =>
       expect(rejecter.logger.warn).toHaveBeenCalledWith(
         "onSessionEnd failed",
@@ -200,8 +193,7 @@ describe("openSessionMemory", () => {
     expect(await memory.open()).toEqual([]);
     expect(memory.refused).toBe("stranger");
     expect(prompt.setContext).not.toHaveBeenCalled();
-    memory.ended(3);
-    await flush();
+    await memory.ended(3);
     expect(onSessionEnd).not.toHaveBeenCalled();
   });
 
@@ -213,9 +205,8 @@ describe("openSessionMemory", () => {
     setSessionCall(sessionId, call);
 
     await memory.open();
-    memory.ended(0);
+    await memory.ended(0);
     expect(sessionContext).toHaveBeenCalledWith(expect.objectContaining({ call }));
-    await vi.waitFor(() => expect(ended).toHaveLength(1));
     expect(ended[0]?.call).toEqual(call);
     expect(memory.refused).toBeUndefined();
   });

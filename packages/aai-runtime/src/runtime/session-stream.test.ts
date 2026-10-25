@@ -233,7 +233,7 @@ describe("attachSessionStream — a client's prior sessions (`memory`)", () => {
     const backend = createMemoryStateBackend();
     const other = createSessionEventStream({ backend });
     for (const text of texts) other.append(backendSid, { type: "userTranscript.committed", text });
-    const ended = vi.fn<(lastEventIndex: number) => void>();
+    const ended = vi.fn<(lastEventIndex: number) => Promise<void>>(async () => undefined);
     const memory: SessionMemory = {
       open: async () => (await readAllEvents(other, backendSid)).slice(),
       refused: undefined,
@@ -303,10 +303,8 @@ describe("attachSessionStream — a client's prior sessions (`memory`)", () => {
     stream.append(SID, { type: "speech.started" });
     stream.append(SID, { type: "speech.started" });
     let storedWhenTold = -1;
-    ended.mockImplementation(() => {
-      void backend.countEvents(SID).then((n) => {
-        storedWhenTold = n;
-      });
+    ended.mockImplementation(async () => {
+      storedWhenTold = await backend.countEvents(SID);
     });
 
     await core.stop();

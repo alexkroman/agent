@@ -35,6 +35,38 @@ describe("fieldKindFor", () => {
     expect(fieldKindFor({ type: ["null", "integer"] })).toBe("number");
   });
 
+  it("renders an array of strings as lines, and a { name, text } object as named text", () => {
+    expect(fieldKindFor({ type: "array", items: { type: "string" } })).toBe("lines");
+    const namedText = {
+      type: "object",
+      properties: { name: { type: "string" }, text: { type: "string" } },
+      required: ["name", "text"],
+    };
+    expect(fieldKindFor(namedText)).toBe("namedText");
+    // Exactly that shape: an optional member, a third key or another type is
+    // some other object, with no honest control.
+    expect(fieldKindFor({ ...namedText, required: ["name"] })).toBe("none");
+    expect(
+      fieldKindFor({
+        ...namedText,
+        properties: { ...namedText.properties, size: { type: "number" } },
+      }),
+    ).toBe("none");
+    expect(
+      fieldKindFor({
+        ...namedText,
+        properties: { name: { type: "string" }, text: { type: "number" } },
+      }),
+    ).toBe("none");
+    expect(fieldKindFor({ type: "array", items: { type: "number" } })).toBe("none");
+  });
+
+  it("takes the page's own render choice over the schema, but never over an upload", () => {
+    expect(fieldKindFor({ type: "array" }, { render: "lines" })).toBe("lines");
+    expect(fieldKindFor({ type: "object" }, { render: "namedText" })).toBe("namedText");
+    expect(fieldKindFor({ type: "string" }, { render: "lines", upload: true })).toBe("file");
+  });
+
   it("declines to guess rather than drawing a wrong control", () => {
     expect(fieldKindFor({ type: "object" })).toBe("none");
     expect(fieldKindFor({ type: "array" })).toBe("none");

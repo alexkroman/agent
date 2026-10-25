@@ -55,8 +55,25 @@ describe("WorkflowPendingNote", () => {
     }
   });
 
-  test("says something different in each of its three situations", () => {
-    const notes = [PRESSED, LOOKING, FOUND].map((submission) => noteOf({ submission }));
+  test("says something different in each of its situations", () => {
+    const notes = [
+      ...[PRESSED, LOOKING, FOUND].map((submission) => noteOf({ submission })),
+      noteOf({ submission: { ...PRESSED, scope: "none" } }),
+      noteOf({
+        submission: {
+          ...PRESSED,
+          upload: {
+            name: "a",
+            index: 1,
+            count: 1,
+            loaded: 1,
+            total: 2,
+            fraction: 0.5,
+            paused: true,
+          },
+        },
+      }),
+    ];
     // A branch that duplicates its neighbour's sentence is a branch nobody can
     // see, and the three are the whole of what a page says about the wait.
     expect(new Set(notes).size).toBe(notes.length);
@@ -69,6 +86,46 @@ describe("WorkflowPendingNote", () => {
     const found = noteOf({ submission: FOUND, scope: "browser" });
     expect(found).toContain("this browser");
     expect(found).not.toContain("this tab");
+  });
+
+  test("reads the submission's own scope, and the prop overrides it", () => {
+    expect(noteOf({ submission: { ...PRESSED, scope: "browser" } })).toMatch(/close this tab/i);
+    expect(noteOf({ submission: { ...PRESSED, scope: "browser" }, scope: "tab" })).toMatch(
+      /reloading is safe/i,
+    );
+  });
+
+  test("a run nothing will find again says to keep the tab open, whoever started it", () => {
+    // `useWorkflowStream`'s run reads the recording as this page sends it, so a
+    // reload does not orphan it, it ENDS it — "you can close this tab" would be
+    // wrong in exactly that mode.
+    for (const submission of [PRESSED, LOOKING, FOUND]) {
+      const note = noteOf({ submission: { ...submission, scope: "none" }, subject: "transcript" });
+      expect(note).toMatch(/keep this tab open/i);
+      expect(note).toContain("the transcript");
+    }
+  });
+
+  test("a PAUSED upload gets its own line, and it differs by whether a run exists yet", () => {
+    const paused = {
+      name: "a.wav",
+      index: 1,
+      count: 1,
+      loaded: 10,
+      total: 100,
+      fraction: 0.1,
+      paused: true,
+    } as const;
+    const safe = noteOf({ submission: { ...PRESSED, upload: paused } });
+    expect(safe).toMatch(/upload paused/i);
+    expect(safe).toMatch(/nothing has started yet/i);
+    const risky = noteOf({ submission: { ...PRESSED, upload: paused, scope: "none" } });
+    expect(risky).toMatch(/upload paused/i);
+    expect(risky).toMatch(/already started/i);
+    // An upload in flight but NOT paused says the ordinary thing.
+    expect(noteOf({ submission: { ...PRESSED, upload: { ...paused, paused: false } } })).toMatch(
+      /reloading is safe/i,
+    );
   });
 
   test("renders the sentence muted, and className is added rather than replacing that", () => {

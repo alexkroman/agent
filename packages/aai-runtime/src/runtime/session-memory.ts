@@ -80,11 +80,13 @@ export type SessionMemory = {
    */
   readonly greeting: string | undefined;
   /**
-   * The session stopped and its log is flushed through `lastEventIndex`. Never
-   * throws. A no-op for a REFUSED session: it never began, and a summarizer
-   * started for it would digest a conversation a stranger was denied.
+   * The session stopped and its log is flushed through `lastEventIndex`.
+   * Resolves once the hook has been CALLED (its own settlement is nobody's to
+   * wait on), so a stop that awaits this has fired it; never rejects. A no-op
+   * for a REFUSED session: it never began, and a summarizer started for it
+   * would digest a conversation a stranger was denied.
    */
-  ended(lastEventIndex: number): void;
+  ended(lastEventIndex: number): Promise<void>;
 };
 
 /**
@@ -146,7 +148,7 @@ export function openSessionMemory(deps: {
         since: context?.historySince,
       });
     },
-    ended(lastEventIndex) {
+    async ended(lastEventIndex) {
       // The client's live feed hears it first: its log is flushed, which is what
       // a page reacting to it (reading the transcript back) relies on.
       feedClientSessionEnd(sessionId);
@@ -176,19 +178,21 @@ export function openSessionMemory(deps: {
         }
       };
       // The transcript is read off the flushed log first, and the hook fires
-      // once it is in hand. A log the backend cannot read is not the hook's
-      // failure: it is logged and the hook runs with an empty transcript,
-      // which is what it would have seen before the field existed.
-      readSessionTranscript(deps.history, sessionId)
-        .catch((err: unknown): ClientTranscriptMessage[] => {
+      // once it is in hand — still inside the stop that called this, which is
+      // what an eval's `watchSessionEndHook` and a page's "the end was
+      // reported" both rely on. A log the backend cannot read is not the
+      // hook's failure: it is logged and the hook runs with an empty
+      // transcript, which is what it would have seen before the field existed.
+      const transcript = await readSessionTranscript(deps.history, sessionId).catch(
+        (err: unknown): ClientTranscriptMessage[] => {
           logger.warn("Session transcript not read for onSessionEnd", {
             sid,
             error: errorMessage(err),
           });
           return [];
-        })
-        .then(fire)
-        .catch(report);
+        },
+      );
+      fire(transcript);
     },
   };
 }

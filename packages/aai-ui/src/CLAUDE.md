@@ -162,11 +162,15 @@ gate, recall and report coalescing).
   sliding (a very long call) reads as a new `run`.
 - **`routeFetch`** resolves `api/…` against the page's DIRECTORY (an agent at
   `/:slug/` reaches `/:slug/api`); `useRoute`'s default `?client=` is the
-  session identity's, read per request, and none under `mountPage()`.
-  `useRouteMutation` is the write half with the same default: `run` never
-  rejects, the error shown is the highest-numbered SETTLED write's, and nothing
-  runs after unmount. `useClientRuns` is those two over a `clientRunsRoutes()`
-  pair — its row type is the SDK's, re-exported, never restated.
+  session identity's, read per request, and none under `mountPage()`. Both take
+  `headers` (an `authorization` for an `apiKeyRoute`); `useRoute`'s poll
+  (`every`/`pollMs`) is `repeatUntil`'s loop, re-armed from the settled read and
+  stopped by `until(value)`, with `headers`/`until` read per request so an
+  inline literal re-arms nothing. `useRouteMutation` is the write half with the
+  same default: `run` never rejects, the error shown is the highest-numbered
+  SETTLED write's, and nothing runs after unmount. `useClientRuns` is those two
+  over a `clientRunsRoutes()` pair — its row type is the SDK's, re-exported,
+  never restated.
 
 ## Client identity and the inbox
 
@@ -337,7 +341,15 @@ Reports what the run WROTE (`useWorkflowRun` reports its state).
   previous run id BEFORE the next request. Returns `wake()`/`cancel()` bound to
   its run (`_run-controls.ts`, shared because `WorkflowStreamSubmission` aliases
   `WorkflowSubmission`); both answer (`0`/`false`) when there is no run.
-  `reset()` puts the FORM back and leaves the run running.
+  `reset()` puts the FORM back and leaves the run running. The submission's
+  types live in `workflow-submission.ts`; `timing` (press-to-settle
+  `performance.now` marks, `_submission-timing.ts`) and `scope` (who finds the
+  run again, from `key`/`recover`; `"none"` for the stream hook) are what
+  `<WorkflowPendingNote>` reads. Both hooks, `useWorkflowRuns` and
+  `<WorkflowFields>` are overloaded on the AGENT type too
+  (`useWorkflowSubmit<typeof agentDef>("digest")`, `workflow-def-types.ts`): the
+  name is then a checked literal, and the def form is tried when the type
+  argument has no `workflows` map.
 - **The state between submit and run is a statechart**
   (`_workflow-form-state.ts`:
   `idle | recovering | submitting{active,paused} | following | failed`), bridged

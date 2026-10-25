@@ -105,6 +105,23 @@ describe("collected values", () => {
     expect(await submitted(onSubmit)).toEqual({ lang: "fr", notes: "hi" });
   });
 
+  test('a textarea with split="lines" contributes one trimmed entry per non-blank line', async () => {
+    const typed = "  pricing \n\nthe deadline\n   \n";
+    const { onSubmit, submit } = renderForm(
+      <TextAreaField name="mustCover" label="Must cover" split="lines" defaultValue={typed} />,
+    );
+    submit();
+    expect(await submitted(onSubmit)).toEqual({ mustCover: ["pricing", "the deadline"] });
+  });
+
+  test("an empty split textarea contributes an empty list, which is what nothing required means", async () => {
+    const { onSubmit, submit } = renderForm(
+      <TextAreaField name="mustCover" label="Must cover" split="lines" />,
+    );
+    submit();
+    expect(await submitted(onSubmit)).toEqual({ mustCover: [] });
+  });
+
   test("a plain named input a caller wrote themselves is collected too", async () => {
     // The point of reading the DOM: a field here is nothing but a styled
     // `<input>`, so a hand-written one composes with the generated ones.

@@ -11,24 +11,41 @@
  * workflow's form matches its schema by construction, so adding a field to the
  * schema adds it to the page and nothing can drift.
  *
- * ## It covers SCALARS, and says so rather than guessing
+ * ## It covers SCALARS and two more shapes, and says so rather than guessing
  *
- * A string, number, integer, boolean or enum has one obvious control each. A
- * nested object or an array does not — every choice (a JSON textarea, a repeater,
+ * A string, number, integer, boolean or enum has one obvious control each. Most
+ * nested objects and arrays do not — every choice (a JSON textarea, a repeater,
  * a comma-separated string) is a guess about what the author meant, and a guess
  * that produces a value the schema then rejects is worse than no field at all.
  * So those are SKIPPED, and the fields for them are written by hand: every field
  * in this package is a plain named control, so a hand-written one composes with
  * a generated one inside the same {@link Form}.
+ *
+ * Two non-scalar shapes DO have an honest control, and are rendered: an array
+ * of strings as `<TextAreaField split="lines">` (one per line), and an object
+ * of exactly `{ name: string, text: string }` as `<FileField read="text"
+ * as="namedText">` (a draft, read in the browser). A page may also ask for
+ * either by property name through `render`, for a schema that is one of those
+ * but does not say so plainly. Both were the hand-written half of
+ * `document-redline-workflow`'s mixed form, reshaped on submit; the fields
+ * contribute the schema's shape now, so the form is all declared.
  */
 
 import { isRecord } from "@alexkroman1/aai/utils";
 import type { WorkflowSummary } from "@alexkroman1/aai/workflow-api";
 import type { JSX } from "react";
 import { useWorkflows } from "../use-workflows.ts";
-import { fieldKindFor, schemaTypeOf } from "../workflow-field-kind.ts";
+import type { WorkflowAppLike, WorkflowNameOf } from "../workflow-def-types.ts";
+import { fieldKindFor, schemaTypeOf, type WorkflowFieldRender } from "../workflow-field-kind.ts";
 import { useDeclareFieldsPending } from "./_form-readiness.ts";
-import { CheckboxField, FileField, NumberField, SelectField, TextField } from "./form.tsx";
+import {
+  CheckboxField,
+  FileField,
+  NumberField,
+  SelectField,
+  TextAreaField,
+  TextField,
+} from "./form.tsx";
 
 /** The slice of JSON Schema this reads. Everything else is ignored. */
 type JsonSchemaProperty = {
@@ -44,7 +61,34 @@ type JsonObjectSchema = {
 };
 
 /**
- * Render one field per scalar property of a workflow's input schema.
+ * Props for {@link WorkflowFields}.
+ *
+ * @typeParam App - The agent, when the page names it
+ *   (`<WorkflowFields<typeof agentDef> workflow="digest" />`): `workflow` is
+ *   then a name the agent declares, checked. Left to its default, any string.
+ *
+ * @input
+ * @public
+ */
+export type WorkflowFieldsProps<App extends WorkflowAppLike = WorkflowAppLike> = {
+  /**
+   * The workflow whose input schema to render. A NAME is looked up here (one
+   * `GET workflows`); a {@link WorkflowSummary} the page already holds fetches
+   * nothing. `undefined` renders nothing, so a page may pass a selection
+   * straight through before one is made.
+   */
+  workflow?: WorkflowSummary | WorkflowNameOf<App> | undefined;
+  /**
+   * The control to draw for a property, by name, where the schema alone does
+   * not say — `{ mustCover: "lines", source: "namedText" }`. Beats the schema
+   * for that property, never a declared upload. See `WorkflowFieldKind`.
+   */
+  render?: Readonly<Record<string, WorkflowFieldRender>> | undefined;
+};
+
+/**
+ * Render one field per property of a workflow's input schema that has an
+ * honest control — every scalar, an array of strings, a `{ name, text }` object.
  *
  * Pass the workflow's NAME and the schema is fetched here; pass a
  * {@link WorkflowSummary} you already hold and nothing is fetched. The name form
@@ -75,21 +119,14 @@ type JsonObjectSchema = {
  * }
  * ```
  *
- * @param props - Field-set props.
+ * @param props - See {@link WorkflowFieldsProps}.
  *
  * @public
  */
-export function WorkflowFields({
+export function WorkflowFields<App extends WorkflowAppLike = WorkflowAppLike>({
   workflow,
-}: {
-  /**
-   * The workflow whose input schema to render. A NAME is looked up here (one
-   * `GET workflows`); a {@link WorkflowSummary} the page already holds fetches
-   * nothing. `undefined` renders nothing, so a page may pass a selection
-   * straight through before one is made.
-   */
-  workflow?: WorkflowSummary | string | undefined;
-}): JSX.Element | null {
+  render,
+}: WorkflowFieldsProps<App>): JSX.Element | null {
   // Unconditional, because a hook cannot be: the listing is only REQUESTED when
   // a name was passed, which is what keeps a page that already holds its
   // summaries from fetching them twice.
@@ -120,6 +157,7 @@ export function WorkflowFields({
           property={property}
           required={required.has(name)}
           upload={uploads.has(name)}
+          render={render?.[name]}
         />
       ))}
     </>
@@ -132,12 +170,15 @@ function SchemaField({
   property,
   required,
   upload = false,
+  render,
 }: {
   name: string;
   property: JsonSchemaProperty;
   required: boolean;
   /** Declared in the workflow's `uploads` — a file picker, not a text box. */
   upload?: boolean;
+  /** The page's own choice for this property, when it made one. */
+  render?: WorkflowFieldRender | undefined;
 }) {
   const label = humanize(name);
   // `hint` is only passed when there is one: an `undefined` here would be an
@@ -149,9 +190,33 @@ function SchemaField({
   // pane documents this exact rule rather than a hand-kept mirror of it — the
   // ordering argument (an upload before the type; an enum before it too) lives
   // there, in one place. What stays here is how each kind is DRAWN.
-  switch (fieldKindFor(property, { upload })) {
+  switch (fieldKindFor(property, { upload, render })) {
     case "file":
       return <FileField name={name} label={label} required={required} upload {...hint} />;
+    case "lines":
+      // One entry per line. `required` on a textarea refuses an empty one,
+      // which is what a required `string[]` means after blank lines go.
+      return (
+        <TextAreaField
+          name={name}
+          label={label}
+          required={required}
+          split="lines"
+          rows={3}
+          {...hint}
+        />
+      );
+    case "namedText":
+      return (
+        <FileField
+          name={name}
+          label={label}
+          required={required}
+          read="text"
+          as="namedText"
+          {...hint}
+        />
+      );
     case "select":
       return (
         <SelectField

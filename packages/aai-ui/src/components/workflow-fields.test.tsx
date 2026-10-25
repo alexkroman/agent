@@ -133,6 +133,53 @@ describe("WorkflowFields", () => {
     expect(fieldNames()).toEqual(["requestedBy"]);
   });
 
+  test("renders a string[] as a lines textarea and a { name, text } object as a named-text file", () => {
+    // The mixed form `document-redline-workflow` wrote by hand, declared.
+    renderFields({
+      type: "object",
+      properties: {
+        brief: { type: "string" },
+        mustCover: { type: "array", items: { type: "string" } },
+        source: {
+          type: "object",
+          properties: { name: { type: "string" }, text: { type: "string" } },
+          required: ["name", "text"],
+        },
+      },
+      required: ["brief", "mustCover"],
+    });
+    const lines = document.querySelector('[name="mustCover"]');
+    expect(lines?.tagName).toBe("TEXTAREA");
+    expect(lines).toHaveAttribute("data-aai-split", "lines");
+    expect(lines).toBeRequired();
+    const named = document.querySelector('[name="source"]');
+    expect(named).toHaveAttribute("type", "file");
+    expect(named).toHaveAttribute("data-aai-read", "text");
+    expect(named).toHaveAttribute("data-aai-as", "namedText");
+    expect(named).not.toBeRequired();
+  });
+
+  test("render={{ … }} draws the named control for a property the schema does not say plainly", () => {
+    render(
+      <ThemeProvider>
+        <form>
+          <WorkflowFields
+            workflow={{
+              name: "redline",
+              inputSchema: {
+                type: "object",
+                properties: { mustCover: { type: "array" }, source: { type: "object" } },
+              },
+            }}
+            render={{ mustCover: "lines", source: "namedText" }}
+          />
+        </form>
+      </ThemeProvider>,
+    );
+    expect(document.querySelector('[name="mustCover"]')).toHaveAttribute("data-aai-split", "lines");
+    expect(document.querySelector('[name="source"]')).toHaveAttribute("data-aai-as", "namedText");
+  });
+
   test("renders nothing for a workflow that declared no schema", () => {
     render(
       <ThemeProvider>

@@ -5,7 +5,8 @@
  * `useWorkflowRun` (`workflow-client.ts`) watches a run you already have.
  * This is what comes before it: `useWorkflowSubmit` starts a run and hands the
  * id straight to `useWorkflowRun`. Its sibling `useWorkflows` — the listing
- * `<WorkflowFields>` renders a form from — is `use-workflows.ts`.
+ * `<WorkflowFields>` renders a form from — is `use-workflows.ts`. What it hands
+ * back is `WorkflowSubmission` (`workflow-submission.ts`).
  *
  * ## `useWorkflowSubmit` — a form's two halves in one hook
  *
@@ -37,179 +38,28 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import type {
   AnyWorkflowDef,
   UploadParallelOption,
-  UploadProgress,
   WorkflowOutputOf,
 } from "@alexkroman1/aai/workflow-api";
 import { useCallback } from "react";
 import { useRunControls } from "./_run-controls.ts";
 import { useSubmissionState } from "./_submission-state.ts";
+import { useSubmissionTiming } from "./_submission-timing.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
-import type { FormValues } from "./components/form-types.ts";
 import { coalesceUploadReports, createUploadSession, uploadFiles } from "./upload/index.ts";
 import { useDefaultRunKey } from "./use-run-key.ts";
 import { useWorkflowRun } from "./use-workflow-run.ts";
-import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
-import type { SubmitInputOf } from "./workflow-def-types.ts";
+import type { WorkflowApi } from "./workflow-client.ts";
+import type {
+  SubmitInputOf,
+  WorkflowAppLike,
+  WorkflowDefOf,
+  WorkflowNameOf,
+} from "./workflow-def-types.ts";
+import type { WorkflowSubmission, WorkflowSubmissionScope } from "./workflow-submission.ts";
 
-/**
- * What {@link WorkflowSubmission.upload} reports while the bytes are going.
- *
- * The SDK's per-request {@link UploadProgress} plus WHICH file it describes,
- * because a form is allowed more than one and a bar over "the upload" would
- * restart at zero partway through with nothing to say why.
- *
- * @sealed
- * @public
- */
-export type UploadStatus = UploadProgress & {
-  /** The file being sent, by the name the picker gave it. */
-  name: string;
-  /** Which file of the submission this is, counting from 1. */
-  index: number;
-  /** How many files this submission sends in total. */
-  count: number;
-  /**
-   * Whether the person has parked this upload.
-   *
-   * A paused upload is not a stopped one: the windows already stored stay stored,
-   * `loaded` holds where it got to, and resuming sends what is missing rather than
-   * the file. So a bar rendering this reads "Paused at 62%", never "62% and
-   * frozen" — which is what a page could otherwise only guess from a number that
-   * stopped moving, the same ambiguity `complete` exists to remove on the run side.
-   */
-  paused: boolean;
-};
-
-/**
- * What {@link useWorkflowSubmit} returns.
- *
- * @see {@link WorkflowStreamSubmission} — an ALIAS of this type, returned by
- * `useWorkflowStream`, which is a drop-in sibling. Exactly two fields MEAN
- * something different there, and both differences follow from WHEN the run is
- * created: there, `submit()` resolves when the UPLOAD finishes rather than when
- * the run is accepted, and `run` is non-`undefined` from before the bytes are
- * in, so a page can render `<WorkflowProgress>` beside the upload bar instead
- * of after it. Here the run does not exist until the last byte lands.
- *
- * @sealed
- */
-export type WorkflowSubmission<R = unknown, I = unknown> = {
-  /**
-   * Start a run with this input. Resolves once the run EXISTS — progress
-   * arrives through `run` — so a `<Form>`'s handler can await it to know the
-   * submission was accepted.
-   */
-  submit: (input: I) => Promise<void>;
-  /**
-   * Start a run from a `<Form>`'s values, which are UNVALIDATED.
-   *
-   * The same function as {@link WorkflowSubmission.submit}, with the type the
-   * form path can honestly offer. `FormValues` is `Record<string, unknown>`
-   * scraped off the DOM at submit time — a `<TextField name="limit">`
-   * contributes a string whatever the schema says — so the shape is not known
-   * here and the SERVER is what checks it against the workflow's schema.
-   *
-   * Two doors rather than one loose one: `submit` takes the workflow's own
-   * input type, so a hand-built object is checked at compile time and
-   * `submit({ ur1: 42 })` is an error; widening it to accept `FormValues` would
-   * have made every object satisfy it and given the typing back. Reaching for
-   * this one is the author saying "these came from a form", which is a fact
-   * about the values and not a cast.
-   */
-  submitForm: (values: FormValues) => Promise<void>;
-  /** Clear the run and any error, putting the form back to its initial state. */
-  reset: () => void;
-  /**
-   * End the current run's `sleep()` early — "file it now" — resolving how many
-   * pending sleeps were interrupted.
-   *
-   * Bound to the run this submission is following, which is the point: it is
-   * the only reason a page holding one of these hooks needed an `api` of its
-   * own. `0` is an answer rather than a failure (the run had already moved past
-   * its wait, or there is no run yet), so nothing here has to be guarded.
-   */
-  wake: () => Promise<number>;
-  /**
-   * Stop the current run, resolving whether this call is what ended it.
-   *
-   * `false` for a run that had already finished, and for no run at all — the
-   * SDK's contract, because two tabs pressing Stop is ordinary. Distinct from
-   * `reset()`, which puts the FORM back and leaves the run running.
-   */
-  cancel: () => Promise<boolean>;
-  /** The run, once started, followed to completion. */
-  run: WorkflowRun<R> | undefined;
-  /**
-   * True from `submit()` on this mount until `reset()` — did THIS page start
-   * the run it is showing?
-   *
-   * A page needs it to say the right sentence and cannot derive it: a run
-   * ADOPTED by the mount-time lookup after a reload looks exactly like one this
-   * page started. Six templates kept a `useState(false)` next to this hook, set
-   * it in their `onSubmit` and mirrored it in their `onClear` — shadow state
-   * for a fact only this hook can know, since it is the thing that decides
-   * between `submit()` and the recovery lookup. One of the six grew a fourth
-   * branch and had to move the whole note into its own module with its own
-   * spec, which is what a seam missing one layer down looks like.
-   *
-   * The RAW fact rather than a derived "recovered", deliberately: with `run`
-   * these are three states, not two, and the third is the one a page most needs
-   * to explain. `startedHere` is "you pressed the button"; `!startedHere &&
-   * !run` is the mount-time lookup still going; `!startedHere && run` is a run
-   * this browser started earlier, now in front of somebody who did not press
-   * anything. A boolean meaning only the last of those cannot express the
-   * middle one.
-   *
-   * @example
-   * ```ts
-   * declare const submission: import("@alexkroman1/aai-ui").WorkflowSubmission;
-   * const note = submission.startedHere
-   *   ? "You can close this tab or reload it — this page will find the run again."
-   *   : submission.run === undefined
-   *     ? "Looking for a run this tab started earlier…"
-   *     : "Still working on the run this tab started earlier. Reloading is safe.";
-   * ```
-   */
-  startedHere: boolean;
-  /**
-   * True from `submit()` until the run reaches a terminal status.
-   *
-   * The WORK, not the request: a run outlives its `POST`, and a submit button
-   * that re-enabled on the response would invite a second submission of work
-   * already in flight.
-   */
-  pending: boolean;
-  /**
-   * How far the submission's files have got, while any are still going.
-   *
-   * Undefined before the first byte and again from the moment the last one
-   * lands, so a page can render `{upload && <UploadProgressBar upload={upload} />}`
-   * and the bar exists exactly for as long as there is an upload to describe. A
-   * form with no files never sets it at all.
-   *
-   * The wait it covers is the one `run` cannot: a run does not EXIST until its
-   * input is stored, so `pending` is true and there is nothing to poll — which
-   * for a 200 MB recording is minutes of a page that looks stuck.
-   */
-  upload: UploadStatus | undefined;
-  /**
-   * Park the upload where it is, stopping the bytes in flight.
-   *
-   * The windows already stored stay stored, so `resumeUpload()` sends what is
-   * missing rather than the file — which is the difference between a pause a
-   * person will actually use on a 200 MB recording and a cancel dressed up as one.
-   *
-   * `submit()`'s promise stays unresolved across a pause, because the submission
-   * genuinely has not finished: the run does not exist until the last byte lands,
-   * so resolving here would tell a `<Form>` the work was accepted when nothing has
-   * been started. A no-op when there is no upload in flight.
-   */
-  pauseUpload: () => void;
-  /** Continue a paused upload, sending only the windows the store does not have. */
-  resumeUpload: () => void;
-  /** The submit's own failure (a rejected input), or the watch's. */
-  error: string | undefined;
-};
+// The submission's own types moved to `workflow-submission.ts` at this file's
+// source-length cap; re-exported so every importer keeps its path.
+export type { UploadStatus, WorkflowSubmission } from "./workflow-submission.ts";
 
 /**
  * Options for {@link useWorkflowSubmit}.
@@ -226,13 +76,15 @@ export type UseWorkflowSubmitOptions = {
    * load produces again — `useRunKey()`'s, minted by the hook. Pass one to
    * scope runs to something the page knows better: an ACCOUNT's own id, which
    * is what makes a run follow the person to a new device, or
-   * `useRunKey({ storage: "local" })` for a run that outlives the tab by
-   * design. The key is a lookup CAPABILITY (there is no per-user filtering
-   * behind `find`), it must fit the route's 256-character bound, and anything
-   * derived from a person's own input both collides and carries what they
-   * typed — `use-run-key.ts` argues every alternative.
+   * `{ storage: "local" }` — `useRunKey({ storage: "local" })`'s key, minted
+   * here — for a run that outlives the tab by design. The key is a lookup
+   * CAPABILITY (there is no per-user filtering behind `find`), it must fit the
+   * route's 256-character bound, and anything derived from a person's own
+   * input both collides and carries what they typed — `use-run-key.ts` argues
+   * every alternative. What was chosen is reported back as
+   * `WorkflowSubmission.scope`.
    */
-  key?: string;
+  key?: string | { readonly storage?: "session" | "local" | undefined };
   /**
    * On mount, adopt the newest run this `key` already has.
    *
@@ -275,6 +127,18 @@ export type UseWorkflowSubmitOptions = {
 };
 
 /**
+ * Who can find the run again, from the two options that decide it — see
+ * `WorkflowSubmissionScope`. A page-supplied string key is read as
+ * `"browser"`: it is at least that wide (an account id is wider still), and
+ * "close this tab" is true of it.
+ */
+function scopeOf(key: UseWorkflowSubmitOptions["key"], recover: boolean): WorkflowSubmissionScope {
+  if (!recover) return "none";
+  if (typeof key === "string") return "browser";
+  return key?.storage === "local" ? "browser" : "tab";
+}
+
+/**
  * Start a workflow from a form, and follow the run it creates.
  *
  * @typeParam D - The workflow DEFINITION, which types both halves of the
@@ -288,6 +152,13 @@ export type UseWorkflowSubmitOptions = {
  *   declaration — and `import type` is ERASED, so it costs the bundle nothing.
  *   Passing an output type where a def belongs is now a compile error rather
  *   than a silent loss of typing, which is the point.
+ *
+ *   **Or the AGENT.** `useWorkflowSubmit<typeof agentDef>("digest")` reads the
+ *   def off the agent's own `workflows` map, and the NAME is then a literal the
+ *   compiler checks — a typo is an error naming the keys the agent declares,
+ *   where the def form accepts any string and 404s. See `WorkflowNameOf`; an
+ *   app with several workflows names the one it means as a second type
+ *   argument.
  *
  * @example
  * ```tsx no-check
@@ -306,18 +177,41 @@ export type UseWorkflowSubmitOptions = {
  * }
  * ```
  *
+ * @example Named through the agent, so the name is checked
+ * ```tsx no-check
+ * import { useWorkflowSubmit } from "@alexkroman1/aai-ui";
+ * import type agentDef from "./agent.ts";
+ *
+ * const { submit } = useWorkflowSubmit<typeof agentDef>("digest");
+ * ```
+ *
  * @public
  */
+export function useWorkflowSubmit<
+  App extends WorkflowAppLike = never,
+  Name extends WorkflowNameOf<App> = WorkflowNameOf<App>,
+>(
+  workflow: Name,
+  options?: UseWorkflowSubmitOptions,
+): WorkflowSubmission<
+  WorkflowOutputOf<WorkflowDefOf<App, Name>>,
+  SubmitInputOf<WorkflowDefOf<App, Name>>
+>;
 export function useWorkflowSubmit<D extends AnyWorkflowDef>(
   workflow: string,
+  options?: UseWorkflowSubmitOptions,
+): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
+export function useWorkflowSubmit(
+  workflow: string,
   options: UseWorkflowSubmitOptions = {},
-): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>> {
+): WorkflowSubmission<unknown, never> {
   const { api, recover = true, wait, intervalMs, parallel } = options;
   // The key the runs are recorded under: the caller's, or the per-page one this
   // hook mints and stores for itself. Minted even when `recover` is off, so
   // opting out of the LOOKUP still leaves the run findable — by the next load
   // that turns recovery back on, and by anything else holding the key.
   const key = useDefaultRunKey(options.key);
+  const scope = scopeOf(options.key, recover);
 
   // The caller's client through a ref — see `_workflow-api-ref.ts`.
   const getClient = useWorkflowApiRef(api);
@@ -331,11 +225,26 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
   const form = useSubmissionState({ workflow, key, enabled: recover, getClient });
   const { runId, actions } = form;
 
-  const tracked = useWorkflowRun<WorkflowOutputOf<D>>(runId, omitUndefined({ api, intervalMs }));
+  const tracked = useWorkflowRun<unknown>(runId, omitUndefined({ api, intervalMs }));
   const { wake, cancel } = useRunControls(runId, getClient);
+  // `tracked.polling` rather than a second derivation from the snapshot, and
+  // that is the whole of it: `useWorkflowRun` gives up on an id the agent
+  // keeps reporting as unknown (`MAX_MISSING_READS`), which leaves `run`
+  // undefined — so `!isTerminal(tracked.run)` reads as "still waiting" and
+  // pinned the submit button disabled and reading "Working…" for the life of
+  // the page, with the correct error shown directly above it. That stop is
+  // exactly what `polling` exists to report, per its own doc: it cannot be
+  // derived from the snapshot. `busy` — submitting or looking the run up —
+  // covers the gap between the POST returning and the first read landing,
+  // and the same gap on a RELOAD, where a form that offered Submit while a
+  // live run was arriving would invite a second one.
+  const pending = form.busy || tracked.polling;
+  const stopwatch = useSubmissionTiming(pending);
+  const { markSubmitted, clear: clearTiming } = stopwatch;
 
   const submit = useCallback(
     (input: unknown) => {
+      markSubmitted();
       const client = getClient();
       const session = createUploadSession(workflow);
       return actions.submit(session.gate, async ({ progress, started }) => {
@@ -361,35 +270,31 @@ export function useWorkflowSubmit<D extends AnyWorkflowDef>(
         );
       });
     },
-    [workflow, key, wait, parallel, getClient, actions],
+    [workflow, key, wait, parallel, getClient, actions, markSubmitted],
   );
+
+  const reset = useCallback(() => {
+    clearTiming();
+    // `startedHere` is part of the state `reset()` puts back, and the machine
+    // clears it on the same edge — the six templates that kept it by hand each
+    // had to remember the mirror.
+    actions.reset();
+  }, [actions, clearTiming]);
 
   return {
     submit,
     submitForm: submit,
-    // `startedHere` is part of the state `reset()` puts back, and the machine
-    // clears it on the same edge — the six templates that kept it by hand each
-    // had to remember the mirror.
-    reset: actions.reset,
+    reset,
     wake,
     cancel,
     pauseUpload: actions.pauseUpload,
     resumeUpload: actions.resumeUpload,
     run: tracked.run,
     startedHere: form.startedHere,
-    // `tracked.polling` rather than a second derivation from the snapshot, and
-    // that is the whole of it: `useWorkflowRun` gives up on an id the agent
-    // keeps reporting as unknown (`MAX_MISSING_READS`), which leaves `run`
-    // undefined — so `!isTerminal(tracked.run)` reads as "still waiting" and
-    // pinned the submit button disabled and reading "Working…" for the life of
-    // the page, with the correct error shown directly above it. That stop is
-    // exactly what `polling` exists to report, per its own doc: it cannot be
-    // derived from the snapshot. `busy` — submitting or looking the run up —
-    // covers the gap between the POST returning and the first read landing,
-    // and the same gap on a RELOAD, where a form that offered Submit while a
-    // live run was arriving would invite a second one.
-    pending: form.busy || tracked.polling,
+    pending,
     upload: form.upload,
     error: form.startError ?? tracked.error,
+    timing: stopwatch.timing,
+    scope,
   };
 }

@@ -147,7 +147,10 @@ export function attachSessionStream(
       // touch is written now rather than never (`backends/postgres.ts`).
       await stream.flush(sessionId, { final: true });
       // `tail` is one past the last index assigned, so an empty log answers -1.
-      memory?.ended(stream.tail(sessionId) - 1);
+      // Awaited: the hook is CALLED before the stop resolves (its transcript
+      // is read first), which is the contract an eval's turn and a page
+      // reading "the end was reported" both hold.
+      await memory?.ended(stream.tail(sessionId) - 1);
     }
   };
 }
