@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file budgets for guard-invariants' baselined rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 2, rule 3, rule 5, rule 7, rule 8, rule 9, rule 11, rule 12, rule 13, rule 14, rule 18, rule 19, rule 20, rule 21, rule 22, rule 26, rule 28, rule 29, rule 31, rule 32, rule 33, rule 34, rule 35, rule 36, rule 37, rule 38.",
+  "_description": "Per-file budgets for guard-invariants' baselined rules — see scripts/guard-invariants.mjs and `node scripts/guard-invariants.mjs --rules`. A file may hold FEWER than its number and may never hold more; `--update` lowers an entry and refuses to raise one. Generated: do not hand-edit except to bless a deliberate increase. Enforced at zero, with no entry here: rule 1, rule 2, rule 3, rule 5, rule 7, rule 8, rule 9, rule 11, rule 12, rule 13, rule 14, rule 18, rule 19, rule 20, rule 21, rule 22, rule 26, rule 28, rule 29, rule 31, rule 32, rule 33, rule 34, rule 35, rule 36, rule 37, rule 38, rule 39.",
   "rule4_inlineTickPromise": {
     "packages/aai-runtime/src/tools/executor.ts": 1
   },
@@ -32,16 +32,8 @@
     "packages/aai-templates/templates/link-digest-workflow/workflows/digest.ts": 1,
     "packages/aai-templates/templates/podcast-digest-workflow/workflows/digest.ts": 1,
     "packages/aai-templates/templates/research-handoff-agent/workflows/filing.ts": 1,
-    "packages/aai-templates/templates/research-handoff-agent/workflows/research.ts": 1,
     "packages/aai-templates/templates/transcription-workflow/workflows/stream.ts": 1,
     "packages/aai-templates/templates/transcription-workflow/workflows/sync-api.ts": 2,
     "packages/aai-templates/templates/transcription-workflow/workflows/transcribe.ts": 1
-  },
-  "rule39_jsonShapeProse": {
-    "packages/aai-templates/templates/call-audit-workflow/workflows/summarize.ts": 3,
-    "packages/aai-templates/templates/link-digest-workflow/workflows/digest.ts": 2,
-    "packages/aai-templates/templates/meeting-recap-agent/workflows/recap.ts": 2,
-    "packages/aai-templates/templates/podcast-digest-workflow/workflows/digest.ts": 2,
-    "packages/aai-templates/templates/spoken-summary-workflow/workflows/summarize.ts": 3
   }
 }

@@ -29,8 +29,9 @@
  *
  * Eight templates declare a `workflow({ … })`, and the split is exact: the six
  * `workflowApp()`s declare it in `agent.ts`, and the two voice agents that hand
- * off — `meeting-recap-agent`, `research-handoff-agent` — declare it in `shared.ts`,
- * where eight of their tools import it from.
+ * off — `meeting-recap-agent`, `research-handoff-agent` — default-export it from
+ * `workflows/<name>.ts`, where discovery registers it and their tools import it
+ * from.
  *
  * That is forced by the layering rather than chosen: a workflow app has no
  * `tools/`, so nothing but `agent.ts` needs the def, while a voice agent's
@@ -235,7 +236,8 @@ describe("where a workflow def is declared", () => {
         `${name} has tools/ and declares its workflow in agent.ts. Its tools need the ` +
           "def, and `virtual:aai/agent` is agent.ts PLUS a static import of every tools/ " +
           "file — so importing it back from a tool closes a cycle through that module. " +
-          "Declare the def in shared.ts, as meeting-recap-agent and research-handoff-agent do.",
+          "Default-export the def from workflows/<name>.ts, as meeting-recap-agent and " +
+          "research-handoff-agent do.",
       ).toBe(false);
     } else {
       expect(
