@@ -110,6 +110,8 @@ const pass = deepResearchWorkflow({
 
 /** When the caller asked for it, in words a phone can carry. */
 function askedAt(createdAt: number): string {
+  // Baselined for guard rule 30: this clock read is in `describeRun`, which the
+  // HOST runs when a builtin reads the run back — never in the replayed body.
   const minutes = Math.round((Date.now() - createdAt) / 60_000);
   if (minutes < 1) return "Just now";
   if (minutes < 60) return `${minutes} ${plural(minutes, "minute")} ago`;
