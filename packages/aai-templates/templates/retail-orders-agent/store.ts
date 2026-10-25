@@ -1,7 +1,6 @@
-import type { DialogEvent, ToolContext, ToolFailure } from "@alexkroman1/aai";
-import { dialog, isToolFailure, omitUndefined, sessionSlot } from "@alexkroman1/aai";
-import { roundMoney } from "@alexkroman1/aai/utils";
-import type { z } from "zod";
+import type { ToolFailure } from "@alexkroman1/aai";
+import { dialog, isToolFailure, sessionSlot } from "@alexkroman1/aai";
+import { isRecord, roundMoney, safeJsonParse } from "@alexkroman1/aai/utils";
 import seedJson from "./seed.json";
 import type {
   GiftCard,
@@ -60,23 +59,18 @@ export function seedStore(): Store {
 }
 
 /**
- * The session's store, as one typed slot.
- *
- * Every tool goes through `retailSlot.updateTool` (via `retailTool`), so every
- * tool body is handed a mutable draft of the whole store and mutates it in
- * place: the ~106 KB of catalogue here is exactly the state a functional replace
- * would make unwritable without hand-built spread chains three levels deep.
- * What makes that safe is that the window is SYNCHRONOUS — the LLM loop runs a
- * step's tool calls concurrently, and a draft that cannot span an await cannot
- * interleave with another one.
- *
- * No `after` hook — unlike emergency-dispatch-agent, this store has no derived field to
- * recalculate. Its one growth cap (`activity`) is the slot's `caps`, so it holds
- * for `record` below and for `agent.ts`'s hook alike.
+ * The session's store, as one typed slot. Every tool is a
+ * `retailSlot.updateTool`, handed a mutable draft of the whole store inside the
+ * slot's synchronous window. `empty` is what the slot projects for a session
+ * that has run no tool — the shape with nothing in it, never the seed — and it
+ * is the same frame `client.tsx` builds for itself, since that file must not
+ * import this one (the 107 KB seed would ship to the browser).
  */
 export const retailSlot = sessionSlot("retail", createDefaultState, {
   // What the browser sees: only the authenticated customer of the six seeded.
   view: storeView,
+  sync: true,
+  empty: emptyRetailState,
   caps: { activity: MAX_ACTIVITY },
 });
 
@@ -189,25 +183,11 @@ const callSpec = {
  */
 export const callFlow = dialog("call", callSpec);
 
-/**
- * Every event {@link callSpec} declares, as the union a `send` takes.
- *
- * `DialogEvent<typeof callSpec>` — synthesized from the `on` keys of the spec
- * above, which is why that spec is `as const`. It replaces the four-arm union
- * this file wrote out by hand (`{ type: "IDENTIFIED" } | …`), and the
- * duplication was the live kind: an event added to the spec was legal for
- * `callFlow.send` and rejected by {@link RetailToolSpec}, so the wrapper's
- * `send` field could only ever be a stale copy of the machine. Session events
- * (`@session.timedOut`) are excluded by the SDK — a tool cannot send one.
- */
-type CallEvent = DialogEvent<typeof callSpec>;
-
 /** Every state a tool may run in before the call is handed to a human — i.e.
  *  everything but `transferred`. What the two finders, the three catalog reads
- *  and the transfer itself declare, so the terminal state gates them without an
- *  auth gate. `"serving"` matches both of its children, which is what keeps a
- *  read legal while a change is waiting: a caller who asks "what was the total
- *  again?" mid-confirmation must be answerable. */
+ *  and the transfer itself declare as their `when`, so the terminal state gates
+ *  them without an auth gate. `"serving"` matches both of its children, which
+ *  is what keeps a read legal while a change is waiting. */
 export const BEFORE_TRANSFER = ["identifying", "serving"] as const;
 
 export function setFocus(
@@ -331,155 +311,42 @@ export function requireOwnUser(state: RetailState, userId: string): User | ToolF
   return user;
 }
 
-// ─── The tool wrapper ────────────────────────────────────────────────────────
-
-interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {
-  /** Must equal this tool's key in `agent.ts`. `agent.test.ts` asserts it. */
-  name: string;
-  description: string;
-  /** Required even for no-arg tools — pass `z.object({})`. One code path in the
-   *  wrapper is worth more than saving a line at one call site. */
-  inputSchema: S;
-  /**
-   * The state(s) this tool may run in, as `callFlow`'s states spell them.
-   *
-   * Replaces the `requiresAuth` boolean this spec used to carry. Nine tools
-   * want `"serving"` — which matches both of its children, so a read and a
-   * staging tool are equally legal while a change waits; the two settling
-   * tools want `"serving.awaitingConfirmation"`; and the two finders, the three
-   * catalog reads and the transfer want {@link BEFORE_TRANSFER}, which is every
-   * state but the terminal one — so "does not need a customer" and "is still
-   * legal after the handoff" stopped being the same claim, and they were never
-   * the same claim.
-   */
-  when: string | readonly string[];
-  /** The event to send once the body has succeeded, for a tool that MOVES the
-   *  call. Twelve do: the two finders send `IDENTIFIED`, the transfer sends
-   *  `TRANSFERRED`, the seven staging tools send `STAGED`, and `confirm_change`
-   *  and `cancel_change` send `SETTLED`. Nothing is sent when the body answers
-   *  a `ToolFailure` — which is what stops a refused stage from moving the call
-   *  into a confirmation with nothing behind it.
-   *
-   *  Typed {@link CallEvent}, which is the machine's own event union rather
-   *  than a copy of it. */
-  send?: CallEvent;
-  /**
-   * One line for the activity feed, from the call that SUCCEEDED.
-   *
-   * `R` is the SUCCESS type — `execute` below is declared `R | ToolFailure`, so
-   * the failure arm is matched against `ToolFailure` during inference and never
-   * lands in `R`. That is what lets the fifteen tool files stop writing
-   * `isToolFailure(result) ? "… failed" : …` for a case that cannot arrive: the
-   * wrapper never calls `summary` on a failure and now says so in the type.
-   *
-   * `NoInfer` takes this parameter out of the inference race `R` used to be
-   * decided by. It does NOT make the source order irrelevant — `execute` is an
-   * inline arrow whose parameters are contextually typed, so its return type is
-   * inferred in a LATER pass than this signature is checked, and a `summary`
-   * written above it still lands on `unknown`. What changed is that the failure
-   * is now LOUD: with no `isToolFailure` ternary left to swallow it, the wrong
-   * order is a `TS18046` on the first property read rather than a narrowing
-   * that quietly stops meaning anything. So the twelve-line warning this used
-   * to carry is the compiler's job now.
-   */
-  summary: (args: z.output<S>, result: NoInfer<R>) => string;
-  /**
-   * Handed the store as its second argument, and SYNCHRONOUS.
-   *
-   * **The draft is passed in rather than re-read**, which is the one change the
-   * durable store forced on this template. The body used to open with
-   * `retailSlot.get(ctx)`; under the draft write model that returns the value as
-   * it was BEFORE this call, frozen, so a body that mutated it would be writing
-   * to something nothing was going to store. Passing it removes the possibility
-   * rather than documenting it.
-   *
-   * Synchronous for the same reason: the window cannot span an await — see
-   * {@link SessionSlot.update}. Every tool here is a pure function of the store,
-   * so none of them wants to; a tool that DID would await outside the wrapper and
-   * call `retailSlot.update` itself, the way `research-planner-agent`'s do.
-   */
-  execute: (args: z.output<S>, state: RetailState, ctx: ToolContext) => R | ToolFailure;
-}
+// ─── The activity feed ───────────────────────────────────────────────────────
 
 /**
  * One line of the activity feed, and the `callSeq` bump the sidebar moves on.
  *
- * Exported because {@link retailTool} is no longer its only caller: `agent.ts`
- * records the calls that never reach a body — see {@link gateFor}.
+ * Written by the `tool.called` hook in `agent.ts`, for EVERY call the model
+ * makes — the ones the gate refuses included, which no tool body could record
+ * because a refusal short-circuits before the body. The summary is filled in
+ * by the `tool.completed` hook once the result is known.
  */
-export function record(state: RetailState, name: string, summary: string): void {
+export function record(
+  state: RetailState,
+  tool: string,
+  at: number,
+  callId: string,
+  summary = "running",
+): void {
   state.callSeq += 1;
-  state.activity.push({ seq: state.callSeq, tool: name, summary, at: Date.now() });
+  state.activity.push({ seq: state.callSeq, tool, summary, at, callId });
 }
 
 /**
- * Which states each retail tool may run in, by the name the model calls it by.
- *
- * Populated as the fifteen `tools/` modules are loaded, because {@link retailTool}
- * is what every one of them calls. It exists so `agent.ts`'s `tool.called` hook
- * can ask the SAME question the gate asks — this is one fact evaluated twice, not
- * two copies of a fact.
+ * The line a finished call gets, read off the result the model was handed:
+ * the refusal or error for a failure, the sentence read back for a staged
+ * change, and what was settled for the two settling tools.
  */
-const TOOL_GATES = new Map<string, readonly string[]>();
-
-/**
- * The states `name` may run in, or `undefined` for a tool this template did not
- * declare (a builtin, or anything a future author adds outside the wrapper).
- */
-export function gateFor(name: string): readonly string[] | undefined {
-  return TOOL_GATES.get(name);
-}
-
-/**
- * Every retail tool is built through this. It owns two things no tool body may
- * re-implement:
- *
- * 1. the mutation window the body's draft comes from,
- * 2. the `callSeq` increment + activity entry — the reason the UI moves on
- *    every tool call rather than only when a projected value happens to differ.
- *
- * The third thing it used to own — the authentication gate — is
- * {@link callFlow}'s now, declared per tool as `when`. What that buys is in the
- * machine's own doc; what it COST was one line of the activity feed, because a
- * refused call short-circuits before this wrapper's body runs and so recorded
- * nothing and bumped no `callSeq`.
- *
- * **That line is back, and not from here.** `agent.ts` declares a `tool.called`
- * hook, which the runtime emits for every call the model makes INCLUDING the
- * ones the gate goes on to refuse — a place to observe from that a tool wrapper
- * structurally does not have. See {@link gateFor}.
- *
- * **`callFlow.tool` rather than `retailSlot.updateTool`**, so the body opens the
- * store's window itself. A flow tool's own `execute` is handed `(args, ctx)`;
- * everything else about a tool body here is unchanged, including that it is
- * synchronous — the window cannot span an await.
- *
- * `focus` is deliberately left to tool bodies (`setFocus`): it is a UI nicety,
- * not an invariant, and only the body knows what the call was about.
- */
-export function retailTool<S extends z.ZodType<Record<string, unknown>>, R>(
-  spec: RetailToolSpec<S, R>,
-) {
-  TOOL_GATES.set(spec.name, typeof spec.when === "string" ? [spec.when] : spec.when);
-  return callFlow.tool({
-    description: spec.description,
-    inputSchema: spec.inputSchema,
-    when: spec.when,
-    // `omitUndefined` rather than a conditional spread: `exactOptionalPropertyTypes`
-    // is on, so an explicit `send: undefined` is not the same as an absent one —
-    // and only three of the fifteen tools declare an event (guard-invariants
-    // rule 2).
-    ...omitUndefined({ send: spec.send }),
-    execute: (args, ctx) =>
-      retailSlot.update(ctx, (state) => {
-        const typedArgs = args as z.output<S>;
-        const result = spec.execute(typedArgs, state, ctx);
-        record(
-          state,
-          spec.name,
-          isToolFailure(result) ? `error: ${result.error}` : spec.summary(typedArgs, result),
-        );
-        return result;
-      }),
-  });
+export function summarize(result: string): string {
+  const parsed = safeJsonParse(result);
+  if (isToolFailure(parsed)) return `error: ${parsed.error}`;
+  if (!isRecord(parsed)) return "done";
+  // A gated tool answers the dialog's envelope; the tool's own value is under `result`.
+  const own = "result" in parsed ? parsed.result : parsed;
+  if (!isRecord(own)) return "done";
+  if ("read_back" in own) return `staged: ${String(own.read_back)}`;
+  if ("confirmed" in own) return `confirmed ${String(own.confirmed)}`;
+  if ("dropped" in own) return `dropped ${String(own.dropped ?? "nothing")}`;
+  if ("transferred" in own) return "transferred to a human agent";
+  return "done";
 }

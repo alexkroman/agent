@@ -1,64 +1,27 @@
 import { agent } from "@alexkroman1/aai";
-import { callFlow, gateFor, record, retailSlot } from "./store.ts";
+import { callFlow, record, retailSlot, summarize } from "./store.ts";
 
 export default agent({
   name: "Retail Support",
-  description: "Looks up orders, returns and store credit for an authenticated retail caller",
-
+  listing: "Looks up orders, returns and store credit for an authenticated retail caller",
   /**
    * A per-session ceiling on what the model may spend.
    *
    * This is the template where a budget earns its place: authentication, an
    * order lookup and a staged change are three tool chains deep, the store's
-   * projection is large, and a caller who keeps re-asking can run a session for
-   * as long as they like. `maxSteps` bounds a REPLY and says nothing about a
-   * call — one step that sends a 100k-token context and one that sends a
-   * greeting are the same step.
-   *
-   * Tokens rather than money: a price is per-model and per-contract, and the
-   * SDK carries no table of them (see `UsageLimits`). The number here is a
-   * generous ceiling for a support call, not a target — pick yours from what
-   * `usage.updated` reports on a real conversation.
-   *
-   * Reaching it ends the session. An agent that wants a softer landing watches
-   * `usage.updated` through `agent({ events })` and says something first.
-   *
-   * **It was 200_000, and a real call reached 252,825 and ended mid-support.**
-   * This is the template with the deepest tool chains and the largest
-   * projection, so the old number was a ceiling a legitimate call could touch
-   * — and reaching it is not a soft landing, it ends the session. Raised with
-   * headroom rather than tuned: read `usage.updated` on a few real
-   * conversations and pick from that.
-   *
-   * The overshoot past whatever number is here is expected and bounded by the
-   * requests in flight: the cap is checked BEFORE each request, never
-   * mid-stream, because a limit enforced mid-sentence reads to the caller as a
-   * dropped call.
+   * projection is large, and a caller who keeps re-asking can run a session
+   * for as long as they like. `maxSteps` bounds a REPLY and says nothing about
+   * a call. Tokens rather than money, since a price is per-model (see
+   * `UsageLimits`); a real call reached 252,825 against an earlier 200_000 and
+   * ended mid-support, so this is a ceiling with headroom — read
+   * `usage.updated` on a few real conversations and pick yours from that.
    */
   usageLimits: { totalTokens: 2_000_000 },
-
-  // The store lives in one `sessionSlot` (`store.ts`), a pristine copy per
-  // session — callers must not see each other's cancellations. Nothing declares
-  // it here: the slot installs itself on first access, and its `projected`
-  // view below is what gives a session that has run no tool something to render.
-
-  // One projection pushed after every tool call. It is a projection, not a
-  // flag, because the state holds all six seeded customers and only the
-  // authenticated one may reach the browser (`storeView`, the slot's view).
-  syncState: retailSlot.projected,
-
-  /**
-   * Declaring the flow is what lets the CALL move it, not just a tool.
-   *
-   * `callFlow` gated tools without this and still would; what the declaration
-   * adds is the half no tool can reach — `"@session.timedOut"` carries a call
-   * whose caller has hung up into `abandoned`, and `awaitingConfirmation`'s
-   * instruction reaches the turn that reads a staged change back. Both
-   * happen when no tool is running, which is exactly why neither was
-   * expressible before.
-   */
+  // Declaring the flow is what lets the CALL move it, not just a tool:
+  // `@session.timedOut` carries a hung-up call into `abandoned`, and
+  // `awaitingConfirmation`'s instruction reaches the turn that reads a staged
+  // change back.
   dialogs: [callFlow],
-
   // Callers read order numbers and ten-digit item numbers in bursts with pauses
   // inside one utterance ("W seven six seven … eight oh seven two"). The default
   // pipeline's `max_turn_silence` already tolerates that; reach for
@@ -66,38 +29,22 @@ export default agent({
   greeting:
     "Thanks for calling. Before I can look anything up I'll need to find your account — " +
     "what's the email address on it?",
-
   /**
-   * The activity feed's blocked lines, which no tool wrapper could write.
-   *
-   * `retailTool` records a line per call from INSIDE the body, so it sees every
-   * call the caller's own logic answered — and none that `callFlow` refused,
-   * because a gated refusal short-circuits before the body. The sidebar simply
-   * stopped showing the most interesting calls the model makes: the ones it
-   * tried too early.
-   *
-   * `tool.called` is emitted by the runtime for every call the model makes, so a
-   * hook is the only place that observation is available at all. It is also the
-   * shape of hook this template is here to show: it WRITES the session's state
-   * and it cannot speak — nothing here changes what the agent says, or stops the
-   * refusal still reaching the model. It does neither.
-   *
-   * The gate is evaluated a second time rather than reported by the first,
-   * because the refusal happens later and inside the body. That is one fact read
-   * twice from one source (`gateFor`, which `retailTool` fills), not two copies
-   * of it — and the only cost of the two evaluations disagreeing is a duplicate
-   * or missing sidebar line, never a wrong store.
+   * The activity feed, written by what the session OBSERVES rather than by the
+   * tools. `tool.called` fires for every call the model makes — including the
+   * ones the gate refuses, which are the most interesting lines the sidebar
+   * shows — and `tool.completed` fills in what each one answered. A hook writes
+   * state and cannot speak; nothing here changes what the agent says.
    */
   events: {
-    "tool.called": (event, ctx) => {
-      const when = gateFor(event.toolName);
-      // Not a retail tool, or one this call may run: either way the wrapper owns
-      // the line, and writing one here would double it.
-      if (!when || when.some((state) => callFlow.matches(ctx, state))) return;
-      const at = callFlow.position(ctx);
+    "tool.called": (event, ctx) =>
       retailSlot.update(ctx, (state) => {
-        record(state, event.toolName, `blocked: call is at ${at.state}`);
-      });
-    },
+        record(state, event.toolName, event.meta.at, event.toolCallId);
+      }),
+    "tool.completed": (event, ctx) =>
+      retailSlot.update(ctx, (state) => {
+        const line = state.activity.find((entry) => entry.callId === event.toolCallId);
+        if (line) line.summary = summarize(event.result);
+      }),
   },
 });

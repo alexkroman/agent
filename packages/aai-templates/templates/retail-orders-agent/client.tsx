@@ -1,11 +1,6 @@
 import { formatMoney, plural } from "@alexkroman1/aai/utils";
 import "@alexkroman1/aai-ui/styles.css";
-import type {
-  AgentState,
-  ChatMessage,
-  SessionControlButton,
-  ToolCallInfo,
-} from "@alexkroman1/aai-ui";
+import type { ChatMessage, SessionControlButton, ToolCallInfo } from "@alexkroman1/aai-ui";
 import {
   ConversationView,
   mountClient,
@@ -53,38 +48,10 @@ const statusColors: Record<string, string> = {
   "exchange requested": "#a16207",
 } satisfies Record<OrderStatus, string>;
 
-// The sidebar before the first tool call, derived from the projection itself so
-// a new StoreView field can't miss the pre-first-call render.
-//
-// **This is one of two templates that do NOT pass the projection to
-// `useAgentState`** — they name the slot (`"retail"`) and pass this fallback —
-// and the reason is the browser bundle rather than style:
-// that overload derives the empty frame by calling the projection, which calls
-// the slot's `create()` — and this slot's factory lives in `store.ts` and pulls
-// the 107 KB seed, so importing it here would ship the whole catalog to the
-// browser. `emptyRetailState()` is the same shape without the seed. Reach for
-// the projection overload everywhere the factory is cheap, which is every
-// other stateful template.
+// The sidebar before the first push: the slot's own `empty` frame, projected
+// here rather than imported, because the slot's module pulls the 107 KB seed
+// and must not reach the browser bundle.
 const EMPTY_VIEW: StoreView = storeView(emptyRetailState());
-
-// The dot's colour per session state, as an EXHAUSTIVE map rather than an
-// if-chain with a grey default.
-//
-// The palette is this template's own — every client here paints the same six
-// states in its own colours, so it is the one prop `<SessionStateDot>` cannot
-// default. What the SDK does own is `AgentState`, and `satisfies
-// Record<AgentState, string>` is what borrows it: a state added there stops
-// compiling here, where the `state === "…"` chain this replaced answered a new
-// state with a silent grey badge in three separate files and no way to notice.
-const STATE_COLORS = {
-  disconnected: "#a1a1aa",
-  connecting: "#a1a1aa",
-  ready: "#16a34a",
-  listening: "#16a34a",
-  thinking: "#ca8a04",
-  speaking: "#2563eb",
-  error: "#a1a1aa",
-} satisfies Record<AgentState, string>;
 
 function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -364,7 +331,7 @@ function Conversation() {
 function StatusReadout() {
   return (
     <SessionStateDot
-      colors={STATE_COLORS}
+      colors={{ idle: "#a1a1aa", live: "#16a34a", busy: "#ca8a04", speaking: "#2563eb" }}
       labelClassName="text-[11px] font-normal text-[#a1a1aa]"
     />
   );
@@ -425,155 +392,140 @@ function App() {
   const lastAction = view.activity.at(-1);
 
   return (
-    <>
-      <style>{CSS}</style>
+    <div
+      className="flex flex-col h-dvh overflow-hidden m-0 p-0"
+      style={{ background: "#f4f4f5", color: "#18181b" }}
+    >
       <div
-        className="flex flex-col h-dvh overflow-hidden m-0 p-0"
-        style={{ background: "#f4f4f5", color: "#18181b" }}
+        className="flex items-center justify-between px-5 py-3 gap-4 flex-wrap shrink-0"
+        style={{ background: "#ffffff", borderBottom: "1px solid #e4e4e7" }}
       >
-        <div
-          className="flex items-center justify-between px-5 py-3 gap-4 flex-wrap shrink-0"
-          style={{ background: "#ffffff", borderBottom: "1px solid #e4e4e7" }}
+        <div className="flex items-center gap-2.5 text-base font-semibold">
+          <span style={{ color: "#2563eb" }}>◆</span>
+          Retail Support
+          <StatusReadout />
+        </div>
+        <span
+          className="px-2.5 py-1 rounded text-[10px] font-semibold uppercase tracking-wider"
+          style={
+            view.customer
+              ? { background: "#dcfce7", color: "#15803d" }
+              : { background: "#f4f4f5", color: "#71717a" }
+          }
         >
-          <div className="flex items-center gap-2.5 text-base font-semibold">
-            <span style={{ color: "#2563eb" }}>◆</span>
-            Retail Support
-            <StatusReadout />
-          </div>
-          <span
-            className="px-2.5 py-1 rounded text-[10px] font-semibold uppercase tracking-wider"
-            style={
-              view.customer
-                ? { background: "#dcfce7", color: "#15803d" }
-                : { background: "#f4f4f5", color: "#71717a" }
-            }
-          >
-            {view.customer ? `Verified · ${view.customer.name}` : "Not yet identified"}
-          </span>
+          {view.customer ? `Verified · ${view.customer.name}` : "Not yet identified"}
+        </span>
+      </div>
+
+      <div
+        className="rt-main flex-1 grid overflow-hidden"
+        style={{ gridTemplateColumns: "1fr 340px" }}
+      >
+        {/* Conversation */}
+        <div className="flex flex-col overflow-hidden" style={{ borderRight: "1px solid #e4e4e7" }}>
+          <Conversation />
+          <SessionErrorBanner className="rounded-none border-x-0 border-b-0" />
+          <CallControls productCount={view.productCount} />
         </div>
 
+        {/* Sidebar: the customer file */}
         <div
-          className="rt-main flex-1 grid overflow-hidden"
-          style={{ gridTemplateColumns: "1fr 340px" }}
+          className="aai-scroll overflow-y-auto p-3 flex flex-col gap-3"
+          style={{ background: "#f4f4f5" }}
         >
-          {/* Conversation */}
-          <div
-            className="flex flex-col overflow-hidden"
-            style={{ borderRight: "1px solid #e4e4e7" }}
-          >
-            <Conversation />
-            <SessionErrorBanner className="rounded-none border-x-0 border-b-0" />
-            <CallControls productCount={view.productCount} />
-          </div>
+          {view.pending && <PendingChange pending={view.pending} />}
 
-          {/* Sidebar: the customer file */}
-          <div
-            className="aai-scroll overflow-y-auto p-3 flex flex-col gap-3"
-            style={{ background: "#f4f4f5" }}
-          >
-            {view.pending && <PendingChange pending={view.pending} />}
-
-            {!view.customer && (
-              <Panel title="Who to be">
-                <PersonaList />
-              </Panel>
-            )}
-
-            <Panel title="Customer">
-              {view.customer ? (
-                <>
-                  <div className="text-sm font-semibold">{view.customer.name}</div>
-                  <div className="text-[11px] break-all" style={{ color: "#71717a" }}>
-                    {view.customer.email}
-                  </div>
-                  <div className="text-[11px] mt-1" style={{ color: "#71717a" }}>
-                    {view.customer.address.address1}
-                    {view.customer.address.address2 ? `, ${view.customer.address.address2}` : ""}
-                    <br />
-                    {view.customer.address.city} {view.customer.address.state}{" "}
-                    {view.customer.address.zip}
-                  </div>
-                </>
-              ) : (
-                <div className="text-xs" style={{ color: "#a1a1aa" }}>
-                  Nothing is looked up until the caller is identified.
-                </div>
-              )}
+          {!view.customer && (
+            <Panel title="Who to be">
+              <PersonaList />
             </Panel>
+          )}
 
-            {view.customer && (
-              <Panel title="Payment methods">
-                {view.customer.paymentMethods.map((method) => (
-                  <MethodRow key={method.id} method={method} />
-                ))}
-              </Panel>
-            )}
-
-            {view.orders.length > 0 && (
-              <Panel title={`Orders (${view.orders.length})`}>
-                {view.orders.map((order) => (
-                  <OrderCard
-                    key={order.orderId}
-                    order={order}
-                    focused={order.orderId === view.focus.orderId}
-                  />
-                ))}
-              </Panel>
-            )}
-
-            {view.swapOptions.length > 0 && (
-              <Panel title={`Swap options · ${view.focus.orderId ?? ""}`}>
-                {view.swapOptions.map((option) => (
-                  <SwapOptions key={option.itemId} option={option} />
-                ))}
-              </Panel>
-            )}
-
-            <Panel title="You can say">
-              {view.scriptBullets.map((bullet) => (
-                <div
-                  key={bullet}
-                  className="text-[11px] leading-relaxed mb-1"
-                  style={{ color: "#3f3f46" }}
-                >
-                  · {bullet}
-                </div>
-              ))}
-            </Panel>
-          </div>
-        </div>
-
-        {/* The footer strip. `callSeq` is monotonic, so this moves on EVERY tool
-            call — including a repeated read that changed nothing else. */}
-        <div
-          className="flex items-center justify-between px-5 py-2 text-[10px] shrink-0"
-          style={{ background: "#ffffff", borderTop: "1px solid #e4e4e7", color: "#71717a" }}
-        >
-          <span className="truncate">
-            {lastAction ? (
+          <Panel title="Customer">
+            {view.customer ? (
               <>
-                <span style={{ color: "#2563eb" }}>{lastAction.tool}</span> — {lastAction.summary}
+                <div className="text-sm font-semibold">{view.customer.name}</div>
+                <div className="text-[11px] break-all" style={{ color: "#71717a" }}>
+                  {view.customer.email}
+                </div>
+                <div className="text-[11px] mt-1" style={{ color: "#71717a" }}>
+                  {view.customer.address.address1}
+                  {view.customer.address.address2 ? `, ${view.customer.address.address2}` : ""}
+                  <br />
+                  {view.customer.address.city} {view.customer.address.state}{" "}
+                  {view.customer.address.zip}
+                </div>
               </>
             ) : (
-              "No tool calls yet"
+              <div className="text-xs" style={{ color: "#a1a1aa" }}>
+                Nothing is looked up until the caller is identified.
+              </div>
             )}
-          </span>
-          <span className="tabular-nums whitespace-nowrap ml-3">
-            {view.callSeq} {plural(view.callSeq, "call")}
-          </span>
+          </Panel>
+
+          {view.customer && (
+            <Panel title="Payment methods">
+              {view.customer.paymentMethods.map((method) => (
+                <MethodRow key={method.id} method={method} />
+              ))}
+            </Panel>
+          )}
+
+          {view.orders.length > 0 && (
+            <Panel title={`Orders (${view.orders.length})`}>
+              {view.orders.map((order) => (
+                <OrderCard
+                  key={order.orderId}
+                  order={order}
+                  focused={order.orderId === view.focus.orderId}
+                />
+              ))}
+            </Panel>
+          )}
+
+          {view.swapOptions.length > 0 && (
+            <Panel title={`Swap options · ${view.focus.orderId ?? ""}`}>
+              {view.swapOptions.map((option) => (
+                <SwapOptions key={option.itemId} option={option} />
+              ))}
+            </Panel>
+          )}
+
+          <Panel title="You can say">
+            {view.scriptBullets.map((bullet) => (
+              <div
+                key={bullet}
+                className="text-[11px] leading-relaxed mb-1"
+                style={{ color: "#3f3f46" }}
+              >
+                · {bullet}
+              </div>
+            ))}
+          </Panel>
         </div>
       </div>
-    </>
+
+      {/* The footer strip. `callSeq` is monotonic, so this moves on EVERY tool
+            call — including a repeated read that changed nothing else. */}
+      <div
+        className="flex items-center justify-between px-5 py-2 text-[10px] shrink-0"
+        style={{ background: "#ffffff", borderTop: "1px solid #e4e4e7", color: "#71717a" }}
+      >
+        <span className="truncate">
+          {lastAction ? (
+            <>
+              <span style={{ color: "#2563eb" }}>{lastAction.tool}</span> — {lastAction.summary}
+            </>
+          ) : (
+            "No tool calls yet"
+          )}
+        </span>
+        <span className="tabular-nums whitespace-nowrap ml-3">
+          {view.callSeq} {plural(view.callSeq, "call")}
+        </span>
+      </div>
+    </div>
   );
 }
 
-mountClient({
-  component: App,
-  theme: {
-    bg: "#f4f4f5",
-    primary: "#2563eb",
-    text: "#18181b",
-    surface: "#ffffff",
-    border: "#e4e4e7",
-  },
-});
+mountClient({ component: App, theme: { primary: "#2563eb" }, css: CSS });

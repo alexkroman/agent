@@ -1,9 +1,9 @@
 import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
-import { BEFORE_TRANSFER, findProduct, retailTool, setFocus } from "../store.ts";
+import { BEFORE_TRANSFER, callFlow, findProduct, retailSlot, setFocus } from "../store.ts";
 
-export default retailTool({
-  name: "get_product_details",
+export default retailSlot.updateTool({
+  dialog: callFlow,
   description:
     "Get a product's variants — each with its item id, options, price and availability. Takes a " +
     "PRODUCT id, which is not the same as an item id. Use list_all_product_types to find one.",
@@ -26,5 +26,4 @@ export default retailTool({
       })),
     };
   },
-  summary: (_args, result) => `read product ${result.name}`,
 });

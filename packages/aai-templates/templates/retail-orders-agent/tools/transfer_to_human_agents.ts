@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { BEFORE_TRANSFER, retailTool } from "../store.ts";
+import { BEFORE_TRANSFER, callFlow, retailSlot } from "../store.ts";
 
-export default retailTool({
-  name: "transfer_to_human_agents",
+export default retailSlot.updateTool({
+  dialog: callFlow,
   description:
     "Hand the caller to a human agent. Use this ONLY when the caller explicitly asks for a human, " +
     "or when their request cannot be handled with the other tools and the policy. The caller is " +
@@ -19,7 +19,6 @@ export default retailTool({
   // than asked for — every tool, this one included, refuses afterwards.
   when: BEFORE_TRANSFER,
   send: { type: "TRANSFERRED" },
-  summary: () => "transferred to a human agent",
   execute: (args) => ({
     transferred: true,
     summary: args.summary,

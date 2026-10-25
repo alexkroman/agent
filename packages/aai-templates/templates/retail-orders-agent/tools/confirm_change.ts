@@ -1,6 +1,5 @@
-import { z } from "zod";
 import { applyAction } from "../pending.ts";
-import { retailTool } from "../store.ts";
+import { callFlow, retailSlot } from "../store.ts";
 
 /**
  * The only tool in this template that writes to the store.
@@ -10,15 +9,14 @@ import { retailTool } from "../store.ts";
  * body runs, and the refusal quotes the state's own instruction. See
  * `pending.ts`.
  */
-export default retailTool({
-  name: "confirm_change",
+export default retailSlot.updateTool({
+  dialog: callFlow,
   when: "serving.awaitingConfirmation",
   send: { type: "SETTLED" },
   description:
     "Apply the change that is waiting, after you have read it back to the caller and heard an " +
     "explicit yes. Never call this on an implied yes, on silence, or before you have said what " +
     "the change is. If they say no, or want any part of it different, call cancel_change instead.",
-  inputSchema: z.object({}),
   execute: (_args, state) => {
     const action = state.pending;
     // Unreachable while the gate holds: `awaitingConfirmation` is entered only
@@ -38,5 +36,4 @@ export default retailTool({
     state.pending = null;
     return { confirmed: action.kind, ...result };
   },
-  summary: (_args, result) => `confirmed ${result.confirmed}`,
 });

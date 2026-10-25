@@ -3,10 +3,10 @@ import { z } from "zod";
 import { CANCEL_REASONS, planCancel } from "../cancel.ts";
 import { stageAction } from "../pending.ts";
 import { OrderIdField } from "../resolve.ts";
-import { retailTool, setFocus } from "../store.ts";
+import { callFlow, retailSlot, setFocus } from "../store.ts";
 
-export default retailTool({
-  name: "cancel_pending_order",
+export default retailSlot.updateTool({
+  dialog: callFlow,
   when: "serving",
   send: { type: "STAGED" },
   description:
@@ -27,5 +27,4 @@ export default retailTool({
     setFocus(state, { orderId: plan.orderId });
     return stageAction(state, { kind: "cancel_pending_order", plan });
   },
-  summary: (_args, result) => `staged: ${result.read_back}`,
 });
