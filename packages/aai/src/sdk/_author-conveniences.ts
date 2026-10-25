@@ -30,6 +30,7 @@
  */
 
 import { assertModeFields, resolveAgentMode } from "./_agent-modes.ts";
+import { syncedProjections } from "./_sync-registry.ts";
 import { assertTurnSilenceWindow, ENDPOINTING_KEYS } from "./config-rules.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
@@ -48,7 +49,13 @@ export function normalizeAgentParams(input: unknown): unknown {
   assertModeFields(mode, rest);
   rest.mode = mode;
   if (typeof rest.llm === "string") rest.llm = normalizeLlm(rest.llm);
-  if (rest.syncState !== undefined) rest.syncState = normalizeSyncState(rest.syncState);
+  // An explicit `syncState` wins; absent, the slots declared `sync: true`
+  // are the agent's projections (see `SessionSlotOptions.sync`). Resolved
+  // here rather than in `agent()` alone so a raw `export default {...}` config
+  // in the same bundle syncs the same slots — and idempotent, because the
+  // record this produces is accepted unchanged by the next pass.
+  const syncState = rest.syncState ?? defaultSyncState();
+  if (syncState !== undefined) rest.syncState = normalizeSyncState(syncState);
   normalizeListing(rest);
   normalizeEndpointing(rest);
   // AFTER the desugaring, and over `rest.stt` rather than over the two
@@ -112,6 +119,12 @@ function takeNumber(group: Record<string, unknown>, key: string): number | undef
   }
   delete group[key];
   return value;
+}
+
+/** The registered `sync: true` projections as a `syncState` list, or nothing. */
+function defaultSyncState(): readonly unknown[] | undefined {
+  const synced = syncedProjections();
+  return synced.length === 0 ? undefined : synced;
 }
 
 /**

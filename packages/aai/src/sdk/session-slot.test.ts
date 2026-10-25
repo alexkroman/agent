@@ -2,7 +2,9 @@
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod";
 import { agentToolsToSchemas } from "./_internal-types.ts";
+import type { ToolInputSchema } from "./schema.ts";
 import { sessionSlot } from "./session-slot.ts";
+import type { SlotUpdateToolDef } from "./session-slot-types.ts";
 import { createToolContext } from "./testing.ts";
 import { toolset } from "./toolset.ts";
 
@@ -246,7 +248,9 @@ describe("sessionSlot", () => {
         });
       }).toThrow(/async-update.update must be synchronous/);
       expect(slot.get(ctx)).toBe(before);
-      expect(after).not.toHaveBeenCalled();
+      // Once, for the default the first `get` installed — not for the refused
+      // mutation, which ran no hook and stored nothing.
+      expect(after).toHaveBeenCalledOnce();
       resumed.resolve();
       await vi.waitFor(() => expect(continued).toHaveBeenCalledOnce());
       expect(slot.get(ctx).n).toBe(0);
@@ -254,7 +258,7 @@ describe("sessionSlot", () => {
         draft.n = 3;
       });
       expect(slot.get(ctx).n).toBe(3);
-      expect(after).toHaveBeenCalledOnce();
+      expect(after).toHaveBeenCalledTimes(2);
     });
 
     test("refuses a synchronous mutation returning a thenable without installing a default", () => {
@@ -595,19 +599,22 @@ describe("sessionSlot", () => {
       // but at DECLARATION rather than on the first call, which is a caller on
       // the line. The module holding this is loaded by `aai dev`, by the build,
       // and by the agent's own spec.
-      expect(() =>
-        // @ts-expect-error - `RejectThenable` refuses this at COMPILE time now,
-        // which is the point; the runtime guard stays because a generic wrapper
-        // (retail-orders-agent's `retailTool`) and any JS caller still reach this path, and
-        // this test is what keeps that guard covered.
-        cartSlot.updateTool({
-          description: "Awaits",
-          execute: async (_args, cart) => {
-            await Promise.resolve();
-            cart.items.push("x");
-          },
-        }),
-      ).toThrow(/must be synchronous, and this one is `async`/);
+      // `RejectThenable` refuses this at COMPILE time now, which is the point;
+      // the runtime guard stays because a generic wrapper (retail-orders-agent's
+      // `retailTool`) and any JS caller still reach this path, and this test is
+      // what keeps that guard covered. The assertion is how such a wrapper's
+      // def reaches the call: typed as a sync body answering `unknown`, which
+      // admits a promise.
+      const awaits: SlotUpdateToolDef<ToolInputSchema, Cart, unknown> = {
+        description: "Awaits",
+        execute: async (_args, cart) => {
+          await Promise.resolve();
+          cart.items.push("x");
+        },
+      };
+      expect(() => cartSlot.updateTool(awaits)).toThrow(
+        /must be synchronous, and this one is `async`/,
+      );
     });
 
     test("refuses a sync body that RETURNS a promise, on the call", () => {
@@ -700,5 +707,82 @@ describe("one key, one slot", () => {
     const b = sessionSlot("same-name", () => ({ s: "" }));
     expect(a.get(createToolContext())).toEqual({ n: 0 });
     expect(b.get(createToolContext())).toEqual({ s: "" });
+  });
+});
+
+describe("the after hook runs on EVERY store", () => {
+  /** A slot whose hook derives a field the default cannot carry on its own. */
+  const counted = sessionSlot(
+    "counted-log",
+    (): { lines: string[]; n: number } => ({ lines: [], n: -1 }),
+    {
+      after: (log) => {
+        log.n = log.lines.length;
+      },
+    },
+  );
+
+  test("on the default the first get installs, so it cannot disagree with the first update", () => {
+    const ctx = createToolContext();
+    expect(counted.get(ctx).n).toBe(0);
+    counted.update(ctx, (log) => log.lines.push("a"));
+    expect(counted.get(ctx).n).toBe(1);
+  });
+
+  test("on set, over the copy", () => {
+    const ctx = createToolContext();
+    const loaded = { lines: ["a", "b"], n: -1 };
+    expect(counted.set(ctx, loaded).n).toBe(2);
+    expect(loaded.n).toBe(-1);
+  });
+
+  test("on reset", () => {
+    const ctx = createToolContext();
+    counted.update(ctx, (log) => log.lines.push("a"));
+    expect(counted.reset(ctx).n).toBe(0);
+  });
+
+  test("caps still apply after it, on the default and on set", () => {
+    const capped = sessionSlot(
+      "capped-log",
+      (): { lines: string[]; n: number } => ({ lines: ["a", "b", "c"], n: 0 }),
+      {
+        caps: { lines: 2 },
+        after: (log) => {
+          log.n = log.lines.length;
+        },
+      },
+    );
+    const ctx = createToolContext();
+    // The hook saw three; the cap kept two — the documented price, on every path.
+    expect(capped.get(ctx)).toEqual({ lines: ["b", "c"], n: 3 });
+    expect(capped.set(ctx, { lines: ["x", "y", "z"], n: 0 })).toEqual({ lines: ["y", "z"], n: 3 });
+  });
+});
+
+describe("a plain value as the default", () => {
+  const DEFAULT: Cart = { items: [], nextId: 1 };
+  const plain = sessionSlot("plain-cart", DEFAULT);
+
+  test("is cloned per install, so two sessions never share it and the module's copy is untouched", () => {
+    const a = createToolContext();
+    const b = createToolContext();
+    plain.update(a, (cart) => cart.items.push("apple"));
+    expect(plain.get(b).items).toEqual([]);
+    expect(DEFAULT.items).toEqual([]);
+    expect(Object.isFrozen(DEFAULT)).toBe(false);
+  });
+
+  test("`create` on the handle is the cloning factory", () => {
+    expect(plain.create()).toEqual(DEFAULT);
+    expect(plain.create()).not.toBe(DEFAULT);
+    expect(plain.create()).not.toBe(plain.create());
+  });
+
+  test("the factory form is read as a factory, as before", () => {
+    const factory = vi.fn(emptyCart);
+    const made = sessionSlot("made-cart", factory);
+    expect(made.get(createToolContext())).toEqual({ items: [], nextId: 1 });
+    expect(factory).toHaveBeenCalledOnce();
   });
 });

@@ -75,8 +75,12 @@ export type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure |
  * @typeParam P - The tool's input schema: any
  *   [Standard Schema](https://standardschema.dev) that can convert to JSON
  *   Schema — a Zod object schema (the documented default) or e.g. an
- *   ArkType type. Defaults to a permissive record schema so tools without
- *   inputs don't need an explicit type argument.
+ *   ArkType type. `undefined` is admitted so a wrapper can forward an optional
+ *   schema field verbatim, and `args` is then `Record<string, never>` (see
+ *   {@link InferSchemaOutput}). The default is the WIDEST reading — any
+ *   schema or none — so a bare `ToolDef` is what every registry holds and
+ *   every `ToolDef<P>` is assignable to it; a tool without inputs needs no
+ *   explicit type argument either way.
  *
  * @typeParam R - What `execute` returns, inferred at the {@link tool} call and
  *   read by {@link InferToolOutput}. Defaults to `unknown`, so `ToolDef<typeof
@@ -102,15 +106,23 @@ export type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure |
  * @input
  * @public
  */
-export type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+export type ToolDef<
+  P extends ToolInputSchema | undefined = ToolInputSchema | undefined,
+  R = unknown,
+> = {
   /** Human-readable description shown to the LLM. */
   description: string;
   /**
    * Schema for the tool's input, shown to the LLM and used to validate each
    * call's arguments before `execute` runs. Named after the Vercel AI SDK's
    * `tool({ inputSchema })`.
+   *
+   * `| undefined` is spelled out so a wrapper can forward its own optional
+   * schema field (`inputSchema: spec.inputSchema`) under
+   * `exactOptionalPropertyTypes`; an explicit `undefined` means the same as an
+   * absent key.
    */
-  inputSchema?: P;
+  inputSchema?: P | undefined;
   /**
    * Function that executes the tool and returns a result, JSON-serialized for
    * the LLM and the client.
@@ -264,7 +276,7 @@ export type ToolMap = Readonly<Record<string, ToolDef>>;
  *
  * @public
  */
-export type InferToolInput<T extends ToolDef<ToolInputSchema>> = Parameters<T["execute"]>[0];
+export type InferToolInput<T extends ToolDef> = Parameters<T["execute"]>[0];
 
 /**
  * The result type a tool's `execute` returns (awaited, so a sync and an `async`
@@ -273,7 +285,7 @@ export type InferToolInput<T extends ToolDef<ToolInputSchema>> = Parameters<T["e
  *
  * @public
  */
-export type InferToolOutput<T extends ToolDef<ToolInputSchema>> = Awaited<ReturnType<T["execute"]>>;
+export type InferToolOutput<T extends ToolDef> = Awaited<ReturnType<T["execute"]>>;
 
 /**
  * How the LLM should select tools. Mirrors the Vercel AI SDK's `toolChoice`.

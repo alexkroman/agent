@@ -129,3 +129,39 @@ describe("agent({ syncState }) takes projections and keys them by slot name", ()
     expect(untyped(def.syncState).syncState).toEqual(def.syncState);
   });
 });
+
+describe("the pre-push frame", () => {
+  test("runs the slot's after hook, so it matches the stored shape", () => {
+    const derived = sessionSlot(
+      "derived",
+      (): { items: string[]; count: number } => ({ items: [], count: -1 }),
+      {
+        after: (value) => {
+          value.count = value.items.length;
+        },
+      },
+    );
+    expect(derived.projected()).toEqual({ items: [], count: 0 });
+  });
+
+  test("projects `empty()` instead of the seeded default, hooked and capped alike", () => {
+    const seeded = sessionSlot(
+      "seeded",
+      (): { catalogue: string[]; count: number } => ({ catalogue: ["a", "b", "c"], count: -1 }),
+      {
+        empty: () => ({ catalogue: [], count: -1 }),
+        caps: { catalogue: 2 },
+        after: (value) => {
+          value.count = value.catalogue.length;
+        },
+      },
+    );
+    expect(seeded.projected()).toEqual({ catalogue: [], count: 0 });
+    // The seed is still what a session installs, and a stored value projects as is.
+    expect(seeded.get(createToolContext())).toEqual({ catalogue: ["b", "c"], count: 3 });
+    expect(seeded.projected({ catalogue: ["z"], count: 1 })).toEqual({
+      catalogue: ["z"],
+      count: 1,
+    });
+  });
+});

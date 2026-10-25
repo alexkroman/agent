@@ -18,10 +18,43 @@
  */
 
 import type { DeepReadonly } from "./deep-readonly.ts";
+import type { DialogSendOptions, DialogToolResult } from "./dialog-types.ts";
 import type { ToolInputSchema } from "./schema.ts";
-import type { RejectThenable, RejectThenableResult, SlotToolDef } from "./session-slot-types.ts";
+import type {
+  RejectThenable,
+  RejectThenableResult,
+  SlotDialogGate,
+  SlotPreparedToolDef,
+  SlotToolDef,
+  SlotTransaction,
+  SlotUpdateToolDef,
+} from "./session-slot-types.ts";
 import type { SlotHolder, StateProjection } from "./session-state.ts";
 import type { ToolDef } from "./types.ts";
+import type { ToolFailure } from "./utils.ts";
+
+/**
+ * The frozen value a slot hands a reader — `DeepReadonly<T>` for the slot's
+ * own `T`, read off the handle so a helper's signature names the slot rather
+ * than restating its type: `(cart: SlotValueOf<typeof cartSlot>) => …`.
+ *
+ * @public
+ */
+export type SlotValueOf<S extends SessionSlot<string, unknown, unknown>> =
+  S extends SessionSlot<string, infer T, unknown> ? DeepReadonly<T> : never;
+
+/**
+ * The mutable draft a slot hands a mutator — the slot's own `T`, read off the
+ * handle: `(cart: SlotDraftOf<typeof cartSlot>) => …` for a helper called
+ * inside `update`/`updateTool`.
+ *
+ * @public
+ */
+export type SlotDraftOf<S extends SessionSlot<string, unknown, unknown>> =
+  S extends SessionSlot<string, infer T, unknown> ? T : never;
+
+/** A gated tool's declared output: the success value in the envelope, or a failure. */
+type GatedOutput<R> = Promise<DialogToolResult<Exclude<Awaited<R>, ToolFailure>> | ToolFailure>;
 
 /**
  * A named slot of per-session state, created by {@link sessionSlot}.
@@ -38,7 +71,10 @@ import type { ToolDef } from "./types.ts";
 export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
   /** The store key this slot occupies. Two slots must not share one. */
   readonly key: K;
-  /** A fresh default value, as `get` would install one. */
+  /**
+   * A fresh default value, as `get` would install one — the factory the slot
+   * was declared with, or a `structuredClone` of the plain value it was.
+   */
   create(): T;
   /**
    * Whether this slot's value is stored durably. `true` unless the slot
@@ -143,6 +179,12 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    * exactly the tools an agent most often writes. Narrowing a return type is
    * covariant, so the tool stays assignable to `ToolDef<ToolInputSchema>`.
    *
+   * **Declaring `dialog` gates it** (see {@link SlotDialogGate}): the refusal
+   * runs before the read, `send`/`sendFrom` after a success, and the tool
+   * answers the {@link DialogToolResult} envelope exactly as {@link Dialog.tool}
+   * does — which is why that overload's output is wrapped and async. A
+   * `require` precondition runs before the body on either overload.
+   *
    * @example
    * ```ts
    * import { sessionSlot } from "@alexkroman1/aai";
@@ -157,7 +199,15 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    * });
    * ```
    */
-  tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
+  tool<
+    P extends ToolInputSchema | undefined = ToolInputSchema,
+    R = unknown,
+    E extends { type: string } = { type: string },
+  >(
+    def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E>,
+    options?: DialogSendOptions<Awaited<R>, E>,
+  ): ToolDef<P, GatedOutput<R>>;
+  tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(
     def: SlotToolDef<P, DeepReadonly<T>, R>,
   ): ToolDef<P, R>;
   /**
@@ -182,6 +232,18 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    * the build, in the agent's own spec. A sync function that RETURNS a promise
    * is the other half, and only the call can catch it.
    *
+   * **The four overloads are one pipeline with optional stages**, in order:
+   * the dialog refusal (`dialog`), `require` on the frozen value, the async
+   * `prepare` and a second `require`, the synchronous window (`execute`, then
+   * the slot's `after` and `caps`), `report` on the stored value, and the
+   * dialog's `send`/`sendFrom` with the envelope. A tool declaring `prepare`
+   * or `dialog` is therefore async and may answer a {@link ToolFailure}; one
+   * declaring neither keeps the synchronous `R` it always had. See
+   * {@link SlotPreparedToolDef}, {@link SlotUpdateToolDef.report} and
+   * {@link SlotDialogGate}. A `require` refusal is a `ToolFailure` the
+   * declared result type does not spell on the plain overload, like a thrown
+   * error's — the model-facing channel, not the client's.
+   *
    * @example
    * ```ts
    * import { sessionSlot } from "@alexkroman1/aai";
@@ -199,9 +261,69 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    * });
    * ```
    */
-  updateTool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
-    def: SlotToolDef<P, T, R> & RejectThenable<R>,
-  ): ToolDef<P, R>;
+  updateTool<
+    P extends ToolInputSchema | undefined = ToolInputSchema,
+    Prep = unknown,
+    R = unknown,
+    R2 = R,
+    E extends { type: string } = { type: string },
+  >(
+    def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E> & RejectThenable<R>,
+    options?: DialogSendOptions<R2, E>,
+  ): ToolDef<P, GatedOutput<R2>>;
+  updateTool<
+    P extends ToolInputSchema | undefined = ToolInputSchema,
+    Prep = unknown,
+    R = unknown,
+    R2 = R,
+  >(
+    def: SlotPreparedToolDef<P, T, Prep, R, R2> & RejectThenable<R>,
+  ): ToolDef<P, Promise<R2 | ToolFailure>>;
+  updateTool<
+    P extends ToolInputSchema | undefined = ToolInputSchema,
+    R = unknown,
+    R2 = R,
+    E extends { type: string } = { type: string },
+  >(
+    def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E> & RejectThenable<R>,
+    options?: DialogSendOptions<R2, E>,
+  ): ToolDef<P, GatedOutput<R2>>;
+  updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R>(
+    def: SlotUpdateToolDef<P, T, R, R2> & RejectThenable<R>,
+  ): ToolDef<P, R2 | Extract<R, ToolFailure>>;
+  /**
+   * An await ahead of a synchronous window, from inside a plain `tool()`: the
+   * non-tool form of {@link SlotPreparedToolDef}.
+   *
+   * `prepare` runs on the frozen value (and `require`, if declared, before it
+   * and again right before the window); a {@link ToolFailure} from either ends
+   * the transaction as its result, and nothing is stored. `commit` is the
+   * window — handed the draft and what `prepare` produced — and its return is
+   * the transaction's.
+   *
+   * @example
+   * ```ts
+   * import { sessionSlot, tool, toolFailure } from "@alexkroman1/aai";
+   * import { z } from "zod";
+   *
+   * const cartSlot = sessionSlot("cart", () => ({ items: [] as string[], quote: 0 }));
+   *
+   * export default tool({
+   *   description: "Price the cart",
+   *   inputSchema: z.object({}),
+   *   execute: (_args, ctx) =>
+   *     cartSlot.transact(ctx, {
+   *       require: (cart) => (cart.items.length === 0 ? toolFailure("The cart is empty.") : undefined),
+   *       prepare: async (cart) => Number((await ctx.generate({ prompt: `price ${cart.items}` })).text),
+   *       commit: (cart, quote) => {
+   *         cart.quote = quote;
+   *         return { quote };
+   *       },
+   *     }),
+   * });
+   * ```
+   */
+  transact<Prep, R>(ctx: SlotHolder, tx: SlotTransaction<T, Prep, R>): Promise<R | ToolFailure>;
   /**
    * This slot's view as a `syncState` projection — THE way to project a slot.
    * Built once, at declaration, so both ends pass the same object.
@@ -214,8 +336,9 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    * memoizes its empty frame on.
    *
    * Callable with nothing — `cartSlot.projected()` is the pre-first-tool-call
-   * frame. With no {@link SessionSlotOptions.view}, it projects the whole
-   * value; declare one to narrow it to what the page renders.
+   * frame: the default (or {@link SessionSlotOptions.empty}), with `after` and
+   * `caps` applied. With no {@link SessionSlotOptions.view}, it projects the
+   * whole value; declare one to narrow it to what the page renders.
    *
    * @example
    * ```ts

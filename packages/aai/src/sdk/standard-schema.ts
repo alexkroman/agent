@@ -83,8 +83,22 @@ export interface StandardSchemaIssue {
   readonly issues?: unknown;
 }
 
-/** The output (validated) type of a Standard Schema. */
-export type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+/**
+ * The output (validated) type of a Standard Schema — and, for `undefined`, the
+ * empty record `Record<string, never>`.
+ *
+ * `ToolDef<P>` admits `P = undefined` so a wrapper can forward an optional
+ * `inputSchema` field verbatim under `exactOptionalPropertyTypes`; a tool with
+ * no schema is called with no arguments, and the empty record says so — a body
+ * reading `args.anything` off it is a compile error rather than an `unknown` it
+ * has to narrow. Anything else that is not a schema stays `never`.
+ */
+export type InferSchemaOutput<S> =
+  S extends StandardSchemaV1<unknown, infer O>
+    ? O
+    : S extends undefined
+      ? Record<string, never>
+      : never;
 
 /**
  * How far {@link formatSchemaIssues} follows nested union branches.

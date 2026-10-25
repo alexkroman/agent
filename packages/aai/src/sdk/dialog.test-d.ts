@@ -27,6 +27,7 @@ import type { DialogEvent, DialogSpec, DialogToolResult } from "./dialog-types.t
 import type { ToolInputSchema } from "./schema.ts";
 import type { SessionEvent } from "./session-event-map.ts";
 import { sessionSlot } from "./session-slot.ts";
+import type { SlotHolder } from "./session-state.ts";
 import type { InferToolOutput, ToolDef } from "./types.ts";
 import type { ToolFailure } from "./utils.ts";
 
@@ -192,4 +193,108 @@ test("a dialog of any event union is assignable to `AnyDialog`", () => {
   expectTypeOf(other).toExtend<AnyDialog>();
   const dialogs: readonly AnyDialog[] = [claim, other];
   expectTypeOf(dialogs).toExtend<readonly AnyDialog[]>();
+});
+
+test("`when` is optional, and `reset` is a flag", () => {
+  const peek = claim.tool({ description: "Where are we", reset: true, execute: () => "fresh" });
+  expectTypeOf<InferToolOutput<typeof peek>>().toEqualTypeOf<
+    DialogToolResult<string> | ToolFailure
+  >();
+});
+
+test("the field-name `sendFrom` admits only a key holding an event name", () => {
+  const body = (): { next?: "QUOTED"; note: string; n: number } => ({ note: "", n: 1 });
+  claim.tool({ description: "By field", sendFrom: "next", execute: body });
+  type Key = Extract<
+    Parameters<typeof claim.tool<ToolInputSchema, ReturnType<typeof body>>>[0]["sendFrom"],
+    string
+  >;
+  expectTypeOf<Key>().toEqualTypeOf<"next">();
+  // Written ABOVE `execute`, where a callback would see `unknown`: the name needs no ordering.
+  claim.tool({ sendFrom: "next", description: "Above", execute: body });
+});
+
+test("the second-argument `sendFrom` sees the body's success type, whatever the def's order", () => {
+  claim.tool(
+    { description: "Quote", execute: quoteBody },
+    {
+      sendFrom: (result) => {
+        expectTypeOf(result).toEqualTypeOf<{ premium: number }>();
+      },
+    },
+  );
+});
+
+test("a slot tool carrying a dialog answers the envelope, with E read from the dialog", () => {
+  const gated = cart.tool({
+    description: "Count, gated",
+    dialog: claim,
+    when: "quoting",
+    send: { type: "QUOTED" },
+    execute: (_args, value) => ({ count: value.items.length }),
+  });
+  expectTypeOf<InferToolOutput<typeof gated>>().toEqualTypeOf<
+    DialogToolResult<{ count: number }> | ToolFailure
+  >();
+  expectTypeOf(gated).toExtend<ToolDef<ToolInputSchema>>();
+  // An event the dialog does not declare is not a `send`.
+  type Gate = Parameters<typeof cart.tool<ToolInputSchema, unknown, { type: "QUOTED" }>>[0];
+  expectTypeOf<{ type: "NOPE" }>().not.toExtend<NonNullable<Gate["send"]>>();
+});
+
+test("updateTool: `require`, `report` and `prepare` thread their types through", () => {
+  const reported = cart.updateTool({
+    description: "Add, reported",
+    inputSchema: z.object({ item: z.string() }),
+    require: (value, args) => {
+      expectTypeOf(value).toEqualTypeOf<{ readonly items: readonly string[] }>();
+      expectTypeOf(args).toEqualTypeOf<{ item: string }>();
+    },
+    execute: ({ item }, draft) => {
+      draft.items.push(item);
+      return { added: item };
+    },
+    report: (stored, partial) => ({ ...partial, count: stored.items.length }),
+  });
+  expectTypeOf<InferToolOutput<typeof reported>>().toEqualTypeOf<{
+    added: string;
+    count: number;
+  }>();
+
+  const prepared = cart.updateTool({
+    description: "Add, prepared",
+    prepare: async (_args, value) => value.items.length * 2,
+    execute: (_args, draft, quote, ctx) => {
+      expectTypeOf(draft).toEqualTypeOf<{ items: string[] }>();
+      expectTypeOf(quote).toEqualTypeOf<number>();
+      expectTypeOf(ctx.sessionId).toBeString();
+      return { quote };
+    },
+  });
+  expectTypeOf<InferToolOutput<typeof prepared>>().toEqualTypeOf<{ quote: number } | ToolFailure>();
+
+  const both = cart.updateTool({
+    description: "Add, prepared and gated",
+    dialog: claim,
+    prepare: () => 1,
+    execute: (_args, _draft, n) => ({ n }),
+    report: (_stored, partial): { n: number; next?: "QUOTED" } => ({ ...partial, next: "QUOTED" }),
+    sendFrom: "next",
+  });
+  expectTypeOf<InferToolOutput<typeof both>>().toEqualTypeOf<
+    DialogToolResult<{ n: number; next?: "QUOTED" }> | ToolFailure
+  >();
+});
+
+test("transact types `prepare` into `commit`", () => {
+  const ctx = {} as SlotHolder;
+  const run = cart.transact(ctx, {
+    prepare: async (value) => value.items.length,
+    commit: (draft, n) => {
+      expectTypeOf(draft).toEqualTypeOf<{ items: string[] }>();
+      expectTypeOf(n).toEqualTypeOf<number>();
+      return { n };
+    },
+  });
+  expectTypeOf(run).toEqualTypeOf<Promise<{ n: number } | ToolFailure>>();
 });

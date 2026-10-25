@@ -22,6 +22,7 @@
 import type { PipelineTuning } from "./agent-tuning.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { SessionEventType } from "./session-event-map.ts";
+import type { SlotHolder } from "./session-state.ts";
 import type { ToolChoice } from "./tool-def.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 import type { ToolFailure } from "./utils.ts";
@@ -69,12 +70,87 @@ export interface DialogToolResult<R> extends DialogPosition {
 }
 
 /**
+ * The keys of a success result `S` whose value names an event of `E` — the
+ * STRING form of {@link DialogGate.sendFrom}.
+ *
+ * A key qualifies when its value is assignable to `E["type"] | undefined`:
+ * `{ next?: "QUOTED" | "DECLINED" }` offers `"next"`, and a field typed plain
+ * `string` offers nothing, because a string the machine does not know is an
+ * event XState would silently ignore. Declare the field's type (an `as const`
+ * on the literal, or an annotated return) and the key appears.
+ *
+ * @typeParam S - The tool's SUCCESS result (the failure arm already removed).
+ * @typeParam E - The machine's event union.
+ *
+ * @public
+ */
+export type DialogSendFromKey<S, E> = keyof {
+  // `keyof` over a key-REMAPPED mapped type rather than an indexed access over
+  // a plain one, deliberately: with `E` only in a conditional's `extends`
+  // clause and the keys read back through `[keyof S]`, the compiler measured
+  // `E` INVARIANT, which made `Dialog<{ type: "X" }>` unassignable to
+  // `AnyDialog` (`Dialog<unknown>`) — `agent({ dialogs })` rejected every
+  // dialog. This spelling it compares structurally, where a wider `E` only
+  // ever admits more keys.
+  [K in keyof S as S[K] extends EventNameOf<E> | undefined ? K : never]: never;
+} &
+  string;
+
+/**
+ * The `type` names an event union `E` carries — `string` for an erased `E`
+ * (`AnyDialog`'s `unknown`), so every string-valued field qualifies there.
+ */
+type EventNameOf<E> = (E & { type: string })["type"];
+
+/**
+ * What {@link DialogGate.sendFrom} accepts: a function of the success result
+ * answering the event (or `undefined` to stay put), or the NAME of a result
+ * field holding that event's `type` — see {@link DialogSendFromKey}.
+ *
+ * `NoInfer` on `R` in both arms is what makes the parameter mean anything; the
+ * argument is on {@link DialogGate.sendFrom}. The failure arm is subtracted
+ * because the gate returns a {@link ToolFailure} before either form is reached.
+ *
+ * @typeParam R - What the tool's `execute` returns, failure arm included.
+ * @typeParam E - The machine's event union.
+ *
+ * @public
+ */
+export type DialogSendFrom<R, E> =
+  | ((result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined)
+  | DialogSendFromKey<Exclude<NoInfer<R>, ToolFailure>, E>;
+
+/**
+ * The second argument of {@link Dialog.tool} (and of a gated slot tool): the
+ * transition, declared AFTER the def rather than inside it.
+ *
+ * It exists for one reason — an inline-arrow `execute` is contextually typed
+ * only once the whole object literal is, so a `sendFrom` written ABOVE it in
+ * the same literal sees `result` as `unknown` (`TS18046`), and the fix was an
+ * ordering rule nobody can see from the declaration. A second argument is
+ * checked after the first has settled `R`, so the order inside the def no
+ * longer matters. Declaring `send`/`sendFrom` in both places is refused at
+ * declaration.
+ *
+ * @typeParam R - What the tool's `execute` returns.
+ * @typeParam E - The machine's event union.
+ *
+ * @input
+ * @public
+ */
+export interface DialogSendOptions<R, E> {
+  /** The transition the result decides — see {@link DialogGate.sendFrom}. */
+  sendFrom: DialogSendFrom<R, E>;
+}
+
+/**
  * What makes a tool part of a dialog: where it may run, and what it advances.
  *
  * The half of {@link DialogToolDef} that is the dialog's own — the rest is
- * {@link ToolDef}'s, unchanged. Declared on its own so the gate's three fields
- * have one home and `DialogToolDef` is BUILT from the two halves rather than
- * restating either.
+ * {@link ToolDef}'s, unchanged. Declared on its own so the gate's fields have
+ * one home and `DialogToolDef` is BUILT from the two halves rather than
+ * restating either; a slot-backed tool carries the same gate beside its
+ * `dialog` (see `SlotDialogGate`).
  *
  * @typeParam R - What the tool's `execute` returns, as `sendFrom` reads it.
  * @typeParam E - The machine's event union.
@@ -86,6 +162,11 @@ export interface DialogGate<R, E> {
   /**
    * The state(s) this tool may run in, as {@link DialogPosition.state} spells
    * them. Anywhere else the body does not run and the call is refused.
+   *
+   * **Omitted, the tool is legal in EVERY state and never refuses** — a tool
+   * that reads or resets the dialog, or one whose only job is the envelope and
+   * the `send`. It still answers the `{ ...position, result }` envelope and
+   * still honours `send`/`sendFrom`.
    *
    * Every name is checked against the machine's own states when the tool is
    * DECLARED, so a typo is a throw at startup rather than a tool that is
@@ -99,7 +180,17 @@ export interface DialogGate<R, E> {
    * Otherwise the event would fire whatever transition the new state declares
    * for it, moving the dialog out of a state this tool was never allowed in.
    */
-  when: string | readonly string[];
+  when?: string | readonly string[];
+  /**
+   * Start the dialog over BEFORE the body runs — for a setup tool (`start_order`,
+   * `new_claim`) that begins a fresh pass through the conversation.
+   *
+   * `when`, if declared, is checked against the position before the reset, and
+   * the post-body send sees the reset position; the two rarely belong on one
+   * tool. The initial state's `onEnter` does not fire on a reset, the same as
+   * on a fresh session.
+   */
+  reset?: true;
   /**
    * The event to send once `execute` has succeeded — how the conversation moves
    * on. Omit both this and `sendFrom` for a tool that reads without advancing.
@@ -136,8 +227,16 @@ export interface DialogGate<R, E> {
    * failure is never handed to it. Saying so in the type is what lets a body
    * declared `Order | ToolFailure` be narrowed here without the author
    * re-checking a case that cannot arrive.
+   *
+   * **The string form reads the event off the result** — `sendFrom: "next"`
+   * sends `{ type: result.next }`, or stays put when the field is `undefined`.
+   * Typed as a key whose value is `E["type"] | undefined`
+   * ({@link DialogSendFromKey}), it needs no callback and so no ordering: an
+   * inline `(result) => …` written ABOVE an inline-arrow `execute` still sees
+   * `unknown` (`TS18046`), and the field name does not. The other way around
+   * that rule is the second argument, {@link DialogSendOptions}.
    */
-  sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
+  sendFrom?: DialogSendFrom<R, E>;
 }
 
 /**
@@ -175,7 +274,7 @@ export interface DialogGate<R, E> {
  * @input
  * @public
  */
-export interface DialogToolDef<P extends ToolInputSchema, R, E>
+export interface DialogToolDef<P extends ToolInputSchema | undefined, R, E>
   extends Omit<ToolDef<P, R>, "execute">,
     DialogGate<R, E> {
   /**
@@ -375,6 +474,28 @@ export interface DialogStateSpec {
    * Checked against the roster by `agent()`.
    */
   persona?: string;
+  /**
+   * Run when the dialog ENTERS this state — by {@link Dialog.send} or
+   * {@link Dialog.receive}, synchronously, inside the same mutation window the
+   * position moves in, after the new position has been written to the draft.
+   *
+   * For the side effect a phase change owns: clearing a scratch slot on
+   * `checkout`, stamping a timestamp on `escalated`. It is handed the
+   * {@link SlotHolder} the move came through, so it can write OTHER slots; a
+   * `send`/`reset` of this dialog from inside it throws (the window is open),
+   * and a throw discards the move — nothing is stored, the caller sees the
+   * error.
+   *
+   * **Synchronous, like every slot mutation**: a thenable return is not
+   * awaited. **XState's entry semantics**: a nested state fires its parent's
+   * hook and then its own; a self-transition does not re-enter. **A restored
+   * snapshot does not re-fire it**, nor does a fresh session installing the
+   * initial state, nor {@link Dialog.reset} — only a move does.
+   *
+   * A function, so it is the one field of a state that does not ride in the
+   * machine's `meta`; the spec form only (a machine passes XState's own `entry`).
+   */
+  onEnter?: (ctx: SlotHolder) => void;
   /** Whether reaching this state ENDS the dialog — XState's `type: "final"`. */
   final?: true;
   /** For a state with `states`: which child it starts in. */
