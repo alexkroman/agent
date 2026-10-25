@@ -60,27 +60,29 @@ function pathProblem(path, seen) {
  * Split one fence body into the files it declares.
  *
  * Returns `null` for a single-file fence (no marker anywhere), otherwise one
- * `{ path, code }` per section in order. Throws on a shape the harness will
- * not guess at; the message names the fence so the gate can say which.
+ * `{ path, code, line }` per section in order, `line` being the 0-based fence
+ * line its code starts on (so a diagnostic in a section can point at the
+ * fence). Throws on a shape the harness will not guess at; the message names
+ * the fence so the gate can say which.
  *
  * @param {string} code the fence body, as extracted
  * @param {string} origin where it came from, for the error message
- * @returns {{ path: string, code: string }[] | null}
+ * @returns {{ path: string, code: string, line: number }[] | null}
  */
 export function splitExampleFiles(code, origin = "<fence>") {
   const lines = code.split("\n");
   if (!lines.some((line) => FILE_MARKER.test(line))) return null;
-  /** @type {{ path: string, code: string[] }[]} */
+  /** @type {{ path: string, code: string[], line: number }[]} */
   const files = [];
   const seen = new Set();
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     const path = line.match(FILE_MARKER)?.[1];
     if (path !== undefined) {
       const problem = pathProblem(path, seen);
       if (problem)
         throw new Error(`check-doc-examples: ${origin} \`// file: ${path}\` ${problem}.`);
       seen.add(path);
-      files.push({ path, code: [] });
+      files.push({ path, code: [], line: index + 1 });
     } else if (files.length > 0) {
       files.at(-1)?.code.push(line);
     } else if (line.trim() !== "") {
@@ -90,5 +92,5 @@ export function splitExampleFiles(code, origin = "<fence>") {
       );
     }
   }
-  return files.map((file) => ({ path: file.path, code: file.code.join("\n") }));
+  return files.map((file) => ({ path: file.path, code: file.code.join("\n"), line: file.line }));
 }

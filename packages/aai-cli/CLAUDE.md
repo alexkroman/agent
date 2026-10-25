@@ -337,8 +337,10 @@ the summary.
   the STT/TTS kinds off its `__aaiConfig`, and the full build stubs the other
   vendors' openers (`_vendor-openers.ts`; the stub throws only when a session
   opens that stage). LLM vendors stay: a tool's `ctx.generate({ llm })` can name
-  any of them at run time. `_vendor-openers.test.ts` holds the table to the
-  built runtime's chunk names.
+  any of them at run time. The runtime's `tsdown.config.ts` gives each lazily
+  loaded opener a stable chunk path (`dist/providers/<stage>/<module>.js`) so
+  the match is an exact specifier; `_vendor-openers.test.ts` holds the table to
+  the built runtime.
 - **`buildClient` with no `client.tsx` returns `{}`** → default UI.
 - **`buildClient` dedupes React** (`resolve.dedupe`): `aai-ui` declares React as
   a peer, and a pruned install can leave it unresolvable from `aai-ui/dist/**`.

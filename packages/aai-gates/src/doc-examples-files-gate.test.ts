@@ -46,7 +46,12 @@ const splitExampleFiles: Split =
     throw new Error(`${FILES_MODULE} did not resolve`);
   });
 
-/** The checked ts/tsx fence bodies of one markdown document. */
+/**
+ * The checked ts/tsx fence bodies of one markdown document — the same twenty
+ * lines `doc-examples-ambient-gate.test.ts` carries, on purpose: each spec
+ * parses with its own parser (`_doc-example-corpus.ts` says why), so a parser
+ * gone blind blinds one guard, not both.
+ */
 function checkedFences(source: string): string[] {
   const bodies: string[] = [];
   let open: string[] | null = null;

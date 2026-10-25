@@ -33,14 +33,20 @@
  * runtime handed a provider the config did not declare (a self-hoster passing
  * `stt`/`tts` to `createRuntime`); the message says what was left out and why.
  *
- * A vendor is matched by the runtime's own module for it, in both shapes the
- * bundler meets: the published `dist/<module>-<hash>.js` chunk tsdown splits
- * each lazy import into, and `src/providers/<stage>/<module>.ts` under
- * `AAI_DEV_SOURCE=1`. `_vendor-openers.test.ts` holds the table to the built
- * runtime, so a renamed chunk or opener fails there rather than silently
- * leaving a vendor in.
+ * A vendor is matched by the runtime's own module for it, at the two exact
+ * specifiers the registry imports it by: `./providers/<stage>/<module>.js` in
+ * the published `dist` — a STABLE path, which `aai-runtime/tsdown.config.ts`
+ * gives every lazily loaded opener chunk for this purpose — and
+ * `./<stage>/<module>.ts` under `AAI_DEV_SOURCE=1`. Only an import from inside
+ * the runtime package counts, so a project's own file of the same name is
+ * never touched. `_vendor-openers.test.ts` holds the table to the built
+ * runtime, so a moved opener fails there rather than silently leaving a
+ * vendor in.
  */
 
+import { realpathSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
 import {
   CARTESIA_KIND,
   DEEPGRAM_KIND,
@@ -55,7 +61,7 @@ export type VendorOpener = {
   /** The registry kind — the `kind` of the descriptor that opens it. */
   readonly kind: string;
   readonly stage: "stt" | "tts";
-  /** The runtime module's basename: `dist/<module>-<hash>.js`, `src/providers/<stage>/<module>.ts`. */
+  /** The runtime module's basename under `providers/<stage>/`. */
   readonly module: string;
   /** The one function the module exports — what the stub re-exports as a thrower. */
   readonly opener: string;
@@ -94,37 +100,57 @@ export const VENDOR_OPENERS: readonly VendorOpener[] = [
 ];
 
 /**
- * The STT and TTS kinds a built config declares, each `fallback` member
- * counted. Empty for a config with neither stage (text mode, S2S, a workflow
- * app) and for anything that is not a config at all — which makes
- * {@link vendorsToOmit} omit EVERY vendor for the first and NOTHING for the
- * second, the right answer in both directions.
+ * The two specifiers the registry imports an opener by, relative to the
+ * module that imports it: the published chunk (`dist/agent-*.js` →
+ * `./providers/<stage>/<module>.js`) and the source
+ * (`src/providers/registry.ts` → `./<stage>/<module>.ts`).
  */
-export function declaredStageKinds(config: unknown): Set<string> | undefined {
-  if (!isRecord(config)) return undefined;
-  const kinds = new Set<string>();
-  for (const stage of ["stt", "tts"] as const) {
-    for (const member of stageMembers(config[stage])) {
-      if (isRecord(member) && typeof member.kind === "string") kinds.add(member.kind);
-    }
-  }
-  return kinds;
+export function openerSpecifiers(entry: VendorOpener): { dist: string; src: string } {
+  return {
+    dist: `./providers/${entry.stage}/${entry.module}.js`,
+    src: `./${entry.stage}/${entry.module}.ts`,
+  };
 }
 
-/** The vendor kinds a worker built for `config` can leave out. */
+/**
+ * The vendor kinds a worker built for `config` can leave out: every table
+ * entry whose kind no `stt`/`tts` descriptor (or `fallback` member) names.
+ * A config with neither stage (text mode, S2S, a workflow app) reaches no
+ * vendor, so every one goes; anything that is not a config at all — an older
+ * bundle with no `__aaiConfig` — keeps every one in.
+ */
 export function vendorsToOmit(config: unknown): string[] {
-  const declared = declaredStageKinds(config);
-  if (declared === undefined) return [];
+  if (!isRecord(config)) return [];
+  const declared = new Set<string>();
+  for (const stage of ["stt", "tts"] as const) {
+    for (const member of stageMembers(config[stage])) {
+      if (isRecord(member) && typeof member.kind === "string") declared.add(member.kind);
+    }
+  }
   return VENDOR_OPENERS.filter((entry) => !declared.has(entry.kind)).map((entry) => entry.kind);
 }
 
 const STUB_PREFIX = "\0aai-omitted-vendor:";
 
-/** Is `importer` a module of the runtime — the only place a vendor opener is imported from? */
-const fromRuntime = (importer: string): boolean => /[\\/]aai-runtime[\\/]/.test(importer);
+/**
+ * The runtime package's real directory as the project at `cwd` resolves it,
+ * with a trailing separator so a prefix test cannot match `aai-runtime-x/`.
+ * `undefined` when the project has no runtime, in which case nothing is
+ * imported from it and nothing is stubbed.
+ */
+function runtimeDir(cwd: string): string | undefined {
+  try {
+    const manifest = createRequire(path.join(cwd, "package.json")).resolve(
+      "@alexkroman1/aai-runtime/package.json",
+    );
+    return `${realpathSync(path.dirname(manifest))}${path.sep}`;
+  } catch {
+    return undefined;
+  }
+}
 
 /** The one message a stub throws, for the vendor it stands in for. */
-export function omittedVendorMessage(entry: VendorOpener): string {
+function omittedVendorMessage(entry: VendorOpener): string {
   return (
     `${entry.label} was left out of this bundle: the agent declared no "${entry.kind}" ` +
     `${entry.stage} stage when it was built, and ${entry.packages.join(", ")} is bundled ` +
@@ -136,32 +162,34 @@ export function omittedVendorMessage(entry: VendorOpener): string {
 /**
  * A Vite plugin that replaces each of `kinds`' runtime opener with a stub.
  *
- * `resolveId` answers only an import FROM the runtime, in either of the two
- * shapes the module doc describes; everything else falls through to Vite.
+ * `resolveId` answers only an import FROM the runtime package at one of the
+ * two specifiers {@link openerSpecifiers} names; everything else falls
+ * through to Vite.
  */
-export function omitVendorOpeners(kinds: readonly string[]): Plugin {
-  const entries = VENDOR_OPENERS.filter((entry) => kinds.includes(entry.kind));
-  const matchers = entries.map((entry) => ({
+export function omitVendorOpeners(cwd: string, kinds: readonly string[]): Plugin {
+  const runtime = runtimeDir(cwd);
+  const matchers = VENDOR_OPENERS.filter((entry) => kinds.includes(entry.kind)).map((entry) => ({
     entry,
-    dist: new RegExp(`^\\./${entry.module}-[\\w-]+\\.js$`),
-    src: `./${entry.stage}/${entry.module}.ts`,
+    ...openerSpecifiers(entry),
   }));
   return {
     name: "aai:omit-vendor-openers",
     // Before `vite:resolve`, which answers a relative specifier itself and
-    // would never let a plugin behind it see the runtime's `./<module>-<hash>.js`.
+    // would never let a plugin behind it see the runtime's import.
     enforce: "pre",
     resolveId(source, importer) {
-      if (importer === undefined || !fromRuntime(importer)) return null;
-      const hit = matchers.find((m) => m.dist.test(source) || source === m.src);
+      if (runtime === undefined || importer === undefined || !importer.startsWith(runtime)) {
+        return null;
+      }
+      const hit = matchers.find((m) => source === m.dist || source === m.src);
       return hit ? `${STUB_PREFIX}${hit.entry.kind}` : null;
     },
     load(id) {
       if (!id.startsWith(STUB_PREFIX)) return null;
-      const entry = entries.find((candidate) => candidate.kind === id.slice(STUB_PREFIX.length));
-      if (entry === undefined) return null;
-      const message = JSON.stringify(omittedVendorMessage(entry));
-      return `export function ${entry.opener}() {\n  throw new Error(${message});\n}\n`;
+      const hit = matchers.find((m) => m.entry.kind === id.slice(STUB_PREFIX.length));
+      if (hit === undefined) return null;
+      const message = JSON.stringify(omittedVendorMessage(hit.entry));
+      return `export function ${hit.entry.opener}() {\n  throw new Error(${message});\n}\n`;
     },
   };
 }

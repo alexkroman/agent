@@ -272,7 +272,7 @@ export async function buildWorker(cwd: string, options: BuildWorkerOptions = {})
   // untouched rather than overwritten with an empty list.
   const plugins = [
     ...(options.plugins ?? []),
-    ...(options.omitVendors?.length ? [omitVendorOpeners(options.omitVendors)] : []),
+    ...(options.omitVendors?.length ? [omitVendorOpeners(cwd, options.omitVendors)] : []),
   ];
 
   let result: Awaited<ReturnType<typeof build>>;

@@ -419,16 +419,18 @@ const manifest = new Map();
 let directivesStripped = 0;
 /** Fences that declared several files (`// file:` sections) — reported, not floored. */
 let multiFileFences = 0;
-/** Write one scratch file: ambients stripped, made a module of its own. */
-const writeExample = (name, ex, source) => {
-  manifest.set(name, ex);
+/**
+ * Write one scratch file: ambients stripped, made a module of its own.
+ * `line` is where its first line sits in the document, so a diagnostic's
+ * own (line,col) — relative to the scratch file — reads against the fence.
+ */
+const writeExample = (name, ex, source, line) => {
+  manifest.set(name, { origin: ex.origin, line });
   const { code, stripped } = stripReferenceDirectives(source);
   directivesStripped += stripped;
-  const target = path.join(scratch, name);
-  mkdirSync(path.dirname(target), { recursive: true });
   // `export {}` makes each example its own module, so identically-named
   // consts across examples don't collide in one global scope.
-  writeFileSync(target, `${code}\nexport {};\n`);
+  writeFileSync(path.join(scratch, name), `${code}\nexport {};\n`);
 };
 examples.forEach((ex, i) => {
   const files = splitExampleFiles(ex.code, `${ex.origin}:${ex.line}`);
@@ -436,12 +438,16 @@ examples.forEach((ex, i) => {
     // Each section at the path it names, under the fence's own directory, so
     // `../shared.ts` from `tools/x.ts` resolves the way a project's would.
     multiFileFences += 1;
-    for (const file of files) writeExample(`example-${i}/${file.path}`, ex, file.code);
+    for (const file of files) {
+      const name = `example-${i}/${file.path}`;
+      mkdirSync(path.dirname(path.join(scratch, name)), { recursive: true });
+      writeExample(name, ex, file.code, ex.line + file.line);
+    }
     return;
   }
   // JSX in a .ts file is a parse error, so anything with JSX gets .tsx.
   const ext = ex.lang === "tsx" || /<[A-Z][^>]*>/.test(ex.code) ? "tsx" : "ts";
-  writeExample(`example-${i}.${ext}`, ex, ex.code);
+  writeExample(`example-${i}.${ext}`, ex, ex.code, ex.line);
 });
 
 console.log(
