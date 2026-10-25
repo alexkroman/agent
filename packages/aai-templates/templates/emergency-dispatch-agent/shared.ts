@@ -1,7 +1,8 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-import type { DeepReadonly, ToolFailure } from "@alexkroman1/aai";
-import { dialog, pushCapped, sessionSlot } from "@alexkroman1/aai";
+import type { DeepReadonly } from "@alexkroman1/aai";
+import { dialog, pushCapped, type SlotValueOf, sessionSlot } from "@alexkroman1/aai";
+import { type ToolFailure, toolFailure } from "@alexkroman1/aai/utils";
 
 export const SEVERITIES = ["critical", "urgent", "moderate", "minor"] as const;
 export type Severity = (typeof SEVERITIES)[number];
@@ -109,10 +110,8 @@ export interface DashboardView {
   incidents: IncidentSummary[];
 }
 
-/** The `syncState` projection — the whole contract with client.tsx. Takes the
- *  board itself, not the slot: `dispatchSlot.projection` supplies a real one
- *  even before the first tool call. */
-export function dashboardView(state: FrozenDispatchState): DashboardView {
+/** The synced projection — the whole contract with client.tsx. */
+export function dashboardView(state: DeepReadonly<DispatchState>): DashboardView {
   return {
     systemAlertLevel: state.alertLevel,
     incidents: Object.values(state.incidents).map(incidentSummary),
@@ -183,35 +182,21 @@ function pruneState(state: DispatchState): void {
 }
 
 /**
- * The session's dispatch board, as one typed slot.
- *
- * Every tool here is declared through the slot rather than reaching for it from
- * inside a `tool()` body, and WHICH HALF is the whole decision: `updateTool`
- * runs the body inside the mutation window and hands it a draft that is stored
- * when the body returns, `tool` hands it the deep-frozen stored value. That
- * makes "does this tool write?" a property of the declaration a reader can see,
- * and choosing wrong a compile error rather than a `TypeError` on the first
- * call.
- *
- * The window is SYNCHRONOUS, which is what makes a read-modify-write atomic
- * with no lock — the LLM loop runs a step's tool calls concurrently. It does
- * NOT serialize anything (an earlier version of this comment claimed it did):
- * there is nothing to serialize, because no other JS turn can interleave with
- * a synchronous body. `updateTool` is what enforces the rule, refusing a
- * thenable body by name.
- *
- * `after` is the bookkeeping every mutating tool needs and none of them should
- * have to remember — pruning resolved incidents, and recalculating the alert
- * level the dashboard reads. Declaring it here rather than at each call site is
- * the point: a new mutating tool gets both for free.
+ * The session's dispatch board, as one typed slot. `after` is the bookkeeping
+ * every mutating tool needs and none should have to remember: pruning resolved
+ * incidents and recalculating the alert level the dashboard reads.
  */
 export const dispatchSlot = sessionSlot("dispatch", createDefaultState, {
   view: dashboardView,
+  sync: true,
   after: (state) => {
     pruneState(state);
     recalculateAlertLevel(state);
   },
 });
+
+/** The board as a read hands it out — what the pure helpers below take. */
+export type FrozenDispatchState = SlotValueOf<typeof dispatchSlot>;
 
 // ─── The call in hand ────────────────────────────────────────────────────────
 
@@ -232,12 +217,11 @@ export const dispatchSlot = sessionSlot("dispatch", createDefaultState, {
  * which is advice to a model rather than a property of the agent. Two things
  * change by declaring it.
  *
- * **The gate is real.** Six mutating tools take an incident id and did their own
- * "does this exist" check through {@link findIncident}, whose answer on an empty
- * board is `Incident INC-0001 not found` — a data answer to a positional
- * question, and the wrong sentence for a dispatcher who has logged nothing yet.
- * `when: "working"` is that check now, and the SDK's refusal names where the
- * shift actually is and quotes the state's instruction.
+ * **The gate is real.** Six mutating tools take an incident id, and on an empty
+ * board "does this exist" answers `Incident INC-0001 not found` — a data answer
+ * to a positional question, and the wrong sentence for a dispatcher who has
+ * logged nothing yet. `when: "working"` is that check now, and the SDK's
+ * refusal names where the shift actually is and quotes the state's instruction.
  *
  * **The instruction rides every result.** A flow tool answers with the position
  * it landed in, so `incident_create`'s result now ends with "confirm the
@@ -318,23 +302,16 @@ export const callSpec = {
  */
 export const callFlow = dialog("call", callSpec);
 
-/**
- * The board as a READ hands it out: deep-frozen, and typed to say so.
- *
- * The pure helpers below take this rather than {@link DispatchState}, which is
- * the widening a deep-readonly slot forces and the reason it is worth doing: a
- * mutable board still satisfies it, so a helper called with an `updateTool`
- * draft is unaffected, while a helper that WOULD have mutated stops compiling
- * instead of throwing at its first call in production.
- */
-export type FrozenDispatchState = DeepReadonly<DispatchState>;
-
 // ─── Incident helpers ────────────────────────────────────────────────────────
 
-export function createIncident(state: DispatchState, overrides: Partial<Incident>): Incident {
+export function createIncident(
+  state: DispatchState,
+  overrides: Partial<Incident>,
+  now: number,
+): Incident {
   state.incidentCounter++;
   const id = `INC-${String(state.incidentCounter).padStart(4, "0")}`;
-  const time = Date.now();
+  const time = now;
   const incident: Incident = {
     id,
     type: "other",
@@ -359,20 +336,24 @@ export function createIncident(state: DispatchState, overrides: Partial<Incident
 }
 
 /**
- * One incident by id, or the failure the model should read.
- *
- * Generic over the incident's own type rather than pinned to {@link Incident},
- * so ONE lookup serves both halves of the slot: a mutating tool passes its
- * draft and gets a mutable incident back to change, while `incident_get` passes
- * what `dispatchSlot.tool` handed it — deep-frozen — and gets a readonly one.
- * Pinning it would have made the read path the odd one out, and its way out
- * would have been a cast.
+ * The `require` of every tool addressed to an incident: it exists, and — when
+ * `action` names what the tool is about to do — it is not resolved. `resolved`
+ * is terminal: its resources have been released (and possibly reassigned), so
+ * escalating, re-resolving or dispatching to it would corrupt the assignments.
  */
-export function findIncident<I extends DeepReadonly<Incident>>(
-  state: { readonly incidents: { readonly [id: string]: I } },
+export function requireIncident(
+  state: FrozenDispatchState,
   incidentId: string,
-): I | ToolFailure {
-  return state.incidents[incidentId] ?? { error: `Incident ${incidentId} not found` };
+  action?: string,
+): ToolFailure | undefined {
+  const inc = state.incidents[incidentId];
+  if (inc === undefined) return toolFailure(`Incident ${incidentId} not found`);
+  if (action !== undefined && inc.status === "resolved") {
+    return toolFailure(
+      `Incident ${inc.id} is resolved — cannot ${action}. Create a new incident if the situation has reopened.`,
+    );
+  }
+  return undefined;
 }
 
 /**
@@ -390,13 +371,10 @@ export function findIncident<I extends DeepReadonly<Incident>>(
  * "current" pointer is a second copy of a fact `updatedAt` already carries, and
  * the two disagree the first time a tool forgets to update it.
  *
- * Generic for the same reason {@link findIncident} is — one lookup serves a
- * mutable draft and a frozen read alike.
- *
- * `updatedAt` is `Date.now()`, so two incidents touched inside one millisecond
- * tie; `>=` breaks that toward the one enumerated LAST, which for an insertion-
- * ordered record is the most recently logged. Real calls are seconds apart and
- * the tie only shows up in a test that logs two incidents in a row.
+ * Generic so one lookup serves a mutable draft and a frozen read alike. Two
+ * incidents touched in the same millisecond tie; `>=` breaks that toward the
+ * one enumerated LAST, which for an insertion-ordered record is the most
+ * recently logged.
  */
 export function callInHand<I extends DeepReadonly<Incident>>(state: {
   readonly incidents: { readonly [id: string]: I };
@@ -409,18 +387,17 @@ export function callInHand<I extends DeepReadonly<Incident>>(state: {
   return latest;
 }
 
-/** Append a timeline entry and touch `updatedAt`, holding
- *  {@link MAX_TIMELINE_ENTRIES}. Capped on APPEND rather than swept later, so
- *  a single long-running incident cannot outgrow the payload between sweeps. */
-export function logEvent(inc: Incident, event: string): void {
-  const time = Date.now();
-  pushCapped(inc.timeline, { time, event }, MAX_TIMELINE_ENTRIES);
-  inc.updatedAt = time;
+/** Append a timeline entry at `now` (a tool's `ctx.now()`) and touch
+ *  `updatedAt`, holding {@link MAX_TIMELINE_ENTRIES}. Capped on APPEND rather
+ *  than swept later, so one long incident cannot outgrow the payload. */
+export function logEvent(inc: Incident, event: string, now: number): void {
+  pushCapped(inc.timeline, { time: now, event }, MAX_TIMELINE_ENTRIES);
+  inc.updatedAt = now;
 }
 
 /** Minutes since the incident was created, rounded. */
-export function incidentAgeMinutes(inc: DeepReadonly<Incident>): number {
-  return Math.round((Date.now() - inc.createdAt) / 60_000);
+export function incidentAgeMinutes(inc: DeepReadonly<Incident>, now: number): number {
+  return Math.round((now - inc.createdAt) / 60_000);
 }
 
 /** A resource as tool results describe it to the LLM. */
@@ -432,20 +409,6 @@ export function resourceBrief(r: DeepReadonly<Resource>): {
   // `capabilities` is COPIED: a brief is a fresh object handed to the LLM, and
   // the source list belongs either to a frozen slot value or to a live draft.
   return { callsign: r.callsign, type: r.type, capabilities: [...r.capabilities] };
-}
-
-/**
- * Status-transition guard. `resolved` is terminal: a resolved incident's
- * resources have been released (and possibly reassigned), so escalating,
- * re-resolving, or dispatching to it would corrupt resource assignments.
- */
-export function assertNotResolved(inc: DeepReadonly<Incident>, action: string): ToolFailure | null {
-  if (inc.status === "resolved") {
-    return {
-      error: `Incident ${inc.id} is resolved — cannot ${action}. Create a new incident if the situation has reopened.`,
-    };
-  }
-  return null;
 }
 
 // ─── Triage & scoring ────────────────────────────────────────────────────────
