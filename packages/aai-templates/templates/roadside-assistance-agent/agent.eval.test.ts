@@ -14,27 +14,33 @@ import agentDef from "virtual:aai/agent";
 // resolves `tools/`, still applies the dialog gate and still executes the tool
 // a script names — so a stub run proves the wiring and proves nothing about
 // what the agent chose.
+import { type DialogToolResult, isToolFailure } from "@alexkroman1/aai";
+import type { ToolFailure } from "@alexkroman1/aai/utils";
 import {
   describeEval,
   describeToolCalls,
-  dialogResultSchema,
   type EvalToolCall,
   evalSimulation,
   lastToolResultIn,
+  toolArgsIn,
   toolCallsInTurns,
   toolNames,
   toolResultIn,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
 import { disclosureFor, PLANS } from "./shared.ts";
-
-/** A refusal: what a `when` gate answers instead of running the body. */
-const REFUSAL = z.object({ error: z.string() });
+import dispatchTruck from "./tools/dispatch_truck.ts";
+import reportLocation from "./tools/report_location.ts";
+import serviceDisclosure from "./tools/service_disclosure.ts";
 
 /** Whether a call ran its body, rather than being refused by a gate or a check. */
-const succeeded = (call: EvalToolCall) =>
-  !REFUSAL.safeParse(toolResultIn([call], call.name)).success;
+const succeeded = (call: EvalToolCall) => !isToolFailure(toolResultIn([call], call.name));
+
+/** A gated tool's envelope, position kept, or a throw quoting the refusal. */
+function landed<R>(answer: DialogToolResult<R> | ToolFailure): DialogToolResult<R> {
+  if (isToolFailure(answer)) throw new Error(`tool refused: ${answer.error}`);
+  return answer;
+}
 
 describeEval(agentDef, (test) => {
   test(
@@ -52,20 +58,15 @@ describeEval(agentDef, (test) => {
       // both real findings — and the second is the one a phone agent actually
       // makes.
       expect(toolNames(turn.toolCalls)).toEqual(["report_location"]);
-      const args = turn.toolCalls[0]?.args as { safeToWait: boolean; situation: string };
+      const [args] = toolArgsIn(turn.toolCalls, reportLocation);
       // The caller said "well off the road", which is the safety question this
       // desk has to get right the first time: it decides the priority bump.
-      expect(args.safeToWait).toBe(true);
-      expect(args.situation).toBe("wont_start");
+      expect(args?.safeToWait).toBe(true);
+      expect(args?.situation).toBe("wont_start");
 
       // And the call moved on: the next instruction the model reads is the one
       // about coverage, on every turn, whether or not it calls another tool.
-      const landed = toolResultIn(
-        turn.toolCalls,
-        "report_location",
-        dialogResultSchema(z.object({ where: z.string() })),
-      );
-      expect(landed.state).toBe("onCall.verifying");
+      expect(landed(toolResultIn(turn.toolCalls, reportLocation)).state).toBe("onCall.verifying");
     },
     {
       stubReply: [
@@ -99,11 +100,9 @@ describeEval(agentDef, (test) => {
       // before the fee has been read has to come back refused, which is what
       // stops the agent reading out an ETA for a truck nobody sent.
       for (const call of turn.toolCalls.filter((c) => c.name === "dispatch_truck")) {
-        // A one-call list, so the reader's "no such call" and "two calls"
-        // throws are unreachable and what is left is the parse. The schema
-        // REQUIRES `error`, which is the claim — a call that succeeded fails
-        // here rather than three assertions later.
-        expect(toolResultIn([call], call.name, REFUSAL).error).toMatch(/policy|coverage|fee|hear/i);
+        const answer = toolResultIn([call], dispatchTruck);
+        if (!isToolFailure(answer)) throw new Error("a truck went out before the fee was read");
+        expect(answer.error).toMatch(/policy|coverage|fee|hear/i);
       }
       expect(turn.completed).toBe(true);
     },
@@ -163,11 +162,7 @@ describeEval(agentDef, (test) => {
       // The disclosure as finally handed over: read across the turns, and the
       // LAST one, because a desk that re-read it after an interruption has
       // called this twice and the words the caller heard last are the words.
-      const handed = lastToolResultIn(
-        calls,
-        "service_disclosure",
-        dialogResultSchema(z.object({ readThisVerbatim: z.string() })),
-      );
+      const handed = landed(lastToolResultIn(calls, serviceDisclosure));
       expect(handed.result.readThisVerbatim).toBe(
         disclosureFor({
           policyNumber: "RS-4417",
