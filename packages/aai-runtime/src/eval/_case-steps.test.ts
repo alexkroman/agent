@@ -10,7 +10,7 @@
 
 import { stepFetch } from "@alexkroman1/aai/step";
 import { describe, expect, onTestFinished, test, vi } from "vitest";
-import { drainCaseSteps, installCaseSteps } from "./_case-steps.ts";
+import { drainCaseSteps, drainThenClose, installCaseSteps } from "./_case-steps.ts";
 import type { EvalWorkflows } from "./workflows.ts";
 
 const ROUTES = {
@@ -35,6 +35,36 @@ describe("installCaseSteps", () => {
     // Only the first: the next request answers at once.
     const next = await stepFetch("https://provider.test/submit");
     expect(await next.json()).toEqual({ id: "job_1" });
+  });
+
+  test("`held` reads false the moment release() is called, not when the handler resumes", async () => {
+    const steps = installCaseSteps({ routes: ROUTES, hold: "first" });
+    onTestFinished(steps.restore);
+    const pending = stepFetch("https://provider.test/poll");
+    await vi.waitFor(() => expect(steps.held).toBe(true));
+    steps.release();
+    // Synchronously: the parked handler resumes a microtask later, and a case
+    // reads `held` right after the release it just made.
+    expect(steps.held).toBe(false);
+    await pending;
+  });
+
+  test("two requests in flight through a handler LIST are each logged once", async () => {
+    const steps = installCaseSteps({
+      routes: [
+        (request) => (request.pathname === "/submit" ? { body: { id: "job_1" } } : undefined),
+        (request) => (request.pathname === "/poll" ? { body: { status: "done" } } : undefined),
+      ],
+    });
+    onTestFinished(steps.restore);
+    // `/poll` falls through the first handler to the second, and `/submit`
+    // arrives between the two — so the log's last entry is not `/poll` when
+    // its second wrapper runs.
+    await Promise.all([
+      stepFetch("https://provider.test/poll"),
+      stepFetch("https://provider.test/submit"),
+    ]);
+    expect(steps.requests.map((request) => request.pathname)).toEqual(["/poll", "/submit"]);
   });
 
   test("a predicate holds the first request it matches, not the first request", async () => {
@@ -99,6 +129,20 @@ describe("drainCaseSteps", () => {
     });
     await expect(drainCaseSteps(steps, failing, true)).resolves.toBeUndefined();
     await expect(drainCaseSteps(steps, failing, false)).rejects.toThrow("run timed out");
+  });
+
+  test("a drain that rejects still runs every close, and is rethrown after them", async () => {
+    const steps = installCaseSteps({ routes: ROUTES });
+    onTestFinished(steps.restore);
+    const failing = app(async () => {
+      throw new Error("run timed out");
+    });
+    const close = vi.fn(async () => undefined);
+    await expect(drainThenClose(steps, failing, false, close)).rejects.toThrow("run timed out");
+    expect(close).toHaveBeenCalledOnce();
+    // No steps: nothing to drain, and the close still runs.
+    await drainThenClose(undefined, failing, false, close);
+    expect(close).toHaveBeenCalledTimes(2);
   });
 
   test("`drain: false` releases and settles nothing; no app settles nothing", async () => {

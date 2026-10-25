@@ -9,7 +9,7 @@
 import type { WorkflowContext } from "@alexkroman1/aai";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { harness } from "./_engine-harness.ts";
-import { clearHeldSignals } from "./held-signals.ts";
+import { clearHeldSignals, heldSignalCount } from "./held-signals.ts";
 
 afterEach(clearHeldSignals);
 
@@ -69,6 +69,40 @@ describe("ctx.waitForSignal", () => {
     ).toBe(true);
     // The held payload is delivered when the wait is claimed, through the
     // journal: the hook reads `delivered` like any answered wait.
+    expect(await world.engine.execute(runId)).toBe("completed");
+    expect(await world.engine.readOutput(runId)).toBe("published");
+  });
+
+  test("a hold stored AFTER the wait claimed and looked is retried, not parked on forever", async () => {
+    // The interleaving: `signal`'s `deliverHook` misses (the hook is not
+    // claimed yet), then — before `signal` goes on to store the hold — the body
+    // reaches its wait, claims the hook, finds nothing held and parks. Forced by
+    // holding `signal` at the gap: the FIRST delivery's answer is handed back
+    // only once the test lets it go.
+    const gap = Promise.withResolvers<void>();
+    let misses = 0;
+    const world = harness({ digest: body }, vi.fn(), (journal) => ({
+      ...journal,
+      async deliverHook(token, payload) {
+        const woke = await journal.deliverHook(token, payload);
+        if (woke === undefined && misses++ === 0) await gap.promise;
+        return woke;
+      },
+    }));
+    const runId = await world.engine.start("digest", [{}], { key: "sess-1" });
+    const signalled = world.engine.signal(
+      "digest:sess-1:approval",
+      { approved: true },
+      { holdMs: 60_000 },
+    );
+    // The wait claims while the signal is parked at the gap, and parks the run.
+    expect(await world.engine.execute(runId)).toBe("running");
+    gap.resolve();
+    expect(await signalled).toBe(true);
+    // `true` has to mean TAKEN: the run was re-dispatched to read the answer,
+    // and no hold is left behind for a wait that will never come.
+    expect(world.dispatch).toHaveBeenCalledWith(runId);
+    expect(heldSignalCount()).toBe(0);
     expect(await world.engine.execute(runId)).toBe("completed");
     expect(await world.engine.readOutput(runId)).toBe("published");
   });

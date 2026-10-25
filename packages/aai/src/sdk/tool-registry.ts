@@ -38,6 +38,7 @@
  * the agent could not do the thing with no error anywhere.
  */
 
+import { withCollectedSyncState } from "./_author-conveniences.ts";
 import { isRecord } from "./is-record.ts";
 import type { Toolset } from "./toolset.ts";
 import type { ToolDef } from "./types.ts";
@@ -251,5 +252,8 @@ export function withTools<
       );
     }
   }
-  return { ...def, tools: { ...def.tools, ...registry } };
+  // The lowering is also where every module has evaluated, so a slot synced
+  // in a `tools/*.ts` file — registered after `agent()` ran — joins the
+  // agent's default `syncState` here. See `withCollectedSyncState`.
+  return withCollectedSyncState({ ...def, tools: { ...def.tools, ...registry } });
 }

@@ -613,6 +613,25 @@ describe("createTextAgent", () => {
     expect(systemOf(1)).toMatchObject({ role: "system", content: "Base.\n\nTier: gold." });
   });
 
+  test("a per-turn system prompt keeps the agent's promptContext under it, as the voice runtime does", async () => {
+    const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
+    const chat = createTextAgent({
+      agent: textAgent({
+        name: "Helper",
+        mode: "text",
+        systemPrompt: "Base.",
+        promptContext: "Tier: gold.",
+      }),
+      model,
+      logger: silentLogger,
+    });
+    await drain(
+      chat.stream({ messages: [{ role: "user", content: "hi" }], systemPrompt: "Per turn." }),
+    );
+    const prompt = model.calls[0]?.prompt as { role: string; content: unknown }[];
+    expect(prompt[0]).toMatchObject({ role: "system", content: "Per turn.\n\nTier: gold." });
+  });
+
   test("a per-turn system prompt overrides the agent's", async () => {
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
     const chat = createTextAgent({

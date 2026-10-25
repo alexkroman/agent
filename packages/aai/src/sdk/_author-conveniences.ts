@@ -30,7 +30,11 @@
  */
 
 import { assertModeFields, resolveAgentMode } from "./_agent-modes.ts";
-import { syncedProjections } from "./_sync-registry.ts";
+import {
+  isCollectedSyncState,
+  markCollectedSyncState,
+  syncedProjections,
+} from "./_sync-registry.ts";
 import { assertTurnSilenceWindow, ENDPOINTING_KEYS } from "./config-rules.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
@@ -49,13 +53,8 @@ export function normalizeAgentParams(input: unknown): unknown {
   assertModeFields(mode, rest);
   rest.mode = mode;
   if (typeof rest.llm === "string") rest.llm = normalizeLlm(rest.llm);
-  // An explicit `syncState` wins; absent, the slots declared `sync: true`
-  // are the agent's projections (see `SessionSlotOptions.sync`). Resolved
-  // here rather than in `agent()` alone so a raw `export default {...}` config
-  // in the same bundle syncs the same slots — and idempotent, because the
-  // record this produces is accepted unchanged by the next pass.
-  const syncState = rest.syncState ?? defaultSyncState();
-  if (syncState !== undefined) rest.syncState = normalizeSyncState(syncState);
+  const syncState = resolveSyncState(rest.syncState);
+  if (syncState !== undefined) rest.syncState = syncState;
   normalizeListing(rest);
   normalizeEndpointing(rest);
   // AFTER the desugaring, and over `rest.stt` rather than over the two
@@ -121,10 +120,43 @@ function takeNumber(group: Record<string, unknown>, key: string): number | undef
   return value;
 }
 
-/** The registered `sync: true` projections as a `syncState` list, or nothing. */
-function defaultSyncState(): readonly unknown[] | undefined {
+/**
+ * The canonical `syncState` for what an author declared — or, declared
+ * nothing, the slots registered `sync: true` (see `SessionSlotOptions.sync`).
+ *
+ * Resolved here rather than in `agent()` alone so a raw `export default {...}`
+ * config in the same bundle syncs the same slots — and idempotent, because the
+ * record this produces is accepted unchanged by the next pass. A record an
+ * EARLIER pass collected from the registry is collected again rather than
+ * kept: `agent()` runs before the `tools/*.ts` modules the generated entry
+ * imports after `agent.ts`, so a slot synced in one of those registers after
+ * the agent was built, and the next pass is where every module has evaluated
+ * ("A collected `syncState` is re-collected at the lowering" in
+ * `_sync-registry.ts`). An explicit `syncState` always wins.
+ */
+function resolveSyncState(declared: unknown): Record<string, unknown> | undefined {
+  if (declared !== undefined && !isCollectedSyncState(declared)) {
+    return normalizeSyncState(declared);
+  }
   const synced = syncedProjections();
-  return synced.length === 0 ? undefined : synced;
+  if (synced.length === 0) return declared === undefined ? undefined : declared;
+  const record = normalizeSyncState(synced);
+  markCollectedSyncState(record);
+  return record;
+}
+
+/**
+ * `def` with a `syncState` the registry collected re-collected — the lowering
+ * step `withTools` runs after every module has evaluated; see
+ * {@link resolveSyncState}. A def whose `syncState` was declared, or that has
+ * nothing new to collect, is handed back as it is.
+ */
+export function withCollectedSyncState<D extends object>(def: D): D {
+  const declared = (def as { readonly syncState?: unknown }).syncState;
+  if (declared !== undefined && !isCollectedSyncState(declared)) return def;
+  const syncState = resolveSyncState(declared);
+  if (syncState === undefined || syncState === declared) return def;
+  return { ...def, syncState };
 }
 
 /**

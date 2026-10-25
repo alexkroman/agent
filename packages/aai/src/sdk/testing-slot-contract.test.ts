@@ -26,11 +26,38 @@ describe("expectSlotContract", () => {
     expect(() => expectSlotContract(counter)).not.toThrow();
   });
 
-  test("a default already past its cap drifts the empty frame from the default's projection", () => {
+  test("a slot whose `after` derives a field is held to the default AS STORED, not to create() raw", () => {
+    const log = sessionSlot("log", (): Log => ({ lines: [], total: 0 }), {
+      caps: { lines: 3 },
+      after: (value) => {
+        value.total = value.lines.length + 100;
+      },
+      view: (value) => ({ count: value.lines.length, total: value.total }),
+    });
+    expect(() =>
+      expectSlotContract(log, {
+        write: (draft) => {
+          draft.lines.push("hello");
+        },
+        caps: { lines: 3 },
+      }),
+    ).not.toThrow();
+  });
+
+  test("an `empty` seed that differs from the default drifts the empty frame from the default's projection", () => {
+    const log = sessionSlot("log", (): Log => ({ lines: ["seed"], total: 0 }), {
+      empty: (): Log => ({ lines: [], total: 0 }),
+    });
+    expect(() => expectSlotContract(log)).toThrow("projected() is not the view of the default");
+  });
+
+  test("a default already past its restated cap is reported under that cap", () => {
     const log = sessionSlot("log", (): Log => ({ lines: ["a", "b", "c", "d"], total: 0 }), {
       caps: { lines: 2 },
     });
-    expect(() => expectSlotContract(log)).toThrow("projected() is not the view of create()");
+    expect(() => expectSlotContract(log, { caps: { lines: 2 } })).toThrow(
+      "caps.lines = 2, but the default already holds 4 entries",
+    );
   });
 
   test("a SHARED default object is refused before it can leak", () => {

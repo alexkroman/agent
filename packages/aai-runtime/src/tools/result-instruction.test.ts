@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { withInstruction } from "@alexkroman1/aai/utils";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   splitInstruction,
   TOOL_INSTRUCTION_LABEL,
@@ -24,6 +24,17 @@ describe("splitInstruction", () => {
       expect(split.result).toBe(raw);
       expect(split).not.toHaveProperty("instruction");
     }
+  });
+
+  test("a result that does not spell the key is never parsed; one that does is parsed once", () => {
+    const parse = vi.fn((text: string) => JSON.parse(text) as unknown);
+    for (const raw of ['{"ok":true}', '{"instruction":"not the key"}', "plain $instruction"]) {
+      expect(splitInstruction(raw, parse).result).toBe(raw);
+    }
+    expect(parse).not.toHaveBeenCalled();
+    const raw = JSON.stringify(withInstruction({ ok: true }, "Say so."));
+    expect(splitInstruction(raw, parse)).toEqual({ result: '{"ok":true}', instruction: "Say so." });
+    expect(parse).toHaveBeenCalledTimes(1);
   });
 });
 

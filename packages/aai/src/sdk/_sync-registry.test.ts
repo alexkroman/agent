@@ -13,6 +13,7 @@ import { normalizeAgentParams } from "./_author-conveniences.ts";
 import { syncedProjections } from "./_sync-registry.ts";
 import { agent } from "./define.ts";
 import { sessionSlot } from "./session-slot.ts";
+import { withTools } from "./tool-registry.ts";
 
 /** `syncState` off a normalized params record. */
 function syncStateOf(params: unknown): unknown {
@@ -45,6 +46,30 @@ describe("sync: true", () => {
     const desk = sessionSlot("desk", () => ({ open: 0 }), { sync: true });
     expect(Object.keys(agent({ name: "p" }).syncState ?? {})).toEqual(["cart", "desk"]);
     expect(agent({ name: "p" }).syncState?.desk).toBe(desk.projected);
+
+    // A slot synced AFTER the agent was built — a `tools/*.ts` module, which
+    // the generated entry imports after `agent.ts` — joins at the lowering
+    // (`withTools`) and at the config boundary, where every module has
+    // evaluated. A def that had no synced slot at all when it was built too.
+    const built = agent({ name: "p" });
+    const late = sessionSlot("late", () => ({ n: 0 }), { sync: true });
+    expect(Object.keys(built.syncState ?? {})).toEqual(["cart", "desk"]);
+    expect(Object.keys(withTools(built, {}).syncState ?? {})).toEqual(["cart", "desk", "late"]);
+    expect(withTools(built, {}).syncState?.late).toBe(late.projected);
+    expect(Object.keys(syncStateOf(normalizeAgentParams(built)) as object)).toEqual([
+      "cart",
+      "desk",
+      "late",
+    ]);
+    expect(Object.keys(syncStateOf(withTools({ tools: {} }, {})) as object)).toEqual([
+      "cart",
+      "desk",
+      "late",
+    ]);
+    // A DECLARED syncState is never re-collected, at either step.
+    const declared = agent({ name: "p", syncState: prefs.projected });
+    expect(withTools(declared, {}).syncState).toEqual({ prefs: prefs.projected });
+    expect(syncStateOf(normalizeAgentParams(declared))).toEqual({ prefs: prefs.projected });
 
     // Two synced slots on one key are refused where the collision is named.
     sessionSlot("desk", () => ({ open: 1 }), { sync: true });

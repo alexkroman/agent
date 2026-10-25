@@ -369,16 +369,19 @@ export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
         // `system` is the AI SDK's key; `systemPrompt` is ours, at both levels.
         // A per-turn override wins; otherwise the agent's own, which may be a
         // RESOLVER called here — once per turn rather than once per step, since
-        // this door assembles one request and lets the SDK step it.
+        // this door assembles one request and lets the SDK step it. The agent's
+        // `promptContext` lands under EITHER, as the voice resolver composes it
+        // (`runtime/system-prompt.ts`): an override replaces the instructions,
+        // not the context the agent declared for every turn.
         ...omitUndefined({
-          system:
+          system: appendPromptContext(
             turn.systemPrompt ??
-            appendPromptContext(
-              instructions?.(sessionContext) ?? staticSystemPrompt(agent.systemPrompt),
-              typeof agent.promptContext === "function"
-                ? agent.promptContext(sessionContext)
-                : agent.promptContext,
-            ),
+              instructions?.(sessionContext) ??
+              staticSystemPrompt(agent.systemPrompt),
+            typeof agent.promptContext === "function"
+              ? agent.promptContext(sessionContext)
+              : agent.promptContext,
+          ),
         }),
         // PAIRED: a caller that appends each run's `response.messages` carries
         // forward whatever the last step left, and a tool call that step never

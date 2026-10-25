@@ -156,8 +156,11 @@ export function useRoute<T = unknown>(
 
   /**
    * One read. Resolves whether the poll (if any) is FINISHED: `until` was
-   * satisfied, or the read was superseded or aborted — a loop that kept going
-   * past either would be reading for nobody.
+   * satisfied. A read that was superseded by a newer one (a `reload()`, or the
+   * unmount's bump) answers `false` — its ANSWER is nobody's, but the poll is
+   * still owed its next tick: `true` here would stop `repeatUntil` for good on
+   * the first reload during a poll. The unmount is what stops the loop, through
+   * its own `stop()`, and a loop whose signal is aborted never re-arms.
    */
   const read = useCallback(
     async (signal?: AbortSignal): Promise<boolean> => {
@@ -170,13 +173,13 @@ export function useRoute<T = unknown>(
         const answer = await routeFetch<T>("GET", path, undefined, {
           ...omitUndefined({ client: client ?? session?.identity.clientId(), headers, signal }),
         });
-        if (!epoch.isCurrent(mine)) return true;
+        if (!epoch.isCurrent(mine)) return false;
         setData(answer);
         setError(undefined);
         setLoading(false);
         return until?.(answer) === true;
       } catch (err: unknown) {
-        if (!epoch.isCurrent(mine)) return true;
+        if (!epoch.isCurrent(mine)) return false;
         setError(errorMessage(err));
         setLoading(false);
         return false;

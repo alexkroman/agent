@@ -8,10 +8,12 @@
 
 import { agent } from "@alexkroman1/aai";
 import { describe, expect, onTestFinished, test } from "vitest";
+import { ALL_PROVIDER_ENV_VARS } from "../providers/resolve.ts";
 import { suiteNetwork } from "./_network-install.ts";
 import { runCase } from "./_run-case.ts";
 import { runRepeats, SuiteSpread } from "./_spread.ts";
 import { evalNetwork } from "./network.ts";
+import { STUB_LLM_API_KEY_ENV } from "./stub-llm.ts";
 
 describe("runCase", () => {
   test("a failing body leaves its try's transcript for the summary, refusals included", async () => {
@@ -61,6 +63,25 @@ describe("runCase", () => {
     expect(message).toMatch(
       /\n\n--- the failing try ---\n(.*\n)*User: Book a table for four\.\nAgent: One moment, please\.$/,
     );
+  });
+
+  test("`steps` beside `network` is refused before anything is installed", async () => {
+    const net = suiteNetwork("stub", []);
+    net.install();
+    onTestFinished(() => net.restore());
+    await expect(
+      runCase({
+        agent: agent({ name: "Desk" }),
+        mode: "stub",
+        options: { network: evalNetwork(), steps: { routes: {} } },
+        caseOptions: { stubReply: "One moment, please." },
+        net,
+        body: async () => undefined,
+      }),
+    ).rejects.toThrow(/`steps` answers a step's HTTP/);
+    // The scripted model is a process-global registration; refused ahead of
+    // its install, it is not left registered for the next case to read.
+    expect(ALL_PROVIDER_ENV_VARS).not.toContain(STUB_LLM_API_KEY_ENV);
   });
 
   test("`network` beside `fetch` is refused before anything is installed", async () => {

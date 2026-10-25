@@ -136,8 +136,9 @@ export type EngineWorld = {
 export function harness(
   bodies: Record<string, Body> = {},
   dispatch: DispatchSpy = vi.fn(),
+  wrap?: (journal: JournalStore) => JournalStore,
 ): EngineWorld {
-  const world = unwatchedHarness(bodies, dispatch);
+  const world = unwatchedHarness(bodies, dispatch, wrap);
   onTestFinished(async () => {
     await expectWorldSound(world, world.outOfBand);
   });
@@ -160,8 +161,12 @@ export function harness(
 export function unwatchedHarness(
   bodies: Record<string, Body> = {},
   dispatch: DispatchSpy = vi.fn(),
+  // Over the RECORDED store, so a spec that delays or intercepts one call (an
+  // interleaving it has to force) still produces a log the rebuild can replay.
+  wrap?: (journal: JournalStore) => JournalStore,
 ): EngineWorld {
-  const { journal, writes } = recordJournal(createMemoryJournal());
+  const { journal: recorded, writes } = recordJournal(createMemoryJournal());
+  const journal = wrap === undefined ? recorded : wrap(recorded);
   const workflows = Object.fromEntries(
     Object.entries(bodies).map(([name, run]) => [
       name,

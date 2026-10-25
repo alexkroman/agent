@@ -16,7 +16,12 @@
  * @module
  */
 
-import { instructionOf, safeJsonParse, stripInstruction } from "@alexkroman1/aai/utils";
+import {
+  INSTRUCTION_KEY,
+  instructionOf,
+  safeJsonParse,
+  stripInstruction,
+} from "@alexkroman1/aai/utils";
 
 /**
  * What a result's instruction is prefixed with in the model's copy. Its own
@@ -24,6 +29,14 @@ import { instructionOf, safeJsonParse, stripInstruction } from "@alexkroman1/aai
  * sentence about the tool, this is the tool's sentence about this answer.
  */
 export const TOOL_INSTRUCTION_LABEL = "[instruction]";
+
+/**
+ * The key as JSON spells it — `"$instruction"`, quotes included. A result that
+ * does not contain it cannot carry the key: `JSON.stringify` never escapes a
+ * character of it, so the substring test is exact for every result an
+ * executor answers with.
+ */
+const INSTRUCTION_LITERAL = JSON.stringify(INSTRUCTION_KEY);
 
 /** A result string with its instruction, if any, taken out. */
 export type SplitResult = {
@@ -37,10 +50,18 @@ export type SplitResult = {
  * Take the reserved `$instruction` key out of a result string.
  *
  * A result that is not JSON, not a record, or carries no instruction comes
- * back as it was, by identity — an ordinary tool's result is untouched.
+ * back as it was, by identity — an ordinary tool's result is untouched, and
+ * never parsed: this runs on EVERY tool result, ahead of a second parse in
+ * `compactRecordsForModel`, so a result without the key's spelling is let
+ * through on a substring test alone. `parse` is a seam for the spec that
+ * pins that; every caller takes the default.
  */
-export function splitInstruction(raw: string): SplitResult {
-  const parsed = safeJsonParse(raw);
+export function splitInstruction(
+  raw: string,
+  parse: (text: string) => unknown = safeJsonParse,
+): SplitResult {
+  if (!raw.includes(INSTRUCTION_LITERAL)) return { result: raw };
+  const parsed = parse(raw);
   const instruction = instructionOf(parsed);
   if (instruction === undefined) return { result: raw };
   return { result: JSON.stringify(stripInstruction(parsed)), instruction };
