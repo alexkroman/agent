@@ -30,9 +30,12 @@
  * So a module with no default export, or whose default export is not a def
  * (no `run` function), is simply not a workflow. Only a file that IS one and is
  * misnamed is an error, because that one is a workflow the author meant to
- * register and cannot.
+ * register and cannot — and a two-phase declaration still waiting for its
+ * `.body()`, which is a workflow the author meant to register and forgot to
+ * finish.
  */
 
+import { isWorkflowDef, moduleNameOf, SPEC_RE } from "./_module-registry.ts";
 import { isRecord } from "./is-record.ts";
 import type { WorkflowDef } from "./workflow.ts";
 
@@ -46,12 +49,6 @@ const WORKFLOW_NAME_RE = /^[A-Za-z][A-Za-z0-9_-]*$/;
 /** Longest name registered — a path segment of the workflow API. */
 const WORKFLOW_NAME_MAX = 64;
 
-/** Extensions a workflow module may be authored in. */
-const MODULE_EXT_RE = /\.(?:m?[jt]s|tsx)$/;
-
-/** A co-located spec or type test is never a workflow file. */
-const SPEC_RE = /\.(?:test|spec|test-d)$/;
-
 /**
  * `path → module namespace`, as both sources produce it: the static import
  * list the CLI generates, and a spec's `import.meta.glob` (eager).
@@ -64,18 +61,13 @@ export type WorkflowModules = Readonly<Record<string, unknown>>;
 export type WorkflowRegistry = Readonly<Record<string, WorkflowDef>>;
 
 /**
- * A workflow def as recognized at RUNTIME — structural, because `workflow()`
- * returns its argument and there is no brand to read. `run` is the one member
- * every def has.
+ * A two-phase `workflow({ … })` whose `.body()` was never called: it carries
+ * `body` and no `run`. Skipping it as a helper would make a forgotten `.body`
+ * a workflow that silently vanishes from the registry, so it is the one
+ * non-def this refuses.
  */
-function isWorkflowDef(value: unknown): value is WorkflowDef {
-  return isRecord(value) && typeof value.run === "function";
-}
-
-/** The name a path declares: the file name after the last `workflows/`, extension dropped. */
-function workflowNameOf(path: string): { name: string; nested: boolean } {
-  const afterDir = path.split(/(?:^|\/)workflows\//).pop() ?? path;
-  return { name: afterDir.replace(MODULE_EXT_RE, ""), nested: afterDir.includes("/") };
+function isBodylessDeclaration(value: unknown): boolean {
+  return isRecord(value) && typeof value.body === "function" && typeof value.run !== "function";
 }
 
 /**
@@ -84,8 +76,9 @@ function workflowNameOf(path: string): { name: string; nested: boolean } {
  * top-level `await`.
  *
  * A module that does not default-export a def is skipped (see the module
- * doc). One that does and is nested, misnamed or a duplicate is an error
- * naming the file.
+ * doc) — except a bodyless two-phase declaration, which is refused naming
+ * `.body()`. One that is a def and is nested, misnamed or a duplicate is an
+ * error naming the file.
  *
  * @public
  */
@@ -93,9 +86,14 @@ export function workflowRegistry(modules: WorkflowModules): WorkflowRegistry {
   const registry: Record<string, WorkflowDef> = {};
   const sources: Record<string, string> = {};
   for (const [path, module] of Object.entries(modules)) {
-    const { name, nested } = workflowNameOf(path);
+    const { name, nested } = moduleNameOf(path, "workflows");
     if (SPEC_RE.test(name)) continue;
     const exported = (module as { default?: unknown } | null)?.default;
+    if (isBodylessDeclaration(exported)) {
+      throw new Error(
+        `${path} default-exports a workflow declaration with no body — \`workflow({ … })\` without \`run\` answers a declaration, and the def is what \`.body(fn)\` returns. Export \`workflow({ … }).body(fn)\`, or register the finished def in agent({ workflows }).`,
+      );
+    }
     if (!isWorkflowDef(exported)) continue;
     if (nested) {
       throw new Error(

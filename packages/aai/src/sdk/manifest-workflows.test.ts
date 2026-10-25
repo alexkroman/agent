@@ -33,6 +33,16 @@ describe("workflowRegistry", () => {
     expect(Object.keys(registry)).toEqual(["digest"]);
   });
 
+  test("a two-phase declaration whose `.body()` was never called is refused naming it", () => {
+    const declared = workflow({ description: "half" });
+    expect(() => workflowRegistry({ "workflows/half.ts": { default: declared } })).toThrow(
+      /workflows\/half\.ts default-exports a workflow declaration with no body .*\.body\(fn\)/,
+    );
+    // Finished, it registers like any def.
+    const whole = declared.body(async () => ({}));
+    expect(workflowRegistry({ "workflows/half.ts": { default: whole } })).toEqual({ half: whole });
+  });
+
   test("a def that IS a workflow but is nested, misnamed or declared twice is an error naming it", () => {
     expect(() => workflowRegistry({ "workflows/daily/digest.ts": { default: digest } })).toThrow(
       /workflows\/daily\/digest\.ts .* nested/,

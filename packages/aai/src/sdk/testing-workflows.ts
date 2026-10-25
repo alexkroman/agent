@@ -12,6 +12,7 @@
  * the fixture silently stops resembling what a tool will actually be handed.
  */
 
+import { isWorkflowDef } from "./_module-registry.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import type { AnyWorkflowDef, WorkflowClient } from "./workflow.ts";
 import type { WorkflowRunBase, WorkflowRunSnapshot } from "./workflow-run.ts";
@@ -102,10 +103,11 @@ export function createRunSnapshot<R = unknown>(
   first?: RunSnapshotOverrides<R> | AnyWorkflowDef<R>,
   second?: RunSnapshotOverrides<R>,
 ): WorkflowRunSnapshot<R> {
-  // A def is told from an overrides bag by its `run`: no snapshot field is a
-  // function, and every workflow def has one.
-  const overrides: RunSnapshotOverrides<R> =
-    first !== undefined && isWorkflowDef(first) ? (second ?? {}) : (first ?? {});
+  // A def is told from an overrides bag by its `run` (`_module-registry.ts`'s
+  // test): no snapshot field is a function, and every workflow def has one.
+  const overrides: RunSnapshotOverrides<R> = isWorkflowDef(first)
+    ? (second ?? {})
+    : ((first ?? {}) as RunSnapshotOverrides<R>);
   const base: WorkflowRunBase = {
     runId: overrides.runId ?? DEFAULT_RUN_ID,
     workflow: overrides.workflow ?? DEFAULT_WORKFLOW,
@@ -124,13 +126,6 @@ export function createRunSnapshot<R = unknown>(
     default:
       return { ...base, status: overrides.status };
   }
-}
-
-/** Is this a workflow def rather than an overrides bag? Only a def has a `run`. */
-function isWorkflowDef<R>(
-  value: RunSnapshotOverrides<R> | AnyWorkflowDef<R>,
-): value is AnyWorkflowDef<R> {
-  return typeof (value as { run?: unknown }).run === "function";
 }
 
 /**
