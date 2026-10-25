@@ -134,7 +134,12 @@ function isDialogEnvelope(value: unknown): value is { result: unknown } {
  * on anything that is not a dialog envelope: keeping a position claims there is
  * one.
  *
- * @typeParam T - What the tool's `execute` returns, under `result`.
+ * **Typed by INFERENCE**, as {@link expectToolOk} is: handed a typed envelope
+ * (`runTool(theTool, …)`, `theTool.execute(…)`) it keeps the type under
+ * `result`; the name form answers `unknown`, where the claimed overload below
+ * takes the type the spec asserts.
+ *
+ * @typeParam R - What was handed in, inferred — never written.
  *
  * @throws When the tool refused, quoting the refusal, as {@link expectToolOk} does.
  * @throws When the value is not a dialog envelope — a plain `tool()` has no
@@ -153,7 +158,21 @@ function isDialogEnvelope(value: unknown): value is { result: unknown } {
  *
  * @public
  */
-export function expectDialogOk<T>(result: unknown): DialogToolResult<T> {
+export function expectDialogOk<R>(
+  result: R,
+): R extends DialogToolResult<infer V> ? DialogToolResult<V> : DialogToolResult<unknown>;
+/**
+ * The dialog envelope a gated tool answered — the CLAIMED form, for a result
+ * typed `unknown` (`runTool(agent, "name", …)`, a `toolRunner`): `T` is what
+ * the spec says is under `result`, unchecked at runtime, as
+ * {@link expectToolOk}'s claimed form is.
+ *
+ * @typeParam T - The type the spec claims for the tool's own value.
+ *
+ * @public
+ */
+export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
+export function expectDialogOk(result: unknown): DialogToolResult<unknown> {
   // The refusal FIRST, because it is the case worth reporting well: a
   // `ToolFailure` is a record without `result`, so the envelope check below
   // would otherwise report it as "not a tool result" and throw away the
@@ -173,7 +192,7 @@ export function expectDialogOk<T>(result: unknown): DialogToolResult<T> {
   // is what lets a spec assert on `done` without checking its type first.
   const { result: value, state, done, instruction } = result;
   return {
-    result: value as T,
+    result: value,
     state: String(state),
     done: done === true,
     ...omitUndefined({ instruction: typeof instruction === "string" ? instruction : undefined }),
