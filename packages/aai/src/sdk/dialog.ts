@@ -85,6 +85,7 @@ import type {
   DialogTimeout,
   DialogToolDef,
   DialogToolResult,
+  EventNameOf,
   DialogVoiceConfig,
 } from "./dialog-types.ts";
 import { isRecord } from "./is-record.ts";

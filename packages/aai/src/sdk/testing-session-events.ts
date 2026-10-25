@@ -47,7 +47,13 @@ export type SessionEventFields<K extends SessionEventType> = {
  * takes no fields argument at all, so `sessionEvent("reply.completed")` is
  * the whole call rather than `sessionEvent("reply.completed", {})`.
  */
-type SessionEventRest<K extends SessionEventType> = keyof SessionEventFields<K> extends never
+/**
+ * The trailing parameters of {@link sessionEvent}: `[meta?]` for an envelope-only
+ * event, `[fields, meta?]` for one with a payload.
+ *
+ * @public
+ */
+export type SessionEventRest<K extends SessionEventType> = keyof SessionEventFields<K> extends never
   ? [fields?: SessionEventFields<K>, meta?: Partial<SessionEventMeta>]
   : [fields: SessionEventFields<K>, meta?: Partial<SessionEventMeta>];
 

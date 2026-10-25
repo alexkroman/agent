@@ -66,7 +66,13 @@ export type WorkflowAppLike = {
  * `Extract` rather than `NonNullable`: an absent key infers `unknown`, which
  * `NonNullable` would keep.
  */
-type WorkflowsOf<App> = App extends { readonly workflows?: infer W }
+/**
+ * The `workflows` map of an app def, or `never` when it declares none — the
+ * reading {@link WorkflowNameOf} and {@link WorkflowDefOf} are spelled in.
+ *
+ * @public
+ */
+export type WorkflowsOf<App> = App extends { readonly workflows?: infer W }
   ? Extract<W, Record<string, unknown>>
   : never;
 

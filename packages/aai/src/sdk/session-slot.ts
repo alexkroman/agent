@@ -42,7 +42,12 @@ export type { DeepReadonly } from "./deep-readonly.ts";
 // `@alexkroman1/aai` and a reader who looks for it where `sessionSlot` is both
 // still find it in one place. `SlotValueOf`/`SlotDraftOf` read a value's two
 // types off a handle, so they are beside it.
-export type { SessionSlot, SlotDraftOf, SlotValueOf } from "./session-slot-handle.ts";
+export type {
+  GatedOutput,
+  SessionSlot,
+  SlotDraftOf,
+  SlotValueOf,
+} from "./session-slot-handle.ts";
 // The types a CALLER writes live in their own module (this file was at the
 // 500-line cap) and are re-exported here, so `@alexkroman1/aai` — and a reader
 // who looks for them where `sessionSlot` is — still finds them in one place.

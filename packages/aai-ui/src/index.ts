@@ -439,6 +439,7 @@ export type {
   WorkflowAppLike,
   WorkflowDefOf,
   WorkflowNameOf,
+  WorkflowsOf,
 } from "./workflow-def-types.ts";
 // The control-selection rule `<WorkflowFields>` itself runs, published so a
 // reader documenting the form-to-JSON correspondence asks the component's own
