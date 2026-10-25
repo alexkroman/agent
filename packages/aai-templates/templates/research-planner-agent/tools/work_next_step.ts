@@ -1,4 +1,4 @@
-import { errorMessage, type ToolFailure, toolFailure } from "@alexkroman1/aai";
+import { errorMessage, type ToolFailure, toolFailure, withInstruction } from "@alexkroman1/aai";
 import { executeStep, replanNode } from "../procedure.ts";
 import { type PastStep, planFlow, planSlot } from "../shared.ts";
 
@@ -43,130 +43,118 @@ type Claim =
  * there is a plan in progress.
  *
  */
-export default planFlow.tool(
-  {
-    description:
-      "Do the next step of the plan and report what it found. Call this once per " +
-      "step — never in a loop. Say a short 'let me look into that' first, since " +
-      "the step may take a few seconds.",
-    ui: { icon: "\u{1F50E}", label: "Working a step" },
-    when: "working",
-    async execute(_args, ctx) {
-      // The whole read-and-claim, in one window nothing can interleave with.
-      const claimed = planSlot.update(ctx, (plan): Claim => {
-        // `when: "working"` means there IS a plan, so this arm is unreachable by
-        // the flow's own guarantee — kept because the slot and the flow are two
-        // values, and a plan cleared by something else should refuse rather than
-        // claim a step off an empty objective.
-        if (!plan.objective) {
-          return { kind: "failed", failure: toolFailure("There is no plan yet — use start_plan.") };
-        }
-        const step = plan.plan.shift();
-        if (!step) return { kind: "dry" };
-        return {
-          kind: "step",
-          step,
-          objective: plan.objective,
-          pastSteps: [...plan.pastSteps] as PastStep[],
-        };
-      });
-      if (claimed.kind === "failed") return claimed.failure;
-      if (claimed.kind === "dry") {
-        return {
-          finished: true,
-          message: "No steps are left. Ask the caller what they want next.",
-        };
+export default planFlow.tool({
+  description:
+    "Do the next step of the plan and report what it found. Call this once per " +
+    "step — never in a loop. Say a short 'let me look into that' first, since " +
+    "the step may take a few seconds.",
+  ui: { icon: "\u{1F50E}", label: "Working a step" },
+  when: "working",
+  // The event rides on the result as `next`: `ANSWERED` only when the
+  // replanner produced a RESPONSE. A plan that merely ran out of steps stays
+  // in `working` — nothing was concluded, and the caller can still revise it.
+  sendFrom: "next",
+  async execute(_args, ctx) {
+    // The whole read-and-claim, in one window nothing can interleave with.
+    const claimed = planSlot.update(ctx, (plan): Claim => {
+      // `when: "working"` means there IS a plan, so this arm is unreachable by
+      // the flow's own guarantee — kept because the slot and the flow are two
+      // values, and a plan cleared by something else should refuse rather than
+      // claim a step off an empty objective.
+      if (!plan.objective) {
+        return { kind: "failed", failure: toolFailure("There is no plan yet — use start_plan.") };
       }
-      const { step, objective, pastSteps } = claimed;
+      const step = plan.plan.shift();
+      if (!step) return { kind: "dry" };
+      return {
+        kind: "step",
+        step,
+        objective: plan.objective,
+        pastSteps: [...plan.pastSteps] as PastStep[],
+      };
+    });
+    if (claimed.kind === "failed") return claimed.failure;
+    if (claimed.kind === "dry") {
+      // `next: undefined` is "stay in `working`" — `withInstruction` wraps each
+      // arm on its own, so the field is spelled on every arm rather than
+      // filled in by the union.
+      return withInstruction(
+        { finished: true, next: undefined },
+        "No steps are left. Ask the caller what they want next.",
+      );
+    }
+    const { step, objective, pastSteps } = claimed;
 
-      let outcome: Awaited<ReturnType<typeof executeStep>>;
-      try {
-        outcome = await executeStep(ctx.delegate, objective, step, pastSteps);
-      } catch (err: unknown) {
-        // Put the claimed step back at the head, where a retry will find it.
-        planSlot.update(ctx, (plan) => {
-          plan.plan.unshift(step);
-        });
-        return toolFailure(`That step could not be worked: ${errorMessage(err)}`);
-      }
+    let outcome: Awaited<ReturnType<typeof executeStep>>;
+    try {
+      outcome = await executeStep(ctx.delegate, objective, step, pastSteps);
+    } catch (err: unknown) {
+      // Put the claimed step back at the head, where a retry will find it.
       planSlot.update(ctx, (plan) => {
-        // Capped: `historyOf` renders this whole list into two prompts, so an
-        // append with no bound is a model bill that grows with the plan.
-        plan.pastSteps.push({
-          step,
-          result: outcome.result,
-          settled: outcome.settled,
-          searches: outcome.searches,
-        });
+        plan.plan.unshift(step);
       });
-      const found = {
+      return toolFailure(`That step could not be worked: ${errorMessage(err)}`);
+    }
+    planSlot.update(ctx, (plan) => {
+      // Capped: `historyOf` renders this whole list into two prompts, so an
+      // append with no bound is a model bill that grows with the plan.
+      plan.pastSteps.push({
         step,
         result: outcome.result,
         settled: outcome.settled,
         searches: outcome.searches,
-      };
-
-      // Their `replan_step`: the plan after a step is whatever still needs
-      // doing, decided from the result rather than from what was planned before
-      // anyone knew it.
-      //
-      // Its OWN failure path, apart from the step's. By here the step is done and
-      // recorded, so a replanner that throws must not put it back: the first live
-      // run did exactly that, and left one step both in `done` and at the head of
-      // the plan, waiting to be worked a second time. What is left stays what it
-      // was, which is the plan as it stood before anyone knew this result.
-      let act: Awaited<ReturnType<typeof replanNode>>;
-      try {
-        act = await replanNode(ctx.generate, planSlot.get(ctx));
-      } catch {
-        return {
-          finished: false,
-          ...found,
-          remaining: planSlot.get(ctx).plan,
-          message:
-            "Report what this step found — say so plainly if it is not settled. The plan " +
-            "could not be updated from it, so ask whether to carry on with the next step as planned.",
-        };
-      }
-      return planSlot.update(ctx, (plan) => {
-        if (act.kind === "respond") {
-          plan.response = act.response;
-          plan.plan = [];
-          plan.revisions.push(`Finished after ${plan.pastSteps.length} step(s)`);
-          return {
-            finished: true,
-            ...found,
-            response: act.response,
-            next: "ANSWERED" as const,
-            message: "The plan is done — give the caller the answer.",
-          };
-        }
-
-        // A completed step is never redone, whatever the replanner lists. It is
-        // shown the steps done and told to leave them out, but that is a prompt;
-        // this is the guarantee.
-        const worked = new Set(plan.pastSteps.map((past) => past.step));
-        const steps = act.steps.filter((next) => !worked.has(next));
-        const changed = steps.join("|") !== plan.plan.join("|");
-        plan.plan = steps;
-        if (changed) plan.revisions.push(`Replanned to ${steps.length} step(s) after: ${step}`);
-        return {
-          finished: false,
-          ...found,
-          remaining: steps,
-          message:
-            "Report what this step found — say so plainly if it is not settled — " +
-            "then ask whether to carry on.",
-        };
       });
-    },
+    });
+    const found = {
+      step,
+      result: outcome.result,
+      settled: outcome.settled,
+      searches: outcome.searches,
+    };
+
+    // Their `replan_step`: the plan after a step is whatever still needs
+    // doing, decided from the result rather than from what was planned before
+    // anyone knew it.
+    //
+    // Its OWN failure path, apart from the step's. By here the step is done and
+    // recorded, so a replanner that throws must not put it back: the first live
+    // run did exactly that, and left one step both in `done` and at the head of
+    // the plan, waiting to be worked a second time. What is left stays what it
+    // was, which is the plan as it stood before anyone knew this result.
+    let act: Awaited<ReturnType<typeof replanNode>>;
+    try {
+      act = await replanNode(ctx.generate, planSlot.get(ctx));
+    } catch {
+      return withInstruction(
+        { finished: false, ...found, remaining: planSlot.get(ctx).plan, next: undefined },
+        "Report what this step found — say so plainly if it is not settled. The plan " +
+          "could not be updated from it, so ask whether to carry on with the next step as planned.",
+      );
+    }
+    return planSlot.update(ctx, (plan) => {
+      if (act.kind === "respond") {
+        plan.response = act.response;
+        plan.plan = [];
+        plan.revisions.push(`Finished after ${plan.pastSteps.length} step(s)`);
+        return withInstruction(
+          { finished: true, ...found, response: act.response, next: "ANSWERED" as const },
+          "The plan is done — give the caller the answer.",
+        );
+      }
+
+      // A completed step is never redone, whatever the replanner lists. It is
+      // shown the steps done and told to leave them out, but that is a prompt;
+      // this is the guarantee.
+      const worked = new Set(plan.pastSteps.map((past) => past.step));
+      const steps = act.steps.filter((next) => !worked.has(next));
+      const changed = steps.join("|") !== plan.plan.join("|");
+      plan.plan = steps;
+      if (changed) plan.revisions.push(`Replanned to ${steps.length} step(s) after: ${step}`);
+      return withInstruction(
+        { finished: false, ...found, remaining: steps, next: undefined },
+        "Report what this step found — say so plainly if it is not settled — " +
+          "then ask whether to carry on.",
+      );
+    });
   },
-  {
-    // The event rides on the result as `next`: `ANSWERED` only when the
-    // replanner produced a RESPONSE. A plan that merely ran out of steps stays
-    // in `working` — nothing was concluded, and the caller can still revise it.
-    // The second-argument form, because this body returns through
-    // `planSlot.update` and the field-name form does not see through it.
-    sendFrom: (outcome) => ("next" in outcome ? { type: outcome.next } : undefined),
-  },
-);
+});

@@ -5,7 +5,6 @@ import { gameSlot, statusBlock } from "./shared.ts";
 export default agent({
   name: "Cavern Adventure",
   listing: "Runs a spoken text adventure through an underground cave system",
-  syncState: gameSlot.projected,
   // A narrator wants a narrative voice; everything else stays on the default
   // all-AssemblyAI pipeline.
   tts: assemblyAITts({ voice: "aai-paul" }),

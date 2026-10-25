@@ -13,15 +13,7 @@ import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
 import { describe, expect, test, vi } from "vitest";
 import { executeStep, executor, MAX_STEP_TURNS, normalizeAct, planNode } from "./procedure.ts";
 import { PLANNER_SYSTEM, REPLANNER_SYSTEM, REVISE_SYSTEM, type StepAnswer } from "./prompts.ts";
-import {
-  createWebTools,
-  MAX_PAGE_CHARS,
-  MAX_PAST_STEPS,
-  MAX_REVISIONS,
-  planFlow,
-  planSlot,
-  type WebAccess,
-} from "./shared.ts";
+import { createWebTools, MAX_PAGE_CHARS, planFlow, planSlot, type WebAccess } from "./shared.ts";
 // The tool FILES: each default export is the object `agentDef` registers, so
 // `run(startPlan, …)` is typed by the def — arguments and result, gate included.
 import planStatus from "./tools/plan_status.ts";
@@ -417,12 +409,12 @@ describeAgent(agentDef, (run) => {
       });
       await run(startPlan, { objective: "a weekend in Lisbon" }, ctx);
 
-      const first = expectToolOk(await run(workNextStep, ctx));
-      if (!("remaining" in first)) throw new Error("expected a worked step with a plan left");
-      expect(first.finished).toBe(false);
-      expect(first.step).toBe("Check prices");
-      expect(first.result).toContain("180");
-      expect(first.remaining).toEqual(["Compare hotels"]);
+      expect(expectToolOk(await run(workNextStep, ctx))).toMatchObject({
+        finished: false,
+        step: "Check prices",
+        result: expect.stringContaining("180"),
+        remaining: ["Compare hotels"],
+      });
       // Still working: nothing was concluded, so the flow has not moved on.
       expect(at(ctx)).toBe("working");
 
@@ -470,7 +462,6 @@ describeAgent(agentDef, (run) => {
         write: (plan) => {
           plan.objective = "mine";
         },
-        caps: { pastSteps: MAX_PAST_STEPS, revisions: MAX_REVISIONS },
       });
     });
 
@@ -503,8 +494,7 @@ describeAgent(agentDef, (run) => {
       const revised = expectToolOk(
         await run(revisePlan, { instruction: "make it Porto instead" }, ctx),
       );
-      expect(revised.finished).toBe(false);
-      expect(revised.remaining).toEqual(["Check Porto prices"]);
+      expect(revised).toMatchObject({ finished: false, remaining: ["Check Porto prices"] });
       // REOPENED: the one transition that goes backwards, and the reason
       // `revise_plan` is legal in `answered` at all.
       expect(at(ctx)).toBe("working");

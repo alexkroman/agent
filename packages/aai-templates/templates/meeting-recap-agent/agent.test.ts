@@ -16,7 +16,6 @@
 
 import agentDef from "virtual:aai/agent";
 import { describeRun } from "@alexkroman1/aai";
-import { isTerminal, type WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import type {
   WorkflowTestRun,
   WorkflowTestStep,
@@ -53,20 +52,6 @@ import recap, {
   summarize,
   type TranscriptState,
 } from "./workflows/recap.ts";
-import { retentionToken, transcriptToken } from "./workflows/tokens.ts";
-
-/**
- * A `ctx.workflows` that records `start` and answers the lookups from a fixture.
- *
- * `installStubWorkflows` answers everything but `live`, which `request_recap`
- * reads, so that one is added beside it: the newest run that has not finished.
- */
-function stubWorkflows(runs: WorkflowRunSnapshot[] = []) {
-  return {
-    ...installStubWorkflows({ agent: agentDef, runs }),
-    live: vi.fn(async () => runs.find((run) => !isTerminal(run))),
-  };
-}
 
 /** A finished recap, as the workflow's output reaches the status line. */
 function finishedOutput(over: { kept?: boolean; answered?: boolean } = {}) {
@@ -101,7 +86,7 @@ describeAgent(agentDef, (run) => {
 
   describe("request_recap", () => {
     test("starts a run on the session's key, and asks to be TOLD when it lands", async () => {
-      const workflows = stubWorkflows();
+      const workflows = installStubWorkflows({ agent: agentDef });
       const ctx = createToolContext({ workflows });
       const result = await run(requestRecap, ctx);
 
@@ -114,7 +99,7 @@ describeAgent(agentDef, (run) => {
     });
 
     test("uses the caller's recording when they named one", async () => {
-      const workflows = stubWorkflows();
+      const workflows = installStubWorkflows({ agent: agentDef });
       await run(
         requestRecap,
         { url: "https://example.com/board.mp3" },
@@ -128,43 +113,51 @@ describeAgent(agentDef, (run) => {
     test("REFUSES a second run while one is live, and hands back the one that exists", async () => {
       // Temporal's workflow-id reuse policy: a caller who asks twice would
       // otherwise pay for the same recording being transcribed twice.
-      const workflows = stubWorkflows([createRunSnapshot(recap, { status: "running" })]);
+      const workflows = installStubWorkflows({
+        agent: agentDef,
+        runs: [createRunSnapshot(recap, { status: "running" })],
+      });
       const result = await run(requestRecap, createToolContext({ workflows }));
       expect(result).toMatchObject({ started: false, runId: "wrun_1" });
       expect(workflows.start).not.toHaveBeenCalled();
     });
 
     test("starts a fresh run once the previous one is terminal", async () => {
-      const workflows = stubWorkflows([
-        createRunSnapshot(recap, { status: "completed", output: finishedOutput() }),
-      ]);
+      const workflows = installStubWorkflows({
+        agent: agentDef,
+        runs: [createRunSnapshot(recap, { status: "completed", output: finishedOutput() })],
+      });
       const result = await run(requestRecap, createToolContext({ workflows }));
       expect(result).toMatchObject({ started: true });
     });
   });
 
   describe("keep_transcript — the signal", () => {
-    // A `ctx.workflows` where `signal` is the ONLY method that answers, so these
-    // fail if the tool ever reaches for a run: a hook is addressed by a token
-    // both sides derive from the session, which is the whole claim of the tool.
+    // A `ctx.workflows` where `signalRun` is the ONLY method that answers, so
+    // these fail if the tool ever reaches for a run: the hook is addressed by
+    // the def, the session's key and the label, which is the whole claim of
+    // the tool — neither side spells a token.
     const signalOnly = (answer: boolean) => {
-      const signal = vi.fn(async () => answer);
-      return { signal, ctx: createToolContext({ workflows: createStubWorkflows({ signal }) }) };
+      const signalRun = vi.fn(async () => answer);
+      return {
+        signalRun,
+        ctx: createToolContext({ workflows: createStubWorkflows({ signalRun }) }),
+      };
     };
 
-    test("signals the run's retention hook on the token BOTH sides derive", async () => {
-      const { signal, ctx } = signalOnly(true);
+    test("signals the run's retention hook by the session's key and the label", async () => {
+      const { signalRun, ctx } = signalOnly(true);
       const result = await run(keepTranscript, { keep: true }, ctx);
-      expect(signal).toHaveBeenCalledWith(retentionToken(ctx.sessionId), { keep: true });
+      expect(signalRun).toHaveBeenCalledWith(recap, "session", "retention", { keep: true });
       expect(result).toMatchObject({ answered: true, keep: true });
     });
 
     test("carries a DECLINE, not just an approval", async () => {
       // "Delete it" has to reach the run before the window closes, or the
       // caller waits two minutes for something they already said.
-      const { signal, ctx } = signalOnly(true);
+      const { signalRun, ctx } = signalOnly(true);
       await run(keepTranscript, { keep: false }, ctx);
-      expect(signal).toHaveBeenCalledWith(expect.any(String), { keep: false });
+      expect(signalRun).toHaveBeenCalledWith(recap, "session", "retention", { keep: false });
     });
 
     test("a token nobody holds is reported as SETTLED, not as a failure", async () => {
@@ -393,6 +386,10 @@ function recordedSteps(ctx: WorkflowContextRecorder, name: string) {
   return ctx.steps.filter((step) => step.name === name);
 }
 
+/** The run as `request_recap` starts it: keyed by the session, so the body can derive its tokens. */
+const recapCtx = (options: Parameters<typeof createWorkflowContext>[0] = {}) =>
+  createWorkflowContext({ workflow: "recap", key: "s_1", ...options });
+
 describe("awaitTranscript — the polling port, and the callback over it", () => {
   beforeEach(() => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
@@ -413,15 +410,15 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
       { status: "completed", text: "Done.", audio_duration: 60 },
     ]);
 
-  /** The token both `request_recap`'s run and the body derive for one session. */
-  const NUDGE = transcriptToken("s_1");
+  /** The callback token the body derives for that run — read off the context, never spelled. */
+  const NUDGE = recapCtx().signalToken("transcript");
 
   test("parks on the callback ONCE, then polls on the cadence until the job settles", async () => {
     // No `hooks` entry, so the timed wait resolves `undefined` — the window
     // closing. A dropped delivery is the ordinary case a webhook has no answer
     // for, and the run must finish anyway.
     const polls = slowJob(2);
-    const ctx = createWorkflowContext();
+    const ctx = recapCtx();
 
     const state = await awaitTranscript("t_1", NUDGE, ctx);
 
@@ -439,7 +436,7 @@ describe("awaitTranscript — the polling port, and the callback over it", () =>
       { status: "processing" },
       { status: "completed", text: "The real transcript.", audio_duration: 60 },
     ]);
-    const ctx = createWorkflowContext({
+    const ctx = recapCtx({
       hooks: { [NUDGE]: { transcript_id: "t_1", status: "completed", text: "A LIE." } },
     });
 
@@ -484,16 +481,16 @@ describe("askWhetherToKeep — the expense port", () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
   });
 
+  /** The run's own retention token, derived the way the body derives it. */
+  const RETENTION = recapCtx().signalToken("retention");
   /** The gate, driven with or without an answer: a `hooks` entry, or its absence. */
   const gateCtx = (answer?: { keep: boolean }) =>
-    createWorkflowContext(
-      answer === undefined ? {} : { hooks: { [retentionToken("s_1")]: answer } },
-    );
+    recapCtx(answer === undefined ? {} : { hooks: { [RETENTION]: answer } });
 
   test("keeps the transcript when the caller says to, and deletes nothing", async () => {
     const provider = installStubStepFetch();
     const compensations = [{ label: "transcript t_1", undo: async () => undefined }];
-    expect(await askWhetherToKeep("s_1", "t_1", compensations, gateCtx({ keep: true }))).toEqual({
+    expect(await askWhetherToKeep("t_1", compensations, gateCtx({ keep: true }))).toEqual({
       kept: true,
       answered: true,
     });
@@ -505,7 +502,7 @@ describe("askWhetherToKeep — the expense port", () => {
   test("deletes on a DECLINE, and drops the undo it just performed", async () => {
     const calls = stubProvider({ id: "t_1" });
     const compensations = [{ label: "transcript t_1", undo: async () => undefined }];
-    expect(await askWhetherToKeep("s_1", "t_1", compensations, gateCtx({ keep: false }))).toEqual({
+    expect(await askWhetherToKeep("t_1", compensations, gateCtx({ keep: false }))).toEqual({
       kept: false,
       answered: true,
     });
@@ -515,7 +512,7 @@ describe("askWhetherToKeep — the expense port", () => {
 
   test("DELETES when nobody answers, which is what makes the window mean anything", async () => {
     const calls = stubProvider({ id: "t_1" });
-    expect(await askWhetherToKeep("s_1", "t_1", [], gateCtx())).toEqual({
+    expect(await askWhetherToKeep("t_1", [], gateCtx())).toEqual({
       kept: false,
       answered: false,
     });
@@ -525,9 +522,9 @@ describe("askWhetherToKeep — the expense port", () => {
   test("asks BEFORE it waits, so the caller knows what they are answering", async () => {
     const ctx = gateCtx({ keep: true });
     installStubStepFetch();
-    await askWhetherToKeep("s_1", "t_1", [], ctx);
+    await askWhetherToKeep("t_1", [], ctx);
     expect(ctx.steps[0]?.name).toBe("noteGate");
-    expect(ctx.waited).toEqual([retentionToken("s_1")]);
+    expect(ctx.waited).toEqual([RETENTION]);
   });
 });
 
@@ -581,7 +578,7 @@ describe("compensate — the saga port", () => {
  * A spec publishes no webhook minter, so the submit carries no `webhook_url` —
  * and the poll still parks on the callback window FIRST, which is the arm a
  * deployment with no public URL takes. Here the window is ended the way the
- * provider ends it, with a delivery on the callback token (`run.signal`);
+ * provider ends it, with a delivery on the callback label (`run.signalRun`);
  * `expireWaits()` is kept for the retention gate's unanswered branch, which
  * nothing public can reach — that is `SleepRecord.kind`'s entire reason.
  */
@@ -622,10 +619,13 @@ describe("the run is DURABLE", () => {
   ): WorkflowTestStep | undefined => run.steps.find((step) => step.name === name);
   const parkKinds = (waits: readonly WorkflowTestWait[]) => waits.map((wait) => wait.kind);
 
+  /** The run as the tool starts it: keyed by the session, which its tokens derive from. */
+  const KEY = "sess_1";
+
   /** Through the callback and the one poll, to the gate. */
   async function toTheGate() {
-    const run = await runWorkflow(agentDef, "recap", INPUT);
-    await run.signal(transcriptToken("sess_1"), NUDGE); // the provider calls back
+    const run = await runWorkflow(agentDef, "recap", INPUT, { key: KEY });
+    await run.signalRun("transcript", NUDGE); // the provider calls back
     await run.advanceSleep(); // the poll cadence
     return run;
   }
@@ -636,7 +636,7 @@ describe("the run is DURABLE", () => {
 
   test("submits once, then parks on the callback window before any read", async () => {
     stubWorld([PROCESSING, DONE]);
-    const run = await runWorkflow(agentDef, "recap", INPUT);
+    const run = await runWorkflow(agentDef, "recap", INPUT, { key: KEY });
 
     expect(run.status).toBe("running");
     expect(stepKeys(run)).toEqual(["submitRecording#0"]);
@@ -673,7 +673,7 @@ describe("the run is DURABLE", () => {
   test("an answer of KEEP leaves the transcript on the account", async () => {
     const world = stubWorld([PROCESSING, DONE]);
     const run = await toTheGate();
-    await run.signal(retentionToken("sess_1"), { keep: true });
+    await run.signalRun("retention", { keep: true });
 
     expect(run.status).toBe("completed");
     expect(run.output).toMatchObject({ kept: true, answered: true, requestedBy: "sess_1" });
@@ -694,7 +694,7 @@ describe("the run is DURABLE", () => {
     expect(world.deletes).toEqual(["https://api.assemblyai.com/v2/transcript/t_1"]);
 
     // And a signal that arrives after the window closed cannot reopen it.
-    await run.signal(retentionToken("sess_1"), { keep: true });
+    await run.signalRun("retention", { keep: true });
     expect(run.signalled).toBe(false);
     expect(run.output).toMatchObject({ kept: false });
   });
@@ -704,8 +704,8 @@ describe("the run is DURABLE", () => {
     // the step exhausts its patience and the body's catch runs the compensation
     // stack — which must delete the transcript the run acquired.
     const world = stubWorld([DONE], "Here is a recap, in prose, as you did not ask.");
-    const run = await runWorkflow(agentDef, "recap", INPUT);
-    await run.signal(transcriptToken("sess_1"), NUDGE);
+    const run = await runWorkflow(agentDef, "recap", INPUT, { key: KEY });
+    await run.signalRun("transcript", NUDGE);
 
     expect(run.status).toBe("failed");
     expect(run.error).toMatch(/JSON/i);
@@ -721,8 +721,11 @@ describe("the run is DURABLE", () => {
     // attempt has been charged and before the body runs, which is where a real
     // death lands.
     const world = stubWorld([DONE], "Here is a recap, in prose, as you did not ask.");
-    const run = await runWorkflow(agentDef, "recap", INPUT, { crashAt: "discardTranscript" });
-    await run.signal(transcriptToken("sess_1"), NUDGE);
+    const run = await runWorkflow(agentDef, "recap", INPUT, {
+      key: KEY,
+      crashAt: "discardTranscript",
+    });
+    await run.signalRun("transcript", NUDGE);
 
     expect(run.crashed).toBe(true);
     // The transcript is still on the account: announced and never performed.

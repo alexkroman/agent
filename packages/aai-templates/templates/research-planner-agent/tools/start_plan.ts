@@ -1,4 +1,4 @@
-import { errorMessage, toolFailure } from "@alexkroman1/aai";
+import { errorMessage, toolFailure, withInstruction } from "@alexkroman1/aai";
 import { z } from "zod";
 import { planNode } from "../procedure.ts";
 import { planFlow, planSlot } from "../shared.ts";
@@ -39,12 +39,10 @@ export default planSlot.updateTool({
     plan.pastSteps = [];
     plan.response = null;
     plan.revisions.push(`Planned ${steps.length} step(s) for: ${objective}`);
-    return {
-      objective,
-      steps,
-      message:
-        "Read the plan back in one breath, then ask if they want you to start. " +
+    return withInstruction(
+      { objective, steps },
+      "Read the plan back in one breath, then ask if they want you to start. " +
         "Work it one step at a time with work_next_step.",
-    };
+    );
   },
 });

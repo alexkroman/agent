@@ -1,4 +1,4 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { toolFailure, withInstruction } from "@alexkroman1/aai";
 import { z } from "zod";
 import { roadsideCall } from "../call.ts";
 import { findPolicy, quoteFee, rateFor, roadsideSlot } from "../shared.ts";
@@ -49,24 +49,23 @@ export default roadsideSlot.updateTool({
     state.log.push(`Coverage: ${rate.name}`);
     // The figures price the job; they are NOT a script. A live desk handed
     // every number answered the policy number with a sentence about the fee
-    // and never called `service_disclosure`, so `next` names the call where
-    // the model is actually looking. A plain field rather than
-    // `withInstruction`: a gated tool's own value sits under the dialog
-    // envelope's `result`, and the runtime renders an instruction only at the
-    // top level. `ifNoTowNeeded` is the zero-mile quote, through the same
-    // `quoteFee` the invoice uses.
-    return {
-      plan: rate.name,
-      holder: state.coverage?.holder ?? null,
-      status: state.coverage?.status ?? "unverified",
-      callOut: rate.callOut,
-      freeTowMiles: rate.freeTowMiles,
-      perMile: rate.perMile,
-      ifNoTowNeeded: quoteFee(rate, 0).total,
-      next:
-        "Call service_disclosure now, in this same turn, and read back exactly what it " +
+    // and never called `service_disclosure`, so the instruction names the call
+    // where the model is actually looking — the gate lifts it onto the dialog
+    // envelope, where the runtime renders it. `ifNoTowNeeded` is the zero-mile
+    // quote, through the same `quoteFee` the invoice uses.
+    return withInstruction(
+      {
+        plan: rate.name,
+        holder: state.coverage?.holder ?? null,
+        status: state.coverage?.status ?? "unverified",
+        callOut: rate.callOut,
+        freeTowMiles: rate.freeTowMiles,
+        perMile: rate.perMile,
+        ifNoTowNeeded: quoteFee(rate, 0).total,
+      },
+      "Call service_disclosure now, in this same turn, and read back exactly what it " +
         "returns. Do not say any of these numbers in your own words — the disclosure is " +
         "the only wording the caller may hear the fee in.",
-    };
+    );
   },
 });

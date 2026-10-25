@@ -167,7 +167,6 @@ describeAgent(agentDef, (run) => {
       write: (state) => {
         state.log.push("a line");
       },
-      caps: { log: LOG_CAP.log ?? 0 },
     });
   });
 
@@ -415,7 +414,8 @@ describeAgent(agentDef, (run) => {
         const ctx = createToolContext();
         await reach(ctx);
 
-        const position = roadsideCall.receive(ctx, CALLER_GONE);
+        await fireEvent(agentDef, CALLER_GONE, ctx);
+        const position = at(ctx);
         expect(position.state).toBe("abandoned");
         expect(position.done).toBe(true);
 
@@ -523,7 +523,7 @@ describeAgent(agentDef, (run) => {
         ctx,
       );
       // `abandoned`'s `onEnter` writes the line in the same window the move lands in.
-      roadsideCall.receive(ctx, CALLER_GONE);
+      await fireEvent(agentDef, CALLER_GONE, ctx);
 
       const log = roadsideSlot.get(ctx).log;
       expect(log).toHaveLength(before + 2);

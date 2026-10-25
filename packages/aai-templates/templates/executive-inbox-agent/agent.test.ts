@@ -4,6 +4,7 @@ import {
   createToolContext,
   expectSlotContract,
   expectToolOk,
+  fireEvent,
   sessionEvent,
   stubGenerate,
 } from "@alexkroman1/aai-runtime/testing";
@@ -190,13 +191,16 @@ describeAgent(agentDef, (run) => {
     test("opens the oldest email that needs a reply and hands back the brief", async () => {
       const { ctx } = scriptedDesk();
       await run(triageInbox, ctx);
-      const opened = expectToolOk(await run(openEmail, ctx));
+      const answer = await run(openEmail, ctx);
+      const opened = expectToolOk(answer);
       expect(opened.route).toBe("draft");
       expect(opened.email.id).toBe("m2");
       expect(at(ctx)).toBe(DRAFTING);
       // The brief IS the instruction — their EMAIL_WRITING_INSTRUCTIONS with
-      // memory in it, read by the model and stripped from the page.
-      const brief = instructionOf(opened);
+      // memory in it, read by the model and stripped from the page. The gate
+      // lifts it onto the dialog envelope, so it is read off the answer as a
+      // whole, not off the tool's own value.
+      const brief = instructionOf(answer);
       expect(brief).toContain("draft_reply");
       expect(brief).toContain("Priya");
       expect(stateOf(ctx).openId).toBe("m2");
@@ -233,9 +237,10 @@ describeAgent(agentDef, (run) => {
       await openById("m6", ctx);
       expect(model.calls.filter((c) => c.system === TRIAGE_SYSTEM)).toHaveLength(1);
       await run(ignore, ctx);
-      const filed = expectToolOk(await openById("m1", ctx));
+      const reopened = await openById("m1", ctx);
+      const filed = expectToolOk(reopened);
       expect(filed.route === "draft" && filed.reopened).toBe(false);
-      expect(instructionOf(filed)).toMatch(/filed this one/);
+      expect(instructionOf(reopened)).toMatch(/filed this one/);
       await run(ignore, ctx);
       const again = expectToolOk(await openById("m1", ctx));
       expect(again.route === "draft" && again.reopened).toBe(true);
@@ -305,13 +310,16 @@ describeAgent(agentDef, (run) => {
     test("draft_reply rewrites in the executive's tone and stages the result", async () => {
       const { ctx, model } = scriptedDesk();
       await openById("m2", ctx);
-      const staged = expectToolOk(
-        await run(draftReply, { content: "Yes — inference stays inside your VPC." }, ctx),
+      const drafted = await run(
+        draftReply,
+        { content: "Yes — inference stays inside your VPC." },
+        ctx,
       );
+      const staged = expectToolOk(drafted);
       expect(at(ctx)).toBe(AWAITING);
       expect(staged.awaitingDecision).toBe(true);
       expect(staged.allowed).toEqual(["accept", "edit", "ignore", "respond"]);
-      expect(instructionOf(staged)).toMatch(/Nothing has been sent/);
+      expect(instructionOf(drafted)).toMatch(/Nothing has been sent/);
       // Their `rewrite` node ran, on the tone memory, over this draft.
       const rewrite = model.calls.find((c) => c.system === REWRITE_SYSTEM);
       expect(rewrite?.prompt).toContain(DEFAULT_MEMORY.rewriteInstructions);
@@ -505,12 +513,13 @@ describeAgent(agentDef, (run) => {
       const { ctx, model } = scriptedDesk({ chooser: ["tone", "background"] });
       await openById("m7", ctx);
       await run(askQuestion, { content: "Is the audit closed?" }, ctx);
-      const back = expectToolOk(await run(respond, { feedback: "Yes, closed last Friday." }, ctx));
+      const responded = await run(respond, { feedback: "Yes, closed last Friday." }, ctx);
+      const back = expectToolOk(responded);
       expect(at(ctx)).toBe(DRAFTING);
       expect(back.feedback).toBe(
         `${EXECUTIVE.name} responded in this way: Yes, closed last Friday.`,
       );
-      expect(instructionOf(back)).toContain("draft_reply");
+      expect(instructionOf(responded)).toContain("draft_reply");
       expect(stateOf(ctx).proposal).toBeNull();
       expect(stateOf(ctx).exchange.at(-1)).toContain("responded in this way");
       // Their `prompt_types=["background"]`: the chooser is offered one type, and a
@@ -600,7 +609,6 @@ describeAgent(agentDef, (run) => {
         write: (draft) => {
           draft.log.push("Opened: that ramen place");
         },
-        caps: { log: 40, exchange: 30, reflections: 20, sent: 40, triageExamples: 40 },
       });
     });
 
@@ -639,7 +647,8 @@ describeAgent(agentDef, (run) => {
       const { ctx } = scriptedDesk();
       await openById("m2", ctx);
       await run(draftReply, { content: "Yes." }, ctx);
-      const gone = reviewFlow.receive(ctx, sessionEvent("session.timedOut"));
+      await fireEvent(agentDef, sessionEvent("session.timedOut"), ctx);
+      const gone = reviewFlow.position(ctx);
       expect(gone.state).toBe("abandoned");
       expect(gone.done).toBe(true);
       const refused = await run(accept, ctx);

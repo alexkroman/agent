@@ -9,6 +9,7 @@ import {
 import { isToolFailure } from "@alexkroman1/aai/utils";
 import {
   createToolContext,
+  expectSlotContract,
   expectToolOk,
   fireEvent,
   parseToolInput,
@@ -35,11 +36,15 @@ const say = (text: string, ctx: SessionEventContext) =>
 const FRESH = { ...DEFAULT_GAME_STATE, rank: rankFor(0) };
 
 describeAgent(agentDef, (run) => {
-  test("the game is per session, and the default is cloned", async () => {
-    const one = createToolContext();
-    const two = createToolContext();
-    await run(gameStateTake, { value: "lantern" }, one);
-    expect(gameSlot.get(two).inventory).toEqual([]);
+  test("the game is per session, the default is cloned, and the top bar is the blank's view", () => {
+    // The three slot invariants in one call: `projected()` is the view of the
+    // default with `rank` filled by `after`, a write in one session is invisible
+    // in another, and the default is a fresh clone per session.
+    expectSlotContract(gameSlot, {
+      write: (draft) => {
+        draft.inventory.push("lantern");
+      },
+    });
     expect(DEFAULT_GAME_STATE.inventory).toEqual([]);
   });
 

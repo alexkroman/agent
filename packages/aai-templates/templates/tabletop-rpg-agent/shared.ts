@@ -350,11 +350,12 @@ const GAME_CAPS: SlotCaps<GameState> = { sessionLog: MAX_LOG_ENTRIES };
 /**
  * The in-play game, one per session. `gameView` withholds the seven fields the
  * sidebar never reads and every unplayed act's goal and mood with them — the
- * only defence there is against a spoiler leak — and `agent.ts`'s `syncState`
- * is what sends it. `after` restores `gameOver`/`crisisMode` on every store, so no
+ * only defence there is against a spoiler leak — and `sync: true` is what
+ * sends it. `after` restores `gameOver`/`crisisMode` on every store, so no
  * mutating tool can leave a stale flag for the `DOWNED` transition to read.
  */
 export const gameSlot = sessionSlot("game", DEFAULT_STATE, {
+  sync: true,
   view: gameView,
   after: updateCrisisFlags,
   caps: GAME_CAPS,

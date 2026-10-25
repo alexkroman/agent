@@ -420,7 +420,6 @@ describeAgent(agentDef, (run) => {
         write: (trip) => {
           trip.log.push("a line");
         },
-        caps: { log: LOG_CAP },
       });
     });
 
@@ -497,7 +496,8 @@ describeAgent(agentDef, (run) => {
       await run(bookHotel, { hotelId: "H1", nights: 3 }, ctx);
       expect(gateFlow.position(ctx).state).toBe("awaitingConfirmation");
 
-      const at = gateFlow.receive(ctx, CALLER_GONE);
+      await fireEvent(agentDef, CALLER_GONE, ctx);
+      const at = gateFlow.position(ctx);
       expect(at.state).toBe("abandoned");
       expect(at.done).toBe(true);
     });
@@ -506,7 +506,7 @@ describeAgent(agentDef, (run) => {
       const ctx = createToolContext();
       await atDesk("hotel", ctx);
       await run(bookHotel, { hotelId: "H1", nights: 3 }, ctx);
-      gateFlow.receive(ctx, CALLER_GONE);
+      await fireEvent(agentDef, CALLER_GONE, ctx);
 
       // The property the state exists for: `confirm_action` is what turns a
       // staged booking into a real one, and nobody is on the call to agree to it.
@@ -520,7 +520,7 @@ describeAgent(agentDef, (run) => {
       const ctx = createToolContext();
       await atDesk("hotel", ctx);
       await run(bookHotel, { hotelId: "H1", nights: 3 }, ctx);
-      gateFlow.receive(ctx, CALLER_GONE);
+      await fireEvent(agentDef, CALLER_GONE, ctx);
 
       // A session event sends an event and cannot run a tool, so `pending` is
       // untouched. Safe only because `abandoned` is final — a timeout returning
@@ -528,7 +528,7 @@ describeAgent(agentDef, (run) => {
       expect(tripSlot.get(ctx).pending).not.toBeNull();
     });
 
-    test("the call log says the caller went, and names what was never applied", () => {
+    test("the call log says the caller went, and names what was never applied", async () => {
       // `abandoned`'s `onEnter` writes the line in the same window the move
       // lands in — a position is not something a desk can read afterwards.
       const ctx = createToolContext();
@@ -536,7 +536,7 @@ describeAgent(agentDef, (run) => {
         trip.pending = { kind: "book_hotel", hotelId: "H1", nights: 3 };
       });
 
-      gateFlow.receive(ctx, CALLER_GONE);
+      await fireEvent(agentDef, CALLER_GONE, ctx);
 
       expect(tripSlot.get(ctx).log.at(-1)).toContain("Caller gone");
       expect(tripSlot.get(ctx).log.at(-1)).toContain("Harborview Suites");
@@ -544,9 +544,9 @@ describeAgent(agentDef, (run) => {
       expect(tripSlot.get(ctx).pending).not.toBeNull();
     });
 
-    test("with nothing staged it says so, rather than naming an empty change", () => {
+    test("with nothing staged it says so, rather than naming an empty change", async () => {
       const ctx = createToolContext();
-      gateFlow.receive(ctx, CALLER_GONE);
+      await fireEvent(agentDef, CALLER_GONE, ctx);
       expect(tripSlot.get(ctx).log).toEqual(["Caller gone — nothing was waiting."]);
     });
 

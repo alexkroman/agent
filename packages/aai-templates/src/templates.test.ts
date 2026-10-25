@@ -91,7 +91,7 @@ describe("template build smoke", () => {
       // the (now empty) map the definition itself carries. This is also what
       // asserts every tool file's name, shape and uniqueness — `toolRegistry`
       // throws naming the file, so a template's tools are validated here.
-      const resolved = withTemplateTools(name, agentDef as AgentDef);
+      const resolved = await withTemplateTools(name, agentDef as AgentDef);
       expect(() => agentToolsToSchemas(agentToolsets(resolved))).not.toThrow();
       // And the prose half, for the same reason: `system-prompt.md` BECOMES the
       // prompt, so this is where an empty one — or one the agent ignores while

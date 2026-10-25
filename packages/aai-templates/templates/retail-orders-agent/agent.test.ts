@@ -5,6 +5,8 @@ import {
   createToolContext,
   expectDialogRefused,
   expectToolOk,
+  fireEvent,
+  sessionEvent,
 } from "@alexkroman1/aai-runtime/testing";
 import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
 import { describe, expect, test } from "vitest";
@@ -28,9 +30,8 @@ import modifyUserAddress from "./tools/modify_user_address.ts";
 import returnDeliveredOrderItems from "./tools/return_delivered_order_items.ts";
 import transferToHumanAgents from "./tools/transfer_to_human_agents.ts";
 
-// No `expectSlotContract` here: it compares `projected()` with the view of
-// `create()`, and a SEEDED slot with an `empty` frame differs by design.
-// Isolation lives in `registry.test.ts`, the cap in `store.test.ts`.
+// The slot's contract (`expectSlotContract`: the empty frame, isolation, the
+// cap) is asserted in `registry.test.ts`, beside the lowering it belongs to.
 describeAgent(agentDef, (run) => {
   /** A context already authenticated as `userId`, via the real tool. */
   async function authedCtx(email: string): Promise<ToolContext> {
@@ -1236,11 +1237,14 @@ describeAgent(agentDef, (run) => {
 
   describe("a caller who hangs up", () => {
     /** The frame the runtime offers a declared dialog when a session times out. */
-    const CALLER_GONE = { type: "session.timedOut", meta: { id: "evt_1", at: 0 } } as const;
+    const CALLER_GONE = sessionEvent("session.timedOut");
 
-    test("ends the call from `identifying`, before anyone is on it", () => {
+    test("ends the call from `identifying`, before anyone is on it", async () => {
       const ctx = createToolContext();
-      const at = callFlow.receive(ctx, CALLER_GONE);
+      // Driven the way the session dispatches it: the declared dialog is
+      // offered the event first, then the `events` handlers.
+      await fireEvent(agentDef, CALLER_GONE, ctx);
+      const at = callFlow.position(ctx);
       expect(at.state).toBe("abandoned");
       expect(at.done).toBe(true);
     });
@@ -1252,13 +1256,14 @@ describeAgent(agentDef, (run) => {
 
       // Declared on the PARENT, so it reaches this child without `serving`
       // re-entering and resetting to `helping`.
-      expect(callFlow.receive(ctx, CALLER_GONE).state).toBe("abandoned");
+      await fireEvent(agentDef, CALLER_GONE, ctx);
+      expect(callFlow.position(ctx).state).toBe("abandoned");
     });
 
     test("leaves nothing runnable — including the tool that would settle the change", async () => {
       const ctx = await authedCtx("aarav.anderson9752@example.com");
       await stageFor(ctx);
-      callFlow.receive(ctx, CALLER_GONE);
+      await fireEvent(agentDef, CALLER_GONE, ctx);
 
       // The whole point of the state. `confirm_change` is what applies a staged
       // change to the store, and a caller who is gone has agreed to nothing.

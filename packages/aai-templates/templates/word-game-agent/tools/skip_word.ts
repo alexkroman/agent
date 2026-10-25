@@ -1,3 +1,4 @@
+import { withInstruction } from "@alexkroman1/aai";
 import { gameFlow, type RoundEnd } from "../game.ts";
 import { advanceWord, currentWord, gameSlot, requireWord, score } from "../shared.ts";
 
@@ -18,12 +19,9 @@ export default gameSlot.updateTool({
     game.lastRemark = null;
     const nextWord = currentWord(game);
     const next: RoundEnd = nextWord === null ? "WORDS_DONE" : undefined;
-    return {
-      skipped,
-      nextWord,
-      score: score(game),
-      next,
-      say: nextWord === null ? "That was the last word." : `The new word is ${nextWord}.`,
-    };
+    return withInstruction(
+      { skipped, nextWord, score: score(game), next },
+      nextWord === null ? "That was the last word." : `The new word is ${nextWord}.`,
+    );
   },
 });

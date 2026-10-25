@@ -47,7 +47,9 @@ export const nightSlot = sessionSlot(
   { recs: [] as Rec[] },
   {
     // What the browser sees: newest first, over a copy — the slot stays
-    // chronological, and reversing here keeps both ends agreeing which end is new.
+    // Synced to the page after every tool call; the page renders
+    // `useAgentState(nightSlot.projected)` and keeps no copy.
+    sync: true,
     view: (night) => ({ recs: [...night.recs].reverse() }),
     caps: { recs: MAX_RECS },
   },

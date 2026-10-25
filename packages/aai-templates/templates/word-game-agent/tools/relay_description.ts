@@ -1,3 +1,4 @@
+import { withInstruction } from "@alexkroman1/aai";
 import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import { gameFlow, type RoundEnd } from "../game.ts";
@@ -103,27 +104,23 @@ export default gameSlot.updateTool({
       advanceWord(game, "fouled");
       const nextWord = currentWord(game);
       const next: RoundEnd = nextWord === null ? "WORDS_DONE" : undefined;
-      return {
-        verdict: "foul" as const,
-        word,
-        score: score(game),
-        nextWord,
-        next,
-        say:
-          `The describer said the word - "${word}" is forfeited, no point. ` +
+      return withInstruction(
+        { verdict: "foul" as const, word, score: score(game), nextWord, next },
+        `The describer said the word - "${word}" is forfeited, no point. ` +
           (nextWord === null ? "That was the last word." : `The next word is ${nextWord}.`),
-      };
+      );
     }
 
     const { heard, guess } = ruling;
     // The word may have moved while the player thought (a skip landing in the
     // same step); score against the word the description was FOR.
     if (currentWord(game) !== word) {
-      return {
-        verdict: "stale" as const,
-        score: score(game),
-        say: "That word has already moved on.",
-      };
+      // `next: undefined` stays put: `withInstruction` wraps each arm on its
+      // own, so the field the gate reads is spelled on every arm.
+      return withInstruction(
+        { verdict: "stale" as const, score: score(game), next: undefined },
+        "That word has already moved on.",
+      );
     }
     game.descriptions = heard;
     game.lastRemark = guess.remark;
@@ -133,28 +130,32 @@ export default gameSlot.updateTool({
       const points = score(game);
       const nextWord = currentWord(game);
       const next: RoundEnd = nextWord === null ? "WORDS_DONE" : undefined;
-      return {
-        verdict: "correct" as const,
-        playerSaid: guess.remark,
-        guess: guess.guess,
-        word,
-        score: points,
-        nextWord,
-        secondsLeft: secondsLeft(game, ctx.now()),
-        next,
-        say:
-          `Correct! That's ${points} ${plural(points, "point")}. ` +
+      return withInstruction(
+        {
+          verdict: "correct" as const,
+          playerSaid: guess.remark,
+          guess: guess.guess,
+          word,
+          score: points,
+          nextWord,
+          secondsLeft: secondsLeft(game, ctx.now()),
+          next,
+        },
+        `Correct! That's ${points} ${plural(points, "point")}. ` +
           (nextWord === null ? "That was the last word!" : `Your next word is ${nextWord}.`),
-      };
+      );
     }
     game.wrongGuesses.push(guess.guess);
-    return {
-      verdict: "wrong" as const,
-      playerSaid: guess.remark,
-      guess: guess.guess,
-      score: score(game),
-      secondsLeft: secondsLeft(game, ctx.now()),
-      say: `Relay the player's remark ("${guess.remark}") and let the describer keep going.`,
-    };
+    return withInstruction(
+      {
+        verdict: "wrong" as const,
+        playerSaid: guess.remark,
+        guess: guess.guess,
+        score: score(game),
+        secondsLeft: secondsLeft(game, ctx.now()),
+        next: undefined,
+      },
+      `Relay the player's remark ("${guess.remark}") and let the describer keep going.`,
+    );
   },
 });

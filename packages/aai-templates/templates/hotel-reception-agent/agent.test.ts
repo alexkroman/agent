@@ -6,7 +6,9 @@ import {
   createToolContext,
   expectDialogOk,
   expectDialogRefused,
+  expectSlotContract,
   expectToolOk,
+  fireEvent,
   sessionEvent,
   toolInputIssues,
 } from "@alexkroman1/aai-runtime/testing";
@@ -240,6 +242,14 @@ describeAgent(agentDef, (run) => {
       // one `client.tsx` builds for itself — never the seed.
       expect(hotelSlot.projected()).toEqual(deskView(emptyHotelState()));
       expect(hotelSlot.projected()).toMatchObject({ inHouse: 0, arrivingToday: 0 });
+      // The same claim as the slot's contract, with the other two invariants:
+      // the frame is the view of `empty()`, a session's writes stay its own, and
+      // the log cap keeps the newest forty lines.
+      expectSlotContract(hotelSlot, {
+        write: (draft) => {
+          draft.log.push("probe");
+        },
+      });
     });
   });
 
@@ -511,7 +521,8 @@ describeAgent(agentDef, (run) => {
     test("a hang-up ends the call, and nothing books after it", async () => {
       const ctx = createToolContext();
       await bookUpToReadBack(ctx);
-      expect(deskFlow.receive(ctx, CALLER_GONE).state).toBe("hungUp");
+      await fireEvent(agentDef, CALLER_GONE, ctx);
+      expect(deskFlow.position(ctx).state).toBe("hungUp");
       expect(isToolFailure(await run("confirm_booking", ctx))).toBe(true);
       expect(isToolFailure(await run("start_room_booking", ctx))).toBe(true);
       // And the lead is on the ledger: `hungUp`'s `onEnter` (desk-seams.test.ts).

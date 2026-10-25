@@ -174,16 +174,16 @@ describeAgent(deployedDef, (run) => {
 
   describe("cancel_reminders", () => {
     test("cancels this speaker's reminders that have not fired, and counts them", async () => {
-      // Snapshots typed by the def: `output` is checked against what `remind`'s
-      // body returns, and `agent` is what `listing()` answers from.
+      // Snapshots typed AND named by the def: `output` is checked against what
+      // `remind`'s body returns, `workflow` is the name the agent declared it
+      // under, and `agent` is what `listing()` answers from.
       const workflows = installStubWorkflows({
         agent: deployedDef,
         runs: [
-          createRunSnapshot(remind, { runId: "a", workflow: "remind", status: "running" }),
-          createRunSnapshot(remind, { runId: "b", workflow: "remind", status: "pending" }),
+          createRunSnapshot(remind, { runId: "a", status: "running" }),
+          createRunSnapshot(remind, { runId: "b", status: "pending" }),
           createRunSnapshot(remind, {
             runId: "c",
-            workflow: "remind",
             status: "completed",
             output: { delivered: true },
           }),

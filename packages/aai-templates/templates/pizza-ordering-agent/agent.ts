@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import { menuText, orderSlot } from "./shared.ts";
+import { menuText } from "./shared.ts";
 
 // The in-progress order lives in one `sessionSlot` (see shared.ts) —
 // per-session by construction, so concurrent customers each get their own cart.
@@ -8,8 +8,6 @@ import { menuText, orderSlot } from "./shared.ts";
 
 export default agent({
   name: "Pizza Palace",
-  // The cart, pushed to the page after every tool call.
-  syncState: orderSlot.projected,
   listing: "Takes pizza orders over the phone, from first topping to checkout",
   // Appended under `system-prompt.md`, and generated from MENU so the prompt
   // can never quote a price the pricing code doesn't charge.

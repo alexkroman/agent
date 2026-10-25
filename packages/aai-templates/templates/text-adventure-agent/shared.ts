@@ -65,11 +65,12 @@ export const SCAVENGER_FLAG = "scavenger_struck";
 
 /**
  * The game, one per session. Its view is the status line every text adventure
- * prints across the top of the screen — the CRT's top bar (`syncState`) and
+ * prints across the top of the screen — the CRT's top bar (`sync: true`) and
  * what `game_state_get` opens with — so the narrator and the player can never
  * disagree about the four numbers.
  */
 export const gameSlot = sessionSlot("game", DEFAULT_GAME_STATE, {
+  sync: true,
   view: ({ currentRoom, score, rank, moves }) => ({ currentRoom, score, rank, moves }),
   after: (game) => {
     game.rank = rankFor(game.score);

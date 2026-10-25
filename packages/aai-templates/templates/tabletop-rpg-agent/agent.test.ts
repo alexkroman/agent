@@ -159,7 +159,6 @@ describeAgent(agentDef, (run) => {
       write: (game) => {
         game.playerName = "Kael";
       },
-      caps: { sessionLog: MAX_LOG_ENTRIES },
     });
   });
 

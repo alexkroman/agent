@@ -98,12 +98,16 @@ export interface SupportView {
 }
 
 /**
- * The call's state, and the `view` `agent.ts` syncs. The `ticket` field is why
+ * The call's state, and the `view` synced to the page. The `ticket` field is why
  * that is a projection rather than the state itself: a ticket carries the
  * caller's phone number, and the view is where you decide what leaves the
  * server.
  */
 export const supportSlot = sessionSlot("support", EMPTY_SUPPORT, {
+  // The trace, synced to the page after every tool call. The projection is
+  // also the privacy boundary: a logged ticket carries the caller's callback
+  // number, and only its reference crosses to the browser.
+  sync: true,
   view: (state): SupportView => ({
     product: PRODUCT,
     trace: state.trace,

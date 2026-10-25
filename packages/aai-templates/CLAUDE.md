@@ -193,7 +193,11 @@ Rules the table carries that apply to any template:
 - A tool's icon and label are `tool({ ui })`, served with the declaration;
   `mountClient({ tools })` is an override, not the home.
 - A tool reads the clock and the turn from `ctx.now()` and `ctx.turn`, never
-  `Date.now()` or a counter kept in a slot.
+  `Date.now()` or a counter kept in a slot; a module a tool hands the clock to
+  takes it as an argument (`roadside-assistance-agent`'s `reserveTruck`). A
+  count the PAGE renders (`text-adventure-agent`'s `moves`) is slot state
+  written by a hook, which is a different thing from a tool asking how old the
+  session is.
 - A no-argument tool omits `inputSchema` rather than writing `z.object({})`.
 - Step code imports from `@alexkroman1/aai/step` (zero-zod), not the root.
 - `@alexkroman1/aai/tools` functions return `T | ToolFailure` — narrow with
@@ -204,10 +208,10 @@ Rules the table carries that apply to any template:
   schema; read eval results with `toolResultIn(calls, toolDef)` and
   `lastStateIn(events, slot.projected)`; assert refusals with
   `expectDialogRefused`/`dialogRefusalPattern`, never a regex on the sentence;
-  the three slot invariants are one `expectSlotContract(slot, { write, caps })`;
-  stub step I/O with `installStubWorld`, which also seeds `ASSEMBLYAI_API_KEY`
-  (so no `vi.stubEnv` for it; `apiKey: false` for the missing-key spec), never
-  `globalThis.fetch`.
+  the three slot invariants are one `expectSlotContract(slot, { write })` (the
+  caps come off the handle, so a spec restates none); stub step I/O with
+  `installStubWorld`, which also seeds `ASSEMBLYAI_API_KEY` (so no `vi.stubEnv`
+  for it; `apiKey: false` for the missing-key spec), never `globalThis.fetch`.
 
 ## A flow is WHERE A CONVERSATION IS, and a board is not one
 
@@ -368,8 +372,6 @@ as separate steps so a submit retry does not re-upload the file.
 - `stepTranscribePoll` returns the transcript; do not fetch it again.
 - `stepTranscribeUpload` resolves `{ audioUrl, source, size }`; report the
   `source` (the upload's `label`), never the id.
-- `meeting-recap-agent` keeps its hand-written poll on purpose (its status is a
-  value its Query port and saga read); do not convert it.
 
 Any other submit-then-check shape is
 `ctx.poll(name, check, { everyMs, maxMs, done, first, slowAfterMs })`, never a

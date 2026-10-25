@@ -23,7 +23,6 @@ import {
   factChecker,
   findByAngle,
   MAX_ANGLES,
-  MAX_FINDINGS,
   MAX_RESEARCH_STEPS,
   researcher,
   VerdictSchema,
@@ -443,7 +442,6 @@ describeAgent(agentDef, (run) => {
         write: (board) => {
           board.topic = "t";
         },
-        caps: { findings: MAX_FINDINGS },
       });
     });
 

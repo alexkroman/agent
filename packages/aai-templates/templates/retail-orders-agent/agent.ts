@@ -4,7 +4,6 @@ import { callFlow, record, retailSlot, summarize } from "./store.ts";
 export default agent({
   name: "Retail Support",
   listing: "Looks up orders, returns and store credit for an authenticated retail caller",
-  syncState: retailSlot.projected,
   /**
    * A per-session ceiling on what the model may spend.
    *

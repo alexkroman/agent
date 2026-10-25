@@ -68,6 +68,7 @@ export function seedStore(): Store {
  */
 export const retailSlot = sessionSlot("retail", createDefaultState, {
   // What the browser sees: only the authenticated customer of the six seeded.
+  sync: true,
   view: storeView,
   empty: emptyRetailState,
   caps: { activity: MAX_ACTIVITY },

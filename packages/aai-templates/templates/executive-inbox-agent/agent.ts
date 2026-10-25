@@ -1,7 +1,7 @@
 import { agent } from "@alexkroman1/aai";
 import { EXECUTIVE } from "./inbox.ts";
 import { principalBrief } from "./prompts.ts";
-import { assistantSlot, reviewFlow } from "./shared.ts";
+import { reviewFlow } from "./shared.ts";
 
 /**
  * An executive assistant you phone about your inbox, adapted from LangChain's
@@ -40,9 +40,6 @@ export default agent({
   // from the one place `inbox.ts` declares them so the prompt cannot name a
   // different executive than the triage does.
   promptContext: principalBrief(EXECUTIVE),
-  // The inbox, the memory and the proposal exist before the first tool call, so
-  // a resumed connection has something to project.
-  syncState: assistantSlot.projected,
   // Declared so the CALL can move the gate: a caller who hangs up with a draft
   // waiting leaves `accept` legal for the rest of the session otherwise.
   dialogs: [reviewFlow],

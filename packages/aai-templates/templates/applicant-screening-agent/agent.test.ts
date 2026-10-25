@@ -783,10 +783,12 @@ describeAgent(agentDef, (run) => {
   describe("screening_status", () => {
     test("reads the stage off the flow, not off the data", async () => {
       const { ctx, model } = scriptedDesk();
-      const idle = landed(await run(screeningStatus, ctx));
+      const answer = await run(screeningStatus, ctx);
+      const idle = landed(answer);
       expect(idle.state).toBe("idle");
       expect(idle.result).toMatchObject({ stage: "nothing screened yet", screened: 0, top: [] });
-      expect(idle.result.message).toMatch(/offer to screen/);
+      // What the model is told to do with it rides the envelope as its instruction.
+      expect(instructionOf(answer)).toMatch(/offer to screen/);
       expect(model.calls).toEqual([]);
     });
 
@@ -949,7 +951,6 @@ describeAgent(agentDef, (run) => {
         write: (state) => {
           state.rounds = 1;
         },
-        caps: { feedback: MAX_FEEDBACK_ENTRIES },
       });
       // No round can be dropped while it counts.
       expect(MAX_FEEDBACK_ENTRIES).toBeGreaterThan(MAX_FEEDBACK_ROUNDS);
