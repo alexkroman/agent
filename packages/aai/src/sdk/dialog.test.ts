@@ -531,7 +531,7 @@ describe("declaration errors", () => {
         sendFrom: () => ({ type: "ABANDON" }) as const,
         execute: () => "ok",
       }),
-    ).toThrow(/both send and sendFrom/);
+    ).toThrow(/more than one of send, sendFrom/);
   });
 });
 

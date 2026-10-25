@@ -34,7 +34,7 @@ import type { ToolContext, ToolDef } from "./types.ts";
  * @public
  */
 export type ToolBearingAgent = {
-  readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+  readonly tools: Readonly<Record<string, ToolDef>>;
   readonly dialogs?: readonly AnyDialog[] | undefined;
 };
 
@@ -64,7 +64,7 @@ export type ToolBearingAgent = {
  *
  * @public
  */
-export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema> {
+export function toolOf(agent: ToolBearingAgent, name: string): ToolDef {
   return resolveTool(agent, name).def;
 }
 
@@ -76,7 +76,7 @@ export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInput
 function resolveTool(
   agent: ToolBearingAgent,
   name: string,
-): { def: ToolDef<ToolInputSchema>; call: ToolDef["execute"] } {
+): { def: ToolDef; call: ToolDef["execute"] } {
   // Before the lookup, because the value in this position is routinely not an
   // agent at all: a tool def (the thing under test), or the `undefined` a
   // mistyped import answers with. Both used to die on `agent.tools[name]` with

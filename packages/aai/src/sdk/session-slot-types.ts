@@ -13,8 +13,11 @@
  */
 
 import type { DeepReadonly } from "./deep-readonly.ts";
+import type { Dialog } from "./dialog-handle.ts";
+import type { DialogGate } from "./dialog-types.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
+import type { ToolFailure } from "./utils.ts";
 
 /**
  * The compile error a mutation body gets for being `async`.
@@ -116,10 +119,131 @@ type IsAny<T> = 0 extends 1 & T ? true : false;
  * @input
  * @public
  */
-export interface SlotToolDef<P extends ToolInputSchema, V, R>
+export interface SlotToolDef<P extends ToolInputSchema | undefined, V, R>
   extends Omit<ToolDef<P, R>, "execute"> {
   /** The tool body, handed this session's slot value alongside the usual args. */
   execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
+  /**
+   * A precondition on the FROZEN value, checked before the body — and before
+   * an update window opens. A returned {@link ToolFailure} is the tool's whole
+   * result: no window, no `prepare`, nothing sent.
+   *
+   * For the "is there an order yet", "is the caller verified" check every
+   * mutating body used to open with, written once beside the body rather than
+   * as its first line, where the value in hand is already a draft. Handed the
+   * readonly value whichever method the tool was declared through.
+   *
+   * With {@link SlotPreparedToolDef.prepare} it runs TWICE: once before the
+   * await, once more on the fresh value right before the window, so a state
+   * change during the await is caught.
+   */
+  require?: (value: DeepReadonly<V>, args: InferSchemaOutput<P>) => ToolFailure | undefined;
+}
+
+/**
+ * The authoring shape of {@link SessionSlot.updateTool}: a {@link SlotToolDef}
+ * over the mutable draft, plus `report`.
+ *
+ * @typeParam R - What `execute` returns — the PARTIAL result, if `report` is
+ *   declared.
+ * @typeParam R2 - What the tool answers after `report`; `R` without one.
+ *
+ * @input
+ * @public
+ */
+export interface SlotUpdateToolDef<P extends ToolInputSchema | undefined, T, R, R2 = R>
+  extends SlotToolDef<P, T, R> {
+  /**
+   * Complete the body's result from the value ACTUALLY STORED — after the
+   * slot's `after` hook and `caps` have applied, which the draft inside the
+   * window has not seen yet.
+   *
+   * `({ added }, stored) => ({ added, count: stored.items.length })`: the count
+   * a body reads off its draft is the count BEFORE a cap trimmed it, and a
+   * derived field `after` recalculates is not on the draft when the body
+   * returns. Reporting from the stored value is the only reading that cannot
+   * disagree with the next `get`. A `sendFrom` on a gated tool sees the
+   * reported value.
+   *
+   * **Skipped when the body returned a {@link ToolFailure}**, which is answered
+   * unchanged: a failure has no partial result to complete.
+   */
+  report?: (stored: DeepReadonly<T>, partial: Exclude<NoInfer<R>, ToolFailure>) => R2;
+}
+
+/**
+ * {@link SlotUpdateToolDef} with an ASYNC `prepare` ahead of the synchronous
+ * window — the shape of a mutating tool that has to await first.
+ *
+ * The window stays synchronous and the await moves in front of it, which is
+ * the pattern {@link SessionSlot.update}'s doc prescribes by hand; declaring it
+ * here is what lets a mutating tool stay ONE declaration. `execute` is handed
+ * what `prepare` produced as its THIRD argument, ahead of `ctx` — so the
+ * three-argument body of a tool without `prepare` is unchanged.
+ *
+ * @typeParam Prep - What `prepare` hands the body.
+ *
+ * @input
+ * @public
+ */
+export interface SlotPreparedToolDef<P extends ToolInputSchema | undefined, T, Prep, R, R2 = R>
+  extends Omit<SlotUpdateToolDef<P, T, R, R2>, "execute"> {
+  /**
+   * The async half: handed the args and the FROZEN value (no draft exists yet),
+   * it awaits what the body needs — a model call, an HTTP lookup — and answers
+   * it, or a {@link ToolFailure} that becomes the tool's result with no window
+   * opened. `require`, if declared, is re-run on the fresh value afterwards.
+   */
+  prepare(
+    args: InferSchemaOutput<P>,
+    value: DeepReadonly<T>,
+    ctx: ToolContext,
+  ): Prep | ToolFailure | Promise<Prep | ToolFailure>;
+  /** The synchronous body: the draft, then what `prepare` produced, then `ctx`. */
+  execute(args: InferSchemaOutput<P>, draft: T, prepared: Prep, ctx: ToolContext): R;
+}
+
+/**
+ * The {@link DialogGate} a slot-backed tool carries, with the dialog it is on.
+ *
+ * A {@link SessionSlot.tool} or {@link SessionSlot.updateTool} declaring
+ * `dialog` runs exactly what {@link Dialog.tool} runs around the body — the
+ * refusal before, the transition and the `{ ...position, result }` envelope
+ * after, nothing sent on a {@link ToolFailure} — around its own read or update
+ * window. `E` is read from the dialog handle alone (`NoInfer` on the gate's
+ * own fields), so a misspelled event is reported at `send`, not at `dialog`.
+ *
+ * @typeParam R - The tool's result as the gate reads it (reported, for an
+ *   `updateTool`).
+ * @typeParam E - The dialog's event union.
+ *
+ * @input
+ * @public
+ */
+export interface SlotDialogGate<R, E extends { type: string }>
+  extends DialogGate<Awaited<R>, NoInfer<E>> {
+  /** The dialog this tool is gated on. */
+  dialog: Dialog<E>;
+}
+
+/**
+ * What {@link SessionSlot.transact} takes: the async half, then the
+ * synchronous window — {@link SlotPreparedToolDef}'s two halves for a caller
+ * inside a plain `tool()` body.
+ *
+ * @typeParam Prep - What `prepare` hands `commit`.
+ * @typeParam R - What `commit` returns.
+ *
+ * @input
+ * @public
+ */
+export interface SlotTransaction<T, Prep, R> {
+  /** A precondition on the frozen value — see {@link SlotToolDef.require}. Run before `prepare` and again before `commit`. */
+  require?: (value: DeepReadonly<T>) => ToolFailure | undefined;
+  /** The await, handed the frozen value; a {@link ToolFailure} ends the transaction with no window. */
+  prepare(value: DeepReadonly<T>): Prep | ToolFailure | Promise<Prep | ToolFailure>;
+  /** The synchronous window, handed the draft and what `prepare` produced. */
+  commit(draft: T, prepared: Prep): R;
 }
 
 /**
@@ -224,13 +348,20 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
    */
   caps?: SlotCaps<T>;
   /**
-   * Invariant restoration, run on the draft at the end of every successful
+   * Invariant restoration, run on the value at the end of every successful
    * {@link SessionSlot.update} — pruning growth, recalculating a derived field.
    *
    * It exists so those rules live with the slot rather than being re-listed at
    * every mutating call site, which is how one gets forgotten. Because it runs
    * inside the mutation window, it sees the complete value about to be stored
    * and may mutate it in place.
+   *
+   * **It runs on EVERY store, not only `update`**: on the default the first
+   * `get` installs, on `set`, on `reset`, and on the frame `projected()`
+   * renders with no argument. A derived field the hook computes was absent
+   * from the default and present after the first update, so a page rendered
+   * two shapes of one slot and a tool reading the default saw the field
+   * missing. Caps still apply after it, on every path.
    *
    * **It does NOT run when `mutate` throws.** A mutator that failed part-way
    * may have left the draft in a shape the hook itself cannot handle, and an
@@ -245,6 +376,34 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
    * the hook and defaults to `void`, so a caller never writes it.
    */
   after?: ((draft: T) => After) & RejectThenable<After>;
+  /**
+   * Register {@link SessionSlot.projected} with `agent()`, so an `agent.ts`
+   * that declares no `syncState` syncs every slot declared with `sync: true`.
+   *
+   * The slot is then declared ONCE, view and all, and the agent names nothing:
+   * `sessionSlot("cart", create, { view, sync: true })` is the whole wiring.
+   * An explicit `agent({ syncState })` still wins — registration is the
+   * default, not an addition — and a registered slot the agent projects by
+   * hand is one projection, not two.
+   *
+   * **It works because `agent.ts` and `shared.ts` share one bundle**: the
+   * registry is module state in the SDK copy the bundle carries, and
+   * `agent()` reads it when `agent.ts` runs, so the slot has to be declared in
+   * a module `agent.ts` imports (`shared.ts`), not only in a `tools/` file the
+   * build loads afterwards.
+   */
+  sync?: boolean;
+  /**
+   * What {@link SessionSlot.projected} projects for a session that has not
+   * touched the slot, INSTEAD of `create()`.
+   *
+   * For a SEEDED slot: `create` builds the catalogue or the demo accounts the
+   * first `get` installs, and `projected()` with no argument — the frame a page
+   * renders before its first push — would otherwise ship that seed to the
+   * browser. `empty()` is the shape with nothing in it. Runs through `after`
+   * and `caps` like any stored value.
+   */
+  empty?: () => T;
   /**
    * Whether this slot's value is STORED. Defaults to `true`.
    *

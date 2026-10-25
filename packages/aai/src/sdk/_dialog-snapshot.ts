@@ -29,6 +29,17 @@ import { toStateMeta } from "./_dialog-meta.ts";
 import type { DialogSpec, DialogStateSpec } from "./dialog-types.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
+import type { SlotHolder } from "./session-state.ts";
+
+/**
+ * The entry action a state with an {@link DialogStateSpec.onEnter} compiles
+ * to. Unimplemented on purpose: XState runs nothing for it, and `dialog()`
+ * watches for it through the actor's inspection stream (`@xstate.action`), which
+ * is how a hook fires with XState's own entry semantics — a parent before its
+ * child, no re-fire on a self-transition, nothing on a restored snapshot —
+ * without the machine holding a function. `params.path` names the state.
+ */
+export const ENTER_ACTION = "aai.dialog.enter";
 
 /**
  * What a dialog stores per session: the actor's persisted snapshot, in a wrapper.
@@ -99,14 +110,21 @@ export function statePaths(machine: AnyStateMachine): Set<string> {
 }
 
 /** One state map as XState state-node configs. Recurses into nested `states`. */
-function toNodes(states: Record<string, DialogStateSpec>): Record<string, AnyStateNodeConfig> {
+function toNodes(
+  states: Record<string, DialogStateSpec>,
+  prefix = "",
+): Record<string, AnyStateNodeConfig> {
   const nodes: Record<string, AnyStateNodeConfig> = {};
   for (const [name, state] of Object.entries(states)) {
     // `omitUndefined` rather than four conditional spreads: `exactOptionalPropertyTypes`
     // is on, and XState reads an explicitly-`undefined` `initial` or `states` as
     // a declaration of one (guard-invariants rule 2).
+    const path = prefix === "" ? name : `${prefix}.${name}`;
     nodes[name] = omitUndefined({
       type: state.final === true ? ("final" as const) : undefined,
+      // A marker action, not the hook: the hook lives in `entryHooks`' map,
+      // keyed by this same path, so the machine stays plain data.
+      entry: state.onEnter === undefined ? undefined : [{ type: ENTER_ACTION, params: { path } }],
       // The whole reason the spec form exists: every per-state setting is read
       // back out of `meta`, and XState types `meta` as `Record<string, any>`, so
       // a misspelling is silent in the machine form and a compile error here.
@@ -115,10 +133,27 @@ function toNodes(states: Record<string, DialogStateSpec>): Record<string, AnySta
       meta: toStateMeta(state),
       on: state.on,
       initial: state.initial,
-      states: state.states === undefined ? undefined : toNodes(state.states),
+      states: state.states === undefined ? undefined : toNodes(state.states, path),
     });
   }
   return nodes;
+}
+
+/**
+ * Every `onEnter` a spec declares, keyed by the dotted state path the entry
+ * action's `params.path` names — the other half of {@link ENTER_ACTION}.
+ */
+export function entryHooks(spec: DialogSpec): ReadonlyMap<string, (ctx: SlotHolder) => void> {
+  const hooks = new Map<string, (ctx: SlotHolder) => void>();
+  const walk = (states: Record<string, DialogStateSpec>, prefix: string): void => {
+    for (const [name, state] of Object.entries(states)) {
+      const path = prefix === "" ? name : `${prefix}.${name}`;
+      if (state.onEnter !== undefined) hooks.set(path, state.onEnter);
+      if (state.states !== undefined) walk(state.states, path);
+    }
+  };
+  walk(spec.states, "");
+  return hooks;
 }
 
 /**

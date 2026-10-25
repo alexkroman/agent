@@ -39,7 +39,6 @@
  */
 
 import { isRecord } from "./is-record.ts";
-import type { ToolInputSchema } from "./schema.ts";
 import type { Toolset } from "./toolset.ts";
 import type { ToolDef } from "./types.ts";
 
@@ -85,7 +84,7 @@ const SPEC_RE = /\.(?:test|spec)$/;
 export type ToolModules = Readonly<Record<string, unknown>>;
 
 /** A checked set of tools, keyed by the name the model calls. */
-export type ToolRegistry = Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+export type ToolRegistry = Readonly<Record<string, ToolDef>>;
 
 /**
  * A tool as recognized at RUNTIME, which has to be structural: `tool()` is
@@ -93,7 +92,7 @@ export type ToolRegistry = Readonly<Record<string, ToolDef<ToolInputSchema>>>;
  * is the mistake worth naming — under discovery it would otherwise register an
  * object the executor calls `execute` on and fail per turn instead of at build.
  */
-function isToolDef(value: unknown): value is ToolDef<ToolInputSchema> {
+function isToolDef(value: unknown): value is ToolDef {
   return (
     isRecord(value) && typeof value.description === "string" && typeof value.execute === "function"
   );
@@ -128,7 +127,7 @@ function toolNameOf(path: string): string {
  * @public
  */
 export function toolRegistry(modules: ToolModules): ToolRegistry {
-  const registry: Record<string, ToolDef<ToolInputSchema>> = {};
+  const registry: Record<string, ToolDef> = {};
   const sources: Record<string, string> = {};
 
   for (const [path, module] of Object.entries(modules)) {

@@ -309,7 +309,22 @@ member it governs**:
   `slot.projection(view)`.
 - **`caps` bounds a TOP-LEVEL array on every store, AFTER `after`**;
   `SlotCaps<T>` admits only array keys, bad caps refused at declaration
-  (`_session-slot-caps.ts`). The hook sees the untrimmed draft.
+  (`_session-slot-caps.ts`). The hook sees the untrimmed draft. **`after` runs
+  on EVERY store** — the default the first `get` installs, `set`, `reset`, the
+  empty frame of `projected()` — so a derived field cannot differ between the
+  default and the first update.
+- **`create` may be a plain value** (cloned per install) or a factory; `empty`
+  is what `projected()` renders for a seeded slot; `sync: true` registers
+  `projected` (`_sync-registry.ts`) for `agent()` to collect when no `syncState`
+  is declared — one bundle, one registry, so the slot must be in a module
+  `agent.ts` imports. `SlotValueOf`/`SlotDraftOf` read a handle's two value
+  types.
+- **Slot tools are one pipeline** (`_slot-tools.ts`): dialog refusal → `require`
+  (frozen value) → `prepare` (async, then `require` again) → the window
+  (`execute(args, draft, [prepared,] ctx)`, `after`, `caps`) → `report` on the
+  stored value → `send`/`sendFrom` + envelope. `updateTool`'s overloads select
+  stages; `slot.transact(ctx, { require?, prepare, commit })` is the non-tool
+  form. A tool declaring `prepare` or `dialog` is async.
 
 **The backend is a property of the DEPLOYMENT**, never a slot: Postgres with
 `DATABASE_URL`, memory otherwise, the platform backend on the platform —
@@ -344,8 +359,20 @@ module doc owns it, `packages/aai-runtime/DIALOG-CLAUDE.md` owns the knobs.
   still assignable to the registry.
 - **`sendFrom` takes `Exclude<NoInfer<R>, ToolFailure>`**; `NoInfer` stops a
   `sendFrom` above `execute` inferring `unknown`. An inline-arrow `execute`
-  still needs `sendFrom` declared BELOW it (else `TS18046`) — see "A `sendFrom`
-  goes BELOW `execute`" in `packages/aai-templates/CLAUDE.md`.
+  still needs a CALLBACK `sendFrom` declared BELOW it (else `TS18046`) — see "A
+  `sendFrom` goes BELOW `execute`" in `packages/aai-templates/CLAUDE.md`. The
+  two forms with no ordering rule: `sendFrom: "field"` (a key of the success
+  result holding `E["type"] | undefined`, `DialogSendFromKey`) and the second
+  argument `dialog.tool(def, { sendFrom })` (`DialogSendOptions`).
+- **`when` is optional** (legal in every state, envelope and `send` still
+  apply); `reset: true` starts the dialog over before the body.
+  `DialogStateSpec.onEnter(ctx)` runs INSIDE `send`/`receive`'s window after the
+  move, with XState's entry semantics (parent then child, no re-fire on a
+  self-transition, nothing on a restored snapshot or `reset`): a marker `entry`
+  action read off the inspection stream, never in `meta` (`ENTER_ACTION`).
+- **The gate halves are `_dialog-gate.ts`**, shared by `dialog.tool` and a slot
+  tool declaring `dialog` (`SlotDialogGate`). `AnyDialog` assignability depends
+  on `DialogSendFromKey`'s `keyof`-over-remapped-keys spelling (comment there).
 - Types sit beside factories: `dialog-types.ts`/`dialog-handle.ts`,
   `session-slot-types.ts`, re-exported from the factories.
 

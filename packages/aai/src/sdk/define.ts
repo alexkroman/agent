@@ -70,7 +70,7 @@ import { type AgentDef, DEFAULT_SYSTEM_PROMPT, type ToolContext, type ToolDef } 
  *
  * @public
  */
-export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
+export function tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(
   def: ToolDef<P, R>,
 ): ToolDef<P, R> {
   return def;
@@ -106,7 +106,9 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
  *
  * **Session state is not declared here either** — a {@link sessionSlot} owns its
  * own default and its own storage, so there is no `state` factory to remember.
- * `syncState` takes that slot's projection, or a list of them.
+ * `syncState` takes that slot's projection, or a list of them — or nothing,
+ * when the slots were declared `sync: true`: those are collected here by
+ * default, and an explicit `syncState` replaces them.
  *
  * @example Default pipeline with another voice and a different LLM
  * ```ts

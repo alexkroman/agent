@@ -114,3 +114,28 @@ describe("AgentDef type inference", () => {
     expectTypeOf(agent.tools).toBeObject();
   });
 });
+
+describe("an optional input schema", () => {
+  test("`inputSchema` admits an explicit undefined, so a wrapper can forward it", () => {
+    const forward = <S extends z.ZodObject | undefined>(spec: {
+      inputSchema: S;
+    }): ToolDef<S, number> => ({
+      description: "forwarded",
+      inputSchema: spec.inputSchema,
+      execute: () => 1,
+    });
+    expectTypeOf(forward({ inputSchema: undefined })).toEqualTypeOf<ToolDef<undefined, number>>();
+    const schema = z.object({ n: z.number() });
+    expectTypeOf(forward({ inputSchema: schema })).toEqualTypeOf<ToolDef<typeof schema, number>>();
+  });
+
+  test("with P undefined the args are the empty record", () => {
+    type Args = Parameters<ToolDef<undefined>["execute"]>[0];
+    expectTypeOf<Args>().toEqualTypeOf<Record<string, never>>();
+    // Still a ToolDef the registry takes: the bare default is the widest
+    // reading, so every `ToolDef<P>` lands in it.
+    const wide: ToolDef = {} as ToolDef<undefined, number>;
+    expectTypeOf(wide).toEqualTypeOf<ToolDef>();
+    expectTypeOf<ToolDef<z.ZodObject<{ n: z.ZodNumber }>, string>>().toExtend<ToolDef>();
+  });
+});

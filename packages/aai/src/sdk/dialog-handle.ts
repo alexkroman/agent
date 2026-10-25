@@ -18,6 +18,7 @@
 
 import type {
   DialogPosition,
+  DialogSendOptions,
   DialogTimeout,
   DialogToolDef,
   DialogToolResult,
@@ -146,9 +147,14 @@ export interface Dialog<E = { type: string }> {
    * shape the tool sends instead of `unknown`. Narrowing a return type is
    * covariant, so a gated tool is still assignable wherever the agent's
    * registry wants a `ToolDef<ToolInputSchema>`.
+   *
+   * The optional second argument carries `sendFrom` for a tool whose def
+   * cannot order it below an inline `execute` — see {@link DialogSendOptions}.
+   * A `send`/`sendFrom` in both places is refused at declaration.
    */
-  tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
+  tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(
     def: DialogToolDef<P, R, E>,
+    options?: DialogSendOptions<R, E>,
   ): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
   /**
    * A `syncState` projection of this dialog's position, so a client can render
