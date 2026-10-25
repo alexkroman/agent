@@ -118,5 +118,6 @@ auto-loads only `CLAUDE.md`):
 | `packages/aai/AUTHORING-HELPERS-CLAUDE.md` | The speech boundary both ways, the calendar/zod argument shapes, `ctx.random`, `orFail`/`failable`, `parseWav`, `roundMoney` |
 | `packages/aai/DEFAULTS-CLAUDE.md` | Every numeric default an `agent()` field carries — the value, where it is applied, and the measurement behind it |
 | `packages/aai/S2S-CLAUDE.md` | S2S wire-level: the one sample rate, tool-call captions, in-band errors, `endSession`, abandoning a handshake |
+| `packages/aai/WORKFLOWS-CLAUDE.md` | Workflow apps and the workflow HTTP API from the authoring side: `lastLine`, the input/output readings and the TS7022 escapes, `publicWebhookUrl`, the run-lifecycle helpers (`poll`, `report`, signals, `onFailure`, `sayOnClient`, `transcribeUploadDurably`), the `workflow_*` builtins |
 <!-- /guide-index:siblings -->
 <!-- prettier-ignore-end -->

@@ -30,7 +30,8 @@ Claude Code loads these when you work in the directory:
 
 Reference siblings (read on demand):
 [`AUTHORING-HELPERS-CLAUDE.md`](AUTHORING-HELPERS-CLAUDE.md),
-[`DEFAULTS-CLAUDE.md`](DEFAULTS-CLAUDE.md), [`S2S-CLAUDE.md`](S2S-CLAUDE.md).
+[`DEFAULTS-CLAUDE.md`](DEFAULTS-CLAUDE.md), [`S2S-CLAUDE.md`](S2S-CLAUDE.md),
+[`WORKFLOWS-CLAUDE.md`](WORKFLOWS-CLAUDE.md).
 
 ## SDK structure
 
