@@ -22,6 +22,7 @@
  */
 
 import { createToolContext } from "./_testing-context.ts";
+import type { AnyDialog } from "./dialog-handle.ts";
 import type { SessionEventMeta } from "./protocol-event-meta.ts";
 import type { SessionEvent, SessionEventMap, SessionEventType } from "./session-event-map.ts";
 import type {
@@ -84,7 +85,7 @@ let minted = 0;
  * const committed = sessionEvent("userTranscript.committed", { text: "two pizzas" });
  * committed.type; // "userTranscript.committed"
  * committed.meta.id.startsWith("evt_"); // true
- * sessionEvent("reply.completed").text; // compile error: the event has no `text`
+ * // `sessionEvent("reply.completed").text` is a compile error: the event has no `text`.
  * ```
  *
  * @public
@@ -117,12 +118,23 @@ export type FiredEvent = {
   readonly typed: boolean;
   /** The `"*"` handler ran, after the typed one. */
   readonly wildcard: boolean;
+  /**
+   * The keys of the declared dialogs the event MOVED — one whose `on` map
+   * names it (`"@session.timedOut": "abandoned"`) and whose active state
+   * handles it. Every declared dialog is offered the event, before the
+   * handlers, as the session offers it.
+   */
+  readonly dialogs: readonly string[];
 };
 
 /**
- * Drive the agent's `events` handlers with one event, the way the session
- * dispatches it: the handler declared for `event.type` first, then `"*"`, each
- * handed the same context.
+ * Drive the agent's dialogs and `events` handlers with one event, the way the
+ * session dispatches it: every declared dialog is offered the event FIRST
+ * (`dialog.receive`, so a `"@session.timedOut"` transition fires), then the
+ * handler declared for `event.type`, then `"*"`, each handed the same context.
+ * Dialogs first because a dialog is part of the session's state and moves
+ * before any observer sees the effect — the order `aai-runtime`'s session
+ * keeps (`session-controls.ts`).
  *
  * Two deliberate differences from the runtime's dispatch, both because a SPEC
  * is reading the outcome rather than a live call surviving it:
@@ -140,8 +152,9 @@ export type FiredEvent = {
  * `ctx.said`. Defaults to a fresh one, i.e. a DISTINCT session; pass one
  * explicitly wherever a second event is meant to see the first's writes.
  *
- * @throws When the agent declares no `events` at all — there is nothing to
- *   drive, and a spec that fired into nothing would pass against nothing.
+ * @throws When the agent declares neither `events` nor `dialogs` — there is
+ *   nothing to drive, and a spec that fired into nothing would pass against
+ *   nothing.
  *
  * @example
  * ```ts
@@ -168,25 +181,38 @@ export type FiredEvent = {
  * @public
  */
 export async function fireEvent(
-  agent: { readonly name?: string | undefined; readonly events?: SessionEventHandlers | undefined },
+  agent: {
+    readonly name?: string | undefined;
+    readonly events?: SessionEventHandlers | undefined;
+    readonly dialogs?: readonly AnyDialog[] | undefined;
+  },
   event: SessionEvent,
   ctx: SessionEventContext = createToolContext(),
 ): Promise<FiredEvent> {
   const handlers = agent.events;
-  if (handlers === undefined) {
+  const declared = agent.dialogs ?? [];
+  if (handlers === undefined && declared.length === 0) {
     throw new Error(
-      `fireEvent: the agent${agent.name ? ` "${agent.name}"` : ""} declares no \`events\`, so ` +
-        `there is no handler to drive with "${event.type}". Declare one with agent({ events }), ` +
-        "or test the function directly.",
+      `fireEvent: the agent${agent.name ? ` "${agent.name}"` : ""} declares no \`events\` and no ` +
+        `\`dialogs\`, so there is nothing to drive with "${event.type}". Declare a handler with ` +
+        "agent({ events }) or a dialog with agent({ dialogs }), or test the function directly.",
     );
+  }
+  // The dialogs FIRST, each offered the event through `receive` — which sends
+  // it only where the active state handles it, so a moved dialog is one whose
+  // position changed.
+  const dialogs: string[] = [];
+  for (const dialog of declared) {
+    const before = dialog.position(ctx).state;
+    if (dialog.receive(ctx, event).state !== before) dialogs.push(dialog.key);
   }
   // Widened at the LOOKUP, once, as the session's own dispatch does: the
   // handler under `event.type` was declared for exactly this event.
-  const typed = handlers[event.type] as SessionEventHandler | undefined;
-  const wildcard = handlers["*"];
+  const typed = handlers?.[event.type] as SessionEventHandler | undefined;
+  const wildcard = handlers?.["*"];
   // Sequential, awaited: the typed handler settles before `"*"` runs, so a
   // wildcard that reads what the typed one wrote sees it.
   if (typed) await typed(event, ctx);
   if (wildcard) await wildcard(event, ctx);
-  return { typed: typed !== undefined, wildcard: wildcard !== undefined };
+  return { typed: typed !== undefined, wildcard: wildcard !== undefined, dialogs };
 }

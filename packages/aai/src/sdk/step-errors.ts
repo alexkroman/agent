@@ -190,7 +190,7 @@ export type ErrorClass = abstract new (...args: never[]) => Error;
  *
  * export function header(bytes: Uint8Array): WavFormat {
  *   return fatalOn((err) => err instanceof Error && err.name === "UnsupportedRecordingError", () =>
- *     parseWav(bytes),
+ *     parseWav(bytes, bytes.byteLength),
  *   );
  * }
  * ```
@@ -232,7 +232,7 @@ export type OrFatalOptions = {
  *
  * export function header(bytes: Uint8Array): WavFormat {
  *   // A WAV the cutter cannot read is a WAV it cannot read on the next attempt.
- *   return orFatal(() => parseWav(bytes), { when: UnsupportedRecordingError });
+ *   return orFatal(() => parseWav(bytes, bytes.byteLength), { when: UnsupportedRecordingError });
  * }
  * ```
  *

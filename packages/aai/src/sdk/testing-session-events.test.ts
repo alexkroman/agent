@@ -2,6 +2,7 @@
 import { describe, expect, test } from "vitest";
 import { createToolContext } from "./_testing-context.ts";
 import { agent } from "./define.ts";
+import { dialog } from "./dialog.ts";
 import { SessionEventMetaSchema } from "./protocol-event-meta.ts";
 import type { SessionEvent } from "./session-event-map.ts";
 import { sessionSlot } from "./session-slot.ts";
@@ -63,7 +64,7 @@ describe("fireEvent", () => {
       sessionEvent("userTranscript.committed", { text: "hi" }),
       ctx,
     );
-    expect(fired).toEqual({ typed: true, wildcard: true });
+    expect(fired).toEqual({ typed: true, wildcard: true, dialogs: [] });
     expect(order).toEqual(["typed:hi", "*:userTranscript.committed"]);
     // What the handlers wrote is read back through the SAME context.
     expect(heard.get(ctx)).toEqual({ lines: ["hi"], seen: 1 });
@@ -74,11 +75,51 @@ describe("fireEvent", () => {
     expect(await fireEvent(def, sessionEvent("reply.completed"))).toEqual({
       typed: true,
       wildcard: false,
+      dialogs: [],
     });
     expect(await fireEvent(def, sessionEvent("reply.cancelled"))).toEqual({
       typed: false,
       wildcard: false,
+      dialogs: [],
     });
+  });
+
+  test("offers the event to every declared dialog FIRST, and reports the ones it moved", async () => {
+    const call = dialog("call", {
+      initial: "greeting",
+      states: {
+        greeting: { on: { HEARD: "helping", "@session.timedOut": "abandoned" } },
+        helping: { on: { DONE: "abandoned" } },
+        abandoned: { final: true },
+      },
+    });
+    const deaf = dialog("deaf", {
+      initial: "a",
+      states: { a: { on: { GO: "b" } }, b: { final: true } },
+    });
+    const seen: string[] = [];
+    const def = agent({
+      name: "Phone",
+      dialogs: [call, deaf],
+      events: {
+        "session.timedOut": (_event, ctx) => {
+          // The dialog has already moved when the handler runs.
+          seen.push(call.position(ctx).state);
+        },
+      },
+    });
+    const ctx = createToolContext();
+    const fired = await fireEvent(def, sessionEvent("session.timedOut", { afterMs: 1000 }), ctx);
+    expect(fired).toEqual({ typed: true, wildcard: false, dialogs: ["call"] });
+    expect(call.position(ctx)).toMatchObject({ state: "abandoned", done: true });
+    expect(seen).toEqual(["abandoned"]);
+    // A dialog no state of which handles the event stays put and is not reported.
+    expect(deaf.position(ctx).state).toBe("a");
+    // An agent with dialogs and no `events` is driven too.
+    const silent = agent({ name: "Silent", dialogs: [dialog("s", call.machine as never)] });
+    expect(
+      (await fireEvent(silent, sessionEvent("session.timedOut", { afterMs: 1 }))).dialogs,
+    ).toEqual(["s"]);
   });
 
   test("awaits an async handler, where the session would not", async () => {
@@ -130,7 +171,7 @@ describe("fireEvent", () => {
   test("an agent with no `events` is refused by name", async () => {
     const event: SessionEvent = sessionEvent("reply.completed");
     await expect(fireEvent(agent({ name: "Mute" }), event)).rejects.toThrow(
-      'the agent "Mute" declares no `events`',
+      'the agent "Mute" declares no `events` and no `dialogs`',
     );
   });
 });
