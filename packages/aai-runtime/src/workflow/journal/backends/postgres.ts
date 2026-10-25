@@ -96,6 +96,7 @@ import type {
   ResumableRun,
   RunRecord,
   RunStatus,
+  RunStatusPatch,
   SleepEntry,
   SleepRecord,
   StepEntry,
@@ -158,7 +159,7 @@ function runOps(db: Db): RunOps {
     async setStatus(
       runId: string,
       next: RunStatus,
-      patch?: { output?: unknown; error?: { message: string } },
+      patch?: RunStatusPatch,
       expect?: readonly RunStatus[],
     ): Promise<boolean> {
       // The COMPARE-AND-SET, and the row count is the answer. `returning run_id`

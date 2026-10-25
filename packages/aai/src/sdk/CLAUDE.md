@@ -599,6 +599,29 @@ pipeline only).
   `text`); `deepResearchWorkflow` takes the same `{ run, maxAttempts }` object
   and hands it to the engine, where a FUNCTION `onFailure` still runs in its
   body `catch`.
+- **`ctx.report(name, line)` is ONE `ctx.step` around `stepReport`**
+  (`workflow-report.ts`); `ctx.poll({ first, slowAfterMs })` is a `ctx.waitFor`
+  ahead of the loop plus one `<name>:slow` report step, both journaled as the
+  hand-written calls were (`workflow-poll.ts`). `PollResult.woken` is what a
+  body reads instead of branching on a journaled submit result.
+- **A signal token is DERIVED from the run key** — `<workflow>:<key>:<label>`
+  (`workflow-signals.ts`): `ctx.waitForSignal(label)` / `ctx.signalToken(label)`
+  in the body, `ctx.workflows.signalRun(def, key, label, payload)` in the tool,
+  and both THROW for a keyless run. `StartOptions.key` defaults to `"session"`
+  (the session id on a tool's client, `aai-runtime`'s
+  `workflow/client-session.ts`; no key anywhere else), so `latest`/`live` read
+  back what a tool started. `signal(token, payload, { holdMs })` keeps a payload
+  for a wait the run has not reached yet (`signalRun` holds
+  `DEFAULT_SIGNAL_HOLD_MS` by default).
+- **`workflow({ input, output }).body(fn)`** is the two-phase form whose
+  `typeof def` is fixed before the body exists — the `TS7022` escape, with
+  `WorkflowInputOf<typeof inputSchema>` as the other (`workflow-readings.ts`).
+  `WorkflowDef.describeRun`/`cancelNote` are what the `workflow_status` /
+  `workflow_progress` / `workflow_cancel` builtins say
+  (`host/workflow-builtins.ts`); `describeRun(def, run)` is the same line for a
+  route handler.
+- **`StepOptions.maxWaits`** (opt-in) lets a far side's dated `Retry-After` be
+  waited out without spending an attempt — `aai-runtime`'s `replay/step.ts`.
 - **`stepTextOwner(text, { phone?, links? })`** (`step-text-owner.ts`, `/step`)
   is `text_me`'s rule from a step: `allowedSmsRecipient` over the step env, a
   non-retryable refusal as `{ sent: false, why }`, a transient one thrown

@@ -41,13 +41,21 @@ import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { Logger } from "../logger.ts";
 import { guestCodeVersion } from "./code-version.ts";
 import { dedupedRunId } from "./dedupe-run-id.ts";
+import { holdSignal } from "./held-signals.ts";
 import { isTerminalStatus, type JournalStore, type RunRecord } from "./journal/types.ts";
 import { settleRunOutcome } from "./output.ts";
+import { runKeyEntry } from "./replay/run-key.ts";
 import { type ReplayOptions, type ReplayOutcome, replayRun } from "./replay.ts";
 import { createStepGate, resolveStepConcurrency, type StepGate } from "./step-gate.ts";
 import { type StreamStore, streamNamespace } from "./streams.ts";
 import { toWdkRunRecord } from "./wdk-record.ts";
-import type { WdkAdapter, WdkRunRecord, WdkStartOptions, WdkStreamOptions } from "./wdk-types.ts";
+import type {
+  WdkAdapter,
+  WdkRunRecord,
+  WdkSignalOptions,
+  WdkStartOptions,
+  WdkStreamOptions,
+} from "./wdk-types.ts";
 
 /** What one engine needs. */
 export type WorkflowEngineOptions = {
@@ -161,7 +169,7 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
    * outcome, and a second copy is the one that would forget the log line.
    */
   async function abandon(runId: string, workflow: string, message: string): Promise<"failed"> {
-    await journal.setStatus(runId, "failed", { error: { message } });
+    await journal.setStatus(runId, "failed", { error: { message }, settledAt: Date.now() });
     logger.warn?.("Workflow run abandoned", { runId, workflow, reason: message });
     return "failed";
   }
@@ -212,7 +220,13 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
     // CANCELLED mid-flight from being overwritten as completed by the worker
     // that had not noticed. The body ran to the end either way; what the cancel
     // decided is what the run is recorded as.
-    const moved = await journal.setStatus(runId, terminal.status, terminal.patch, ["running"]);
+    // The settle instant rides the terminal write — `RunRecord.settledAt`.
+    const moved = await journal.setStatus(
+      runId,
+      terminal.status,
+      { ...terminal.patch, settledAt: Date.now() },
+      ["running"],
+    );
     if (!moved) return (await journal.getRun(runId))?.status;
     return terminal.status;
   }
@@ -309,6 +323,13 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
             throw err;
           },
         );
+      // The correlation key, journaled as the entry `key!` BEFORE the first
+      // dispatch so the first walk already reads it as `ctx.key` —
+      // `workflow/replay/run-key.ts`. Only the winner writes it: the loser of
+      // a dedupe race is answering for a run whose start already did.
+      if (created && options?.key !== undefined) {
+        await journal.appendStep(runId, runKeyEntry(options.key));
+      }
       // After the record exists, never before: a dispatcher that delivered first
       // would race a worker against `createRun` and find no such run.
       if (created) dispatchDetached(runId);
@@ -343,8 +364,10 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       // may not walk answers `false` rather than moving, and a `failed` an abandon
       // below wrote first is outside the set too, so neither order changes where
       // the run ends up — at the cost of a transient `running` on a doomed run.
+      // `startedAt` rides every announcement and the journal keeps the FIRST
+      // — `RunStatusPatch` — so a redelivery cannot move the run's start.
       const announceStarted = (): Promise<boolean> =>
-        journal.setStatus(runId, "running", undefined, ["pending", "running"]);
+        journal.setStatus(runId, "running", { startedAt: Date.now() }, ["pending", "running"]);
       const started = announceStarted();
       void started.catch(() => undefined);
 
@@ -423,7 +446,10 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       // error-class predicates plus a cause-chain walk to reach the same
       // boolean, because the DevKit signalled all three outcomes by throwing and
       // did so differently per world.
-      const ended = await journal.setStatus(runId, "cancelled", undefined, ["pending", "running"]);
+      const ended = await journal.setStatus(runId, "cancelled", { settledAt: Date.now() }, [
+        "pending",
+        "running",
+      ]);
       // And STOP the body, which is the half `WorkflowClient.cancel`'s "Stop a
       // run" promises and a status write cannot keep on its own. `replayRun`
       // checks an `AbortSignal` before each step and no production caller ever
@@ -447,13 +473,23 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       return stopped;
     },
 
-    async signal(token: string, payload: unknown): Promise<boolean> {
+    async signal(token: string, payload: unknown, options?: WdkSignalOptions): Promise<boolean> {
       const runId = await journal.deliverHook(token, payload);
       // `false` is what "no hook holds this token" means, and it is the ORDINARY
       // answer rather than an error: a token whose run has moved past its wait,
       // finished, or was never started is indistinguishable to the caller, and a
       // caller that had to catch this would catch it on the happy path.
-      if (!runId) return false;
+      //
+      // Unless the caller asked for a HOLD: the run may not have reached its
+      // wait yet, and the payload is kept for the wait to take when it is
+      // claimed (`workflow/held-signals.ts`). `true` for having been taken —
+      // the hold is the taking, as the caller's doc says.
+      if (!runId) {
+        const holdMs = options?.holdMs ?? 0;
+        if (!(holdMs > 0)) return false;
+        holdSignal(token, payload, holdMs);
+        return true;
+      }
       // The answer is stored; the body has to be re-walked to read it.
       dispatchDetached(runId);
       return true;

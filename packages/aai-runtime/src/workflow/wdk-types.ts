@@ -56,7 +56,7 @@ export type WdkAdapter = {
    * happens to be asking. Same throw-vs-answer translation as `cancel` — a
    * token nothing is listening on is an answer.
    */
-  signal(token: string, payload: unknown): Promise<boolean>;
+  signal(token: string, payload: unknown, options?: WdkSignalOptions): Promise<boolean>;
   /**
    * `getRun(runId).getReadable(options)` — the run's own written stream.
    *
@@ -96,6 +96,23 @@ export type WdkStartOptions = {
    * already exists, resolve its id without creating anything.
    */
   dedupeKey?: string | undefined;
+  /**
+   * `StartOptions.key`, already resolved (a session-scoped client has turned
+   * `"session"` into the id). Journaled WITH the run so a body reads it back as
+   * `ctx.key` on every walk — `workflow/replay/run-key.ts`. The key INDEX is
+   * the client's own write and not the engine's.
+   */
+  key?: string | undefined;
+};
+
+/** What {@link WdkAdapter.signal} is told beyond the payload. */
+export type WdkSignalOptions = {
+  /**
+   * `SignalOptions.holdMs`: keep the payload this long for a wait on `token`
+   * the run has not reached yet. Absent or `0`, a token nothing holds answers
+   * `false` as it always did.
+   */
+  holdMs?: number | undefined;
 };
 
 /** What {@link WdkAdapter.readStream} passes through to WDK. */
@@ -135,4 +152,8 @@ export type WdkRunRecord = {
   error?: { message: string } | undefined;
   /** `RunRecord.label` — what the run is, absent when it was given none. */
   label?: string | undefined;
+  /** `RunRecord.startedAt` — absent until the first delivery, and on a journal without it. */
+  startedAt?: number | undefined;
+  /** `RunRecord.settledAt` — absent on a live run, and on a journal without it. */
+  settledAt?: number | undefined;
 };

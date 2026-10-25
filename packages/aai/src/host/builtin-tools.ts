@@ -23,6 +23,7 @@ import { agentToolsToSchemas, type ToolSchema } from "../sdk/_internal-types.ts"
 import { HTML_ACCEPT, MAX_HTML_BYTES, MAX_JSON_BYTES, MAX_PAGE_CHARS } from "../sdk/constants.ts";
 import { toolset } from "../sdk/toolset.ts";
 import type { ToolDef } from "../sdk/types.ts";
+import type { AnyWorkflowDef } from "../sdk/workflow.ts";
 import { builtinCover } from "./_builtin-cover.ts";
 import { calculate } from "./_calculate.ts";
 import { fetchCappedJson, fetchCappedText } from "./_fetch-capped.ts";
@@ -35,6 +36,7 @@ import { readNotes, writeNote } from "./session-notes.ts";
 import { builtinFetch } from "./ssrf.ts";
 import { createTextMe } from "./text-me.ts";
 import { createWebSearch } from "./web-search.ts";
+import { WORKFLOW_BUILTINS } from "./workflow-builtins.ts";
 
 // Compiled once: `convert()` rebuilds the selector index per call (116 µs vs
 // 3.5 µs), and this runs on every `visit_webpage`.
@@ -303,6 +305,13 @@ export type BuiltinToolOptions = {
    * without it, run_code refuses to evaluate code in this process.
    */
   runCode?: RunCodeExecutor;
+  /**
+   * The agent's declared workflows, for the three run builtins
+   * (`workflow_status`, `workflow_progress`, `workflow_cancel`): what each
+   * SAYS about a run is the def's own `describeRun`/`cancelNote`. Absent, every
+   * line is the status sentence `describeRun` falls back to.
+   */
+  workflows?: Readonly<Record<string, AnyWorkflowDef>> | undefined;
 };
 
 /** Resolved builtin tool definitions, keyed by tool name. */
@@ -386,6 +395,8 @@ export function resolveBuiltin(
 ): (ToolDef & { guidance?: string }) | undefined {
   if (Object.hasOwn(SANDBOX_BUILTINS, name)) return SANDBOX_BUILTINS[name]?.(options?.runCode);
   if (Object.hasOwn(FETCH_BUILTINS, name)) return FETCH_BUILTINS[name]?.(options?.fetch);
+  // Built per resolve, like the fetch ones: what they SAY is the agent's own.
+  if (Object.hasOwn(WORKFLOW_BUILTINS, name)) return WORKFLOW_BUILTINS[name]?.(options?.workflows);
   if (Object.hasOwn(STATIC_BUILTINS, name)) return STATIC_BUILTINS[name];
   return undefined;
 }

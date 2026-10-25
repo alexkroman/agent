@@ -10,6 +10,7 @@ import type { AgentParams, workflowApp } from "./define.ts";
 import type { LlmProvider, S2sProvider } from "./providers.ts";
 import type { StateProjection } from "./session-state.ts";
 import type { AgentDef } from "./types.ts";
+import type { WorkflowDeclaration } from "./workflow.ts";
 
 /**
  * The workflow-app arm — the fourth, and the only one keyed on the FRONT DOOR
@@ -167,4 +168,12 @@ test("the workflow-app member and workflowApp() do not have the session fields",
   type AppParams = Parameters<typeof workflowApp>[0];
   expectTypeOf<"maxSteps" extends keyof AppParams ? true : false>().toEqualTypeOf<false>();
   expectTypeOf<"systemPrompt" extends keyof AppParams ? true : false>().toEqualTypeOf<false>();
+});
+
+test("a two-phase declaration's def is a workflow an app may declare", () => {
+  type Workflows = NonNullable<AgentDef["workflows"]>;
+  type TwoPhaseDef = ReturnType<WorkflowDeclaration["body"]>;
+  expectTypeOf<TwoPhaseDef>().toExtend<Workflows[string]>();
+  // And the declaration itself is NOT — a workflow with no body cannot run.
+  expectTypeOf<WorkflowDeclaration>().not.toExtend<Workflows[string]>();
 });

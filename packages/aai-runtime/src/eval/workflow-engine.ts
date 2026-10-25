@@ -100,8 +100,11 @@ import {
   publishStepFetch,
   publishStepInfoReader,
   publishStepReporter,
+  reportWorkflow,
   resolveFailureHandler,
   sayOnClientWorkflow,
+  signalTokenFor,
+  waitForSignalWorkflow,
 } from "@alexkroman1/aai/host-internal";
 import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type {
@@ -233,6 +236,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
     const ctx: WorkflowContext = {
       runId: record.runId,
       workflow: record.workflowName,
+      key: record.key,
       // The parameters are annotated because `WorkflowContext.step` is OVERLOADED —
       // a schema selects a second signature — and TypeScript contextually types
       // a function expression from one signature only. The pass-through is
@@ -265,6 +269,12 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
       // records each wait of the poll the way it records a hand-written loop's.
       poll: (name, check, options) => pollWorkflow(ctx, name, check, options),
       sayOnClient: (name, clientId, notice) => sayOnClientWorkflow(ctx, name, clientId, notice),
+      report: (name, line) => reportWorkflow(ctx, name, line),
+      signalToken: (label) => signalTokenFor(ctx, label),
+      // The derived token handed to the refusal below, so a bounded signal wait
+      // takes its closed-window arm exactly as a bounded `waitFor` does.
+      waitForSignal: ((label: string, waitOptions?: WaitForOptions | WaitForSchemaOptions) =>
+        waitForSignalWorkflow(ctx, label, waitOptions)) as WorkflowContext["waitForSignal"],
       // REFUSED, and named. A hook is the one thing on `WorkflowContext` this engine
       // cannot fake: a sleep can be skipped because the body continues either
       // way, but a `waitFor` is defined by what the SIGNALLER sends, and
@@ -399,7 +409,7 @@ export function createEvalWorkflowEngine(opts: EvalWorkflowEngineOptions): EvalW
         workflowName,
         status: "running",
         createdAt: Date.now(),
-        ...omitUndefined({ label: options?.label }),
+        ...omitUndefined({ label: options?.label, key: options?.key }),
         reported: [],
         emitted: [],
         slept: [],

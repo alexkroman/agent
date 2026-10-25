@@ -26,3 +26,13 @@ describe("workflow-ctx", () => {
     expectTypeOf<WorkflowContext>().toHaveProperty("step");
   });
 });
+
+describe("the key-derived members", () => {
+  test("the recorder carries `key`, and `report` is one recorded step", async () => {
+    const ctx = createWorkflowContext({ key: "sess-1" });
+    expect(ctx.key).toBe("sess-1");
+    expect(createWorkflowContext().key).toBeUndefined();
+    await ctx.report("note", "line");
+    expect(ctx.steps.map((s) => s.name)).toEqual(["note"]);
+  });
+});

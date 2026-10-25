@@ -109,9 +109,10 @@ describe("starting a run", () => {
   test("resolves the declared name from the definition by identity", async () => {
     const { client, wdk, keys } = makeClient();
     await client.start(digest, { topic: "otters" }, { key: "sess-1" });
-    // The workflowId reaches WDK; the NAME is what the key index records, so a
+    // The workflowId reaches WDK, and so does the key — the engine journals it
+    // for the body's `ctx.key`; the NAME is what the key index records, so a
     // workflow moved between modules keeps its keys.
-    expect(wdk.start).toHaveBeenCalledWith(DIGEST_ID, [{ topic: "otters" }]);
+    expect(wdk.start).toHaveBeenCalledWith(DIGEST_ID, [{ topic: "otters" }], { key: "sess-1" });
     expect(await keys.lookup("digest", "sess-1", 10)).toEqual(["wrun_1"]);
   });
 

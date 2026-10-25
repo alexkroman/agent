@@ -23,6 +23,8 @@ export type StoredRun = {
   output?: unknown;
   error?: { message: string } | undefined;
   label?: string | undefined;
+  startedAt?: number | undefined;
+  settledAt?: number | undefined;
 };
 
 /**
@@ -42,6 +44,10 @@ export function toWdkRunRecord(record: StoredRun): WdkRunRecord {
     createdAt: record.createdAt,
     ...(record.status === "completed" ? { output: record.output } : {}),
     ...(record.status === "failed" && record.error ? { error: record.error } : {}),
-    ...omitUndefined({ label: record.label }),
+    ...omitUndefined({
+      label: record.label,
+      startedAt: record.startedAt,
+      settledAt: record.settledAt,
+    }),
   };
 }

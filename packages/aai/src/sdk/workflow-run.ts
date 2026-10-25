@@ -67,6 +67,22 @@ export type WorkflowRunBase = {
    * `StartOptions.label` — normalized, and absent when it was given none.
    */
   label?: string;
+  /**
+   * When the run's FIRST delivery began walking the body, as epoch ms.
+   *
+   * `createdAt` is when `start` wrote the record; the gap between the two is
+   * queue latency, which is a different question from how long the run took.
+   * Absent while the run is still `pending`, and on a journal that does not
+   * record it — the self-hosted Postgres journal and the platform's carry no
+   * column for it yet, so a page reads it as a courtesy rather than a promise.
+   */
+  startedAt?: number;
+  /**
+   * When the run reached its terminal status, as epoch ms — `completed`,
+   * `failed` or `cancelled`. Absent on a live run, and absent on the journals
+   * {@link WorkflowRunBase.startedAt} names.
+   */
+  settledAt?: number;
 };
 
 /**

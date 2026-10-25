@@ -120,7 +120,8 @@ describe("a run that SLEEPS", () => {
     const run = await runWorkflow(review, {});
 
     expect(run.waits).toEqual([
-      expect.objectContaining({ kind: "sleep", woken: false, correlationId: undefined }),
+      // The label is the wait's correlation id by default (`SleepOptions`).
+      expect.objectContaining({ kind: "sleep", woken: false, correlationId: "settle" }),
     ]);
     expect(run.waits[0]?.wakeAt).toBe(run.wakeAt);
     // Unsettled, so a boot sweep re-arms it; once it settles, nothing is owed.

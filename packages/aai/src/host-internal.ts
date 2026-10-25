@@ -452,9 +452,22 @@ export {
   type ResolvedFailureHandler,
   resolveFailureHandler,
 } from "./sdk/workflow-failure.ts";
+// The `StartOptions.key` literal a session-scoped client resolves to its id.
+export { SESSION_KEY } from "./sdk/workflow-options.ts";
 // The one implementation of `ctx.poll`, which every `WorkflowContext` a host
 // builds (the replay engine's, an eval's) delegates to.
 export { type PollHost, pollWorkflow } from "./sdk/workflow-poll.ts";
+// `ctx.report`'s one implementation, delegated to the same way.
+export { type ReportHost, reportWorkflow } from "./sdk/workflow-report.ts";
 // `ctx.sayOnClient`'s one implementation, delegated to the same way.
 export { type SayOnClientHost, sayOnClientWorkflow } from "./sdk/workflow-say-on-client.ts";
+// `ctx.signalToken`/`ctx.waitForSignal` and the token grammar `signalRun`
+// shares with them, so every host mints one token for one label.
+export {
+  type SignalHost,
+  type SignalWaitHost,
+  signalTokenFor,
+  waitForSignalWorkflow,
+  workflowSignalToken,
+} from "./sdk/workflow-signals.ts";
 export { PUBLIC_URL_UNCONFIGURED_MESSAGE } from "./sdk/workflow-unavailable.ts";

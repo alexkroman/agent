@@ -66,12 +66,17 @@ import { randomUUID } from "node:crypto";
 import {
   DEFAULT_STEP_MAX_ATTEMPTS,
   type StepOptions,
+  type WaitForOptions,
+  type WaitForSchemaOptions,
   type WorkflowContext,
 } from "@alexkroman1/aai";
 import {
   pollWorkflow,
   type ResolvedFailureHandler,
+  reportWorkflow,
   sayOnClientWorkflow,
+  signalTokenFor,
+  waitForSignalWorkflow,
 } from "@alexkroman1/aai/host-internal";
 import type { Logger } from "../logger.ts";
 import { describeCodeChange } from "./code-version.ts";
@@ -82,6 +87,7 @@ import { watchDivergence } from "./replay/divergence.ts";
 import { afterRunFailed } from "./replay/failure-hook.ts";
 import { watchJournalFailure } from "./replay/journal-failure.ts";
 import { classifyThrow, type ReplayOutcome } from "./replay/outcome.ts";
+import { readRunKey } from "./replay/run-key.ts";
 import { journaledStepOutput } from "./replay/schema.ts";
 import { runStepAttempts, stepFailure } from "./replay/step.ts";
 import { createSuspendController } from "./replay/suspend.ts";
@@ -286,6 +292,9 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   // run never reached is evidence the body has lost its place. Seeded from the
   // read above and from nothing this walk appends — see the module.
   const divergence = watchDivergence(entries, code);
+  // The run's correlation key, journaled by `start` as the entry `key!` and
+  // REACHED here so the watch does not count it as work this walk skipped.
+  const key = readRunKey(settled, divergence);
 
   // How many times each NAME has been reached in this execution. Reset per call
   // because it is a property of the walk, not of the run — a replay walks the
@@ -327,6 +336,7 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
   const ctx: WorkflowContext = {
     runId,
     workflow,
+    key,
     // `ctx.now`/`ctx.random`/`ctx.uuid`, each journaled under its own positional
     // key. Their key space, their absent attempt lease and their part in the
     // divergence check are argued in `workflow/replay/determinism.ts`.
@@ -345,6 +355,13 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
     // exactly the keys the hand-written code did — `sdk/workflow-poll.ts`.
     poll: (name, check, pollOptions) => pollWorkflow(ctx, name, check, pollOptions),
     sayOnClient: (name, clientId, notice) => sayOnClientWorkflow(ctx, name, clientId, notice),
+    // ONE `step` around `stepReport`, so a body's narration journals as the
+    // step every narrating body wrote — `sdk/workflow-report.ts`.
+    report: (name, line) => reportWorkflow(ctx, name, line),
+    // The token grammar `ctx.workflows.signalRun` shares — `sdk/workflow-signals.ts`.
+    signalToken: (label) => signalTokenFor(ctx, label),
+    waitForSignal: ((label: string, waitOptions?: WaitForOptions | WaitForSchemaOptions) =>
+      waitForSignalWorkflow(ctx, label, waitOptions)) as WorkflowContext["waitForSignal"],
     async step<T>(name: string, fn: () => Promise<T> | T, stepOptions?: StepOptions): Promise<T> {
       // IDENTITY first: which journal key is this call? See `WorkflowContext` in the
       // SDK for why it is a name plus an occurrence count.
@@ -376,6 +393,9 @@ export async function replayRun(options: ReplayOptions): Promise<ReplayOutcome> 
             name,
             key,
             maxAttempts: stepOptions?.maxAttempts ?? DEFAULT_STEP_MAX_ATTEMPTS,
+            // Opt-in: absent, a far side's `Retry-After` spends an attempt as
+            // it always did. See `StepOptions.maxWaits`.
+            maxWaits: stepOptions?.maxWaits,
             journal,
             holder,
             signal,

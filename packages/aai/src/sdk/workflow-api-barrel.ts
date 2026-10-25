@@ -100,41 +100,48 @@ export { type EventStreamFrame, readEventStream } from "./event-stream.ts";
  * `client.tsx`, beside `createWorkflowApi` from `@alexkroman1/aai-ui`, from
  * this subpath.
  */
-export type {
-  AnyWorkflowDef,
+export {
+  type AnyWorkflowDef,
+  // The one spoken line about a run, for a route handler: `WorkflowDef.describeRun`
+  // when the workflow declared one, a sentence per status otherwise.
+  describeRun,
   // `WorkflowContext` is `WorkflowBody`'s second parameter and these three are its
   // own methods' option bags, so all four travel with it under the rule the
   // comment below states: a type a public signature names must be reachable
   // from this entry point.
-  PollOptions,
-  PollResult,
-  SleepOptions,
-  StepOptions,
-  StepSchemaOptions,
-  WaitForOptions,
-  WaitForSchemaOptions,
-  WorkflowBody,
-  WorkflowContext,
+  type PollFirstWait,
+  type PollOptions,
+  type PollResult,
+  type SleepOptions,
+  type StepOptions,
+  type StepSchemaOptions,
+  type WaitForOptions,
+  type WaitForSchemaOptions,
+  type WorkflowBody,
+  type WorkflowContext,
+  // The two-phase declaration `workflow({ input, output })` answers before
+  // `.body(fn)`; `WorkflowDef` links it, so it is reachable here as `WorkflowDef` is.
+  type WorkflowDeclaration,
   // `WorkflowDef` and `WorkflowClient` belong to the `workflow` capability and
   // stay on the ROOT — they are what an `agent.ts` declares with. They are
   // reachable here only because the run types' own docs `{@link}` them, and a
   // type a public signature's documentation names must be reachable from the
   // entry point or the docs build fails.
-  WorkflowDef,
+  type WorkflowDef,
   // `WorkflowDef.onFailure`'s vocabulary, reachable for the reason the body's
   // own option bags are: `WorkflowDef` is linked from this entry point.
-  WorkflowFailureContext,
-  WorkflowFailureHandler,
-  WorkflowFailureHook,
+  type WorkflowFailureContext,
+  type WorkflowFailureHandler,
+  type WorkflowFailureHook,
   // The three `…Of<typeof def>` helpers travel together: a body names the
   // input, a page names the output, and a tool reporting on a run names the
   // snapshot the two compose into. The first and third of those readers are
   // author-side, so those two are on the ROOT as well — the reference renders
   // them there and links back here. `WorkflowOutputOf` is page-side only.
-  WorkflowInputOf,
-  WorkflowOutputOf,
-  WorkflowRunOf,
-  WorkflowSummary,
+  type WorkflowInputOf,
+  type WorkflowOutputOf,
+  type WorkflowRunOf,
+  type WorkflowSummary,
 } from "./workflow.ts";
 // The narrower factory, the call set, and the upload types a caller names.
 // `WORKFLOW_API_PREFIX` was here too and is on `/internal`: a caller composes
@@ -167,12 +174,16 @@ export {
   type WorkflowStreamOutputOptions,
 } from "./workflow-api-client.ts";
 export type { WorkflowClient } from "./workflow-client.ts";
-export type {
-  FindByKeyOptions,
-  FindOptions,
-  StartOptions,
-  StreamOptions,
-  WakeUpOptions,
+export {
+  // How long `signalRun` holds a payload for a wait the run has not reached —
+  // a value, so a caller sizing its own `holdMs` reads it rather than copying it.
+  DEFAULT_SIGNAL_HOLD_MS,
+  type FindByKeyOptions,
+  type FindOptions,
+  type SignalOptions,
+  type StartOptions,
+  type StreamOptions,
+  type WakeUpOptions,
 } from "./workflow-options.ts";
 export {
   isTerminal,

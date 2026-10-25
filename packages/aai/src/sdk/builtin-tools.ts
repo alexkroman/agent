@@ -36,6 +36,14 @@
  *   model's choice (see `allowedSmsRecipient` in `@alexkroman1/aai/channels`).
  *   `TEXTBELT_LINKS=strip` leaves links out, for a key Textbelt has not yet
  *   allowed to send them.
+ * - `"workflow_status"` — The caller's most recent runs (three, newest first),
+ *   each with a line to say — `WorkflowDef.describeRun`'s, or a sentence per
+ *   status. Keyed by the session, which is what a tool's `start` records.
+ * - `"workflow_progress"` — The newest progress line the caller's latest run
+ *   has written (`ctx.workflows.lastLine`), or its status line.
+ * - `"workflow_cancel"` — Stop the caller's newest run still going, answering
+ *   `{ cancelled, note }` with `WorkflowDef.cancelNote` or "already finished" /
+ *   "nothing started yet" baked in. All three take an optional `workflow` name.
  *
  * The three keyed builtins read their key from `ctx.env` on each
  * call and answer the model with an error naming the variable when it is
@@ -72,4 +80,7 @@ export type BuiltinTool =
   | "brave_search"
   | "google_places"
   | "text_me"
+  | "workflow_status"
+  | "workflow_progress"
+  | "workflow_cancel"
   | (string & {});
