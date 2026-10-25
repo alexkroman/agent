@@ -108,19 +108,25 @@ export function installCaseSteps(options: EvalStepsOptions): CaseSteps {
   let parked = false;
   let held = false;
   const requests: FetchRouteRequest[] = [];
+  // By IDENTITY, not against the last entry: two requests in flight at once
+  // interleave their handlers, so the second's arrival lands between the
+  // first's wrappers and the first would be logged again.
+  const arrived = new Set<FetchRouteRequest>();
   const wrap =
     (handler: FetchRouteHandler): FetchRouteHandler =>
     async (request) => {
       // Logged on ARRIVAL, once per request: a list's handlers are tried in
       // order and a table's by specificity, so the same request reaches
       // several wrappers.
-      if (requests.at(-1) !== request) requests.push(request);
+      if (!arrived.has(request)) {
+        arrived.add(request);
+        requests.push(request);
+      }
       const answered = await handler(request);
       if (answered !== undefined && !parked && wants(request)) {
         parked = true;
         held = true;
         await gate.promise;
-        held = false;
       }
       return answered;
     };
@@ -131,7 +137,12 @@ export function installCaseSteps(options: EvalStepsOptions): CaseSteps {
     get held() {
       return held;
     },
-    release: () => gate.resolve(),
+    release: () => {
+      // Cleared HERE, not when the parked handler resumes: `held` is what a case
+      // reads right after `release()`, and the resume is a microtask away.
+      held = false;
+      gate.resolve();
+    },
     drain: options.drain ?? true,
     restore: () => net.restore(),
   };

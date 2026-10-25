@@ -37,6 +37,36 @@ describe("installCaseSteps", () => {
     expect(await next.json()).toEqual({ id: "job_1" });
   });
 
+  test("`held` reads false the moment release() is called, not when the handler resumes", async () => {
+    const steps = installCaseSteps({ routes: ROUTES, hold: "first" });
+    onTestFinished(steps.restore);
+    const pending = stepFetch("https://provider.test/poll");
+    await vi.waitFor(() => expect(steps.held).toBe(true));
+    steps.release();
+    // Synchronously: the parked handler resumes a microtask later, and a case
+    // reads `held` right after the release it just made.
+    expect(steps.held).toBe(false);
+    await pending;
+  });
+
+  test("two requests in flight through a handler LIST are each logged once", async () => {
+    const steps = installCaseSteps({
+      routes: [
+        (request) => (request.pathname === "/submit" ? { body: { id: "job_1" } } : undefined),
+        (request) => (request.pathname === "/poll" ? { body: { status: "done" } } : undefined),
+      ],
+    });
+    onTestFinished(steps.restore);
+    // `/poll` falls through the first handler to the second, and `/submit`
+    // arrives between the two — so the log's last entry is not `/poll` when
+    // its second wrapper runs.
+    await Promise.all([
+      stepFetch("https://provider.test/poll"),
+      stepFetch("https://provider.test/submit"),
+    ]);
+    expect(steps.requests.map((request) => request.pathname)).toEqual(["/poll", "/submit"]);
+  });
+
   test("a predicate holds the first request it matches, not the first request", async () => {
     const steps = installCaseSteps({
       routes: ROUTES,
