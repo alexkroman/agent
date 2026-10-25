@@ -104,29 +104,18 @@ async function servePage(html: string): Promise<string> {
 }
 
 /**
- * Answer both of the run's legs in memory: the page, then the model.
- *
- * ONE handler, because publishing a `stepFetch` REPLACES — a flow that fetches a
- * page and calls a model cannot install two fakes, so it routes by URL. The
- * routing is `stubGatewayRoute`'s rather than this file's: it answers the
- * completion request and `undefined` for everything else, which is what makes
- * the page the `??` arm — and it routes off the SDK's own completions PATH, so a
- * case cannot pass because the fake and the step agree on a typo. That matters
- * more here than it looks: the envelope is a WIRE shape, so a field typed one
- * off does not fail — `stepGenerate` reads no content and reports an empty
- * completion, and the case blames the digest.
- *
- * The recorded calls are what makes the prompt assertable, which is the only way
- * to check what the model was SHOWN rather than what it said — and they come
- * back DECODED, so the last case reads `prompt` rather than the raw request
- * body, which is the whole serialized request.
+ * Answer both of the run's legs in memory: the model, then the page for
+ * everything else — composed by hand rather than with `installStubWorld`,
+ * which also publishes a reporter and would take the narration `run.reported`
+ * asserts on away from the eval's own. The recorded model calls come back
+ * DECODED, which is what lets the last case read what the model was SHOWN.
  */
 function scriptBothLegs(html: string, reply = SCRIPTED_DIGEST) {
   const model = stubGatewayRoute(reply);
   installStubStepFetch(
     (request) => model.route(request) ?? { body: html, headers: { "Content-Type": "text/html" } },
   );
-  return model;
+  return model.calls;
 }
 
 describeWorkflowEval(agentDef, (test) => {
@@ -137,18 +126,10 @@ describeWorkflowEval(agentDef, (test) => {
     const url = mode === "live" ? await servePage(ARTICLE_HTML) : "https://example.test/otters";
     if (mode === "stub") scriptBothLegs(ARTICLE_HTML);
 
-    // Run TWICE at most, and only for a reply that came back the wrong SHAPE.
-    //
-    // The digest step asks its call site for six attempts precisely because a
-    // model that answers with prose, or with JSON it truncated, may well obey
-    // the next time — `orFail(stepGenerateJson)` throws retryably for exactly
-    // that. This harness has no retry to give it (`maxAttempts: 1`, and the eval
-    // engine says so in as many words), so a live run here spends the step's
-    // whole reliability budget on one draw and a single malformed reply failed
-    // the case: "Expected JSON from the model, got: {"headline"…". That is the
-    // harness being thinner than production, not the flow being wrong, so the
-    // retry is restored HERE — narrowly, on the one error the deployed run
-    // would ride out, and never on a `FatalError`, which must still fail once.
+    // Run TWICE at most, and only for a reply that came back the wrong SHAPE:
+    // a deployed run retries that inside the step, and this harness has no
+    // retry to give it (`maxAttempts: 1`), so the one retry is restored HERE —
+    // never on a `FatalError`, which must still fail once.
     let run = await app.run(digest, { url });
     if (mode === "live" && /Expected JSON from the model/.test(run.error ?? "")) {
       run = await app.run(digest, { url });
@@ -158,7 +139,7 @@ describeWorkflowEval(agentDef, (test) => {
     // "expected 'failed' to be 'completed'".
     expect(run.error).toBeUndefined();
     expect(run.status).toBe("completed");
-    // Exactly three points, because the step slices to `POINTS` — a model that
+    // Exactly three points, because the schema caps at `POINTS` — a model that
     // returned five is not allowed to widen the shape the page renders.
     expect(run.output?.points).toHaveLength(3);
     const digested = `${run.output?.headline} ${run.output?.points.join(" ")}`;
@@ -211,7 +192,7 @@ describeWorkflowEval(agentDef, (test) => {
     const run = await app.run(digest, { url: "https://example.test/otters" });
     expect(run.status).toBe("completed");
 
-    const asked = model.calls[0];
+    const asked = model[0];
     assert(asked !== undefined, "the run must have shown the article to the model");
     expect(asked.prompt).toContain("Sea otters are one of the few mammals that use tools");
     // The page's OWN abstract, labelled — it comes off the `<meta>` the head

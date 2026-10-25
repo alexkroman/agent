@@ -42,11 +42,14 @@
  * three functions read more tidily than one.
  */
 
-import type { WorkflowContext } from "@alexkroman1/aai";
+import type { WorkflowContext, WorkflowInputOf } from "@alexkroman1/aai";
 import { stepGenerate, stepGenerateJson, stepReport } from "@alexkroman1/aai/step";
 import { FatalError, orFail } from "@alexkroman1/aai/step-errors";
 import { countWords } from "@alexkroman1/aai/utils";
 import { z } from "zod";
+// ERASED at build time: the body names the schema's own output type without a
+// runtime cycle back through `agent.ts`.
+import type { redlineInput } from "../agent.ts";
 import { CRITIC_SYSTEM, REVISER_SYSTEM, WRITER_SYSTEM } from "./prompts.ts";
 
 /** Shortest brief worth writing from. Below this the piece would be invention. */
@@ -64,28 +67,15 @@ export const MAX_DRAFT_CHARS = 20_000;
 /** Notes one critique may return — their prompt asks for three at most. */
 export const MAX_NOTES = 3;
 
-/** A draft the author already had, as the page reads it off the file they chose. */
-export interface AttachedDraft {
-  /** What the file was called. The run narrates it, and the output carries it. */
-  name: string;
-  text: string;
-}
+/**
+ * What a run is started with — the schema's OUTPUT, so every `.default()` has
+ * already run: `rounds` and `mustCover` are present, and `source` is absent
+ * for the ordinary run.
+ */
+export type RedlineInput = WorkflowInputOf<typeof redlineInput>;
 
-/** What the form collects, once the page has mapped its fields. */
-export interface RedlineInput {
-  brief: string;
-  audience: string;
-  /** Critique-and-revise rounds this run may spend. Their `should_continue` cap. */
-  rounds: number;
-  /** Points the piece must cover. An ARRAY, which is why the page writes that
-   *  field by hand — `<WorkflowFields>` renders scalars only. */
-  mustCover: string[];
-  /** A draft to mark up instead of writing one. Absent for the ordinary run.
-   *  An OBJECT for the same reason `mustCover` is an array: it is the other
-   *  property `<WorkflowFields>` renders nothing for, so the page owns its
-   *  control — a `<FileField read="text">` — and maps it on submit. */
-  source?: AttachedDraft | undefined;
-}
+/** A draft the author already had, as the page read it off the file they chose. */
+export type AttachedDraft = NonNullable<RedlineInput["source"]>;
 
 export interface Critique {
   verdict: "ship" | "revise";
@@ -97,16 +87,22 @@ export interface Critique {
 /**
  * What the critic is asked to reply with, as something that CHECKS.
  *
- * `stepGenerateJson` validates against this, so a reply that missed is a plain
- * throw and therefore a retry — where the hand-written `isCritique` guard this
- * replaces had to restate every field's type by hand. The VERDICT is strict
- * because the body branches on it; the score is deliberately not, and is
- * clamped at the call site instead (see `critiqueDraft`).
+ * `stepGenerateJson` renders it into the prompt as JSON Schema and validates
+ * the reply against it, so a reply that missed is a plain throw and therefore
+ * a retry. The VERDICT is strict because the body branches on it; the score is
+ * deliberately not, and is clamped at the call site instead (see
+ * `critiqueDraft`). How many notes, and in what order, is the one judgement
+ * that rides on the schema rather than in the prompt.
  */
 const CritiqueReply = z.object({
-  verdict: z.enum(["ship", "revise"]),
-  score: z.number(),
-  notes: z.array(z.string()),
+  verdict: z
+    .enum(["ship", "revise"])
+    .describe("'ship' when a reader would be well served by this as it stands; 'revise' otherwise"),
+  score: z.number().describe("1 to 10"),
+  notes: z
+    .array(z.string())
+    .describe(`${MAX_NOTES} notes at most, ordered by how much they matter`)
+    .transform((notes) => notes.slice(0, MAX_NOTES)),
 });
 
 /** One round, as the page renders it and the journal records it. */
@@ -126,10 +122,9 @@ export interface Round {
  * `client.tsx` is that type, derived rather than restated.
  */
 export async function redlineFlow(input: RedlineInput, ctx: WorkflowContext) {
-  // The `maxAttempts` below were `maxRetries` properties on the functions
-  // (3, 5, 3 — retries AFTER the first attempt, so 4, 6, 4 in all). The policy
-  // is an argument to the CALL now, which is where it belongs: the same function
-  // called from two places may deserve different patience.
+  // `maxWaits` on every model step: a rate limit carrying `Retry-After` is
+  // waited out rather than charged as an attempt, so the default three are
+  // spent on the step's own failures — a reply in the wrong shape, say.
   //
   // Which of the two ways in this run took is a branch on the INPUT, which is
   // replay-stable for free: the input is journaled once at `start()` and is the
@@ -141,7 +136,7 @@ export async function redlineFlow(input: RedlineInput, ctx: WorkflowContext) {
     ? // One attempt: this step performs no I/O and its only failure is fatal, so
       // a second walk through it would throw the identical error.
       await ctx.step("acceptDraft", () => acceptDraft(source), { maxAttempts: 1 })
-    : await ctx.step("writeDraft", () => writeDraft(input), { maxAttempts: 4 });
+    : await ctx.step("writeDraft", () => writeDraft(input), { maxWaits: 3 });
   const rounds: Round[] = [];
   let shipped = false;
 
@@ -150,7 +145,7 @@ export async function redlineFlow(input: RedlineInput, ctx: WorkflowContext) {
     // identity is for: this is `critiqueDraft#0`, `critiqueDraft#1`, … so each
     // round journals separately and a resume replays the rounds already done.
     const critique = await ctx.step("critiqueDraft", () => critiqueDraft(draft, input, round), {
-      maxAttempts: 6,
+      maxWaits: 3,
     });
 
     if (critique.verdict === "ship") {
@@ -162,7 +157,7 @@ export async function redlineFlow(input: RedlineInput, ctx: WorkflowContext) {
     }
 
     draft = await ctx.step("reviseDraft", () => reviseDraft(draft, critique, input, round), {
-      maxAttempts: 4,
+      maxWaits: 3,
     });
     rounds.push({ round, critique, revisedWords: countWords(draft) });
   }
@@ -258,7 +253,7 @@ export async function critiqueDraft(
     // answered 11 has still answered, and the number is worth keeping at the
     // edge of the range rather than costing a whole retry.
     score: clampScore(parsed.score),
-    notes: parsed.notes.slice(0, MAX_NOTES),
+    notes: parsed.notes,
   };
   await stepReport(
     critique.verdict === "ship"
@@ -303,15 +298,3 @@ export function clampScore(score: number): number {
   if (!Number.isFinite(score)) return 0;
   return Math.min(10, Math.max(1, Math.round(score)));
 }
-
-// ---- The model call ---------------------------------------------------------
-//
-// There is no local `ask()` any more, and its absence is the point. The SDK
-// classifies the gateway's failure (`StepGenerateError.retryable`) and stops
-// there — whether a terminal failure should burn the step's remaining attempts
-// is the caller's call — so `orFail(stepGenerate)` and
-// `orFail(stepGenerateJson)` (`@alexkroman1/aai/step-errors`) are that call
-// made one way: terminal stays terminal, and a rate limit becomes a
-// `RetryableError` carrying the delay the gateway itself named, which beats
-// `RetryableError`'s own one-second default. Three templates each wrapped the
-// raw `/step` call to say that; the wrapper is a suffix on the import now.

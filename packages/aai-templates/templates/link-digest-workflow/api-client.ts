@@ -59,8 +59,9 @@ import type { digest } from "./agent.ts";
  * by.
  *
  * A literal rather than an import from `agent.ts`, because that is what a caller
- * in another repository would have to write — and `agent.test.ts` pins the key
- * so a rename fails there rather than at somebody's 400.
+ * in another repository would have to write — and `agent.test.ts` drives the
+ * run through the agent by this name, so a rename fails there rather than at
+ * somebody's 400.
  */
 const WORKFLOW = "digest";
 

@@ -19,8 +19,10 @@
  *   deploy) and telephony defaults off.
  * - There is no `stt`/`llm`/`tts`, no `tools` and no `systemPrompt` — and they
  *   are not merely omitted, they are UNDECLARABLE here. Nothing talks and no
- *   model runs, so every one of them was inert; this file used to carry a
- *   `systemPrompt` addressed to a model that never ran.
+ *   model runs.
+ * - `requiredEnv` defaults to `["ASSEMBLYAI_API_KEY"]`, the one key the steps
+ *   read (`.env` under `aai dev`, `aai secret put` once deployed), so a deploy
+ *   checks for it rather than letting the first run find out.
  *
  * ## The page is one caller of the API, not the only one
  *
@@ -39,29 +41,11 @@
  * which is ERASED at build time, so naming it pulls no server graph into the
  * browser bundle. Nothing is generated and nothing is restated.
  *
- * ## What it needs
- *
- * `ASSEMBLYAI_API_KEY` in the agent env — `.env` under `aai dev`, `aai secret
- * put ASSEMBLYAI_API_KEY` once deployed — because the run really reads the page
- * and really summarizes it with a model. `requiredEnv` below is what makes a
- * deploy check for it rather than letting the first run find out, and it is
- * load-bearing here in a way it is not for a voice agent: a workflow app
- * declares no providers, so nothing else in its config names a credential.
- *
- * A step is handed no `ToolContext`, so it reads that key with `requireStepEnv`
- * rather than `ctx.env`; see `workflows/digest.ts` and `research-handoff-agent`'s module
- * doc for the one thing that changes under `aai dev` (the key has to be in
- * `.env`, not just your shell).
- *
- * Runs are DURABLE on the platform with nothing to configure — a deployed app's
- * runs live on the platform's own database and survive a restart, a redeploy and
- * an idle sandbox.
- *
- * A `DATABASE_URL` (a secret when deployed, `.env` under `aai dev`) still buys
- * one thing here: the correlation-key index, which is what lets `find()` resolve
- * a run by key. Without one that index is in memory, so it is forgotten on a
- * restart even though the runs themselves are not. Under `aai dev` with no
- * `DATABASE_URL` the runs go too — fine while you are building.
+ * Runs are DURABLE on the platform with nothing to configure. A `DATABASE_URL`
+ * (a secret when deployed, `.env` under `aai dev`) still buys one thing here:
+ * the correlation-key index, which is what lets `find()` resolve a run by key.
+ * Without one that index is in memory, so it is forgotten on a restart even
+ * though the runs themselves are not.
  */
 
 import { workflow, workflowApp } from "@alexkroman1/aai";
@@ -69,19 +53,23 @@ import { z } from "zod";
 import { digestFlow } from "./workflows/digest.ts";
 
 /**
- * The declaration: schema, description, and the directive body.
+ * The run input. A named const so the body can take
+ * `WorkflowInputOf<typeof digestInput>` — the schema's own output — rather than
+ * restating `{ url }` by hand.
  *
- * The `input` schema does double duty here in a way it cannot for a voice agent.
- * It validates at `start()` — so a bad URL is a 400 at the call site rather than
- * a failed run discovered later — and it is served on `GET /workflows` as JSON
- * Schema, which is what lets a page render a form from a workflow it was not
- * written against.
+ * It validates at `start()` — so a bad URL is a 400 at the call site rather
+ * than a failed run discovered later — and it is served on `GET /workflows` as
+ * JSON Schema, which is what lets a page render a form from a workflow it was
+ * not written against.
  */
+export const digestInput = z.object({
+  url: z.url().describe("The link to digest"),
+});
+
+/** The declaration: schema, description, and the body. */
 export const digest = workflow({
   description: "Read a link, reduce it to a headline and three points, then file the digest",
-  input: z.object({
-    url: z.url().describe("The link to digest"),
-  }),
+  input: digestInput,
   run: digestFlow,
 });
 
@@ -94,7 +82,4 @@ export default workflowApp({
   description: "Turns a pasted link into a headline and three points",
   // The whole product. A workflow app is an agent whose work happens here.
   workflows: { digest },
-  // Checked at deploy time. A workflow app declares no providers, so this is the
-  // only thing that can name the credential its steps read.
-  requiredEnv: ["ASSEMBLYAI_API_KEY"],
 });
