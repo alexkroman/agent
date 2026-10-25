@@ -167,29 +167,7 @@ function InboxSidebar() {
 }
 
 mountClient({
-  name: "Executive Assistant",
   sidebar: InboxSidebar,
   sidebarWidth: "22rem",
-  theme: {
-    bg: "#0f1412",
-    primary: "#5fb89a",
-    text: "#eef3f0",
-    surface: "#18211d",
-    border: "#26332d",
-  },
-  tools: {
-    triage_inbox: { icon: "\u{1F4E5}", label: "Triaging the inbox" },
-    open_email: { icon: "\u{2709}", label: "Opening email" },
-    draft_reply: { icon: "\u{270D}", label: "Drafting reply" },
-    new_email: { icon: "\u{1F4E7}", label: "Drafting new email" },
-    ask_question: { icon: "\u{2753}", label: "Asking you" },
-    meeting_assistant: { icon: "\u{1F4C5}", label: "Checking the calendar" },
-    send_calendar_invite: { icon: "\u{1F4C6}", label: "Staging invite" },
-    accept: { icon: "\u{2705}", label: "Sending" },
-    edit: { icon: "\u{1F58A}", label: "Sending your version" },
-    ignore: { icon: "\u{1F5D1}", label: "Skipping" },
-    respond: { icon: "\u{1F501}", label: "Taking your feedback" },
-    inbox_status: { icon: "\u{1F4CB}", label: "Inbox status" },
-    review_memory: { icon: "\u{1F9E0}", label: "What I've learned" },
-  },
+  theme: { primary: "#5fb89a", mode: "dark" },
 });

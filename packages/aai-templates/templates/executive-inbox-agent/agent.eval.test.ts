@@ -34,24 +34,12 @@ import {
   toolNames,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
 import { INBOX } from "./inbox.ts";
+import { assistantSlot } from "./shared.ts";
 
-/**
- * What the BROWSER is sent, as this eval reads it. Parsed rather than cast, and
- * naming only the fields asserted below, so `assistantView` may grow freely.
- */
-const ProjectedAssistant = z.object({
-  phase: z.enum(["inbox", "drafting", "awaitingDecision"]),
-  proposal: z.object({ kind: z.string(), body: z.string() }).nullable(),
-  emails: z.array(z.object({ id: z.string(), status: z.string() })),
-  sent: z.array(z.unknown()),
-});
-
-const frames = (session: EvalSession) =>
-  statesIn(session.events(), "assistant", ProjectedAssistant);
-const latest = (session: EvalSession) =>
-  lastStateIn(session.events(), "assistant", ProjectedAssistant);
+/** What the BROWSER was sent, typed by the projection the page itself renders. */
+const frames = (session: EvalSession) => statesIn(session.events(), assistantSlot.projected);
+const latest = (session: EvalSession) => lastStateIn(session.events(), assistantSlot.projected);
 
 /** A triage verdict, as the JSON the scripted model returns for `respondTo`. */
 const verdict = (response: "no" | "email" | "notify") =>
@@ -163,10 +151,11 @@ describeEval(agentDef, (test) => {
       // Across BOTH turns, and named: "expected [ 'open_email' ] to include
       // 'draft_reply'" said nothing about what the desk did instead.
       expectCalled(turns, "open_email", "draft_reply");
-      // The staging tool answered with the read-back, not a receipt.
+      // The staging tool answered with a proposal, not a receipt. (Its
+      // read-back instruction is the MODEL's to read and is stripped from the
+      // frame a page sees, so it is not here to assert on.)
       const staged = calls.find((call) => call.name === "draft_reply");
       expect(staged?.result).toMatch(/awaitingDecision/);
-      expect(staged?.result).toMatch(/Nothing has been sent/);
       // The assistant asks; it does not decide. An `accept` anywhere in here is
       // the agent confirming on its own initiative — neither utterance was a
       // yes to SEND, only an instruction to draft.

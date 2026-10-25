@@ -2,9 +2,8 @@ import { toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { EXECUTIVE } from "../inbox.ts";
 import { rewriteDraft } from "../nodes.ts";
-import { threadText } from "../prompts.ts";
-import { propose } from "../review.ts";
-import { assistantSlot, DRAFTING, openEmail, reviewFlow } from "../shared.ts";
+import { openThread, propose, requireOpenEmail } from "../review.ts";
+import { assistantSlot, DRAFTING, reviewFlow } from "../shared.ts";
 
 /**
  * Their `ResponseEmailDraft`, followed by their `rewrite` node.
@@ -21,11 +20,13 @@ import { assistantSlot, DRAFTING, openEmail, reviewFlow } from "../shared.ts";
  */
 const PLACEHOLDER = /\[[^\]]{1,40}\]/;
 
-export default reviewFlow.tool({
+export default assistantSlot.updateTool({
   description:
     `Draft ${EXECUTIVE.name}'s reply to the open email — the full text, in their voice, as ` +
     "email prose rather than speech. It is NOT sent: it is rewritten in their tone, then " +
     "staged for you to read back. Never a placeholder; use ask_question for anything you lack.",
+  ui: { icon: "\u{270D}", label: "Drafting reply" },
+  dialog: reviewFlow,
   when: DRAFTING,
   send: { type: "PROPOSED" },
   inputSchema: z.object({
@@ -38,30 +39,27 @@ export default reviewFlow.tool({
         `Addresses to ADD to the thread — only ones ${EXECUTIVE.name} asked for and you know`,
       ),
   }),
-  async execute(args, ctx) {
-    const state = assistantSlot.get(ctx);
-    const email = openEmail(state);
-    if (!email) return toolFailure("No email is open — call open_email first.");
+  require: requireOpenEmail,
+  prepare: (args, state, ctx) => {
     if (PLACEHOLDER.test(args.content)) {
       return toolFailure(
         "The draft contains a placeholder in square brackets. Never draft with one — " +
           `call ask_question to get the real detail from ${EXECUTIVE.name}, then draft again.`,
       );
     }
-    const tone = await rewriteDraft(
+    return rewriteDraft(
       ctx.generate,
       EXECUTIVE,
       state.memory.rewriteInstructions,
       args.content,
-      threadText(email),
-    );
-    return assistantSlot.update(ctx, (draft) =>
-      propose(draft, {
-        kind: "reply",
-        content: tone.rewrittenContent,
-        newRecipients: [...(args.newRecipients ?? [])],
-        toneLogic: tone.toneLogic,
-      }),
+      openThread(state),
     );
   },
+  execute: (args, state, tone) =>
+    propose(state, {
+      kind: "reply",
+      content: tone.rewrittenContent,
+      newRecipients: [...(args.newRecipients ?? [])],
+      toneLogic: tone.toneLogic,
+    }),
 });

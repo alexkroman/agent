@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { EXECUTIVE } from "../inbox.ts";
-import { propose } from "../review.ts";
+import { propose, requireOpenEmail } from "../review.ts";
 import { assistantSlot, DRAFTING, reviewFlow } from "../shared.ts";
 
 /**
@@ -13,18 +13,18 @@ import { assistantSlot, DRAFTING, reviewFlow } from "../shared.ts";
  * gate records that a question is waiting, so `accept` cannot be the answer to
  * it.
  */
-export default reviewFlow.tool({
+export default assistantSlot.updateTool({
   description:
     `Ask ${EXECUTIVE.name} for a fact you need and do not have — a name, an address, a decision. ` +
     "Stages the question so their answer comes back through respond. Never for their free " +
     "time (meeting_assistant knows that).",
+  ui: { icon: "\u{2753}", label: "Asking you" },
+  dialog: reviewFlow,
   when: DRAFTING,
   send: { type: "PROPOSED" },
   inputSchema: z.object({
     content: z.string().min(1).max(500).describe("The question, in one sentence"),
   }),
-  execute: (args, ctx) =>
-    assistantSlot.update(ctx, (state) =>
-      propose(state, { kind: "question", content: args.content }),
-    ),
+  require: requireOpenEmail,
+  execute: (args, state) => propose(state, { kind: "question", content: args.content }),
 });
