@@ -26,10 +26,10 @@
  * workflow as `research`, the name the run builtins and the run API know it by.
  */
 
-import type { WorkflowContext, WorkflowDef, WorkflowRunOf } from "@alexkroman1/aai";
+import type { WorkflowContext } from "@alexkroman1/aai";
 import { type DeepResearchResult, deepResearchWorkflow } from "@alexkroman1/aai/experimental";
 import { plural } from "@alexkroman1/aai/utils";
-import { isTerminal } from "@alexkroman1/aai/workflow-api";
+import { isTerminal, type WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { z } from "zod";
 import { file } from "./filing.ts";
 import { BRIEF_SUMMARY_SYSTEM, BRIEF_SYSTEM } from "./prompts.ts";
@@ -100,19 +100,9 @@ export async function deliverResearch(
   };
 }
 
-const pass = deepResearchWorkflow({
-  description:
-    "Research a topic properly — brief, angles, web search per angle, a gap pass, then a written report",
-  input,
-  prompts: { brief: BRIEF_SYSTEM, summary: BRIEF_SUMMARY_SYSTEM },
-  deliver: deliverResearch,
-});
-
 /** When the caller asked for it, in words a phone can carry. */
-function askedAt(createdAt: number): string {
-  // Baselined for guard rule 30: this clock read is in `describeRun`, which the
-  // HOST runs when a builtin reads the run back — never in the replayed body.
-  const minutes = Math.round((Date.now() - createdAt) / 60_000);
+function askedAt(createdAt: number, now: number): string {
+  const minutes = Math.round((now - createdAt) / 60_000);
   if (minutes < 1) return "Just now";
   if (minutes < 60) return `${minutes} ${plural(minutes, "minute")} ago`;
   const hours = Math.round(minutes / 60);
@@ -122,10 +112,11 @@ function askedAt(createdAt: number): string {
 /**
  * One line a voice agent reads aloud about a run — what `workflow_status`
  * says per run. It leads with WHEN the caller asked, because that is the only
- * thing distinguishing two of their requests.
+ * thing distinguishing two of their requests. Pure in `now`; the declaration
+ * below reads the clock when a builtin asks.
  */
-function describeRun(run: WorkflowRunOf<typeof pass>): string {
-  const when = askedAt(run.createdAt);
+function describeRunAt(run: WorkflowRunSnapshot<Findings>, now: number): string {
+  const when = askedAt(run.createdAt, now);
   if (!isTerminal(run)) return `${when}: still working on it.`;
   switch (run.status) {
     case "completed":
@@ -139,12 +130,19 @@ function describeRun(run: WorkflowRunOf<typeof pass>): string {
 
 /**
  * The declaration: the pass, plus the two spoken lines the run builtins read
- * off it. (`deepResearchWorkflow` takes neither, so they ride a spread.)
+ * off it — `describeRun` and `cancelNote` are `deepResearchWorkflow`'s own
+ * options, passed through to the def.
  */
-const research: WorkflowDef<typeof input, Findings> = {
-  ...pass,
-  describeRun,
+const research = deepResearchWorkflow({
+  description:
+    "Research a topic properly — brief, angles, web search per angle, a gap pass, then a written report",
+  input,
+  prompts: { brief: BRIEF_SYSTEM, summary: BRIEF_SUMMARY_SYSTEM },
+  deliver: deliverResearch,
+  // Runs on the HOST when a builtin reads the run back — never inside the
+  // replayed body — so the clock is read here, where guard rule 30 exempts it.
+  describeRun: (run) => describeRunAt(run, Date.now()),
   cancelNote: "Dropped that research. Nothing was filed.",
-};
+});
 
 export default research;

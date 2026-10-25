@@ -134,8 +134,6 @@ async function takeTruck(
 export interface ReserveOptions {
   /** How long to wait for the yard's lock. Defaults to {@link YARD_WAIT}. */
   wait?: KeyedLockOptions;
-  /** The clock, for a spec that needs a hold to have lapsed. */
-  now?: number;
 }
 
 /**
@@ -150,10 +148,12 @@ export interface ReserveOptions {
 export function reserveTruck(
   situation: Situation,
   callKey: string,
+  // The caller's clock (`ctx.now()` in the tool), never read here: a hold
+  // lapses against the time the DESK keeps, which a spec can set.
+  now: number,
   options: ReserveOptions = {},
 ): Promise<Truck | ToolFailure> {
   const kind = TRUCK_FOR[situation];
-  const now = options.now ?? Date.now();
   return withLock(
     yardLock,
     kind,

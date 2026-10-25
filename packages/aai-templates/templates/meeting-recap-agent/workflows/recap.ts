@@ -13,7 +13,7 @@
  * | `saga` — `openAccount`'s compensation stack | {@link recapFlow}'s `compensations`, unwound by {@link compensate} |
  * | `polling` — infrequent polling | {@link awaitTranscript}: one `ctx.poll`, each check a step and each wait a durable sleep |
  * | `timer-examples` — `processOrderWorkflow` | the poll's `slowAfterMs`: the "still going" note, once, two minutes in |
- * | `expense` — `timeoutOrUserAction` | the RETENTION GATE: one `ctx.waitFor` with {@link RETENTION_WINDOW_MS}, three outcomes and a safe default |
+ * | `expense` — `timeoutOrUserAction` | the RETENTION GATE: one `ctx.waitForSignal` with {@link RETENTION_WINDOW_MS}, three outcomes and a safe default |
  *
  * The voice half — start, query, cancel, and the answer to the gate — is
  * `agent.ts` and `tools/`.
@@ -71,7 +71,6 @@ import { FatalError, orFail, toStepError } from "@alexkroman1/aai/step-errors";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import { isTerminal } from "@alexkroman1/aai/workflow-api";
 import { z } from "zod";
-import { retentionToken, transcriptToken } from "./tokens.ts";
 
 /**
  * What the desk works on when the caller does not name something else.
@@ -216,9 +215,10 @@ export async function recapFlow(input: { url: string; requestedBy: string }, ctx
 
   try {
     // The token the callback URL is minted for and the poll parks on: derived
-    // from the run's own input in one place (`tokens.ts`), because the two
-    // sides are separated by a third party on the public internet.
-    const nudge = transcriptToken(input.requestedBy);
+    // from the run's own key (`<workflow>:<key>:transcript`), so nothing on
+    // either side spells it — the two sides are separated by a third party on
+    // the public internet.
+    const nudge = ctx.signalToken("transcript");
     // Minted INSIDE the step, so it runs once and never on a replay.
     const transcriptId = await ctx.step("submitRecording", () =>
       submitRecording(input.url, stepWebhookUrl(nudge, { optional: true })),
@@ -235,7 +235,7 @@ export async function recapFlow(input: { url: string; requestedBy: string }, ctx
       // attempts a reply that missed the shape is allowed.
       maxWaits: 3,
     });
-    const retention = await askWhetherToKeep(input.requestedBy, transcriptId, compensations, ctx);
+    const retention = await askWhetherToKeep(transcriptId, compensations, ctx);
     return { ...recap, ...retention, requestedBy: input.requestedBy };
   } catch (err) {
     // The saga's whole point. Everything acquired above is released, in
@@ -291,7 +291,6 @@ export async function awaitTranscript(
  * behind.
  */
 export async function askWhetherToKeep(
-  requestedBy: string,
   transcriptId: string,
   compensations: Compensation[],
   ctx: WorkflowContext,
@@ -303,8 +302,10 @@ export async function askWhetherToKeep(
 
   // ONE call, not a race: the deadline is journaled with the hook, and the
   // timeout arm CLOSES it before the body continues, so a late answer cannot
-  // change a window that already timed out.
-  const answer = await ctx.waitFor<{ keep: boolean }>(retentionToken(requestedBy), {
+  // change a window that already timed out. The token is the run's own
+  // (`ctx.signalToken("retention")`), which `keep_transcript` answers with
+  // `ctx.workflows.signalRun(recap, "session", "retention", …)`.
+  const answer = await ctx.waitForSignal<{ keep: boolean }>("retention", {
     timeoutMs: RETENTION_WINDOW_MS,
   });
 

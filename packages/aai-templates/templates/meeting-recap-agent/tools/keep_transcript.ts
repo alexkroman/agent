@@ -1,6 +1,6 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { retentionToken } from "../workflows/tokens.ts";
+import recap from "../workflows/recap.ts";
 
 export default tool({
   description:
@@ -10,9 +10,10 @@ export default tool({
   }),
   execute: async ({ keep }, ctx) => {
     // The SIGNAL — the caller is the approver and the phone is the signal
-    // channel. The run is parked on a token both sides derive from the
-    // session, so the tool needs no runId and no bookkeeping of its own.
-    const delivered = await ctx.workflows.signal(retentionToken(ctx.sessionId), { keep });
+    // channel. The run is parked on `ctx.waitForSignal("retention")`, keyed by
+    // the session it was started from, so `signalRun` addresses it by the def,
+    // the session's key and the label: no runId, no token, no bookkeeping.
+    const delivered = await ctx.workflows.signalRun(recap, "session", "retention", { keep });
     // `false` is the ORDINARY answer, not a failure: the window closed, or the
     // caller answered a question nobody asked.
     if (!delivered) {

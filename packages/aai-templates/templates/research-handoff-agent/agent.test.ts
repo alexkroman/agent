@@ -20,7 +20,6 @@ import {
   DEFAULT_DEEP_RESEARCH_PROMPTS,
 } from "@alexkroman1/aai/experimental";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import { isTerminal, type WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import type { WorkflowTestRun, WorkflowTestWait } from "@alexkroman1/aai-runtime/testing";
 import {
   createRunSnapshot,
@@ -55,19 +54,6 @@ import {
 import { BRIEF_SUMMARY_SYSTEM, BRIEF_SYSTEM } from "./workflows/prompts.ts";
 import research, { deliverResearch, REVIEW_DELAY_MS } from "./workflows/research.ts";
 
-/**
- * A `ctx.workflows` that records `start` and answers the lookups from a fixture.
- *
- * `installStubWorkflows` answers everything but `live`, which `file_it_now`
- * reads, so that one is added beside it: the newest run that has not finished.
- */
-function stubWorkflows(runs: WorkflowRunSnapshot[] = []) {
-  return {
-    ...installStubWorkflows({ agent: agentDef, runs }),
-    live: vi.fn(async () => runs.find((run) => !isTerminal(run))),
-  };
-}
-
 /** A finished pass, as the status line reads it. */
 function findings(over: { summary?: string; sources?: number } = {}) {
   return {
@@ -95,7 +81,7 @@ describeAgent(agentDef, (run) => {
 
   describe("request_research", () => {
     test("starts a run on the session's key, and asks to be TOLD when it lands", async () => {
-      const workflows = stubWorkflows();
+      const workflows = installStubWorkflows({ agent: agentDef });
       const ctx = createToolContext({ workflows });
       const result = await run(requestResearch, { topic: "otters" }, ctx);
 
@@ -113,7 +99,10 @@ describeAgent(agentDef, (run) => {
 
   describe("file_it_now", () => {
     test("wakes the REVIEW wait by its label, not whatever the run happens to hold", async () => {
-      const workflows = stubWorkflows([createRunSnapshot(research, { status: "running" })]);
+      const workflows = installStubWorkflows({
+        agent: agentDef,
+        runs: [createRunSnapshot(research, { status: "running" })],
+      });
       vi.mocked(workflows.wakeUp).mockResolvedValue(1);
       const result = await run(fileItNow, createToolContext({ workflows }));
       expect(workflows.wakeUp).toHaveBeenCalledWith("wrun_1", {
@@ -123,15 +112,19 @@ describeAgent(agentDef, (run) => {
     });
 
     test("a run that was not waiting is reported honestly, not as a failure", async () => {
-      const workflows = stubWorkflows([createRunSnapshot(research, { status: "running" })]);
+      const workflows = installStubWorkflows({
+        agent: agentDef,
+        runs: [createRunSnapshot(research, { status: "running" })],
+      });
       const result = await run(fileItNow, createToolContext({ workflows }));
       expect(result).toMatchObject({ filed: false, note: expect.stringContaining("moved on") });
     });
 
     test("says nothing is in flight when the session's runs have all finished", async () => {
-      const workflows = stubWorkflows([
-        createRunSnapshot(research, { status: "completed", output: findings() }),
-      ]);
+      const workflows = installStubWorkflows({
+        agent: agentDef,
+        runs: [createRunSnapshot(research, { status: "completed", output: findings() })],
+      });
       const result = await run(fileItNow, createToolContext({ workflows }));
       expect(result).toMatchObject({ filed: false, note: expect.stringContaining("in flight") });
       expect(workflows.wakeUp).not.toHaveBeenCalled();

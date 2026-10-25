@@ -238,10 +238,13 @@ describeEval(
       // data would be a prompt with a grace period.
       script({ hold: false });
 
-      const run = await workflows?.run(recap, {
-        url: SAMPLE_RECORDING,
-        requestedBy: "eval-session",
-      });
+      // Keyed, as a tool's `start` is by default: the body derives its signal
+      // tokens from the run's key, so a case that starts the run passes one.
+      const run = await workflows?.run(
+        recap,
+        { url: SAMPLE_RECORDING, requestedBy: "eval-session" },
+        { key: "eval-session" },
+      );
 
       expect(run?.status).toBe("completed");
       // `answered: false` separates this from a caller who said no.
@@ -264,10 +267,13 @@ describeEval(
       // that unwinds the compensation stack.
       script({ hold: false, ending: "error" });
 
-      const run = await workflows?.run(recap, {
-        url: SAMPLE_RECORDING,
-        requestedBy: "eval-session",
-      });
+      // Keyed, as a tool's `start` is by default: the body derives its signal
+      // tokens from the run's key, so a case that starts the run passes one.
+      const run = await workflows?.run(
+        recap,
+        { url: SAMPLE_RECORDING, requestedBy: "eval-session" },
+        { key: "eval-session" },
+      );
 
       expect(run?.status).toBe("failed");
       expect(run?.error).toMatch(/could not transcribe/);
