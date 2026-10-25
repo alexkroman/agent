@@ -31,6 +31,8 @@ describe("stubUploads", () => {
     expect(stored).toEqual({
       id: "upl_stub_1",
       name: "summary.wav",
+      // The step's reader labels the stub's record, as it labels a real store's.
+      label: "summary.wav",
       type: "audio/wav",
       size: 2,
       complete: true,

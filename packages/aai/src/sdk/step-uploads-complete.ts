@@ -94,7 +94,13 @@ export class UploadIncompleteError extends Error {
  * @throws {UploadIncompleteError} when the upload is still arriving — see this
  *   module's doc for why that is a refusal rather than a wait.
  * @throws when the id names no upload, exactly as {@link stepUploadInfo} does.
+ *
  * @public
+ *
+ * **From a step, prefer `orFail(stepRequireCompleteUpload)` (`orFail` is on
+ * `@alexkroman1/aai/step-errors`).** The refusal carries `retryable: false`, and
+ * `orFail` is what turns that into the `FatalError` the engine stops on; the raw
+ * call's throw is retried, against an upload no attempt can finish.
  */
 export async function stepRequireCompleteUpload(id: string): Promise<UploadInfo> {
   const info = await stepUploadInfo(id);

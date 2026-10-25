@@ -579,6 +579,10 @@ pipeline only).
   `_owner-text-env.ts`, which `host/text-me.ts` imports too.
 - **`isCallOver(status)`/`CALL_OVER_STATUSES`** (`step-place-call.ts`) are the
   five terminal `PlacedCallStatus`es a dial-and-follow loop stops on.
+- **`transcribeUploadDurably(ctx, uploadId)`** (`step-transcribe-durably.ts`,
+  `/step`) is the async trio plus `ctx.poll` under three FIXED step names
+  (`TRANSCRIBE_DURABLY_STEPS`), each failure classified; a spent budget is a
+  non-retryable `TranscribeError` naming the job.
 
 ## Uploads (the client half)
 

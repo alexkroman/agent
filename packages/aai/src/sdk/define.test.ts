@@ -4,7 +4,7 @@ import { z } from "zod";
 import { toAgentConfig } from "./agent-config.ts";
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import { DEFAULT_MAX_STEPS, DEFAULT_MIN_TURN_SILENCE_MS } from "./constants.ts";
-import { agent, tool, workflowApp } from "./define.ts";
+import { agent, tool, WORKFLOW_APP_REQUIRED_ENV, workflowApp } from "./define.ts";
 import { dialog } from "./dialog.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { llm } from "./providers/llm/llm.ts";
@@ -313,8 +313,42 @@ describe("workflowApp()", () => {
 
   test("is `agent()` underneath — same definition, so nothing downstream sees a second shape", () => {
     const viaHelper = workflowApp({ name: "Link Digest", workflows: { digest } });
-    const viaAgent = agent({ name: "Link Digest", workflows: { digest }, mode: "workflow-app" });
+    // `requiredEnv` is the one thing the helper adds — see the next cases.
+    const viaAgent = agent({
+      name: "Link Digest",
+      workflows: { digest },
+      mode: "workflow-app",
+      requiredEnv: WORKFLOW_APP_REQUIRED_ENV,
+    });
     expect(viaHelper).toEqual(viaAgent);
+  });
+
+  test("defaults `requiredEnv` to the AssemblyAI key, which every shipped app reads", () => {
+    // A workflow app declares no providers, so nothing else in its config names
+    // a credential — and a deploy's env check is the only thing standing between
+    // a missing key and a first run that 401s inside a step.
+    const def = workflowApp({ name: "Link Digest", workflows: { digest } });
+    expect(def.requiredEnv).toEqual(["ASSEMBLYAI_API_KEY"]);
+    expect(WORKFLOW_APP_REQUIRED_ENV).toEqual(["ASSEMBLYAI_API_KEY"]);
+  });
+
+  test("`requiredEnv: []` opts out of the default", () => {
+    const def = workflowApp({ name: "Fetch Only", workflows: { digest }, requiredEnv: [] });
+    expect(def.requiredEnv).toEqual([]);
+  });
+
+  test("a declared `requiredEnv` REPLACES the default rather than extending it", () => {
+    const def = workflowApp({
+      name: "Other Key",
+      workflows: { digest },
+      requiredEnv: ["OTHER_KEY"],
+    });
+    expect(def.requiredEnv).toEqual(["OTHER_KEY"]);
+  });
+
+  test('`agent({ mode: "workflow-app" })` keeps no such default — the helper is the opt-in', () => {
+    const def = agent({ name: "Raw", workflows: { digest }, mode: "workflow-app" });
+    expect(def.requiredEnv).toBeUndefined();
   });
 
   test("the agent defaults still fill, because AgentDef requires them", () => {

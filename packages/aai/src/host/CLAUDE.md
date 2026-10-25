@@ -63,6 +63,12 @@ pins both halves.
   it).
 - `readUploadToFile` advances by bytes actually READ, never the window size, so
   a streamed upload leaves no hole.
+- **`transcodeUpload` (`step-files-transcode.ts`) is the three moves composed**
+  — one materialization, optional `probeMedia`, `ffmpegBaseArgs()` prepended,
+  `throwFfmpegStepError` applied, an EMPTY output refused as fatal — and
+  **`stepSpeakToUpload` (`step-files-speak.ts`)** is `stepSpeak` + store, with
+  `master: "mp3"` through ffmpeg. Both are specced against the
+  `ffmpegProcess.spawn` seam, never a real binary.
 
 ## `/coding-tools` (`coding-tools-barrel.ts`)
 

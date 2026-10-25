@@ -102,11 +102,15 @@ import { globalSlot } from "./_boundary.ts";
 import { UPLOAD_TOKEN_RE } from "./upload-constants.ts";
 
 /**
- * What a stored upload is, minus its bytes.
+ * What a STORE answers about an upload: the record as stored, minus its bytes.
  *
- * @sealed
+ * {@link UploadInfo} is this plus {@link UploadInfo.label}, which the reader
+ * module derives; a store never writes it. See {@link labelUpload} for why the
+ * two shapes are split.
+ *
+ * @public
  */
-export type UploadInfo = {
+export type UploadRecord = {
   /**
    * The handle a run input carries.
    *
@@ -176,6 +180,30 @@ export type UploadInfo = {
 };
 
 /**
+ * What a stored upload is, minus its bytes — as a STEP reads it.
+ *
+ * {@link UploadRecord} with one derived field on top, filled by every reader on
+ * `@alexkroman1/aai/step` (`stepUploadInfo`, `stepReadUpload`,
+ * `stepRequireCompleteUpload`, `stepWriteUpload`).
+ *
+ * @sealed
+ */
+export type UploadInfo = UploadRecord & {
+  /**
+   * What to CALL this upload in a sentence: its `name`, or its `id` when the
+   * uploader named none.
+   *
+   * Derived here rather than at each call site because every step that narrates
+   * ("Transcribing `call.m4a`") wrote `stored.name || uploadId` itself, and two
+   * templates had already diverged on the fallback (`"the recording"` against
+   * the id). It is the string a progress line and a run's output should show a
+   * person; `name` stays the raw declaration for a caller that needs to know the
+   * uploader gave none.
+   */
+  label: string;
+};
+
+/**
  * A half-open window of an upload's bytes, `[start, end)`.
  *
  * @sealed
@@ -237,7 +265,7 @@ export type ReadUploadOptions = {
  */
 export type OpenUpload = {
   /** The record every window below was resolved against. */
-  info: UploadInfo;
+  info: UploadRecord;
   /** Bytes `[start, end)` of this upload. The caller has already clamped them. */
   read(start: number, end: number): Promise<Uint8Array>;
 };
@@ -251,8 +279,14 @@ export type OpenUpload = {
  * @public
  */
 export type UploadReader = {
-  /** One upload's metadata, or `undefined` when there is no such upload. */
-  info(id: string): Promise<UploadInfo | undefined>;
+  /**
+   * One upload's metadata, or `undefined` when there is no such upload.
+   *
+   * A {@link UploadRecord}, not an {@link UploadInfo}: the `label` is derived by
+   * this module, so a store (and every two-method fake in a spec) answers the
+   * fields it actually holds.
+   */
+  info(id: string): Promise<UploadRecord | undefined>;
   /** Bytes `[start, end)` of one upload. The caller has already clamped them. */
   read(id: string, start: number, end: number): Promise<Uint8Array>;
   /**
@@ -290,7 +324,7 @@ export type UploadWriteMeta = {
  */
 export type UploadWriter = {
   /** Store a file, minting its id, and answer with the finished record. */
-  create(meta: UploadWriteMeta, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
+  create(meta: UploadWriteMeta, body: AsyncIterable<Uint8Array>): Promise<UploadRecord>;
 };
 
 /**
@@ -350,6 +384,29 @@ export function requireUploadAccess(): UploadAccess {
   return reader;
 }
 
+/**
+ * A store's record, as a step reads it: the same fields plus
+ * {@link UploadInfo.label}.
+ *
+ * The one place the label is computed, which is what makes it a FACT about an
+ * upload rather than a convention: `stepUploadInfo`, `stepReadUpload`'s `info`,
+ * `stepRequireCompleteUpload` and `stepWriteUpload` all pass through here, so a
+ * display name is the same string whichever call a step learned it from. The
+ * store is deliberately not asked to supply it — a `label` column would be a
+ * second copy of `name` that could disagree with it, and every fake publishing a
+ * reader would owe a field it has no opinion on.
+ *
+ * A name that is empty or only whitespace counts as none: `""` is what the store
+ * answers for an uploader that gave no filename, and a line reading
+ * "Transcribing  " is the failure this exists to remove.
+ *
+ * @internal — reached by `step-uploads-write.ts`; a step reads `label` off the
+ *   record it was handed.
+ */
+export function labelUpload(record: UploadRecord): UploadInfo {
+  return { ...record, label: record.name.trim() === "" ? record.id : record.name };
+}
+
 /** The refusal for an id naming no upload — the runtime store's sentence, plus the fix. */
 function noUploadMessage(id: string): string {
   return (
@@ -360,8 +417,8 @@ function noUploadMessage(id: string): string {
 }
 
 /**
- * Read one upload's metadata: its name, what has ARRIVED, and whether that is all
- * of it.
+ * Read one upload's metadata: its name (and the `label` to show a person), what
+ * has ARRIVED, and whether that is all of it.
  *
  * The poll a body waiting on a streamed upload runs.
  *
@@ -380,7 +437,7 @@ function noUploadMessage(id: string): string {
 export async function stepUploadInfo(id: string): Promise<UploadInfo> {
   const info = await requireUploadAccess().info(id);
   if (!info) throw new Error(noUploadMessage(id));
-  return info;
+  return labelUpload(info);
 }
 
 /**
@@ -433,7 +490,7 @@ export async function stepReadUpload(
   // (a zero-length trailing segment) and every backend would have to special
   // case it anyway.
   const bytes = end > start ? await held.read(start, end) : new Uint8Array(0);
-  return { info, bytes, start, end };
+  return { info: labelUpload(info), bytes, start, end };
 }
 
 /**
@@ -473,7 +530,7 @@ async function openUpload(id: string): Promise<OpenUpload | undefined> {
  * (a whole-file write has no windows; a finished one is covered end to end), so
  * this is a no-op everywhere else.
  */
-function readableEnd(info: UploadInfo, start: number): number {
+function readableEnd(info: UploadRecord, start: number): number {
   const run = info.ranges?.find((range) => range.start <= start && start < range.end);
   return Math.max(info.size, run?.end ?? 0);
 }

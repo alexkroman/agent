@@ -26,3 +26,18 @@ export {
   withTempDir,
   writeUploadFromFile,
 } from "./step-files.ts";
+// Speak and STORE in one step, mastered to MP3 when asked — `stepSpeak` with
+// the encoder in reach, which `/step` may not name.
+export {
+  type SpeakMaster,
+  type SpeakToUploadOptions,
+  type SpokenUpload,
+  stepSpeakToUpload,
+} from "./step-files-speak.ts";
+// The three moves above composed: materialize once, run ffmpeg classified,
+// refuse an empty output, store.
+export {
+  type TranscodedUpload,
+  type TranscodeUploadOptions,
+  transcodeUpload,
+} from "./step-files-transcode.ts";

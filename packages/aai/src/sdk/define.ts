@@ -285,6 +285,9 @@ function assertNoInlineTools(def: unknown): void {
  * `mountPage()` mounts a workflow app's UI and `mountClient()` mounts a voice
  * one.
  *
+ * `requiredEnv` defaults to {@link WORKFLOW_APP_REQUIRED_ENV} — the AssemblyAI
+ * key every shipped workflow app reads; `requiredEnv: []` opts out.
+ *
  * @example
  * ```ts
  * import { workflow, workflowApp } from "@alexkroman1/aai";
@@ -305,8 +308,29 @@ function assertNoInlineTools(def: unknown): void {
  * @public
  */
 export function workflowApp(def: Omit<WorkflowAppAgentParams, "mode">): AgentDef {
-  return buildAgent({ ...def, mode: "workflow-app" });
+  // A destructuring default rather than a spread beneath `def`, so an explicit
+  // `requiredEnv: undefined` takes the default too — the same rule `buildAgent`
+  // applies to the other defaulted fields through `omitUndefined`.
+  const { requiredEnv = WORKFLOW_APP_REQUIRED_ENV, ...rest } = def;
+  return buildAgent({ ...rest, requiredEnv, mode: "workflow-app" });
 }
+
+/**
+ * What {@link workflowApp} declares as `requiredEnv` when the app names none:
+ * the AssemblyAI key, `["ASSEMBLYAI_API_KEY"]`.
+ *
+ * A workflow app declares no providers, so nothing else in its config names a
+ * credential — and every shipped workflow app transcribes, generates or speaks
+ * through that one key (`stepTranscribe*`, `stepGenerate`, `stepSpeak` all read
+ * it by default). A voice `agent()` keeps no such default: its providers already
+ * declare theirs, and `requiredEnv` there is for what the TOOLS need. An app
+ * that genuinely needs no key — one whose steps only fetch — opts out with
+ * `requiredEnv: []`, and one that names its own list replaces this rather than
+ * extending it.
+ *
+ * @public
+ */
+export const WORKFLOW_APP_REQUIRED_ENV: readonly string[] = ["ASSEMBLYAI_API_KEY"];
 
 /**
  * `AgentParams` with the author-only conveniences normalized away — what

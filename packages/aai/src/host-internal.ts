@@ -385,11 +385,13 @@ export {
 export { publishSpeechSynthesizer, type SpeechSynthesizer } from "./sdk/step-speak.ts";
 export {
   assertUploadToken,
+  labelUpload,
   type OpenUpload,
   publishUploadReader,
   UPLOADS_UNAVAILABLE_MESSAGE,
   type UploadAccess,
   type UploadReader,
+  type UploadRecord,
   type UploadWriteMeta,
   type UploadWriter,
 } from "./sdk/step-uploads.ts";

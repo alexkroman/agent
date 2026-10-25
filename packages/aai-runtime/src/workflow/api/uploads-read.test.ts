@@ -14,7 +14,7 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { UPLOAD_CHUNK_BYTES } from "@alexkroman1/aai/host-internal";
 import { rejectingWorkflows, requestPath } from "@alexkroman1/aai/internal";
-import type { UploadInfo } from "@alexkroman1/aai/step";
+import type { UploadRecord } from "@alexkroman1/aai/step";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../../_logger-test-utils.ts";
 import { tick } from "../../_timing-test-utils.ts";
@@ -69,7 +69,7 @@ function gatedReadStore(size: number): UploadStore & {
   const refuse = (): never => {
     throw new Error("this suite reads; the write routes are specced beside the writes");
   };
-  const record = (id: string): UploadInfo | undefined => {
+  const record = (id: string): UploadRecord | undefined => {
     lookups += 1;
     return id === "upl_read"
       ? { id, name: "a.wav", type: "audio/wav", size, complete: true }

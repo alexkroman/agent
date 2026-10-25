@@ -4,7 +4,7 @@ import { z } from "zod";
 import { freezeDate } from "../host/_test-utils.ts";
 import { FfmpegError, type FfmpegFailureKind } from "../host/ffmpeg.ts";
 import { FatalError, RetryableError } from "./step-error-classes.ts";
-import { orFail, throwFfmpegStepError, toStepError } from "./step-errors.ts";
+import { fatalOn, orFail, orFatal, throwFfmpegStepError, toStepError } from "./step-errors.ts";
 import { stepFetch } from "./step-fetch.ts";
 import { stepGenerate } from "./step-generate.ts";
 import { stepGenerateJson } from "./step-generate-json.ts";
@@ -162,6 +162,88 @@ function ffmpegFailure(kind: FfmpegFailureKind, message = `ffmpeg ${kind}`): Ffm
     binary: "ffmpeg",
     argv: ["-i", "call.m4a", "-c:a", "pcm_s16le", "out.wav"],
   });
+}
+
+/** The terminal failure a pure call throws — a parser's own class, carrying no verdict. */
+class Unreadable extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "Unreadable";
+  }
+}
+
+describe("fatalOn / orFatal", () => {
+  test("returns a sync value untouched", () => {
+    expect(orFatal(() => 42, { when: Unreadable })).toBe(42);
+    expect(
+      fatalOn(
+        () => true,
+        () => "x",
+      ),
+    ).toBe("x");
+  });
+
+  test("makes a MATCHING sync throw fatal, carrying the original as the cause", () => {
+    const original = new Unreadable("not a RIFF file");
+    const err = thrownBy(() => orFatal(() => rethrowing(original), { when: Unreadable }));
+
+    expect(stepVerdict(err)).toEqual({ fatal: true, retryable: false });
+    expect((err as Error).message).toBe("not a RIFF file");
+    expect((err as Error).cause).toBe(original);
+  });
+
+  test("rethrows a NON-matching throw UNCHANGED — a bug stays plainly retryable", () => {
+    // The half that keeps this narrow: `toStepError` refuses to invent a verdict
+    // for an unclassified failure, and so does this. Only the class the caller
+    // named is terminal.
+    const bug = new TypeError("x is not a function");
+    const err = thrownBy(() => orFatal(() => rethrowing(bug), { when: Unreadable }));
+
+    expect(err).toBe(bug);
+    expect(stepVerdict(err)).toEqual({ fatal: false, retryable: false });
+  });
+
+  test("answers in kind: an async call's matching rejection is fatal", async () => {
+    const err = await orFatal(async () => rethrowing(new Unreadable("no header")), {
+      when: Unreadable,
+    }).catch((e: unknown) => e);
+
+    expect(stepVerdict(err)).toEqual({ fatal: true, retryable: false });
+  });
+
+  test("an async call's non-matching rejection passes through, and its value resolves", async () => {
+    const bug = new RangeError("too short");
+    await expect(orFatal(async () => rethrowing(bug), { when: Unreadable })).rejects.toBe(bug);
+    await expect(orFatal(async () => "ok", { when: Unreadable })).resolves.toBe("ok");
+  });
+
+  test("`fatalOn` takes a predicate, so a `name` check stands in where `instanceof` cannot", () => {
+    // A second copy of a module in a guest bundle answers `instanceof` false;
+    // the predicate form reads the name an error sets on itself.
+    const err = thrownBy(() =>
+      fatalOn(
+        (e) => e instanceof Error && e.name === "Unreadable",
+        () => rethrowing(new Unreadable("mangled")),
+      ),
+    );
+    expect(stepVerdict(err)).toEqual({ fatal: true, retryable: false });
+  });
+
+  test("a failure that already carries a verdict keeps it when it does not match", () => {
+    const refusal = new TranscribeErrorLike("provider said no");
+    const err = thrownBy(() => orFatal(() => rethrowing(refusal), { when: Unreadable }));
+    expect(err).toBe(refusal);
+  });
+});
+
+/** `throw`, as an expression a thunk can hold. */
+function rethrowing(err: unknown): never {
+  throw err;
+}
+
+/** An error carrying `retryable` the way `TranscribeError` does, without being one. */
+class TranscribeErrorLike extends Error {
+  readonly retryable = false;
 }
 
 describe("throwFfmpegStepError", () => {

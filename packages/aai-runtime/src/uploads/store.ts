@@ -127,7 +127,7 @@ import {
   UPLOAD_CLAIM_BATCH,
   UPLOAD_ID_PREFIX,
 } from "@alexkroman1/aai/host-internal";
-import type { UploadInfo, UploadRange } from "@alexkroman1/aai/step";
+import type { UploadRecord as StoredUpload, UploadRange } from "@alexkroman1/aai/step";
 
 /** The table one row per upload lives in. Prefixed so it cannot collide with an app's own. */
 export const UPLOADS_TABLE = "aai_workflow_uploads";
@@ -327,7 +327,7 @@ export type UploadStore = UploadReader & {
     meta: UploadMeta,
     body: AsyncIterable<Uint8Array>,
     options?: { limit?: number },
-  ): Promise<UploadInfo>;
+  ): Promise<StoredUpload>;
   /**
    * Store one file under an id the CALLER chose, readable as it arrives.
    *
@@ -346,7 +346,7 @@ export type UploadStore = UploadReader & {
     meta: UploadMeta,
     body: AsyncIterable<Uint8Array>,
     options?: { limit?: number },
-  ): Promise<UploadInfo>;
+  ): Promise<StoredUpload>;
   /**
    * Claim an id for an upload whose bytes arrive as PARTS, declaring its total.
    *
@@ -362,7 +362,7 @@ export type UploadStore = UploadReader & {
     meta: UploadMeta,
     total: number,
     options?: { limit?: number },
-  ): Promise<UploadInfo>;
+  ): Promise<StoredUpload>;
   /**
    * Store one window of a parts upload, at a byte offset the caller chose.
    *
@@ -384,7 +384,7 @@ export type UploadStore = UploadReader & {
    * @throws {UploadPartError} when `offset` is not a multiple of
    *   `UPLOAD_CHUNK_BYTES`, or the part would run past the declared total.
    */
-  writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
+  writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<StoredUpload>;
   /**
    * Record parts whose bytes are ALREADY stored, without carrying them.
    *
@@ -430,7 +430,7 @@ export type UploadStore = UploadReader & {
    *   when an offset is misaligned, when no bytes are stored for one, or when what
    *   is stored runs past the declared total.
    */
-  recordParts(id: string, offsets: readonly number[]): Promise<UploadInfo>;
+  recordParts(id: string, offsets: readonly number[]): Promise<StoredUpload>;
 };
 
 /**

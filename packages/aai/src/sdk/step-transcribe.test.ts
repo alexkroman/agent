@@ -45,8 +45,23 @@ describe("stepTranscribeUpload", () => {
     installStubUploads({ rec: new Uint8Array([1, 2, 3, 4]) });
     const api = stubApi([{ body: { upload_url: "https://cdn.example/abc" } }]);
 
-    expect(await stepTranscribeUpload("rec")).toEqual({ audioUrl: "https://cdn.example/abc" });
+    expect(await stepTranscribeUpload("rec")).toEqual({
+      audioUrl: "https://cdn.example/abc",
+      // The display name and the size ride the JOURNALED result, so a body
+      // narrating the upload reads them off the step rather than paying a second
+      // `stepUploadInfo` round trip — the id, here, because the stub named no file.
+      source: "rec",
+      size: 4,
+    });
     expect(api.fetch.mock.calls[0]?.[0]).toBe("https://api.assemblyai.com/v2/upload");
+  });
+
+  test("`source` is the upload's label — its filename when the uploader gave one", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
+    installStubUploads({ rec: { bytes: new Uint8Array([1, 2]), name: "call.m4a" } });
+    stubApi([{ body: { upload_url: "https://cdn.example/abc" } }]);
+
+    expect(await stepTranscribeUpload("rec")).toMatchObject({ source: "call.m4a", size: 2 });
   });
 
   test("sends the key RAW — a Bearer prefix is a 401 that reads like a bad key", async () => {
