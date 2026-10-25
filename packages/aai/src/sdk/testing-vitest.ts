@@ -51,7 +51,9 @@ import type {
   StubTranscribeOptions,
 } from "./_testing-transcribe.ts";
 import { stubTranscribe } from "./_testing-transcribe.ts";
+import { ASSEMBLYAI_API_KEY_ENV } from "./constants.ts";
 import { omitUndefined } from "./omit-undefined.ts";
+import { hasStepReporter } from "./step-report.ts";
 import type { StubReporter } from "./testing.ts";
 import { stubReporter } from "./testing.ts";
 import type { StubClientInbox, StubClientInboxOptions } from "./testing-client-inbox.ts";
@@ -83,9 +85,10 @@ import type { WorkflowRunSnapshot } from "./workflow-run.ts";
 
 /**
  * The credential a step reads for the AssemblyAI gateway (`requireStepEnv` in
- * `stepGenerate`), and the one every installer here seeds by default.
+ * `stepGenerate`), and the one every installer here seeds by default — the
+ * SDK's one spelling of the name (`constants.ts`).
  */
-const API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+const API_KEY_ENV = ASSEMBLYAI_API_KEY_ENV;
 /** What the seeded key holds: recognizable, and good for nothing real. */
 const STUB_API_KEY = "sk-aai-stub";
 
@@ -388,8 +391,9 @@ export type StubWorkflowsOptions = {
  * and `publicWebhookUrl` fall through to the rejecting base, because a tool
  * reading a progress channel by hand is the hazard `lastLine` exists to remove
  * — see `WorkflowClient.lastLine`, where composing `streamTail` + `stream` in
- * the wrong order waits forever with no error. A spec that really is testing
- * one of those overrides it, which reads as the deliberate act it is.
+ * the wrong order waits forever with no error — and `signal` spells a raw
+ * token where `signalRun` (answered, `true`) derives it. A spec that really is
+ * testing one of those overrides it, which reads as the deliberate act it is.
  *
  * Spread it to replace a method for one test: `{ ...installStubWorkflows(), signal }`.
  *
@@ -407,6 +411,11 @@ export type StubWorkflowsOptions = {
  *
  * @public
  */
+/** A run that is still going — what `live` answers and `cancelAll` counts. */
+function isLive(run: WorkflowRunSnapshot): boolean {
+  return run.status === "pending" || run.status === "running";
+}
+
 export function installStubWorkflows(options: StubWorkflowsOptions = {}): WorkflowClient {
   const runs = options.runs ?? [];
   const runId = options.runId ?? "wrun_stub";
@@ -420,11 +429,16 @@ export function installStubWorkflows(options: StubWorkflowsOptions = {}): Workfl
     find: vi.fn(async () => [...runs]),
     findByKey: vi.fn(async () => [...runs]),
     recent: vi.fn(async () => [...runs]),
+    // The same list read the way the client reads it: `latest` is the first
+    // (newest), `live` the first still going.
+    latest: vi.fn(async () => runs[0]),
+    live: vi.fn(async () => runs.find(isLive)),
     cancel: vi.fn(async () => true),
     // As many as `cancel` would have ended, one by one: the unfinished runs.
-    cancelAll: vi.fn(
-      async () => runs.filter((r) => r.status === "pending" || r.status === "running").length,
-    ),
+    cancelAll: vi.fn(async () => runs.filter(isLive).length),
+    // Delivered, as a tool signalling the run it just started expects; a spec
+    // asserting the token or payload reads the mock's calls.
+    signalRun: vi.fn(async () => true),
     // `0` woken: a `wakeUp` that reports work done is the interesting case and
     // the one a spec overrides, so the default is the quiet answer.
     wakeUp: vi.fn(async () => 0),
@@ -475,6 +489,14 @@ export type StubWorldOptions = {
    * none. Defaults to a recognizable stub value; `false` seeds nothing.
    */
   readonly apiKey?: string | false | undefined;
+  /**
+   * Publish the recording reporter (`installStubReporter`). Defaults to
+   * publishing one only when NO reporter is published yet — inside
+   * `describeEval` the harness's reporter is what `run.reported` reads, and a
+   * stub published over it emptied that log. `false` never publishes one;
+   * `true` always does.
+   */
+  readonly reporter?: boolean | undefined;
 };
 
 /**
@@ -494,7 +516,11 @@ export type StubWorld = {
   readonly uploads: StubUploadWrite[];
   /** The upload store itself, for `read` — `undefined` when `uploads` was not named. */
   readonly files: StubUploads | undefined;
-  /** What the steps narrated and emitted (`installStubReporter`). */
+  /**
+   * What the steps narrated and emitted (`installStubReporter`) — empty, and
+   * recording nothing, when the world left a published reporter in place
+   * (see `StubWorldOptions.reporter`).
+   */
   readonly reported: StubReporter;
 };
 
@@ -520,8 +546,9 @@ export type StubWorld = {
  * cannot seed anything — it installs nothing and owns no lifetime — so the
  * seeding lives with the installers.
  *
- * `installStubReporter` is always installed, so what the steps narrated is on
- * `reported` without a second call.
+ * `installStubReporter` is installed too, so what the steps narrated is on
+ * `reported` without a second call — unless a reporter is already published
+ * (an eval's), which is left in place: `reporter` decides.
  *
  * @example
  * ```ts no-check
@@ -575,7 +602,10 @@ export function installStubWorld(options: StubWorldOptions = {}): StubWorld {
     speech: speech?.calls ?? [],
     uploads: files?.writes ?? [],
     files,
-    reported: installStubReporter(),
+    reported:
+      (options.reporter ?? !hasStepReporter())
+        ? installStubReporter()
+        : { lines: [], emitted: [], restore: () => undefined },
   };
 }
 

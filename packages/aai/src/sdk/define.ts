@@ -15,7 +15,7 @@ import type {
   TextAgentParams,
   WorkflowAppAgentParams,
 } from "./agent-params.ts";
-import { DEFAULT_MAX_STEPS } from "./constants.ts";
+import { ASSEMBLYAI_API_KEY_ENV, DEFAULT_MAX_STEPS } from "./constants.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { bindRosterDialogs, type Roster } from "./roster.ts";
@@ -332,7 +332,7 @@ export function workflowApp(def: Omit<WorkflowAppAgentParams, "mode">): AgentDef
  *
  * @public
  */
-export const WORKFLOW_APP_REQUIRED_ENV: readonly string[] = ["ASSEMBLYAI_API_KEY"];
+export const WORKFLOW_APP_REQUIRED_ENV: readonly string[] = [ASSEMBLYAI_API_KEY_ENV];
 
 /**
  * `AgentParams` with the author-only conveniences normalized away — what

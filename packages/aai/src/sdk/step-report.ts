@@ -100,6 +100,17 @@ export function publishStepReporter(reporter: StepReporter | undefined): void {
 }
 
 /**
+ * Whether a reporter is published in this process — what a test installer
+ * asks before publishing a recording one, so it does not displace a harness's
+ * (the eval harness reads a run's narration through its own).
+ *
+ * @internal
+ */
+export function hasStepReporter(): boolean {
+  return STEP_REPORTER_SLOT.get() !== undefined;
+}
+
+/**
  * Write one progress line for the run this step belongs to.
  *
  * The line reaches two readers: the run's own output stream, which
