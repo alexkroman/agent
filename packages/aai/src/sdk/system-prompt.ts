@@ -20,7 +20,12 @@
 
 import type { AgentConfig } from "./_internal-types.ts";
 import { warnDuplicatedDefaultPrompt } from "./_prompt-duplicate-warning.ts";
-import { appendPromptContext } from "./agent-instructions.ts";
+import {
+  type AgentPromptContext,
+  type AgentSystemPrompt,
+  appendPromptContext,
+} from "./agent-instructions.ts";
+import type { AgentSessionContext } from "./agent-session-context.ts";
 import {
   PROMPT_LISTENING,
   PROMPT_PERSONALITY,
@@ -151,8 +156,6 @@ export function buildSystemPrompt(
   config: AgentConfig,
   options: { hasTools: boolean; voice?: boolean; toolGuidance?: readonly string[] | undefined },
 ): string {
-  const custom = stripDefaultPrefix(config.systemPrompt);
-
   const today = new Date().toLocaleDateString("en-US", DATE_FORMAT_OPTIONS);
 
   const sections: string[] = [PROMPT_ROLE, PROMPT_PERSONALITY, PROMPT_SPEAKING, PROMPT_LISTENING];
@@ -171,11 +174,10 @@ export function buildSystemPrompt(
     sections.push(`Built-in tool usage:\n${options.toolGuidance.join("\n")}`);
   }
 
-  // The static `promptContext` under the author's own text, blank-line
-  // separated — the one place the two static halves meet. A resolver on either
-  // side is appended per session by the runtime instead (`appendPromptContext`
-  // is the shared spelling), and `toAgentConfig` put nothing here for one.
-  const own = appendPromptContext(custom, config.promptContext);
+  // The author section over the STATIC halves — the same composition
+  // `resolveAgentInstructions` makes per session when either half is a
+  // resolver (`toAgentConfig` put nothing here for one).
+  const own = authorSection(config.systemPrompt, config.promptContext);
   if (own !== undefined) sections.push(agentInstructionsSection(own));
 
   return sections.join("\n\n");
@@ -235,11 +237,46 @@ function stripDefaultPrefix(systemPrompt: string | undefined): string | undefine
 }
 
 /**
+ * The whole author section for one request: the agent's `systemPrompt` half
+ * (prefix-stripped, as {@link buildSystemPrompt} strips a static one) with its
+ * `promptContext` half appended under it, each half static or RESOLVED from
+ * `ctx` — the one composition the runtime's per-session resolver and the text
+ * agent make, so a dynamic prompt cannot land under a different precedence
+ * claim, or strip the default differently, from a fixed one. `undefined` when
+ * both halves are empty.
+ *
+ * The runtime hands this the agent DEF (either half may be a function) once
+ * per model request; `buildSystemPrompt` composes the same section from the
+ * serialized config's static halves through `authorSection`.
+ *
+ * @internal
+ */
+export function resolveAgentInstructions(
+  agent: {
+    readonly systemPrompt?: AgentSystemPrompt | undefined;
+    readonly promptContext?: AgentPromptContext | undefined;
+  },
+  ctx: AgentSessionContext,
+): string | undefined {
+  const resolved = (half: AgentSystemPrompt | undefined): string | undefined =>
+    typeof half === "function" ? half(ctx) : half;
+  return authorSection(resolved(agent.systemPrompt), resolved(agent.promptContext));
+}
+
+/** The author section over two STATIC halves — see {@link resolveAgentInstructions}. */
+function authorSection(
+  systemPrompt: string | undefined,
+  promptContext: string | undefined,
+): string | undefined {
+  return appendPromptContext(stripDefaultPrefix(systemPrompt), promptContext);
+}
+
+/**
  * The author's own instructions out of a `systemPrompt` string — the
- * prefix-stripping half of `stripDefaultPrefix`, exported for the runtime's
- * per-session resolver, which has to compose a STATIC prompt with a DYNAMIC
- * `promptContext` under one header and so cannot take the agent section from
- * the cached base. `undefined` when nothing is left (the default, or nothing).
+ * prefix-stripping half of `stripDefaultPrefix`. Exported for a runtime that
+ * composes a STATIC prompt with a DYNAMIC `promptContext` by hand;
+ * {@link resolveAgentInstructions} is the whole composition and the one to
+ * reach for. `undefined` when nothing is left (the default, or nothing).
  *
  * @internal
  */

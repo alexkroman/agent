@@ -122,7 +122,6 @@ export { runAgentGuardrails } from "./sdk/agent-guardrails.ts";
  */
 export {
   appendPromptContext,
-  promptContextResolver,
   staticPromptContext,
   staticSystemPrompt,
   systemPromptResolver,
@@ -412,10 +411,13 @@ export {
   STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE,
   type StepWebhookMinter,
 } from "./sdk/step-webhook.ts";
+// `resolveAgentInstructions` is the whole author section per request — the
+// runtime's per-session resolver and the text agent call it once each.
 export {
   agentInstructionsSection,
   authorInstructions,
   buildSystemPrompt,
+  resolveAgentInstructions,
 } from "./sdk/system-prompt.ts";
 // The tool-message DECLARATION is authoring API (`ToolDef.messages`, on the
 // root); choosing which line a given call gets is the runtime's, so the two

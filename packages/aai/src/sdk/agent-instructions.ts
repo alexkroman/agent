@@ -196,21 +196,10 @@ export function staticPromptContext(context: AgentPromptContext | undefined): st
 }
 
 /**
- * The resolver half of an {@link AgentPromptContext}, or `undefined` for a
- * plain string.
- *
- * @internal
- */
-export function promptContextResolver(
-  context: AgentPromptContext | undefined,
-): Exclude<AgentPromptContext, string> | undefined {
-  return typeof context === "function" ? context : undefined;
-}
-
-/**
  * The agent's instructions with its context appended under them — the ONE
- * spelling of "separated by a blank line", shared by `buildSystemPrompt` (the
- * static pair) and the runtime's per-session resolver (either half dynamic).
+ * spelling of "separated by a blank line", behind `resolveAgentInstructions`
+ * (`system-prompt.ts`), which is what composes the whole author section for
+ * the static pair and for a per-session resolver alike.
  * Blank text on either side contributes nothing, not even the separator, so
  * an agent with no context produces the byte-identical prompt it did before
  * the field existed; both blank answers `undefined`.
