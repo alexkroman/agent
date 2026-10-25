@@ -3,7 +3,7 @@
   "capability": "workflow-api",
   "epoch": 2,
   "rule": 3,
-  "sha256": "c85b0b0a9683edaeefbbc96f675d84ff4278d22c676c41ad9d7cb6f7089b8a3c",
+  "sha256": "3764c39f8b44ae92c8571fb232be1855d61736805db2156ab4318ff047e276ce",
   "exports": [
     "AgentClient",
     "AnyWorkflowDef",
@@ -30,11 +30,8 @@
     "WorkflowBody",
     "WorkflowFollowOutputOptions",
     "WorkflowGetOptions",
-    "WorkflowInputOf",
-    "WorkflowOutputOf",
     "WorkflowRunBase",
     "WorkflowRunListOptions",
-    "WorkflowRunOf",
     "WorkflowRunSnapshot",
     "WorkflowRunStatus",
     "WorkflowStartAndWaitOptions",
@@ -46,5 +43,5 @@
     "isTerminal",
     "readEventStream"
   ],
-  "rollup": "aac9b278f8b852b64aa4fb2c11117c7566833fb5e96b5fcfc79ef729c1ae3789"
+  "rollup": "660e0c07e5137914ed329c99e52832e11e8bc104be1f7026b82fc9581aa44dc3"
 }

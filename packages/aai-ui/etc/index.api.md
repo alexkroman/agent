@@ -29,10 +29,14 @@ import type { TextareaHTMLAttributes } from 'react';
 import type { UploadParallelOption } from '@alexkroman1/aai/workflow-api';
 import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
 import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
+import { WorkflowAppLike } from '@alexkroman1/aai/workflow-api';
+import { WorkflowDefOf } from '@alexkroman1/aai/workflow-api';
 import { WorkflowInputOf } from '@alexkroman1/aai/workflow-api';
+import { WorkflowNameOf } from '@alexkroman1/aai/workflow-api';
 import { WorkflowOutputOf } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
+import { WorkflowsOf } from '@alexkroman1/aai/workflow-api';
 import { WorkflowSummary } from '@alexkroman1/aai/workflow-api';
 
 // @public
@@ -961,7 +965,6 @@ export type UseRouteMutationResult = {
 // @public @input
 export type UseRouteOptions<T = unknown> = {
     pollMs?: number | undefined;
-    every?: number | undefined;
     until?: ((value: T) => boolean) | undefined;
     client?: string | undefined;
     headers?: Readonly<Record<string, string>> | undefined;
@@ -1113,7 +1116,7 @@ export type UseWorkflowRunResult<R = unknown> = {
 };
 
 // @public
-export function useWorkflowRuns<App extends WorkflowAppLike, Name extends WorkflowNameOf<App> = WorkflowNameOf<App>>(workflow: Name | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<WorkflowOutputOf<WorkflowDefOf<App, Name>>>;
+export function useWorkflowRuns<App extends WorkflowAppLike = never, Name extends WorkflowNameOf<App> = WorkflowNameOf<App>>(workflow: [App] extends [never] ? never : Name | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<WorkflowOutputOf<WorkflowDefOf<App, Name>>>;
 
 // @public (undocumented)
 export function useWorkflowRuns<R = unknown>(workflow: [WorkflowNameOf<R>] extends [never] ? string | undefined : never, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
@@ -1214,13 +1217,9 @@ export type WorkflowApiOptions = {
     token?: string;
 };
 
-// @public @input
-export type WorkflowAppLike = {
-    readonly workflows?: Readonly<Record<string, AnyWorkflowDef>> | undefined;
-};
+export { WorkflowAppLike }
 
-// @public
-export type WorkflowDefOf<App, Name extends string> = WorkflowsOf<App>[Name & keyof WorkflowsOf<App>];
+export { WorkflowDefOf }
 
 // @public
 export type WorkflowFieldKind = "text" | "number" | "select" | "checkbox" | "file" | "lines" | "namedText" | "none" | (string & {});
@@ -1239,8 +1238,7 @@ export type WorkflowFieldsProps<App extends WorkflowAppLike = WorkflowAppLike> =
 
 export { WorkflowInputOf }
 
-// @public
-export type WorkflowNameOf<App> = [WorkflowsOf<App>] extends [never] ? never : keyof WorkflowsOf<App> & string;
+export { WorkflowNameOf }
 
 export { WorkflowOutputOf }
 
@@ -1298,10 +1296,7 @@ export type WorkflowRunPanelProps<O> = {
 
 export { WorkflowRunStatus }
 
-// @public
-export type WorkflowsOf<App> = App extends {
-    readonly workflows?: infer W;
-} ? Extract<W, Record<string, unknown>> : never;
+export { WorkflowsOf }
 
 // @public
 export type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmission<R, I>;

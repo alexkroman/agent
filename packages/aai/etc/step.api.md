@@ -355,7 +355,7 @@ export type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed
 
 // @public @input
 type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };

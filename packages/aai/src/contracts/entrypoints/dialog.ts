@@ -57,7 +57,11 @@ export {
   // `dialog.tool(def, { sendFrom })` and the `sendFrom: "field"` key form;
   // `EventNameOf` is the type `DialogSendFromKey` is spelled in.
   type DialogSendFrom,
+  // What `dialog.tool()` answers: the def, or the misuse marker naming the
+  // result fields that DO hold an event name when `sendFrom: "field"` names none.
+  type DialogSendFromChecked,
   type DialogSendFromKey,
+  type DialogSendFromMisuse,
   type DialogSendOptions,
   type DialogSessionEventName,
   type DialogSpec,

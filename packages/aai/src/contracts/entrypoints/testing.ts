@@ -73,14 +73,12 @@ export {
   dialogRefusalPattern,
   dialogResultSchema,
   endSessionCalls,
-  eventsOf,
   expectDialogOk,
   expectDialogRefused,
   // `toolNameOf(def)` beside `toolOf`; `expectSlotContract` asserts the three
   // invariants of a slot's DECLARATION in one call.
   expectSlotContract,
   expectToolOk,
-  isEvent,
   parseSchemaInput,
   parseToolInput,
   type RouteContextOverrides,

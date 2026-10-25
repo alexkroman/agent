@@ -130,7 +130,9 @@ addDays("2026-01-01", -1); // "2025-12-31"
 #### Call Signature
 
 ```ts
-function agent(def: PipelineAgentParams): ModeAgentDef<"pipeline">;
+function agent<W extends Readonly<Record<string, WorkflowDef>> = Readonly<Record<string, WorkflowDef>>>(def: PipelineAgentParams & {
+  workflows?: W;
+}): AgentDefWith<"pipeline", W>;
 ```
 
 Define an agent: its system prompt, its providers, and its configuration.
@@ -145,20 +147,34 @@ so it does not exist on [S2sAgentParams](#s2sagentparams) at all. With no `mode`
 agent is a pipeline agent. [AgentDeclaration](#agentdeclaration) documents what every
 field means; the returned [AgentDef](#agentdef) is the resolved shape.
 
+**The `workflows` map is kept as DECLARED on the result** (its literal keys
+and each def's own type — [AgentDefWith](#agentdefwith)), so a page can name a
+workflow through the agent: `useWorkflowSubmit<typeof agentDef>("digest")`
+types the name as the keys the agent declares and the output as that body's.
+A def without `workflows` is the plain [ModeAgentDef](#modeagentdef).
+
 **Tools are not declared here** — a tool is a FILE. `tools/echo.ts` that
 default-exports `tool({ … })` is the tool `echo`, registered by existing, and
 `agent({ tools })` is a compile error naming the file to create
 (`InlineToolsMisuse`).
 
+##### Type Parameters
+
+###### W
+
+`W` *extends* `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\> = `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\>
+
 ##### Parameters
 
 ###### def
 
-[`PipelineAgentParams`](#pipelineagentparams)
+[`PipelineAgentParams`](#pipelineagentparams) & \{
+  `workflows?`: `W`;
+\}
 
 ##### Returns
 
-[`ModeAgentDef`](#modeagentdef)\<`"pipeline"`\>
+[`AgentDefWith`](#agentdefwith)\<`"pipeline"`, `W`\>
 
 ##### Examples
 
@@ -193,21 +209,83 @@ export default agent({
 #### Call Signature
 
 ```ts
-function agent(def: S2sAgentParams): ModeAgentDef<"s2s">;
+function agent<W extends Readonly<Record<string, WorkflowDef>> = Readonly<Record<string, WorkflowDef>>>(def: Omit<AgentDeclaration, 
+  | "mode"
+  | "systemPrompt"
+  | "greeting"
+  | "maxSteps"
+  | "stt"
+  | "llm"
+  | "tts"
+  | "s2s"
+  | "turnTaking"
+  | "interruption"
+  | "silence"
+  | "errorPhrase"
+  | "startFailurePhrase"
+  | "resetToolChoice"
+  | "usageLimits"
+  | "temperature"
+  | "maxOutputTokens"
+  | "maxRetries"
+  | "inputGuardrails"
+  | "outputGuardrails"
+  | "tools"> & Partial<Pick<AgentDeclaration, "systemPrompt" | "greeting" | "maxSteps">> & {
+  tools?: "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing";
+} & {
+  mode: "s2s";
+  s2s: S2sProvider;
+} & {
+  workflows?: W;
+}): AgentDefWith<"s2s", W>;
 ```
 
 Define a speech-to-speech agent: `mode: "s2s"` and its `s2s` descriptor. See
 [S2sAgentParams](#s2sagentparams).
 
+##### Type Parameters
+
+###### W
+
+`W` *extends* `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\> = `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\>
+
 ##### Parameters
 
 ###### def
 
-[`S2sAgentParams`](#s2sagentparams)
+`Omit`\<[`AgentDeclaration`](#agentdeclaration), 
+  \| `"mode"`
+  \| `"systemPrompt"`
+  \| `"greeting"`
+  \| `"maxSteps"`
+  \| `"stt"`
+  \| `"llm"`
+  \| `"tts"`
+  \| `"s2s"`
+  \| `"turnTaking"`
+  \| `"interruption"`
+  \| `"silence"`
+  \| `"errorPhrase"`
+  \| `"startFailurePhrase"`
+  \| `"resetToolChoice"`
+  \| `"usageLimits"`
+  \| `"temperature"`
+  \| `"maxOutputTokens"`
+  \| `"maxRetries"`
+  \| `"inputGuardrails"`
+  \| `"outputGuardrails"`
+  \| `"tools"`\> & `Partial`\<`Pick`\<[`AgentDeclaration`](#agentdeclaration), `"systemPrompt"` \| `"greeting"` \| `"maxSteps"`\>\> & \{
+  `tools?`: `` "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing" ``;
+\} & \{
+  `mode`: `"s2s"`;
+  `s2s`: [`S2sProvider`](#s2sprovider);
+\} & \{
+  `workflows?`: `W`;
+\}
 
 ##### Returns
 
-[`ModeAgentDef`](#modeagentdef)\<`"s2s"`\>
+[`AgentDefWith`](#agentdefwith)\<`"s2s"`, `W`\>
 
 ##### Example
 
@@ -220,21 +298,37 @@ export default agent({ name: "Concierge", mode: "s2s", s2s: assemblyAIS2s() });
 #### Call Signature
 
 ```ts
-function agent(def: TextAgentParams): ModeAgentDef<"text">;
+function agent<W extends Readonly<Record<string, WorkflowDef>> = Readonly<Record<string, WorkflowDef>>>(def: Omit<SharedAgentParams, "sttPrompt" | "telephony"> & Pick<AgentDeclaration, keyof AgentModelTuning> & {
+  llm?: LlmSpec;
+  mode: "text";
+} & {
+  workflows?: W;
+}): AgentDefWith<"text", W>;
 ```
 
 Define a text agent: `mode: "text"`, driven over a message list by
 `createTextAgent` rather than by a session socket. See [TextAgentParams](#textagentparams).
 
+##### Type Parameters
+
+###### W
+
+`W` *extends* `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\> = `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\>
+
 ##### Parameters
 
 ###### def
 
-[`TextAgentParams`](#textagentparams)
+`Omit`\<[`SharedAgentParams`](#sharedagentparams), `"sttPrompt"` \| `"telephony"`\> & `Pick`\<[`AgentDeclaration`](#agentdeclaration), keyof [`AgentModelTuning`](#agentmodeltuning)\> & \{
+  `llm?`: [`LlmSpec`](#llmspec);
+  `mode`: `"text"`;
+\} & \{
+  `workflows?`: `W`;
+\}
 
 ##### Returns
 
-[`ModeAgentDef`](#modeagentdef)\<`"text"`\>
+[`AgentDefWith`](#agentdefwith)\<`"text"`, `W`\>
 
 ##### Example
 
@@ -251,21 +345,31 @@ export default agent({
 #### Call Signature
 
 ```ts
-function agent(def: WorkflowAppAgentParams): ModeAgentDef<"workflow-app">;
+function agent<W extends Readonly<Record<string, WorkflowDef>> = Readonly<Record<string, WorkflowDef>>>(def: Omit<WorkflowAppAgentParams, "workflows"> & {
+  workflows: W;
+}): AgentDefWith<"workflow-app", W>;
 ```
 
 Define a workflow app: `mode: "workflow-app"`. [workflowApp](#workflowapp) is the
 same member with the mode already set. See [WorkflowAppAgentParams](#workflowappagentparams).
 
+##### Type Parameters
+
+###### W
+
+`W` *extends* `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\> = `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\>
+
 ##### Parameters
 
 ###### def
 
-[`WorkflowAppAgentParams`](#workflowappagentparams)
+`Omit`\<[`WorkflowAppAgentParams`](#workflowappagentparams), `"workflows"`\> & \{
+  `workflows`: `W`;
+\}
 
 ##### Returns
 
-[`ModeAgentDef`](#modeagentdef)\<`"workflow-app"`\>
+[`AgentDefWith`](#agentdefwith)\<`"workflow-app"`, `W`\>
 
 #### Call Signature
 
@@ -784,8 +888,10 @@ no longer declares, and a run that outlived its declaration still has a
 status to report.
 
 ```ts
-import { describeRun, type WorkflowRunOf } from "@alexkroman1/aai";
-import { digest } from "../agent.ts";
+import { describeRun, workflow, type WorkflowRunOf } from "@alexkroman1/aai";
+
+// In an agent this is `import { digest } from "../agent.ts"`.
+const digest = workflow({ run: async () => ({ headline: "…" }) });
 
 declare const run: WorkflowRunOf<typeof digest>;
 const line = describeRun(digest, run);
@@ -957,6 +1063,14 @@ and that path is unchanged.
 It builds the same machine, so the STORED SNAPSHOT is byte-identical to the
 hand-written equivalent's and a `durable: true` dialog resumes across the
 switch — see `machineFromSpec`.
+
+**Write the spec inline, or hold it in a `const` with `satisfies
+DialogSpec` — never `as const`.** The `const S` parameter keeps every `on`
+name a literal on its own, and both forms keep the spec contextually typed,
+so an `onEnter: (ctx) => …` sees `ctx` as a `SlotHolder`. An `as const`
+assertion drops that contextual typing (the literal is typed before the
+parameter sees it), which is `TS7006` on every `onEnter` parameter and
+nothing gained.
 
 ##### Type Parameters
 
@@ -2013,8 +2127,8 @@ The brief a call's parameters carry, or `undefined` when they were not
 signed by this app — a stranger, a stale secret, a truncated stream, or no
 secret at all (an unset env is a refusal, never an open door).
 
-`call.brief(secret)` on the `SessionCall` `sessionContext` receives is this,
-bound to that call's parameters.
+The one reader: `call` is the `SessionCall` `sessionContext` and
+`onSessionEnd` receive, or `sessionCall(ctx)` in a tool.
 
 #### Parameters
 
@@ -2037,13 +2151,13 @@ bound to that call's parameters.
 **Refuse a stream the app did not dial**
 
 ```ts
-import { agent } from "@alexkroman1/aai";
+import { agent, readCallBrief } from "@alexkroman1/aai";
 
 agent({
   name: "Errand calls",
   telephony: ["twilio"],
   async sessionContext({ call, env }) {
-    const brief = await call?.brief(env.CALLS_API_KEY);
+    const brief = call && (await readCallBrief(call, env.CALLS_API_KEY));
     if (!brief) return { refuse: "not a call this app placed" };
     return { instructions: `Your task on this call: ${brief.prompt}` };
   },
@@ -3840,7 +3954,9 @@ export default tool({
 ### workflowApp()
 
 ```ts
-function workflowApp(def: Omit<WorkflowAppAgentParams, "mode">): AgentDef;
+function workflowApp<W extends Readonly<Record<string, WorkflowDef>>>(def: Omit<WorkflowAppAgentParams, "workflows" | "mode"> & {
+  workflows: W;
+}): AgentDefWith<"workflow-app", W>;
 ```
 
 Define a WORKFLOW APP — an agent whose front door is a form rather than a
@@ -3857,17 +3973,27 @@ It mirrors the split `@alexkroman1/aai-ui` already makes in the browser:
 one.
 
 `requiredEnv` defaults to [WORKFLOW\_APP\_REQUIRED\_ENV](#workflow_app_required_env) — the AssemblyAI
-key every shipped workflow app reads; `requiredEnv: []` opts out.
+key every shipped workflow app reads; `requiredEnv: []` opts out. The
+`workflows` map comes back AS DECLARED ([AgentDefWith](#agentdefwith)), which is what
+lets a page write `useWorkflowSubmit<typeof app>("digest")`.
+
+#### Type Parameters
+
+##### W
+
+`W` *extends* `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\>
 
 #### Parameters
 
 ##### def
 
-`Omit`\<[`WorkflowAppAgentParams`](#workflowappagentparams), `"mode"`\>
+`Omit`\<[`WorkflowAppAgentParams`](#workflowappagentparams), `"workflows"` \| `"mode"`\> & \{
+  `workflows`: `W`;
+\}
 
 #### Returns
 
-[`AgentDef`](#agentdef)
+[`AgentDefWith`](#agentdefwith)\<`"workflow-app"`, `W`\>
 
 #### Example
 
@@ -6495,6 +6621,19 @@ only judge one sentence at a time. Writing works too and lands like any
 other slot write — but a resolver runs on every request, so a resolver that
 writes is writing several times a turn.
 
+##### turn
+
+```ts
+turn: number;
+```
+
+How many USER turns this session has taken so far — `0` before the caller
+has said anything, `1` while the reply to the first thing they said is
+being assembled. For a `promptContext` that changes with the
+conversation's age ("the caller has been on the line a while; wrap up")
+without a hook counting turns into a slot; the runtime reads it off the
+session's own turn counter, the same count the metrics report.
+
 ***
 
 ### AgentSessionLifecycle
@@ -7464,9 +7603,9 @@ gets the transition the state declared.
 ##### tool()
 
 ```ts
-tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>, options?: DialogSendOptions<R, E>): ToolDef<P, Promise<
+tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K>, options?: DialogSendOptions<R, E, K>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<
   | ToolFailure
-| DialogToolResult<R>>>;
+| DialogToolResult<R>>>>;
 ```
 
 Declare a tool gated on this dialog's state. See [DialogToolDef](#dialogtooldef).
@@ -7492,21 +7631,25 @@ A `send`/`sendFrom` in both places is refused at declaration.
 
 `R` = `unknown`
 
+###### K
+
+`K` *extends* `string` = `string`
+
 ###### Parameters
 
 ###### def
 
-[`DialogToolDef`](#dialogtooldef)\<`P`, `R`, `E`\>
+[`DialogToolDef`](#dialogtooldef)\<`P`, `R`, `E`, `K`\>
 
 ###### options?
 
-[`DialogSendOptions`](#dialogsendoptions)\<`R`, `E`\>
+[`DialogSendOptions`](#dialogsendoptions)\<`R`, `E`, `K`\>
 
 ###### Returns
 
-[`ToolDef`](#tooldef)\<`P`, `Promise`\<
+[`DialogSendFromChecked`](#dialogsendfromchecked)\<`K`, `R`, `E`, [`ToolDef`](#tooldef)\<`P`, `Promise`\<
   \| [`ToolFailure`](#toolfailure)
-  \| [`DialogToolResult`](#dialogtoolresult)\<`R`\>\>\>
+  \| [`DialogToolResult`](#dialogtoolresult)\<`R`\>\>\>\>
 
 ##### voiceConfig()
 
@@ -7581,6 +7724,10 @@ What the tool's `execute` returns, as `sendFrom` reads it.
 
 The machine's event union.
 
+##### K
+
+`K` *extends* `string` = `string`
+
 #### Properties
 
 ##### reset?
@@ -7614,7 +7761,7 @@ bug this primitive can have, since every later gate is then wrong too.
 ##### sendFrom?
 
 ```ts
-optional sendFrom?: DialogSendFrom<R, E>;
+optional sendFrom?: DialogSendFrom<R, E, K>;
 ```
 
 The event to send, decided by the RESULT — for a tool whose outcome picks
@@ -7844,12 +7991,16 @@ What the tool's `execute` returns.
 
 The machine's event union.
 
+##### K
+
+`K` *extends* `string` = `string`
+
 #### Properties
 
 ##### sendFrom
 
 ```ts
-sendFrom: DialogSendFrom<R, E>;
+sendFrom: DialogSendFrom<R, E, K>;
 ```
 
 The transition the result decides — see [DialogGate.sendFrom](#sendfrom).
@@ -8183,7 +8334,7 @@ phrased by the model (it carries the state's own instruction) declares
 
 #### Extends
 
-- `Omit`\<[`ToolDef`](#tooldef)\<`P`, `R`\>, `"execute"`\>.[`DialogGate`](#dialoggate)\<`R`, `E`\>
+- `Omit`\<[`ToolDef`](#tooldef)\<`P`, `R`\>, `"execute"`\>.[`DialogGate`](#dialoggate)\<`R`, `E`, `K`\>
 
 #### Type Parameters
 
@@ -8204,6 +8355,10 @@ What `execute` returns.
 `E`
 
 The machine's event union.
+
+##### K
+
+`K` *extends* `string` = `string`
 
 #### Methods
 
@@ -8442,7 +8597,7 @@ bug this primitive can have, since every later gate is then wrong too.
 ##### sendFrom?
 
 ```ts
-optional sendFrom?: DialogSendFrom<R, E>;
+optional sendFrom?: DialogSendFrom<R, E, K>;
 ```
 
 The event to send, decided by the RESULT — for a tool whose outcome picks
@@ -10034,10 +10189,10 @@ platform's) answers no sessions.
 
 `Promise`\<[`ClientTranscript`](step.md#clienttranscript)\>
 
-##### sessionTranscript()?
+##### sessionTranscript()
 
 ```ts
-optional sessionTranscript(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
+sessionTranscript(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
 ```
 
 What ONE session has said so far — its committed user and agent lines,
@@ -10051,8 +10206,9 @@ Keyed by session id rather than client id because a phone call names no
 client. As with `speech`, a session id is not authorization: take it from
 state your own code wrote, never from the request alone.
 
-Optional only so a context built by hand (a spec's) need not supply one;
-every runtime does.
+A spec builds a context with `createRouteContext` (`@alexkroman1/aai/testing`)
+rather than by hand, so a field the runtime gains is not one every literal
+has to learn.
 
 ###### Parameters
 
@@ -10435,6 +10591,18 @@ sessionId: string;
 ```
 
 The session that stopped.
+
+##### slots
+
+```ts
+slots: SlotStore;
+```
+
+The session's slot storage, as `SessionEventContext.slots` is — so a fact a
+tool or a hook WROTE during the call ("went to voicemail", the order taken)
+is readable at its end through the slot that owns it: `slot.get(ctx)`,
+since a `SessionEndContext` is a `SlotHolder`. Reads only, in effect: the
+session is over and nothing commits a write made here.
 
 ##### transcript
 
@@ -11543,7 +11711,7 @@ tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, E ext
   type: string;
 } = {
   type: string;
-}>(def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E>, options?: DialogSendOptions<Awaited<R>, E>): ToolDef<P, GatedOutput<R>>;
+}, K extends string = string>(def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E, K>, options?: DialogSendOptions<Awaited<R>, E, K>): DialogSendFromChecked<K, Awaited<R>, E, ToolDef<P, GatedOutput<R>>>;
 ```
 
 Define a READ-ONLY tool over this slot: `execute` is handed the frozen
@@ -11583,19 +11751,23 @@ does — which is why that overload's output is wrapped and async. A
   `type`: `string`;
 \}
 
+###### K
+
+`K` *extends* `string` = `string`
+
 ###### Parameters
 
 ###### def
 
-[`SlotToolDef`](#slottooldef)\<`P`, [`DeepReadonly`](#deepreadonly)\<`T`\>, `R`\> & [`SlotDialogGate`](#slotdialoggate)\<`R`, `E`\>
+[`SlotToolDef`](#slottooldef)\<`P`, [`DeepReadonly`](#deepreadonly)\<`T`\>, `R`\> & [`SlotDialogGate`](#slotdialoggate)\<`R`, `E`, `K`\>
 
 ###### options?
 
-[`DialogSendOptions`](#dialogsendoptions)\<`Awaited`\<`R`\>, `E`\>
+[`DialogSendOptions`](#dialogsendoptions)\<`Awaited`\<`R`\>, `E`, `K`\>
 
 ###### Returns
 
-[`ToolDef`](#tooldef)\<`P`, [`GatedOutput`](#gatedoutput)\<`R`\>\>
+[`DialogSendFromChecked`](#dialogsendfromchecked)\<`K`, `Awaited`\<`R`\>, `E`, [`ToolDef`](#tooldef)\<`P`, [`GatedOutput`](#gatedoutput)\<`R`\>\>\>
 
 ###### Example
 
@@ -11777,7 +11949,7 @@ updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unkno
   type: string;
 } = {
   type: string;
-}>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E> & RejectThenable<R>, options?: DialogSendOptions<R2, E>): ToolDef<P, GatedOutput<R2>>;
+}, K extends string = string>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
 ```
 
 Define a MUTATING tool over this slot: the body runs inside
@@ -11839,19 +12011,23 @@ error's — the model-facing channel, not the client's.
   `type`: `string`;
 \}
 
+###### K
+
+`K` *extends* `string` = `string`
+
 ###### Parameters
 
 ###### def
 
-[`SlotPreparedToolDef`](#slotpreparedtooldef)\<`P`, `T`, `Prep`, `R`, `R2`\> & [`SlotDialogGate`](#slotdialoggate)\<`R2`, `E`\> & `RejectThenable`\<`R`\>
+[`SlotPreparedToolDef`](#slotpreparedtooldef)\<`P`, `T`, `Prep`, `R`, `R2`\> & [`SlotDialogGate`](#slotdialoggate)\<`R2`, `E`, `K`\> & `RejectThenable`\<`R`\>
 
 ###### options?
 
-[`DialogSendOptions`](#dialogsendoptions)\<`R2`, `E`\>
+[`DialogSendOptions`](#dialogsendoptions)\<`R2`, `E`, `K`\>
 
 ###### Returns
 
-[`ToolDef`](#tooldef)\<`P`, [`GatedOutput`](#gatedoutput)\<`R2`\>\>
+[`DialogSendFromChecked`](#dialogsendfromchecked)\<`K`, `R2`, `E`, [`ToolDef`](#tooldef)\<`P`, [`GatedOutput`](#gatedoutput)\<`R2`\>\>\>
 
 ###### Example
 
@@ -11912,7 +12088,7 @@ updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown,
   type: string;
 } = {
   type: string;
-}>(def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E> & RejectThenable<R>, options?: DialogSendOptions<R2, E>): ToolDef<P, GatedOutput<R2>>;
+}, K extends string = string>(def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
 ```
 
 ###### Type Parameters
@@ -11937,19 +12113,23 @@ updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown,
   `type`: `string`;
 \}
 
+###### K
+
+`K` *extends* `string` = `string`
+
 ###### Parameters
 
 ###### def
 
-[`SlotUpdateToolDef`](#slotupdatetooldef)\<`P`, `T`, `R`, `R2`\> & [`SlotDialogGate`](#slotdialoggate)\<`R2`, `E`\> & `RejectThenable`\<`R`\>
+[`SlotUpdateToolDef`](#slotupdatetooldef)\<`P`, `T`, `R`, `R2`\> & [`SlotDialogGate`](#slotdialoggate)\<`R2`, `E`, `K`\> & `RejectThenable`\<`R`\>
 
 ###### options?
 
-[`DialogSendOptions`](#dialogsendoptions)\<`R2`, `E`\>
+[`DialogSendOptions`](#dialogsendoptions)\<`R2`, `E`, `K`\>
 
 ###### Returns
 
-[`ToolDef`](#tooldef)\<`P`, [`GatedOutput`](#gatedoutput)\<`R2`\>\>
+[`DialogSendFromChecked`](#dialogsendfromchecked)\<`K`, `R2`, `E`, [`ToolDef`](#tooldef)\<`P`, [`GatedOutput`](#gatedoutput)\<`R2`\>\>\>
 
 ###### Call Signature
 
@@ -11983,6 +12163,18 @@ updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown,
 
 #### Properties
 
+##### caps?
+
+```ts
+readonly optional caps?: Readonly<Partial<Record<string, number>>>;
+```
+
+The caps the slot DECLARED ([SessionSlotOptions.caps](#caps-1)), when it
+declared any — read back by `expectSlotContract`, so a spec need not
+restate them. Typed as the record it is on the wire rather than
+`SlotCaps<T>`, which is `never` for the erased `T` the `SlotValueOf`
+constraint reads through.
+
 ##### durable
 
 ```ts
@@ -11991,6 +12183,18 @@ readonly durable: boolean;
 
 Whether this slot's value is stored durably. `true` unless the slot
 declared otherwise — see [SessionSlotOptions.durable](#durable-2).
+
+##### empty?
+
+```ts
+readonly optional empty?: () => T;
+```
+
+The seeded slot's blank ([SessionSlotOptions.empty](#empty-1)), when declared.
+
+###### Returns
+
+`T`
 
 ##### key
 
@@ -12017,7 +12221,7 @@ built at declaration also makes it identity-stable, which `useAgentState`
 memoizes its empty frame on.
 
 Callable with nothing — `cartSlot.projected()` is the pre-first-tool-call
-frame: the default (or [SessionSlotOptions.empty](#empty)), with `after` and
+frame: the default (or [SessionSlotOptions.empty](#empty-1)), with `after` and
 `caps` applied. With no [SessionSlotOptions.view](#view), it projects the
 whole value; declare one to narrow it to what the page renders.
 
@@ -12419,7 +12623,7 @@ own fields), so a misspelled event is reported at `send`, not at `dialog`.
 
 #### Extends
 
-- [`DialogGate`](#dialoggate)\<`Awaited`\<`R`\>, `NoInfer`\<`E`\>\>
+- [`DialogGate`](#dialoggate)\<`Awaited`\<`R`\>, `NoInfer`\<`E`\>, `K`\>
 
 #### Type Parameters
 
@@ -12437,6 +12641,10 @@ The tool's result as the gate reads it (reported, for an
 \}
 
 The dialog's event union.
+
+##### K
+
+`K` *extends* `string` = `string`
 
 #### Properties
 
@@ -12487,7 +12695,7 @@ bug this primitive can have, since every later gate is then wrong too.
 ##### sendFrom?
 
 ```ts
-optional sendFrom?: DialogSendFrom<Awaited<R>, NoInfer<E>>;
+optional sendFrom?: DialogSendFrom<Awaited<R>, NoInfer<E>, K>;
 ```
 
 The event to send, decided by the RESULT — for a tool whose outcome picks
@@ -12837,7 +13045,7 @@ Omit.onError
 ##### report?
 
 ```ts
-optional report?: (stored: DeepReadonly<T>, partial: Exclude<NoInfer<R>, ToolFailure>) => R2;
+optional report?: (stored: DeepReadonly<T>, partial: NoInfer<Exclude<R, ToolFailure>>) => R2;
 ```
 
 Complete the body's result from the value ACTUALLY STORED — after the
@@ -12862,7 +13070,7 @@ unchanged: a failure has no partial result to complete.
 
 ###### partial
 
-`Exclude`\<`NoInfer`\<`R`\>, [`ToolFailure`](#toolfailure)\>
+`NoInfer`\<`Exclude`\<`R`, [`ToolFailure`](#toolfailure)\>\>
 
 ###### Returns
 
@@ -13544,7 +13752,7 @@ export default tool({
 ##### report?
 
 ```ts
-optional report?: (stored: DeepReadonly<T>, partial: Exclude<NoInfer<R>, ToolFailure>) => R2;
+optional report?: (stored: DeepReadonly<T>, partial: NoInfer<Exclude<R, ToolFailure>>) => R2;
 ```
 
 Complete the body's result from the value ACTUALLY STORED — after the
@@ -13569,7 +13777,7 @@ unchanged: a failure has no partial result to complete.
 
 ###### partial
 
-`Exclude`\<`NoInfer`\<`R`\>, [`ToolFailure`](#toolfailure)\>
+`NoInfer`\<`Exclude`\<`R`, [`ToolFailure`](#toolfailure)\>\>
 
 ###### Returns
 
@@ -15104,6 +15312,40 @@ As [StandardWebhookOptions.toleranceS](#tolerances).
 
 ## Type Aliases
 
+### AgentDefWith
+
+```ts
+type AgentDefWith<M extends AgentMode, W extends WorkflowsMap> = string extends keyof W ? ModeAgentDef<M> : Omit<ModeAgentDef<M>, "workflows"> & {
+  workflows: W;
+};
+```
+
+**`Sealed`**
+
+What `agent()` and `workflowApp()` return for a declaration in mode `M`
+whose `workflows` map is `W`: [ModeAgentDef](#modeagentdef), carrying `W` as declared
+— its literal keys and each def's own type — when one was declared, and
+nothing more when none was (`W` is then its constraint, the open map).
+
+The one place the declared map survives the lowering: `AgentDef` types
+`workflows` as the open `Record<string, WorkflowDef>`, which is right for
+every reader of a definition and wrong for a page naming one of its
+workflows by key — `useWorkflowSubmit<typeof agentDef>("digets")` typed the
+name `string` and the output `unknown`, so the app-typed hooks were
+unreachable from a template.
+
+#### Type Parameters
+
+##### M
+
+`M` *extends* [`AgentMode`](#agentmode)
+
+##### W
+
+`W` *extends* [`WorkflowsMap`](#workflowsmap)
+
+***
+
 ### AgentGuardrail
 
 ```ts
@@ -15454,7 +15696,7 @@ type CallBrief = {
 
 What a placed call tells the session that answers it, once verified.
 
-Sealed as a ROUND TRIP: `readCallBrief` and `ctx.call.brief` build it, and
+Sealed as a ROUND TRIP: `readCallBrief` builds it, and
 `stepPlaceCall({ brief })` is handed one back.
 
 #### Properties
@@ -15802,18 +16044,34 @@ would reintroduce a `TS2589` on a declaration nobody has written yet.
 ### DialogSendFrom
 
 ```ts
-type DialogSendFrom<R, E> = 
-  | ((result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined)
-| DialogSendFromKey<Exclude<NoInfer<R>, ToolFailure>, E>;
+type DialogSendFrom<R, E, K extends string = string> = 
+  | ((result: NoInfer<Exclude<R, ToolFailure>>) => E | undefined)
+  | K;
 ```
 
 What [DialogGate.sendFrom](#sendfrom) accepts: a function of the success result
 answering the event (or `undefined` to stay put), or the NAME of a result
 field holding that event's `type` — see [DialogSendFromKey](#dialogsendfromkey).
 
-`NoInfer` on `R` in both arms is what makes the parameter mean anything; the
-argument is on [DialogGate.sendFrom](#sendfrom). The failure arm is subtracted
-because the gate returns a [ToolFailure](#toolfailure) before either form is reached.
+`NoInfer` on `R` in the function arm is what makes the parameter mean
+anything; the argument is on [DialogGate.sendFrom](#sendfrom). The failure arm is
+subtracted because the gate returns a [ToolFailure](#toolfailure) before either form
+is reached — and subtracted OUTSIDE the `NoInfer`, deliberately:
+`Exclude<NoInfer<R>, …>` never distributes once `R` is a union of object
+types (a `NoInfer` over one stays a substitution type, which a conditional
+does not split), so a slot tool whose body answered `X | ToolFailure` handed
+its `sendFrom` the whole union.
+
+**The string arm is a bare `K`, and the key is CHECKED ON THE RESULT**
+([DialogSendFromChecked](#dialogsendfromchecked)) rather than spelled as
+[DialogSendFromKey](#dialogsendfromkey) here. It used to be, and that spelling reads `R`
+at the one moment `R` is not known: an `execute` with an unannotated
+parameter (`(args, ctx) => …`, the ordinary voice tool) is context-sensitive,
+so its return is inferred in a second pass — and a key type written over `R`
+widened the literal `"next"` to `string` in the first, which failed every
+such tool whether the key sat above `execute`, below it or in the second
+argument. A naked `K` infers from the literal alone, and the check runs once
+`R` is settled.
 
 #### Type Parameters
 
@@ -15828,6 +16086,48 @@ What the tool's `execute` returns, failure arm included.
 `E`
 
 The machine's event union.
+
+##### K
+
+`K` *extends* `string` = `string`
+
+The literal the field-name form was written as; `string`
+  when the function form (or nothing) was.
+
+***
+
+### DialogSendFromChecked
+
+```ts
+type DialogSendFromChecked<K extends string, R, E, T> = string extends K ? T : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? T : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+```
+
+`T` — the tool a gated call answers — unless the field-name `sendFrom`
+written as `K` names no field of the success result (`R` minus its failure
+arm) holding an event of `E`, in which case [DialogSendFromMisuse](#dialogsendfrommisuse). `string` (no literal
+was written) is the function form, or none, and passes through.
+
+In RETURN position for the reason [DialogSendFrom](#dialogsendfrom) gives: a check
+intersected into the parameter type is a conditional over `R`, which stops
+`R` being inferred from a context-sensitive `execute` at all.
+
+#### Type Parameters
+
+##### K
+
+`K` *extends* `string`
+
+##### R
+
+`R`
+
+##### E
+
+`E`
+
+##### T
+
+`T`
 
 ***
 
@@ -15859,6 +16159,47 @@ The tool's SUCCESS result (the failure arm already removed).
 `E`
 
 The machine's event union.
+
+***
+
+### DialogSendFromMisuse
+
+```ts
+type DialogSendFromMisuse<K extends string, Keys extends string> = {
+  sendFrom names a result field that holds no event name of this dialog: K;
+  the fields that do: Keys;
+};
+```
+
+**`Sealed`**
+
+The compile error a `sendFrom: "field"` gets when `field` holds no event
+name of the dialog — a message TYPE, on the pattern of `SyncMutationMisuse`:
+what `tsc` prints names the rule and the fields that would have worked.
+
+#### Type Parameters
+
+##### K
+
+`K` *extends* `string`
+
+##### Keys
+
+`Keys` *extends* `string`
+
+#### Properties
+
+##### sendFrom names a result field that holds no event name of this dialog
+
+```ts
+readonly sendFrom names a result field that holds no event name of this dialog: K;
+```
+
+##### the fields that do
+
+```ts
+readonly the fields that do: Keys;
+```
 
 ***
 
@@ -15921,8 +16262,8 @@ type EventNameOf<E> = E & {
 ```
 
 The `type` names of a dialog's event union — what a `sendFrom: "field"` key's
-value must be — or `string` for an erased `E` (`AnyDialog`'s `unknown`), so
-every string-valued field qualifies there. Exported because
+value must be; `string` for an erased `E` (`AnyDialog`'s `unknown`), so every
+string-valued field qualifies there. Exported because
 [DialogSendFromKey](#dialogsendfromkey) is spelled in it.
 
 #### Type Parameters
@@ -16771,7 +17112,7 @@ speaks `ASSEMBLYAI_TTS_DEFAULT_VOICE`.
 type PollFirstWait = {
   schema?: StandardSchemaV1;
   timeoutMs: number;
-  waitFor: string;
+  waitFor: string | undefined;
 };
 ```
 
@@ -16802,10 +17143,14 @@ How long to wait for the callback before polling anyway.
 ##### waitFor
 
 ```ts
-waitFor: string;
+waitFor: string | undefined;
 ```
 
-The hook token, as `ctx.waitFor` takes it — derived, so a tool can signal it.
+The hook token, as `ctx.waitFor` takes it — derived, so a tool can signal
+it. `undefined` means NO callback was issued — what
+`stepWebhookUrl(token, { optional: true })` answers on a deployment with
+no public URL — and the poll then checks immediately rather than parking
+for `timeoutMs` on a callback nothing can deliver (`woken: false`).
 
 ***
 
@@ -17298,7 +17643,6 @@ check"). Default `true`.
 
 ```ts
 type SessionCall = {
-  brief: (secret: string | undefined) => Promise<CallBrief | undefined>;
   callId?: string;
   carrier: string;
   parameters: Readonly<Record<string, string>>;
@@ -17309,30 +17653,13 @@ type SessionCall = {
 
 A phone session's call identity, as the carrier's `start` frame reported it.
 
+Plain data, and the same shape on both sides of the wire: what the runtime's
+phone bridge, an eval and `createToolContext({ call })` hand in is what
+`sessionContext`, `onSessionEnd` and `sessionCall(ctx)` read back, frozen.
+The brief `stepPlaceCall({ brief })` signed onto the parameters is read
+with `readCallBrief(call, secret)`, the one reader.
+
 #### Properties
-
-##### brief
-
-```ts
-readonly brief: (secret: string | undefined) => Promise<CallBrief | undefined>;
-```
-
-The signed brief these parameters carry — what `stepPlaceCall({ brief })`
-put on the call — verified under `secret` and reassembled, or `undefined`
-when they were not signed with it: a stranger, a stale secret, a
-truncated stream, or no secret at all. `readCallBrief(call, secret)` bound
-to this call; the same check, so a session refusing on `undefined` is
-refusing exactly the streams this app did not dial.
-
-###### Parameters
-
-###### secret
-
-`string` \| `undefined`
-
-###### Returns
-
-`Promise`\<[`CallBrief`](#callbrief) \| `undefined`\>
 
 ##### callId?
 
@@ -17362,53 +17689,6 @@ elements, by name. Telnyx Call Control's `client_state`, when set, is here
 as `client_state`, still base64 as Telnyx sends it. Empty when there were
 none. Bounded by the bridge: at most 32 entries, each name plus value
 under 500 characters (Twilio's own limit), non-string values dropped.
-
-***
-
-### SessionCallInput
-
-```ts
-type SessionCallInput = {
-  callId?: string;
-  carrier: string;
-  parameters: Readonly<Record<string, string>>;
-};
-```
-
-**`Input`**
-
-A call as the carrier's `start` frame reported it — [SessionCall](#sessioncall)
-without the [SessionCall.brief](#brief) reader, which the record attaches.
-What the runtime's phone bridge, an eval and `createToolContext({ call })`
-hand in. Declared on its own rather than cut from `SessionCall` so each side
-of the wire is probed in its own direction; the three fields mean what
-[SessionCall](#sessioncall)'s do.
-
-#### Properties
-
-##### callId?
-
-```ts
-readonly optional callId?: string;
-```
-
-See [SessionCall.callId](#callid-1).
-
-##### carrier
-
-```ts
-readonly carrier: string;
-```
-
-See [SessionCall.carrier](#carrier).
-
-##### parameters
-
-```ts
-readonly parameters: Readonly<Record<string, string>>;
-```
-
-See [SessionCall.parameters](#parameters).
 
 ***
 
@@ -17879,7 +18159,7 @@ type SlotCaps<T> = T extends object ? { readonly [K in keyof T as NonNullable<T[
 ```
 
 Growth caps for the ARRAYS at the top level of a slot's value — the type of
-[SessionSlotOptions.caps](#caps).
+[SessionSlotOptions.caps](#caps-1).
 
 A key is accepted only when the value under it is an array (or an array
 behind `null`/`undefined`), so declaring a cap on a counter or a nested
@@ -18054,6 +18334,12 @@ type SlotValueOf<S extends SessionSlot<string, unknown, unknown>> = S extends Se
 The frozen value a slot hands a reader — `DeepReadonly<T>` for the slot's
 own `T`, read off the handle so a helper's signature names the slot rather
 than restating its type: `(cart: SlotValueOf<typeof cartSlot>) => …`.
+
+**For a helper declared AFTER the slot.** The slot's type depends on its
+`view`, so a `view` written inline cannot name `SlotValueOf<typeof thisSlot>`
+for its own parameter — that is `typeof thisSlot` referring to itself
+(`TS7022`). Inside the declaration the parameter is already typed:
+`view: (cart) => …` sees `DeepReadonly<T>` with no annotation at all.
 
 #### Type Parameters
 
@@ -22448,6 +22734,17 @@ because the caller this composition was written for is a `*_status` TOOL.
 Note `isTerminal` is on `/workflow-api` only — it is a value, so it is not
 erased, and a tool importing it is importing the client half on purpose.
 
+***
+
+### WorkflowsMap
+
+```ts
+type WorkflowsMap = NonNullable<AgentDef["workflows"]>;
+```
+
+The workflows an agent may declare — `AgentDef["workflows"]` without the
+`undefined`. The constraint every `W` is inferred under.
+
 ## Variables
 
 ### CALL\_BRIEF\_CHUNK\_CHARS
@@ -22482,6 +22779,21 @@ the subagent names no [SpeakerDef.maxRevisions](#maxrevisions) of its own.
 Declared here rather than in `constants.ts` for the reason
 `DEFAULT_STEP_MAX_ATTEMPTS` is declared beside `ctx.step`: a budget whose
 only reader is one field is documented by sitting next to it.
+
+***
+
+### DEFAULT\_SIGNAL\_HOLD\_MS
+
+```ts
+const DEFAULT_SIGNAL_HOLD_MS: number;
+```
+
+How long `WorkflowClient.signalRun` holds a payload for a wait the run has
+not reached yet — see `SignalOptions.holdMs`.
+
+Five minutes: long enough for a body that transcribes or uploads before it
+parks, and short enough that a payload for a run that never parks is not held
+for the life of the process.
 
 ***
 

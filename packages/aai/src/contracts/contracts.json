@@ -223,5 +223,10 @@
     "current": 2,
     "supported": [1, 2],
     "dropped": {}
+  },
+  "workflow-readings": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
   }
 }

@@ -23,6 +23,10 @@ export {
   type FetchRouteRequest,
   type FetchRoutesOptions,
   type FetchRouteTable,
+  // `routeOf(table)` and `routeHandlerOf(answer)`: one handler out of a route
+  // table or a canned answer, for a spec that drives the handler directly.
+  routeHandlerOf,
+  routeOf,
   type StubFetchRoutes,
   type StubGateway,
   type StubGatewayCall,

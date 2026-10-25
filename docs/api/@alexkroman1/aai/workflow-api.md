@@ -191,6 +191,51 @@ shorter than the request's.
 
 `AsyncGenerator`\<[`EventStreamFrame`](#eventstreamframe)\>
 
+***
+
+### workflowNameOf()
+
+```ts
+function workflowNameOf(def: AnyWorkflowDef): string | undefined;
+```
+
+The name `def` was declared under — the key of `agent({ workflows })`, or
+the `workflows/<name>.ts` file it was discovered from — or `undefined` for a
+def no lowering has registered (one built inline in a spec and never handed
+to an agent).
+
+Recorded when the agent is lowered: import it as `virtual:aai/agent` under
+vitest, build it with `aai build`/`aai dev`, or pass the map through
+`withWorkflows` or `workflowRegistry` (`@alexkroman1/aai/manifest`).
+
+#### Parameters
+
+##### def
+
+[`AnyWorkflowDef`](#anyworkflowdef)
+
+#### Returns
+
+`string` \| `undefined`
+
+#### Example
+
+```ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { workflowNameOf } from "@alexkroman1/aai/workflow-api";
+import { z } from "zod";
+
+const digest = workflow({
+  description: "Summarise a page",
+  input: z.object({ url: z.string() }),
+  run: async (input) => ({ url: input.url }),
+});
+// Lowering the map is what records the names; a build or
+// `virtual:aai/agent` does the same for a discovered `workflows/digest.ts`.
+agent({ name: "Digest", workflows: { digest } });
+workflowNameOf(digest); // "digest"
+```
+
 ## Interfaces
 
 ### ClientConfigResponse
@@ -1741,6 +1786,31 @@ reader reach for a `!` or a conditional spread.
 
 ***
 
+### WorkflowAppLike
+
+```ts
+type WorkflowAppLike = {
+  workflows?: Readonly<Record<string, AnyWorkflowDef>>;
+};
+```
+
+**`Input`**
+
+An agent with a `workflows` map — what `agent({ workflows })` and
+`workflowApp()` return, and what the agent form of the workflow hooks and of
+`runWorkflow` is parameterized by (`useWorkflowSubmit<typeof
+agentDef>("digest")`, `runWorkflow(agentDef, "digest", input)`).
+
+#### Properties
+
+##### workflows?
+
+```ts
+readonly optional workflows?: Readonly<Record<string, AnyWorkflowDef>>;
+```
+
+***
+
 ### WorkflowBody
 
 ```ts
@@ -1788,6 +1858,33 @@ What the body returns.
 #### Returns
 
 `Promise`\<`R`\> \| `R`
+
+***
+
+### WorkflowDefOf
+
+```ts
+type WorkflowDefOf<App, Name extends string> = WorkflowsOf<App>[Name & keyof WorkflowsOf<App>];
+```
+
+The def `App` declares under `Name` — what the agent form of a hook derives
+its input and output from: `WorkflowOutputOf<WorkflowDefOf<App, Name>>`.
+
+With `Name` the whole [WorkflowNameOf](#workflownameof) union it is the union of the
+agent's defs, so an app with ONE workflow — most of them — gets exactly that
+workflow's types from `<typeof agentDef>` alone, and an app with several
+names the one it means as a second type argument:
+`useWorkflowSubmit<typeof agentDef, "digest">("digest")`.
+
+#### Type Parameters
+
+##### App
+
+`App`
+
+##### Name
+
+`Name` *extends* `string`
 
 ***
 
@@ -1853,6 +1950,28 @@ optional signal?: AbortSignal;
 ```ts
 optional wait?: number;
 ```
+
+***
+
+### WorkflowNameOf
+
+```ts
+type WorkflowNameOf<App> = [WorkflowsOf<App>] extends [never] ? never : keyof WorkflowsOf<App> & string;
+```
+
+The names `App` declares under `workflows` — the literal union a page passes
+to `useWorkflowSubmit<typeof agentDef>(…)`, `useWorkflowStream`,
+`useWorkflowRuns` and `<WorkflowFields>`, and a spec to `runWorkflow`.
+
+`never` for a type with no `workflows` map (a def, an unrelated object), so
+the agent form of each overloaded hook declines it and the def form is tried.
+The `[T] extends [never]` guard is load-bearing: `keyof never` is every key.
+
+#### Type Parameters
+
+##### App
+
+`App`
 
 ***
 
@@ -2029,6 +2148,27 @@ Lifecycle of one workflow run.
 - `pending` — created, not yet picked up by the queue.
 - `running` — executing, or suspended at a `sleep`/hook waiting to resume.
 - `completed` / `failed` / `cancelled` — terminal.
+
+***
+
+### WorkflowsOf
+
+```ts
+type WorkflowsOf<App> = App extends {
+  workflows?: infer W;
+} ? Extract<W, Record<string, unknown>> : never;
+```
+
+The `workflows` map of an app def, or `never` when it declares none — the
+reading [WorkflowNameOf](#workflownameof) and [WorkflowDefOf](#workflowdefof) are spelled in.
+`Extract` rather than `NonNullable`: an absent key infers `unknown`, which
+`NonNullable` would keep.
+
+#### Type Parameters
+
+##### App
+
+`App`
 
 ***
 
@@ -2230,22 +2370,13 @@ const ClientConfigResponseSchema: z.ZodType<ClientConfigResponse>;
 Body of `GET /client-config`. Unknown fields are stripped, so a response
 from an older server still parses.
 
-***
+## References
 
 ### DEFAULT\_SIGNAL\_HOLD\_MS
 
-```ts
-const DEFAULT_SIGNAL_HOLD_MS: number;
-```
+Re-exports [DEFAULT_SIGNAL_HOLD_MS](index.md#default_signal_hold_ms)
 
-How long `WorkflowClient.signalRun` holds a payload for a wait the run has
-not reached yet — see `SignalOptions.holdMs`.
-
-Five minutes: long enough for a body that transcribes or uploads before it
-parks, and short enough that a payload for a run that never parks is not held
-for the life of the process.
-
-## References
+***
 
 ### describeRun
 

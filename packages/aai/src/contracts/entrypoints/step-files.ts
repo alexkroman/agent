@@ -39,6 +39,7 @@ export {
   // `transcodeUpload` and `stepSpeakToUpload`: ffmpeg over an upload, and
   // synthesized speech stored as one.
   type SpeakMaster,
+  type SpeakMasterFormat,
   type SpeakToUploadOptions,
   type SpokenUpload,
   STEP_FILE_READ_CONCURRENCY,

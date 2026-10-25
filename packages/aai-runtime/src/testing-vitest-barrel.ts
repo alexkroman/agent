@@ -108,6 +108,7 @@ export {
   type EvalTextTest,
   type EvalTextTestContext,
   type EvalToolCall,
+  type EvalToolOutput,
   type EvalTurn,
   type EvalWorkflowCaseOptions,
   type EvalWorkflowRun,

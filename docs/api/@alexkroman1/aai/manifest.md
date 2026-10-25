@@ -734,8 +734,9 @@ modules. Synchronous, like `toolRegistry`, so the generated entry carries no
 top-level `await`.
 
 A module that does not default-export a def is skipped (see the module
-doc). One that does and is nested, misnamed or a duplicate is an error
-naming the file.
+doc) — except a bodyless two-phase declaration, which is refused naming
+`.body()`. One that is a def and is nested, misnamed or a duplicate is an
+error naming the file.
 
 #### Parameters
 

@@ -1,10 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
-import { workflow } from "./workflow.ts";
+import { type AnyWorkflowDef, workflow } from "./workflow.ts";
 import { declaredWorkflowName, recordWorkflowNames, workflowNameOf } from "./workflow-names.ts";
 
-function def(): ReturnType<typeof workflow> {
+function def(): AnyWorkflowDef {
   return workflow({
     description: "a def",
     input: z.object({}),

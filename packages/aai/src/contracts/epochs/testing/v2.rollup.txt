@@ -23,18 +23,44 @@ type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-202
 // @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | "workflow_status" | "workflow_progress" | "workflow_cancel" | (string & {});
 
-// @public
-type CallBrief = {
-    id: string;
-    prompt: string;
-};
-
 // @public @input
 interface ClientEventMap {
 }
 
 // @public
 type ClientEventSender = <K extends keyof ClientEventMap | (string & {})>(event: K, data: K extends keyof ClientEventMap ? ClientEventMap[K] : unknown) => void;
+
+// @public @sealed
+type ClientTranscript = {
+    sessions: ClientTranscriptSession[];
+};
+
+// @public @sealed
+type ClientTranscriptMessage = {
+    role: "user" | "assistant" | (string & {});
+    text: string;
+    at: number;
+};
+
+// @public @sealed
+type ClientTranscriptSession = {
+    sessionId: string;
+    startedAt: number;
+    lastEventIndex: number;
+    messages: ClientTranscriptMessage[];
+    tools: ClientTranscriptTool[];
+};
+
+// @public @sealed
+type ClientTranscriptTool = {
+    name: string | undefined;
+    args: Readonly<Record<string, unknown>> | undefined;
+    result: string;
+    at: number;
+};
+
+// @public
+export function createRouteContext(overrides?: RouteContextOverrides): RouteContext;
 
 // @public
 export function createSlotStore(): SlotStore;
@@ -93,15 +119,15 @@ interface Dialog<E = {
     reset(ctx: SlotHolder): DialogPosition;
     send(ctx: SlotHolder, event: E): DialogPosition;
     timeout(ctx: SlotHolder): DialogTimeout | undefined;
-    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>, options?: DialogSendOptions<R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K>, options?: DialogSendOptions<R, E, K>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
 // @public @input
-interface DialogGate<R, E> {
+interface DialogGate<R, E, K extends string = string> {
     reset?: true;
     send?: E;
-    sendFrom?: DialogSendFrom<R, E>;
+    sendFrom?: DialogSendFrom<R, E, K>;
     when?: string | readonly string[];
 }
 
@@ -125,16 +151,25 @@ export function dialogResultSchema<T extends z.ZodType>(result: T): z.ZodObject<
 }, z.core.$strip>;
 
 // @public
-type DialogSendFrom<R, E> = ((result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined) | DialogSendFromKey<Exclude<NoInfer<R>, ToolFailure>, E>;
+type DialogSendFrom<R, E, K extends string = string> = ((result: NoInfer<Exclude<R, ToolFailure>>) => E | undefined) | K;
+
+// @public
+type DialogSendFromChecked<K extends string, R, E, T> = string extends K ? T : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? T : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
 
 // @public
 type DialogSendFromKey<S, E> = keyof {
     [K in keyof S as S[K] extends EventNameOf<E> | undefined ? K : never]: never;
 } & string;
 
+// @public
+type DialogSendFromMisuse<K extends string, Keys extends string> = {
+    readonly "sendFrom names a result field that holds no event name of this dialog": K;
+    readonly "the fields that do": Keys;
+};
+
 // @public @input
-interface DialogSendOptions<R, E> {
-    sendFrom: DialogSendFrom<R, E>;
+interface DialogSendOptions<R, E, K extends string = string> {
+    sendFrom: DialogSendFrom<R, E, K>;
 }
 
 // @public @input
@@ -146,7 +181,7 @@ interface DialogTimeout {
 }
 
 // @public @input
-interface DialogToolDef<P extends ToolInputSchema | undefined, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
+interface DialogToolDef<P extends ToolInputSchema | undefined, R, E, K extends string = string> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E, K> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
 }
 
@@ -174,11 +209,7 @@ type EventNameOf<E> = (E & {
 })["type"];
 
 // @public
-export function eventsOf<E extends {
-    type: string;
-}, K extends E["type"]>(events: Iterable<E>, type: K): Extract<E, {
-    type: K;
-}>[];
+export function expectDialogOk<R>(result: R): R extends DialogToolResult<infer V> ? DialogToolResult<V> : DialogToolResult<unknown>;
 
 // @public
 export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
@@ -258,13 +289,6 @@ interface InterruptionTuning {
 // @public
 type IsAny<T> = 0 extends 1 & T ? true : false;
 
-// @public
-export function isEvent<E extends {
-    type: string;
-}, K extends E["type"]>(event: E, type: K): event is Extract<E, {
-    type: K;
-}>;
-
 // @internal
 type Literal<S extends string> = string extends S ? never : S;
 
@@ -314,7 +338,7 @@ interface PipelineTuning {
 
 // @public @input
 type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -368,6 +392,21 @@ interface RestoredToolCall {
     result?: string | undefined;
     status: "pending" | "done";
 }
+
+// @public @sealed
+interface RouteContext {
+    clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
+    env: Readonly<Partial<Record<string, string>>>;
+    sessionTranscript(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
+    signal: AbortSignal;
+    speech(sessionId: string): SessionSpeech | undefined;
+    workflows: WorkflowClient;
+}
+
+// @public @input
+export type RouteContextOverrides = {
+    [K in keyof RouteContext]?: RouteContext[K] | undefined;
+};
 
 // @public
 export function runGuardrail(def: SpeakerDef, text: string, answer?: Partial<DelegateAnswer>): GuardrailVerdict;
@@ -426,11 +465,7 @@ type SessionCall = {
     readonly carrier: string;
     readonly callId?: string;
     readonly parameters: Readonly<Record<string, string>>;
-    readonly brief: (secret: string | undefined) => Promise<CallBrief | undefined>;
 };
-
-// @public @input
-type SessionCallInput = Omit<SessionCall, "brief">;
 
 // @public
 type SessionErrorCode = "stt" | "llm" | "tts" | "tool" | "protocol" | "connection" | "audio" | "internal" | (string & {});
@@ -605,8 +640,10 @@ type SessionEventType = Extract<keyof SessionEventMap, string>;
 
 // @public @sealed
 interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
+    readonly caps?: Readonly<Partial<Record<string, number>>>;
     create(): T;
     readonly durable: boolean;
+    readonly empty?: () => T;
     get(ctx: SlotHolder): DeepReadonly<T>;
     readonly key: K;
     readonly projected: StateProjection<V>;
@@ -617,7 +654,7 @@ interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
         type: string;
     } = {
         type: string;
-    }>(def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E>, options?: DialogSendOptions<Awaited<R>, E>): ToolDef<P, GatedOutput<R>>;
+    }, K extends string = string>(def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E, K>, options?: DialogSendOptions<Awaited<R>, E, K>): DialogSendFromChecked<K, Awaited<R>, E, ToolDef<P, GatedOutput<R>>>;
     // (undocumented)
     tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
     transact<Prep, R>(ctx: SlotHolder, tx: SlotTransaction<T, Prep, R>): Promise<R | ToolFailure>;
@@ -626,7 +663,7 @@ interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
         type: string;
     } = {
         type: string;
-    }>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E> & RejectThenable<R>, options?: DialogSendOptions<R2, E>): ToolDef<P, GatedOutput<R2>>;
+    }, K extends string = string>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
     // (undocumented)
     updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unknown, R = unknown, R2 = R>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & RejectThenable<R>): ToolDef<P, Promise<R2 | ToolFailure>>;
     // (undocumented)
@@ -634,7 +671,7 @@ interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
         type: string;
     } = {
         type: string;
-    }>(def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E> & RejectThenable<R>, options?: DialogSendOptions<R2, E>): ToolDef<P, GatedOutput<R2>>;
+    }, K extends string = string>(def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
     // (undocumented)
     updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R>(def: SlotUpdateToolDef<P, T, R, R2> & RejectThenable<R>): ToolDef<P, R2 | Extract<R, ToolFailure>>;
 }
@@ -676,7 +713,7 @@ export type SlotContractOptions<T> = {
 // @public @input
 interface SlotDialogGate<R, E extends {
     type: string;
-}> extends DialogGate<Awaited<R>, NoInfer<E>> {
+}, K extends string = string> extends DialogGate<Awaited<R>, NoInfer<E>, K> {
     dialog: Dialog<E>;
 }
 
@@ -715,7 +752,7 @@ interface SlotTransaction<T, Prep, R> {
 
 // @public @input
 interface SlotUpdateToolDef<P extends ToolInputSchema | undefined, T, R, R2 = R> extends SlotToolDef<P, T, R> {
-    report?: (stored: DeepReadonly<T>, partial: Exclude<NoInfer<R>, ToolFailure>) => R2;
+    report?: (stored: DeepReadonly<T>, partial: NoInfer<Exclude<R, ToolFailure>>) => R2;
 }
 
 // @public @input
@@ -796,6 +833,15 @@ interface StateProjection<V = unknown> {
     readonly create: () => unknown;
     readonly key: string;
 }
+
+// @public @input
+type StepClientTranscriptOptions = {
+    since?: number | undefined;
+    afterEventIndex?: {
+        sessionId: string;
+        index: number;
+    } | undefined;
+};
 
 // @public @input
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
@@ -959,7 +1005,7 @@ export type ToolContextOverrides = {
     clientId?: string | undefined;
     clientPhone?: string | undefined;
     clientLocation?: string | undefined;
-    call?: SessionCallInput | undefined;
+    call?: SessionCall | undefined;
 };
 
 // @public @input

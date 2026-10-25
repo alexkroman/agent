@@ -231,32 +231,6 @@ test finishes.
 function installStubWorkflows(options?: StubWorkflowsOptions): WorkflowClient;
 ```
 
-A `ctx.workflows` whose reads answer from one fixture and whose every method
-is a `vi.fn`.
-
-`createStubWorkflows` (`@alexkroman1/aai/testing`) is the framework-agnostic
-base: it REJECTS every method, so a tool reaching for one the spec did not
-stub says so. That is the right default and it is not the shape a spec of a
-workflow-driving agent wants, because such a tool reads two or three methods
-per call and asserts on `start`. Both shipped workflow templates therefore
-opened with the same fifteen lines — a `vi.fn` per method, answering from one
-`runs` array — byte-identical apart from the workflow name in `listing`.
-
-**It is on this subpath because `vi.fn` is the content.** The methods have to
-be spies: a spec asserts `expect(workflows.start).toHaveBeenCalledWith(def,
-input)` and re-points one per test with
-`vi.mocked(workflows.lastLine).mockResolvedValue("…")`. A plain-function
-version would be a different helper that neither template could use.
-
-**What it does NOT answer is deliberate.** `stream`, `streamTail`, `signal`
-and `publicWebhookUrl` fall through to the rejecting base, because a tool
-reading a progress channel by hand is the hazard `lastLine` exists to remove
-— see `WorkflowClient.lastLine`, where composing `streamTail` + `stream` in
-the wrong order waits forever with no error. A spec that really is testing
-one of those overrides it, which reads as the deliberate act it is.
-
-Spread it to replace a method for one test: `{ ...installStubWorkflows(), signal }`.
-
 #### Parameters
 
 ##### options?
@@ -266,19 +240,6 @@ Spread it to replace a method for one test: `{ ...installStubWorkflows(), signal
 #### Returns
 
 [`WorkflowClient`](../../aai/index.md#workflowclient)
-
-#### Example
-
-```ts
-import { createRunSnapshot, createToolContext } from "@alexkroman1/aai/testing";
-import { installStubWorkflows } from "@alexkroman1/aai/testing/vitest";
-
-const workflows = installStubWorkflows({
-  names: ["recap"],
-  runs: [createRunSnapshot({ workflow: "recap", status: "running" })],
-});
-const ctx = createToolContext({ workflows });
-```
 
 ***
 
@@ -309,8 +270,9 @@ previous value is put back when the test finishes. `stubGatewayRoute` itself
 cannot seed anything — it installs nothing and owns no lifetime — so the
 seeding lives with the installers.
 
-`installStubReporter` is always installed, so what the steps narrated is on
-`reported` without a second call.
+`installStubReporter` is installed too, so what the steps narrated is on
+`reported` without a second call — unless a reporter is already published
+(an eval's), which is left in place: `reporter` decides.
 
 #### Parameters
 
@@ -370,9 +332,7 @@ missing-key refusal.
 
 ```ts
 type StubWorkflowsOptions = {
-  agent?: {
-     workflows?: Readonly<Record<string, unknown>>;
-  };
+  agent?: WorkflowAppLike;
   lastLine?: unknown;
   names?: readonly string[];
   runId?: string;
@@ -393,20 +353,12 @@ first and the one most specs of one want.
 ##### agent?
 
 ```ts
-optional agent?: {
-  workflows?: Readonly<Record<string, unknown>>;
-};
+optional agent?: WorkflowAppLike;
 ```
 
 The agent under test, whose declared `workflows` are what `listing()`
 reports — so a renamed workflow is read off the def rather than restated.
 Pass `agentDef`; an explicit `names` wins over it.
-
-###### workflows?
-
-```ts
-readonly optional workflows?: Readonly<Record<string, unknown>>;
-```
 
 ##### lastLine?
 
@@ -459,7 +411,6 @@ type StubWorld = {
   provider: StubTranscribeCall[];
   reported: StubReporter;
   speech: StubSpeechCall[];
-  uploads: StubUploadWrite[];
 };
 ```
 
@@ -475,7 +426,8 @@ What [installStubWorld](#installstubworld) returns: every fake's call log, live.
 readonly files: StubUploads | undefined;
 ```
 
-The upload store itself, for `read` — `undefined` when `uploads` was not named.
+The upload store itself — `undefined` when `uploads` was not named. Read a
+file back with `read`; what a step wrote (under `writable`) is `writes`.
 
 ##### model
 
@@ -499,7 +451,9 @@ Every transcription request, by leg — empty when `transcribe` was not named.
 readonly reported: StubReporter;
 ```
 
-What the steps narrated and emitted (`installStubReporter`).
+What the steps narrated and emitted (`installStubReporter`) — empty, and
+recording nothing, when the world left a published reporter in place
+(see `StubWorldOptions.reporter`).
 
 ##### speech
 
@@ -508,14 +462,6 @@ readonly speech: StubSpeechCall[];
 ```
 
 Every line the synthesizer was asked to say — empty when `speech` was not named.
-
-##### uploads
-
-```ts
-readonly uploads: StubUploadWrite[];
-```
-
-Every file a step wrote — empty unless `uploads` was named with `writable`.
 
 ***
 
@@ -526,11 +472,14 @@ type StubWorldOptions = {
   apiKey?: string | false;
   model?: string | readonly string[];
   pages?:   | FetchRouteTable
+     | readonly FetchRouteHandler[]
      | FetchRouteHandler;
+  reporter?: boolean;
   speech?: StubSpeechOptions | true;
   transcribe?: StubTranscribeOptions;
-  uploads?: Readonly<Record<string, StubUpload>>;
-  uploadsOptions?: StubUploadsOptions;
+  uploads?: StubUploadsOptions & {
+     files?: Readonly<Record<string, StubUpload>>;
+  };
 };
 ```
 
@@ -567,13 +516,28 @@ Absent, a completion request falls through to the other legs.
 ```ts
 readonly optional pages?: 
   | FetchRouteTable
+  | readonly FetchRouteHandler[]
   | FetchRouteHandler;
 ```
 
 Everything else a step fetches — a page, a vendor API — as a
-`stubFetchRoutes` table or one handler. The LAST leg: a request it does
+`stubFetchRoutes` table, an ordered handler list (what `describeEval`'s
+`steps.routes` takes too) or one handler. The LAST leg: a request it does
 not answer is a finding and throws naming the method and URL, never an
-empty `200` a step would try to parse.
+empty `200` a step would try to parse — after a `transcribe.otherwise` of
+your own has declined it.
+
+##### reporter?
+
+```ts
+readonly optional reporter?: boolean;
+```
+
+Publish the recording reporter (`installStubReporter`). Defaults to
+publishing one only when NO reporter is published yet — inside
+`describeEval` the harness's reporter is what `run.reported` reads, and a
+stub published over it emptied that log. `false` never publishes one;
+`true` always does.
 
 ##### speech?
 
@@ -598,18 +562,23 @@ the slot. An `otherwise` of your own runs after both.
 ##### uploads?
 
 ```ts
-readonly optional uploads?: Readonly<Record<string, StubUpload>>;
+readonly optional uploads?: StubUploadsOptions & {
+  files?: Readonly<Record<string, StubUpload>>;
+};
 ```
 
-Publish an in-memory upload store holding these files — `installStubUploads`'s.
+Publish an in-memory upload store — `installStubUploads`'s two arguments
+as one object: the `files` it holds by id, beside its options (`writable`,
+`idPrefix`). `{}` publishes an empty read-only store; `{ writable: true }`
+one a step may write into, read back on `files`.
 
-##### uploadsOptions?
+###### Type Declaration
+
+###### files?
 
 ```ts
-readonly optional uploadsOptions?: StubUploadsOptions;
+readonly optional files?: Readonly<Record<string, StubUpload>>;
 ```
-
-`installStubUploads`'s options (`writable`, `idPrefix`), beside the files.
 
 ## References
 
@@ -910,6 +879,12 @@ Re-exports [EvalTextTestContext](../eval/vitest.md#evaltexttestcontext)
 ### EvalToolCall
 
 Re-exports [EvalToolCall](../eval.md#evaltoolcall)
+
+***
+
+### EvalToolOutput
+
+Re-exports [EvalToolOutput](../eval.md#evaltooloutput)
 
 ***
 

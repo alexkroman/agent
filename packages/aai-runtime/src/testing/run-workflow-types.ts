@@ -244,8 +244,8 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
    */
   signal(token: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
   /**
-   * Answer the body's `ctx.waitForSignal(label)`, and deliver — {@link signal}
-   * for the token the body DERIVED from the run's name, its {@link key} and
+   * Answer the body's `ctx.waitForSignal(label)`, and deliver — `signal`
+   * for the token the body DERIVED from the run's name, its `key` and
    * `label` (`ctx.signalToken`), so a spec names the label it reads in the
    * body rather than re-spelling the token grammar. `signalled` reads the
    * same answer.

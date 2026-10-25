@@ -39,8 +39,14 @@ export type ReadUploadToFileOptions = {
     concurrency?: number | undefined;
 };
 
+// @public @input
+export type SpeakMaster = SpeakMasterFormat | {
+    format: SpeakMasterFormat;
+    args?: readonly string[] | undefined;
+};
+
 // @public
-export type SpeakMaster = "mp3" | "wav";
+export type SpeakMasterFormat = "mp3" | "wav";
 
 // @public @input
 type SpeakOptions = {
@@ -62,6 +68,7 @@ export type SpeakToUploadOptions = SpeakOptions & {
 export type SpokenUpload = UploadInfo & {
     durationMs: number;
     voice: string;
+    ffmpegMs: number;
 };
 
 // @public
@@ -88,7 +95,7 @@ export function transcodeUpload(uploadId: string, options: TranscodeUploadOption
 
 // @public @input
 export type TranscodeUploadOptions = {
-    args: (source: string, out: string) => readonly string[];
+    args: (source: string, out: string, info: MediaInfo | undefined) => readonly string[];
     output: {
         name: string;
         type: string;

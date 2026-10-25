@@ -96,6 +96,65 @@ memory journal never outranks it.
 
 ***
 
+### createRouteContext()
+
+```ts
+function createRouteContext(overrides?: RouteContextOverrides): RouteContext;
+```
+
+Build a [RouteContext](../aai/index.md#routecontext) for calling a route handler in isolation.
+
+Defaults are inert: an empty `env`, a `workflows` client whose every method
+rejects naming itself (`createStubWorkflows`), a `clientTranscript` that
+answers no sessions, a `sessionTranscript` that answers no lines, a `speech`
+that finds no live session, and a `signal` that never aborts. Override any of
+them — most specs pass `env` and a `workflows` fake of their own.
+
+A hand-built literal has to restate every field, and it is the field the
+runtime gained LAST that it leaves out: five shipped specs each carried one,
+and `sessionTranscript` was missing from all five.
+
+#### Parameters
+
+##### overrides?
+
+[`RouteContextOverrides`](#routecontextoverrides)
+
+#### Returns
+
+[`RouteContext`](../aai/index.md#routecontext)
+
+#### Example
+
+```ts
+import { type RouteHandler, type RouteRequest, routeError } from "@alexkroman1/aai";
+import { createRouteContext, createStubWorkflows } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+
+const getCall: RouteHandler = async (req, ctx) => {
+  const [run] = await ctx.workflows.find("call", req.params.id ?? "", { limit: 1 });
+  if (run === undefined) throw routeError(404, `No call ${req.params.id}.`);
+  return run;
+};
+
+const request: RouteRequest = {
+  method: "GET",
+  path: "/calls/c_1",
+  params: { id: "c_1" },
+  query: {},
+  headers: {},
+  body: undefined,
+};
+
+test("GET /calls/:id is a 404 for a call nobody placed", async () => {
+  const workflows = createStubWorkflows({ find: () => Promise.resolve([]) });
+  const ctx = createRouteContext({ env: { CALLS_API_KEY: "k" }, workflows });
+  await expect(getCall(request, ctx)).rejects.toMatchObject({ status: 404 });
+});
+```
+
+***
+
 ### createRunSnapshot()
 
 #### Call Signature
@@ -151,9 +210,10 @@ checks `output` against it, where the bare form takes whatever `R` the
 caller names. A fixture whose output stopped matching the body is then a
 compile error in the spec rather than a page that renders `undefined`.
 
-The def names nothing else: a workflow's NAME is the key in
-`agent({ workflows })`, which the def does not carry, so `workflow` still
-defaults to `"workflow"` unless the overrides name it.
+The def names the run too, when it can: `workflow` is the key the def was
+declared under (`workflowNameOf`, recorded when the agent is lowered — a
+`virtual:aai/agent` import, `withWorkflows`, `workflowRegistry`), the
+overrides' `workflow` winning, and `"workflow"` for a def no agent declares.
 
 ##### Type Parameters
 
@@ -181,10 +241,9 @@ defaults to `"workflow"` unless the overrides name it.
 import { recap } from "./shared.ts";
 
 const done = createRunSnapshot(recap, {
-  workflow: "recap",
   status: "completed",
   output: { headline: "…", points: [] }, // typed by `recap`
-});
+}); // `workflow` is "recap" once the agent declaring it has been imported
 ```
 
 ***
@@ -596,8 +655,10 @@ Naming the invariant that failed, and — for the validation one — the
 
 ### expectDialogOk()
 
+#### Call Signature
+
 ```ts
-function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
+function expectDialogOk<R>(result: R): R extends DialogToolResult<V> ? DialogToolResult<V> : DialogToolResult<unknown>;
 ```
 
 The dialog envelope a gated tool answered, keeping WHERE the dialog landed.
@@ -609,34 +670,39 @@ than about the tool's own value — that a call advanced the machine into
 on anything that is not a dialog envelope: keeping a position claims there is
 one.
 
-#### Type Parameters
+**Typed by INFERENCE**, as [expectToolOk](#expecttoolok) is: handed a typed envelope
+(`runTool(theTool, …)`, `theTool.execute(…)`) it keeps the type under
+`result`; the name form answers `unknown`, where the claimed overload below
+takes the type the spec asserts.
 
-##### T
+##### Type Parameters
 
-`T`
+###### R
 
-What the tool's `execute` returns, under `result`.
+`R`
 
-#### Parameters
+What was handed in, inferred — never written.
 
-##### result
+##### Parameters
 
-`unknown`
+###### result
 
-#### Returns
+`R`
 
-[`DialogToolResult`](../aai/index.md#dialogtoolresult)\<`T`\>
+##### Returns
 
-#### Throws
+`R` *extends* [`DialogToolResult`](../aai/index.md#dialogtoolresult)\<`V`\> ? [`DialogToolResult`](../aai/index.md#dialogtoolresult)\<`V`\> : [`DialogToolResult`](../aai/index.md#dialogtoolresult)\<`unknown`\>
+
+##### Throws
 
 When the tool refused, quoting the refusal, as [expectToolOk](#expecttoolok) does.
 
-#### Throws
+##### Throws
 
 When the value is not a dialog envelope — a plain `tool()` has no
   position to keep; use [expectToolOk](#expecttoolok) for it.
 
-#### Example
+##### Example
 
 ```ts no-check
 import { expectDialogOk, runTool } from "@alexkroman1/aai/testing";
@@ -647,6 +713,35 @@ const answered = expectDialogOk<{ quoted: number }>(
 expect(answered.state).toBe("quote.pending");
 expect(answered.result.quoted).toBe(42);
 ```
+
+#### Call Signature
+
+```ts
+function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
+```
+
+The dialog envelope a gated tool answered — the CLAIMED form, for a result
+typed `unknown` (`runTool(agent, "name", …)`, a `toolRunner`): `T` is what
+the spec says is under `result`, unchecked at runtime, as
+[expectToolOk](#expecttoolok)'s claimed form is.
+
+##### Type Parameters
+
+###### T
+
+`T`
+
+The type the spec claims for the tool's own value.
+
+##### Parameters
+
+###### result
+
+`unknown`
+
+##### Returns
+
+[`DialogToolResult`](../aai/index.md#dialogtoolresult)\<`T`\>
 
 ***
 
@@ -997,6 +1092,7 @@ const order = expectToolOk<{ id: string }>(await run("place_order", { item: "piz
 ```ts
 function fireEvent(
    agent: {
+  dialogs?: readonly AnyDialog[];
   events?: SessionEventHandlers;
   name?: string;
 }, 
@@ -1005,9 +1101,13 @@ function fireEvent(
 ): Promise<FiredEvent>;
 ```
 
-Drive the agent's `events` handlers with one event, the way the session
-dispatches it: the handler declared for `event.type` first, then `"*"`, each
-handed the same context.
+Drive the agent's dialogs and `events` handlers with one event, the way the
+session dispatches it: every declared dialog is offered the event FIRST
+(`dialog.receive`, so a `"@session.timedOut"` transition fires), then the
+handler declared for `event.type`, then `"*"`, each handed the same context.
+Dialogs first because a dialog is part of the session's state and moves
+before any observer sees the effect — the order `aai-runtime`'s session
+keeps (`session-controls.ts`).
 
 Two deliberate differences from the runtime's dispatch, both because a SPEC
 is reading the outcome rather than a live call surviving it:
@@ -1028,6 +1128,10 @@ explicitly wherever a second event is meant to see the first's writes.
 #### Parameters
 
 ##### agent
+
+###### dialogs?
+
+readonly [`AnyDialog`](../aai/index.md#anydialog)[]
 
 ###### events?
 
@@ -1051,8 +1155,9 @@ explicitly wherever a second event is meant to see the first's writes.
 
 #### Throws
 
-When the agent declares no `events` at all — there is nothing to
-  drive, and a spec that fired into nothing would pass against nothing.
+When the agent declares neither `events` nor `dialogs` — there is
+  nothing to drive, and a spec that fired into nothing would pass against
+  nothing.
 
 #### Example
 
@@ -1212,6 +1317,61 @@ const parsed = await parseToolInput<{ quantity: number }>(agentDef, "add_pizza",
 // The schema's own default, which is the thing worth asserting here.
 expect(parsed.quantity).toBe(1);
 ```
+
+***
+
+### routeHandlerOf()
+
+```ts
+function routeHandlerOf(value: 
+  | StubStepAnswer
+  | FetchRouteHandler): FetchRouteHandler;
+```
+
+A table's value as a handler: a handler is itself; a fixed answer is given
+to every request it is asked, a `Response` CLONED per request — a body is
+read once, and the second request would otherwise find it consumed.
+
+#### Parameters
+
+##### value
+
+  \| [`StubStepAnswer`](#stubstepanswer)
+  \| [`FetchRouteHandler`](#fetchroutehandler)
+
+#### Returns
+
+[`FetchRouteHandler`](#fetchroutehandler)
+
+***
+
+### routeOf()
+
+```ts
+function routeOf(routes: 
+  | Readonly<Record<string, 
+  | StubStepAnswer
+  | FetchRouteHandler>>
+  | readonly FetchRouteHandler[]): FetchRouteHandler;
+```
+
+`routes` as ONE handler — a table matched by specificity, a list tried in
+order — that DECLINES (`undefined`) a request no route answers, so it can be
+one leg of a list or the `otherwise` of another fake. The same matching
+[stubFetchRoutes](#stubfetchroutes-1) does, without installing anything.
+
+#### Parameters
+
+##### routes
+
+  \| `Readonly`\<`Record`\<`string`, 
+  \| [`StubStepAnswer`](#stubstepanswer)
+  \| [`FetchRouteHandler`](#fetchroutehandler)\>\>
+  \| readonly [`FetchRouteHandler`](#fetchroutehandler)[]
+
+#### Returns
+
+[`FetchRouteHandler`](#fetchroutehandler)
 
 ***
 
@@ -1529,13 +1689,15 @@ is what `ctx.workflows.start` does on every real path: a body is written
 against a validated input, so handing it an unvalidated one tests a call that
 cannot happen.
 
-**Two forms.** Handed a DEF, the run is named by `options.name` (default
-`"workflow"`). Handed the AGENT and a workflow's name — `runWorkflow(agentDef,
-"digest", input)`, with `agentDef` from `virtual:aai/agent` — the def is the
-one the agent declares (or the build discovered in `workflows/`) under that
-name, and the run carries that name, so a body that reads `ctx.workflow`,
-starts a sibling by name or is found by `ctx.workflows.find` sees what a
-deployment would. An unknown name throws, listing the ones the agent has.
+**Two forms.** Handed a DEF, the run is named by `options.name`, else by the
+name the def was declared under (`workflowNameOf`, recorded when the agent
+declaring it was lowered — a `virtual:aai/agent` import), else `"workflow"`.
+Handed the AGENT and a workflow's name — `runWorkflow(agentDef, "digest",
+input)`, with `agentDef` from `virtual:aai/agent` — the def is the one the
+agent declares (or the build discovered in `workflows/`) under that name,
+and the run carries that name, so a body that reads `ctx.workflow`, starts a
+sibling by name or is found by `ctx.workflows.find` sees what a deployment
+would. An unknown name throws, listing the ones the agent has.
 
 ##### Type Parameters
 
@@ -1606,12 +1768,12 @@ const run = await runWorkflow(agentDef, "digest", { url: "https://example.com/a"
 #### Call Signature
 
 ```ts
-function runWorkflow<App extends WorkflowBearingAgent, Name extends string>(
+function runWorkflow<App extends WorkflowAppLike, Name extends string>(
    agent: App, 
    name: Name, 
    input: Record<string, unknown>, 
    options?: Omit<RunWorkflowOptions, "name">
-): Promise<WorkflowTestHandle<WorkflowOutputOf<NonNullable<App["workflows"]>[Name]>>>;
+): Promise<WorkflowTestHandle<WorkflowOutputOf<WorkflowDefOf<App, Name>>>>;
 ```
 
 Start `def` with `input` and drive it until it finishes or parks.
@@ -1625,19 +1787,21 @@ is what `ctx.workflows.start` does on every real path: a body is written
 against a validated input, so handing it an unvalidated one tests a call that
 cannot happen.
 
-**Two forms.** Handed a DEF, the run is named by `options.name` (default
-`"workflow"`). Handed the AGENT and a workflow's name — `runWorkflow(agentDef,
-"digest", input)`, with `agentDef` from `virtual:aai/agent` — the def is the
-one the agent declares (or the build discovered in `workflows/`) under that
-name, and the run carries that name, so a body that reads `ctx.workflow`,
-starts a sibling by name or is found by `ctx.workflows.find` sees what a
-deployment would. An unknown name throws, listing the ones the agent has.
+**Two forms.** Handed a DEF, the run is named by `options.name`, else by the
+name the def was declared under (`workflowNameOf`, recorded when the agent
+declaring it was lowered — a `virtual:aai/agent` import), else `"workflow"`.
+Handed the AGENT and a workflow's name — `runWorkflow(agentDef, "digest",
+input)`, with `agentDef` from `virtual:aai/agent` — the def is the one the
+agent declares (or the build discovered in `workflows/`) under that name,
+and the run carries that name, so a body that reads `ctx.workflow`, starts a
+sibling by name or is found by `ctx.workflows.find` sees what a deployment
+would. An unknown name throws, listing the ones the agent has.
 
 ##### Type Parameters
 
 ###### App
 
-`App` *extends* [`WorkflowBearingAgent`](#workflowbearingagent)
+`App` *extends* [`WorkflowAppLike`](../aai/workflow-api.md#workflowapplike)
 
 ###### Name
 
@@ -1663,7 +1827,7 @@ deployment would. An unknown name throws, listing the ones the agent has.
 
 ##### Returns
 
-`Promise`\<[`WorkflowTestHandle`](#workflowtesthandle)\<[`WorkflowOutputOf`](../aai/index.md#workflowoutputof)\<`NonNullable`\<`App`\[`"workflows"`\]\>\[`Name`\]\>\>\>
+`Promise`\<[`WorkflowTestHandle`](#workflowtesthandle)\<[`WorkflowOutputOf`](../aai/index.md#workflowoutputof)\<[`WorkflowDefOf`](../aai/workflow-api.md#workflowdefof)\<`App`, `Name`\>\>\>\>
 
 ##### Examples
 
@@ -1859,7 +2023,7 @@ import { sessionEvent } from "@alexkroman1/aai/testing";
 const committed = sessionEvent("userTranscript.committed", { text: "two pizzas" });
 committed.type; // "userTranscript.committed"
 committed.meta.id.startsWith("evt_"); // true
-sessionEvent("reply.completed").text; // compile error: the event has no `text`
+// `sessionEvent("reply.completed").text` is a compile error: the event has no `text`.
 ```
 
 ***
@@ -2614,7 +2778,8 @@ The tool `name` is declared under, or a throw naming the ones that are.
 Three names for three jobs: `toolOf` hands back the DEF, to assert on what
 the agent declares (its description, its schema); [runTool](#runtool) CALLS a
 tool, gated as the runtime gates it; [toolRunner](#toolrunner-1) is `runTool` with the
-agent bound, the `run(name, …)` a spec calls throughout.
+agent bound, the `run(name, …)` a spec calls throughout. All three resolve
+through one lookup (`resolveEntry`), by name or by the def's identity.
 
 A tool is a FILE, so `agent.ts`'s default export declares no tools at all —
 import the agent as DEPLOYED, exactly as this example does and as every
@@ -4003,6 +4168,7 @@ matches.
 
 ```ts
 type FiredEvent = {
+  dialogs: readonly string[];
   typed: boolean;
   wildcard: boolean;
 };
@@ -4013,6 +4179,17 @@ type FiredEvent = {
 What [fireEvent](#fireevent) reports: how many handlers the event reached.
 
 #### Properties
+
+##### dialogs
+
+```ts
+readonly dialogs: readonly string[];
+```
+
+The keys of the declared dialogs the event MOVED — one whose `on` map
+names it (`"@session.timedOut": "abandoned"`) and whose active state
+handles it. Every declared dialog is offered the event, before the
+handlers, as the session offers it.
 
 ##### typed
 
@@ -4095,6 +4272,58 @@ call site like `tools`. A module default-exporting a `workflow()` def is
 registered under its file name, an explicit `agent({ workflows })` entry
 winning a clash; the rest of the directory (a body's helpers) is skipped,
 so unlike `tools` an empty or helper-only result is not an error.
+
+***
+
+### RecordedSignal
+
+```ts
+type RecordedSignal = {
+  key: string;
+  label: string;
+  options: SignalOptions | undefined;
+  payload: unknown;
+  workflow: string;
+};
+```
+
+**`Sealed`**
+
+One `signalRun` as a tool made it.
+
+#### Properties
+
+##### key
+
+```ts
+key: string;
+```
+
+##### label
+
+```ts
+label: string;
+```
+
+##### options
+
+```ts
+options: SignalOptions | undefined;
+```
+
+##### payload
+
+```ts
+payload: unknown;
+```
+
+##### workflow
+
+```ts
+workflow: string;
+```
+
+The workflow's declared name.
 
 ***
 
@@ -4205,6 +4434,7 @@ The declared name — the key in `agent({ workflows })` — or the string passed
 ```ts
 type RecordedStep = {
   maxAttempts?: number;
+  maxWaits?: number;
   name: string;
 };
 ```
@@ -4223,11 +4453,32 @@ optional maxAttempts?: number;
 
 What the body asked for, or `undefined` when it passed no options.
 
+##### maxWaits?
+
+```ts
+optional maxWaits?: number;
+```
+
+The step's wait budget (`StepOptions.maxWaits`), or `undefined` when none was asked for.
+
 ##### name
 
 ```ts
 name: string;
 ```
+
+***
+
+### RouteContextOverrides
+
+```ts
+type RouteContextOverrides = { [K in keyof RouteContext]?: RouteContext[K] };
+```
+
+**`Input`**
+
+What [createRouteContext](#createroutecontext) accepts: a field per [RouteContext](../aai/index.md#routecontext)
+field, each also taking `undefined` for one the caller does not have.
 
 ***
 
@@ -4304,6 +4555,7 @@ answers nothing, which is a spec asserting on silence by accident.
 type RunWorkflowOptions = {
   crashAt?: string;
   journal?: WorkflowJournal;
+  key?: string;
   logger?: Logger;
   maxDeliveries?: number;
   name?: string;
@@ -4343,6 +4595,17 @@ The journal the run lives in. Defaults to a fresh in-memory one.
 
 Pass a previous run's `journal` (or a
 `createMemoryJournal()` of your own) to start two runs in the same world.
+
+##### key?
+
+```ts
+optional key?: string;
+```
+
+The correlation key the run is started with — `StartOptions.key`, which
+the body reads as `ctx.key` and `ctx.signalToken`/`ctx.waitForSignal`
+derive their token from. Defaults to `"test"`, so a keyed body runs out
+of the box; a spec asserting on the key passes its own.
 
 ##### logger?
 
@@ -4533,9 +4796,10 @@ What [expectSlotContract](#expectslotcontract) may be told.
 readonly optional caps?: Readonly<Record<string, number>>;
 ```
 
-The caps the slot DECLARED, restated — each top-level array key and the
-most entries it keeps. Each is driven past its bound and the surviving
-entries must be the NEWEST ones.
+The caps to check — each top-level array key and the most entries it
+keeps. Defaults to what the slot DECLARED (`slot.caps`); given, each is
+driven past its bound and the surviving entries must be the NEWEST ones,
+and a bound that differs from the declared one fails naming both.
 
 ##### write?
 
@@ -6097,7 +6361,7 @@ readonly tools: Readonly<Record<string, ToolDef>>;
 
 ```ts
 type ToolContextOverrides = {
-  call?: SessionCallInput;
+  call?: SessionCall;
   clientId?: string;
   clientLocation?: string;
   clientPhone?: string;
@@ -6160,7 +6424,7 @@ their own docs below.
 ##### call?
 
 ```ts
-optional call?: SessionCallInput;
+optional call?: SessionCall;
 ```
 
 The phone call this session is, as `sessionCall(ctx)` will read it —
@@ -6323,7 +6587,7 @@ See [ToolContext.signal](../aai/index.md#signal-5). Defaults to a signal that ne
 optional slots?: ToolContext["slots"];
 ```
 
-See [ToolContext.slots](../aai/index.md#slots-3). Defaults to a fresh, empty, REAL slot store.
+See [ToolContext.slots](../aai/index.md#slots-4). Defaults to a fresh, empty, REAL slot store.
 
 ##### speech?
 
@@ -6339,7 +6603,7 @@ See [ToolContext.speech](../aai/index.md#speech-2). Defaults to the recorder beh
 optional turn?: ToolContext["turn"];
 ```
 
-See [ToolContext.turn](../aai/index.md#turn). Defaults to `0` — a context that belongs to no turn.
+See [ToolContext.turn](../aai/index.md#turn-1). Defaults to `0` — a context that belongs to no turn.
 
 ##### workflows?
 
@@ -6348,29 +6612,6 @@ optional workflows?: ToolContext["workflows"];
 ```
 
 See [ToolContext.workflows](../aai/index.md#workflows-4). Defaults to a client whose every method rejects.
-
-***
-
-### WorkflowBearingAgent
-
-```ts
-type WorkflowBearingAgent = {
-  workflows?: Readonly<Record<string, WorkflowDef>>;
-};
-```
-
-**`Input`**
-
-An agent with a `workflows` map, for the `runWorkflow(agentDef, "name", …)`
-form: `agent({ workflows })`'s result, or `virtual:aai/agent`'s.
-
-#### Properties
-
-##### workflows?
-
-```ts
-readonly optional workflows?: Readonly<Record<string, WorkflowDef>>;
-```
 
 ***
 
@@ -6583,34 +6824,19 @@ import, which is what stops a hand-written object from satisfying the type.
 
 ***
 
-### WorkflowNameOf
-
-```ts
-type WorkflowNameOf<App extends WorkflowBearingAgent> = keyof NonNullable<App["workflows"]> & string;
-```
-
-The names `App` declares under `workflows` — what the agent form of
-[runWorkflow](#runworkflow) accepts as its second argument.
-
-#### Type Parameters
-
-##### App
-
-`App` *extends* [`WorkflowBearingAgent`](#workflowbearingagent)
-
-***
-
 ### WorkflowTestHandle
 
 ```ts
 type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
   journal: WorkflowJournal;
+  key: string;
   signalled: boolean;
   advanceSleep: Promise<WorkflowTestHandle<R>>;
   close: Promise<void>;
   expireWaits: Promise<WorkflowTestHandle<R>>;
   restart: Promise<WorkflowTestHandle<R>>;
   signal: Promise<WorkflowTestHandle<R>>;
+  signalRun: Promise<WorkflowTestHandle<R>>;
 };
 ```
 
@@ -6648,13 +6874,23 @@ as [RunWorkflowOptions.journal](#journal) to start a second run against the
 same world. What it holds for this run is [WorkflowTestRun.steps](#steps),
 [WorkflowTestRun.reads](#reads) and [WorkflowTestRun.waits](#waits).
 
+##### key
+
+```ts
+readonly key: string;
+```
+
+The correlation key the run was started with — [RunWorkflowOptions.key](#key-1),
+`"test"` by default — which is what the body reads as `ctx.key` and what
+its `ctx.signalToken(label)` derives a token from.
+
 ##### signalled
 
 ```ts
 readonly signalled: boolean;
 ```
 
-What the last `signal` answered.
+What the last `signal` or `signalRun` answered.
 
 ##### advanceSleep()
 
@@ -6724,9 +6960,14 @@ is to wait out a window measured in minutes.
 It does NOT move a clock and does not rewrite the stored record. It answers
 the deadline READ the way an elapsed one answers it — `woken`, which
 [WorkflowTestWait.woken](#woken) defines as "returns immediately" — for the
-duration of the delivery it triggers. Everything downstream is the engine's
-own: the close is still a compare-and-set on `delivered`, so a payload that
-landed first still wins and the body still takes the ANSWERED branch.
+windows OUTSTANDING when it is called, from the delivery it triggers on
+(a closed window stays closed on every later walk, as an elapsed one
+does). A window the body opens during that delivery (a second `waitFor`
+the first one's close led to) is not expired with them: it parks, and a
+later `expireWaits()` or `signal` ends it. Everything downstream is the
+engine's own: the close is still a compare-and-set on `delivered`, so a
+payload that landed first still wins and the body still takes the
+ANSWERED branch.
 
 Resolves this handle. A run parked on a `ctx.sleep` is unaffected;
 `advanceSleep` is that one.
@@ -6774,6 +7015,32 @@ a deployed `ctx.workflows.signal` gives.
 ###### Parameters
 
 ###### token
+
+`string`
+
+###### payload?
+
+`unknown`
+
+###### Returns
+
+`Promise`\<[`WorkflowTestHandle`](#workflowtesthandle)\<`R`\>\>
+
+##### signalRun()
+
+```ts
+signalRun(label: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
+```
+
+Answer the body's `ctx.waitForSignal(label)`, and deliver — `signal`
+for the token the body DERIVED from the run's name, its `key` and
+`label` (`ctx.signalToken`), so a spec names the label it reads in the
+body rather than re-spelling the token grammar. `signalled` reads the
+same answer.
+
+###### Parameters
+
+###### label
 
 `string`
 

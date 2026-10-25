@@ -162,6 +162,7 @@ export {
   type EvalTextAgent,
   type EvalTextAgentOptions,
   type EvalToolCall,
+  type EvalToolOutput,
   type EvalTurn,
   type EvalWorkflowRun,
   type EvalWorkflowStart,

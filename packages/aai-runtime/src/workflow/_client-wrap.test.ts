@@ -14,11 +14,11 @@ describe("wrapStart", () => {
       return await start(workflow, input, { ...options, key: "k" });
     });
     const runId = await wrapped.start("digest", { url: "u" }, {
-      notify: undefined,
-    } as StartOptions);
+      notify: false,
+    } satisfies StartOptions);
     expect(runId).toBe("run_1");
-    expect(seen).toEqual(["digest", { url: "u" }, { notify: undefined }]);
-    expect(inner).toHaveBeenCalledWith("digest", { url: "u" }, { notify: undefined, key: "k" });
+    expect(seen).toEqual(["digest", { url: "u" }, { notify: false }]);
+    expect(inner).toHaveBeenCalledWith("digest", { url: "u" }, { notify: false, key: "k" });
     // The rest of the client is the same object's members, not re-implemented.
     expect(wrapped.get).toBe(client.get);
     expect(wrapped.find).toBe(client.find);

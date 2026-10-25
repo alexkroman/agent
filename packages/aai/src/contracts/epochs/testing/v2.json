@@ -3,8 +3,9 @@
   "capability": "testing",
   "epoch": 2,
   "rule": 3,
-  "sha256": "cf8149968ec123aed9ee815ab2961af869b8fc9d5bfd10afaadbf54d3df1ecc6",
+  "sha256": "50eb5b4c0985b9dd61888bdb4f600b61581761374f1a4f66c9e407144a66fee3",
   "exports": [
+    "RouteContextOverrides",
     "SaidLine",
     "SentEvent",
     "SlotContractOptions",
@@ -22,17 +23,16 @@
     "ToolBearingAgent",
     "ToolContextOverrides",
     "ToolRunner",
+    "createRouteContext",
     "createSlotStore",
     "createToolContext",
     "dialogRefusalPattern",
     "dialogResultSchema",
     "endSessionCalls",
-    "eventsOf",
     "expectDialogOk",
     "expectDialogRefused",
     "expectSlotContract",
     "expectToolOk",
-    "isEvent",
     "parseSchemaInput",
     "parseToolInput",
     "runGuardrail",
@@ -45,5 +45,5 @@
     "toolOf",
     "toolRunner"
   ],
-  "rollup": "17ec1737f7d29bc8e3baf448e82db1b379237e68ebed59b2a73bb209a99934b0"
+  "rollup": "8b37f02ad874befa5f9cc385da35d295f0601ce98ef1bef373afcdbfd692e108"
 }

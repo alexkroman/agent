@@ -147,6 +147,7 @@ export type DialogSendFrom<R, E, K extends string = string> =
  * name of the dialog — a message TYPE, on the pattern of `SyncMutationMisuse`:
  * what `tsc` prints names the rule and the fields that would have worked.
  *
+ * @sealed
  * @public
  */
 export type DialogSendFromMisuse<K extends string, Keys extends string> = {

@@ -53,6 +53,7 @@ export {
   type ProjectFiles,
   parseSchemaInput,
   parseToolInput,
+  type RecordedSignal,
   type RecordedSleep,
   type RecordedStart,
   type RecordedStep,

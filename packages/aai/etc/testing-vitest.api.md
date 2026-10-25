@@ -99,15 +99,15 @@ interface Dialog<E = {
     reset(ctx: SlotHolder): DialogPosition;
     send(ctx: SlotHolder, event: E): DialogPosition;
     timeout(ctx: SlotHolder): DialogTimeout | undefined;
-    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>, options?: DialogSendOptions<R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K>, options?: DialogSendOptions<R, E, K>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
 // @public @input
-interface DialogGate<R, E> {
+interface DialogGate<R, E, K extends string = string> {
     reset?: true;
     send?: E;
-    sendFrom?: DialogSendFrom<R, E>;
+    sendFrom?: DialogSendFrom<R, E, K>;
     when?: string | readonly string[];
 }
 
@@ -120,16 +120,25 @@ interface DialogPosition {
 }
 
 // @public
-type DialogSendFrom<R, E> = ((result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined) | DialogSendFromKey<Exclude<NoInfer<R>, ToolFailure>, E>;
+type DialogSendFrom<R, E, K extends string = string> = ((result: NoInfer<Exclude<R, ToolFailure>>) => E | undefined) | K;
+
+// @public
+type DialogSendFromChecked<K extends string, R, E, T> = string extends K ? T : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? T : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
 
 // @public
 type DialogSendFromKey<S, E> = keyof {
     [K in keyof S as S[K] extends EventNameOf<E> | undefined ? K : never]: never;
 } & string;
 
+// @public @sealed
+type DialogSendFromMisuse<K extends string, Keys extends string> = {
+    readonly "sendFrom names a result field that holds no event name of this dialog": K;
+    readonly "the fields that do": Keys;
+};
+
 // @public @input
-interface DialogSendOptions<R, E> {
-    sendFrom: DialogSendFrom<R, E>;
+interface DialogSendOptions<R, E, K extends string = string> {
+    sendFrom: DialogSendFrom<R, E, K>;
 }
 
 // @public @input
@@ -141,7 +150,7 @@ interface DialogTimeout {
 }
 
 // @public @input
-interface DialogToolDef<P extends ToolInputSchema | undefined, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
+interface DialogToolDef<P extends ToolInputSchema | undefined, R, E, K extends string = string> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E, K> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
 }
 
@@ -255,7 +264,7 @@ export function installStubTranscribe(options?: StubTranscribeOptions): StubTran
 // @public
 export function installStubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
 
-// @public
+// @public (undocumented)
 export function installStubWorkflows(options?: StubWorkflowsOptions): WorkflowClient;
 
 // @public
@@ -312,7 +321,7 @@ interface PipelineTuning {
 
 // @public @input
 type PollFirstWait = {
-    waitFor: string;
+    waitFor: string | undefined;
     timeoutMs: number;
     schema?: StandardSchemaV1 | undefined;
 };
@@ -882,9 +891,7 @@ type StubUploadWrite = {
 export type StubWorkflowsOptions = {
     runs?: readonly WorkflowRunSnapshot[];
     names?: readonly string[];
-    agent?: {
-        readonly workflows?: Readonly<Record<string, unknown>> | undefined;
-    } | undefined;
+    agent?: WorkflowAppLike | undefined;
     runId?: string;
     lastLine?: unknown;
 };
@@ -894,7 +901,6 @@ export type StubWorld = {
     readonly model: StubGatewayCall[];
     readonly provider: StubTranscribeCall[];
     readonly speech: StubSpeechCall[];
-    readonly uploads: StubUploadWrite[];
     readonly files: StubUploads | undefined;
     readonly reported: StubReporter;
 };
@@ -903,11 +909,13 @@ export type StubWorld = {
 export type StubWorldOptions = {
     readonly model?: string | readonly string[] | undefined;
     readonly transcribe?: StubTranscribeOptions | undefined;
-    readonly pages?: FetchRouteTable | FetchRouteHandler | undefined;
+    readonly pages?: FetchRouteTable | readonly FetchRouteHandler[] | FetchRouteHandler | undefined;
     readonly speech?: StubSpeechOptions | true | undefined;
-    readonly uploads?: Readonly<Record<string, StubUpload>> | undefined;
-    readonly uploadsOptions?: StubUploadsOptions | undefined;
+    readonly uploads?: (StubUploadsOptions & {
+        readonly files?: Readonly<Record<string, StubUpload>> | undefined;
+    }) | undefined;
     readonly apiKey?: string | false | undefined;
+    readonly reporter?: boolean | undefined;
 };
 
 // @public @input
@@ -1063,6 +1071,11 @@ type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
 // @public @input
 type WakeUpOptions = {
     correlationIds?: string[];
+};
+
+// @public @input
+type WorkflowAppLike = {
+    readonly workflows?: Readonly<Record<string, AnyWorkflowDef>> | undefined;
 };
 
 // @public

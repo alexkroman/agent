@@ -9,6 +9,7 @@ import type { AgentEnv } from '@alexkroman1/aai/host-internal';
 import type { ClientNotifier } from '@alexkroman1/aai/host-internal';
 import { ClientSink } from '@alexkroman1/aai/protocol';
 import { ClientToolCall } from '@alexkroman1/aai/internal';
+import type { ClientTranscriptMessage } from '@alexkroman1/aai/step';
 import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
 import type { Db as Db_2 } from '@alexkroman1/aai/internal';
 import type { DelegateOptions } from '@alexkroman1/aai';
@@ -35,7 +36,7 @@ import type { RestoredToolCall } from '@alexkroman1/aai/protocol';
 import { safeFetch } from '@alexkroman1/aai/host-internal';
 import type { SayOptions } from '@alexkroman1/aai';
 import type { ServerResponse } from 'node:http';
-import type { SessionCallInput } from '@alexkroman1/aai';
+import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionCommand } from '@alexkroman1/aai/protocol';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { SessionEventBody } from '@alexkroman1/aai';
@@ -764,6 +765,7 @@ export type SessionDirectory = {
     emitter(sessionId: string): SessionEmitter | undefined;
     meter(sessionId: string): UsageMeter | undefined;
     turn(sessionId: string): number;
+    workflows(sessionId: string): WorkflowClient | undefined;
     readonly speech: SpeechDirectory;
     live(): IterableIterator<ServerSession>;
     ids(): IterableIterator<string>;
@@ -783,6 +785,7 @@ export type SessionEventLog = SessionEventStream & {
         final?: boolean;
     }): Promise<void>;
     hydrate(sessionId: string): Promise<void>;
+    transcript(sessionId: string): readonly ClientTranscriptMessage[];
     discard(sessionId: string): void;
     clear(): void;
 };
@@ -821,7 +824,7 @@ type SessionStartOptions = {
     clientLocation?: string;
     clientId?: string;
     clientPhone?: string;
-    call?: SessionCallInput;
+    call?: SessionCall;
     logContext?: Record<string, string>;
     onOpen?: () => void;
     onClose?: () => void;
@@ -903,6 +906,7 @@ export type SessionWiring = {
     emitter: SessionEmitter;
     meter: UsageMeter;
     turns: TurnCounter;
+    workflows: WorkflowClient | undefined;
 };
 
 // @internal
@@ -1182,7 +1186,7 @@ type WsSessionOptions = Omit<AttachSessionOptions, "closeAfterFailure"> & {
     clientLocation?: string;
     clientId?: string;
     clientPhone?: string;
-    call?: SessionCallInput;
+    call?: SessionCall;
 };
 
 // (No @packageDocumentation comment for this package)
