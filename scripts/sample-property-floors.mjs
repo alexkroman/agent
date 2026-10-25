@@ -64,7 +64,9 @@ const vitest = path.join(ROOT, "node_modules/.bin/vitest");
 /** Spawn one vitest run per selected group, appending samples to `out`. */
 function runOnce(out) {
   let failed = false;
-  const env = { ...process.env, AAI_FLOOR_SAMPLES: out };
+  // A fresh seed per run is the point of sampling; gating runs pin one
+  // (`fast-check-seed.mjs`).
+  const env = { ...process.env, AAI_FLOOR_SAMPLES: out, AAI_FC_SEED: "random" };
   if (unit.length > 0) {
     const r = spawnSync(vitest, ["run", ...unit], { cwd: ROOT, env, stdio: "ignore" });
     failed ||= r.status !== 0;
