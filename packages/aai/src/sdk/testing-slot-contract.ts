@@ -21,9 +21,10 @@
  *    what survives, and the half a hand-rolled bound gets wrong is which END
  *    is kept.
  *
- * The caps are restated by the caller because the handle does not carry them
- * (`SessionSlot` exposes what a tool needs, not what the declaration said);
- * a cap the spec restates wrongly fails naming the key, which is the point.
+ * The caps are read off the handle (`slot.caps`, the declaration itself), so
+ * every declared cap is checked without the spec restating one; a spec may
+ * still pass `caps` to assert a PARTICULAR bound, and one that disagrees with
+ * the declaration fails naming both numbers.
  *
  * Framework-agnostic: a throw with the invariant in its message, like every
  * reader on `@alexkroman1/aai/testing`.
@@ -52,9 +53,10 @@ export type SlotContractOptions<T> = {
    */
   readonly write?: ((draft: T) => void) | undefined;
   /**
-   * The caps the slot DECLARED, restated — each top-level array key and the
-   * most entries it keeps. Each is driven past its bound and the surviving
-   * entries must be the NEWEST ones.
+   * The caps to check — each top-level array key and the most entries it
+   * keeps. Defaults to what the slot DECLARED (`slot.caps`); given, each is
+   * driven past its bound and the surviving entries must be the NEWEST ones,
+   * and a bound that differs from the declared one fails naming both.
    */
   readonly caps?: Readonly<Record<string, number>> | undefined;
 };
@@ -90,7 +92,10 @@ export function expectSlotContract<K extends string, T, V>(
 ): void {
   assertProjectionAgrees(slot);
   assertSessionsIsolated(slot, options.write);
-  for (const [key, max] of Object.entries(options.caps ?? {})) assertCapTrimsOldest(slot, key, max);
+  const caps = options.caps ?? slot.caps ?? {};
+  for (const [key, max] of Object.entries(caps)) {
+    if (max !== undefined) assertCapTrimsOldest(slot, key, max);
+  }
 }
 
 /** Invariant 1: the empty frame is the view of the default, and the default is fresh per call. */
@@ -210,9 +215,20 @@ function assertCapTrimsOldest<K extends string, T, V>(
     throw new Error(
       `expectSlotContract("${slot.key}"): caps.${key} = ${max} did not keep the newest ${max} ` +
         `of ${probes.length} entries — kept ${describe(kept)}, expected ${describe(expected)}. ` +
-        "Either the declared cap differs from this one, or the slot trims the wrong end.",
+        whyCapFailed(slot.caps?.[key], key, max),
     );
   }
+}
+
+/**
+ * Why a cap check failed, told from the DECLARATION: a restated bound the slot
+ * never declared, one it declared differently, or the slot itself trimming
+ * the wrong end.
+ */
+function whyCapFailed(declared: number | undefined, key: string, max: number): string {
+  if (declared === max) return "The slot trims the wrong end.";
+  if (declared === undefined) return `The slot declares no cap on ${key}.`;
+  return `The slot declares caps.${key} = ${declared}, not ${max}.`;
 }
 
 /** Structural equality over the JSON-shaped values a slot holds. */

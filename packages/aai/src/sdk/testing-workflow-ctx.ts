@@ -111,6 +111,8 @@ export type RecordedStep = {
   name: string;
   /** What the body asked for, or `undefined` when it passed no options. */
   maxAttempts?: number | undefined;
+  /** The step's wait budget (`StepOptions.maxWaits`), or `undefined` when none was asked for. */
+  maxWaits?: number | undefined;
 };
 
 /**
@@ -271,7 +273,7 @@ export function createWorkflowContext(
     waited,
 
     async step<T>(name: string, fn: () => Promise<T> | T, stepOptions?: StepOptions): Promise<T> {
-      steps.push({ name, maxAttempts: stepOptions?.maxAttempts });
+      steps.push({ name, maxAttempts: stepOptions?.maxAttempts, maxWaits: stepOptions?.maxWaits });
       // A supplied result wins over running, in either mode — see `results`.
       // `Object.hasOwn`, never `in`: `in` walks the prototype chain, so a step
       // named `toString` or `constructor` would be answered with an inherited

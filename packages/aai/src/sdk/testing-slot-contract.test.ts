@@ -73,6 +73,31 @@ describe("expectSlotContract", () => {
     );
   });
 
+  test("a declared cap is checked with no `caps` option at all, read off the handle", () => {
+    const wrongEnd = sessionSlot("wrong-end", () => ({ log: [] as string[] }), {
+      caps: { log: 2 },
+      // A slot whose hook keeps the OLDEST two: the cap then trims nothing.
+      after: (v) => {
+        v.log.splice(2);
+      },
+    });
+    expect(() => expectSlotContract(wrongEnd)).toThrow(
+      /caps\.log = 2 did not keep the newest 2 .* The slot trims the wrong end\./,
+    );
+    expect(() =>
+      expectSlotContract(
+        sessionSlot("declared-ok", () => ({ log: [] as string[] }), { caps: { log: 2 } }),
+      ),
+    ).not.toThrow();
+  });
+
+  test("a restated cap that disagrees with the declaration names both numbers", () => {
+    const slot = sessionSlot("disagree", () => ({ log: [] as string[] }), { caps: { log: 5 } });
+    expect(() => expectSlotContract(slot, { caps: { log: 2 } })).toThrow(
+      /The slot declares caps\.log = 5, not 2\./,
+    );
+  });
+
   test("a cap restated wrongly fails naming the key", () => {
     const log = sessionSlot("log", (): Log => ({ lines: [], total: 0 }), { caps: { lines: 3 } });
     expect(() => expectSlotContract(log, { caps: { lines: 2 } })).toThrow(

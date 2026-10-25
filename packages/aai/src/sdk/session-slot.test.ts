@@ -710,6 +710,21 @@ describe("one key, one slot", () => {
   });
 });
 
+describe("the declaration on the handle", () => {
+  test("caps and empty are read back as declared, and absent when not", () => {
+    const empty = () => ({ lines: [] as string[] });
+    const declared = sessionSlot("declared-log", () => ({ lines: ["seed"] }), {
+      caps: { lines: 3 },
+      empty,
+    });
+    expect(declared.caps).toEqual({ lines: 3 });
+    expect(declared.empty).toBe(empty);
+    const bare = sessionSlot("bare-log", () => ({ lines: [] as string[] }));
+    expect("caps" in bare).toBe(false);
+    expect("empty" in bare).toBe(false);
+  });
+});
+
 describe("the after hook runs on EVERY store", () => {
   /** A slot whose hook derives a field the default cannot carry on its own. */
   const counted = sessionSlot(
@@ -740,6 +755,22 @@ describe("the after hook runs on EVERY store", () => {
     const ctx = createToolContext();
     counted.update(ctx, (log) => log.lines.push("a"));
     expect(counted.reset(ctx).n).toBe(0);
+  });
+
+  test("inside update's window, so a write from the hook is refused like any other", () => {
+    const nested = sessionSlot("nested-hook", (): { n: number } => ({ n: 0 }), {
+      after: (value) => {
+        if (value.n === 1) nested.set(ctx, { n: 9 });
+      },
+    });
+    const ctx = createToolContext();
+    expect(() =>
+      nested.update(ctx, (v) => {
+        v.n = 1;
+      }),
+    ).toThrow(/cannot run inside/);
+    // A throwing hook stores nothing, like a throwing mutator.
+    expect(nested.get(ctx)).toEqual({ n: 0 });
   });
 
   test("caps still apply after it, on the default and on set", () => {

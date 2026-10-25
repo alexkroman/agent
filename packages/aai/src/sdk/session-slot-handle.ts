@@ -53,7 +53,6 @@ export type SlotValueOf<S extends SessionSlot<string, unknown, unknown>> =
 export type SlotDraftOf<S extends SessionSlot<string, unknown, unknown>> =
   S extends SessionSlot<string, infer T, unknown> ? T : never;
 
-/** A gated tool's declared output: the success value in the envelope, or a failure. */
 /**
  * What a slot tool declaring a dialog gate resolves: the dialog envelope over the
  * body's success value, or the refusal/failure. Named because every gated
@@ -91,6 +90,16 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    * declared otherwise — see {@link SessionSlotOptions.durable}.
    */
   readonly durable: boolean;
+  /**
+   * The caps the slot DECLARED ({@link SessionSlotOptions.caps}), when it
+   * declared any — read back by `expectSlotContract`, so a spec need not
+   * restate them. Typed as the record it is on the wire rather than
+   * `SlotCaps<T>`, which is `never` for the erased `T` the `SlotValueOf`
+   * constraint reads through.
+   */
+  readonly caps?: Readonly<Partial<Record<string, number>>>;
+  /** The seeded slot's blank ({@link SessionSlotOptions.empty}), when declared. */
+  readonly empty?: () => T;
   /**
    * This session's value, installing the default on first access.
    *
