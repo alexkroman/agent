@@ -36,5 +36,12 @@
     "packages/aai-templates/templates/transcription-workflow/workflows/stream.ts": 1,
     "packages/aai-templates/templates/transcription-workflow/workflows/sync-api.ts": 2,
     "packages/aai-templates/templates/transcription-workflow/workflows/transcribe.ts": 1
+  },
+  "rule39_jsonShapeProse": {
+    "packages/aai-templates/templates/call-audit-workflow/workflows/summarize.ts": 3,
+    "packages/aai-templates/templates/link-digest-workflow/workflows/digest.ts": 2,
+    "packages/aai-templates/templates/meeting-recap-agent/workflows/recap.ts": 2,
+    "packages/aai-templates/templates/podcast-digest-workflow/workflows/digest.ts": 2,
+    "packages/aai-templates/templates/spoken-summary-workflow/workflows/summarize.ts": 3
   }
 }

@@ -1,8 +1,9 @@
 /**
- * The SHAPE rules — 2, 17, 18, 22 and 28.
+ * The SHAPE rules — 2, 17, 18, 22, 28 and 39.
  *
  * Each replaces an open-coded expression with a primitive the repo already
- * publishes.
+ * publishes (39's "expression" is prose: a JSON shape restated in a prompt
+ * string beside the schema that already states it).
  *
  * Grouped because all of them are about a value's shape being re-derived at a
  * call site rather than asked for once, and because several shipped a
@@ -33,7 +34,38 @@ import {
   SPREAD_TRUTHY,
   TYPEOF_OBJECT,
 } from "./guard-invariants-ere.mjs";
-import { SCRIPT_PATHSPECS, SOURCE_PATHSPECS } from "./guard-invariants-scopes.mjs";
+import {
+  SCRIPT_PATHSPECS,
+  SOURCE_PATHSPECS,
+  TEMPLATE_SOURCE_PATHSPECS,
+} from "./guard-invariants-scopes.mjs";
+
+/**
+ * Rule 39's three spellings of "the prompt restates the JSON shape".
+ *
+ * Two are the SENTENCE (`JSON only`, `JSON and nothing else` — the one a
+ * `system:` string opens or closes with) and one is the SHAPE: an opening
+ * brace, a quoted key, a colon and a TYPE NAME or a `"..."` placeholder, which
+ * is prose about JSON and never JSON. A real JSON string has a VALUE after the
+ * colon (`'{"headline":"H"}'`), so a spec's stubbed reply does not match; a
+ * `string[]` type does, through its `string` prefix, so no `[` alternative is
+ * needed — and one would score a stub's `"items":["apple"]` as prose.
+ *
+ * BUILT from an array, for `CLASSIFIABLE_STEP_CALLS`'s reason: end to end the
+ * alternation is long enough that biome's `noSecrets` heuristic scores it as a
+ * credential.
+ */
+const JSON_SHAPE_PROSE = [
+  "JSON only",
+  "JSON and nothing else",
+  // Three pieces: the brace and quoted key, the colon, then a type name or a
+  // `"..."` placeholder. Joined, so no one literal is long enough to score.
+  [
+    '\\{ ?"[A-Za-z_]+"',
+    ": ?",
+    `(${["string", "number", "boolean", '"\\.\\.\\."'].join("|")})`,
+  ].join(""),
+].join("|");
 
 /** @type {import("./guard-invariants-rules.mjs").LineRule[]} */
 export const SHAPE_RULES = [
@@ -311,5 +343,58 @@ export const SHAPE_RULES = [
       "The rule is ABSOLUTE: there are no occurrences left, and no baseline.\n" +
       "A script whose knobs are genuinely open-ended (the loadtest harnesses)\n" +
       "uses valueReader, which reads a LOCAL argv and so does not match.",
+  },
+  {
+    id: 39,
+    key: "rule39_jsonShapeProse",
+    label: "a prompt restating the JSON shape beside a schema",
+    re: JSON_SHAPE_PROSE,
+    paths: TEMPLATE_SOURCE_PATHSPECS,
+    // A module doc explaining what `stepGenerateJson` appends says "JSON only"
+    // in prose; a comment is not a prompt.
+    skipComments: true,
+    samples: {
+      matches: [
+        // The sentence, in a `system:` string and in a prompt.
+        '      system: "You audit recorded calls. You answer with JSON and nothing else.",',
+        '      "Answer with JSON only, in this shape:\\n" +',
+        // The shape, as a TYPE listing and as a placeholder listing.
+        '      `Reply with JSON only: {"headline": string, "points": string[]}. ` +',
+        '      `{"headline": "...", "risks": ["..."], "spoken": "..."}\\n\\n` +',
+        '        \'{"summary": string, "keyPoints": string[]}. Keep the summary short\' +',
+      ],
+      ignores: [
+        // The remedy: the schema carries the shape, `.describe()` the guidance.
+        "  const reply = await orFail(stepGenerateJson)(prompt, { schema: Summary });",
+        '  headline: z.string().describe("One line naming what the call was about."),',
+        "  points: z.array(z.string()).transform((a) => a.slice(0, MAX_POINTS)),",
+        // A spec's stubbed reply IS JSON: a value after the colon, not a type.
+        `  const reply = '${JSON.stringify({ headline: "H", points: ["a"] })}';`,
+        "  const body = JSON.stringify(reply);",
+        // A `system:` line that says what the model IS, not what shape to answer in.
+        '      system: "You summarize recordings for a daily digest.",',
+      ],
+    },
+    remedy:
+      "Delete the sentence. `stepGenerateJson(prompt, { schema })` and\n" +
+      "`ctx.generate({ prompt, schema })` append the schema's own JSON shape\n" +
+      "to the request and validate the reply against it, so a `system:` or a\n" +
+      'prompt that spells the shape again — `Reply with JSON only: {"headline":\n' +
+      "string, …}` — is a second copy of the contract that drifts from the\n" +
+      "first the day a field is added, and a model told two shapes obeys one.\n" +
+      "\n" +
+      "Per-field guidance goes on the SCHEMA FIELD with `.describe()`:\n" +
+      "\n" +
+      '  headline: z.string().describe("One line naming what the call was about."),\n' +
+      "\n" +
+      "That sentence reaches the model inside the schema it is validated\n" +
+      "against, beside the field it describes, instead of in a paragraph the\n" +
+      "schema cannot see. A cap on an array belongs in the schema too —\n" +
+      "`.transform((a) => a.slice(0, N))` — rather than in prose the model may\n" +
+      "or may not honour.\n" +
+      "\n" +
+      "Scoped to the templates' shipped source because that is what a user\n" +
+      "copies, and a spec's stubbed reply is JSON by design. Baselined where\n" +
+      "the prose still stands; the budget only comes down.",
   },
 ];

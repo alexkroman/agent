@@ -112,10 +112,13 @@ gate, recall and report coalescing).
   the slot and import it in both `agent.ts` and `client.tsx`.
   `useAgentState("slot", fallback)` is only for a slot whose `create()` is
   expensive to ship to the browser; `useAgentState()` is the whole frame.
-  `hooks.test-d.ts` pins all four signatures. **Per-slot re-renders hold because
-  of two things together**: `selectAgentState(slot)` is ONE stable selector per
-  name, and the session core keeps an unchanged slot's value object across
-  pushes (`shareUnchangedSlots`, `session/messages.ts`).
+  `hooks.test-d.ts` pins all four signatures. A seeded slot declares
+  `sessionSlot(…, { empty })` on the SDK side instead, so `projected()` renders
+  the empty shape and the fallback overload is only for a slot whose module the
+  page cannot import at all. **Per-slot re-renders hold because of two things
+  together**: `selectAgentState(slot)` is ONE stable selector per name, and the
+  session core keeps an unchanged slot's value object across pushes
+  (`shareUnchangedSlots`, `session/messages.ts`).
 - **State or moment:** if re-rendering after a reload would be RIGHT, it is
   state → a `sessionSlot` read by `useAgentState`. If it would be a lie or a
   nuisance, it is a moment → `useEvent` / `useToolCallStart` (which never
@@ -129,11 +132,18 @@ gate, recall and report coalescing).
   `styles.css`'s `@theme`). Additive: `useTheme()` stays. The page background is
   still painted imperatively on `html` AND `body`; the `styles.css` fallbacks
   must equal `DEFAULT_THEME` (a test compares them); variables are RESTORED on
-  unmount, not removed. `theme-css-vars.test.tsx` holds these.
+  unmount, not removed. `theme-css-vars.test.tsx` holds these. **The short form
+  `{ primary, mode }` is resolved to the five tokens BEFORE `ThemeProvider`**
+  (`resolveClientTheme`, `_theme.ts`), so nothing below the mount knows two
+  shapes exist; `mountClient({ css })` injects a page sheet into `<head>` for
+  the mount's lifetime, after the tokens are on `:root`.
 - **`ClientConfig` display fields** (`icon`, `subtitle`, `buttonText`,
   `sidebarPosition`) must be honoured by BOTH `rootFor` branches; `icon` reaches
   the start card and the header. The forwarding bag is a MAPPED type over `Pick`
-  because of `exactOptionalPropertyTypes`.
+  because of `exactOptionalPropertyTypes`. **A tool's icon and label come from
+  client-config's `tools`** (`tool({ ui })` on the SDK side);
+  `mountClient({ tools })` is merged OVER them per tool name, an override and
+  never the only source.
 - **Session resume is on by default in `sessionStorage`**
   (`session/resume-store.ts`). Do not wire `onSessionId`/`resumeSessionId` by
   hand, and never into `localStorage` (a stale id suppresses the greeting and

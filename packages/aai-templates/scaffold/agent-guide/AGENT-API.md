@@ -20,12 +20,13 @@ import { agent } from "@alexkroman1/aai";
 export default agent({
   // ── Identity and prompt ────────────────────────────────────────────────
   name: string;                              // required — display name
-  description?: string;                      // one line for humans choosing the agent (a
+  listing?: string;                          // one line for humans choosing the agent (a
                                              // registry, `aai list`) — never sent to the model
-  systemPrompt?: string | ((ctx) => string); // usually ABSENT — write system-prompt.md
-                                             // instead; declare it only to COMPOSE one, or as
-                                             // a per-request resolver over session state.
-                                             // There is no `system` alias — one name.
+  promptContext?: string | ((ctx) => string); // appended UNDER system-prompt.md: a menu, a
+                                             // catalogue, or per-request text over session
+                                             // state (below). Refused on a workflow app.
+  systemPrompt?: string | ((ctx) => string); // usually ABSENT — write system-prompt.md; set
+                                             // only to take over the WHOLE prompt
   greeting?: string;                         // default: "Hey there..."; "" starts silent
   sttPrompt?: string;                        // STT guidance for jargon/acronyms (both voice modes)
   voicePresets?: VoicePresetName[];          // opt-in prompt presets — see below; each one
@@ -54,7 +55,9 @@ export default agent({
                                              // (TOOLS.md, "Speakers")
   dialogs?: AnyDialog[];                     // wires a dialog() to the SESSION: @-events, timeouts,
                                              // per-state instruction (TOOLS.md, "dialog()")
-  workflows?: Record<string, WorkflowDef>;   // durable workflows a tool may start (WORKFLOWS.md)
+  workflows?: Record<string, WorkflowDef>;   // durable runs a tool may start; usually ABSENT —
+                                             // a `workflows/<name>.ts` default export is
+                                             // registered as <name> (WORKFLOWS.md)
   mcpServers?: McpServers;                   // remote MCP servers' tools, prefixed mcp_<key>_…;
                                              // a host connects them with `withMcpTools`
   requiredEnv?: string[];                    // env vars this agent reads. Publishing CHECKS them,
@@ -111,10 +114,13 @@ export default agent({
                                              // switch with a default); "*" gets AnySessionEvent
   sessionContext?: (args) => SessionContext; // fetched once per connect, before the first model
                                              // call: extra instructions, history cut-off, refusal
-  onSessionEnd?: (ctx) => unknown;           // after every hang-up / disconnect / idle close
+  onSessionEnd?: (ctx) => unknown;           // after every hang-up / disconnect / idle close;
+                                             // ctx.transcript is what was said, oldest first
 
   // ── Surfaces outside a session ─────────────────────────────────────────
-  routes?: Record<string, RouteHandler>;     // JSON endpoints under /api, keyed "GET /path/:id"
+  routes?: Record<string, RouteHandler>;     // JSON endpoints under /api, keyed "GET /path/:id";
+                                             // wrap one in apiKeyRoute({ env }, handler) or
+                                             // webhookRoute(...) to authenticate it
   clientInbox?: { sampleRate?: number };     // what a run pushes to a device over WS /inbox
 });
 ```
@@ -143,16 +149,17 @@ export default agent({
 });
 ```
 
-A prompt RESOLVER reads session state once per model request:
+A `promptContext` FUNCTION reads session state once per model request, and is
+appended under `system-prompt.md`, which stays the prompt:
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
 
-const caller = sessionSlot("caller", () => ({ verified: false }));
+const caller = sessionSlot("caller", { verified: false });
 
 export default agent({
   name: "Bank Line",
-  systemPrompt: (ctx) =>
+  promptContext: (ctx) =>
     caller.get(ctx).verified
       ? "The caller is verified. You may discuss balances."
       : "The caller is NOT verified. Verify them before discussing anything.",
@@ -177,32 +184,36 @@ export default agent({
 
 `sessionContext` is bounded (1.5 s) and a throw, a timeout or `undefined` starts
 the session without it; `onSessionEnd` is fire-and-forget and at-least-once, so
-key any run it starts. A `routes` handler's return value is the JSON body;
-`routeResponse(status, body, { headers })` picks another status (and any headers
-— a `Location`, a `Retry-After`) and a thrown `routeError(status, message)`
-answers `{ error: message }`.
+key any run it starts, and its `ctx.transcript` is every committed line of the
+session (what an app that places calls records). A `routes` handler's return
+value is the JSON body; `routeResponse(status, body, { headers })` picks another
+status (and any headers — a `Location`, a `Retry-After`) and a thrown
+`routeError(status, message)` answers `{ error: message }`.
+`apiKeyRoute({ env: "CALLS_API_KEY" }, handler)` runs the handler only for a
+request carrying that key (`Authorization: Bearer …` by default; `503` when the
+variable is unset, `401` when the key is wrong).
 
-## Composing a system prompt
+## Text beside the prompt — `promptContext`
 
-**Composing a prompt is still legal, and it is the one case you write the import
-for.** When part of the prompt is computed — a menu, a catalogue, today's date —
-import the file and build the field; the build sees its own text inside your
-prompt and leaves what you built alone:
+**The file is never imported.** When part of the prompt is computed — a menu, a
+catalogue, today's date — put it in `promptContext`; the build appends it under
+`system-prompt.md` after a blank line, and the file stays discovered:
 
-```ts no-check
-// `no-check`: the prompt file and the menu module are the project's, not this
-// guide's — which is the point of the example.
-/// <reference types="vite/client" />
+```ts
 import { agent } from "@alexkroman1/aai";
-import systemPrompt from "./system-prompt.md?raw";
-import { menuText } from "./menu.ts";
 
-export default agent({ name: "Pizza", systemPrompt: `${systemPrompt}\n${menuText()}` });
+const MENU = ["Margherita — 12", "Marinara — 10"];
+
+export default agent({ name: "Pizza", promptContext: `Menu:\n${MENU.join("\n")}` });
 ```
 
-`greeting` stays a field, deliberately: it is one sentence with no structure to
-lose, and it crosses the wire to the browser beside `name` and `page`. **A
-document goes in a file, a value stays in the call.**
+A string is serialized into the config like the prompt is; a function is
+resolved per model request (per connection on S2S) from the same session context
+a `systemPrompt` resolver sees, so per-caller state goes in the function form
+shown above. A workflow app refuses the field. `greeting` stays a field,
+deliberately: it is one sentence with no structure to lose, and it crosses the
+wire to the browser beside `name` and `page`. **A document goes in a file, a
+value stays in the call.**
 
 **JSON imports need no attribute.** `resolveJsonModule` is on, so
 `import data from "./knowledge.json"` is all it takes. Do NOT write

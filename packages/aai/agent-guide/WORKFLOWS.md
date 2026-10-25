@@ -24,15 +24,8 @@ submit a job, watch it run, read the result — declare it with `workflowApp()`
 instead of `agent()`:
 
 ```ts no-check
-import { workflow, workflowApp } from "@alexkroman1/aai";
-import { z } from "zod";
-import { digestFlow } from "./workflows/digest.ts";
-
-export const digest = workflow({
-  description: "Summarize a link and file the digest",
-  input: z.object({ url: z.url().describe("The link to digest") }),
-  run: digestFlow,
-});
+import { workflowApp } from "@alexkroman1/aai";
+import digest from "./workflows/digest.ts";
 
 export default workflowApp({
   name: "Link Digest",
@@ -43,10 +36,12 @@ export default workflowApp({
 That is the whole declaration, and the fields it does NOT take are the point: a
 workflow app has no session and no LLM loop, so `systemPrompt`, `tools`,
 `maxSteps`, `syncState`, `stt`/`llm`/`tts`/`s2s` and every voice knob are
-**compile errors** here, not fields that quietly do nothing. `greeting` and
-`requiredEnv` stay. `workflowApp()` is `agent({ mode: "workflow-app", … })` with
-the discriminant already set — same definition object out, so `aai build`,
-`aai dev` and `aai publish` treat it like any other agent.
+**compile errors** here, not fields that quietly do nothing. `greeting` stays;
+`requiredEnv` defaults to `["ASSEMBLYAI_API_KEY"]`, the one key every step
+helper reads (`requiredEnv: []` opts out). `workflowApp()` is
+`agent({ mode: "workflow-app", … })` with the discriminant already set — same
+definition object out, so `aai build`, `aai dev` and `aai publish` treat it like
+any other agent.
 
 Reach for it when the user asks for something that outlives a request: an
 overnight job, an upload that takes minutes, anything waiting on a third-party
@@ -72,18 +67,34 @@ no database of its own for either half. Under `aai dev` they are as temporary as
 the runs above: the bytes go to a per-process temporary directory that a restart
 abandons. There is no `ctx.db` at all — see "Persisting data" in `TOOLS.md`.
 
-### Workflow bodies live in `workflows/`
+### A file in `workflows/` IS a workflow
 
-A body is an ordinary exported async function of its input and a
-`WorkflowContext`. There is no directive and no compile step of its own — the
-agent bundle compiles `workflows/` like any other source file — and durability
-is a method call:
+**`workflows/<name>.ts` default-exporting a `workflow()` def is registered as
+`<name>`**, the way a `tools/` file is a tool: a voice agent lists nothing on
+`agent()`, a `workflowApp()` imports the def into its `workflows` map (the field
+is required there — the workflows ARE the product), and a tool imports
+`../workflows/digest.ts` directly to start it. A file there with no default def
+— `prompts.ts`, `media.ts` — is a helper and is skipped; an explicit
+`agent({ workflows })` entry wins a clash, with a warning. The declaration
+carries the schema, the body is an ordinary exported async function of its input
+and a `WorkflowContext`, and durability is a method call:
 
 ```ts
-import type { WorkflowContext } from "@alexkroman1/aai";
+import { type WorkflowContext, type WorkflowInputOf, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
 
-export async function digestFlow(input: { url: string }, ctx: WorkflowContext) {
-  const digest = await ctx.step("summarize", () => summarize(input.url));
+// workflows/digest.ts → registered as "digest". Declared in two phases so the
+// body below can name `typeof digest` (see "Type the body's input").
+const digest = workflow({
+  description: "Summarize a link and file the digest",
+  input: z.object({ url: z.url().describe("The link to digest"), limit: z.number().default(5) }),
+  output: z.object({ url: z.string(), headline: z.string(), filedAt: z.string() }),
+}).body(digestFlow);
+export default digest;
+
+export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
+  // `limit` is `number`, not `number | undefined` — the schema's default already ran.
+  const summary = await ctx.step("summarize", () => summarize(input.url, input.limit));
 
   // Suspended, not blocked: the container is free to exit here and the run
   // resumes when it comes due. Six hours works the same as ten seconds.
@@ -92,14 +103,14 @@ export async function digestFlow(input: { url: string }, ctx: WorkflowContext) {
   // the same reason: it is the wait's identity in the journal.
   await ctx.sleep("settle", 10_000);
 
-  const filedAt = await ctx.step("file", () => file(digest));
-  return { ...digest, filedAt };
+  const filedAt = await ctx.step("file", () => file(summary));
+  return { ...summary, filedAt };
 }
 
-async function summarize(url: string) {
+async function summarize(url: string, limit: number) {
   // The whole Node runtime is available in a step: fetch, a model call, a
   // database. Not in the body.
-  return { url, headline: `What ${new URL(url).hostname} says`, points: [] };
+  return { url, headline: `What ${new URL(url).hostname} says, in ${limit} points` };
 }
 
 async function file(_digest: { url: string }) {
@@ -112,61 +123,28 @@ later replay returns the journaled value without running it again. The step
 functions themselves are ordinary functions — which is also what lets a spec
 call one directly, with no engine in the path.
 
-**Type the body's input from the SCHEMA, not by hand.** The example above writes
-`input: { url: string }`, which is fine only while the workflow declares no
-input schema. Once it does, a hand-written parameter is unchecked: `run` takes
-its input as a function PARAMETER, so it is contravariant, and a body declaring
-a wider shape — or the same shape with one field's optionality or default wrong
-— is assignable and compiles. A `z.number().default(5)` against a body that
-writes `input.limit ?? 3` is the sharp version: the schema guarantees `limit` is
-there, the `??` is dead, and the two numbers disagree with nothing to report it.
-`WorkflowInputOf<typeof theDef>` reads the declaration instead.
+**Type the body's input from the SCHEMA, not by hand.** A hand-written parameter
+is unchecked: `run` takes its input as a function PARAMETER, so it is
+contravariant, and a body declaring a wider shape — or the same shape with one
+field's optionality or default wrong — is assignable and compiles. A
+`z.number().default(5)` against a body that writes `input.limit ?? 3` is the
+sharp version: the schema guarantees `limit` is there, the `??` is dead, and the
+two numbers disagree with nothing to report it. `WorkflowInputOf<…>` reads the
+declaration instead, and in the body's own module it takes one of two spellings,
+because `workflow({ input, run })` infers from the body while the body's
+parameter names the def (`TS7022`):
 
-**Reaching for it needs one thing that is not obvious: ANNOTATE the def.** The
-obvious spelling does not compile —
+- **The two-phase def**, as above:
+  `workflow({ description, input, output }).body(digestFlow)` fixes
+  `typeof digest` from the declaration alone, so the body may name it. Declare
+  `output` — without one the completed run's result is `unknown`.
+- **The schema itself**: `WorkflowInputOf<typeof digestInput>` for a named
+  `z.object(…)` const, with the single-phase
+  `workflow({ input: digestInput, run })` beside it.
 
-```text
-error TS7022: 'digest' implicitly has type 'any' because it does not have a type
-annotation and is referenced directly or indirectly in its own initializer.
-```
-
-— because `workflow()` infers its output from `run`, so `typeof digest` needs
-the body's signature while the body's signature needs `typeof digest`. Naming
-the schema in a `const` and annotating the def breaks the cycle:
-
-```ts
-import {
-  type WorkflowContext,
-  type WorkflowDef,
-  type WorkflowInputOf,
-  workflow,
-} from "@alexkroman1/aai";
-import { z } from "zod";
-
-const digestInput = z.object({ url: z.string(), limit: z.number().default(5) });
-
-// The annotation is what `typeof digest` resolves to, so it no longer depends
-// on the body below it.
-export const digest: WorkflowDef<typeof digestInput, { headline: string }> = workflow({
-  description: "Summarize a page",
-  input: digestInput,
-  run: digestFlow,
-});
-
-export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
-  // `limit` is `number`, not `number | undefined` — the default already ran.
-  return await ctx.step("summarize", () => ({ headline: `${input.url} (${input.limit})` }));
-}
-```
-
-Declaring an `output` schema is what makes the annotation cheap: with one, the
-output type is stated once, in the schema, and checked where the run completes.
-
-Two of that family are on `@alexkroman1/aai` — `WorkflowInputOf` for a body's
-parameter and `WorkflowRunOf` for a `*_status` tool's snapshot. The third,
-`WorkflowOutputOf`, is on `@alexkroman1/aai/workflow-api` only, because its
-reader is a `client.tsx` parameterizing `useWorkflowRun<…>`; a status tool wants
-`WorkflowRunOf`, which composes the output in already.
+`WorkflowRunOf<typeof digest>` types a `*_status` tool's snapshot (output
+included); `WorkflowOutputOf` is on `@alexkroman1/aai/workflow-api`, for a
+`client.tsx` parameterizing `useWorkflowRun<…>`.
 
 Three rules, and all three fail silently if broken — nothing scans a body for
 them:
@@ -193,11 +171,15 @@ alias onto one counter and read each other's journaled results. Nothing detects
 it.
 
 **Per-step retries are an argument, not a property.** Pass `{ maxAttempts }`
-where a step deserves more patience than the default three:
+where a step deserves more patience than the default three, and `{ maxWaits }`
+where the expected failure is a RATE LIMIT: a `RetryableError` whose
+`retryAfter` is still ahead (what `orFail(step*)` raises on a 429) is then a
+wait, not an attempt, so the three attempts stay for the step's own failures:
 
 ```ts no-check
 const digest = await ctx.step("summarize", () => summarize(input.url), {
-  maxAttempts: 6,
+  maxAttempts: 3,
+  maxWaits: 6,
 });
 ```
 
@@ -261,6 +243,41 @@ Two rules:
   DERIVED from the run's own input, because whoever signals is usually a tool
   and a tool cannot see the body's local variables. See below.
 
+### Checking until it is done: `ctx.poll`
+
+A body that submits a job and checks on it does not write the loop.
+`ctx.poll(name, check, options)` runs each check as `ctx.step(name, check)` and
+each wait as a durable `ctx.sleep(name, everyMs)`, journaled exactly as the
+hand-written loop would be, and resolves `{ value, done, checks }` —
+`done: false` with the latest reading once the budget (`floor(maxMs / everyMs)`
+sleeps, a COUNT so a replay walks the same number) is spent:
+
+```ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+
+declare function checkJob(id: string): Promise<{ status: string; text?: string }>;
+
+export async function awaitJob(id: string, ctx: WorkflowContext) {
+  const job = await ctx.poll("job", () => checkJob(id), {
+    everyMs: 10_000,
+    maxMs: 60 * 60_000,
+    done: (j) => j.status === "completed" || j.status === "error",
+    // Park on the provider's callback FIRST, then poll — see the webhook rules.
+    first: { waitFor: ctx.signalToken("job"), timeoutMs: 20 * 60_000 },
+    // Said once, in its own journaled step, when the poll outlasts a minute.
+    slowAfterMs: 60_000,
+    onSlow: "Still waiting on the provider.",
+  });
+  if (!job.done) await ctx.report("gaveUp", `Gave up on job ${id} after ${job.checks} checks.`);
+  return job.value;
+}
+```
+
+`done` is called on the JOURNALED value, so it must be a pure function of it.
+`ctx.report(name, line)` is one journaled step around `stepReport` — the
+narration a body writes between steps. Transcription has this whole shape
+packaged as `transcribeUploadDurably` (below).
+
 ### Waiting: `ctx.sleep` and `ctx.waitFor`
 
 Both SUSPEND the run — the body stops, the container is free, and the engine
@@ -274,13 +291,15 @@ lives only as long as the dev server. The boot line reports which one is in
 play.
 
 ```ts no-check
-// A label, then a duration in milliseconds or an absolute Date.
-await ctx.sleep("review-window", 6 * 60 * 60 * 1000, { correlationId: "review" });
+// A label, then a duration in milliseconds or an absolute Date. The label is
+// also the sleep's correlation id, which is what `wakeUp` names.
+await ctx.sleep("review-window", 6 * 60 * 60 * 1000);
 
-// Until somebody outside the run answers, via `ctx.workflows.signal(token, …)`
-// from a tool, or by a delivery to `publicWebhookUrl` — both hops reach the
-// same waitpoint.
-const approval = await ctx.waitFor<{ approved: boolean }>(approvalToken(input.id), {
+// Until somebody outside the run answers — a tool's
+// `ctx.workflows.signalRun(def, "session", "approval", payload)`, or a delivery
+// to a webhook URL minted from `ctx.signalToken("approval")`. Both hops reach
+// the same waitpoint.
+const approval = await ctx.waitForSignal<{ approved: boolean }>("approval", {
   timeoutMs: 120_000,
 });
 if (approval === undefined) return { published: false, reason: "nobody approved" };
@@ -295,12 +314,16 @@ Five things worth knowing:
   occurrence count separates the iterations. This is what makes a wait behind an
   `if` safe: the body can reach a different NUMBER of waits on two walks and
   each one still finds its own record.
-- **A hook's token must be DERIVED, not random.** Whoever signals is usually a
-  tool, and a tool cannot see the body's local variables — so export one
-  function that computes the token from the run's own input and import it in
-  both places. Derive it from something that identifies the RUN rather than the
-  caller: a token is held for the life of its run, so two runs deriving the same
-  one is the second one failing.
+- **Nobody spells the token.** `ctx.waitForSignal(label)` waits on
+  `<workflow>:<key>:<label>`, minted from the run's declared name and its
+  `StartOptions.key` (`ctx.key`); `ctx.signalToken(label)` hands the same token
+  to a step, and `ctx.workflows.signalRun(def, key, label, payload)` answers it
+  from a tool — `"session"` there is the session id, the key a tool's `start`
+  uses by default. A run started with NO key has no token, and both body methods
+  throw rather than mint one from `undefined`. `signalRun` HOLDS a payload that
+  lands before the body reaches its wait (`holdMs`), which is the tool that
+  starts a run and answers its first question in the same turn.
+  `ctx.waitFor(token)` remains for a token you own.
 - **`timeoutMs` resolves `undefined` when the window closes unanswered.** A
   closing window is an outcome to branch on, not a failure, and the engine
   closes the hook as it shuts so a late answer cannot change what already
@@ -336,11 +359,13 @@ it hands AssemblyAI a `webhook_url` and parks on the delivery instead of polling
 for twenty minutes. Five things about that shape, every one a trap somebody has
 already paid for:
 
-- **Mint it with `stepWebhookUrl(token)`, from inside the step that hands it
-  over.** That is the step-side half of `ctx.workflows.publicWebhookUrl` — the
-  tool-side one needs a `ToolContext`, which a step is not handed. It THROWS
-  when the deployment cannot mint one, which a step should catch and treat as
-  "no callback": a run must not fail over a missing optimization. And note
+- **Mint it with
+  `stepWebhookUrl(ctx.signalToken("transcript"), { optional: true })`, from
+  inside the step that hands it over.** That is the step-side half of
+  `ctx.workflows.publicWebhookUrl` — the tool-side one needs a `ToolContext`,
+  which a step is not handed. `optional` answers `undefined` when the deployment
+  cannot mint one, so the step passes "no callback" on rather than failing a run
+  over a missing optimization; without it the call THROWS. And note
   `requireStepEnv("AAI_PUBLIC_BASE_URL")` is NOT a substitute — the public base
   URL is a boot parameter of the deployment, not one of the agent's own secrets,
   so that read is `undefined` in production precisely where the value exists.
@@ -353,8 +378,9 @@ already paid for:
   party with no delivery guarantee you control: the sender gives up after its
   own retry budget, a deployment may not know its public URL, and a delivery
   that lands before your body reaches its wait is answered `404` and dropped. So
-  read the state before you park and again after, give the wait a `timeoutMs`,
-  and let an unanswered window fall through to the read.
+  give the wait a `timeoutMs` and let an unanswered window fall through to the
+  read — which is `ctx.poll` with `first: { waitFor, timeoutMs }` in one call,
+  and `woken` on its result says which arm answered.
 - **Wait for the EDGE, not the answer.** Treat the payload as "something
   happened, go look" and get the fact from the far side's own API under your own
   credential. That is what makes an unauthenticated callback route safe: a
@@ -401,12 +427,11 @@ journal, and really survives a restart.
 
 ```ts no-check
 import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
-import { digest } from "./agent.ts";
+import agentDef from "virtual:aai/agent";
 
 // Parks on the wait instead of blocking, with the work before it journaled.
-const run = await runWorkflow(digest, { url: "https://example.com/a" }, {
-  name: "digest",
-});
+// Named through the AGENT, so the name is checked and the output typed.
+const run = await runWorkflow(agentDef, "digest", { url: "https://example.com/a" });
 expect(run.status).toBe("running");
 expect(run.wakeAt).toBeGreaterThan(Date.now());
 expect(run.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize"]);
@@ -429,15 +454,19 @@ Three more things it can do, each the thing a durable body is written for:
   second run sees.
 
 Stub the steps' collaborators at the seams they really use — a step's HTTP goes
-through the published `stepFetch` slot, so a model call and a page fetch are
-BOTH answered there. `stubGatewayRoute` composes the two:
+through ONE published `stepFetch` slot, so a model call, a page fetch and a
+transcription are all answered there, and `installStubWorld` composes them in
+the one order that works, seeds `ASSEMBLYAI_API_KEY`, and hands back every
+fake's call log:
 
 ```ts no-check
-import { stubGatewayRoute } from "@alexkroman1/aai-runtime/testing";
-import { installStubStepFetch } from "@alexkroman1/aai-runtime/testing/vitest";
+import { installStubWorld } from "@alexkroman1/aai-runtime/testing/vitest";
 
-const model = stubGatewayRoute('{"headline":"H","points":["a"]}');
-installStubStepFetch((request) => model.route(request) ?? { body: PAGE_HTML });
+const world = installStubWorld({
+  model: '{"headline":"H","points":["a"]}',
+  pages: { "https://example.com/a": { body: PAGE_HTML } },
+});
+expect(world.model[0]?.prompt).toContain("example.com");
 ```
 
 ### A step's env, and calling a model from one
@@ -513,7 +542,11 @@ that means "already deleted", a `4xx` whose body decides which advice to print.
 Then classify it yourself: `throwStepError(err)`, `throwFatalStepError(err)` to
 stop outright, `toStepError(cause, message)` to build the error without
 throwing, or `throwFfmpegStepError(err)` for a media failure, whose default runs
-the other way (only a `timeout` or an `aborted` is worth another attempt).
+the other way (only a `timeout` or an `aborted` is worth another attempt). **A
+decision that is a pure function of the input is fatal on its first attempt**:
+`orFatal(() => parseWav(head, size), { when: UnsupportedRecordingError })` makes
+that one class terminal and passes everything else through unchanged;
+`fatalOn((err) => …, fn)` is the same with a predicate.
 
 **Why the split exists, since the wrapped call is what you usually want:**
 importing from here is the OPT-IN, and `/step` is not written only for a step:
@@ -527,20 +560,32 @@ is one. A step pays nothing for the extra import line.
 Three more subpaths a `workflows/*.ts` module can reach, all with the same
 bundling rule as `/step` — import them there, never through the root barrel:
 
-- **`@alexkroman1/aai/step`** — `stepTranscribeSync(bytes)` for a short
-  recording, or `stepTranscribeUpload` → `stepTranscribeSubmit` →
-  `stepTranscribePoll` for a long one, plus `Transcript`, `TranscribeError` and
-  the `TRANSCRIBE_*` limits. (There is no `/transcribe` subpath; transcription
-  lives on `/step` with the other step primitives.) Wrap each in `orFail` as
-  above: a provider refusal — a container it will not read, a recording with no
-  speech — arrives with `retryable: false`, and unclassified a step re-uploads
-  the same bytes until its attempts run out.
+- **`@alexkroman1/aai/step`** —
+  **`transcribeUploadDurably(ctx, uploadId, { params?, everyMs?, maxMs? })`** is
+  the whole async job from the BODY: upload, submit and poll as three journaled
+  steps under fixed names (`TRANSCRIBE_DURABLY_STEPS`), each call classified,
+  and a budget that runs out throwing a `TranscribeError` naming the transcript
+  id — the job is still finishing on the provider's side, so the sentence says
+  where to read it rather than transcribing twice. It resolves the `Transcript`
+  plus `source`, the upload's name. The primitives stay for another shape:
+  `stepTranscribeSync(bytes)` for a short recording, or `stepTranscribeUpload`
+  (resolving `{ audioUrl, source, size }`) → `stepTranscribeSubmit` →
+  `stepTranscribePoll`, plus `TranscribeError` and the `TRANSCRIBE_*` limits.
+  (There is no `/transcribe` subpath.) Wrap each in `orFail` as above: a
+  provider refusal — a container it will not read, a recording with no speech —
+  arrives with `retryable: false`, and unclassified a step re-uploads the same
+  bytes until its attempts run out.
 - **`@alexkroman1/aai/ffmpeg`** — `transcodeToWav(bytes, { sampleRate })`,
   `runFfmpeg(args)`, `probeMedia(source)` for duration and stream info, and
   `FfmpegError`/`isFfmpegError`. Under `aai dev` it needs ffmpeg on your PATH; a
   `missing-binary` failure says so and carries the install line.
 - **`@alexkroman1/aai/step-files`** — for a recording too big to hold in memory.
-  `readUploadToFile(uploadId, path)` streams an upload to disk,
+  **`transcodeUpload(uploadId, { args, output, probe? })`** — `args` is
+  `(source, out) => string[]`, `output` is `{ name, type }` — is the whole
+  materialize → ffmpeg → store shell as one step result
+  (`{ id, size, bytes, info?, ffmpegMs, stderr }`), with the standing flags
+  (`-nostdin`, the one whose absence hangs a guest) prepended for you.
+  Underneath: `readUploadToFile(uploadId, path)` streams an upload to disk,
   `writeUploadFromFile(path)` streams one back, and `withTempDir(work)` gives
   both a directory that is cleaned up even when the step throws.
 
@@ -591,6 +636,28 @@ rendered per platform, so the same message is legal on a channel kind added
 later; `isSlackWebhookUrl` / `isSlackWorkflowTriggerUrl` validate a pasted URL
 before a run depends on it, and `explainChannelFailure` turns a refusal into a
 sentence a person can act on. `podcast-digest-workflow` is the worked example.
+
+### What a voice agent says about a run
+
+Declare `describeRun(run)` and `cancelNote` on the def and the `workflow_status`
+/ `workflow_progress` / `workflow_cancel` builtins speak them (`TOOLS.md`,
+"Starting a run from a tool"): `describeRun` is handed the typed snapshot once
+the run is terminal, and `cancelNote` is what a cancel says on top of the fact —
+on this engine a cancel runs no compensations, so a note that says what stays
+behind is honest. `describeRun(def, run)` (the function) is the same sentence
+for a route handler.
+
+### Placing a call from a run
+
+`stepPlaceCall({ carrier, to, from, brief: { id, prompt } })` dials out through
+this agent's `/phone`; the `brief` rides the call signed with `CALLS_API_KEY`
+(`briefSecretEnv` names another variable), and the answering session reads it
+back with `sessionCall(ctx)?.brief(secret)` — a stream that presents no valid
+signature answers `undefined`, so a tool refuses it. How the call went is on
+`onSessionEnd`'s `ctx.transcript`, keyed by nothing: every committed line of
+that session, oldest first. The route that accepts the brief from the app's own
+callers is `apiKeyRoute({ env: "CALLS_API_KEY" }, handler)` (`AGENT-API.md`).
+`outbound-call-agent` is the worked example.
 
 ### Reaching a device after the call
 
@@ -679,26 +746,29 @@ on `@alexkroman1/aai/step`, and `spoken-summary-workflow` shows the whole round
 trip.
 
 ```ts
-import { stepSpeak, stepWriteUpload } from "@alexkroman1/aai/step";
+import { stepSpeakToUpload } from "@alexkroman1/aai/step-files";
 
 export async function narrate(script: string) {
-  const spoken = await stepSpeak(script, { voice: "aai-jane" });
-  const stored = await stepWriteUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
-  return { audio: stored.id, durationMs: spoken.durationMs };
+  // Speak, master (wav, or mp3 through ffmpeg) and store, as ONE step result.
+  const spoken = await stepSpeakToUpload(script, { voice: "aai-jane", name: "summary.wav" });
+  return { audio: spoken.id, durationMs: spoken.durationMs };
 }
 ```
 
-**`stepSpeak` is `stepGenerate` for the voice.** A step is handed no
-`ToolContext`, so the provider stack your `agent()` declares is not in scope —
-and the session TTS surface would not help anyway: it is an event stream wired
-into a live pipeline's playback, and a step has no turn to be part of and has to
-return a value. So this is the smaller thing: text in, the whole utterance out
-as a WAV, on the same `ASSEMBLYAI_API_KEY` everything else uses. Voices come
-from `ASSEMBLYAI_TTS_VOICES` (`@alexkroman1/aai`, or `/tts`) — read that list
-rather than typing an id, because a wrong one is refused _after_ the socket
-opens and produces silence rather than an error. The `AssemblyAITtsVoice` type
-gives you autocomplete over it and nothing more: it accepts any string, so that
-a voice the service adds after this release still compiles.
+Underneath are `stepSpeak(text, { voice })` and
+`stepWriteUpload(bytes, { name, type })` on `@alexkroman1/aai/step`, for a step
+that does something with the audio between the two. **`stepSpeak` is
+`stepGenerate` for the voice.** A step is handed no `ToolContext`, so the
+provider stack your `agent()` declares is not in scope — and the session TTS
+surface would not help anyway: it is an event stream wired into a live
+pipeline's playback, and a step has no turn to be part of and has to return a
+value. So this is the smaller thing: text in, the whole utterance out as a WAV,
+on the same `ASSEMBLYAI_API_KEY` everything else uses. Voices come from
+`ASSEMBLYAI_TTS_VOICES` (`@alexkroman1/aai`, or `/tts`) — read that list rather
+than typing an id, because a wrong one is refused _after_ the socket opens and
+produces silence rather than an error. The `AssemblyAITtsVoice` type gives you
+autocomplete over it and nothing more: it accepts any string, so that a voice
+the service adds after this release still compiles.
 
 **`stepWriteUpload` is `stepReadUpload`'s other direction, and you need it.** A
 run's output is read back as JSON, so audio cannot travel in one — the same rule
@@ -767,30 +837,24 @@ no microphone request. Everything else is the same file, React and Tailwind
 included.
 
 ```tsx no-check
-import { createWorkflowApi, mountPage, useWorkflowRun } from "@alexkroman1/aai-ui";
+import { mountPage, useWorkflowSubmit, WorkflowPendingNote } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
-import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
-import { useState } from "react";
-import type { digest } from "./agent.ts";
-
-// Hoisted: a client built in render is a new object every render.
-const api = createWorkflowApi();
+import type agentDef from "./agent.ts";
 
 export function App() {
-  const [runId, setRunId] = useState<string>();
-  // The generic is what makes `run.output` typed rather than `unknown`.
-  const { run, polling } = useWorkflowRun<WorkflowOutputOf<typeof digest>>(runId, { api });
+  // Typed by the APP: "digest" is checked against what agent.ts declares, the
+  // input against its schema, and `run.output` by its output schema.
+  const submission = useWorkflowSubmit<typeof agentDef>("digest");
+  const { run, pending, submit } = submission;
 
   return (
     <main>
-      <button
-        type="button"
-        onClick={async () => setRunId(await api.start("digest", { url: "https://example.com" }))}
-      >
+      <button type="button" onClick={() => submit({ url: "https://example.com" })}>
         Digest
       </button>
-      {polling && <p>Working. You can close this tab — the run continues.</p>}
+      <WorkflowPendingNote submission={submission} />
       {run?.status === "completed" && <h2>{run.output.headline}</h2>}
+      {pending && <p>Working.</p>}
     </main>
   );
 }
@@ -798,11 +862,14 @@ export function App() {
 mountPage({ name: "Link Digest", component: App });
 ```
 
-`api.start()` resolves as soon as the RUN EXISTS, not when it finishes — that is
-the whole mechanism. The `runId` is the entire client state, so it survives a
-reload, a different device, or `curl`. Note the workflow is named by the key it
-has in `workflows` above (`"digest"`); nothing else records that string, so a
-rename there is a 400 here rather than a compile error.
+The run starts as soon as the RUN EXISTS, not when it finishes — that is the
+whole mechanism. The run id is the entire client state, so it survives a reload
+(the hook finds it again by a per-tab key; `{ key: { storage: "local" } }`
+outlives the tab), a different device, or `curl`. The same page over raw
+primitives is `createWorkflowApi()` + `api.start("digest", input)` +
+`useWorkflowRun<WorkflowOutputOf<typeof digest>>(runId)`; `link-digest-workflow`
+writes it that way. A run's snapshot carries `startedAt` and `settledAt`, so a
+page needs no clock of its own.
 
 The same routes are scriptable, which is the other half of having an API:
 
