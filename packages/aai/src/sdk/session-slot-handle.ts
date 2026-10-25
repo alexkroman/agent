@@ -62,7 +62,9 @@ export type SlotDraftOf<S extends SessionSlot<string, unknown, unknown>> =
  * @sealed
  * @public
  */
-export type GatedOutput<R> = Promise<DialogToolResult<Exclude<Awaited<R>, ToolFailure>> | ToolFailure>;
+export type GatedOutput<R> = Promise<
+  DialogToolResult<Exclude<Awaited<R>, ToolFailure>> | ToolFailure
+>;
 
 /**
  * A named slot of per-session state, created by {@link sessionSlot}.

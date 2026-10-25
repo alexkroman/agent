@@ -85,7 +85,6 @@ import type {
   DialogTimeout,
   DialogToolDef,
   DialogToolResult,
-  EventNameOf,
   DialogVoiceConfig,
 } from "./dialog-types.ts";
 import { isRecord } from "./is-record.ts";
@@ -125,6 +124,7 @@ export type {
   DialogToolDef,
   DialogToolResult,
   DialogVoiceConfig,
+  EventNameOf,
 } from "./dialog-types.ts";
 
 /** The event type the implementation works in: every overload narrows it. */
