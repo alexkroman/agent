@@ -30,7 +30,7 @@ project: `node_modules/@alexkroman1/aai/agent-guide/`).
 | `agent-guide/PIPELINE-TUNING.md` | pipeline vs S2S vs text, turn-taking knobs, phone calls, `ctx.speech`      |
 | `agent-guide/PROVIDERS.md`       | an STT, LLM or TTS vendor or model; the voice catalog                      |
 | `agent-guide/UI.md`              | `client.tsx`: `mountClient()`, hooks, components, styling                  |
-| `agent-guide/TESTING-EVALS.md`   | `agent.test.ts`, `runTool`, `agent.eval.test.ts`                           |
+| `agent-guide/TESTING-EVALS.md`   | `agent.test.ts`, `describeAgent`, `agent.eval.test.ts`                     |
 | `agent-guide/HOSTING.md`         | `npm start`, OpenTelemetry tracing, `aai build --target`                   |
 
 ## Workflow
@@ -40,30 +40,27 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) → `pnpm test` (logic)
 
 1. **Iterate in `pnpm dev`** — browser UI; it restarts on every save at a
    terminal (`AAI_DEV_WATCH=0`/`1` forces it off/on). Speak to the agent to
-   verify behavior end-to-end. This is the primary feedback loop.
+   verify behavior end-to-end.
 2. **Run `pnpm test` after logic changes** — vitest, co-located as
    `agent.test.ts`. **When the project has one, it is yours to maintain**: a
    test asserting the old agent's shape is stale after a rewrite, and updating
    it is a normal fix. Do not delete a test to make it pass.
-   `agent-guide/TESTING-EVALS.md` has `virtual:aai/agent` and `runTool`.
+   `agent-guide/TESTING-EVALS.md` has `virtual:aai/agent` and `describeAgent`.
 3. **Run `pnpm eval` when you change what the agent DOES** — a test asserts the
-   shape; an eval (`agent.eval.test.ts`, harness imported from
-   `@alexkroman1/aai-runtime/testing/vitest`) drives a real session and asserts
-   what it did. With a provider key it uses a LIVE model (spends tokens, noisy);
+   shape; an eval (`agent.eval.test.ts`) drives a real session and asserts what
+   it did. With a provider key it uses a LIVE model (spends tokens, noisy);
    without one a SCRIPTED model, which proves wiring and nothing about what the
    agent says.
 4. **Run `pnpm build` before declaring done** — bundles `agent.ts`, type-checks,
-   validates the manifest, and runs the WHOLE spec suite first. Catches issues
-   `dev` won't.
+   validates the manifest, and runs the WHOLE spec suite first.
 5. **Make small, focused changes** — verify each one before stacking the next.
 6. **Look at templates before writing custom code** — the CLI ships working
    examples inside its own package, at
    `node_modules/@alexkroman1/aai-cli/dist/templates/`. Read them directly;
    `aai init --template <name>` scaffolds a fresh project from one. Closest:
    `quickstart-agent`, `custom-pipeline-agent`, `web-research-agent`,
-   `pizza-ordering-agent`, `retail-orders-agent` (the most complex). Built entry
-   points under `node_modules/@alexkroman1/aai*/dist/` re-export with source
-   specifiers — rewrite `.ts`/`.tsx` to `.d.ts` to find the file.
+   `pizza-ordering-agent`, `retail-orders-agent` (the most complex). A built
+   `dist/` entry re-exports source specifiers: read the `.d.ts` beside it.
 
 ## CLI
 
@@ -101,9 +98,8 @@ aai workflow cancel <id> # Stop a running run
 
 **A bare `aai` in an agent directory PUBLISHES** (it asks first at a terminal).
 **`aai test` runs every non-eval spec**, which `--only` narrows to
-`agent.test.ts`; a narrowed run names the files it skipped and answers
-`complete: false`. `pnpm test` is `aai test`, and so is the gate in front of
-`aai build`.
+`agent.test.ts` (naming what it skipped). `pnpm test` is `aai test`, and so is
+the gate in front of `aai build`.
 
 ## Project structure
 
@@ -113,10 +109,10 @@ my-agent/
   agent.test.ts       # Unit tests (optional)
   agent.eval.test.ts  # Behaviour evals, run by `pnpm eval` (optional)
   client.tsx          # Custom UI (optional, React)
-  shared.ts           # Types shared between agent.ts and client.tsx
+  shared.ts           # Slots and types agent.ts, tools/ and client.tsx share
   system-prompt.md    # The system prompt — discovered, not imported
   tools/              # One file per tool — this is how a tool is declared
-  workflows/          # Durable workflow bodies (optional — see agent-guide/WORKFLOWS.md)
+  workflows/          # One file per workflow, discovered the same way (agent-guide/WORKFLOWS.md)
   package.json
   tsconfig.json
   .env                # Local dev secrets (gitignored)
@@ -151,8 +147,8 @@ Three rules come with it, each a build error naming the file:
   letter, and join words with `_` — `tools/incident_create.ts`, never
   `incident-create.ts`. Renaming the file renames the tool.
 - **The export is the DEFAULT export**, and it must be a `tool()` (or a
-  `slot.tool()` / `slot.updateTool()`). A file exporting something else is named
-  at build time rather than becoming a tool that fails per turn.
+  `slot.tool()` / `slot.updateTool()`). A file exporting something else is a
+  build error, not a tool that fails per turn.
 - **`tools/` is flat.** A nested file — a nested HELPER too — is rejected, so
   put shared helpers beside `agent.ts` rather than under `tools/`.
 
@@ -189,21 +185,21 @@ export default agent({
 });
 ```
 
-The fields almost every agent sets: `name` (required), `greeting` (default: "Hey
-there..."; `""` starts silent), `tts` (voice `aai-jane` unless set), `llm`,
-`builtinTools` (omitted = `["think"]` only; setting it REPLACES the default),
-`maxSteps` (default 10 tool-calling steps per reply) and `requiredEnv` (every
-env var a tool or step reads; **publishing checks it**, so a missing key fails
-at `aai publish` instead of mid-call). `agent-guide/AGENT-API.md` lists every
-field.
+The fields almost every agent sets: `name` (required), `listing` (one line for
+`aai list` and the studio picker — never sent to the model), `greeting`
+(default: "Hey there..."; `""` starts silent), `tts` (voice `aai-jane` unless
+set), `llm`, `builtinTools` (omitted = `["think"]` only; setting it REPLACES the
+default), `maxSteps` (default 10 tool-calling steps per reply) and `requiredEnv`
+(every env var a tool or step reads; **publishing checks it**, so a missing key
+fails at `aai publish` instead of mid-call). `agent-guide/AGENT-API.md` lists
+every field.
 
-**To change the model, set `llm` in `agent.ts`** — templates usually omit it, so
-there is no line to find. The default is `gpt-5.6-luna` on the AssemblyAI LLM
-Gateway, which is **not part of AssemblyAI's free credits**: an account with no
-payment method is refused ("does not have access to this LLM Gateway model").
-Add a card in the dashboard, or bring another provider's key
-(`agent-guide/PROVIDERS.md`). A model must support tool calling if the agent has
-tools — `qwen3.5-4b-32k-fast` does not.
+**To change the model, set `llm` in `agent.ts`** (templates usually omit it).
+The default is `gpt-5.6-luna` on the AssemblyAI LLM Gateway, which is **not part
+of AssemblyAI's free credits**: an account with no payment method is refused
+("does not have access to this LLM Gateway model"). Add a card in the dashboard,
+or bring another provider's key (`agent-guide/PROVIDERS.md`). A model must
+support tool calling if the agent has tools — `qwen3.5-4b-32k-fast` does not.
 
 **Four modes, one field: `mode`.** Omit it for PIPELINE — the default, and the
 mode this guide assumes. `mode: "s2s"` beside an `s2s: assemblyAIS2s()`
@@ -229,8 +225,8 @@ The default pipeline lowers the pair onto its STT stage; beside an explicit
 or dictating callers; only turns that never read as complete pay it);
 `minSilenceMs` taxes every finished turn — the doc comments on
 `DEFAULT_MIN_TURN_SILENCE_MS`/`DEFAULT_MAX_TURN_SILENCE_MS` say why. Min must be
-<= max. S2S has no such knob on purpose: its end-of-turn detection is adaptive
-and entity-aware, and a silence window disables it (`AssemblyAIS2sOptions`).
+<= max. S2S has no such knob: its adaptive end-of-turn detection would be
+disabled by one (`AssemblyAIS2sOptions`).
 
 ## `tool()` basics
 
@@ -262,17 +258,21 @@ export default tool({
   also returns an error shape. Let it infer.
 - **`ctx`** carries `env` (secrets; every read is `string | undefined` —
   `requireEnv(ctx, "KEY")` fails by name), `signal` (pass it to anything slow),
-  `messages`, `sessionId`, `send(event, data)` to the browser, `generate(...)`
-  for a one-shot model call, `delegate(...)` for a speaker, `speech` to say
-  something later and `workflows` to start a durable run.
+  `messages`, `sessionId`, `turn` (committed user turns so far), `now()`,
+  `send(event, data)` to the browser, `generate(...)` for a one-shot model call,
+  `delegate(...)` for a speaker, `speech` to say something later and `workflows`
+  to start a durable run.
 - **State across tool calls lives in a `sessionSlot`** — `slot.tool` reads,
-  `slot.updateTool` writes. Never keep it in a module variable: every session
-  shares the module.
+  `slot.updateTool` writes (`require`/`prepare`/`report`: the precondition, the
+  await before the write, the result off the stored value). Never a module
+  variable: every session shares it.
+- **A per-result instruction to the model** is
+  `withInstruction(value, "Read it back in one breath.")`: the model reads it,
+  nothing else does.
 
-`agent-guide/TOOLS.md` has the rest: `ctx` in full, session state, `dialog()`
-and `procedure()`, speakers and the roster, `clientTool()` (a tool the browser
-runs), the built-in tool table, `/utils`, `/html`, persistence and the speech
-helpers.
+`agent-guide/TOOLS.md` has the rest: `ctx` in full, session state, `dialog()`,
+speakers, `clientTool()`, starting a run, the builtin table, `/utils`, `/html`,
+persistence and the speech helpers.
 
 ## `system-prompt.md` IS the system prompt
 
@@ -296,17 +296,17 @@ You are a concise, friendly assistant.
 
 Three rules, each a build error naming the file:
 
-- **A file nothing reads is an error.** If `system-prompt.md` exists and
-  `agent.ts` declares a DIFFERENT `systemPrompt`, the build fails rather than
-  ignoring the file.
+- **A file nothing reads is an error**: `system-prompt.md` beside a DIFFERENT
+  `systemPrompt` in `agent.ts` fails the build rather than being ignored.
 - **An empty file is an error**, not a silent fall-through to the framework
   default. Delete the file if that is what you want.
 - **A `system-prompt/` directory is rejected.** One file, no concatenation order
   to guess.
 
-Composing a prompt from the file plus computed text, and a per-request prompt
-resolver, are in `agent-guide/AGENT-API.md`. `greeting` stays a field: a
-document goes in a file, a value stays in the call.
+**Computed text goes in `agent({ promptContext })`** — a menu, today's facts, or
+a function of the session resolved per request — and is appended under the file.
+Never import the file to compose it (`agent-guide/AGENT-API.md`). `greeting`
+stays a field: a document goes in a file, a value stays in the call.
 
 ## Voice rules for systemPrompt
 
@@ -388,8 +388,6 @@ eval suites) — `agent-guide/TESTING-EVALS.md`.
 
 ## Gotchas
 
-- **Tool execute must return a value.** A missing return = `undefined` in LLM
-  context = the model thinks the tool failed.
 - **`verbatimModuleSyntax` is on**: `import type { ToolContext }`, or
   `import { agent, type ToolContext }`.
 - **There is no global `JSX` namespace** (React 19): type a component's return
@@ -400,16 +398,17 @@ eval suites) — `agent-guide/TESTING-EVALS.md`.
   `toolCalls`** — the effect re-fires every render and duplicates.
 - **Never await `ctx.speech.say(...).done` inside a tool's `execute`** — the
   line waits behind the reply that tool is part of.
-- **Never call `Math.random()` in a tool** — use `ctx.random`, which a spec can
-  substitute. A workflow body uses its journaled `ctx.random()`.
+- **Never call `Math.random()` or `Date.now()` in a tool** — use `ctx.random`
+  and `ctx.now()`, which a spec can pin. A workflow body uses its journaled
+  `ctx.random()` / `ctx.now()`.
 - **The LLM loop runs one step's tool calls CONCURRENTLY**: serialize a
   read-modify-write over anything outside a slot with `createKeyedLock`
   (`/utils`).
 - **The network builtins refuse private IPs** (SSRF). Use public URLs.
 - **`run_code` refuses under `aai dev`/`aai start`** unless the shell sets
   `AAI_RUN_CODE=deno`: each call then runs in its own Deno 2 with no network,
-  file or env access. Deployed, it runs in the platform's sandbox. Or use the
-  `calculate` builtin for simple arithmetic.
+  file or env access. Deployed, it runs in the platform's sandbox. `calculate`
+  covers simple arithmetic.
 - **There is no `ctx.db`.** A tool that persists brings its own client — see
   "Persisting data" in `agent-guide/TOOLS.md`. A secret is read when the sandbox
   is BUILT, so a newly set `DATABASE_URL` arrives on the next deploy.

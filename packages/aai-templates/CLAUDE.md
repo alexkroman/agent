@@ -123,24 +123,33 @@ from `SUBPATHS` (which must cover the `exports` map exactly).
 **A tool that touches session state is `slot.tool` or `slot.updateTool`, never a
 `tool()` that opens with `slot.get(ctx)`.** The declaration makes "does this
 write?" visible and the wrong answer a compile error (what a read receives is
-frozen). A tool where only ONE branch writes stays a plain `tool()` and calls
-`slot.update` in that branch (`tabletop-rpg-agent`'s `oracle` `chaos_check`):
-`updateTool` bodies must be synchronous and would open a mutation window on
-branches that store nothing.
+frozen). The declaration carries the rest of the shape too, so none of it is
+hand-forwarded in the body: `require` is the precondition (a `ToolFailure` off
+the frozen value, run before `prepare` and again before the window), `prepare`
+is the await a mutating body needs first (its answer is `execute`'s THIRD
+argument, ahead of `ctx`), and `dialog`/`when`/`send` is the gate
+(`SlotToolDef`, `packages/aai/src/sdk/session-slot-types.ts`). A plain `tool()`
+that must await and then write uses
+`slot.transact(ctx, { require, prepare, commit })`; only a tool where ONE branch
+writes stays a `tool()` calling `slot.update` in that branch
+(`tabletop-rpg-agent`'s oracle), since a window on a branch that stores nothing
+is the wrong declaration.
 
-**A derived field belongs in the slot's `after` hook; a tool that REPORTS it
-reads a PREDICATE.** `update()` runs `mutate(draft)` and only then
-`after(draft)`, so a result built in the body carries the pre-recalculation
-value. Put a predicate beside the writer (`isGameOver`/`inCrisis`) and let
-`after` own the write.
+**A derived field belongs in the slot's `after` hook, which runs on EVERY store;
+a tool that REPORTS it declares `report`.** `after` runs on the default, on
+`set`, on `reset` and on the empty projected frame as well as after `update`, so
+a default never precomputes one (`SessionSlotOptions.after`). A result built in
+the body still carries the pre-`after`, pre-`caps` draft, so
+`report: (stored, partial) => …` reads it off the stored value instead
+(`SlotUpdateToolDef.report`).
 
-**A pure helper over slot state takes `DeepReadonly<T>`, aliased once per
-template** (`FrozenGameState`, `FrozenOrderState`, …). `slot.get`/`slot.tool`
-hand out a deep-readonly value and `readonly string[]` does not satisfy
-`string[]`; a mutable draft still satisfies the alias. When the widening is
-awkward, make the lookup generic (`emergency-dispatch-agent`'s `findIncident`)
-or copy the array into a fresh result (`resourceBrief`). A client renders
-`DeepReadonly<State>` — what the projection produces.
+**A pure helper over slot state takes `SlotValueOf<typeof slot>`, a mutator
+takes `SlotDraftOf<typeof slot>`** — never a per-template `Frozen*` alias over
+`DeepReadonly<T>`. `slot.get`/`slot.tool` hand out a deep-readonly value and
+`readonly string[]` does not satisfy `string[]`; a mutable draft still satisfies
+the value type. When the widening is awkward, make the lookup generic
+(`emergency-dispatch-agent`'s `findIncident`) or copy the array into a fresh
+result. A client renders what the projection produces.
 
 **The LLM loop runs one step's tool calls CONCURRENTLY**, so a read-modify-write
 tool body over non-slot state needs `createKeyedLock`/`withLock`
@@ -161,8 +170,12 @@ can be wrong for releases. Drive every tool you add.
 
 Rules the table carries that apply to any template:
 
-- A slot whose `create()` pulls a seed uses `useAgentState("slot", fallback)`,
-  not the projection overload, or the seed ships to the browser.
+- A slot whose `create()` pulls a seed declares `empty` beside `view`
+  (`SessionSlotOptions.empty`), so `useAgentState(slot.projected)` renders the
+  empty shape and the seed never ships to the browser; a slot with a `view` is
+  declared `sync: true` rather than listed on `agent({ syncState })`.
+- A slot's default is a plain value (cloned per install) unless it is computed;
+  a factory exists for the seed, not for the clone.
 - Do not call `spokenOrdinal` beside `resolveOne`; it consults it internally.
 - Name a subagent in code when the tool IS the choice; put it on
   `agent({ roster })` when the caller's words are. Give every speaker an
@@ -171,16 +184,29 @@ Rules the table carries that apply to any template:
   a `ToolFailure`.
 - `ToolDef.onError` is a classifier: re-throw to make a failure fatal instead of
   a model retry loop.
-- `agent({ outputGuardrails })` is pipeline-only; `agent({ description })` is
-  for humans choosing the agent, not the model.
+- `agent({ outputGuardrails })` is pipeline-only; `agent({ listing })` is for
+  humans choosing the agent, not the model (`description` is its deprecated
+  alias on `agent()`; on a tool it is the model's).
+- A per-outcome instruction to the model is `withInstruction(value, "…")`, never
+  an invented `message`/`say`/`guidance` field the prompt begs the model to
+  read.
+- A tool's icon and label are `tool({ ui })`, served with the declaration;
+  `mountClient({ tools })` is an override, not the home.
+- A tool reads the clock and the turn from `ctx.now()` and `ctx.turn`, never
+  `Date.now()` or a counter kept in a slot.
+- A no-argument tool omits `inputSchema` rather than writing `z.object({})`.
 - Step code imports from `@alexkroman1/aai/step` (zero-zod), not the root.
 - `@alexkroman1/aai/tools` functions return `T | ToolFailure` — narrow with
   `isToolFailure`; a `catch` cannot see a refused search, and an unhandled one
   reads as "no results".
-- Specs: use `toolRunner(agentDef)` rather than a per-spec wrapper; assert
-  refusals with `expectDialogRefused`/`dialogRefusalPattern`, never a regex on
-  the sentence; wrap a lone `expectDeployable` in `expect(…).not.toThrow()`;
-  stub step HTTP with `installStubStepFetch`/`stubStepFetch`, never
+- Specs: open with `describeAgent(agentDef, (run) => …)` and call tools through
+  the DEF (`run(toolDef, args)`), never a per-spec wrapper or a restated result
+  schema; read eval results with `toolResultIn(calls, toolDef)` and
+  `lastStateIn(events, slot.projected)`; assert refusals with
+  `expectDialogRefused`/`dialogRefusalPattern`, never a regex on the sentence;
+  the three slot invariants are one `expectSlotContract(slot, { write, caps })`;
+  stub step I/O with `installStubWorld`, which also seeds `ASSEMBLYAI_API_KEY`
+  (so no `vi.stubEnv` for it; `apiKey: false` for the missing-key spec), never
   `globalThis.fetch`.
 
 ## A flow is WHERE A CONVERSATION IS, and a board is not one
@@ -191,33 +217,38 @@ id, and a per-entity constraint is a `ToolFailure` from the lookup, not a flow.
 Do not read a position as a summary of the data. Reading order and each
 template's account: `EXEMPLARS-CLAUDE.md`, "Dialog templates".
 
-- **A tool legal in EVERY state is not a flow tool.** Keep it an ordinary
-  `tool()`/`slot.updateTool` that calls `dialog.send` itself.
-- **`sendFrom` goes BELOW `execute`** (next section). It is also where "did this
-  actually do the thing" lives: send nothing when nothing happened.
-- **A `final` state delivers no events**, so restarting is `dialog.reset`.
+- **A tool legal in EVERY state omits `when`** and keeps `dialog`/`send`: it
+  never refuses, still answers the `{ ...position, result }` envelope, and the
+  SDK sends for it — never spread `dialog.send(ctx, …)` into a result by hand
+  (`DialogGate.when`).
+- **`sendFrom` is where "did this actually do the thing" lives**: send nothing
+  when nothing happened. Three spellings, no source-order rule: the callback,
+  the field name (`sendFrom: "next"`, a key holding the event type or
+  `undefined`), or the second argument `flow.tool(def, { sendFrom })`
+  (`DialogSendOptions`).
+- **A side effect a phase change owns is the state's `onEnter`** — clearing a
+  scratch slot, stamping a time — not a transition plus an `events.ts`; it may
+  write other slots and never sends its own dialog (`DialogStateSpec.onEnter`).
+- **A `final` state delivers no events**, so restarting is `dialog.reset`, or
+  `reset: true` on the setup tool that begins a fresh pass.
 - **A refusal short-circuits before the tool body**, including any bookkeeping a
   per-agent wrapper does; say so at the wrapper.
 - **A state with a `timeout` must not transition on chatter** unless you want
   every turn to re-arm it: the deadline runs from the dialog's last MOVE.
 
-### A `sendFrom` goes BELOW `execute`
+### A per-agent wrapper is rarely needed, and copies the SDK's signature
 
-Declare `sendFrom` after `execute`. Real tool bodies are contextually typed
-inline arrows whose return type is inferred after `sendFrom` is checked, so
-written first, `result` is `unknown` and you get `TS18046` (the same for a body
-ending in a generic call like `planSlot.update`). `dialog.test-d.ts` uses an
-annotated function reference and so does not show this. With `NoInfer` it is a
-compile error, not silence: delete absorbing guards (`"x" in result &&`,
-`isToolFailure(result) ? … : …` in a `summary`) rather than adding them.
-
-- **A per-agent wrapper copies the SDK's signature, not its `Exclude`:** declare
-  `execute: (…) => R | ToolFailure` and let union inference subtract the failure
-  arm; `summary` takes `NoInfer<R>`. `Exclude<NoInfer<R>, ToolFailure>` does not
-  distribute over a non-naked type parameter.
-- **Every arm of the result union must have the field `sendFrom` reads.** A
-  return through a declared type or an inner union gains no `?: never` keys; add
-  `field: undefined` at that return.
+A gated slot tool is one
+`slot.updateTool({ dialog, when, require, prepare, report, send })` declaration,
+so the wrapper that forwarded a gate and a precondition by hand is gone. Where
+one survives (an activity log), it copies the SDK's signature, not its
+`Exclude`: declare `execute: (…) => R | ToolFailure` and let union inference
+subtract the failure arm; a `summary` takes `NoInfer<R>`, since
+`Exclude<NoInfer<R>, ToolFailure>` does not distribute over a non-naked type
+parameter. With `NoInfer` a `sendFrom` reading a missing field is a compile
+error, not silence: delete absorbing guards (`"x" in result &&`) rather than
+adding them, and use the field form of `sendFrom` when a union's arms would
+otherwise each need `field: undefined`.
 
 ### A dialog is a plain state map now
 
@@ -226,10 +257,9 @@ No `setup({ types })`, no `xstate` import, no `meta: { instruction }`;
 union is synthesized from the `on` keys. `packages/aai/src/sdk/CLAUDE.md` has
 the rationale.
 
-- **An ungated tool reports its position by SPREADING it:**
-  `return { incidentId: id, ...callFlow.send(ctx, { type: "LOGGED" }) }` — never
-  rename `state`/`done`/`instruction`, or the model reads its position under two
-  key sets.
+- **A tool that reports its position declares `dialog` with no `when`** and
+  returns its own result; the envelope's `state`/`done`/`instruction` keys are
+  the SDK's, so the model reads its position under one key set.
 - **A spec pins the POSITION as well as the refusal** — that it moved, and did
   not move on a failure — using `expectToolOk`/`expectDialogOk`.
 
@@ -274,11 +304,26 @@ A `describe("the run is DURABLE")` block calling `runWorkflow`
 
 ### Where the declaration and body go
 
-A `workflowApp()` declares its workflow in `agent.ts`; a voice agent whose tools
-start, poll or cancel the run declares it in `shared.ts`, because a tool cannot
-import `agent.ts` (`virtual:aai/agent` imports every `tools/` file). The body
-and its steps go in `workflows/*.ts` by convention, so a spec can import the
-steps alone. `template-layout-gate.test.ts` enforces placement.
+`workflows/<name>.ts` default-exports the def
+(`workflow({ description, input, output }).body(flow)` — the two-phase form, so
+the body may name `WorkflowInputOf<typeof def>` in the same module) and is
+REGISTERED as `<name>` by `aai build`, `aai dev` and `virtual:aai/agent`
+(`workflowRegistry`, `packages/aai/src/sdk/manifest-workflows.ts`). A voice
+agent declares nothing and its tools import `../workflows/<name>.ts` directly —
+no `shared.ts` detour for the def; a `workflowApp()` imports the def into its
+required `workflows` map. A `workflows/` file with no default def is a helper
+and is skipped. `template-layout-gate.test.ts` enforces placement.
+
+### A tool reaches a run by the session's key, and the SDK speaks the status
+
+`ctx.workflows.start(def, input)` keys the run by the session
+(`StartOptions.key` defaults to `"session"`), and `latest(def)` / `live(def)`
+read it back; a hand-written `request/status/progress/cancel` quartet is the
+`workflow_status`/`workflow_progress`/`workflow_cancel` builtins plus
+`describeRun`/`cancelNote` on the def. A signal is `ctx.waitForSignal(label)` in
+the body and `ctx.workflows.signalRun(def, "session", label, payload)` in the
+tool — no `tokens.ts` module holding a string two files must agree on
+(`packages/aai/src/sdk/workflow-signals.ts`).
 
 ### A step can authenticate now, so no template's I/O is a fixture
 
@@ -307,19 +352,18 @@ the same work, so (rule stated in `sdk/map-concurrent.ts`'s module doc):
 **A workflow input carries an upload id, never bytes** — inputs are journaled
 and replayed. Declare `uploads: [...]` and read windows with `stepReadUpload`.
 
-### A transcription step is the SDK's; the boundaries are the template's
+### Transcribing an upload from a body is one call, and a poll is `ctx.poll`
 
-Use `stepTranscribeUpload`/`Submit`/`Poll` and `stepTranscribeSync` wrapped in
-`orFail` (`orFail(stepTranscribeSubmit)`, which turns `TranscribeError`'s
-`retryable`/`retryAfter` into the engine's verdict). The SDK cannot ship a step
-— a step is what a body wraps in `ctx.step(name, fn)` — so the template owns
-which steps exist, i.e. what is journaled and what a retry repeats.
-
-- Keep upload and submit as separate steps, so a submit retry does not re-upload
-  the file.
-- `stepTranscribePoll` returns the transcript; do not fetch it again.
-- `meeting-recap-agent` keeps its hand-written poll on purpose (its status is a
-  value its Query port and saga read); do not convert it.
+`transcribeUploadDurably(ctx, uploadId, opts)` (`@alexkroman1/aai/step`) is
+upload, submit and poll as three journaled steps under fixed names
+(`TRANSCRIBE_DURABLY_STEPS`), each classified, with the "not lost,
+`GET /v2/transcript/<id>`" refusal on budget expiry — a template writes no loop
+and no `MAX_POLLS` of its own. Any other submit-then-check shape is
+`ctx.poll(name, check, { everyMs, maxMs, done, first, slowAfterMs })`, never a
+hand-rolled `for (poll < MAX)` with a `ctx.sleep` inside; narration between
+steps is `ctx.report`. The primitives (`stepTranscribeUpload`/`Submit`/`Poll`,
+`stepTranscribeSync`) stay for a shape the composition does not fit —
+`transcription-workflow`'s sync fan-out — wrapped in `orFail`.
 
 ### A run can be the SCHEDULE
 
@@ -332,10 +376,20 @@ reason in the digest rather than a failed run.
 
 ### A step that SPEAKS returns an id
 
-`spoken-summary-workflow`: speak and store in ONE step (a step is journaled by
-its return value, so an id replays and bytes do not); ask the model for a
-required `spoken` field; derive voices from `ASSEMBLYAI_TTS_VOICES`, since a
-wrong id fails silently in band. See `STEP-IO-CLAUDE.md`.
+`spoken-summary-workflow`: speak and store in ONE step — `stepSpeakToUpload`
+(`/step-files`), which is the step result (a step is journaled by its return
+value, so an id replays and bytes do not); ask the model for a required `spoken`
+field; derive voices from `ASSEMBLYAI_TTS_VOICES`, since a wrong id fails
+silently in band. The ffmpeg shell (materialize → probe → run → store) is
+`transcodeUpload` on the same subpath. See `STEP-IO-CLAUDE.md`.
+
+### A `system:` string never restates the JSON shape
+
+`stepGenerateJson` and `ctx.generate({ schema })` append the schema themselves,
+so "Reply with JSON only: {…}" prose beside a `schema:` is a second copy that
+drifts; per-field guidance is `.describe()` on the schema field, and an array
+cap is `.transform((a) => a.slice(0, N))` in the schema (`guard-invariants` rule
+39).
 
 ### ffmpeg is what lets a desk cut a recording where a HUMAN would
 
@@ -400,13 +454,16 @@ in its result.
 ## `system-prompt.md` IS the system prompt
 
 A document goes in a file, a value stays in the call: `greeting` and `sttPrompt`
-stay fields. `withSystemPrompt` (`@alexkroman1/aai/manifest`) owns the rules and
-its module doc the argument. A `system-prompt.md` alongside a different prompt
-STRING in `agent.ts` is a build error, and so is an empty file — a silently
-ignored prompt produces an agent that behaves plausibly and wrongly. The check
-compares VALUES, so composing a string from the file passes, and a
-`systemPrompt` RESOLVER passes unchecked (it closes over its own `?raw` import).
-`_discovery.ts` resolves prompts for `templates.test.ts`.
+stay fields, and text computed beside the file — a menu, a status block, a
+per-request line over a slot — is `agent({ promptContext })`, appended under it
+(`AgentPromptContext`, `packages/aai/src/sdk/agent-instructions.ts`). **No
+template imports `system-prompt.md?raw`**: `withSystemPrompt`
+(`@alexkroman1/aai/manifest`) owns the rules and its module doc the argument. A
+`system-prompt.md` alongside a different prompt STRING in `agent.ts` is a build
+error, and so is an empty file — a silently ignored prompt produces an agent
+that behaves plausibly and wrongly. A `systemPrompt` RESOLVER is for an agent
+taking over the WHOLE prompt. `_discovery.ts` resolves prompts for
+`templates.test.ts`.
 
 **`coding-agent` is TEXT-mode** (`mode: "text"`), so `createRuntime` refuses it
 and it ships its own front door, `chat.ts` — the only entry point in

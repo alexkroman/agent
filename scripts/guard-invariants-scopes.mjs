@@ -169,6 +169,28 @@ export const SCRIPT_PATHSPECS = ["scripts/*.mjs", "scripts/**/*.mjs"];
 export const TEMPLATE_PATHSPECS = ["packages/aai-templates/templates"];
 
 /**
+ * Rule 39's scope: the templates' shipped SOURCE — what a user copies — minus
+ * the specs, the prose and the data.
+ *
+ * Narrower than {@link TEMPLATE_PATHSPECS} on purpose. A spec's stubbed model
+ * reply IS a JSON shape (`'{"headline":"H"}'`), a `system-prompt.md` may tell a
+ * voice agent anything, and a fixture is data; none of them is a `system:`
+ * string handed to a model beside a `schema:`. The three exclusions name the
+ * exact extensions, so a new source extension defaults IN, as it should.
+ *
+ * Both `*.test.ts` and `*.test.tsx`, for {@link TEST_FILE_PATHSPECS}'s reason:
+ * a pathspec is fnmatch, and the `.tsx` spec is one extension away from every
+ * finding this corpus exists to keep out.
+ */
+export const TEMPLATE_SOURCE_PATHSPECS = [
+  ...TEMPLATE_PATHSPECS,
+  ":!packages/aai-templates/templates/**/*.test.ts",
+  ":!packages/aai-templates/templates/**/*.test.tsx",
+  ":!packages/aai-templates/templates/**/*.md",
+  ":!packages/aai-templates/templates/**/*.json",
+];
+
+/**
  * Rule 33's scope: this repo's own test files.
  *
  * `.tsx` is listed separately and not folded into a brace pattern, because a
@@ -358,6 +380,11 @@ export const SCAN_CORPORA = [
   },
   { what: "rule 12's guest HTTP-surface scan", pathspecs: GUEST_SURFACE_PATHSPECS, minFiles: 20 }, // 32
   { what: "rule 13's template scan", pathspecs: TEMPLATE_PATHSPECS, minFiles: 100 }, // 175
+  {
+    what: "rule 39's template-source scan",
+    pathspecs: TEMPLATE_SOURCE_PATHSPECS,
+    minFiles: 80,
+  }, // 352
   { what: "rule 33's test-file scan", pathspecs: TEST_FILE_PATHSPECS, minFiles: 600 }, // 850
   {
     what: "rule 26's shipped workflow-body scan",

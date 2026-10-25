@@ -29,7 +29,9 @@ import `"@alexkroman1/aai-ui/styles.css"` first.
 import "@alexkroman1/aai-ui/styles.css";
 import { mountClient } from "@alexkroman1/aai-ui";
 
-mountClient({ name: "My Agent" });
+// The title, greeting and each tool's icon come from the server (`agent()` and
+// `tool({ ui })`), so there is nothing to restate here.
+mountClient({ theme: { primary: "#e05a3a", mode: "dark" } });
 ```
 
 ### Tier 1 with sidebar
@@ -52,7 +54,7 @@ function Sidebar() {
   );
 }
 
-mountClient({ name: "My Agent", sidebar: Sidebar });
+mountClient({ sidebar: Sidebar });
 ```
 
 ### Tier 2 — full custom component
@@ -86,18 +88,19 @@ mountClient({ component: MyApp });
 
 ### `mountClient()` config
 
-| Field          | Type                     | Default   | Description                              |
-| -------------- | ------------------------ | --------- | ---------------------------------------- |
-| `name`         | `string`                 | —         | Header/start screen title (tier 1)       |
-| `component`    | `ComponentType`          | —         | Custom root component (tier 2)           |
-| `sidebar`      | `ComponentType`          | —         | Sidebar alongside default chat (tier 1)  |
-| `sidebarWidth` | `string`                 | `"18rem"` | CSS width of sidebar                     |
-| `theme`        | `ClientTheme`            | —         | `{ bg, primary, text, surface, border }` |
-| `target`       | `string \| HTMLElement`  | `"#app"`  | Mount target                             |
-| `tools`        | `ToolDisplayConfig`      | —         | Icon/label overrides per tool name       |
-| `client`       | `string \| () => string` | —         | `?client=`; `"auto"` = per-browser id    |
+| Field          | Type                     | Default    | Description                                                          |
+| -------------- | ------------------------ | ---------- | -------------------------------------------------------------------- |
+| `name`         | `string`                 | the server | Page title; the agent's `name` unless overridden                     |
+| `component`    | `ComponentType`          | —          | Custom root component (tier 2)                                       |
+| `sidebar`      | `ComponentType`          | —          | Sidebar alongside default chat (tier 1)                              |
+| `sidebarWidth` | `string`                 | `"18rem"`  | CSS width of sidebar                                                 |
+| `theme`        | `ClientTheme`            | —          | `{ primary, mode?: "dark" \| "light" }`, or all five tokens (below)  |
+| `css`          | `string`                 | —          | A page stylesheet (`@keyframes`, a font face) — no `<style>` element |
+| `target`       | `string \| HTMLElement`  | `"#app"`   | Mount target                                                         |
+| `tools`        | `ToolDisplayConfig`      | the server | Icon/label OVERRIDES per tool name; declare them on `tool({ ui })`   |
+| `client`       | `string \| () => string` | —          | `?client=`; `"auto"` = per-browser id                                |
 
-Beside a `component`, `sidebar` still renders; `name` becomes the page title.
+Beside a `component`, `sidebar` still renders.
 
 ### `useSession()` return type
 
@@ -147,30 +150,31 @@ want for anything that can be a string, an array, or null.
 **`useAgentState`** — the agent's session state, pushed automatically:
 
 ```ts no-check
-// shared.ts — the slot owns the shape AND its one view; `agent()` has no
-// `state` field. staffPin is not in the view, so it stays server-side, and the
-// agent and the client cannot name different views of it.
-export const cartSlot = sessionSlot("cart", () => ({ cart: [] as Item[], staffPin: "" }), {
+// shared.ts — the slot owns the shape AND its one view; `agent()` names nothing.
+// staffPin is not in the view, so it stays server-side, and the agent and the
+// client cannot name different views of it. `sync: true` registers the
+// projection (agent.ts must import this module).
+export const cartSlot = sessionSlot("cart", { cart: [] as Item[], staffPin: "" }, {
   view: (s) => ({ cart: s.cart }),
+  sync: true,
 });
-export const cartProjection = cartSlot.projected;
-
-// agent.ts — the frame is keyed by the slot's own name
-export default agent({ syncState: cartProjection });
 
 // client.tsx — selects `state.cart`; the projection types it AND supplies the
 // frame rendered before the first push, so no type argument and no `?? EMPTY`.
-const view = useAgentState(cartProjection);
+const view = useAgentState(cartSlot.projected);
 return <Cart items={view.cart} />;
 ```
 
 Passing the projection is the shape to copy. The frame is `{ [slot]: view }`,
-one key per slot. The other overloads: `useAgentState()` is the whole frame or
-`null`; `useAgentState<S>("cart")` is one slot by name, `S | null` (nothing is
-pushed before the first tool call); `useAgentState("cart", fallback)` returns
-`S` for an empty frame you build yourself — reach for it only when the slot's
-factory is expensive to import into the browser. `selectAgentState("cart")` is
-the same slot as a `useSessionSelector` selector.
+one key per slot. A SEEDED slot (a catalogue, demo accounts) declares `empty`
+beside `view`, so the frame before the first push is the empty shape and the
+seed never ships to the browser. The other overloads: `useAgentState()` is the
+whole frame or `null`; `useAgentState<S>("cart")` is one slot by name,
+`S | null` (nothing is pushed before the first tool call);
+`useAgentState("cart", fallback)` returns `S` for an empty frame you build
+yourself — only for a slot whose module cannot be imported into the browser at
+all. `selectAgentState("cart")` is the same slot as a `useSessionSelector`
+selector.
 
 **Reach for this before wiring `useToolResult` into `useState`.** Without it the
 pattern is: return a cart snapshot from every tool, declare a type describing
@@ -192,7 +196,13 @@ useEvent<DataType>("event_name", (data) => { ... })
 Server: `ctx.send("order", { total: "$14.99" })` — Client:
 `useEvent("order", (data) => ...)`.
 
-**`useTheme`** — returns `{ bg, primary, text, surface, border }`.
+**`useTheme`** — returns the resolved `{ bg, primary, text, surface, border }`.
+
+**`useRoute` / `routeFetch`** — one of the agent's own `routes`, resolved
+against the page: `routeFetch("api/calls", { method: "POST", headers })` and
+`useRoute("api/calls/1", { every: 2000, until: (call) => call.done, headers })`,
+which re-reads on that interval until `until` says so and stops on unmount. The
+`headers` carry an `authorization` for an `apiKeyRoute`.
 
 **`useToolCallStart`** — fires when a tool call begins (status `"pending"`).
 
@@ -227,6 +237,7 @@ Available from `@alexkroman1/aai-ui`:
 | `MessageList`       | —                                                                  | Messages with auto-scroll, tool calls, transcript                                                                         |
 | `Controls`          | —                                                                  | Stop/Resume, New Conversation and End Call buttons                                                                        |
 | `Button`            | —                                                                  | Styled button                                                                                                             |
+| `SessionStateDot`   | `colors?`                                                          | The live state as a dot and a word, coloured from the theme; `colors` overrides a group (`idle`/`live`/`busy`) or a state |
 | `UploadProgressBar` | `upload, onPause?, onResume?`                                      | Bytes in flight, with pause/resume                                                                                        |
 
 **Forms are declared, not written.** `<Form onSubmit>` collects typed values off
@@ -236,19 +247,30 @@ components — `TextField`, `TextAreaField`, `NumberField`, `SelectField`,
 `Field`/`FieldShell` are what a custom control wraps itself in to match them.
 For a workflow app there is usually no field markup at all:
 `<WorkflowFields workflow="name" />` fetches that workflow's input schema and
-renders a control per field, so a page written against one workflow serves
-another.
+renders a control per scalar field, plus a `string[]` as
+`<TextAreaField split="lines">` and a `{ name, text }` object as
+`<FileField as="namedText">` (a draft read in the browser); `render` asks for
+either by property name where the schema does not say.
 
 ```tsx no-check
 import { Form, WorkflowFields } from "@alexkroman1/aai-ui";
+import type agentDef from "./agent.ts";
 
+// Typed by the app: a workflow name the agent does not declare is a compile error.
 <Form onSubmit={(values) => submit(values)} error={error}>
-  <WorkflowFields workflow="digest" />
+  <WorkflowFields<typeof agentDef> workflow="redline" render={{ mustCover: "lines" }} />
 </Form>;
 ```
 
-`transcription-workflow` is the all-declared version; `link-digest-workflow`
-writes its form by hand, which is what the two are for.
+**Every workflow hook takes the app type the same way** —
+`useWorkflowSubmit<typeof agentDef>("redline")`, `useWorkflowStream`,
+`useWorkflowRuns` — so the name is checked and the input and output are typed
+from the def. What `useWorkflowSubmit` hands back carries `timing`
+(press-to-settle `performance.now` marks) and `scope` (`"tab"` by default;
+`"browser"` with `{ key: { storage: "local" } }`), which
+`<WorkflowPendingNote submission={…}>` renders along with the upload's `paused`.
+`transcription-workflow` is the all-declared form; `link-digest-workflow` writes
+its form by hand, which is what the two are for.
 
 The usual shape — note `StartScreen` **wraps** the app rather than sitting
 beside it; writing `<StartScreen ... />` self-closing is a
@@ -275,7 +297,9 @@ mountClient({ component: PizzaApp });
 - **Tailwind CSS v4** — compiled at bundle time, configured via CSS. Do NOT
   create `tailwind.config.js` — it will be ignored.
 - Use Tailwind classes for layout, `useTheme()` for dynamic colors.
-- Set theme: `mountClient({ theme: { bg, primary, text, surface, border } })`.
+- Set theme: `mountClient({ theme: { primary, mode: "dark" } })` derives the
+  four neutrals; `{ bg, primary, text, surface, border }` sets all five. The
+  tokens are on `:root` as `--aai-*`, so a `css` sheet may use them.
 - Override CSS custom properties for extra tokens: `--color-aai-*`,
   `--radius-aai`, `--font-aai`.
 - Always import `"@alexkroman1/aai-ui/styles.css"` at the top of `client.tsx`.
