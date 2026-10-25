@@ -105,8 +105,10 @@ otherwise.
   `stored-value.ts`, `linked-client.ts`, `phone.ts` — a device twin page's
   plumbing.
 - `_workflow-api-ref.ts` / `_repeat-until.ts` — the client-in-a-ref preamble and
-  the bounded-read loop the workflow hooks share; `upload/` — upload gate,
-  pause, recall, report, file claiming, entered through `upload/index.ts`.
+  the bounded-read loop the workflow hooks share; `_submission.ts` — the tail
+  the two submit hooks share (statechart, watch, controls, stopwatch, the
+  returned submission); `upload/` — upload gate, pause, recall, report, file
+  claiming, entered through `upload/index.ts`.
 - `workflow-client.ts` — `createWorkflowApi`, the re-exported workflow types.
 - `types.ts` — UI types, `VOICE_CAPTURE_CONSTRAINTS`.
 - `components/`, `worklets/`, `contracts/` — see the directory guides.

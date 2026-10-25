@@ -47,8 +47,8 @@ gate, recall and report coalescing).
   read by the session AND by the inbox, the mounts and the hooks;
   `_session-core-test-utils.ts` is the socket double the inbox and mount specs
   dial through too. The workflow hooks (`use-workflow-*.ts`, `_workflow-*.ts`,
-  `_run-controls.ts`, `_submission-state.ts`) stay at `src/` because the
-  `use-*.ts` konsistent conventions key on that path.
+  `_run-controls.ts`, `_submission*.ts`) stay at `src/` because the `use-*.ts`
+  konsistent conventions key on that path.
 
 ## Client config lookup (`client-config.ts`)
 
@@ -368,6 +368,12 @@ Reports what the run WROTE (`useWorkflowRun` reports its state).
   no tokens, no `current ?? found`. A body reports through `progress`/`started`,
   refused once its signal aborts; leaving `submitting` (unmount included)
   cancels its gate. Never add a flag beside it.
+- **Each hook owns only its BODY** (`begin`: the gate and the work for one
+  press); the watch, the controls, `pending`, the stopwatch, `reset` and the
+  returned `WorkflowSubmission` are `useSubmission` (`_submission.ts`), once for
+  both. A field added to the submission is added THERE, so the two cannot
+  disagree. `useWorkflowApiRef` stays in each hook file
+  (`ui-workflow-hook-api-ref` keys on it) and the getter is passed in.
 - **Files**: every `File` in the values is stored via `api.uploadStream()` under
   an id the hook MINTS (so an interrupted upload can resume), then the id is
   substituted and the run started. `WorkflowSubmission.upload` reports bytes and
