@@ -90,10 +90,13 @@ describe("latest / live", () => {
     expect(await client.live("digest", "nobody")).toBeUndefined();
   });
 
-  test("both default the key to the `session` literal, which the raw client cannot resolve", async () => {
+  test("a keyless call on the per-runtime client is refused: no session resolves `session`", async () => {
     const { client } = await seeded();
-    expect(await client.latest(digest)).toBeUndefined();
-    expect(await client.live(digest)).toBeUndefined();
+    // Not `undefined`: that read as "no such run" from every route, body and
+    // script, which have no session for the default to mean.
+    await expect(client.latest(digest)).rejects.toThrow(/this client has no session/);
+    await expect(client.live(digest, "session")).rejects.toThrow(/this client has no session/);
+    expect(await client.latest(digest, "sess-1")).toMatchObject({ runId: "wrun_3" });
   });
 });
 

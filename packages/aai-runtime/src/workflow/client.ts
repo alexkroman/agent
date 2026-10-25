@@ -313,17 +313,19 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
 
     async latest(
       workflow: AnyWorkflowDef | string,
-      key: string = SESSION_KEY,
+      key?: string,
     ): Promise<WorkflowRunSnapshot | undefined> {
       // `find` with a limit of one — newest first, so the head is the answer.
-      return (await findOne(resolve(workflow).name, key, 1))[0];
+      return (await findOne(resolve(workflow).name, keyOnThisClient("latest", key), 1))[0];
     },
 
-    live(
+    // `async` so the key refusal is a rejection like every other failure here,
+    // never a synchronous throw out of a promise-returning method.
+    async live(
       workflow: AnyWorkflowDef | string,
-      key: string = SESSION_KEY,
+      key?: string,
     ): Promise<WorkflowRunSnapshot | undefined> {
-      return liveByKey(resolve(workflow).name, findOne, key);
+      return await liveByKey(resolve(workflow).name, findOne, keyOnThisClient("live", key));
     },
 
     findByKey(key: string, options?: FindByKeyOptions): Promise<WorkflowRunSnapshot[]> {
@@ -524,4 +526,24 @@ function safeJsonSchema(
 function unknownWorkflowMessage(named: string, declared: readonly string[]): string {
   const list = declared.length > 0 ? declared.join(", ") : "(none)";
   return `Workflow "${named}" is not declared on this agent. Declared workflows: ${list}.`;
+}
+
+/**
+ * The key `latest`/`live` look up on THIS client, which has no session.
+ *
+ * Both default to the literal `"session"`, which a session-scoped client
+ * (`workflow/client-session.ts`) resolves to its session id before the call
+ * reaches here; `start` DROPS the same literal here for the same reason. A
+ * route, a body or a script holding this per-runtime client and calling
+ * either keyless was answered `undefined` — a silent nothing, indistinguishable
+ * from "no such run". Refused by name instead, as `signalTokenFor` refuses a
+ * missing key.
+ */
+function keyOnThisClient(method: "latest" | "live", key: string | undefined): string {
+  if (key !== undefined && key !== SESSION_KEY) return key;
+  throw new Error(
+    `workflows.${method}(): the key "session" means the session id, and this client has no ` +
+      "session — it is the per-runtime client a route, a body or a script holds. Pass the key " +
+      'the run was started with; a tool\'s ctx.workflows resolves "session" itself.',
+  );
 }
