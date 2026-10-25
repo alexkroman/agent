@@ -5,6 +5,7 @@ import {
   omitUndefined,
   type TypedDelegateResult,
   toolFailure,
+  withInstruction,
 } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
@@ -104,20 +105,22 @@ export default briefingSlot.tool({
       return toolFailure(`The check did not come back: ${errorMessage(err)}`);
     }
 
-    return {
-      claim,
-      // The word the desk BRANCHES on, as a word — not a sentence it has to
-      // read a word out of.
-      verdict: verdict?.verdict ?? null,
-      detail,
-      searches,
-      checkedAgainst: source?.angle ?? null,
-      ...omitUndefined({ unusable }),
-      message: unusable
+    return withInstruction(
+      {
+        claim,
+        // The word the desk BRANCHES on, as a word — not a sentence it has to
+        // read a word out of.
+        verdict: verdict?.verdict ?? null,
+        detail,
+        searches,
+        checkedAgainst: source?.angle ?? null,
+        ...omitUndefined({ unusable }),
+      },
+      unusable
         ? "The checker never gave a clear verdict. Tell the caller it is unresolved " +
-          "and offer to research it properly — do not present this as confirmation."
+            "and offer to research it properly — do not present this as confirmation."
         : "Say the verdict plainly, in the caller's words. If it is contradicted, " +
-          "correct what you told them earlier rather than defending it.",
-    };
+            "correct what you told them earlier rather than defending it.",
+    );
   },
 });

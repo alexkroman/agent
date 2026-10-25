@@ -35,9 +35,9 @@ import { desk } from "./shared.ts";
  */
 export default agent({
   name: "Briefing Desk",
-  // The listing line — a registry row, the studio's picker. "At once" is the
-  // part worth a reader's attention: it is what the subagents below buy.
-  description: "Researches a subject from several angles at once and reads back what was found",
+  // "At once" is the part worth a reader's attention: it is what the subagents
+  // below buy.
+  listing: "Researches a subject from several angles at once and reads back what was found",
   greeting:
     "Briefing desk. Tell me a subject and I'll put a few researchers on it — " +
     "try something like, what's going on with home battery prices.",

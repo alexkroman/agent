@@ -16,10 +16,7 @@ import { remind, research } from "./shared.ts";
 // means five on the HOME's clock, and a deployed agent's machine is not in the home.
 export default agent({
   name: "Home Assistant",
-  // One line for whoever is reading a LIST of agents — `aai list`, a registry
-  // page, the studio's picker. Never the model: what the model is told is
-  // `system-prompt.md`, beside this file.
-  description: "Alexa-style home assistant: weather, quick answers, reminders and deep research",
+  listing: "Alexa-style home assistant: weather, quick answers, reminders and deep research",
   // The first thing a caller hears. Without one the agent waits for them to speak.
   greeting: "Hi, what can I do for you?",
   // Only the speaking stage is declared; speech-to-text and the LLM are the defaults.

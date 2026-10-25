@@ -22,7 +22,12 @@
  * which is exactly the duplication moving it there removed.
  */
 
-import { type DeepReadonly, type ToolFailure, toolFailure } from "@alexkroman1/aai";
+import {
+  type DeepReadonly,
+  type SlotValueOf,
+  type ToolFailure,
+  toolFailure,
+} from "@alexkroman1/aai";
 import {
   type ChannelMessage,
   type ChannelSection,
@@ -31,7 +36,10 @@ import {
   slackChannel,
 } from "@alexkroman1/aai/channels";
 import { plural } from "@alexkroman1/aai/utils";
-import { type Finding, type FrozenBriefing, totalWork } from "./shared.ts";
+import { type briefingSlot, type Finding, totalWork } from "./shared.ts";
+
+/** The board as `send_briefing` reads it: frozen, the way a slot hands it out. */
+type Board = SlotValueOf<typeof briefingSlot>;
 
 /**
  * The variable holding the desk's channel.
@@ -79,7 +87,7 @@ export function briefingChannel(webhookUrl: string): SlackChannel | ToolFailure 
  * WHOLE message, so it stands on its own rather than repeating a heading that
  * arm will never render.
  */
-export function briefingMessage(board: FrozenBriefing): ChannelMessage {
+export function briefingMessage(board: Board): ChannelMessage {
   const topic = board.topic ?? "an unnamed subject";
   const angles = board.findings.length;
   return {
@@ -102,7 +110,7 @@ function findingSection(finding: DeepReadonly<Finding>): ChannelSection {
 }
 
 /** What the briefing cost, as the desk is willing to say it in writing. */
-function costLine(board: FrozenBriefing): string {
+function costLine(board: Board): string {
   const { searches, reads } = totalWork(board.findings);
   return `${searches} ${plural(searches, "search", "searches")}, ${reads} ${plural(reads, "page")} read`;
 }

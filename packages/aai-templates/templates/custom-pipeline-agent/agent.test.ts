@@ -1,20 +1,12 @@
 import { expectDeployable } from "@alexkroman1/aai-runtime/testing";
-import { describe, expect, test } from "vitest";
+import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
+import { expect, test } from "vitest";
 import agentDef from "./agent.ts";
 
-describe("custom-pipeline-agent template", () => {
-  test("is deployable: validates, is nameable, and every stage its mode needs is filled", () => {
-    // The three invariants every starter owes, thrown by name — the same
-    // conversion `aai build`/`aai deploy` run, so an invalid provider
-    // combination or tuning fails here rather than at the first live session.
-    // The name is deliberately NOT the literal: `aai init <project>` scaffolds
-    // this file verbatim, so a pinned name would be a test about the TEMPLATE
-    // inside somebody else's project — and renaming the agent is the first
-    // thing they will do. `not.toThrow()` because the helper's throw IS the
-    // finding: vitest quotes the message, which names the invariant that went.
-    expect(() => expectDeployable(agentDef)).not.toThrow();
-  });
-
+// The three invariants every starter owes — the config passes the conversion
+// `aai build`/`aai deploy` run, the platform can name it, every stage its mode
+// needs is filled — are `describeAgent`'s built-in case, thrown by name.
+describeAgent(agentDef, () => {
   test("declares at least one stage itself, which is what makes it a pipeline", () => {
     // WHICH stage is deliberately not asserted: `agent.ts` invites you to move
     // the declaration ("Declare only the stage you want elsewhere"), so naming
