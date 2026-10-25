@@ -193,8 +193,8 @@ reverse — a new target is a new file plus two lines.
   `node_modules`, `/health` + `/client-config` + `/`, a `/websocket` dial (to
   `session.configured`, no key spent), and exit 0 on SIGTERM.
 - **The bundle's `node:` imports are pinned** to `PORTABLE_NODE_BUILTINS`
-  (`_target-bundle.ts`); `FEATURE_DETECTED_NODE_BUILTINS` (`node:sqlite`) must
-  never be a static import.
+  (`_target-bundle.ts`); `FEATURE_DETECTED_NODE_BUILTINS` (`node:sqlite`, and
+  `node:cluster`, which only `--workers` loads) must never be a static import.
 - **Bun floor is 1.4.0** (below it undici crashes on import and a bundled `ws`
   upgrade writes zero bytes). `minVersion` on the bun arm, CI pins 1.4.2, and
   `runtime-pins-gate.test.ts` fails if the pin drops below the floor. A binary

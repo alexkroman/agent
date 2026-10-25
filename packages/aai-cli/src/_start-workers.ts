@@ -36,7 +36,10 @@
  * and fails the command instead of looping.
  */
 
-import cluster, { type Worker } from "node:cluster";
+// Type-only: `start.ts` is in the graph of every `aai build --target` entry,
+// and Deno and Bun do not implement `node:cluster` — it is loaded only when
+// `--workers` forks (`loadCluster`).
+import type { Cluster, Worker } from "node:cluster";
 import type { Socket } from "node:net";
 import { availableParallelism } from "node:os";
 import type { ClientNotifier } from "@alexkroman1/aai/host-internal";
@@ -193,6 +196,20 @@ export interface WorkerLike {
   send(message: PrimaryMessage, socket?: Socket): boolean;
 }
 
+/**
+ * Is this process a `--workers` worker? What `cluster.isWorker` reads
+ * (`NODE_UNIQUE_ID`, set by `cluster.fork`), plus the slot only our fork sets —
+ * without importing `node:cluster`.
+ */
+export function isStartWorker(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.NODE_UNIQUE_ID !== undefined && env[SLOT_ENV] !== undefined;
+}
+
+/** `node:cluster`, loaded on demand — see the import note at the top. */
+export async function loadCluster(): Promise<Cluster> {
+  return (await import("node:cluster")).default;
+}
+
 /** The slice of `node:cluster` the supervisor drives — a seam, so the unit tier forks nothing. */
 export interface ClusterLike {
   fork(env: Record<string, string>): WorkerLike;
@@ -204,7 +221,7 @@ export interface ClusterLike {
  * `node:cluster` behind {@link ClusterLike}. Structured-clone IPC, because a
  * relayed notice can carry audio (`Uint8Array`), which JSON would mangle.
  */
-export function nodeCluster(): ClusterLike {
+export function nodeCluster(cluster: Cluster): ClusterLike {
   cluster.setupPrimary({ serialization: "advanced" });
   const wrapped = new Map<Worker, WorkerLike>();
   const like = (worker: Worker): WorkerLike => {

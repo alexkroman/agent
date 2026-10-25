@@ -42,7 +42,6 @@
  * and it is why the scaffold moves this package to `dependencies`.
  */
 
-import cluster from "node:cluster";
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -65,7 +64,14 @@ import { DEPLOY_ENV_FILES, resolveServerEnv } from "./_server-common.ts";
 import { startLogger, workerLogger } from "./_start-log.ts";
 import { listenServer, runStart, type StartResult } from "./_start-run.ts";
 import { processLink } from "./_start-worker.ts";
-import { DEFAULT_DRAIN_TIMEOUT_S, nodeCluster, SLOT_ENV, SLOTS_ENV } from "./_start-workers.ts";
+import {
+  DEFAULT_DRAIN_TIMEOUT_S,
+  isStartWorker,
+  loadCluster,
+  nodeCluster,
+  SLOT_ENV,
+  SLOTS_ENV,
+} from "./_start-workers.ts";
 import { stopProjectServer } from "./_stop-server.ts";
 import { defaultUi } from "./_ui.ts";
 
@@ -205,7 +211,7 @@ async function buildProjectServer(
     // in this process's log.
     await ensureSessionStateSchema({ url: env.DATABASE_URL, logger });
     await ensureWorkflowJournalSchema({ url: env.DATABASE_URL, logger });
-  } else if (cluster.isPrimary) {
+  } else if (!isStartWorker()) {
     // Say that this process is the only place the state lives, because the next
     // thing an operator does with a container is run two of them. It is not
     // only about restarts: the browser reconnects with `?sessionId=`, so a
@@ -262,18 +268,22 @@ export async function executeStart(options: ProjectServerOptions): Promise<Start
   // A worker's runtime lines are tagged with its slot and its boot dump left to
   // slot 0 (`_start-log.ts`); `runStart` says when the boot is over.
   const base = startLogger(defaultUi.silenced);
-  const tagged = cluster.isWorker ? workerLogger(base, Number(process.env[SLOT_ENV])) : undefined;
+  const isWorker = isStartWorker();
+  const tagged = isWorker ? workerLogger(base, Number(process.env[SLOT_ENV])) : undefined;
   const logger = tagged?.logger ?? base;
+  const workers = options.workers ?? 1;
+  // Only a primary that will fork loads `node:cluster` (see `loadCluster`).
+  const forking = !isWorker && workers > 1 ? await loadCluster() : undefined;
   return runStart(
     {
       port,
       host,
-      workers: options.workers ?? 1,
+      workers,
       drainTimeoutMs: options.drainTimeoutMs ?? DEFAULT_DRAIN_TIMEOUT_S * 1000,
       maxCallsPerWorker: options.maxCallsPerWorker ?? Number.POSITIVE_INFINITY,
     },
     {
-      isWorker: cluster.isWorker,
+      isWorker,
       slot: () => ({ slot: Number(process.env[SLOT_ENV]), slots: Number(process.env[SLOTS_ENV]) }),
       load: () => loadProject(cwd),
       build: ({ agent, env }) => buildProjectServer(cwd, agent, env, logger),
@@ -283,7 +293,10 @@ export async function executeStart(options: ProjectServerOptions): Promise<Start
         builtAgentPath(cwd);
       },
       startTracing,
-      cluster: nodeCluster,
+      cluster: () => {
+        if (!forking) throw new Error("node:cluster was not loaded: this process does not fork");
+        return nodeCluster(forking);
+      },
       link: processLink,
       listen: listenServer,
       // SIGHUP too: the `--workers` primary reads it as a rolling restart, and a

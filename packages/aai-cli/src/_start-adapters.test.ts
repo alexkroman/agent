@@ -10,7 +10,7 @@ import { EventEmitter } from "node:events";
 import { Socket } from "node:net";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { type IpcProcess, processLink } from "./_start-worker.ts";
-import { nodeCluster, type WorkerMessage } from "./_start-workers.ts";
+import { isStartWorker, nodeCluster, type WorkerMessage } from "./_start-workers.ts";
 
 afterEach(() => {
   cluster.removeAllListeners("message");
@@ -26,9 +26,18 @@ function emittedWorker(connected = true) {
   };
 }
 
+describe("isStartWorker", () => {
+  test("only a cluster-forked process our fork gave a slot", () => {
+    expect(isStartWorker({ NODE_UNIQUE_ID: "1", AAI_START_SLOT: "0" })).toBe(true);
+    expect(isStartWorker({ AAI_START_SLOT: "0" })).toBe(false);
+    expect(isStartWorker({ NODE_UNIQUE_ID: "1" })).toBe(false);
+    expect(isStartWorker({})).toBe(false);
+  });
+});
+
 describe("nodeCluster", () => {
   test("wraps an emitting worker ONCE, forwarding messages, kills and sends", () => {
-    const adapter = nodeCluster();
+    const adapter = nodeCluster(cluster);
     const raw = emittedWorker();
     const seen: unknown[] = [];
     adapter.onMessage((worker, message) => seen.push([worker, message]));
@@ -45,7 +54,7 @@ describe("nodeCluster", () => {
   });
 
   test("a send to a disconnected worker is dropped, not thrown", () => {
-    const adapter = nodeCluster();
+    const adapter = nodeCluster(cluster);
     const raw = emittedWorker(false);
     let wrapped: ReturnType<typeof adapter.fork> | undefined;
     adapter.onMessage((worker) => {
@@ -57,7 +66,7 @@ describe("nodeCluster", () => {
   });
 
   test("an exit is reported with its code and signal", () => {
-    const adapter = nodeCluster();
+    const adapter = nodeCluster(cluster);
     const exits: unknown[] = [];
     adapter.onExit((worker, code, signal) => exits.push([worker.pid, code, signal]));
     cluster.emit("exit", emittedWorker(), 1, null);

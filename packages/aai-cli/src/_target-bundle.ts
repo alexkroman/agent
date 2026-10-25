@@ -172,11 +172,15 @@ export const PORTABLE_NODE_BUILTINS: readonly string[] = [
  * inside a `try` that tolerates `ERR_UNKNOWN_BUILTIN_MODULE`, and
  * `SqliteCacheStore` requires it lazily in a constructor nothing here calls.
  *
+ * `cluster` is `aai start --workers`'s (`loadCluster` in `_start-workers.ts`):
+ * a dynamic import reached only when a primary forks, which a `--target` entry
+ * never does — Deno and Bun do not implement it.
+ *
  * The spec pins the guard rather than trusting this comment: a name here must
  * never appear as a STATIC import in the bundle, which is what would make it a
  * load-time dependency again.
  */
-export const FEATURE_DETECTED_NODE_BUILTINS: readonly string[] = ["sqlite"];
+export const FEATURE_DETECTED_NODE_BUILTINS: readonly string[] = ["sqlite", "cluster"];
 
 /** Bundle `source` as if it were a module in `cwd`, and answer the code. */
 export async function bundleTargetEntry(
