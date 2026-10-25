@@ -2,42 +2,25 @@
 /**
  * What a reload has to remember BESIDES the key: which MODE started the run.
  *
- * A `runId` names a run for as long as something holds it, and the page holds it
- * in React state — so a refresh loses it while the fan-out carries on
- * transcribing. `useWorkflowSubmit({ key, recover: true })` is the fix; the key
- * itself is `useRunKey()` (`@alexkroman1/aai-ui`), which owns the minting, the
- * storage and the argument for both. What is left here is the value that is
- * this PAGE's own concept — the mode — plus the sentence the page says while a
- * run it did not start is arriving.
+ * `useWorkflowSubmit` keeps the correlation key that finds a run again and
+ * `<WorkflowPendingNote>` says the sentence for each of its states. What is
+ * left is the value that is this PAGE's own concept — the mode — and it is its
+ * own module for two reasons:
  *
- * It is its own module for two reasons, and only the second is about keeping
- * `client.tsx` down to the page's shape:
- *
- * - **A template's spec is what makes its exemplar code true**, and none of this
- *   can be tested from a `client.tsx`. That file ends in a `mountPage()` call and
- *   imports a stylesheet, and this package's suites have no DOM at all: the
- *   vitest `include` matches `.test.ts` and not `.test.tsx`, and the scaffold
- *   declares no React testing library — so a `client.test.tsx` would be
- *   collected by nothing here AND would break `aai test` in a scaffolded
- *   project. Here the decisions are ordinary functions, so `recover.test.ts`
- *   pins them; what only a DOM can show (that the hook adopts the run, once,
- *   and never over a submit) is `aai-ui`'s own suite.
+ * - **A template's spec is what makes its exemplar code true**, and none of
+ *   `client.tsx` is reachable from a test: it mounts on import, and this
+ *   package's suites have no DOM. Here the decisions are ordinary functions, so
+ *   `recover.test.ts` pins them.
  * - The mode recall has a REAL branch in it: what comes back out of storage is
  *   an untrusted string, and a page that trusted it would index `WORKFLOWS`
  *   with it and start a run by the name `undefined` — a 400 from a value nobody
  *   typed.
  *
- * ## The two values keep the same lifetime, and it is not a coincidence
- *
- * The mode lives in `sessionStorage`, which is the store `useRunKey()` defaults
- * to and the same lifetime as the SDK's own upload recall (`useWorkflowSubmit`
- * remembers the id it minted, so picking the same file again sends only the
- * windows that did not land). All three halves of a reload therefore make the
- * same promise: a mode remembered longer than the key that finds the run would
- * open the desk on a flow with nothing behind it.
+ * The mode lives in `sessionStorage`, which is the store the hook's own key
+ * defaults to, so the two halves of a reload make the same promise: a mode
+ * remembered longer than the key that finds the run would open the desk on a
+ * flow with nothing behind it.
  */
-
-import type { UploadStatus } from "@alexkroman1/aai-ui";
 
 /** Where the mode that last submitted lives between loads. */
 const MODE_STORAGE = "transcription-workflow:mode";
@@ -86,69 +69,4 @@ export function recalledMode<M extends string>(valid: readonly M[], fallback: M)
   } catch {
     return fallback;
   }
-}
-
-/** What {@link pendingNote} needs to know about the run in flight. */
-export type PendingNoteInput = {
-  /**
-   * Whether this flow's run can be picked up after a reload at all.
-   *
-   * False for the streaming flow, and the sentence has to say so — see
-   * {@link pendingNote}.
-   */
-  recoverable: boolean;
-  /** Whether THIS load pressed Transcribe. A reload cannot have. */
-  startedHere: boolean;
-  /** Whether a run has arrived yet, which on a reload means the lookup landed. */
-  found: boolean;
-  /**
-   * The submission's own upload status, or `undefined` when no bytes are moving.
-   *
-   * The SDK's {@link UploadStatus} rather than the one boolean read below,
-   * because this is a page-state type and what a later sentence will want is
-   * the rest of it — which part, how many, how far. It is REQUIRED rather than
-   * optional: every one of the three hooks reports one, so a caller that leaves
-   * it out has silently dropped a branch rather than declined a feature.
-   */
-  upload: UploadStatus | undefined;
-};
-
-/**
- * What the desk says while something is in flight — six situations, one line
- * each.
- *
- * The one that earns this function is the streaming arm: that flow's run reads
- * the recording as this page sends it, so a reload does not orphan that run, it
- * ENDS it — `workflows/stream.ts` gives an upload that stops growing
- * `MAX_IDLE_POLLS` before it calls the uploader gone and fails the
- * run. A page telling a reader they can close the tab would be wrong in the
- * mode this desk opens in.
- *
- * **A PAUSE is that same fact arriving through a button**, which is why it is
- * tested first and why the two paused sentences differ. `<UploadProgressBar>`
- * offers pause on every mode, and the module doc of `client.tsx` says what it
- * costs: with no run yet it costs nothing at all, and in streaming mode the run
- * is already watching an upload it will give up on. The desk knew that and said
- * it nowhere — a reader who paused was told "reloading is safe" while the clock
- * on their run ran down.
- *
- * The other three are the ordinary recovery copy, and the reload case gets its
- * own words deliberately: somebody who did not press the button is owed an
- * explanation for a transcript appearing in front of them, and it is the line
- * that stops them sending the recording again.
- *
- * @param input - See {@link PendingNoteInput}.
- * @returns One sentence, always.
- */
-export function pendingNote(input: PendingNoteInput): string {
-  const { recoverable, startedHere, found, upload } = input;
-  if (upload?.paused === true)
-    return recoverable
-      ? "Upload paused — nothing has started yet, so resume whenever you are ready."
-      : "Upload paused — resume within a few minutes: the run has already started and gives up on a recording that stops arriving.";
-  if (!recoverable)
-    return "Keep this tab open — the run is reading the recording as this page sends it, so a reload ends the run.";
-  if (startedHere) return "Reloading is safe — this page will find the run again.";
-  if (!found) return "Looking for a transcript this tab started earlier…";
-  return "Still transcribing a recording this tab sent earlier — no need to send it again.";
 }

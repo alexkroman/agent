@@ -149,7 +149,7 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
   if (cuttable(head.bytes, stored.size) && !heavierThanNormalized(head.bytes, stored.size)) {
     // No subprocess, no copy, no second upload. The overwhelmingly common case
     // for a desk whose form says WAV, and the reason the check is a 64 KB read.
-    await stepReport(`${stored.name || uploadId} is already linear-PCM WAV — cutting it as it is.`);
+    await stepReport(`${stored.label} is already linear-PCM WAV — cutting it as it is.`);
     return { recording: uploadId, converted: false };
   }
 
@@ -163,7 +163,7 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
   // can cut" for the second one is a line that contradicts the file they
   // uploaded.
   await stepReport(
-    `Converting ${stored.name || uploadId} (${formatBytes(stored.size)}) — ` +
+    `Converting ${stored.label} (${formatBytes(stored.size)}) — ` +
       (cuttable(head.bytes, stored.size)
         ? `heavier per second than ${NORMALIZED_SAMPLE_RATE / 1000} kHz mono.`
         : "not a WAV we can cut."),
@@ -223,7 +223,7 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
         // Named after the ORIGINAL, so a download reads as the recording it came
         // from. The extension has to change with the bytes: a file served as
         // `audio/wav` under a `.m4a` name is one no player will open.
-        name: `${basename(stored.name || uploadId, extname(stored.name || uploadId))}.wav`,
+        name: `${basename(stored.label, extname(stored.label))}.wav`,
         type: "audio/wav",
       });
 

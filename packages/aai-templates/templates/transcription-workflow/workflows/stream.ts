@@ -385,11 +385,11 @@ export async function transcribeStreamFlow(input: { recording: string }, ctx: Wo
             ready,
             segmentConcurrency((plan as StreamPlan).format),
             (segment) =>
-              // `maxAttempts: 6` was `transcribeSegment.maxRetries = 5`.
+              // `maxWaits`, as the classic flow: a 429 is waited out, not charged.
               ctx.step(
                 "transcribeSegment",
                 () => transcribeSegment(input.recording, (plan as StreamPlan).format, segment),
-                { maxAttempts: 6 },
+                { maxWaits: 3 },
               ),
           )),
         );
