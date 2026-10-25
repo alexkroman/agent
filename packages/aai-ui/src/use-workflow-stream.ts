@@ -87,6 +87,7 @@ import type {
 import { useCallback } from "react";
 import { useRunControls } from "./_run-controls.ts";
 import { useSubmissionState } from "./_submission-state.ts";
+import { useSubmissionTiming } from "./_submission-timing.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import { fileFields, filesOf } from "./_workflow-files.ts";
 import {
@@ -96,14 +97,16 @@ import {
   sendThroughGate,
   type UploadGate,
 } from "./upload/index.ts";
-import type {
-  UploadStatus,
-  UseWorkflowSubmitOptions,
-  WorkflowSubmission,
-} from "./use-workflow-form.ts";
+import type { UseWorkflowSubmitOptions } from "./use-workflow-form.ts";
 import { useWorkflowRun } from "./use-workflow-run.ts";
 import type { WorkflowApi } from "./workflow-client.ts";
-import type { SubmitInputOf } from "./workflow-def-types.ts";
+import type {
+  SubmitInputOf,
+  WorkflowAppLike,
+  WorkflowDefOf,
+  WorkflowNameOf,
+} from "./workflow-def-types.ts";
+import type { UploadStatus, WorkflowSubmission } from "./workflow-submission.ts";
 
 /**
  * Options for {@link useWorkflowStream}.
@@ -156,13 +159,13 @@ export type UseWorkflowStreamOptions = {
 /**
  * What {@link useWorkflowStream} returns: a {@link WorkflowSubmission}, exactly.
  *
- * The same eight fields `useWorkflowSubmit` returns, of which this hook is a
+ * The same fields `useWorkflowSubmit` returns, of which this hook is a
  * drop-in sibling — same `<Form>`, same `<UploadProgressBar>`, same
- * `<WorkflowProgress>`. An ALIAS rather than a second declaration of the eight:
+ * `<WorkflowProgress>`. An ALIAS rather than a second declaration of them:
  * the two have to agree field for field to be drop-in, and two copies of a type
  * that have to agree are two copies that can stop agreeing.
  *
- * Exactly two of the fields mean something different here, and both differences
+ * Exactly three of the fields mean something different here, and all three
  * follow from WHEN the run is created — it exists before its bytes do:
  *
  * - `submit()` resolves when the UPLOAD finishes, not when the run is accepted;
@@ -172,6 +175,9 @@ export type UseWorkflowStreamOptions = {
  * - `run` is set from the moment the run EXISTS, which here is before the bytes
  *   are in. That is what lets a page render `<WorkflowProgress>` beside the
  *   upload bar rather than after it.
+ * - `scope` is always `"none"`: the run is reading the bytes THIS page sends,
+ *   so a reload does not orphan it, it ENDS it — and `<WorkflowPendingNote>`
+ *   says so instead of promising the run will be found again.
  */
 export type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmission<R, I>;
 
@@ -200,10 +206,24 @@ export type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmiss
  *
  * @public
  */
+export function useWorkflowStream<
+  App extends WorkflowAppLike = never,
+  Name extends WorkflowNameOf<App> = WorkflowNameOf<App>,
+>(
+  workflow: Name,
+  options?: UseWorkflowStreamOptions,
+): WorkflowStreamSubmission<
+  WorkflowOutputOf<WorkflowDefOf<App, Name>>,
+  SubmitInputOf<WorkflowDefOf<App, Name>>
+>;
 export function useWorkflowStream<D extends AnyWorkflowDef>(
   workflow: string,
+  options?: UseWorkflowStreamOptions,
+): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
+export function useWorkflowStream(
+  workflow: string,
   options: UseWorkflowStreamOptions = {},
-): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>> {
+): WorkflowStreamSubmission<unknown, never> {
   const { api, key, intervalMs, parallel } = options;
   const getClient = useWorkflowApiRef(api);
 
@@ -216,13 +236,17 @@ export function useWorkflowStream<D extends AnyWorkflowDef>(
   const form = useSubmissionState();
   const { runId, actions } = form;
 
-  const tracked = useWorkflowRun<WorkflowOutputOf<D>>(runId, omitUndefined({ api, intervalMs }));
+  const tracked = useWorkflowRun<unknown>(runId, omitUndefined({ api, intervalMs }));
   // Same two controls as `useWorkflowSubmit` — this hook returns an ALIAS of
   // that hook's type, so a field missing here is a lie in the shared type.
   const { wake, cancel } = useRunControls(runId, getClient);
+  const pending = form.busy || tracked.polling;
+  const stopwatch = useSubmissionTiming(pending);
+  const { markSubmitted, clear: clearTiming } = stopwatch;
 
   const submit = useCallback(
     (input: unknown) => {
+      markSubmitted();
       const client = getClient();
       const gate = createUploadGate();
       return actions.submit(gate, async ({ progress, started: adopt }) => {
@@ -262,22 +286,30 @@ export function useWorkflowStream<D extends AnyWorkflowDef>(
         }
       });
     },
-    [workflow, key, parallel, getClient, actions],
+    [workflow, key, parallel, getClient, actions, markSubmitted],
   );
+
+  const reset = useCallback(() => {
+    clearTiming();
+    actions.reset();
+  }, [actions, clearTiming]);
 
   return {
     submit,
     submitForm: submit,
-    reset: actions.reset,
+    reset,
     wake,
     cancel,
     pauseUpload: actions.pauseUpload,
     resumeUpload: actions.resumeUpload,
     run: tracked.run,
     startedHere: form.startedHere,
-    pending: form.busy || tracked.polling,
+    pending,
     upload: form.upload,
     error: form.startError ?? tracked.error,
+    timing: stopwatch.timing,
+    // Nothing will find this run again — see `WorkflowStreamSubmission`.
+    scope: "none",
   };
 }
 

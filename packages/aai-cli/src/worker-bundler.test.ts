@@ -31,7 +31,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
-import { describe, expect } from "vitest";
+import { describe, expect, vi } from "vitest";
 import { linkSdkNodeModules, test } from "./_test-utils.ts";
 import { buildWorker } from "./worker-bundler.ts";
 
@@ -134,6 +134,67 @@ describe("tool discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
     // The whole point of discovery: this class of mistake is named at build
     // time instead of becoming a tool that fails on every turn.
     await expect(loadWorker(dir)).rejects.toThrow(/broken\.ts/);
+  });
+});
+
+describe("workflow discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
+  const workflowSource = (description: string) =>
+    `import { workflow } from "@alexkroman1/aai";\n` +
+    `export default workflow({ description: ${JSON.stringify(description)}, run: async () => 1 });\n`;
+
+  /** The built worker's workflow names and descriptions. */
+  async function loadWorkflows(dir: string): Promise<Record<string, string | undefined>> {
+    const code = await buildWorker(dir, { runtime: false });
+    const out = path.join(dir, "worker.mjs");
+    await fs.writeFile(out, code, "utf-8");
+    const mod = (await import(pathToFileURL(out).href)) as {
+      default: { workflows?: Record<string, { description?: string }> };
+    };
+    return Object.fromEntries(
+      Object.entries(mod.default.workflows ?? {}).map(([name, def]) => [name, def.description]),
+    );
+  }
+
+  test("a workflows/ file default-exporting a def is registered under the file name", async ({
+    tmpDir: dir,
+  }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+    await fs.mkdir(path.join(dir, "workflows"));
+    await fs.writeFile(path.join(dir, "workflows", "digest.ts"), workflowSource("Digest"), "utf-8");
+    // A body's helper, and a spec: imported (the helper) or skipped (the spec),
+    // registered neither way.
+    await fs.writeFile(path.join(dir, "workflows", "prompts.ts"), "export const P = 1;\n", "utf-8");
+    await fs.writeFile(
+      path.join(dir, "workflows", "digest.test.ts"),
+      "export default { nope: true };\n",
+      "utf-8",
+    );
+
+    expect(await loadWorkflows(dir)).toEqual({ digest: "Digest" });
+  });
+
+  test("an explicit agent({ workflows }) entry wins a clash and the rest merge", async ({
+    tmpDir: dir,
+  }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(
+      path.join(dir, "agent.ts"),
+      `import { agent, workflow } from "@alexkroman1/aai";\n` +
+        `export default agent({ name: "T", workflows: { digest: workflow({ description: "Declared", run: async () => 1 }) } });\n`,
+      "utf-8",
+    );
+    await fs.mkdir(path.join(dir, "workflows"));
+    await fs.writeFile(path.join(dir, "workflows", "digest.ts"), workflowSource("File"), "utf-8");
+    await fs.writeFile(path.join(dir, "workflows", "recap.ts"), workflowSource("Recap"), "utf-8");
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      expect(await loadWorkflows(dir)).toEqual({ digest: "Declared", recap: "Recap" });
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/workflows\/digest\.ts/));
+    } finally {
+      warn.mockRestore();
+    }
   });
 });
 

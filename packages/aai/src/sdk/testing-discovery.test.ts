@@ -90,6 +90,19 @@ describe("deployedAgent", () => {
     );
   });
 
+  test("workflows alone register a workflows/ file's default export under its name", async () => {
+    const { workflow } = await import("./workflow.ts");
+    const digest = workflow({ run: async () => 1 });
+    const def = deployedAgent(agent({ name: "Desk" }), {
+      workflows: {
+        "./workflows/digest.ts": { default: digest },
+        "./workflows/prompts.ts": { P: 1 },
+      },
+    });
+    expect(def.workflows).toEqual({ digest });
+    expect(def.systemPrompt).toBe(DEFAULT_SYSTEM_PROMPT);
+  });
+
   test("an EMPTY tools glob is refused — the silent half of the same bug", () => {
     // `import.meta.glob("./tool/*.ts")`, or a tools/ directory that moved:
     // lowering nothing is indistinguishable from not lowering at all, and the

@@ -132,6 +132,37 @@ async function discoverToolFiles(cwd: string): Promise<string[]> {
   );
 }
 
+/** A type test beside a workflow file is not a workflow either. */
+const WORKFLOW_SPEC_RE = /\.(?:test|spec|test-d)\.[^.]+$/;
+
+/**
+ * The project's `workflows/` directory, as file names relative to it — the
+ * other directory a file beside `agent.ts` can BE the thing in.
+ *
+ * Same mechanism and same reason as {@link discoverToolFiles}: the guest has no
+ * filesystem, so the enumeration is here and the RULES are `workflowRegistry`'s
+ * (`@alexkroman1/aai/manifest`). It is deliberately looser than the tools
+ * scan on one axis and the registry carries the argument: a `workflows/` file
+ * that does not default-export a def is a body's helper, not an error, so
+ * every file is imported and the registry keeps the ones that are workflows.
+ * Flat, not recursive — a nested helper module (`workflows/lib/x.ts`) is
+ * common and is nobody's workflow.
+ */
+async function discoverWorkflowFiles(cwd: string): Promise<string[]> {
+  const root = path.join(cwd, "workflows");
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(root, { withFileTypes: true });
+  } catch (err) {
+    if (errorCode(err) === "ENOENT") return [];
+    throw err;
+  }
+  return entries
+    .filter((e) => e.isFile() && TOOL_MODULE_EXT_RE.test(e.name) && !WORKFLOW_SPEC_RE.test(e.name))
+    .map((e) => e.name)
+    .sort();
+}
+
 /** The prose slot: one file, beside `agent.ts`, named by convention. */
 const SYSTEM_PROMPT_FILE = "system-prompt.md";
 
@@ -171,6 +202,7 @@ async function hasSystemPromptFile(cwd: string): Promise<boolean> {
 function wrapperEntrySource(
   runtime: boolean,
   toolFiles: readonly string[],
+  workflowFiles: readonly string[],
   systemPromptFile: boolean,
 ): string {
   // `import * as` rather than a default import per file: the namespace is what
@@ -182,9 +214,17 @@ function wrapperEntrySource(
   const toolEntries = toolFiles
     .map((file, i) => `  ${JSON.stringify(`tools/${file}`)}: __aaiTool${i},`)
     .join("\n");
+  // The same shape for `workflows/`; `workflowRegistry` keeps the files that
+  // default-export a def and skips a body's helpers.
+  const workflowImports = workflowFiles
+    .map((file, i) => `import * as __aaiWorkflow${i} from "../workflows/${file}";`)
+    .join("\n");
+  const workflowEntries = workflowFiles
+    .map((file, i) => `  ${JSON.stringify(`workflows/${file}`)}: __aaiWorkflow${i},`)
+    .join("\n");
 
   return `import def from "../agent.ts";
-import { agentToolsets, agentToolsToSchemas, toAgentConfig, toolRegistry, withSystemPrompt, withTools } from "@alexkroman1/aai/manifest";
+import { agentToolsets, agentToolsToSchemas, toAgentConfig, toolRegistry, withSystemPrompt, withTools, withWorkflows, workflowRegistry } from "@alexkroman1/aai/manifest";
 ${
   runtime
     ? `import { createRuntime } from "@alexkroman1/aai-runtime";
@@ -193,18 +233,26 @@ import { GUEST_HOST } from "@alexkroman1/aai-runtime/internal";`
 }
 ${systemPromptFile ? `import __aaiSystemPrompt from "../${SYSTEM_PROMPT_FILE}?raw";` : ""}
 ${toolImports}
+${workflowImports}
 // A tool's name is its file name. The map is built here rather than written in
 // agent.ts, so a file that exists is a tool the model can call — there is no
-// registration step to forget.
+// registration step to forget. A \`workflows/<name>.ts\` default-exporting a
+// \`workflow()\` def is registered as \`<name>\` the same way, an explicit
+// \`agent({ workflows })\` entry winning a clash.
 //
 // \`system-prompt.md\` arrives the same way, and the \`?raw\` lives HERE rather
 // than in the author's own \`agent.ts\`: it is a Vite convention, and the whole
 // point of generating this entry is that a bundler feature never has to appear
 // in user-authored space.
-const __aaiAgent = ${systemPromptFile ? "withSystemPrompt(" : ""}withTools(
-  def,
-  toolRegistry({
+const __aaiAgent = ${systemPromptFile ? "withSystemPrompt(" : ""}withWorkflows(
+  withTools(
+    def,
+    toolRegistry({
 ${toolEntries}
+    }),
+  ),
+  workflowRegistry({
+${workflowEntries}
   }),
 )${systemPromptFile ? ", __aaiSystemPrompt)" : ""};
 export default __aaiAgent;
@@ -240,14 +288,15 @@ export async function buildWorker(cwd: string, options: BuildWorkerOptions = {})
   // The two probes are independent reads of the project directory, and this
   // function runs after every settled write burst in the studio — so they
   // overlap with each other and with creating the scratch dir.
-  const [, toolFiles, systemPromptFile] = await Promise.all([
+  const [, toolFiles, workflowFiles, systemPromptFile] = await Promise.all([
     fs.mkdir(path.dirname(wrapperPath), { recursive: true }),
     discoverToolFiles(cwd),
+    discoverWorkflowFiles(cwd),
     hasSystemPromptFile(cwd),
   ]);
   await fs.writeFile(
     wrapperPath,
-    wrapperEntrySource(options.runtime !== false, toolFiles, systemPromptFile),
+    wrapperEntrySource(options.runtime !== false, toolFiles, workflowFiles, systemPromptFile),
     "utf-8",
   );
 

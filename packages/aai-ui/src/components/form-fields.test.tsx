@@ -178,6 +178,33 @@ describe("file fields", () => {
     expect((await submitted(onSubmit)).recording).toBe(file);
   });
 
+  test('as="namedText" contributes { name, text } and nothing else, reading the text', async () => {
+    // The shape a schema declares for a draft — no size, type or mtime for the
+    // schema to strip or refuse.
+    const { onSubmit, submit } = renderForm(
+      <FileField name="source" label="Draft" read="text" as="namedText" />,
+    );
+    fireEvent.change(screen.getByLabelText("Draft"), {
+      target: { files: [new File(["# Draft\n\nhello"], "draft.md", { type: "text/markdown" })] },
+    });
+    submit();
+    expect(await submitted(onSubmit)).toEqual({
+      source: { name: "draft.md", text: "# Draft\n\nhello" },
+    });
+  });
+
+  test('as="namedText" implies the text read, and an upload stays an upload', () => {
+    render(
+      <ThemeProvider>
+        <FileField name="a" label="Named" as="namedText" />
+        <FileField name="b" label="Uploaded" as="namedText" upload />
+      </ThemeProvider>,
+    );
+    expect(screen.getByLabelText("Named")).toHaveAttribute("data-aai-read", "text");
+    expect(screen.getByLabelText("Named")).toHaveAttribute("data-aai-as", "namedText");
+    expect(screen.getByLabelText("Uploaded")).toHaveAttribute("data-aai-read", "upload");
+  });
+
   test("contribute an array when the field takes several", async () => {
     const { onSubmit, submit } = renderForm(
       <FileField name="uploads" label="Recordings" multiple />,

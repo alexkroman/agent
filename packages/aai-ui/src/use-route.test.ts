@@ -6,10 +6,11 @@
  * poll.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import { createMockSessionCore, renderHookWithSession } from "./_react-test-utils.ts";
-import { useRoute } from "./use-route.ts";
+import { type UseRouteOptions, useRoute } from "./use-route.ts";
 
 let fetchMock: Mock<(url: URL, init: RequestInit) => Promise<Response>>;
 const json = (body: unknown, status = 200) =>
@@ -28,10 +29,14 @@ beforeEach(() => {
 const lastUrl = () => String(fetchMock.mock.calls.at(-1)?.[0]);
 
 describe("useRoute", () => {
-  function mount(path: string | null, pollMs?: number) {
+  function mount(
+    path: string | null,
+    pollMs?: number,
+    options: UseRouteOptions<{ ok: unknown }> = {},
+  ) {
     const core = createMockSessionCore({}, { clientId: () => "speaker-7" });
     return renderHookWithSession(
-      () => useRoute<{ ok: boolean }>(path, pollMs ? { pollMs } : {}),
+      () => useRoute<{ ok: unknown }>(path, { ...omitUndefined({ pollMs }), ...options }),
       core,
     );
   }
@@ -81,5 +86,53 @@ describe("useRoute", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  test("sends the caller's headers on every read, read per request", async () => {
+    const hook = mount("/calls", undefined, { headers: { authorization: "Bearer k" } });
+    await waitFor(() => expect(hook.result.current.data).toEqual({ ok: true }));
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ headers: { authorization: "Bearer k" } });
+  });
+
+  test("`every` polls from the SETTLED read, and `until` stops it without stopping reload()", async () => {
+    vi.useFakeTimers();
+    try {
+      let reads = 0;
+      fetchMock.mockImplementation(async () => json({ ok: ++reads >= 3 ? "done" : "going" }));
+      const hook = mount("/calls/1", undefined, {
+        every: 1000,
+        until: (call) => call.ok === "done",
+      });
+      // The poll's first tick is the mount read: not two reads at mount.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      // Third read satisfied `until`, and nothing was read after it.
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(hook.result.current.data).toEqual({ ok: "done" });
+      act(() => hook.result.current.reload());
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      hook.unmount();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("unmounting aborts the read in flight, and nothing lands afterwards", async () => {
+    let seen: AbortSignal | undefined;
+    fetchMock.mockImplementationOnce(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          seen = init.signal ?? undefined;
+          init.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    );
+    const hook = mount("/slow", 1000);
+    expect(seen?.aborted).toBe(false);
+    hook.unmount();
+    expect(seen?.aborted).toBe(true);
   });
 });

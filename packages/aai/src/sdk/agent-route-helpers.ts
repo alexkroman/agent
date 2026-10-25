@@ -12,11 +12,16 @@
  * - {@link route} — a handler with its body validated by a Standard Schema
  *   (zod, valibot…) and, optionally, `req.clientId` required, both answered
  *   400 with the reason before the handler runs.
+ * - {@link apiKeyRoute} — a handler behind a shared secret in the agent's env,
+ *   checked in constant time; the door an app's own API (a caller placing
+ *   calls, a cron) comes through. `webhookRoute` (`standard-webhook.ts`) is
+ *   the same shape for a SIGNED delivery.
  *
  * @module
  */
 
 import { readBrand, setBrand } from "./_boundary.ts";
+import { timingSafeEqual } from "./_timing-safe-equal.ts";
 import {
   type RouteContext,
   type RouteHandler,
@@ -174,5 +179,74 @@ export function route<
       { ...req, body } as ValidatedRouteRequest<InferSchemaOutput<S>, Client>,
       ctx,
     );
+  };
+}
+
+/**
+ * What {@link apiKeyRoute} takes.
+ *
+ * @input
+ * @public
+ */
+export interface ApiKeyRouteOptions {
+  /** The agent-env variable holding the key, e.g. `"CALLS_API_KEY"`. */
+  env: string;
+  /**
+   * The request header the caller sends the key in, lower-case. Default
+   * `"authorization"`, where a `Bearer ` prefix is optional; a custom header
+   * (`"x-api-key"`) is compared as sent.
+   */
+  header?: string;
+}
+
+/** The scheme prefix `authorization` may carry, compared case-insensitively. */
+const BEARER_RE = /^bearer\s+/i;
+
+/**
+ * A route handler that runs `handler` only for a request carrying the key in
+ * `env[options.env]`.
+ *
+ * Three answers, none of which run the handler: an unset variable is a
+ * `503 { error }` naming it — the route is not CONFIGURED, which is the
+ * operator's problem and not the caller's, so it is not a 401 that would send
+ * them checking their key; a missing or wrong key is `401 { error }`. The
+ * compare is constant-time (`_timing-safe-equal.ts`), so a guess learns
+ * nothing from how long a refusal took.
+ *
+ * Routes are as open as the server (see `agent-routes.ts`'s security note),
+ * which is what this is for: the app's own callers hold the key, nobody else
+ * does, and the key never leaves the env — the handler reads what it needs
+ * from the request, not from the credential.
+ *
+ * @example
+ * ```ts
+ * import { agent, apiKeyRoute } from "@alexkroman1/aai";
+ *
+ * export default agent({
+ *   name: "Errand calls",
+ *   routes: {
+ *     "POST /calls": apiKeyRoute({ env: "CALLS_API_KEY" }, async (req, ctx) => {
+ *       const runId = await ctx.workflows.start("call", req.body);
+ *       return { runId };
+ *     }),
+ *   },
+ * });
+ * ```
+ *
+ * @public
+ */
+export function apiKeyRoute(options: ApiKeyRouteOptions, handler: RouteHandler): RouteHandler {
+  const header = (options.header ?? "authorization").toLowerCase();
+  return async (req, ctx) => {
+    const expected = ctx.env[options.env]?.trim();
+    if (!expected) return routeResponse(503, { error: `${options.env} is not set` });
+    const sent = req.headers[header]?.trim() ?? "";
+    const key = header === "authorization" ? sent.replace(BEARER_RE, "") : sent;
+    // Compared even when nothing was sent, so an absent key costs the same as
+    // a wrong one.
+    if (!timingSafeEqual(key, expected)) {
+      return routeResponse(401, { error: `Invalid or missing ${header} key` });
+    }
+    return await handler(req, ctx);
   };
 }

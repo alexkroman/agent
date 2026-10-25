@@ -98,6 +98,8 @@ export * from "./sdk/calendar.ts";
 export type { AgentClientInbox, ClientInboxOptions } from "./sdk/agent-client-inbox.ts";
 /** `route()`'s door checks and a thrown `routeError(400, "…")`: `sdk/agent-route-helpers.ts`. */
 export {
+  type ApiKeyRouteOptions,
+  apiKeyRoute,
   type RouteDef,
   RouteError,
   route,
@@ -129,6 +131,19 @@ export type {
   SessionContextArgs,
   SessionEndContext,
 } from "./sdk/agent-session-lifecycle.ts";
+/**
+ * The signed BRIEF a placed call carries to the session that answers it — what
+ * `stepPlaceCall({ brief })` puts on the call and `call.brief(secret)` reads
+ * back; `readCallBrief`/`signCallBrief` are the same two halves unbound.
+ */
+export {
+  CALL_BRIEF_CHUNK_CHARS,
+  CALL_BRIEF_SECRET_ENV,
+  type CallBrief,
+  MAX_CALL_BRIEF_PROMPT_CHARS,
+  readCallBrief,
+  signCallBrief,
+} from "./sdk/call-brief.ts";
 export * from "./sdk/client-runs-routes.ts";
 // A tool the connected browser page answers — `useClientTool` in `aai-ui`.
 export { type ClientToolDef, clientTool } from "./sdk/client-tool.ts";
@@ -315,7 +330,7 @@ export type {
  * Which phone call a `WS /phone` session is — the carrier, its call id and the
  * stream's custom parameters — read from `ctx.sessionId`. A CLAIM by the far end.
  */
-export { type SessionCall, sessionCall } from "./sdk/session-call.ts";
+export { type SessionCall, type SessionCallInput, sessionCall } from "./sdk/session-call.ts";
 /**
  * Which device a session belongs to, read from `ctx.sessionId` — how a tool hands
  * a run the id `stepNotifyClient` reaches that device by after the call.

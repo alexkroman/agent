@@ -24,9 +24,11 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { createEpoch, type Epoch } from "@alexkroman1/aai/internal";
+import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
+import type { WorkflowAppLike, WorkflowDefOf, WorkflowNameOf } from "./workflow-def-types.ts";
 
 /**
  * Options for {@link useWorkflowRuns}.
@@ -71,7 +73,10 @@ export type UseWorkflowRunsResult<R = unknown> = {
  * Read a workflow's recent runs.
  *
  * @typeParam R - The workflow's output type, so a completed run's `output` is
- *   typed rather than `unknown`. Derive it with `WorkflowOutputOf`.
+ *   typed rather than `unknown`. Derive it with `WorkflowOutputOf` — or name
+ *   the AGENT instead, `useWorkflowRuns<typeof agentDef>("transcribe")`, and
+ *   both the name and the output come off its `workflows` map (see
+ *   `WorkflowNameOf`).
  *
  * @example
  * ```tsx
@@ -85,6 +90,19 @@ export type UseWorkflowRunsResult<R = unknown> = {
  *
  * @public
  */
+export function useWorkflowRuns<
+  App extends WorkflowAppLike,
+  Name extends WorkflowNameOf<App> = WorkflowNameOf<App>,
+>(
+  workflow: Name | undefined,
+  options?: UseWorkflowRunsOptions,
+): UseWorkflowRunsResult<WorkflowOutputOf<WorkflowDefOf<App, Name>>>;
+export function useWorkflowRuns<R = unknown>(
+  // An AGENT type in this position belongs to the overload above, so a name
+  // it does not declare is refused there rather than accepted here as a string.
+  workflow: [WorkflowNameOf<R>] extends [never] ? string | undefined : never,
+  options?: UseWorkflowRunsOptions,
+): UseWorkflowRunsResult<R>;
 export function useWorkflowRuns<R = unknown>(
   workflow: string | undefined,
   options: UseWorkflowRunsOptions = {},

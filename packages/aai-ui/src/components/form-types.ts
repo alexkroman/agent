@@ -65,6 +65,22 @@ export function isFileValue(value: unknown): value is FileValue {
 }
 
 /**
+ * What a `<FileField read="text" as="namedText">` contributes: the file's name
+ * and its text, and nothing else — the shape a workflow schema declares as
+ * `z.object({ name: z.string(), text: z.string() })` for a draft, a config, a
+ * CSV of ids that belongs in the run's input rather than in an upload. A
+ * {@link FileValue} carries the browser's metadata too, which a schema then
+ * has to strip or refuse; this is the value a schema can take as it is.
+ *
+ * @sealed
+ * @public
+ */
+export type NamedTextValue = {
+  name: string;
+  text: string;
+};
+
+/**
  * How much of a chosen file a {@link FileField} reads.
  *
  * `"upload"` is the odd one and the one a workflow input wants: the field
@@ -76,6 +92,25 @@ export function isFileValue(value: unknown): value is FileValue {
  * @public
  */
 export type FileReadMode = "none" | "text" | "dataUrl" | "upload";
+
+/**
+ * The SHAPE a {@link FileField} contributes a read file as. `"file"` (the
+ * default) is a {@link FileValue}; `"namedText"` is a {@link NamedTextValue},
+ * which implies `read="text"`. Only `"namedText"` is a reshape today; the
+ * option exists so a workflow's object property has a declared control.
+ *
+ * @public
+ */
+export type FileValueShape = "file" | "namedText";
+
+/**
+ * How a {@link TextAreaField} contributes its text. `"none"` (the default) is
+ * the string; `"lines"` is a `string[]` — one entry per non-blank line,
+ * trimmed — the control for a schema's `z.array(z.string())`.
+ *
+ * @public
+ */
+export type TextSplitMode = "none" | "lines";
 
 /**
  * The props every field in `form.tsx` shares.

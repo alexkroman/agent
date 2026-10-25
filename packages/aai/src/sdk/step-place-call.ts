@@ -74,6 +74,13 @@ import {
   type TwilioRequest,
   twilioAdvice,
 } from "./_twilio-calls.ts";
+import {
+  CALL_BRIEF_SECRET_ENV,
+  type CallBrief,
+  isCallBriefParameter,
+  signCallBrief,
+} from "./call-brief.ts";
+import type { PlacedCallStatus } from "./call-status.ts";
 import { redactCredentials } from "./channels/shared/outbox.ts";
 import { isRecord } from "./is-record.ts";
 import { stepEnv } from "./step-env.ts";
@@ -143,6 +150,21 @@ export type PlaceCallOptions = {
    * in `sessionContext`.
    */
   parameters?: Readonly<Record<string, string>>;
+  /**
+   * The call's BRIEF — the app's own call id and the task prompt — signed
+   * with the secret in `briefSecretEnv` and carried on the call as the
+   * parameters `call`, `sig` and `p0…pN` (`signCallBrief`), so the answering
+   * session reads it back with `call.brief(secret)` and refuses a stream that
+   * was not signed by this app. `parameters` may not use those names. The
+   * prompt is at most `MAX_CALL_BRIEF_PROMPT_CHARS`.
+   */
+  brief?: CallBrief;
+  /**
+   * The step-env variable holding the secret `brief` is signed with. Default
+   * `CALL_BRIEF_SECRET_ENV` (`"CALLS_API_KEY"`); the answering agent reads the
+   * same variable from its env. Unset with a `brief` is a non-retryable refusal.
+   */
+  briefSecretEnv?: string;
   /** Hard cap on the connected call, in seconds. Default `DEFAULT_CALL_TIME_LIMIT_S`. */
   timeLimitS?: number;
   /** How long it rings before `no-answer`, in seconds. Default `DEFAULT_CALL_RING_TIMEOUT_S`. */
@@ -174,54 +196,10 @@ export type CallStatusOptions = {
   signal?: AbortSignal;
 };
 
-/**
- * Where a placed call is. The last five are OVER — nothing moves off them:
- * `completed` (answered and hung up), `busy`, `no-answer`, `failed` (never
- * connected: a bad number, a carrier refusal), `canceled` (hung up by the API
- * before it was answered). Twilio's `initiated` reads as `queued`.
- */
-export type PlacedCallStatus =
-  | "queued"
-  | "ringing"
-  | "in-progress"
-  | "completed"
-  | "busy"
-  | "no-answer"
-  | "failed"
-  | "canceled"
-  | (string & {});
-
-/**
- * The {@link PlacedCallStatus} values nothing moves off — `completed`, `busy`,
- * `no-answer`, `failed`, `canceled`. What a loop following a call with
- * {@link stepCallStatus} stops on.
- *
- * Published because every body that dialled wrote its own copy of the list, and
- * a copy missing `canceled` polls a call the API already hung up until its
- * budget runs out.
- *
- * @public
- */
-export const CALL_OVER_STATUSES: ReadonlySet<PlacedCallStatus> = new Set<PlacedCallStatus>([
-  "completed",
-  "busy",
-  "no-answer",
-  "failed",
-  "canceled",
-]);
-
-/**
- * Whether a call in `status` is over — one of {@link CALL_OVER_STATUSES}.
- *
- * Takes a `string` rather than a {@link PlacedCallStatus} so a loop can start
- * from a status it made up (`"queued"`) or read back from its own store without
- * a cast; anything unknown is not over.
- *
- * @public
- */
-export function isCallOver(status: string): boolean {
-  return (CALL_OVER_STATUSES as ReadonlySet<string>).has(status);
-}
+// The status vocabulary and the "is it over" test live in `call-status.ts`
+// (this file is at the source-length cap); re-exported so the `/step` barrel
+// and every importer keep one path.
+export { CALL_OVER_STATUSES, isCallOver, type PlacedCallStatus } from "./call-status.ts";
 
 /**
  * The carrier refused, or never answered. `message` is a sentence a person can
@@ -361,13 +339,14 @@ const CARRIER_REQUEST_TIMEOUT_MS = 30_000;
  */
 export async function stepPlaceCall(options: PlaceCallOptions): Promise<PlacedCall> {
   const credentials = resolveCredentials(options.carrier, options.credentials);
+  const parameters = await callParameters(options);
   const request = (() => {
     try {
       return dialRequest(credentials, {
         to: options.to,
         from: options.from,
         agentUrl: answeringAgentUrl(options.agentUrl),
-        parameters: options.parameters ?? {},
+        parameters,
         timeLimitS: options.timeLimitS ?? DEFAULT_CALL_TIME_LIMIT_S,
         ringTimeoutS: options.ringTimeoutS ?? DEFAULT_CALL_RING_TIMEOUT_S,
       });
@@ -415,6 +394,32 @@ export async function stepCallStatus(options: CallStatusOptions): Promise<Placed
     );
   }
   return status;
+}
+
+/**
+ * The call's parameters: the caller's own, plus the signed brief when one is
+ * given. Every refusal here is the caller's to fix, so none is retryable.
+ */
+async function callParameters(
+  options: Pick<PlaceCallOptions, "parameters" | "brief" | "briefSecretEnv">,
+): Promise<Readonly<Record<string, string>>> {
+  const own = options.parameters ?? {};
+  if (options.brief === undefined) return own;
+  const refuse = (message: string): never => {
+    throw new PlaceCallError(message, { carrier: "twilio", retryable: false });
+  };
+  const taken = Object.keys(own).find(isCallBriefParameter);
+  if (taken !== undefined) {
+    refuse(`parameters.${taken} collides with the brief, which is carried as call, sig and p0…pN.`);
+  }
+  const secretEnv = options.briefSecretEnv ?? CALL_BRIEF_SECRET_ENV;
+  const secret = stepEnv(secretEnv)?.trim();
+  if (!secret) refuse(`${secretEnv} is not set, and the call's brief is signed with it.`);
+  try {
+    return { ...own, ...(await signCallBrief(options.brief, secret ?? "")) };
+  } catch (err: unknown) {
+    return refuse(errorMessage(err));
+  }
 }
 
 /** The credentials to use: the explicit pair, else the step env, else a refusal naming both keys. */

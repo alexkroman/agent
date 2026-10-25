@@ -111,11 +111,16 @@ theme rules are in `../CLAUDE.md`.
   humanized label; upload properties (`workflow({ uploads })`) get
   `<FileField upload>`. Pass a name (it fetches the listing) or a
   `WorkflowSummary` (it fetches nothing — `useWorkflows({ skip: true })`).
-- **It is all-or-nothing and SKIPS objects and arrays.** No `exclude`/`only`;
-  `SchemaField` reads only `type`, `enum`, `description`, `default` (no
-  `min`/`max`, no `rows`). A conditionally-shown field must be hand-written and
-  must be one `<WorkflowFields>` skips, or it renders twice
-  (`document-redline-workflow` is the mixed-form example).
+- **It is all-or-nothing and SKIPS objects and arrays, bar two shapes.** An
+  array of strings renders `<TextAreaField split="lines">` (a `string[]`, one
+  per line) and an object of exactly `{ name: string, text: string }` renders
+  `<FileField read="text" as="namedText">` (a `NamedTextValue`);
+  `render={{ prop: "lines" | "namedText" }}` asks for either by name, never over
+  an upload (`fieldKindFor`). No `exclude`/`only`; `SchemaField` reads only
+  `type`, `enum`, `items`, `properties`, `required`, `description`, `default`
+  (no `min`/`max`). A conditionally-shown field must be hand-written and must be
+  one `<WorkflowFields>` skips, or it renders twice (`document-redline-workflow`
+  is the mixed-form example).
 - `useFlash`, `useCopy` and `fieldKindFor` exist for the studio's tooling; their
   unexercised names are in `template-api-allowlist.json` on purpose.
 

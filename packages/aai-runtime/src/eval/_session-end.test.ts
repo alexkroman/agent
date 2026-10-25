@@ -186,6 +186,7 @@ const HOOK_ARGS: Parameters<NonNullable<AgentDef["onSessionEnd"]>>[0] = {
   sessionId: "s",
   env: {},
   lastEventIndex: 0,
+  transcript: [],
   workflows: createStubWorkflows(),
 };
 

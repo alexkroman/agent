@@ -40,7 +40,11 @@ import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "../logger.ts";
 import type { SpeechDirectory } from "../session/index.ts";
-import { type ClientHistoryDeps, readClientTranscript } from "../session/index.ts";
+import {
+  type ClientHistoryDeps,
+  readClientTranscript,
+  readSessionTranscript,
+} from "../session/index.ts";
 import type { AgentRuntime } from "./types.ts";
 
 /**
@@ -221,6 +225,9 @@ export function compileAgentRoutes(deps: {
       env,
       workflows,
       clientTranscript,
+      // Keyed by session id — a placed call names no client — and read off the
+      // flushed log, so a live call answers what has been said so far.
+      sessionTranscript: (sessionId) => readSessionTranscript(history, sessionId),
       speech: speech.live,
       signal: call.signal,
     };

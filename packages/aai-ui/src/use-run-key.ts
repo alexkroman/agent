@@ -141,13 +141,18 @@ function mintRunKey(storage: StorageKind): string {
  *
  * @internal
  */
-export function useDefaultRunKey(explicit: string | undefined): string {
+export function useDefaultRunKey(
+  explicit: string | { readonly storage?: StorageKind | undefined } | undefined,
+): string {
   // STORAGE is touched only when the first render had no key of its own; a page
   // that named one mints nothing at all. Either way the value is frozen for the
   // component's life, which is what makes the next load able to produce the
-  // same one.
-  const [minted] = useState(() => (explicit === undefined ? mintRunKey("session") : ""));
-  return explicit ?? minted;
+  // same one. `{ storage }` is the caller choosing the store the hook mints
+  // into — `useRunKey({ storage: "local" })` without the second hook call.
+  const [minted] = useState(() =>
+    typeof explicit === "string" ? "" : mintRunKey(explicit?.storage ?? "session"),
+  );
+  return typeof explicit === "string" ? explicit : minted;
 }
 
 /**

@@ -33,7 +33,7 @@
 
 import type http from "node:http";
 import type { Duplex } from "node:stream";
-import type { SessionCall } from "@alexkroman1/aai";
+import type { SessionCallInput } from "@alexkroman1/aai";
 import {
   callParametersFromQuery,
   connectStreamTwiml,
@@ -105,7 +105,7 @@ const WS_CLOSE_POLICY_VIOLATION = 1008;
 const TIMED_OUT: unique symbol = Symbol("carrier start timed out");
 
 /** The `call` a session is started with, from the carrier's `start` frame. */
-function callOf(carrier: CarrierCodec, start: CarrierStart): SessionCall {
+function callOf(carrier: CarrierCodec, start: CarrierStart): SessionCallInput {
   return {
     carrier: carrier.name,
     parameters: start.parameters ?? {},

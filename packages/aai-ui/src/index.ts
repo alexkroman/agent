@@ -136,15 +136,18 @@ export {
   FileField,
   type FileReadMode,
   type FileValue,
+  type FileValueShape,
   Form,
   type FormProps,
   type FormValues,
   isFileValue,
+  type NamedTextValue,
   NumberField,
   SelectField,
   SubmitButton,
   TextAreaField,
   TextField,
+  type TextSplitMode,
 } from "./components/form.tsx";
 export { Markdown, type MarkdownProps, type MarkdownVariant } from "./components/markdown.tsx";
 export { MessageList, type MessageListProps } from "./components/message-list.tsx";
@@ -193,7 +196,7 @@ export type { ToolDisplayConfig } from "./components/tool-config-context.ts";
 // happens BEFORE the run that carries their ids exists.
 export { UploadProgressBar } from "./components/upload-progress.tsx";
 // A form generated from a workflow's own declared input schema.
-export { WorkflowFields } from "./components/workflow-fields.tsx";
+export { WorkflowFields, type WorkflowFieldsProps } from "./components/workflow-fields.tsx";
 // The one sentence a page says while a run is pending — three situations, and
 // the reload case gets its own words. Six pages had written the function.
 export {
@@ -389,12 +392,7 @@ export {
 // The caller's in-progress turn, with `null` (silent) and `""` (speech
 // detected, no words yet) kept apart — see the module doc.
 export { type UseUserTranscriptResult, useUserTranscript } from "./use-user-transcript.ts";
-export {
-  type UploadStatus,
-  type UseWorkflowSubmitOptions,
-  useWorkflowSubmit,
-  type WorkflowSubmission,
-} from "./use-workflow-form.ts";
+export { type UseWorkflowSubmitOptions, useWorkflowSubmit } from "./use-workflow-form.ts";
 // `RunProgressReader` stays unexported, like `RunWatcher` next door: both are
 // one-method narrowings of the client for their own module's use, not API.
 export {
@@ -436,11 +434,30 @@ export {
 // What `submit()` takes: `WorkflowInputOf<D>`, or `undefined` for a def with no
 // input schema. It is in the rendered signature of both submit hooks, so it is
 // a name a page can read rather than one it has to re-derive.
-export type { SubmitInputOf } from "./workflow-def-types.ts";
+export type {
+  SubmitInputOf,
+  WorkflowAppLike,
+  WorkflowDefOf,
+  WorkflowNameOf,
+} from "./workflow-def-types.ts";
 // The control-selection rule `<WorkflowFields>` itself runs, published so a
 // reader documenting the form-to-JSON correspondence asks the component's own
 // decision rather than mirroring the switch by hand.
-export { fieldKindFor, type WorkflowFieldKind } from "./workflow-field-kind.ts";
+export {
+  fieldKindFor,
+  type WorkflowFieldKind,
+  type WorkflowFieldRender,
+} from "./workflow-field-kind.ts";
 // The five default status lines, so a page overrides the one word it has a
 // better term for instead of restating the union.
 export { WORKFLOW_STATUS_LABELS } from "./workflow-status-labels.ts";
+// What the two submit hooks hand back, and the readings over it: the def-typed
+// alias a component takes as a prop, the press-to-settle marks, and who finds
+// the run again.
+export type {
+  UploadStatus,
+  WorkflowSubmission,
+  WorkflowSubmissionOf,
+  WorkflowSubmissionScope,
+  WorkflowSubmissionTiming,
+} from "./workflow-submission.ts";

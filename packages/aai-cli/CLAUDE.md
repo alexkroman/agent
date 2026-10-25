@@ -317,6 +317,18 @@ the summary.
 
 ## Bundling rules
 
+- **`workflows/<name>.ts` is discovered the way `tools/<name>.ts` is.** The
+  generated worker entry (`worker-bundler.ts`) imports every flat
+  `workflows/*.ts` (specs and `.test-d.ts` excepted) and hands them to
+  `workflowRegistry` + `withWorkflows` (`@alexkroman1/aai/manifest`), which
+  registers each file whose DEFAULT export is a `workflow()` def under its file
+  name and skips the rest — a body's helpers (`prompts.ts`, `media.ts`) live in
+  that directory too, so an unlike-`tools/` file is not an error. An explicit
+  `agent({ workflows })` entry wins a name clash and warns naming the file; the
+  same def declared both ways is silent. The rules have one implementation (the
+  registry), and `virtual:aai/agent` (`aai/src/host/testing-vite.ts`) emits the
+  same imports so a spec sees the discovered set;
+  `runWorkflow(agentDef, "<name>", input)` runs one by that name.
 - **Nothing scans a workflow body for replay-unsafe calls** (`Date.now()`,
   `Math.random()`, `fetch(`…) — a known gap. A replacement must work off the
   source of `workflows/*.ts`, outside every `ctx.step(…)` callback, and stay a

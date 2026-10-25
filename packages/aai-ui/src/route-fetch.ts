@@ -47,6 +47,12 @@ export type RouteFetchOptions = {
   client?: string | undefined;
   /** The agent's base URL. Default: the page's own directory. */
   baseUrl?: string | undefined;
+  /**
+   * Extra request headers — an `authorization` for a route behind
+   * `apiKeyRoute`, say. Sent as given; a `content-type` here beats the JSON
+   * one a body would set.
+   */
+  headers?: Readonly<Record<string, string>> | undefined;
   /** Abort the request. */
   signal?: AbortSignal | undefined;
 };
@@ -79,7 +85,7 @@ export type RouteFetchOptions = {
  * @param method - The route's method.
  * @param path - The route's path as declared, starting with `/`; `?query` allowed.
  * @param body - Sent as JSON when given.
- * @param options - `client`, `baseUrl` and `signal`; see {@link RouteFetchOptions}.
+ * @param options - `client`, `baseUrl`, `headers` and `signal`; see {@link RouteFetchOptions}.
  * @returns The parsed JSON body.
  *
  * @public
@@ -94,12 +100,18 @@ export async function routeFetch<T = unknown>(
   // Relative to the directory: `api/x` under `https://h/slug/` is `/slug/api/x`.
   const url = new URL(`api${path.startsWith("/") ? path : `/${path}`}`, base);
   if (options.client) url.searchParams.set("client", options.client);
+  // A body is JSON unless the caller's headers say otherwise; the caller's win.
+  const headers = omitUndefined({
+    "content-type": body === undefined ? undefined : "application/json",
+    ...options.headers,
+  });
   const res = await fetch(url, {
     method,
-    ...(body === undefined
-      ? {}
-      : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
-    ...omitUndefined({ signal: options.signal }),
+    ...omitUndefined({
+      headers: Object.keys(headers).length > 0 ? headers : undefined,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: options.signal,
+    }),
   });
   const json: unknown = await res.json().catch(() => ({}));
   if (!res.ok) {

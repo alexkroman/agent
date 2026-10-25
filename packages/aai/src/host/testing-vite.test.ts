@@ -119,11 +119,31 @@ describe("load", () => {
     expect(source).not.toContain("tool1");
   });
 
+  test("imports every workflows/ file and passes the map, helpers included", async () => {
+    // `workflowRegistry` is what keeps the files that default-export a def; the
+    // plugin's job is only to hand it the whole directory, specs excepted.
+    const dir = await project({
+      "agent.ts": "export default {};",
+      "workflows/digest.ts": "export default { run: () => 1 };",
+      "workflows/prompts.ts": "export const P = 1;",
+      "workflows/digest.test.ts": "export const x = 1;",
+    });
+    const source = emit(dir);
+    expect(source).toContain(
+      `import * as workflow0 from ${JSON.stringify(join(dir, "workflows/digest.ts"))};`,
+    );
+    expect(source).toContain(`[${JSON.stringify(join(dir, "workflows/prompts.ts"))}]: workflow1,`);
+    expect(source).not.toContain("digest.test.ts");
+    expect(source).toContain("  workflows,");
+    expect(source).not.toContain("  tools,");
+  });
+
   test("omits `tools` rather than passing an empty one", async () => {
     const dir = await project({ "agent.ts": "export default {};" });
     const source = emit(dir);
 
     expect(source).not.toContain("  tools,");
+    expect(source).not.toContain("  workflows,");
     expect(source).not.toContain("  systemPrompt,");
     expect(source).toContain("export default deployedAgent(authored, {\n});");
   });

@@ -42,6 +42,14 @@ import { isRecord } from "@alexkroman1/aai/utils";
  * text field is — the same value over the wire — so it is a hand-written swap
  * rather than a shape the schema can ask for.
  *
+ * Two NON-scalar shapes do have an honest control, and are the two members
+ * past the scalars: `"lines"` is `<TextAreaField split="lines">` for an array
+ * of strings (one per line), and `"namedText"` is `<FileField read="text"
+ * as="namedText">` for an object of exactly `{ name: string, text: string }` —
+ * a draft, a config, read in the browser and journaled with the input. Both
+ * were the hand-written half of `document-redline-workflow`'s mixed form; a
+ * page may also ASK for either by name through `render`.
+ *
  * Open (`| (string & {})`): a control added later is a new value, so read an
  * unknown kind as `"none"`.
  *
@@ -53,8 +61,40 @@ export type WorkflowFieldKind =
   | "select"
   | "checkbox"
   | "file"
+  | "lines"
+  | "namedText"
   | "none"
   | (string & {});
+
+/**
+ * The kinds a page may ask `<WorkflowFields render>` for by property name —
+ * the two non-scalar controls, which a schema cannot always say it wants.
+ *
+ * @public
+ */
+export type WorkflowFieldRender = "lines" | "namedText";
+
+/**
+ * Whether `schema` is an object of exactly `{ name: string, text: string }`,
+ * both required — the one object shape with a declared control.
+ */
+function isNamedTextSchema(schema: Record<string, unknown>): boolean {
+  if (schemaTypeOf(schema) !== "object" || !isRecord(schema.properties)) return false;
+  const keys = Object.keys(schema.properties);
+  if (keys.length !== 2 || !keys.includes("name") || !keys.includes("text")) return false;
+  const required = Array.isArray(schema.required) ? schema.required : [];
+  return (
+    required.includes("name") &&
+    required.includes("text") &&
+    schemaTypeOf(schema.properties.name) === "string" &&
+    schemaTypeOf(schema.properties.text) === "string"
+  );
+}
+
+/** Whether `schema` is an array of strings. */
+function isStringListSchema(schema: Record<string, unknown>): boolean {
+  return schemaTypeOf(schema) === "array" && schemaTypeOf(schema.items) === "string";
+}
 
 /**
  * A property's declared type, taking the first non-null member of a union.
@@ -85,7 +125,12 @@ export function schemaTypeOf(schema: unknown): string | undefined {
  * 2. **Then a non-empty `enum`**, before the type switch: an enum of strings
  *    is a `string` too, and a select is the narrower, better control.
  * 3. **Then the type** — `boolean`, `number`/`integer`, `string`.
- * 4. **Anything else is `"none"`** rather than a guess. See
+ * 4. **Then the two non-scalar shapes with a control** — an array of strings
+ *    is `"lines"`, an object of exactly `{ name: string, text: string }` is
+ *    `"namedText"`. A page may also name either through `render`, which beats
+ *    the schema for that property (it is the author saying what the shape
+ *    means) but never a declared upload.
+ * 5. **Anything else is `"none"`** rather than a guess. See
  *    {@link WorkflowFieldKind}.
  *
  * @example
@@ -108,15 +153,17 @@ export function schemaTypeOf(schema: unknown): string | undefined {
  * @param schema - The property's JSON Schema, as `GET workflows` reports it.
  *   Anything that is not an object reads as `"none"`.
  * @param options - `upload` says the property is named in the workflow's own
- *   `uploads` declaration, which is what step 1 above tests.
+ *   `uploads` declaration, which is what step 1 above tests; `render` is the
+ *   page's own choice for the property (`<WorkflowFields render>`).
  *
  * @public
  */
 export function fieldKindFor(
   schema: unknown,
-  options?: { upload?: boolean | undefined },
+  options?: { upload?: boolean | undefined; render?: WorkflowFieldRender | undefined },
 ): WorkflowFieldKind {
   if (options?.upload === true) return "file";
+  if (options?.render !== undefined) return options.render;
   if (!isRecord(schema)) return "none";
   const { enum: choices } = schema;
   if (Array.isArray(choices) && choices.length > 0) return "select";
@@ -128,6 +175,10 @@ export function fieldKindFor(
       return "number";
     case "string":
       return "text";
+    case "array":
+      return isStringListSchema(schema) ? "lines" : "none";
+    case "object":
+      return isNamedTextSchema(schema) ? "namedText" : "none";
     default:
       return "none";
   }

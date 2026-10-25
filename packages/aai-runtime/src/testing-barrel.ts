@@ -207,6 +207,8 @@ export {
 export {
   DEFAULT_MAX_DELIVERIES,
   runWorkflow,
+  type WorkflowBearingAgent,
+  type WorkflowNameOf,
 } from "./testing/run-workflow.ts";
 export type {
   RunWorkflowOptions,
