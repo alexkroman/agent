@@ -3,6 +3,7 @@ import { CRUSTS, cartSummary, orderSlot, type Pizza, SIZES } from "../shared.ts"
 
 export default orderSlot.updateTool({
   description: "Add a pizza to the order. Use when the customer has decided on a pizza.",
+  ui: { icon: "\u{1F355}", label: "Adding pizza" },
   inputSchema: z.object({
     size: z.enum(SIZES),
     crust: z.enum(CRUSTS),

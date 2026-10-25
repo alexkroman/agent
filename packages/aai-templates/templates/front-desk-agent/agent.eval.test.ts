@@ -1,4 +1,3 @@
-/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
 // An EVAL: does the front desk actually hand the caller to the right desk, and
 // does the desk it lands on act as itself?
@@ -22,7 +21,10 @@ import {
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
+import verifyAccount from "./tools/verify_account.ts";
 
+// The desks' tools are the roster's, not files, so an eval reads them by name
+// and a schema; `verify_account` is a file and is read by its def, typed.
 const Handoff = z.object({ handoff: z.literal(true), from: z.string(), to: z.string() });
 const Refusal = z.object({ error: z.string() });
 const Invoices = z.object({
@@ -37,8 +39,10 @@ describeEval(agentDef, (test) => {
         "Hi, my account number is 1001 and my zip is 94107. I have a question about my last bill.",
       );
       expect(toolNames(turn.toolCalls)).toEqual(["verify_account"]);
-      const handed = toolResultIn(turn.toolCalls, "verify_account", Handoff);
-      expect(handed).toMatchObject({ from: "triage", to: "billing" });
+      expect(toolResultIn(turn.toolCalls, verifyAccount)).toMatchObject({
+        from: "triage",
+        to: "billing",
+      });
       expect(turn.completed).toBe(true);
     },
     {

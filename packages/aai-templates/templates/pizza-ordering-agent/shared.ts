@@ -1,4 +1,4 @@
-import { type DeepReadonly, sessionSlot } from "@alexkroman1/aai";
+import { type DeepReadonly, type SlotDraftOf, sessionSlot } from "@alexkroman1/aai";
 import { formatMoney, roundMoney, type ToolFailure, toolFailure } from "@alexkroman1/aai/utils";
 
 export const SIZES = ["small", "medium", "large"] as const;
@@ -122,12 +122,27 @@ export interface OrderState {
   placed?: { orderNumber: number; total: string; estimatedMinutes: number };
 }
 
-export function emptyOrder(): OrderState {
-  return { pizzas: [], nextId: 1, customerName: null };
-}
+const EMPTY_ORDER: OrderState = { pizzas: [], nextId: 1, customerName: null };
 
-/** The session's cart, as one typed slot. */
-export const orderSlot = sessionSlot("order", emptyOrder, { view: orderView });
+/**
+ * The session's cart, as one typed slot. The default is a plain value — the
+ * slot clones it per session — and `view` is what the browser sees: the cart
+ * and its total, since `syncState` is where you decide what leaves the server.
+ */
+export const orderSlot = sessionSlot("order", EMPTY_ORDER, {
+  view: (order): OrderView => {
+    const placed = order.placed;
+    return {
+      pizzas: order.pizzas,
+      total: placed?.total ?? formatMoney(calculateTotal(order.pizzas)),
+      orderPlaced: Boolean(placed),
+      ...(placed
+        ? { orderNumber: placed.orderNumber, estimatedMinutes: placed.estimatedMinutes }
+        : {}),
+    };
+  },
+  sync: true,
+});
 
 /**
  * The running cart, as every tool that touches it reports it back.
@@ -158,21 +173,18 @@ export function cartSummary(pizzas: readonly ReadonlyPizza[]): {
  * inside an `updateTool` window can edit it in place, and `indexOf` finds it
  * when the caller is removing it.
  */
-export function findPizza(order: OrderState, id: number): Pizza | ToolFailure {
+export function findPizza(order: SlotDraftOf<typeof orderSlot>, id: number): Pizza | ToolFailure {
   return order.pizzas.find((p) => p.id === id) ?? toolFailure("Pizza not found in the order.");
 }
 
 /**
- * A pizza as a READ hands it out, and the cart likewise: deep-frozen, and typed
- * to say so.
+ * A pizza as a READ hands it out: deep-frozen, and typed to say so.
  *
  * `pizzaPrice` and `calculateTotal` take the readonly shape because they are
  * pure and are called from both halves of the slot — a mutable `Pizza` still
- * satisfies it, so an `updateTool` draft passes unchanged, while a helper that
- * WOULD have mutated stops compiling instead of throwing on its first call.
+ * satisfies it, so an `updateTool` draft passes unchanged.
  */
 export type ReadonlyPizza = DeepReadonly<Pizza>;
-export type FrozenOrderState = DeepReadonly<OrderState>;
 
 /**
  * Clear the cart after checkout so a follow-up order starts fresh. The
@@ -186,20 +198,16 @@ export type FrozenOrderState = DeepReadonly<OrderState>;
  * and the cart was never cleared. `slot.set` refuses that outright now; a helper
  * called from inside a mutation mutates what it was handed.
  */
-export function resetOrder(order: OrderState, placed?: OrderState["placed"]): void {
-  const fresh = emptyOrder();
-  order.pizzas = fresh.pizzas;
-  order.nextId = fresh.nextId;
-  order.customerName = fresh.customerName;
+export function resetOrder(
+  order: SlotDraftOf<typeof orderSlot>,
+  placed?: OrderState["placed"],
+): void {
+  Object.assign(order, structuredClone(EMPTY_ORDER));
   if (placed) order.placed = placed;
   else delete order.placed;
 }
 
-/**
- * What the browser sees. A projection rather than the raw state: the client
- * needs the cart and its total, and `syncState` is where you decide what
- * leaves the server.
- */
+/** What the browser sees — the shape `orderSlot`'s `view` projects. */
 export interface OrderView {
   /** Readonly, because the projection hands the client the slot's own list
    *  rather than a copy — see {@link ReadonlyPizza}. */
@@ -208,18 +216,4 @@ export interface OrderView {
   orderPlaced: boolean;
   orderNumber?: number;
   estimatedMinutes?: number;
-}
-
-/** Takes the cart itself, not the slot — `orderSlot.projection` supplies a real
- *  one even before the first tool call, so there is nothing to optional-chain. */
-export function orderView(order: FrozenOrderState): OrderView {
-  const placed = order.placed;
-  return {
-    pizzas: order.pizzas,
-    total: placed?.total ?? formatMoney(calculateTotal(order.pizzas)),
-    orderPlaced: Boolean(placed),
-    ...(placed
-      ? { orderNumber: placed.orderNumber, estimatedMinutes: placed.estimatedMinutes }
-      : {}),
-  };
 }

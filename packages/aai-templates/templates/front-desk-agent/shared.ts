@@ -24,9 +24,9 @@
  * how to hand off — a result the model reads, on every transport.
  */
 import {
-  type DeepReadonly,
   type Roster,
   roster,
+  type SlotValueOf,
   type SpeakerDef,
   sessionSlot,
   speaker,
@@ -89,11 +89,14 @@ export interface Desk {
 }
 
 export const deskSlot = sessionSlot("desk", (): Desk => ({ refunded: [] }), {
+  // What the browser sees, and `sync: true` is what pushes it after every tool
+  // call — `agent.ts` names no `syncState`.
   view: (desk) => ({
     verified: desk.verified?.name,
     refunded: desk.refunded.length,
     appointment: desk.appointment,
   }),
+  sync: true,
 });
 
 /** The one answer every desk gives an unverified caller. */
@@ -102,7 +105,7 @@ export const NOT_VERIFIED = toolFailure(
 );
 
 /** The verified account, or the refusal above. */
-export function verifiedAccount(desk: DeepReadonly<Desk>): Account | ToolFailure {
+export function verifiedAccount(desk: SlotValueOf<typeof deskSlot>): Account | ToolFailure {
   if (desk.verified === undefined) return NOT_VERIFIED;
   const account = ACCOUNTS.find((one) => one.number === desk.verified?.number);
   return account ?? NOT_VERIFIED;
@@ -188,7 +191,6 @@ export const support = speaker({
   tools: {
     run_diagnostic: deskSlot.tool({
       description: "Test the caller's line and report what it finds.",
-      inputSchema: z.object({}),
       execute(_args, desk) {
         const account = verifiedAccount(desk);
         if ("error" in account) return account;
@@ -234,6 +236,5 @@ export const desk: Roster<"triage" | "billing" | "support"> = roster([triage, bi
 /** A tool the front desk itself carries, for a spec to reach `tool()` beside the slot forms. */
 export const whichDesk = tool({
   description: "Which desk is speaking right now.",
-  inputSchema: z.object({}),
   execute: (_args, ctx) => ({ persona: desk.active(ctx).name }),
 });

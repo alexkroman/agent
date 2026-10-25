@@ -11,10 +11,9 @@ import { assemblyAITts } from "@alexkroman1/aai/tts";
 // single stage.
 export default agent({
   name: "Quickstart Assistant",
-  // One line for whoever is reading a LIST of agents — `aai list`, a registry
-  // page, the studio's picker. Never the model: what the model is told is
-  // `system-prompt.md`, beside this file.
-  description: "Looks up the current weather for any city",
+  // One line for whoever is reading a LIST of agents (`aai list`, the studio's
+  // picker). What the model is told is `system-prompt.md`, beside this file.
+  listing: "Looks up the current weather for any city",
   // The first thing a caller hears. Without one the agent waits for them to
   // speak, which on a phone call reads as a dead line.
   greeting: "Hi — I can look up the weather anywhere. Which city?",

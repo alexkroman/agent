@@ -4,6 +4,7 @@ import { CRUSTS, cartSummary, findPizza, orderSlot, SIZES } from "../shared.ts";
 
 export default orderSlot.updateTool({
   description: "Update an existing pizza in the order. Only provided fields are changed.",
+  ui: { icon: "\u{270F}", label: "Updating pizza" },
   inputSchema: z.object({
     pizza_id: z.number(),
     size: z.enum(SIZES).optional(),
@@ -12,9 +13,7 @@ export default orderSlot.updateTool({
     quantity: z.number().int().min(1).optional(),
   }),
   execute(args, order) {
-    // The DRAFT's own pizza, so the four assignments below edit the cart:
-    // `updateTool` hands the body a MUTABLE draft, which is what makes the
-    // spread-into-a-copy and the write-back it then needed unnecessary.
+    // The DRAFT's own pizza, so the four assignments below edit the cart.
     const pizza = findPizza(order, args.pizza_id);
     if (isToolFailure(pizza)) return pizza;
 

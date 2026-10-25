@@ -4,6 +4,7 @@ import { cartSummary, findPizza, orderSlot } from "../shared.ts";
 
 export default orderSlot.updateTool({
   description: "Remove a pizza from the order by its ID.",
+  ui: { icon: "\u{1F5D1}", label: "Removing pizza" },
   inputSchema: z.object({
     pizza_id: z.number().describe("The pizza ID to remove"),
   }),

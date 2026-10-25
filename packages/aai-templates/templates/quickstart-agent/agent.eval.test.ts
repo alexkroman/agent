@@ -1,13 +1,3 @@
-/**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` and
- * `system-prompt.md` declare.
- *
- * `./agent.ts` would be the wrong import even for a template this small.
- * Discovery happens where the bundle is assembled, so the authored export has
- * NO tools and the framework-default prompt — an eval driving it measures a
- * different agent than the one that deploys, and the tool-choice claim below
- * would pass or fail for the wrong reason.
- */
 import agentDef from "virtual:aai/agent";
 // An EVAL: does the agent actually behave? Run it with `aai eval`.
 //
