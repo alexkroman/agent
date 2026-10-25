@@ -1,3 +1,4 @@
+import { withInstruction } from "@alexkroman1/aai";
 import {
   describeRanked,
   hiringFlow,
@@ -23,19 +24,20 @@ export default hiringSlot.tool({
   execute(_args, state, ctx) {
     const at = hiringFlow.position(ctx);
     const top = topCandidates(state);
-    return {
-      stage: stageLabel(at),
-      job: state.job?.title ?? null,
-      screened: Object.keys(state.scores).length,
-      unscored: state.unscored.length,
-      top: top.map(describeRanked),
-      feedbackRounds: `${state.rounds} of ${MAX_FEEDBACK_ROUNDS}`,
-      feedback: state.feedback,
-      drafts: state.drafts.length,
-      message:
-        at.state === "idle"
-          ? "Nothing screened yet — confirm the role and offer to screen the applicants."
-          : "Say where things stand in one breath, then what the caller can do next.",
-    };
+    return withInstruction(
+      {
+        stage: stageLabel(at),
+        job: state.job?.title ?? null,
+        screened: Object.keys(state.scores).length,
+        unscored: state.unscored.length,
+        top: top.map(describeRanked),
+        feedbackRounds: `${state.rounds} of ${MAX_FEEDBACK_ROUNDS}`,
+        feedback: state.feedback,
+        drafts: state.drafts.length,
+      },
+      at.state === "idle"
+        ? "Nothing screened yet — confirm the role and offer to screen the applicants."
+        : "Say where things stand in one breath, then what the caller can do next.",
+    );
   },
 });

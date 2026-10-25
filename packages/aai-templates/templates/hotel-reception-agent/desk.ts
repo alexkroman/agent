@@ -213,9 +213,9 @@ export function recordAbandonedBooking(ctx: SlotHolder): Ticket | null {
  * Every state a recording tool may run in: the whole booking flow.
  *
  * Each recording tool is `deskFlow.tool` around `hotelSlot.update`, the step
- * it landed on read off the result by the `sendFrom` in the second argument —
- * rather than `hotelSlot.updateTool({ dialog })`, whose `sendFrom` is handed
- * the body's `ToolFailure` arm as well, and every arm here can refuse.
+ * it landed on read off the result's `next` field (`sendFrom: "next"`); the
+ * failure arm every one of them can answer is subtracted before the field is
+ * read, so nothing is sent for a refusal.
  */
 export const IN_BOOKING = "booking";
 

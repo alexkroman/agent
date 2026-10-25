@@ -1,6 +1,6 @@
 import agentDef from "virtual:aai/agent";
 import type { Message, ToolContext } from "@alexkroman1/aai";
-import { createSeededRandom } from "@alexkroman1/aai";
+import { createSeededRandom, instructionOf } from "@alexkroman1/aai";
 import type { ToolContextOverrides } from "@alexkroman1/aai-runtime/testing";
 import {
   createToolContext,
@@ -18,7 +18,6 @@ import { containsWord, isCorrectGuess, normalizeWord } from "./guess.ts";
 import { PLAYER_SYSTEM, playerPrompt } from "./player.ts";
 import {
   currentWord,
-  GAME_CAPS,
   GAME_SECONDS,
   gameSlot,
   gameView,
@@ -268,8 +267,9 @@ describeAgent(agentDef, (run) => {
       const player = scriptedPlayer();
       const ctx = player.ctx();
       const word = await startRound(ctx);
-      const said = expectToolOk(await run(repeatWord, ctx));
-      expect(said).toMatchObject({ word, say: `Your word is ${word}.` });
+      const repeated = await run(repeatWord, ctx);
+      expect(expectToolOk(repeated)).toMatchObject({ word });
+      expect(instructionOf(repeated)).toBe(`Your word is ${word}.`);
 
       const skipped = expectToolOk(await run(skipWord, ctx));
       expect(skipped).toMatchObject({ skipped: word, score: 0 });
@@ -296,9 +296,10 @@ describeAgent(agentDef, (run) => {
       // Nothing plays after the round.
       expectDialogRefused(await run(relayDescription, { description: "more" }, ctx), "over");
 
-      const final = expectToolOk(await run(finalScore, ctx));
-      expect(final).toMatchObject({ score: 1, best: 1, solved: ["lantern"] });
-      expect(final.say).toContain("Your final score is 1 point.");
+      const closed = await run(finalScore, ctx);
+      expect(expectToolOk(closed)).toMatchObject({ score: 1, best: 1, solved: ["lantern"] });
+      // The line the host reads rides the envelope as its instruction.
+      expect(instructionOf(closed)).toContain("Your final score is 1 point.");
       expect(gameView(gameSlot.get(ctx)).phase).toBe("over");
 
       // Another round: the score resets, the best survives.
@@ -386,7 +387,6 @@ describeAgent(agentDef, (run) => {
         write: (game) => {
           game.spoken.push("clue");
         },
-        caps: GAME_CAPS,
       });
     });
 

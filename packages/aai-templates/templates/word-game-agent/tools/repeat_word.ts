@@ -1,3 +1,4 @@
+import { withInstruction } from "@alexkroman1/aai";
 import { gameFlow } from "../game.ts";
 import { currentWord, gameSlot, requireWord, secondsLeft } from "../shared.ts";
 
@@ -11,6 +12,9 @@ export default gameSlot.tool({
   require: requireWord,
   execute: (_args, game, ctx) => {
     const word = currentWord(game) ?? "";
-    return { word, secondsLeft: secondsLeft(game, ctx.now()), say: `Your word is ${word}.` };
+    return withInstruction(
+      { word, secondsLeft: secondsLeft(game, ctx.now()) },
+      `Your word is ${word}.`,
+    );
   },
 });

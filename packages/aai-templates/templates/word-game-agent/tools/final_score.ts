@@ -1,3 +1,4 @@
+import { withInstruction } from "@alexkroman1/aai";
 import { plural } from "@alexkroman1/aai/utils";
 import { gameFlow } from "../game.ts";
 import { gameSlot, score, tally } from "../shared.ts";
@@ -22,14 +23,16 @@ export default gameSlot.updateTool({
     const points = score(game);
     game.best = Math.max(game.best, points);
     const solved = game.rounds.filter((r) => r.outcome === "solved").map((r) => r.word);
-    return {
-      score: points,
-      best: game.best,
-      newBest: points > 0 && points === game.best && game.rounds.length > 0,
-      solved,
-      skipped: tally(game, "skipped"),
-      fouled: tally(game, "fouled"),
-      say: `Time's up! Thank you for playing Word Wrangler. Your final score is ${points} ${plural(points, "point")}. Great job!`,
-    };
+    return withInstruction(
+      {
+        score: points,
+        best: game.best,
+        newBest: points > 0 && points === game.best && game.rounds.length > 0,
+        solved,
+        skipped: tally(game, "skipped"),
+        fouled: tally(game, "fouled"),
+      },
+      `Time's up! Thank you for playing Word Wrangler. Your final score is ${points} ${plural(points, "point")}. Great job!`,
+    );
   },
 });

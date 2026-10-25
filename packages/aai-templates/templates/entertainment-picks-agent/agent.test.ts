@@ -15,7 +15,7 @@ import {
 } from "@alexkroman1/aai-runtime/testing";
 import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
 import { describe, expect, test } from "vitest";
-import { CATEGORIES, MAX_RECS, MOODS, nightSlot } from "./shared.ts";
+import { CATEGORIES, MOODS, nightSlot } from "./shared.ts";
 // The tool FILES: a file's default export is the very object `agentDef`
 // registers under its name, so `run(recommend, …)` drives the same code the
 // model's call would and is typed by the def — arguments and result.
@@ -72,7 +72,6 @@ describeAgent(agentDef, (run) => {
         write: (night) => {
           night.recs.push({ category: "book", mood: "cozy", picks: ["x"] });
         },
-        caps: { recs: MAX_RECS },
       });
     });
   });

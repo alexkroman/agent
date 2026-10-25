@@ -56,7 +56,7 @@ const planDispatch = failable(
     now: number,
   ): Promise<DispatchPlan> => {
     const basis = orFail(dispatchBasis(state));
-    const truck = orFail(await reserveTruck(basis.situation, callKey, { now }));
+    const truck = orFail(await reserveTruck(basis.situation, callKey, now));
     return {
       truck,
       etaMinutes: etaMinutes(truck, basis.where.safeToWait),

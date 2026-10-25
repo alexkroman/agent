@@ -4,6 +4,7 @@ import {
   deployedAgent,
   dialogRefusalPattern,
   expectDialogRefused,
+  expectSlotContract,
   fireEvent,
   runTool,
   sessionEvent,
@@ -293,6 +294,7 @@ describe("the authentication gate", () => {
 
 describe("agent config", () => {
   test("projects its slot under the slot name — without it the UI never updates", () => {
+    // `sync: true` on the slot, collected by `agent()`: no `syncState` to forget.
     expect(Object.keys(retailAgent.syncState ?? {})).toEqual(["retail"]);
     expect(typeof retailAgent.syncState?.retail).toBe("function");
   });
@@ -305,11 +307,17 @@ describe("agent config", () => {
   // forget to declare, which is what four of five slot-backed templates used to.
   // What still has to hold is that the factory really is called per session: the
   // 107 KB seed is one module-level object, so a shared clone would let one
-  // caller's cancellation show up in another's.
+  // caller's cancellation show up in another's. `expectSlotContract` is that
+  // claim plus the other two — `projected()` is the view of the EMPTY frame
+  // (the slot declares `empty`), and the activity cap keeps the newest.
   test("the slot's factory clones the seed, so sessions do not share a store", () => {
+    expectSlotContract(retailSlot, {
+      write: (draft) => {
+        draft.callSeq += 1;
+      },
+    });
     const a = retailSlot.create();
     const b = retailSlot.create();
-    expect(a).not.toBe(b);
     expect(a.store.orders).not.toBe(b.store.orders);
     expect(a.store).toEqual(b.store);
   });

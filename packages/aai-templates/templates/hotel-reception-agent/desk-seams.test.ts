@@ -23,7 +23,12 @@
 import agentDef from "virtual:aai/agent";
 import type { InferToolInput, ToolContext } from "@alexkroman1/aai";
 import { isToolFailure, resolveOne } from "@alexkroman1/aai";
-import { createToolContext, expectDialogOk, sessionEvent } from "@alexkroman1/aai-runtime/testing";
+import {
+  createToolContext,
+  expectDialogOk,
+  fireEvent,
+  sessionEvent,
+} from "@alexkroman1/aai-runtime/testing";
 import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
 import { describe, expect, test } from "vitest";
 import { validateCard } from "./card.ts";
@@ -46,8 +51,11 @@ describeAgent(agentDef, (run) => {
   const CALLER_GONE = sessionEvent("session.timedOut");
 
   /** The caller is gone: the dialog moves to `hungUp`, and `onEnter` writes the lead. */
-  const hangUp = (ctx: ToolContext) => {
-    const { state } = deskFlow.receive(ctx, CALLER_GONE);
+  const hangUp = async (ctx: ToolContext) => {
+    // Driven as the session drives it: the declared dialog is offered the
+    // event, and the move is read back off the position.
+    await fireEvent(agentDef, CALLER_GONE, ctx);
+    const { state } = deskFlow.position(ctx);
     if (state !== "hungUp") throw new Error(`the hang-up landed on ${state}`);
     return hotelSlot.get(ctx).tickets.at(-1);
   };
@@ -103,7 +111,7 @@ describeAgent(agentDef, (run) => {
       const ctx = createToolContext();
       await bookUpToCard(ctx);
 
-      const ticket = hangUp(ctx);
+      const ticket = await hangUp(ctx);
       expect(ticket?.kind).toBe("followup");
       expect(ticket?.summary).toBe("abandoned_booking: Maria Whitfield dropped mid-booking");
       expect(ticket?.details).toMatchObject({
@@ -124,9 +132,9 @@ describeAgent(agentDef, (run) => {
       );
     });
 
-    test("a call that ends at the desk writes no followup, only the log line", () => {
+    test("a call that ends at the desk writes no followup, only the log line", async () => {
       const ctx = createToolContext();
-      expect(hangUp(ctx)).toBeUndefined();
+      expect(await hangUp(ctx)).toBeUndefined();
       const hotel = hotelSlot.get(ctx);
       expect(hotel.tickets).toEqual([]);
       expect(hotel.log).toEqual(["Caller gone - call ended"]);
@@ -135,7 +143,7 @@ describeAgent(agentDef, (run) => {
     test("a caller who gave no name still leaves a callable ticket", async () => {
       const ctx = createToolContext();
       expectDialogOk(await run("start_room_booking", ctx));
-      const ticket = hangUp(ctx);
+      const ticket = await hangUp(ctx);
       expect(ticket?.details).toMatchObject({
         callerName: "name not given",
         callerPhone: "no number",

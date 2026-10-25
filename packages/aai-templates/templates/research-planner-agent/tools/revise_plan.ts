@@ -1,4 +1,4 @@
-import { errorMessage, toolFailure } from "@alexkroman1/aai";
+import { errorMessage, toolFailure, withInstruction } from "@alexkroman1/aai";
 import { z } from "zod";
 import { replanNode } from "../procedure.ts";
 import { REVISE_SYSTEM } from "../prompts.ts";
@@ -46,23 +46,19 @@ export default planSlot.updateTool({
     if (act.kind === "respond") {
       plan.plan = [];
       plan.response = act.response;
-      return {
-        finished: true,
-        response: act.response,
-        next: "ANSWERED" as const,
-        message: "Nothing is left to do.",
-      };
+      return withInstruction(
+        { finished: true, response: act.response, next: "ANSWERED" as const },
+        "Nothing is left to do.",
+      );
     }
 
     plan.plan = act.steps;
     // A revision reopens a plan that had already answered: the caller has
     // moved the goalposts, so the old answer is no longer the answer.
     plan.response = null;
-    return {
-      finished: false,
-      remaining: act.steps,
-      next: "REOPENED" as const,
-      message: "Read the revised steps back and ask if that is right.",
-    };
+    return withInstruction(
+      { finished: false, remaining: act.steps, next: "REOPENED" as const },
+      "Read the revised steps back and ask if that is right.",
+    );
   },
 });

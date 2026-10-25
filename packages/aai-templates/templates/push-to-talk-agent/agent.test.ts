@@ -55,7 +55,6 @@ describeAgent(agentDef, (run) => {
       write: (notebook) => {
         notebook.notes.push({ id: 1, text: "x" });
       },
-      caps: { notes: MAX_NOTES },
     });
   });
 

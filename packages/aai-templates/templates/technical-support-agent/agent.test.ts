@@ -20,7 +20,7 @@ import {
   GROUNDED_SYSTEM,
   REWRITE_SYSTEM,
 } from "./prompts.ts";
-import { ASKED_CAP, supportSlot } from "./shared.ts";
+import { supportSlot } from "./shared.ts";
 /** The tool FILES themselves: a file's default export is the very object
  *  `agentDef` registers under its name, and handing it to `run` is what
  *  types the call's arguments and its result. */
@@ -326,7 +326,6 @@ describeAgent(agentDef, (run) => {
         write: (state) => {
           state.asked.push("question 1");
         },
-        caps: { asked: ASKED_CAP },
       });
     });
   });

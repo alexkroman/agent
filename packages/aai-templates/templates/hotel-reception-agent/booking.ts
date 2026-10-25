@@ -4,8 +4,8 @@
  * Their `BookRoomTask._step()` reads the draft on every call and answers which
  * of seven steps the flow is on, so a correction lands the flow back on the
  * right step with no rollback bookkeeping. Here the same derivation answers the
- * EVENT the recording tool should send: every recording tool ends with
- * `sendFrom: (r) => ({ type: r.next })`, and the `booking` dialog in `desk.ts`
+ * EVENT the recording tool should send: every recording tool answers it as
+ * `next` and declares `sendFrom: "next"`, and the `booking` dialog in `desk.ts`
  * has a child state per step. Two things their flow expressed with a private
  * `_Owed` object — "offer the options before a room may be picked", "read the
  * booking back before it may be confirmed" — are states the dialog leaves on
