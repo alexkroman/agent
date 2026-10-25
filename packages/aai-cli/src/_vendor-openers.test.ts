@@ -94,9 +94,9 @@ describe("omitVendorOpeners", () => {
       openElevenLabs: () => unknown;
     };
     const entry = VENDOR_OPENERS.find((candidate) => candidate.kind === "elevenlabs");
-    expect(entry).toBeDefined();
-    expect(() => mod.openElevenLabs()).toThrow(omittedVendorMessage(entry as never));
-    expect(omittedVendorMessage(entry as never)).toMatch(
+    if (entry === undefined) throw new Error("the table lost elevenlabs");
+    expect(() => mod.openElevenLabs()).toThrow(omittedVendorMessage(entry));
+    expect(omittedVendorMessage(entry)).toMatch(
       /ElevenLabs STT was left out of this bundle.*no "elevenlabs" stt stage.*@elevenlabs\/elevenlabs-js/,
     );
   });
