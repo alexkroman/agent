@@ -32,14 +32,8 @@ import { routeFetch } from "./route-fetch.ts";
  * @public
  */
 export type UseRouteOptions<T = unknown> = {
-  /**
-   * Read again every this many ms, while mounted. Default: never. `every`
-   * is the same option under the name a sentence wants (`every: 5000`); when
-   * both are given `every` wins.
-   */
+  /** Read again every this many ms, while mounted. Default: never. */
   pollMs?: number | undefined;
-  /** Read again every this many ms, while mounted — see `pollMs`. */
-  every?: number | undefined;
   /**
    * Stop polling once an answer satisfies this — a call that is over, a job
    * that has settled. Judged on every read, the first included; `reload()`
@@ -79,7 +73,7 @@ export type UseRouteResult<T> = {
 
 /**
  * `GET` one of the agent's own routes, on mount, on `reload()` and every
- * `pollMs`/`every` until `until` says so — see this module's doc.
+ * `pollMs` until `until` says so — see this module's doc.
  *
  * @example A list that re-reads after each delete
  * ```tsx
@@ -117,7 +111,7 @@ export type UseRouteResult<T> = {
  *
  * function LiveCall({ id }: { id: string }) {
  *   const { data } = useRoute<Call>(`/calls/${id}`, {
- *     every: 2000,
+ *     pollMs: 2000,
  *     until: (call) => call.status === "completed",
  *   });
  *   return <ol>{data?.transcript.map((line, i) => <li key={String(i)}>{line.text}</li>)}</ol>;
@@ -126,7 +120,7 @@ export type UseRouteResult<T> = {
  *
  * @typeParam T - The shape the route answers. Not checked.
  * @param path - The route's path as declared, without `/api`. `null` reads nothing.
- * @param options - `pollMs`/`every`, `until`, `client` and `headers`; see {@link UseRouteOptions}.
+ * @param options - `pollMs`, `until`, `client` and `headers`; see {@link UseRouteOptions}.
  * @returns The answer, the last error, and `reload`; see {@link UseRouteResult}.
  *
  * @public
@@ -136,8 +130,7 @@ export function useRoute<T = unknown>(
   options: UseRouteOptions<T> = {},
 ): UseRouteResult<T> {
   const session = useOptionalSessionCore();
-  const { pollMs, every, client } = options;
-  const intervalMs = every ?? pollMs;
+  const { pollMs, client } = options;
   const [data, setData] = useState<T | undefined>(undefined);
   const [error, setError] = useState<string | undefined>(undefined);
   const [loading, setLoading] = useState(path !== null);
@@ -195,13 +188,13 @@ export function useRoute<T = unknown>(
   useEffect(() => {
     // The poll's first tick IS the mount read, so a polled route is not read
     // twice at mount.
-    const stop = intervalMs ? repeatUntil(intervalMs, read) : undefined;
+    const stop = pollMs ? repeatUntil(pollMs, read) : undefined;
     if (!stop) void read();
     return () => {
       stop?.();
       epoch.bump();
     };
-  }, [read, intervalMs, epoch]);
+  }, [read, pollMs, epoch]);
 
   return { data, error, loading, reload };
 }

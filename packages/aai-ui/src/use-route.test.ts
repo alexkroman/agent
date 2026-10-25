@@ -94,13 +94,13 @@ describe("useRoute", () => {
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ headers: { authorization: "Bearer k" } });
   });
 
-  test("`every` polls from the SETTLED read, and `until` stops it without stopping reload()", async () => {
+  test("`pollMs` polls from the SETTLED read, and `until` stops it without stopping reload()", async () => {
     vi.useFakeTimers();
     try {
       let reads = 0;
       fetchMock.mockImplementation(async () => json({ ok: ++reads >= 3 ? "done" : "going" }));
       const hook = mount("/calls/1", undefined, {
-        every: 1000,
+        pollMs: 1000,
         until: (call) => call.ok === "done",
       });
       // The poll's first tick is the mount read: not two reads at mount.

@@ -133,7 +133,7 @@ export type {
 } from "./sdk/agent-session-lifecycle.ts";
 /**
  * The signed BRIEF a placed call carries to the session that answers it — what
- * `stepPlaceCall({ brief })` puts on the call and `call.brief(secret)` reads
+ * `stepPlaceCall({ brief })` puts on the call and `readCallBrief(call, secret)` reads
  * back; `readCallBrief`/`signCallBrief` are the same two halves unbound.
  */
 export {
@@ -330,7 +330,7 @@ export type {
  * Which phone call a `WS /phone` session is — the carrier, its call id and the
  * stream's custom parameters — read from `ctx.sessionId`. A CLAIM by the far end.
  */
-export { type SessionCall, type SessionCallInput, sessionCall } from "./sdk/session-call.ts";
+export { type SessionCall, sessionCall } from "./sdk/session-call.ts";
 /**
  * Which device a session belongs to, read from `ctx.sessionId` — how a tool hands
  * a run the id `stepNotifyClient` reaches that device by after the call.

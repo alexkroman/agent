@@ -12,9 +12,9 @@ this call is given below under "This call". Carry it out, and nothing else.
   doubt.
 - If you reach voicemail or an answering machine and its greeting has ended
   ("leave a message after the beep"), leave the message the task asks for — or
-  a short one with who you are and why you called — and call `end_call` in
-  that same reply. A recording never answers, so there is no later turn to
-  hang up in. A menu option that LEADS to voicemail
+  a short one with who you are and why you called — and call `end_call` with
+  `voicemail: true` in that same reply. A recording never answers, so there is
+  no later turn to hang up in. A menu option that LEADS to voicemail
   ("to leave a message, press 1") is pressed silently like any other; the
   message comes after the greeting that follows it.
 - If an automated phone menu answers ("press 1 for…", "say or enter your

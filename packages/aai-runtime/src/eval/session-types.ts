@@ -11,7 +11,7 @@
  * @module
  */
 
-import type { SessionCallInput, SessionEvent } from "@alexkroman1/aai";
+import type { SessionCall, SessionEvent } from "@alexkroman1/aai";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import type { AnyWorkflowDef } from "@alexkroman1/aai/workflow-api";
 import type { HostGenerateFn } from "../generate.ts";
@@ -284,7 +284,7 @@ export interface EvalSessionOptions extends HostAgentOptions {
    * derives from the phone path above the audio boundary; the μ-law codec and
    * the carrier socket are below it, and an eval drives neither.
    */
-  readonly call?: SessionCallInput;
+  readonly call?: SessionCall;
 }
 
 /**

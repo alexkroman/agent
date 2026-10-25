@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * The brief's wire shape and its signature: what `stepPlaceCall({ brief })`
- * puts on the call, and what `call.brief(secret)` accepts back.
+ * puts on the call, and what `readCallBrief(call, secret)` accepts back.
  */
 
 import { describe, expect, test } from "vitest";

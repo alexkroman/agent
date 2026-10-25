@@ -71,12 +71,7 @@ import { stubGateway, stubGatewayRoute } from "./testing-gateway.ts";
 import type { StubSpeech, StubSpeechCall, StubSpeechOptions } from "./testing-speech.ts";
 import { stubSpeech } from "./testing-speech.ts";
 import { type ToolBearingAgent, type ToolRunner, toolRunner } from "./testing-tools.ts";
-import type {
-  StubUpload,
-  StubUploads,
-  StubUploadsOptions,
-  StubUploadWrite,
-} from "./testing-uploads.ts";
+import type { StubUpload, StubUploads, StubUploadsOptions } from "./testing-uploads.ts";
 import { stubUploads } from "./testing-uploads.ts";
 import { createStubWorkflows } from "./testing-workflows.ts";
 import type { WorkflowClient } from "./workflow-client.ts";
@@ -482,10 +477,15 @@ export type StubWorldOptions = {
   readonly pages?: FetchRouteTable | readonly FetchRouteHandler[] | FetchRouteHandler | undefined;
   /** Publish a recording synthesizer — `installStubSpeech`'s options, or `true` for the defaults. */
   readonly speech?: StubSpeechOptions | true | undefined;
-  /** Publish an in-memory upload store holding these files — `installStubUploads`'s. */
-  readonly uploads?: Readonly<Record<string, StubUpload>> | undefined;
-  /** `installStubUploads`'s options (`writable`, `idPrefix`), beside the files. */
-  readonly uploadsOptions?: StubUploadsOptions | undefined;
+  /**
+   * Publish an in-memory upload store — `installStubUploads`'s two arguments
+   * as one object: the `files` it holds by id, beside its options (`writable`,
+   * `idPrefix`). `{}` publishes an empty read-only store; `{ writable: true }`
+   * one a step may write into, read back on `files`.
+   */
+  readonly uploads?:
+    | (StubUploadsOptions & { readonly files?: Readonly<Record<string, StubUpload>> | undefined })
+    | undefined;
   /**
    * The `ASSEMBLYAI_API_KEY` to seed for this test, when the process holds
    * none. Defaults to a recognizable stub value; `false` seeds nothing.
@@ -514,9 +514,10 @@ export type StubWorld = {
   readonly provider: StubTranscribeCall[];
   /** Every line the synthesizer was asked to say — empty when `speech` was not named. */
   readonly speech: StubSpeechCall[];
-  /** Every file a step wrote — empty unless `uploads` was named with `writable`. */
-  readonly uploads: StubUploadWrite[];
-  /** The upload store itself, for `read` — `undefined` when `uploads` was not named. */
+  /**
+   * The upload store itself — `undefined` when `uploads` was not named. Read a
+   * file back with `read`; what a step wrote (under `writable`) is `writes`.
+   */
   readonly files: StubUploads | undefined;
   /**
    * What the steps narrated and emitted (`installStubReporter`) — empty, and
@@ -598,15 +599,13 @@ export function installStubWorld(options: StubWorldOptions = {}): StubWorld {
     options.speech === undefined
       ? undefined
       : installStubSpeech(options.speech === true ? {} : options.speech);
+  const { files: seeded = {}, ...uploadsOptions } = options.uploads ?? {};
   const files =
-    options.uploads === undefined
-      ? undefined
-      : installStubUploads(options.uploads, options.uploadsOptions ?? {});
+    options.uploads === undefined ? undefined : installStubUploads(seeded, uploadsOptions);
   return {
     model: model?.calls ?? [],
     provider: provider?.calls ?? [],
     speech: speech?.calls ?? [],
-    uploads: files?.writes ?? [],
     files,
     reported:
       (options.reporter ?? !hasStepReporter())

@@ -79,21 +79,27 @@ import {
   type UseDownloadUrlResult,
   useDownloadUrl,
   useWorkflowSubmit,
+  type WorkflowDefOf,
   WorkflowFields,
   type WorkflowOutputOf,
   WorkflowPendingNote,
   WorkflowProgress,
   WorkflowRunError,
 } from "@alexkroman1/aai-ui";
-import type { spokenSummary } from "./agent.ts";
+// ERASED at build time: the agent's own type, so the hook checks the NAME
+// below against the `workflows` map `agent.ts` declares.
+import type agentDef from "./agent.ts";
+
+/** The one workflow this app declares, read off the agent by its name. */
+type SpokenSummary = WorkflowDefOf<typeof agentDef, "spokenSummary">;
 
 /**
  * What a finished run looks like: the words, the player, and the transcript.
  *
  * Its own component, so the two things it is handed have to be NAMED — and
  * both names are the SDK's rather than a restatement of them.
- * `WorkflowOutputOf<typeof spokenSummary>` is the run's declared output read
- * off the def in `agent.ts` (a type-only import, erased at build), which is
+ * `WorkflowOutputOf<SpokenSummary>` is the run's declared output read off the
+ * agent in `agent.ts` (a type-only import, erased at build), which is
  * what stops this file writing out a shape `workflows/summarize.ts` already
  * owns; `UseDownloadUrlResult` is the `{ url, error, pending }` triple the
  * hook answers, and it belongs to the hook rather than to this page — a page
@@ -109,7 +115,7 @@ function Summary({
   output,
   audio,
 }: {
-  output: WorkflowOutputOf<typeof spokenSummary>;
+  output: WorkflowOutputOf<SpokenSummary>;
   audio: UseDownloadUrlResult;
 }) {
   return (
@@ -152,7 +158,7 @@ export function App() {
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
   // `run.output` instead of `unknown`. The reload is the hook's own doing — see
   // the module doc for why the key it mints is the right one for this page.
-  const submission = useWorkflowSubmit<typeof spokenSummary>("spokenSummary");
+  const submission = useWorkflowSubmit<typeof agentDef>("spokenSummary");
   const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error } = submission;
   const output = run?.status === "completed" ? run.output : undefined;
   // `useDownloadUrl` is the SDK's: the byte route takes the agent's bearer, so the
@@ -171,7 +177,7 @@ export function App() {
 
       <Form onSubmit={(values) => submitForm(values)} error={error} className="flex flex-col gap-4">
         {/* Every control, from the workflow's own input schema. See the module doc. */}
-        <WorkflowFields workflow="spokenSummary" />
+        <WorkflowFields<typeof agentDef> workflow="spokenSummary" />
         <SubmitButton pending={pending} pendingLabel="Working…">
           Summarize
         </SubmitButton>

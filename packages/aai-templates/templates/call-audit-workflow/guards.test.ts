@@ -74,7 +74,7 @@ function probed(...kinds: string[]): MediaInfo {
 /** The store, holding `bytes` of the recording — whole unless `complete: false`. */
 function stored(bytes: Uint8Array, options: { complete?: boolean; type?: string } = {}) {
   return installStubWorld({
-    uploads: { [UPLOAD_ID]: { bytes, name: "call.m4a", ...options } },
+    uploads: { files: { [UPLOAD_ID]: { bytes, name: "call.m4a", ...options } } },
   });
 }
 

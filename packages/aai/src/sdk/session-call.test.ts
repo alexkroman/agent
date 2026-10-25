@@ -2,16 +2,12 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createToolContext } from "./_testing-context.ts";
-import {
-  type SessionCall,
-  type SessionCallInput,
-  sessionCall,
-  setSessionCall,
-} from "./session-call.ts";
+import { readCallBrief } from "./call-brief.ts";
+import { type SessionCall, sessionCall, setSessionCall } from "./session-call.ts";
 
 afterEach(() => vi.useRealTimers());
 
-const CALL: SessionCallInput = {
+const CALL: SessionCall = {
   carrier: "twilio",
   callId: "CA00000000000000000000000000000001",
   parameters: { call: "c_81f2" },
@@ -35,16 +31,17 @@ describe("sessionCall", () => {
     expect(Object.isFrozen(call?.parameters)).toBe(true);
   });
 
-  test("the recorded call reads its own brief, and the reader is not data", async () => {
+  test("the recorded call is plain data, and readCallBrief reads the brief it carries", async () => {
     const { signCallBrief } = await import("./call-brief.ts");
     const parameters = await signCallBrief({ id: "call_7", prompt: "Say hello." }, "s3cret");
     setSessionCall("call-d", { carrier: "twilio", parameters: { ...parameters, for: "Sam" } });
     const call = sessionCall({ sessionId: "call-d" });
-    expect(await call?.brief("s3cret")).toEqual({ id: "call_7", prompt: "Say hello." });
-    expect(await call?.brief("wrong")).toBeUndefined();
-    expect(await call?.brief(undefined)).toBeUndefined();
-    // Non-enumerable: a log line or a deep equality sees the call as data.
-    expect(Object.keys(call ?? {})).toEqual(["carrier", "parameters"]);
+    if (!call) throw new Error("not recorded");
+    expect(await readCallBrief(call, "s3cret")).toEqual({ id: "call_7", prompt: "Say hello." });
+    expect(await readCallBrief(call, "wrong")).toBeUndefined();
+    expect(await readCallBrief(call, undefined)).toBeUndefined();
+    // A log line or a deep equality sees the call as data: no reader rides on it.
+    expect(Object.keys(call)).toEqual(["carrier", "parameters"]);
     expect(call).toEqual({ carrier: "twilio", parameters: { ...parameters, for: "Sam" } });
   });
 

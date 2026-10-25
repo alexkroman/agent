@@ -10,8 +10,8 @@
     "dropped": {}
   },
   "eval": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "eval-assert": {
@@ -53,8 +53,8 @@
     "dropped": {}
   },
   "runtime": {
-    "current": 2,
-    "supported": [1, 2],
+    "current": 1,
+    "supported": [1],
     "dropped": {}
   },
   "server": {

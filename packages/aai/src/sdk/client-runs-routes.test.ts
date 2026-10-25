@@ -6,6 +6,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createRouteContext } from "./_testing-route-context.ts";
 import type { RouteContext, RouteRequest } from "./agent-routes.ts";
 import { readRouteResponse } from "./agent-routes.ts";
 import { type ClientRunsResponse, clientRunsRoutes } from "./client-runs-routes.ts";
@@ -25,13 +26,7 @@ afterEach(() => {
 });
 
 function ctxWith(workflows: Partial<WorkflowClient>): RouteContext {
-  return {
-    env: {},
-    workflows: createStubWorkflows(workflows),
-    clientTranscript: async () => ({ sessions: [] }),
-    speech: () => undefined,
-    signal: new AbortController().signal,
-  };
+  return createRouteContext({ workflows: createStubWorkflows(workflows) });
 }
 
 function req(over: Partial<RouteRequest> = {}): RouteRequest {

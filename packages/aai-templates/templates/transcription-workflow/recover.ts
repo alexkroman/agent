@@ -12,9 +12,8 @@
  *   package's suites have no DOM. Here the decisions are ordinary functions, so
  *   `recover.test.ts` pins them.
  * - The mode recall has a REAL branch in it: what comes back out of storage is
- *   an untrusted string, and a page that trusted it would index `WORKFLOWS`
- *   with it and start a run by the name `undefined` — a 400 from a value nobody
- *   typed.
+ *   an untrusted string, and a page that trusted it would start a run by a
+ *   name the agent never declared — a 400 from a value nobody typed.
  *
  * The mode lives in `sessionStorage`, which is the store the hook's own key
  * defaults to, so the two halves of a reload make the same promise: a mode

@@ -26,10 +26,8 @@ export {
   type AgentSessionContext,
   type AgentSessionLifecycle,
   // The call BRIEF: what `stepPlaceCall({ brief })` signs onto a call and
-  // `ctx.call.brief(secret)` / `readCallBrief` reads back off `SessionCall`. Here
-  // rather than on `step` because the reader is the session the call becomes;
-  // `SessionCallInput` is the record a writer hands in (`createToolContext`, the
-  // phone bridge) before the SDK attaches the reader.
+  // `readCallBrief(call, secret)` reads back off `SessionCall`. Here rather
+  // than on `step` because the reader is the session the call becomes.
   CALL_BRIEF_CHUNK_CHARS,
   CALL_BRIEF_SECRET_ENV,
   type CallBrief,
@@ -39,7 +37,6 @@ export {
   readCallBrief,
   type SayOptions,
   type SessionCall,
-  type SessionCallInput,
   type SessionContext,
   type SessionContextArgs,
   type SessionEndContext,

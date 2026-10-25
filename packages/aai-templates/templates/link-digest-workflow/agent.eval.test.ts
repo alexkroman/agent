@@ -26,11 +26,7 @@
 
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import {
-  describeWorkflowEval,
-  installStubStepFetch,
-  stubGatewayRoute,
-} from "@alexkroman1/aai-runtime/testing/vitest";
+import { describeWorkflowEval, installStubWorld } from "@alexkroman1/aai-runtime/testing/vitest";
 import { assert, expect, onTestFinished } from "vitest";
 import agentDef, { digest } from "./agent.ts";
 import { SETTLE_MS } from "./workflows/digest.ts";
@@ -105,17 +101,16 @@ async function servePage(html: string): Promise<string> {
 
 /**
  * Answer both of the run's legs in memory: the model, then the page for
- * everything else — composed by hand rather than with `installStubWorld`,
- * which also publishes a reporter and would take the narration `run.reported`
- * asserts on away from the eval's own. The recorded model calls come back
- * DECODED, which is what lets the last case read what the model was SHOWN.
+ * everything else — `installStubWorld`'s own order, which leaves the eval's
+ * reporter in place so `run.reported` still reads the narration. The recorded
+ * model calls come back DECODED, which is what lets the last case read what the
+ * model was SHOWN.
  */
 function scriptBothLegs(html: string, reply = SCRIPTED_DIGEST) {
-  const model = stubGatewayRoute(reply);
-  installStubStepFetch(
-    (request) => model.route(request) ?? { body: html, headers: { "Content-Type": "text/html" } },
-  );
-  return model.calls;
+  return installStubWorld({
+    model: reply,
+    pages: () => ({ body: html, headers: { "Content-Type": "text/html" } }),
+  }).model;
 }
 
 describeWorkflowEval(agentDef, (test) => {

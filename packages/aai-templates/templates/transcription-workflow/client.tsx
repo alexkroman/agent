@@ -99,6 +99,7 @@
  */
 
 import "@alexkroman1/aai-ui/styles.css";
+import type { WorkflowNameOf } from "@alexkroman1/aai/workflow-api";
 import {
   CheckboxField,
   Form,
@@ -113,27 +114,22 @@ import {
   WorkflowPendingNote,
 } from "@alexkroman1/aai-ui";
 import { useEffect, useState } from "react";
-import type { transcribe } from "./agent.ts";
+// ERASED at build time: the agent's own type, so every workflow NAME this page
+// passes is checked against the `workflows` map `agent.ts` declares.
+import type agentDef from "./agent.ts";
 import { recalledMode, rememberMode } from "./recover.ts";
 // The readouts — one run in flight, every one before it, and the clock. Their
 // own module because they are the same whichever of the three hooks produced
 // the run; this file owns the page's shape.
-import { HISTORY_LIMIT, History, RunPanel, TotalLatency, type Transcript } from "./run-panel.tsx";
+import { HISTORY_LIMIT, History, RunPanel, TotalLatency } from "./run-panel.tsx";
 
 /**
- * The three workflows this page drives, keyed by the mode that picks one.
- *
- * The STRINGS are the keys of `workflowApp({ workflows })` in `agent.ts`; a
- * run started by a name the agent does not declare is a runtime 400.
+ * Which flow the form submits through: the three workflows `agent.ts`
+ * declares, by name. `WorkflowNameOf` is the literal union of its `workflows`
+ * keys, so a mode the agent does not declare is a compile error here rather
+ * than a runtime 400.
  */
-const WORKFLOWS = {
-  streaming: "transcribeStream",
-  classic: "transcribe",
-  batch: "transcribeBatch",
-} as const;
-
-/** Which flow the form submits through. */
-type Mode = keyof typeof WORKFLOWS;
+type Mode = WorkflowNameOf<typeof agentDef>;
 
 /**
  * What each mode is called, and what picking it changes.
@@ -144,17 +140,17 @@ type Mode = keyof typeof WORKFLOWS;
  */
 const MODES: readonly { mode: Mode; label: string; note: string }[] = [
   {
-    mode: "streaming",
+    mode: "transcribeStream",
     label: "While it uploads",
     note: "Sync API. The run starts first and transcribes each segment as its bytes land, so progress is visible while the file is still moving — but the run is reading the file from this page, so it cannot survive a reload.",
   },
   {
-    mode: "classic",
+    mode: "transcribe",
     label: "After it uploads",
     note: "Sync API. Store the whole recording, then fan out over it. The simplest shape, and the quickest on a fast link.",
   },
   {
-    mode: "batch",
+    mode: "transcribeBatch",
     label: "Let the provider do it",
     note: "Async API. One job, no cutting, no seams — and it accepts MP3 and M4A, which the two above refuse.",
   },
@@ -167,7 +163,7 @@ function TranscriptionDesk() {
   // The mode the last submission used, so a recovered run is in front of the
   // reader rather than behind a radio nobody pressed. Lazy, and validated on the
   // way out of storage — see `recalledMode`.
-  const [mode, setMode] = useState<Mode>(() => recalledMode(MODE_NAMES, "streaming"));
+  const [mode, setMode] = useState<Mode>(() => recalledMode(MODE_NAMES, "transcribeStream"));
   // Whether the browser cuts the recording up and sends the pieces at once. One
   // piece of state for all three hooks, because it describes the UPLOAD and every
   // mode has one — see the module doc.
@@ -178,17 +174,22 @@ function TranscriptionDesk() {
   // lookup is a MOUNT-time act, and `find` is scoped by workflow as well as by key,
   // so the two modes recover separate runs. The streaming hook refuses `recover` by
   // type, and mints no key it would never read back.
-  const streamed = useWorkflowStream<typeof transcribe>(WORKFLOWS.streaming, { parallel });
-  const stored = useWorkflowSubmit<typeof transcribe>(WORKFLOWS.classic, { parallel });
-  const batched = useWorkflowSubmit<typeof transcribe>(WORKFLOWS.batch, { parallel });
+  const streamed = useWorkflowStream<typeof agentDef, "transcribeStream">("transcribeStream", {
+    parallel,
+  });
+  const stored = useWorkflowSubmit<typeof agentDef, "transcribe">("transcribe", { parallel });
+  const batched = useWorkflowSubmit<typeof agentDef, "transcribeBatch">("transcribeBatch", {
+    parallel,
+  });
   // Everything below reads the ACTIVE hook — `startedHere`, `scope` and `timing`
   // included — so switching modes shows the truth about the run being shown
   // rather than one page-wide flag that survived the switch.
-  const active = mode === "streaming" ? streamed : mode === "batch" ? batched : stored;
+  const active =
+    mode === "transcribeStream" ? streamed : mode === "transcribeBatch" ? batched : stored;
   const { submitForm, run, upload, pending, error, reset, pauseUpload, resumeUpload } = active;
   // History is per WORKFLOW, so the list follows the mode: two flows that produce
   // the same output are still two different things to have run.
-  const history = useWorkflowRuns<Transcript>(WORKFLOWS[mode], { limit: HISTORY_LIMIT });
+  const history = useWorkflowRuns<typeof agentDef>(mode, { limit: HISTORY_LIMIT });
   // Which past run the reader is looking at, if any. Its own state rather than
   // a route, because a workflow app is one page and a run id is not a place.
   const [openId, setOpenId] = useState<string | undefined>(undefined);
@@ -233,7 +234,7 @@ function TranscriptionDesk() {
         error={error}
       >
         {/* The NAME, so the schema is fetched here rather than by this page. */}
-        <WorkflowFields workflow={WORKFLOWS[mode]} />
+        <WorkflowFields<typeof agentDef> workflow={mode} />
         {/* Unguarded on purpose: it renders nothing until there are bytes in
             flight, and nothing again once they have landed. */}
         <UploadProgressBar upload={upload} onPause={pauseUpload} onResume={resumeUpload} />

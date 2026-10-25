@@ -93,6 +93,7 @@ import {
   mountPage,
   SubmitButton,
   useWorkflowSubmit,
+  type WorkflowDefOf,
   WorkflowFields,
   type WorkflowOutputOf,
   WorkflowPendingNote,
@@ -101,9 +102,12 @@ import {
   type WorkflowSubmissionOf,
 } from "@alexkroman1/aai-ui";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
-// nothing — and it is what stops this file restating a shape `workflows/
-// digest.ts` already declares.
-import type { dailyDigest } from "./agent.ts";
+// nothing — and it is what lets the hook check the NAME below against the
+// `workflows` map `agent.ts` declares, and type the run's output off it.
+import type agentDef from "./agent.ts";
+
+/** The one workflow this app declares, read off the agent by its name. */
+type DailyDigest = WorkflowDefOf<typeof agentDef, "dailyDigest">;
 
 export function App() {
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
@@ -113,7 +117,7 @@ export function App() {
   // `key: { storage: "local" }` is this BROWSER's handle on its schedules —
   // minted once and kept for as long as storage lives for this origin, which
   // is the option this template exists to argue for. See the module doc.
-  const submission = useWorkflowSubmit<typeof dailyDigest>("dailyDigest", {
+  const submission = useWorkflowSubmit<typeof agentDef>("dailyDigest", {
     key: { storage: "local" },
   });
   const { submitForm, run, pending, error } = submission;
@@ -125,7 +129,7 @@ export function App() {
       {/* `submit()` resolves as soon as the run EXISTS — deliberately not when it
           finishes, which here could be a month away. */}
       <Form onSubmit={(values) => submitForm(values)} error={error}>
-        <WorkflowFields workflow="dailyDigest" />
+        <WorkflowFields<typeof agentDef> workflow="dailyDigest" />
         <SubmitButton pending={pending}>
           {pending ? "Digest scheduled" : "Start digest"}
         </SubmitButton>
@@ -167,11 +171,7 @@ export function App() {
  * this page is following, and passing them loose invites a caller to bind them
  * to something else.
  */
-function ScheduleControls({
-  submission,
-}: {
-  submission: WorkflowSubmissionOf<typeof dailyDigest>;
-}) {
+function ScheduleControls({ submission }: { submission: WorkflowSubmissionOf<DailyDigest> }) {
   const { pending, wake, cancel } = submission;
   if (!pending) return null;
 
@@ -200,13 +200,13 @@ function ScheduleControls({
 /**
  * What the finished run posted, last digest first.
  *
- * The prop is `WorkflowOutputOf<typeof dailyDigest>` — the workflow's own
- * output type, which is what the `completed` branch narrows `run.output` to.
+ * The prop is `WorkflowOutputOf<DailyDigest>` — the workflow's own output
+ * type, which is what the `completed` branch narrows `run.output` to.
  * Naming it is what keeps this component and `workflows/digest.ts` from
  * drifting: a field renamed there is a compile error here rather than
  * `undefined` on the page.
  */
-function LastDigest({ output }: { output: WorkflowOutputOf<typeof dailyDigest> }) {
+function LastDigest({ output }: { output: WorkflowOutputOf<DailyDigest> }) {
   return (
     <article className="flex flex-col gap-4">
       <p className="text-sm opacity-70">

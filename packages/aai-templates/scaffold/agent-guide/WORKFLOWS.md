@@ -640,7 +640,7 @@ for a route handler.
 `stepPlaceCall({ carrier, to, from, brief: { id, prompt } })` dials out through
 this agent's `/phone`; the `brief` rides the call signed with `CALLS_API_KEY`
 (`briefSecretEnv` names another variable), and the answering session reads it
-back with `sessionCall(ctx)?.brief(secret)` — a stream that presents no valid
+back with `readCallBrief(call, secret)` — a stream that presents no valid
 signature answers `undefined`, so a tool refuses it. How the call went is on
 `onSessionEnd`'s `ctx.transcript`, keyed by nothing: every committed line of
 that session, oldest first. The route that accepts the brief from the app's own

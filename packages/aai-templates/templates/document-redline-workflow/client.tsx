@@ -53,7 +53,7 @@
 
 import "@alexkroman1/aai-ui/styles.css";
 import { plural } from "@alexkroman1/aai/utils";
-import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
+import type { WorkflowDefOf, WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
   BulletList,
   Facts,
@@ -66,21 +66,22 @@ import {
   WorkflowPendingNote,
   WorkflowRunPanel,
 } from "@alexkroman1/aai-ui";
-import type { redline } from "./agent.ts";
+import type agentDef from "./agent.ts";
 
 /**
  * What a finished run reports.
  *
- * Derived from the workflow declaration rather than restated — `import type` is
- * erased, so naming `redline` here bundles none of the agent, the SDK, or the
- * workflow body into this page.
+ * Derived from the agent's declaration rather than restated — `import type` is
+ * erased, so naming the agent here bundles none of it, the SDK, or the
+ * workflow body into this page — and the NAME is checked against its
+ * `workflows` map.
  */
-type Redline = WorkflowOutputOf<typeof redline>;
+type Redline = WorkflowOutputOf<WorkflowDefOf<typeof agentDef, "redline">>;
 
 function RedlineDesk() {
   // The reload is covered by the hook's own key — see the module doc for why
   // this desk wants the tab-scoped one it mints rather than a key of its own.
-  const submission = useWorkflowSubmit<typeof redline>("redline");
+  const submission = useWorkflowSubmit<typeof agentDef>("redline");
   const { submitForm, run, pending, error, reset } = submission;
 
   return (
@@ -95,7 +96,7 @@ function RedlineDesk() {
 
       <Form onSubmit={(values) => submitForm(values)} error={error}>
         {/* Every control, non-scalars included — see the module doc. */}
-        <WorkflowFields workflow="redline" />
+        <WorkflowFields<typeof agentDef> workflow="redline" />
         <SubmitButton pending={pending}>Write it</SubmitButton>
       </Form>
 

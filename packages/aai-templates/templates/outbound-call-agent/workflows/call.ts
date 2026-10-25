@@ -17,9 +17,11 @@
  *    answered or over. Polled, because a call nobody picks up never reaches a
  *    session, so nothing else would ever say "no answer".
  * 3. **The call itself** — once it is answered the run PARKS on
- *    {@link callEndedToken} until the session's `onSessionEnd` signals the
- *    transcript (`agent.ts`). Suspended, not blocked: a ten-minute call costs
- *    nothing while it runs. The window is the call's own time limit plus
+ *    `ctx.waitForSignal("callEnded")` until the session's `onSessionEnd`
+ *    signals the transcript (`agent.ts`, `signalRun(call, id, "callEnded")`):
+ *    the token is derived from the run's own key — the call id — on both
+ *    sides, so neither spells it. Suspended, not blocked: a ten-minute call
+ *    costs nothing while it runs. The window is the call's own time limit plus
  *    slack, and closing unanswered is an outcome, not a failure.
  * 4. **`summarize`** and **`webhook`** — one model call over the transcript,
  *    then one POST of the finished record to the caller's `webhook_url`.
@@ -49,7 +51,6 @@ import { orFail } from "@alexkroman1/aai/step-errors";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import type { CallOutcome, CallRecord, TranscriptTurn } from "../api-types.ts";
-import { callEndedToken } from "./tokens.ts";
 
 /** An E.164 number: a `+`, a country code, and up to fifteen digits in all. */
 const E164 = /^\+[1-9]\d{6,14}$/;
@@ -83,6 +84,8 @@ export type CallInput = z.infer<typeof callInput>;
 export type CallEnded = {
   transcript: TranscriptTurn[];
   duration_seconds: number;
+  /** Whether the session reached an answering machine — `end_call` said so. */
+  voicemail: boolean;
 };
 
 /** The longest a call may last, in seconds — Twilio hangs up at this. */
@@ -160,9 +163,6 @@ const Summary = z.object({
   summary: z
     .string()
     .describe("Two or three sentences: what happened on the call and anything agreed"),
-  voicemail: z
-    .boolean()
-    .describe("True when the call reached an answering machine or voicemail rather than a person"),
 });
 
 /** The transcript as plain lines, which is what a model reads best. */
@@ -173,9 +173,9 @@ export function transcriptText(transcript: readonly TranscriptTurn[]): string {
 }
 
 /**
- * Write the call up in two or three sentences, against the task it was given —
- * and say whether it reached a person or a machine, which the transcript shows
- * (a voicemail greeting, then the message the agent left).
+ * Write the call up in two or three sentences, against the task it was given.
+ * Whether it reached a person or a machine is not asked here: the session
+ * knew, and said so on the signal (`CallEnded.voicemail`).
  */
 export async function summarize(
   prompt: string,
@@ -244,9 +244,9 @@ export async function callFlow(input: CallInput, ctx: WorkflowContext): Promise<
     return await finish(input, callRecord(input, unansweredOutcome(rang.value), {}), ctx);
   }
 
-  const ended = await ctx.waitFor<CallEnded>(callEndedToken(input.id), {
-    timeoutMs: CALL_WINDOW_MS,
-  });
+  // The token is `<workflow>:<key>:callEnded` — the run's key is the call id
+  // (`api.ts` starts it so), and `onSessionEnd` answers with `signalRun`.
+  const ended = await ctx.waitForSignal<CallEnded>("callEnded", { timeoutMs: CALL_WINDOW_MS });
   if (ended === undefined) {
     return await finish(
       input,
@@ -263,7 +263,7 @@ export async function callFlow(input: CallInput, ctx: WorkflowContext): Promise<
       : await ctx.step("summarize", () => summarize(input.prompt, ended.transcript));
   return await finish(
     input,
-    callRecord(input, written?.voicemail ? "voicemail" : "answered", {
+    callRecord(input, ended.voicemail ? "voicemail" : "answered", {
       transcript: ended.transcript,
       duration_seconds: ended.duration_seconds,
       ...omitUndefined({ summary: written?.summary }),

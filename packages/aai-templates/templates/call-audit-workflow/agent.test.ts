@@ -574,10 +574,12 @@ describe("transcribing one segment", () => {
   function stubProvider(failure?: { status: number; message: string }) {
     return installStubWorld({
       uploads: {
-        [UPLOAD_ID]: {
-          bytes: new Uint8Array(BYTES_PER_SECOND),
-          name: "call.pcm",
-          type: "application/octet-stream",
+        files: {
+          [UPLOAD_ID]: {
+            bytes: new Uint8Array(BYTES_PER_SECOND),
+            name: "call.pcm",
+            type: "application/octet-stream",
+          },
         },
       },
       transcribe: {
@@ -734,7 +736,9 @@ describe("the ffmpeg steps, up to the spawn", () => {
     const before = await readdir(tmpdir());
     installStubWorld({
       uploads: {
-        [UPLOAD_ID]: { bytes: new Uint8Array(2048), name: "call.m4a", type: "audio/mp4" },
+        files: {
+          [UPLOAD_ID]: { bytes: new Uint8Array(2048), name: "call.m4a", type: "audio/mp4" },
+        },
       },
     });
     // Fatal, not retryable: four more attempts find the same missing binary, and the
@@ -750,11 +754,7 @@ describe("the ffmpeg steps, up to the spawn", () => {
     // `stepSpeak` runs — the synthesis is not what is broken here — so this also
     // pins the ORDER: a step that mastered before speaking would fail without ever
     // calling the voice service.
-    const { speech } = installStubWorld({
-      speech: true,
-      uploads: {},
-      uploadsOptions: { writable: true },
-    });
+    const { speech } = installStubWorld({ speech: true, uploads: { writable: true } });
 
     await expect(narrate("Read this back.", "aai-jane")).rejects.toBeInstanceOf(FatalError);
     expect(speech.length).toBe(1);
@@ -804,7 +804,7 @@ describe("the body's step policy", () => {
         },
         transcribeSegment: { index: 0, text: "hello" },
         summarize: { headline: "H", risks: [], actions: [], spoken: "S." },
-        narrate: { audio: "upl_wav", durationMs: 500, bytes: 32 },
+        narrate: { audio: "upl_wav", durationMs: 500, bytes: 32, ffmpegMs: 300 },
       },
     });
 
@@ -812,8 +812,7 @@ describe("the body's step policy", () => {
     // The retry policy is an argument to `ctx.step`, so the CALL is the only
     // place it is observable. The ingest reads a whole recording out of the
     // store and writes a whole one back; every other step takes the default
-    // (the fan-out waits out a rate limit with `maxWaits` instead, which the
-    // recorder does not report).
+    // (the fan-out waits out a rate limit with `maxWaits` instead).
     const ctx = walkedCtx();
 
     await auditFlow({ recording: UPLOAD_ID }, ctx);
@@ -827,6 +826,12 @@ describe("the body's step policy", () => {
     for (const name of ["transcribeSegment", "narrate", "summarize"]) {
       expect(budgets.has(name)).toBe(true);
       expect(budgets.get(name)).toBeUndefined();
+    }
+    // The fan-out's rate limit is a WAIT budget, on that step and no other.
+    const waits = new Map(ctx.steps.map((step) => [step.name, step.maxWaits]));
+    expect(waits.get("transcribeSegment")).toBe(3);
+    for (const name of ["ingestRecording", "narrate", "summarize"]) {
+      expect(waits.get(name)).toBeUndefined();
     }
   });
 
@@ -843,10 +848,10 @@ describe("the body's step policy", () => {
     const output = await auditFlow({ recording: UPLOAD_ID }, ctx);
 
     expect(output.elapsedMs).toBe(3000);
-    // And the ffmpeg time is read off the journaled ingest result rather than
-    // measured again — which is what makes a replay report what the passes
-    // really cost instead of zero for work it did not redo.
-    expect(output.ffmpegMs).toBe(1200);
+    // And the ffmpeg time is read off the journaled ingest and narrate results
+    // rather than measured again — which is what makes a replay report what the
+    // passes really cost instead of zero for work it did not redo.
+    expect(output.ffmpegMs).toBe(1500);
     // And the clock is no longer a step, which is the other half of the claim: a
     // name here would mean the migration left one behind.
     expect(ctx.steps.map((step) => step.name)).not.toContain("clockStart");
@@ -886,7 +891,9 @@ describe("the run is DURABLE, as far as ffmpeg allows", () => {
   beforeEach(() => {
     installStubWorld({
       uploads: {
-        [UPLOAD_ID]: { bytes: new Uint8Array(2048), name: "call.m4a", type: "audio/mp4" },
+        files: {
+          [UPLOAD_ID]: { bytes: new Uint8Array(2048), name: "call.m4a", type: "audio/mp4" },
+        },
       },
     });
     // Neither binary is this block's subject (see its doc), and a real

@@ -281,12 +281,16 @@ describe("summarize", () => {
   test("keeps the default attempts — a rate limit is a WAIT, not a try", async () => {
     // The retry policy is an argument to `ctx.step`, so the BODY's call is the
     // only place it is observable. `runSteps: false` because the subject is the
-    // declared policy rather than the work. (The recorder reports `maxAttempts`
-    // only; `maxWaits` is what the body passes instead of raising it.)
+    // declared policy rather than the work.
     const ctx = createWorkflowContext({ runSteps: false });
     await digestFlow({ url: "https://example.com/a" }, ctx);
 
-    expect(ctx.steps.find((step) => step.name === "summarize")?.maxAttempts).toBeUndefined();
+    const summarize = ctx.steps.find((step) => step.name === "summarize");
+    expect(summarize?.maxAttempts).toBeUndefined();
+    // The EXACT wait budget, on the model step alone: the fetch and the filing
+    // are never rate-limited by the gateway.
+    expect(summarize?.maxWaits).toBe(3);
+    expect(ctx.steps.find((step) => step.name === "fetchArticle")?.maxWaits).toBeUndefined();
     // The order is the body's, and it is worth pinning beside the policy: the
     // fetch is separate from the model call precisely so a rate-limited
     // summarize replays the fetch from the journal instead of hitting a

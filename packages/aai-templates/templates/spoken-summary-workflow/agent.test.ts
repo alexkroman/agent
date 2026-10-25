@@ -60,10 +60,12 @@ const SUMMARY = {
  * precisely so a step that wrote one nobody meant it to would fail), the
  * provider, the model and the voice.
  */
-function world(options: Omit<StubWorldOptions, "uploads" | "uploadsOptions"> = {}) {
+function world(options: Omit<StubWorldOptions, "uploads"> = {}) {
   return installStubWorld({
-    uploads: { [UPLOAD_ID]: { bytes: new Uint8Array(64), name: "standup.wav", type: "audio/wav" } },
-    uploadsOptions: { writable: true },
+    uploads: {
+      files: { [UPLOAD_ID]: { bytes: new Uint8Array(64), name: "standup.wav", type: "audio/wav" } },
+      writable: true,
+    },
     speech: true,
     ...options,
   });

@@ -195,10 +195,11 @@ export interface RouteContext {
    * client. As with `speech`, a session id is not authorization: take it from
    * state your own code wrote, never from the request alone.
    *
-   * Optional only so a context built by hand (a spec's) need not supply one;
-   * every runtime does.
+   * A spec builds a context with `createRouteContext` (`@alexkroman1/aai/testing`)
+   * rather than by hand, so a field the runtime gains is not one every literal
+   * has to learn.
    */
-  sessionTranscript?(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
+  sessionTranscript(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
   /**
    * The speech of the LIVE session `sessionId` on this server: say a sentence
    * on that call, or stop the agent. See {@link SessionSpeech}. `undefined`

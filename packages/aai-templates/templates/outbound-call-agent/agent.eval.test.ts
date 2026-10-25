@@ -127,12 +127,13 @@ describeEval(
         );
         // However it is read out: "415-555-0100", "4-1-5…", "four-one-five…".
         expect(spokenDigits(turn.text), turn.text).toContain("4155550100");
-        expect(toolNames(turn.toolCalls)).toContain("end_call");
+        // And it SAID it was voicemail, which is what the run's outcome reads.
+        expect(toolArgsIn(turn.toolCalls, "end_call")[0]).toMatchObject({ voicemail: true });
         expect(turn.endedSession).toBe(true);
       },
       {
         stubReply: [
-          { tool: "end_call", args: {} },
+          { tool: "end_call", args: { voicemail: true } },
           "Hi Maria, this is Mission Dental about your cleaning tomorrow at 2:30. Please call us at 415-555-0100.",
         ],
       },

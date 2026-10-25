@@ -71,9 +71,6 @@
  */
 
 import "@alexkroman1/aai-ui/styles.css";
-// ERASED at build time, so naming the agent's own type costs the browser bundle
-// nothing — and it is what stops this file restating a shape `workflows/audit.ts`
-// already declares.
 import { formatBytes, formatDuration } from "@alexkroman1/aai/utils";
 import {
   AudioResult,
@@ -90,7 +87,10 @@ import {
   WorkflowProgress,
   WorkflowRunError,
 } from "@alexkroman1/aai-ui";
-import type { audit } from "./agent.ts";
+// ERASED at build time, so naming the agent's own type costs the browser bundle
+// nothing — and it is what lets the hook check the NAME below against the
+// `workflows` map `agent.ts` declares, and type the run's output off it.
+import type agentDef from "./agent.ts";
 
 /** One labelled number in the pipeline panel. */
 function Stat({ label, value }: { label: string; value: string }) {
@@ -107,7 +107,7 @@ export function App() {
   // `run.output` instead of `unknown`. The reload — both halves of it — is the
   // hook's own doing; see the module doc for why the key it mints is the one
   // this desk wants.
-  const submission = useWorkflowSubmit<typeof audit>("audit");
+  const submission = useWorkflowSubmit<typeof agentDef>("audit");
   const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error } = submission;
   const output = run?.status === "completed" ? run.output : undefined;
   // `useDownloadUrl` is the SDK's: the byte route takes the agent's bearer, so the
@@ -127,7 +127,7 @@ export function App() {
 
       <Form onSubmit={(values) => submitForm(values)} error={error} className="flex flex-col gap-4">
         {/* Every control, from the workflow's own input schema. See the module doc. */}
-        <WorkflowFields workflow="audit" />
+        <WorkflowFields<typeof agentDef> workflow="audit" />
         <SubmitButton pending={pending} pendingLabel="Auditing…">
           Audit the call
         </SubmitButton>

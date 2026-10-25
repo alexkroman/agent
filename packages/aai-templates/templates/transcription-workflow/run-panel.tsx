@@ -20,7 +20,7 @@
  */
 
 import { countWords, formatDuration, plural } from "@alexkroman1/aai/utils";
-import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
+import type { WorkflowDefOf, WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import {
   Facts,
   type UseWorkflowRunsResult,
@@ -31,17 +31,17 @@ import {
   type WorkflowSubmissionTiming,
 } from "@alexkroman1/aai-ui";
 import { useEffect, useMemo, useState } from "react";
-import type { transcribe } from "./agent.ts";
+import type agentDef from "./agent.ts";
 import { stitchChunks, TRANSCRIPT_STREAM, type TranscriptChunk } from "./workflows/stitch.ts";
 
 /**
  * What a finished run reports.
  *
- * Derived from the workflow declaration rather than restated — `import type` is
- * erased, so naming `transcribe` here bundles none of the agent, the SDK, or the
- * workflow body into this page.
+ * Derived from the agent's declaration rather than restated — `import type` is
+ * erased, so naming the agent here bundles none of it, the SDK, or the
+ * workflow body into this page. All three flows answer this one shape.
  */
-export type Transcript = WorkflowOutputOf<typeof transcribe>;
+export type Transcript = WorkflowOutputOf<WorkflowDefOf<typeof agentDef, "transcribe">>;
 
 /** Most past runs the history list shows. */
 export const HISTORY_LIMIT = 10;

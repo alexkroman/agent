@@ -65,6 +65,9 @@
  */
 
 export {
+  // `createRouteContext(overrides?)`: the `RouteContext` a route handler's spec
+  // hands in, every field supplied, beside `createToolContext`.
+  createRouteContext,
   createSlotStore,
   createToolContext,
   dialogRefusalPattern,
@@ -80,6 +83,7 @@ export {
   isEvent,
   parseSchemaInput,
   parseToolInput,
+  type RouteContextOverrides,
   runGuardrail,
   runTool,
   type SaidLine,

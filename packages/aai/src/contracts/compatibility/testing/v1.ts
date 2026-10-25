@@ -14,10 +14,8 @@
  *   `undefined`; a spec reads `description` and `inputSchema` off it, as below.
  * - `ToolRunner` is an overloaded `@sealed` interface over the old alias; a
  *   spec calls `run(name, args, ctx)` exactly as it did.
- * - `ToolContextOverrides.call` takes `SessionCallInput` — the carrier, call id
- *   and parameters a writer hands in, which is everything `SessionCall` was at
- *   epoch 1. The probe reports `call.brief` removed because it reads today's
- *   `SessionCall` on both sides; the reader did not exist then.
+ * - `ToolContextOverrides.call` takes `SessionCall` — the carrier, call id and
+ *   parameters a writer hands in, plain data, as it was at epoch 1.
  */
 
 import { z } from "zod";
