@@ -27,6 +27,7 @@
  * @module
  */
 
+import { hmacSha256 } from "./_hmac.ts";
 import { timingSafeEqual } from "./_timing-safe-equal.ts";
 import { type RouteHandler, type RouteRequest, routeResponse } from "./agent-routes.ts";
 
@@ -67,16 +68,9 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(bin);
 }
 
+/** The `v1` signature over `payload` under `key`, base64 as the header carries it. */
 async function sign(key: Uint8Array, payload: string): Promise<string> {
-  const imported = await crypto.subtle.importKey(
-    "raw",
-    key as Uint8Array<ArrayBuffer>,
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const mac = await crypto.subtle.sign("HMAC", imported, new TextEncoder().encode(payload));
-  return bytesToBase64(new Uint8Array(mac));
+  return bytesToBase64(await hmacSha256(key, payload));
 }
 
 /** The keys one secret stands for — see the module doc. */

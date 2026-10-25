@@ -20,15 +20,8 @@
 
 import { isResponseLike, throwStepError, toStepError } from "./_step-verdict.ts";
 import { isRecord } from "./is-record.ts";
+import { isThenable } from "./is-thenable.ts";
 import { responseErrorMessage } from "./utils.ts";
-
-/**
- * A thenable, recognised structurally — an async function in a bundle with its
- * own Promise realm is still one.
- */
-function isThenable(value: unknown): value is PromiseLike<unknown> {
-  return typeof (value as { then?: unknown } | null | undefined)?.then === "function";
-}
 
 /**
  * What a failed `Response` is labelled by in the thrown message: the REQUEST,
@@ -52,29 +45,44 @@ async function settled(value: unknown, args: readonly unknown[]): Promise<unknow
 }
 
 /**
- * `call`, wrapped so that what it throws — or a non-2xx `Response` it resolves
- * to — leaves as the verdict {@link toStepError} reaches: `FatalError` for a
- * failure that will answer the same way, `RetryableError` carrying the far
- * side's `Retry-After` for one that will not, and anything unclassifiable
- * unchanged.
+ * `call`, wrapped so that what it throws — or rejects with — leaves through
+ * `fail`, and what it resolves with passes through `resolved`.
  *
  * Answers in kind: a sync `call` stays sync (its throw is classified, its
- * value returned as is), an async one is awaited.
+ * value returned as is — `resolved` is for the AWAITED value only), an async
+ * one is awaited. The one shape behind {@link orFail}'s function arm and
+ * `fatalOn` (`step-errors.ts`): each is a classifier, and this is the
+ * call-then-classify they used to spell separately.
+ *
+ * @param fail - The verdict for a thrown value or a rejection; must throw.
+ * @param resolved - What an awaited value becomes; by default itself.
  */
 export function classifiedCall<A extends readonly unknown[], R>(
   call: (...args: A) => R,
+  fail: (err: unknown) => never,
+  resolved: (value: unknown, args: A) => unknown = (value) => value,
 ): (...args: A) => R {
   return (...args: A): R => {
     let out: R;
     try {
       out = call(...args);
     } catch (err) {
-      return throwStepError(err);
+      return fail(err);
     }
     if (!isThenable(out)) return out;
-    return Promise.resolve(out).then(
-      (value) => settled(value, args),
-      (err: unknown) => throwStepError(err),
-    ) as R;
+    return Promise.resolve(out).then((value) => resolved(value, args), fail) as R;
   };
+}
+
+/**
+ * `call` with its failure classified for the step engine — the verdict
+ * {@link toStepError} reaches: `FatalError` for a failure that will answer the
+ * same way, `RetryableError` carrying the far side's `Retry-After` for one that
+ * will not, and anything unclassifiable unchanged. A non-2xx `Response` it
+ * resolves to is a failure too.
+ */
+export function stepClassifiedCall<A extends readonly unknown[], R>(
+  call: (...args: A) => R,
+): (...args: A) => R {
+  return classifiedCall(call, throwStepError, settled);
 }

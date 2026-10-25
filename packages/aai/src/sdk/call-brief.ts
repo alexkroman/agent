@@ -37,6 +37,7 @@
  * @module
  */
 
+import { hmacSha256 } from "./_hmac.ts";
 import { timingSafeEqual } from "./_timing-safe-equal.ts";
 
 /** Characters of prompt per `<Parameter>` — under Twilio's 500 with the name. */
@@ -63,17 +64,10 @@ export type CallBrief = {
   prompt: string;
 };
 
+/** The brief's MAC under the secret's UTF-8 bytes, hex-encoded for a `<Parameter>`. */
 async function hmacHex(secret: string, text: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const mac = await crypto.subtle.sign("HMAC", key, encoder.encode(text));
-  return Array.from(new Uint8Array(mac), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  const mac = await hmacSha256(new TextEncoder().encode(secret), text);
+  return Array.from(mac, (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 /** The signed text: the id, a separator no id contains, and the prompt. */

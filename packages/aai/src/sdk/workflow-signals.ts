@@ -102,5 +102,5 @@ export async function waitForSignalWorkflow(
   // `async`, so a keyless run's refusal is a REJECTION like every other wait
   // failure, never a synchronous throw out of an `await`-less call.
   const token = signalTokenFor(host, label);
-  return options === undefined ? await host.waitFor(token) : await host.waitFor(token, options);
+  return await host.waitFor(token, options);
 }

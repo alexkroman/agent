@@ -97,12 +97,10 @@ export type DialogSendFromKey<S, E> = keyof {
   string;
 
 /**
- * The `type` names an event union `E` carries — `string` for an erased `E`
- * (`AnyDialog`'s `unknown`), so every string-valued field qualifies there.
- */
-/**
  * The `type` names of a dialog's event union — what a `sendFrom: "field"` key's
- * value must be. Exported because {@link DialogSendFromKey} is spelled in it.
+ * value must be; `string` for an erased `E` (`AnyDialog`'s `unknown`), so every
+ * string-valued field qualifies there. Exported because
+ * {@link DialogSendFromKey} is spelled in it.
  *
  * @public
  */
