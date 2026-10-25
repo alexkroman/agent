@@ -28,6 +28,22 @@ beforeEach(() => {
   vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
 });
 
+describe("the def it builds", () => {
+  test("carries describeRun and cancelNote through, and omits them when not given", () => {
+    const describeRun = () => "Researching.";
+    const def = deepResearchWorkflow({
+      input: z.object({ topic: z.string() }),
+      describeRun,
+      cancelNote: "Dropped the research.",
+    });
+    expect(def.describeRun).toBe(describeRun);
+    expect(def.cancelNote).toBe("Dropped the research.");
+    const bare = deepResearchWorkflow({ input: z.object({ topic: z.string() }) });
+    expect("describeRun" in bare).toBe(false);
+    expect("cancelNote" in bare).toBe(false);
+  });
+});
+
 describe("resolveSettings", () => {
   test("fills every field left out, and an explicit undefined does not unset one", () => {
     const settings = resolveSettings({

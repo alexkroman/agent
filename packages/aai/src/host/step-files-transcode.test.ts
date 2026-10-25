@@ -160,6 +160,31 @@ describe("transcodeUpload", () => {
     expect(out.info?.audio?.codec).toBe("aac");
   });
 
+  test("`args` is handed the probe's reading, so an argv can depend on it", async () => {
+    installStubUploads({ rec: { bytes: RECORDING, name: "call.m4a" } }, { writable: true });
+    const spawned = installFakeFfmpeg();
+    const seen: unknown[] = [];
+
+    await transcodeUpload("rec", {
+      ...toWav,
+      probe: true,
+      args: (source, out, info) => {
+        seen.push(info);
+        return ["-i", source, "-ar", String(info?.audio?.sampleRate ?? 0), out];
+      },
+    });
+
+    expect(seen).toEqual([expect.objectContaining({ durationSec: 12.5 })]);
+    expect(spawned[1]?.args).toContain("-ar");
+    // And without a probe the argument is simply undefined.
+    const bare: unknown[] = [];
+    await transcodeUpload("rec", {
+      ...toWav,
+      args: (s, o, info) => (bare.push(info), ["-i", s, o]),
+    });
+    expect(bare).toEqual([undefined]);
+  });
+
   test("leaves `info` absent rather than undefined when no probe was asked for", async () => {
     installStubUploads({ rec: RECORDING }, { writable: true });
     installFakeFfmpeg();

@@ -32,7 +32,7 @@ import {
 } from "./_dialog-gate.ts";
 import type { DeepReadonly } from "./deep-readonly.ts";
 import type { AnyDialog } from "./dialog-handle.ts";
-import { isRecord } from "./is-record.ts";
+import { isThenable } from "./is-thenable.ts";
 import type { SlotTransaction } from "./session-slot-types.ts";
 import type { SlotHolder } from "./session-state.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
@@ -78,11 +78,6 @@ export type ErasedUpdateToolDef<T> = ErasedStages<T> & {
 
 /** The second-argument `sendFrom`, erased. */
 export type SendOptions = ErasedSendOptions;
-
-/** Would `await` on this do anything? */
-function isThenable(value: unknown): value is PromiseLike<unknown> {
-  return isRecord(value) && typeof value.then === "function";
-}
 
 /**
  * The refusal an asynchronous mutation body earns, in one place.
@@ -148,76 +143,31 @@ function wireFields<T>(
   return wire;
 }
 
+/** A body as the pipeline runs it: the window (or read) after `prepare`, before `report`'s settle. */
+type PipelineBody = (args: Args, ctx: ToolContext, prepared: unknown[]) => unknown;
+
 /**
- * `SessionSlot.tool`: the frozen value handed to the body, around which a
- * `require` and a `dialog` may run. Synchronous when ungated, so a sync body's
- * declared `R` is what the tool answers.
+ * The one pipeline both builders are a selection of stages from: the dialog
+ * refusal, `require` on the frozen value, the async `prepare` with a second
+ * `require` behind it, `body`, and the dialog's transition with its envelope.
+ *
+ * Synchronous when the def declares neither `prepare` nor `dialog`, which is
+ * what keeps a plain tool's output type its body's own.
  */
-export function buildSlotTool<T>(
+function buildPipeline<T>(
   core: SlotCore<T>,
-  def: ErasedSlotToolDef<T>,
-  options?: SendOptions,
+  def: ErasedStages<T> & { execute: unknown; report?: unknown; prepare?: unknown },
+  options: SendOptions | undefined,
+  body: PipelineBody,
 ): ToolDef {
   const gate = gateOf(core.key, def, options);
-  const { execute, require } = def;
+  const { require } = def;
+  const prepare = def.prepare as ErasedUpdateToolDef<T>["prepare"];
   const wire = wireFields(def);
-  if (gate === undefined) {
-    return {
-      ...wire,
-      execute: (args, ctx) => require?.(core.get(ctx), args) ?? execute(args, core.get(ctx), ctx),
-    };
-  }
-  return {
-    ...wire,
-    execute: async (args, ctx) => {
-      const refused = gate.refuse(ctx) ?? require?.(core.get(ctx), args);
-      if (refused) return refused;
-      return gate.settle(ctx, await execute(args, core.get(ctx), ctx));
-    },
-  };
-}
-
-/**
- * `SessionSlot.updateTool`: the whole pipeline. Synchronous when it declares
- * neither `prepare` nor `dialog`, which is what keeps a plain mutating tool's
- * output type its body's own.
- */
-export function buildUpdateTool<T>(
-  core: SlotCore<T>,
-  def: ErasedUpdateToolDef<T>,
-  options?: SendOptions,
-): ToolDef {
-  const { key } = core;
-  const { execute, require, report, prepare } = def;
-  // At DECLARATION, where the overwhelming majority of this mistake is
-  // visible. The check in the window still stands for a sync function that
-  // RETURNS a promise, which only the call can see.
-  if (execute.constructor?.name === "AsyncFunction") {
-    throw mustBeSync(key, ", and this one is `async`");
-  }
-  const gate = gateOf(key, def, options);
-  const wire = wireFields(def);
-
-  /** The window, then `report` on what it stored. */
-  const commit = (args: Args, ctx: ToolContext, prepared: unknown[]): unknown => {
-    const result = core.update(ctx, (draft) => {
-      const out = execute(args, draft, ...prepared, ctx);
-      // The half the declaration-time check cannot see. Its mutations would be
-      // committed at the end of the synchronous part and it would then mutate a
-      // frozen draft — a `TypeError` from somewhere unrelated. Named here.
-      assertSynchronous(key, out, "updateTool");
-      return out;
-    });
-    // A failure has no partial result to complete, and is answered unchanged
-    // so the gate's "nothing sent on a failure" reads the same value.
-    if (report === undefined || isToolFailure(result)) return result;
-    return report(core.get(ctx), result);
-  };
-
   if (gate === undefined && prepare === undefined) {
     return {
       ...wire,
-      execute: (args, ctx) => require?.(core.get(ctx), args) ?? commit(args, ctx, []),
+      execute: (args, ctx) => require?.(core.get(ctx), args) ?? body(args, ctx, []),
     };
   }
   return {
@@ -236,10 +186,60 @@ export function buildUpdateTool<T>(
         if (again) return again;
         prepared = [value];
       }
-      const result = commit(args, ctx, prepared);
+      const result = await body(args, ctx, prepared);
       return gate === undefined ? result : gate.settle(ctx, result);
     },
   };
+}
+
+/**
+ * `SessionSlot.tool`: the frozen value handed to the body, around which a
+ * `require` and a `dialog` may run. Synchronous when ungated, so a sync body's
+ * declared `R` is what the tool answers.
+ */
+export function buildSlotTool<T>(
+  core: SlotCore<T>,
+  def: ErasedSlotToolDef<T>,
+  options?: SendOptions,
+): ToolDef {
+  const { execute } = def;
+  return buildPipeline(core, def, options, (args, ctx) => execute(args, core.get(ctx), ctx));
+}
+
+/**
+ * `SessionSlot.updateTool`: the whole pipeline around the window, with
+ * `report` on what it stored.
+ */
+export function buildUpdateTool<T>(
+  core: SlotCore<T>,
+  def: ErasedUpdateToolDef<T>,
+  options?: SendOptions,
+): ToolDef {
+  const { key } = core;
+  const { execute, report } = def;
+  // At DECLARATION, where the overwhelming majority of this mistake is
+  // visible. The check in the window still stands for a sync function that
+  // RETURNS a promise, which only the call can see.
+  if (execute.constructor?.name === "AsyncFunction") {
+    throw mustBeSync(key, ", and this one is `async`");
+  }
+
+  /** The window, then `report` on what it stored. */
+  const commit: PipelineBody = (args, ctx, prepared) => {
+    const result = core.update(ctx, (draft) => {
+      const out = execute(args, draft, ...prepared, ctx);
+      // The half the declaration-time check cannot see. Its mutations would be
+      // committed at the end of the synchronous part and it would then mutate a
+      // frozen draft — a `TypeError` from somewhere unrelated. Named here.
+      assertSynchronous(key, out, "updateTool");
+      return out;
+    });
+    // A failure has no partial result to complete, and is answered unchanged
+    // so the gate's "nothing sent on a failure" reads the same value.
+    if (report === undefined || isToolFailure(result)) return result;
+    return report(core.get(ctx), result);
+  };
+  return buildPipeline(core, def, options, commit);
 }
 
 /** `SessionSlot.transact`: `prepare` ahead of the window, from a plain tool. */

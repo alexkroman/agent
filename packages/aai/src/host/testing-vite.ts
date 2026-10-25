@@ -66,6 +66,7 @@
 
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { MODULE_EXT_RE, type RegistryDir, SPEC_RE } from "../sdk/_module-registry.ts";
 
 /** The module specifier a spec imports. */
 export const AAI_AGENT_MODULE = "virtual:aai/agent";
@@ -176,12 +177,15 @@ function generate(dir: string): string {
   return lines.join("\n");
 }
 
-/** Every `<sub>/*.ts` file that is a module of its kind — specs and type tests are not. */
-function moduleFiles(dir: string, sub: "tools" | "workflows"): string[] {
+/**
+ * Every `<sub>/*.ts` file that is a module of its kind — a spec or type test
+ * is not, by the one suffix rule the registries apply (`_module-registry.ts`).
+ */
+function moduleFiles(dir: string, sub: RegistryDir): string[] {
   const root = join(dir, sub);
   if (!existsSync(root)) return [];
   return readdirSync(root)
-    .filter((name) => name.endsWith(".ts") && !/\.(test|test-d)\.ts$/.test(name))
+    .filter((name) => name.endsWith(".ts") && !SPEC_RE.test(name.replace(MODULE_EXT_RE, "")))
     .sort()
     .map((name) => join(root, name));
 }

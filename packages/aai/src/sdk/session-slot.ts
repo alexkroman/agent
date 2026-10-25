@@ -27,6 +27,7 @@ import {
 } from "./_slot-tools.ts";
 import { registerSyncedProjection } from "./_sync-registry.ts";
 import type { DeepReadonly } from "./deep-readonly.ts";
+import { omitUndefined } from "./omit-undefined.ts";
 import type { SessionSlot } from "./session-slot-handle.ts";
 import type { SessionSlotOptions } from "./session-slot-types.ts";
 import type { SlotHolder, SlotStore, StateProjection } from "./session-state.ts";
@@ -180,23 +181,24 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
   // rather than being remembered per method.
   const applyCaps = compileSlotCaps<T>(key, options.caps);
 
-  const store = (ctx: SlotHolder, value: T): void => {
-    slots(ctx).write(key, applyCaps(value), { durable });
-  };
-
   /**
-   * The `after` hook over a value about to be stored OUTSIDE a mutation window
-   * — a fresh default, `set`'s copy, the projection's empty frame. `update`
-   * calls the hook itself, inside its window. Every path then meets `caps` in
-   * `store`, which is the ordering `SessionSlotOptions.caps` promises.
+   * What every value meets on its way to the store, in the order
+   * `SessionSlotOptions.caps` promises: the `after` hook, then the caps (which
+   * trim in place). The one funnel — a fresh default, `set`'s copy, `update`'s
+   * draft and the projection's empty frame all go through it, so a derived
+   * field cannot differ between the default and the first update.
    */
   const settled = (value: T): T => {
     options.after?.(value);
-    return value;
+    return applyCaps(value);
   };
 
-  /** A fresh default, hook applied: what `get` and `reset` install. */
-  const install = (): T => settled(make());
+  /** `settled`, then written — answering the value as stored. */
+  const store = (ctx: SlotHolder, value: T): T => {
+    const ready = settled(value);
+    slots(ctx).write(key, ready, { durable });
+    return ready;
+  };
 
   /** Refuse a direct write while a draft of the same slot is open. */
   const assertNoOpenDraft = (ctx: SlotHolder, method: string): void => {
@@ -209,9 +211,8 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
   const get = (ctx: SlotHolder): DeepReadonly<T> => {
     const existing = slots(ctx).read(key);
     if (existing !== undefined) return existing as DeepReadonly<T>;
-    const value = install();
-    store(ctx, value);
-    return frozen(value);
+    // A fresh default needs no copy: nothing else has a reference to it.
+    return frozen(store(ctx, make()));
   };
 
   /**
@@ -242,12 +243,11 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
 
   /** The projection over this slot that `projected` below is built from. */
   const project = <P>(view: (value: DeepReadonly<T>) => P): StateProjection<P> => {
-    // The hook and `applyCaps` on the empty frame too: a stored value is
-    // always hooked and never exceeds its caps, and the frame rendered before
-    // the first tool call should describe the same shape. `empty` is the
-    // seeded slot's blank, so a seed never ships to the browser.
-    const blank = (): T =>
-      applyCaps(settled(options.empty === undefined ? make() : options.empty()));
+    // The empty frame through the same funnel: a stored value is always hooked
+    // and never exceeds its caps, and the frame rendered before the first tool
+    // call should describe the same shape. `empty` is the seeded slot's blank,
+    // so a seed never ships to the browser.
+    const blank = (): T => settled(options.empty === undefined ? make() : options.empty());
     const projection = (value?: unknown): P =>
       view((value === undefined ? blank() : value) as DeepReadonly<T>);
     // The slot's own factory rather than a captured default: the runtime
@@ -265,20 +265,21 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
     }
     const existing = current(ctx);
     // A fresh value needs no copy — nothing else has a reference to it yet.
-    // Unhooked: `after` runs on the draft at the end of this window.
+    // Unhooked: `after` runs on the draft at the end of this window, in `store`.
     const draft = existing === undefined ? make() : privateCopy(existing);
     open.add(ctx.sessionId);
     let result: R;
     try {
       result = mutate(draft);
       assertSynchronous(key, result, "update");
-      options.after?.(draft);
+      // Inside the window, so the hook is synchronous and a nested write from
+      // it is refused like any other.
+      store(ctx, draft);
     } finally {
       // In `finally` so a throwing mutator does not wedge the slot for the rest
       // of the session. Nothing is stored on that path — see this method's doc.
       open.delete(ctx.sessionId);
     }
-    store(ctx, draft);
     return result;
   };
 
@@ -309,6 +310,12 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
     key,
     create: make,
     durable,
+    // The declaration, read back by a spec (`expectSlotContract`) — absent
+    // rather than `undefined` under `exactOptionalPropertyTypes`.
+    ...omitUndefined({
+      caps: options.caps as Readonly<Partial<Record<string, number>>> | undefined,
+      empty: options.empty,
+    }),
     get,
     // `get` hands back the stored (frozen) value itself, so this is always a
     // real copy, durable or not — the one case `privateCopy` skips.
@@ -321,18 +328,14 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
     set(ctx, value) {
       assertNoOpenDraft(ctx, "set");
       // A copy, so the freeze lands on the slot's own object rather than on the
-      // caller's — see this method's doc on the interface above. Hooked, so a
-      // loaded value meets the same invariants an updated one does.
-      const stored = settled(privateCopy(value));
-      store(ctx, stored);
-      return frozen(stored);
+      // caller's — see this method's doc on the interface above. Through the
+      // funnel, so a loaded value meets the same invariants an updated one does.
+      return frozen(store(ctx, privateCopy(value)));
     },
     reset(ctx) {
       assertNoOpenDraft(ctx, "reset");
       // No copy: a fresh default is a value nothing else has a reference to.
-      const value = install();
-      store(ctx, value);
-      return frozen(value);
+      return frozen(store(ctx, make()));
     },
     // The public signatures are OVERLOADS over the stages a def declares (gate,
     // `prepare`, `report`), each intersected with authoring guards

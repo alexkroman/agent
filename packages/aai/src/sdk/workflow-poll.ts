@@ -97,7 +97,14 @@ export async function pollWorkflow<T>(
   const woken: { woken?: boolean } = {};
   if (options.first !== undefined) {
     const { waitFor, timeoutMs, schema } = options.first;
-    const payload = await host.waitFor(waitFor, { timeoutMs, ...omitUndefined({ schema }) });
+    // No token means no callback was issued (`stepWebhookUrl` optional on a
+    // deployment with no public URL): nothing to park on, so the first check
+    // runs now — and the journal sees no wait, exactly as a body that
+    // branched on the URL would have written it.
+    const payload =
+      waitFor === undefined
+        ? undefined
+        : await host.waitFor(waitFor, { timeoutMs, ...omitUndefined({ schema }) });
     woken.woken = payload !== undefined;
   }
   for (let checks = 1; ; checks++) {

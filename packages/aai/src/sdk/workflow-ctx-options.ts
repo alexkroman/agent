@@ -355,8 +355,14 @@ export type PollOptions<T> = {
  * @public
  */
 export type PollFirstWait = {
-  /** The hook token, as `ctx.waitFor` takes it — derived, so a tool can signal it. */
-  waitFor: string;
+  /**
+   * The hook token, as `ctx.waitFor` takes it — derived, so a tool can signal
+   * it. `undefined` means NO callback was issued — what
+   * `stepWebhookUrl(token, { optional: true })` answers on a deployment with
+   * no public URL — and the poll then checks immediately rather than parking
+   * for `timeoutMs` on a callback nothing can deliver (`woken: false`).
+   */
+  waitFor: string | undefined;
   /** How long to wait for the callback before polling anyway. */
   timeoutMs: number;
   /**

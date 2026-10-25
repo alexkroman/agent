@@ -28,9 +28,12 @@
  */
 
 import type { AgentDef, AgentSessionContext } from "@alexkroman1/aai";
-import { agentInstructionsSection, buildSystemPrompt } from "@alexkroman1/aai/host-internal";
+import {
+  agentInstructionsSection,
+  buildSystemPrompt,
+  resolveAgentInstructions,
+} from "@alexkroman1/aai/host-internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
-import { resolveAgentInstructions } from "../_agent-instructions.ts";
 
 /**
  * Between the base prompt and a non-empty suffix.

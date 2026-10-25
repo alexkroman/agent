@@ -1,65 +1,23 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Parsing an `Authorization: Bearer <token>` header, once — and the one thing
- * that parse's return type obliges every caller to check ({@link isBlankSecret}).
+ * The host-side bearer gate's three parts, on `/host-internal`: the parse
+ * (`parseBearer`, declared in `sdk/parse-bearer.ts` so `apiKeyRoute` shares it,
+ * re-exported here), the one thing its return type obliges every caller to
+ * check ({@link isBlankSecret}), and the Node constant-time compare
+ * ({@link constantTimeEquals}).
  *
- * There were THREE copies of this line — `aai-server/_bearer.ts`,
- * `workflow/api/http.ts`'s `bearerMatches` and `aai-guest/harness-auth.ts`'s
- * `bearerToken` — and all three matched the scheme CASE-SENSITIVELY, so a client
- * sending the spec-legal `authorization: bearer <key>` resolved to nothing and
- * every gate refused it. `aai-server`'s copy was fixed first and could not be
- * shared: neither of the other two may import that package. This is the "one
- * layer down" its module doc points at.
- *
- * It lives in the SDK's `/host-internal` (Node-side, no browser bundle imports
- * that subpath) because the guest harness needs it and holds no copy of
- * `aai-runtime`: the harness drives the agent through the runtime its bundle
- * carries, so a helper it calls on its own must come from the SDK.
+ * `aai-server`'s copy of the parse was fixed first and could not be shared:
+ * neither the guest harness nor the workflow API may import that package. This
+ * is the "one layer down" its module doc points at — the harness holds no copy
+ * of `aai-runtime` (it drives the agent through the runtime its bundle carries),
+ * so a helper it calls on its own must come from the SDK.
  *
  * @module bearer
  */
 
 import { timingSafeEqual } from "node:crypto";
 
-/**
- * The `auth-scheme` this parses, lower-cased for comparison.
- *
- * RFC 7235 §2.1 makes `auth-scheme` **case-insensitive** ("Note that both
- * scheme and parameter names are case-insensitive"), so the comparison below
- * lower-cases the header's first token rather than testing for the one
- * capitalisation this repo happens to send.
- *
- * Only the SCHEME is case-insensitive. The credential is `token68`, which is
- * case-SENSITIVE and is never touched here.
- */
-const BEARER_SCHEME = "bearer ";
-
-/**
- * Token from an `Authorization: Bearer <token>` header value.
- *
- * Returns `""` when the header is absent or is not a Bearer credential — the
- * caller decides what an empty token means (401, `null`, a refusal). `""` rather
- * than `null` because every caller has to handle "no token" anyway and a union
- * makes the constant-time comparison below it read as two cases.
- *
- * The credentials are TRIMMED, because `credentials = auth-scheme 1*SP token68`
- * permits more than one space and `token68` cannot contain one — so `Bearer  key`
- * is one legal spelling of one token, where slicing a fixed seven characters
- * yielded `" key"`, a *different* token that then failed every comparison.
- *
- * The one deliberate divergence from `aai-server/_bearer.ts` is that this has no
- * `bearerFailureMessage` twin: neither caller here distinguishes "absent" from
- * "malformed" in its reply — the guest answers 401 with a fixed sentence and the
- * workflow API answers a boolean — so a second function would be a surface with
- * no reader.
- */
-export function parseBearer(header: string | null | undefined): string {
-  if (header === null || header === undefined) return "";
-  // Only the scheme is lower-cased — never the whole header, which would
-  // destroy the credential it is wrapped around.
-  if (header.slice(0, BEARER_SCHEME.length).toLowerCase() !== BEARER_SCHEME) return "";
-  return header.slice(BEARER_SCHEME.length).trim();
-}
+export { parseBearer } from "../sdk/parse-bearer.ts";
 
 /**
  * Is `secret` a value no caller can ever legitimately PRESENT?

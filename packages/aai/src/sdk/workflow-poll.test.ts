@@ -110,6 +110,18 @@ describe("ctx.poll({ first })", () => {
     expect(ctx.waited).toEqual(["job:2"]);
   });
 
+  test("no token (no webhook URL was issued) means no park: the first check runs now, `woken: false`", async () => {
+    const ctx = createWorkflowContext();
+    const polled = await ctx.poll("check", () => "ready", {
+      first: { waitFor: undefined, timeoutMs: 60_000 },
+      everyMs: 10_000,
+      maxMs: 60_000,
+      done: (v) => v === "ready",
+    });
+    expect(polled).toEqual({ value: "ready", done: true, checks: 1, woken: false });
+    expect(ctx.waited).toEqual([]);
+  });
+
   test("the callback's payload is checked against `schema` and then discarded", async () => {
     const ctx = createWorkflowContext({ hooks: { "job:3": { ok: "yes" } } });
     const schema = {

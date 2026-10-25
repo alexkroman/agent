@@ -29,6 +29,7 @@ import {
   routeResponse,
 } from "./agent-routes.ts";
 import { isRecord } from "./is-record.ts";
+import { parseBearer } from "./parse-bearer.ts";
 import {
   formatSchemaIssues,
   type InferSchemaOutput,
@@ -199,9 +200,6 @@ export interface ApiKeyRouteOptions {
   header?: string;
 }
 
-/** The scheme prefix `authorization` may carry, compared case-insensitively. */
-const BEARER_RE = /^bearer\s+/i;
-
 /**
  * A route handler that runs `handler` only for a request carrying the key in
  * `env[options.env]`.
@@ -241,7 +239,9 @@ export function apiKeyRoute(options: ApiKeyRouteOptions, handler: RouteHandler):
     const expected = ctx.env[options.env]?.trim();
     if (!expected) return routeResponse(503, { error: `${options.env} is not set` });
     const sent = req.headers[header]?.trim() ?? "";
-    const key = header === "authorization" ? sent.replace(BEARER_RE, "") : sent;
+    // The `Bearer ` scheme is optional on `authorization`: a header that is
+    // not a Bearer credential (`parseBearer` answers "") is compared as sent.
+    const key = header === "authorization" ? parseBearer(sent) || sent : sent;
     // Compared even when nothing was sent, so an absent key costs the same as
     // a wrong one.
     if (!timingSafeEqual(key, expected)) {

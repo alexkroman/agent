@@ -55,14 +55,13 @@
  */
 
 import type { AgentSessionContext, Message } from "@alexkroman1/aai";
-import { createDetachedSlotStore } from "@alexkroman1/aai/host-internal";
+import { createDetachedSlotStore, resolveAgentInstructions } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_MAX_STEPS } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
 import { agentToolsets, agentToolsToSchemas } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { type LanguageModel, stepCountIs, streamText, type ToolSet } from "ai";
-import { resolveAgentInstructions } from "../_agent-instructions.ts";
 import {
   composePreparers,
   forceFinalAnswer,
@@ -256,10 +255,8 @@ export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
    * the model stream directly and owns no point at which to hold a reply.
    * Per TURN, because `turn` is the count of user messages in the history
    * that turn was handed — what a session counts as committed transcripts.
-   * TODO(integrator): `turn` is on `AgentSessionContext` once S1's SDK change
-   * lands — drop the intersection.
    */
-  const contextFor = (messages: readonly Message[]): AgentSessionContext & { turn: number } => ({
+  const contextFor = (messages: readonly Message[]): AgentSessionContext => ({
     sessionId,
     env,
     slots,

@@ -321,8 +321,10 @@ export type AnyWorkflowDef<R = unknown> = {
  * status to report.
  *
  * ```ts
- * import { describeRun, type WorkflowRunOf } from "@alexkroman1/aai";
- * import { digest } from "../agent.ts";
+ * import { describeRun, workflow, type WorkflowRunOf } from "@alexkroman1/aai";
+ *
+ * // In an agent this is `import { digest } from "../agent.ts"`.
+ * const digest = workflow({ run: async () => ({ headline: "…" }) });
  *
  * declare const run: WorkflowRunOf<typeof digest>;
  * const line = describeRun(digest, run);

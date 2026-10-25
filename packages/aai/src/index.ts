@@ -500,3 +500,8 @@ export {
   type WorkflowRunOf,
   workflow,
 } from "./sdk/workflow.ts";
+// How long `signalRun` holds a payload for a wait the run has not reached: an
+// `agent.ts` names it when its `onSessionEnd` signals the run it started
+// (`{ holdMs: DEFAULT_SIGNAL_HOLD_MS * 2 }`), which is the root's test. Also on
+// `/workflow-api`, where a caller outside the agent sizes its own hold.
+export { DEFAULT_SIGNAL_HOLD_MS } from "./sdk/workflow-options.ts";

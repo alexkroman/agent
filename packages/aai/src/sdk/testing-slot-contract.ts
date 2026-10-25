@@ -7,13 +7,14 @@
  * three things that can go quietly wrong with one is a claim a spec can make
  * about the DECLARATION rather than about any tool:
  *
- * 1. **The projection agrees with the default.** `slot.projected()` is the
- *    frame a page renders before the first tool call, and it must be the view
- *    of the default AS A SESSION STORES IT — `create()` with the slot's `after`
- *    hook and caps applied, which is what a fresh session installs. An `empty`
- *    seed that differs from the default, or a `create()` that hands back a
- *    SHARED object, drifts the two apart. A default already past one of its
- *    caps is reported under the cap it restates (invariant 3).
+ * 1. **The projection agrees with the blank it renders.** `slot.projected()`
+ *    is the frame a page renders before the first tool call, and it must be
+ *    the view of the slot's BLANK as a session would store it — `empty()` for
+ *    a seeded slot, else `create()`, with the slot's `after` hook and caps
+ *    applied. A `projected()` that applies the hook differently from a store,
+ *    or a `create()` that hands back a SHARED object, drifts the two apart. A
+ *    default already past one of its caps is reported under the cap it
+ *    restates (invariant 3).
  * 2. **Sessions do not share state.** A write through one context is invisible
  *    through another; a slot whose default is a module-level object leaks the
  *    first session's writes into the second.
@@ -21,9 +22,10 @@
  *    what survives, and the half a hand-rolled bound gets wrong is which END
  *    is kept.
  *
- * The caps are restated by the caller because the handle does not carry them
- * (`SessionSlot` exposes what a tool needs, not what the declaration said);
- * a cap the spec restates wrongly fails naming the key, which is the point.
+ * The caps are read off the handle (`slot.caps`, the declaration itself), so
+ * every declared cap is checked without the spec restating one; a spec may
+ * still pass `caps` to assert a PARTICULAR bound, and one that disagrees with
+ * the declaration fails naming both numbers.
  *
  * Framework-agnostic: a throw with the invariant in its message, like every
  * reader on `@alexkroman1/aai/testing`.
@@ -52,9 +54,10 @@ export type SlotContractOptions<T> = {
    */
   readonly write?: ((draft: T) => void) | undefined;
   /**
-   * The caps the slot DECLARED, restated — each top-level array key and the
-   * most entries it keeps. Each is driven past its bound and the surviving
-   * entries must be the NEWEST ones.
+   * The caps to check — each top-level array key and the most entries it
+   * keeps. Defaults to what the slot DECLARED (`slot.caps`); given, each is
+   * driven past its bound and the surviving entries must be the NEWEST ones,
+   * and a bound that differs from the declared one fails naming both.
    */
   readonly caps?: Readonly<Record<string, number>> | undefined;
 };
@@ -90,10 +93,13 @@ export function expectSlotContract<K extends string, T, V>(
 ): void {
   assertProjectionAgrees(slot);
   assertSessionsIsolated(slot, options.write);
-  for (const [key, max] of Object.entries(options.caps ?? {})) assertCapTrimsOldest(slot, key, max);
+  const caps = options.caps ?? slot.caps ?? {};
+  for (const [key, max] of Object.entries(caps)) {
+    if (max !== undefined) assertCapTrimsOldest(slot, key, max);
+  }
 }
 
-/** Invariant 1: the empty frame is the view of the default, and the default is fresh per call. */
+/** Invariant 1: the empty frame is the view of the blank as stored, and the default is fresh per call. */
 function assertProjectionAgrees<K extends string, T, V>(slot: SessionSlot<K, T, V>): void {
   const { projected } = slot;
   if (projected.key !== slot.key) {
@@ -111,24 +117,20 @@ function assertProjectionAgrees<K extends string, T, V>(slot: SessionSlot<K, T, 
     );
   }
   const empty = projected();
-  // The default as STORED — `after` and caps applied, through a fresh session
-  // — rather than `create()` raw: `projected()` applies both to its own frame,
-  // so a slot whose `after` derives a field would otherwise fail here on every
-  // declaration that has one.
-  const viewed = projected(storedDefault(slot));
+  // The blank as STORED — `empty()` for a seeded slot (the frame a page is
+  // meant to see before the seed), else `create()`, with `after` and caps
+  // applied through a real `set` — rather than the raw factory: `projected()`
+  // applies both to its own frame, so a slot whose `after` derives a field, or
+  // one declaring `empty`, is held to what it actually renders.
+  const blank = slot.empty ?? slot.create;
+  const viewed = projected(slot.set(createToolContext(), blank()));
   if (!sameJson(empty, viewed)) {
     throw new Error(
-      `expectSlotContract("${slot.key}"): projected() is not the view of the default — the frame ` +
-        `a page renders first differs from the stored default's projection. Rendered ` +
-        `${describe(empty)}; the default projects to ${describe(viewed)}. An \`empty\` seed that ` +
-        "differs from the default is the usual cause.",
+      `expectSlotContract("${slot.key}"): projected() is not the view of the slot's blank — the ` +
+        `frame a page renders first differs from the stored ${slot.empty ? "`empty`" : "default"}'s ` +
+        `projection. Rendered ${describe(empty)}; the blank projects to ${describe(viewed)}.`,
     );
   }
-}
-
-/** The default as a fresh session stores it: `create()`, then `after`, then caps. */
-function storedDefault<K extends string, T, V>(slot: SessionSlot<K, T, V>): T {
-  return slot.snapshot(createToolContext());
 }
 
 /** Invariant 2: a write through one session is invisible through another. */
@@ -210,9 +212,20 @@ function assertCapTrimsOldest<K extends string, T, V>(
     throw new Error(
       `expectSlotContract("${slot.key}"): caps.${key} = ${max} did not keep the newest ${max} ` +
         `of ${probes.length} entries — kept ${describe(kept)}, expected ${describe(expected)}. ` +
-        "Either the declared cap differs from this one, or the slot trims the wrong end.",
+        whyCapFailed(slot.caps?.[key], key, max),
     );
   }
+}
+
+/**
+ * Why a cap check failed, told from the DECLARATION: a restated bound the slot
+ * never declared, one it declared differently, or the slot itself trimming
+ * the wrong end.
+ */
+function whyCapFailed(declared: number | undefined, key: string, max: number): string {
+  if (declared === max) return "The slot trims the wrong end.";
+  if (declared === undefined) return `The slot declares no cap on ${key}.`;
+  return `The slot declares caps.${key} = ${declared}, not ${max}.`;
 }
 
 /** Structural equality over the JSON-shaped values a slot holds. */

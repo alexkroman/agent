@@ -66,6 +66,7 @@ import {
 import { compileDialogGate } from "./_dialog-gate.ts";
 import { assertDialogGraph } from "./_dialog-graph.ts";
 import { toInstruction, toPersona, toTimeout, toVoiceConfig } from "./_dialog-meta.ts";
+import { type DialogReading, registerDialogReader } from "./_dialog-reader.ts";
 import {
   assertDialogSource,
   ENTER_ACTION,
@@ -114,7 +115,9 @@ export type {
   DialogGate,
   DialogPosition,
   DialogSendFrom,
+  DialogSendFromChecked,
   DialogSendFromKey,
+  DialogSendFromMisuse,
   DialogSendOptions,
   DialogSessionEventName,
   DialogSpec,
@@ -247,6 +250,14 @@ export function dialog<E extends { type: string }>(
  * It builds the same machine, so the STORED SNAPSHOT is byte-identical to the
  * hand-written equivalent's and a `durable: true` dialog resumes across the
  * switch — see `machineFromSpec`.
+ *
+ * **Write the spec inline, or hold it in a `const` with `satisfies
+ * DialogSpec` — never `as const`.** The `const S` parameter keeps every `on`
+ * name a literal on its own, and both forms keep the spec contextually typed,
+ * so an `onEnter: (ctx) => …` sees `ctx` as a `SlotHolder`. An `as const`
+ * assertion drops that contextual typing (the literal is typed before the
+ * parameter sees it), which is `TS7006` on every `onEnter` parameter and
+ * nothing gained.
  *
  * @public
  */
@@ -406,6 +417,13 @@ export function dialog(
   const matches = (ctx: SlotHolder, state: string): boolean =>
     withActor(readState(slot.get(ctx)), (a) => a.getSnapshot().matches(state));
 
+  /** Position and `matches` off ONE snapshot — what a gated call reads (`_dialog-reader.ts`). */
+  const read = (ctx: SlotHolder): DialogReading =>
+    withActor(readState(slot.get(ctx)), (a) => {
+      const snapshot = a.getSnapshot();
+      return { position: positionOf(a), matches: (state) => snapshot.matches(state) };
+    });
+
   const handle: Dialog = {
     key,
     machine,
@@ -451,7 +469,10 @@ export function dialog(
           withActor(readState(value ?? create()), (a) => project(positionOf(a))),
         { key, create: create as () => unknown },
       ),
-    tool: <P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(
+    // The public signature answers `DialogSendFromChecked<K, …>`, a check on
+    // the field-name `sendFrom` the body cannot satisfy generically — at run
+    // time it hands back the tool, and an untyped key is refused at the call.
+    tool: (<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(
       def: DialogToolDef<P, R, DialogEventOf>,
       options?: DialogSendOptions<R, DialogEventOf>,
     ): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>> => {
@@ -494,7 +515,8 @@ export function dialog(
         },
       };
       return minted;
-    },
+    }) as Dialog["tool"],
   };
+  registerDialogReader(handle, read);
   return handle;
 }

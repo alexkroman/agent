@@ -88,9 +88,8 @@ function wire(
 describe("openSessionWiring", () => {
   test("a systemPrompt resolver reads the session's committed-turn count, LIVE", () => {
     const turns = createTurnCounter();
-    // TODO(integrator): read `ctx.turn` directly once `AgentSessionContext` carries it.
     const agent = makeAgent({
-      systemPrompt: (ctx) => `Turn ${String((ctx as { turn?: number }).turn)}.`,
+      systemPrompt: (ctx) => `Turn ${String(ctx.turn)}.`,
     });
     const { dialogs } = wire({
       agent,

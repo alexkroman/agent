@@ -100,9 +100,7 @@ export function openSessionWiring(deps: {
   // and both guardrail lists. See `AgentSessionContext`. `turn` is read LIVE:
   // the object is built once per session and the counter advances with every
   // committed user turn, so a resolver asked on turn three reads 3.
-  // TODO(integrator): `turn` is on `AgentSessionContext` once S1's SDK change
-  // lands — drop the intersection.
-  const context: AgentSessionContext & { readonly turn: number } = {
+  const context: AgentSessionContext = {
     sessionId,
     env,
     slots,

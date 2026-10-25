@@ -83,7 +83,7 @@
  * @module
  */
 
-import { classifiedCall } from "./_step-or-fail.ts";
+import { stepClassifiedCall } from "./_step-or-fail.ts";
 import { isToolFailure, type ToolFailure } from "./utils.ts";
 
 /**
@@ -174,7 +174,7 @@ export function orFail<A extends readonly unknown[], R>(
 export function orFail<T>(value: T | ToolFailure): T;
 export function orFail(value: unknown): unknown {
   if (typeof value === "function") {
-    return classifiedCall(value as (...args: readonly unknown[]) => unknown);
+    return stepClassifiedCall(value as (...args: readonly unknown[]) => unknown);
   }
   if (isToolFailure(value)) throw new ToolFailureSignal(value);
   return value;

@@ -18,7 +18,7 @@
  */
 
 import type { DeepReadonly } from "./deep-readonly.ts";
-import type { DialogSendOptions, DialogToolResult } from "./dialog-types.ts";
+import type { DialogSendFromChecked, DialogSendOptions, DialogToolResult } from "./dialog-types.ts";
 import type { ToolInputSchema } from "./schema.ts";
 import type {
   RejectThenable,
@@ -37,6 +37,12 @@ import type { ToolFailure } from "./utils.ts";
  * The frozen value a slot hands a reader — `DeepReadonly<T>` for the slot's
  * own `T`, read off the handle so a helper's signature names the slot rather
  * than restating its type: `(cart: SlotValueOf<typeof cartSlot>) => …`.
+ *
+ * **For a helper declared AFTER the slot.** The slot's type depends on its
+ * `view`, so a `view` written inline cannot name `SlotValueOf<typeof thisSlot>`
+ * for its own parameter — that is `typeof thisSlot` referring to itself
+ * (`TS7022`). Inside the declaration the parameter is already typed:
+ * `view: (cart) => …` sees `DeepReadonly<T>` with no annotation at all.
  *
  * @public
  */
@@ -91,6 +97,16 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    * declared otherwise — see {@link SessionSlotOptions.durable}.
    */
   readonly durable: boolean;
+  /**
+   * The caps the slot DECLARED ({@link SessionSlotOptions.caps}), when it
+   * declared any — read back by `expectSlotContract`, so a spec need not
+   * restate them. Typed as the record it is on the wire rather than
+   * `SlotCaps<T>`, which is `never` for the erased `T` the `SlotValueOf`
+   * constraint reads through.
+   */
+  readonly caps?: Readonly<Partial<Record<string, number>>>;
+  /** The seeded slot's blank ({@link SessionSlotOptions.empty}), when declared. */
+  readonly empty?: () => T;
   /**
    * This session's value, installing the default on first access.
    *
@@ -213,10 +229,11 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     P extends ToolInputSchema | undefined = ToolInputSchema,
     R = unknown,
     E extends { type: string } = { type: string },
+    K extends string = string,
   >(
-    def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E>,
-    options?: DialogSendOptions<Awaited<R>, E>,
-  ): ToolDef<P, GatedOutput<R>>;
+    def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E, K>,
+    options?: DialogSendOptions<Awaited<R>, E, K>,
+  ): DialogSendFromChecked<K, Awaited<R>, E, ToolDef<P, GatedOutput<R>>>;
   tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(
     def: SlotToolDef<P, DeepReadonly<T>, R>,
   ): ToolDef<P, R>;
@@ -277,10 +294,11 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     R = unknown,
     R2 = R,
     E extends { type: string } = { type: string },
+    K extends string = string,
   >(
-    def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E> & RejectThenable<R>,
-    options?: DialogSendOptions<R2, E>,
-  ): ToolDef<P, GatedOutput<R2>>;
+    def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>,
+    options?: DialogSendOptions<R2, E, K>,
+  ): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
   updateTool<
     P extends ToolInputSchema | undefined = ToolInputSchema,
     Prep = unknown,
@@ -294,10 +312,11 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     R = unknown,
     R2 = R,
     E extends { type: string } = { type: string },
+    K extends string = string,
   >(
-    def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E> & RejectThenable<R>,
-    options?: DialogSendOptions<R2, E>,
-  ): ToolDef<P, GatedOutput<R2>>;
+    def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>,
+    options?: DialogSendOptions<R2, E, K>,
+  ): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
   updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R>(
     def: SlotUpdateToolDef<P, T, R, R2> & RejectThenable<R>,
   ): ToolDef<P, R2 | Extract<R, ToolFailure>>;

@@ -211,15 +211,20 @@ test("an agent guardrail answers a GuardrailVerdict", () => {
  * not — and that reason is a deliberate edit to this test. `speech` is the one
  * such edit so far; the reason is in the test body.
  */
-test("AgentSessionContext and SessionEventContext are the same shape, bar `speech`", () => {
-  // `speech` is the ONE deliberate difference. A `say` queues behind the reply
+test("AgentSessionContext and SessionEventContext are the same shape, bar `speech` and `turn`", () => {
+  // `speech` is one deliberate difference. A `say` queues behind the reply
   // in flight, and a resolver or guardrail runs INSIDE that reply, so speaking
   // from one would queue behind itself; an event handler runs beside the turn.
+  // `turn` is the other: a resolver runs once per model request of a turn and
+  // may vary the prompt by its count, where a handler is handed the event that
+  // is the turn.
   type Twin = Omit<SessionEventContext, "speech">;
-  expectTypeOf<AgentSessionContext>().toExtend<Twin>();
-  expectTypeOf<Twin>().toExtend<AgentSessionContext>();
-  expectTypeOf<keyof AgentSessionContext>().toEqualTypeOf<keyof Twin>();
+  type Resolver = Omit<AgentSessionContext, "turn">;
+  expectTypeOf<Resolver>().toExtend<Twin>();
+  expectTypeOf<Twin>().toExtend<Resolver>();
+  expectTypeOf<keyof Resolver>().toEqualTypeOf<keyof Twin>();
   expectTypeOf<SessionEventContext["speech"]>().toEqualTypeOf<SessionSpeech>();
+  expectTypeOf<AgentSessionContext["turn"]>().toEqualTypeOf<number>();
 });
 
 /**

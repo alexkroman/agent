@@ -21,7 +21,10 @@ const MP3 = new Uint8Array([0xff, 0xfb, 0x90, 0x00]);
  * A fake ffmpeg that records its argv and the bytes at `-i`, writes `MP3` to the
  * last argument, and exits `code` on the next macrotask.
  */
-function installFakeFfmpeg(code = 0): { args: string[]; input: Uint8Array | undefined }[] {
+function installFakeFfmpeg(
+  code = 0,
+  output: Uint8Array = MP3,
+): { args: string[]; input: Uint8Array | undefined }[] {
   const spawned: { args: string[]; input: Uint8Array | undefined }[] = [];
   vi.spyOn(ffmpegProcess, "spawn").mockImplementation((_binary, args) => {
     let close: ((c: number | null, s: string | null) => void) | undefined;
@@ -32,7 +35,7 @@ function installFakeFfmpeg(code = 0): { args: string[]; input: Uint8Array | unde
     });
     setTimeout(() => {
       const out = args.at(-1);
-      if (code === 0 && out) writeFileSync(out, MP3);
+      if (code === 0 && out) writeFileSync(out, output);
       close?.(code, null);
     }, 0);
     const silent = { on: () => undefined };
@@ -108,11 +111,82 @@ describe("stepSpeakToUpload", () => {
     ]);
     expect(stored).toMatchObject({ name: "digest.mp3", type: "audio/mpeg", size: MP3.length });
     expect(stored.durationMs).toBe(250);
+    expect(stored.ffmpegMs).toEqual(expect.any(Number));
     expect(uploads.writes.map((one) => [one.type, [...one.bytes]])).toEqual([
       ["audio/mpeg", [...MP3]],
     ]);
     // And the temp directory is gone.
     expect(existsSync(spawned[0]?.args.at(-1) ?? "")).toBe(false);
+  });
+
+  test("the object form rides its flags on the master leg, ahead of the encoder's", async () => {
+    installStubSpeech();
+    const uploads = installStubUploads({}, { writable: true });
+    const spawned = installFakeFfmpeg();
+
+    const stored = await stepSpeakToUpload("Three findings.", {
+      master: { format: "mp3", args: ["-af", "loudnorm=I=-16"] },
+      name: "digest.mp3",
+    });
+
+    expect(spawned[0]?.args.slice(6)).toEqual([
+      "-i",
+      expect.stringMatching(/\/spoken\.wav$/),
+      "-vn",
+      "-af",
+      "loudnorm=I=-16",
+      "-c:a",
+      "libmp3lame",
+      "-q:a",
+      "2",
+      expect.stringMatching(/\/mastered\.mp3$/),
+    ]);
+    expect(stored.type).toBe("audio/mpeg");
+    expect(uploads.writes).toHaveLength(1);
+  });
+
+  test('`{ format: "wav", args }` re-encodes the WAV through ffmpeg; a bare "wav" never spawns', async () => {
+    installStubSpeech();
+    installStubUploads({}, { writable: true });
+    const spawned = installFakeFfmpeg();
+
+    const stored = await stepSpeakToUpload("Three findings.", {
+      master: { format: "wav", args: ["-ar", "8000"] },
+      name: "digest.wav",
+    });
+
+    expect(spawned[0]?.args.slice(6)).toEqual([
+      "-i",
+      expect.stringMatching(/\/spoken\.wav$/),
+      "-vn",
+      "-ar",
+      "8000",
+      expect.stringMatching(/\/mastered\.wav$/),
+    ]);
+    expect(stored.type).toBe("audio/wav");
+    expect(stored.ffmpegMs).toEqual(expect.any(Number));
+
+    const plain = await stepSpeakToUpload("Three findings.", {
+      master: { format: "wav" },
+      name: "p.wav",
+    });
+    expect(spawned).toHaveLength(1);
+    expect(plain.ffmpegMs).toBe(0);
+  });
+
+  test("an encode that wrote nothing is FATAL and stores nothing — the rule the transcode leg has", async () => {
+    installStubSpeech();
+    const uploads = installStubUploads({}, { writable: true });
+    installFakeFfmpeg(0, new Uint8Array(0));
+
+    const err = await stepSpeakToUpload("Three findings.", {
+      master: "mp3",
+      name: "digest.mp3",
+    }).catch((e: unknown) => e);
+
+    expect(err).toSatisfy(FatalError.is);
+    expect((err as Error).message).toContain("empty digest.mp3 for the spoken audio");
+    expect(uploads.writes).toEqual([]);
   });
 
   test("a failed encode is FATAL and stores nothing", async () => {

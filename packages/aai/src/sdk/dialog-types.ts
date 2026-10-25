@@ -98,8 +98,8 @@ export type DialogSendFromKey<S, E> = keyof {
 
 /**
  * The `type` names of a dialog's event union — what a `sendFrom: "field"` key's
- * value must be — or `string` for an erased `E` (`AnyDialog`'s `unknown`), so
- * every string-valued field qualifies there. Exported because
+ * value must be; `string` for an erased `E` (`AnyDialog`'s `unknown`), so every
+ * string-valued field qualifies there. Exported because
  * {@link DialogSendFromKey} is spelled in it.
  *
  * @public
@@ -111,18 +111,66 @@ export type EventNameOf<E> = (E & { type: string })["type"];
  * answering the event (or `undefined` to stay put), or the NAME of a result
  * field holding that event's `type` — see {@link DialogSendFromKey}.
  *
- * `NoInfer` on `R` in both arms is what makes the parameter mean anything; the
- * argument is on {@link DialogGate.sendFrom}. The failure arm is subtracted
- * because the gate returns a {@link ToolFailure} before either form is reached.
+ * `NoInfer` on `R` in the function arm is what makes the parameter mean
+ * anything; the argument is on {@link DialogGate.sendFrom}. The failure arm is
+ * subtracted because the gate returns a {@link ToolFailure} before either form
+ * is reached — and subtracted OUTSIDE the `NoInfer`, deliberately:
+ * `Exclude<NoInfer<R>, …>` never distributes once `R` is a union of object
+ * types (a `NoInfer` over one stays a substitution type, which a conditional
+ * does not split), so a slot tool whose body answered `X | ToolFailure` handed
+ * its `sendFrom` the whole union.
+ *
+ * **The string arm is a bare `K`, and the key is CHECKED ON THE RESULT**
+ * ({@link DialogSendFromChecked}) rather than spelled as
+ * {@link DialogSendFromKey} here. It used to be, and that spelling reads `R`
+ * at the one moment `R` is not known: an `execute` with an unannotated
+ * parameter (`(args, ctx) => …`, the ordinary voice tool) is context-sensitive,
+ * so its return is inferred in a second pass — and a key type written over `R`
+ * widened the literal `"next"` to `string` in the first, which failed every
+ * such tool whether the key sat above `execute`, below it or in the second
+ * argument. A naked `K` infers from the literal alone, and the check runs once
+ * `R` is settled.
  *
  * @typeParam R - What the tool's `execute` returns, failure arm included.
  * @typeParam E - The machine's event union.
+ * @typeParam K - The literal the field-name form was written as; `string`
+ *   when the function form (or nothing) was.
  *
  * @public
  */
-export type DialogSendFrom<R, E> =
-  | ((result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined)
-  | DialogSendFromKey<Exclude<NoInfer<R>, ToolFailure>, E>;
+export type DialogSendFrom<R, E, K extends string = string> =
+  | ((result: NoInfer<Exclude<R, ToolFailure>>) => E | undefined)
+  | K;
+
+/**
+ * The compile error a `sendFrom: "field"` gets when `field` holds no event
+ * name of the dialog — a message TYPE, on the pattern of `SyncMutationMisuse`:
+ * what `tsc` prints names the rule and the fields that would have worked.
+ *
+ * @public
+ */
+export type DialogSendFromMisuse<K extends string, Keys extends string> = {
+  readonly "sendFrom names a result field that holds no event name of this dialog": K;
+  readonly "the fields that do": Keys;
+};
+
+/**
+ * `T` — the tool a gated call answers — unless the field-name `sendFrom`
+ * written as `K` names no field of the success result (`R` minus its failure
+ * arm) holding an event of `E`, in which case {@link DialogSendFromMisuse}. `string` (no literal
+ * was written) is the function form, or none, and passes through.
+ *
+ * In RETURN position for the reason {@link DialogSendFrom} gives: a check
+ * intersected into the parameter type is a conditional over `R`, which stops
+ * `R` being inferred from a context-sensitive `execute` at all.
+ *
+ * @public
+ */
+export type DialogSendFromChecked<K extends string, R, E, T> = string extends K
+  ? T
+  : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>]
+    ? T
+    : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
 
 /**
  * The second argument of {@link Dialog.tool} (and of a gated slot tool): the
@@ -142,9 +190,9 @@ export type DialogSendFrom<R, E> =
  * @input
  * @public
  */
-export interface DialogSendOptions<R, E> {
+export interface DialogSendOptions<R, E, K extends string = string> {
   /** The transition the result decides — see {@link DialogGate.sendFrom}. */
-  sendFrom: DialogSendFrom<R, E>;
+  sendFrom: DialogSendFrom<R, E, K>;
 }
 
 /**
@@ -162,7 +210,7 @@ export interface DialogSendOptions<R, E> {
  * @input
  * @public
  */
-export interface DialogGate<R, E> {
+export interface DialogGate<R, E, K extends string = string> {
   /**
    * The state(s) this tool may run in, as {@link DialogPosition.state} spells
    * them. Anywhere else the body does not run and the call is refused.
@@ -240,7 +288,7 @@ export interface DialogGate<R, E> {
    * `unknown` (`TS18046`), and the field name does not. The other way around
    * that rule is the second argument, {@link DialogSendOptions}.
    */
-  sendFrom?: DialogSendFrom<R, E>;
+  sendFrom?: DialogSendFrom<R, E, K>;
 }
 
 /**
@@ -278,9 +326,13 @@ export interface DialogGate<R, E> {
  * @input
  * @public
  */
-export interface DialogToolDef<P extends ToolInputSchema | undefined, R, E>
-  extends Omit<ToolDef<P, R>, "execute">,
-    DialogGate<R, E> {
+export interface DialogToolDef<
+  P extends ToolInputSchema | undefined,
+  R,
+  E,
+  K extends string = string,
+> extends Omit<ToolDef<P, R>, "execute">,
+    DialogGate<R, E, K> {
   /**
    * The tool body. Runs only in one of `when`'s states.
    *

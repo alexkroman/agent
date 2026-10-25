@@ -125,5 +125,5 @@ export function makeSpeech(): SessionSpeech & { said: string[] } {
 export function makeSessionContext(
   overrides: Partial<AgentSessionContext> = {},
 ): AgentSessionContext {
-  return { sessionId: "s-1", env: {}, slots: createDetachedSlotStore(), ...overrides };
+  return { sessionId: "s-1", env: {}, slots: createDetachedSlotStore(), turn: 0, ...overrides };
 }

@@ -134,11 +134,7 @@ describe("openSessionMemory", () => {
     const onSessionEnd = vi.fn<(ctx: SessionEndContext) => unknown>();
     const { memory } = wire({ onSessionEnd });
     await memory.ended(0, []);
-    // TODO(integrator): read `ctx.slots` directly once `SessionEndContext` carries it.
-    const ctx = onSessionEnd.mock.calls[0]?.[0] as
-      | (SessionEndContext & { slots?: unknown })
-      | undefined;
-    expect(ctx?.slots).toBeDefined();
+    expect(onSessionEnd.mock.calls[0]?.[0]?.slots).toBeDefined();
   });
 
   test("onSessionEnd gets the runtime's workflow client when there is one", async () => {

@@ -44,7 +44,8 @@ export type ToolBearingAgent = {
  * Three names for three jobs: `toolOf` hands back the DEF, to assert on what
  * the agent declares (its description, its schema); {@link runTool} CALLS a
  * tool, gated as the runtime gates it; {@link toolRunner} is `runTool` with the
- * agent bound, the `run(name, …)` a spec calls throughout.
+ * agent bound, the `run(name, …)` a spec calls throughout. All three resolve
+ * through one lookup (`resolveEntry`), by name or by the def's identity.
  *
  * A tool is a FILE, so `agent.ts`'s default export declares no tools at all —
  * import the agent as DEPLOYED, exactly as this example does and as every
@@ -65,18 +66,31 @@ export type ToolBearingAgent = {
  * @public
  */
 export function toolOf(agent: ToolBearingAgent, name: string): ToolDef {
-  return resolveTool(agent, name).def;
+  return resolveEntry(agent, name).def;
 }
 
+/** A def as the lookups below match it: anything carrying an `execute`. */
+type ExecuteBearing = { readonly execute: (...args: never[]) => unknown };
+
 /**
- * The tool `name` resolves to across the agent's toolsets, and how a CALL runs
- * it: its toolset's gate first (a roster entry not on the line, a dialog out of
- * state — the refusal comes back as the result), then the toolset's execute.
+ * The tool `nameOrDef` resolves to across the agent's toolsets — by NAME (the
+ * model's form) or by IDENTITY (the def a spec imported) — and how a CALL runs
+ * it: its toolset's gate first (a roster entry not on the line, a dialog out
+ * of state — the refusal comes back as the result), then the toolset's execute.
+ *
+ * Identity rather than a structural match for the def form, because the
+ * registry's entry IS the file's default export (`toolRegistry` stores the
+ * exported object, never a copy): the def a spec imported from
+ * `tools/add_item.ts` is the very object the deployed agent runs under
+ * `add_item`. A def that is not in the table is therefore one the agent does
+ * not declare — a tool built inline in the spec, or a file the agent was not
+ * imported as DEPLOYED with — and the throw names the tools that are.
  */
-function resolveTool(
+function resolveEntry(
   agent: ToolBearingAgent,
-  name: string,
-): { def: ToolDef; call: ToolDef["execute"] } {
+  nameOrDef: string | ExecuteBearing,
+): { name: string; def: ToolDef; call: ToolDef["execute"] } {
+  const lookup = typeof nameOrDef === "string" ? `"${nameOrDef}"` : "def";
   // Before the lookup, because the value in this position is routinely not an
   // agent at all: a tool def (the thing under test), or the `undefined` a
   // mistyped import answers with. Both used to die on `agent.tools[name]` with
@@ -89,44 +103,76 @@ function resolveTool(
     const looksLikeTool = isRecord(given) && typeof given.execute === "function";
     throw new Error(
       looksLikeTool
-        ? `toolOf(def, "${name}") takes the AGENT, not one tool — this is a tool def, which has no name until a file gives it one. Import the agent from \`virtual:aai/agent\` and name the tool there, or call the def's own \`execute\` directly.`
-        : `toolOf(agent, "${name}") was handed ${describe(given)} rather than an agent definition. Import the agent as DEPLOYED: \`import agentDef from "virtual:aai/agent"\` under vitest, or \`deployedAgent\` from @alexkroman1/aai/testing under any other runner.`,
+        ? `toolOf(def, ${lookup}) takes the AGENT, not one tool — this is a tool def, which has no name until a file gives it one. Import the agent from \`virtual:aai/agent\` and name the tool there, or call the def's own \`execute\` directly.`
+        : `toolOf(agent, ${lookup}) was handed ${describeHanded(given, "tools")} rather than an agent definition. Import the agent as DEPLOYED: \`import agentDef from "virtual:aai/agent"\` under vitest, or \`deployedAgent\` from @alexkroman1/aai/testing under any other runner.`,
     );
   }
   const table = composeToolsets(agentToolsets(agent as ToolBearingDef));
-  const found = table.resolve(name);
-  if (!found) {
-    const declared = table.tools.map((one) => one.name);
-    throw new Error(
-      declared.length > 0
-        ? `The agent declares no tool named ${name}. It declares: ${declared.join(", ")}.`
-        : `The agent declares no tool named ${name}. It declares: (none). ${AUTHORED_DEF_HINT}`,
+  const found =
+    typeof nameOrDef === "string"
+      ? table.resolve(nameOrDef)
+      : table.tools.find((one) => one.entry.def === nameOrDef);
+  if (!found)
+    throw notDeclared(
+      table.tools.map((one) => one.name),
+      nameOrDef,
     );
-  }
-  const { toolset } = found;
+  const { name, toolset } = found;
   return {
+    name,
     def: found.entry.def,
     call: (args, ctx) => toolset.gate(name, ctx) ?? toolset.execute(name, args, ctx),
   };
+}
+
+/** The miss: what was looked up, what the agent declares, and the hint for an empty table. */
+function notDeclared(declared: readonly string[], nameOrDef: string | ExecuteBearing): Error {
+  const declares = declared.length > 0 ? declared.join(", ") : "(none)";
+  const hint = declared.length > 0 ? "" : ` ${AUTHORED_DEF_HINT}`;
+  if (typeof nameOrDef === "string") {
+    return new Error(
+      `The agent declares no tool named ${nameOrDef}. It declares: ${declares}.${hint}`,
+    );
+  }
+  const def: unknown = nameOrDef;
+  const described =
+    isRecord(def) && typeof def.description === "string"
+      ? ` (described as ${JSON.stringify(def.description.slice(0, 60))})`
+      : "";
+  return new Error(
+    `The agent declares no tool that IS this def${described}. It declares: ${declares}. ` +
+      "A tool is matched by IDENTITY — import the tool FILE's default export, which is the " +
+      "object the deployed agent registered; a def built inline in a spec is not in the " +
+      `table, so call its \`execute\` directly.${hint}`,
+  );
 }
 
 /**
  * Why an agent declares NO tools, and what to import instead.
  *
  * Shared rather than copied because {@link toolRunner} says it at BIND, where
- * this function says it at the first miss: one sentence for one mistake, and the
- * two cannot drift into describing different remedies.
+ * {@link resolveEntry} says it at the first miss: one sentence for one mistake,
+ * and the two cannot drift into describing different remedies.
  */
 const AUTHORED_DEF_HINT =
   "A tool is a FILE, so an agent.ts default export carries none of them — " +
   'import the agent as DEPLOYED instead: `import agentDef from "virtual:aai/agent"` ' +
   "under vitest, or `deployedAgent` from @alexkroman1/aai/testing under any other runner.";
 
-/** What was passed, for a message that can say so without printing it. */
-function describe(value: unknown): string {
+/**
+ * What was passed, for a message that can say so without printing it: a
+ * value that is not the agent, tool or def a position takes, named by the
+ * member it lacks.
+ */
+function describeHanded(value: unknown, lacks: "tools" | "execute"): string {
   if (value === undefined) return "undefined";
   if (value === null) return "null";
-  return `a ${typeof value} with no \`tools\``;
+  return `a ${typeof value} with no \`${lacks}\``;
+}
+
+/** Is this something with an `execute` — a tool def, by the lookups' own test? */
+function isExecuteBearing(value: unknown): value is ExecuteBearing {
+  return isRecord(value) && typeof value.execute === "function";
 }
 
 /**
@@ -239,9 +285,8 @@ export async function runTool(
   // a sentence for every way the first argument can fail to be an agent,
   // including a tool def handed where the agent belongs.
   if (typeof nameOrArgs === "string") {
-    const agent: unknown = target;
     // The CALL, not the bare def: gated by its toolset exactly as the runtime gates it.
-    const { call } = resolveTool(agent as ToolBearingAgent, nameOrArgs);
+    const { call } = resolveEntry(target as ToolBearingAgent, nameOrArgs);
     return await execute({ execute: call }, argsOrCtx, ctx);
   }
   return await execute(target, nameOrArgs, argsOrCtx);
@@ -252,9 +297,9 @@ export async function runTool(
  * shape {@link runTool} documents told apart by SHAPE.
  */
 async function execute(tool: unknown, argsOrCtx: unknown, ctx: unknown): Promise<unknown> {
-  if (!(isRecord(tool) && typeof tool.execute === "function")) {
+  if (!isExecuteBearing(tool)) {
     throw new Error(
-      `runTool(tool, …) was handed ${tool === undefined ? "undefined" : `a ${typeof tool} with no \`execute\``} rather than a tool. Pass a tool def (a tool file's default export), or the agent and the tool's NAME: runTool(agentDef, "name", …).`,
+      `runTool(tool, …) was handed ${describeHanded(tool, "execute")} rather than a tool. Pass a tool def (a tool file's default export), or the agent and the tool's NAME: runTool(agentDef, "name", …).`,
     );
   }
   const passedContext = ctx ?? (isToolContext(argsOrCtx) ? argsOrCtx : undefined);
@@ -278,46 +323,6 @@ function isToolContext(value: unknown): value is ToolContext {
     typeof value.send === "function" &&
     isRecord(value.slots)
   );
-}
-
-/**
- * The tool `def` resolves to in the agent's table, by IDENTITY — the mirror of
- * {@link resolveTool}, for a caller holding the def rather than the name.
- *
- * Identity rather than a structural match, because the registry's entry IS the
- * file's default export (`toolRegistry` stores the exported object, never a
- * copy): the def a spec imported from `tools/add_item.ts` is the very object the
- * deployed agent runs under `add_item`. A def that is not in the table is
- * therefore one the agent does not declare — a tool built inline in the spec, or
- * a file the agent was not imported as DEPLOYED with — and the throw names the
- * tools that are.
- */
-function resolveToolByDef(
-  agent: ToolBearingAgent,
-  def: { readonly execute: (...args: never[]) => unknown },
-): { name: string; call: ToolDef["execute"] } {
-  const table = composeToolsets(agentToolsets(agent as ToolBearingDef));
-  const found = table.tools.find((one) => one.entry.def === def);
-  if (found === undefined) {
-    const declared = table.tools.map((one) => one.name);
-    const given: unknown = def;
-    const described =
-      isRecord(given) && typeof given.description === "string"
-        ? ` (described as ${JSON.stringify(given.description.slice(0, 60))})`
-        : "";
-    throw new Error(
-      `The agent declares no tool that IS this def${described}. It declares: ${
-        declared.length > 0 ? declared.join(", ") : "(none)"
-      }. A tool is matched by IDENTITY — import the tool FILE's default export, which is the ` +
-        "object the deployed agent registered; a def built inline in a spec is not in the " +
-        `table, so call its \`execute\` directly. ${declared.length > 0 ? "" : AUTHORED_DEF_HINT}`,
-    );
-  }
-  const { name, toolset } = found;
-  return {
-    name,
-    call: (args, ctx) => toolset.gate(name, ctx) ?? toolset.execute(name, args, ctx),
-  };
 }
 
 /**
@@ -457,14 +462,14 @@ export function toolRunner(agent: ToolBearingAgent): ToolRunner {
         ctx,
       );
     }
-    if (!(isRecord(target) && typeof target.execute === "function")) {
+    if (!isExecuteBearing(target)) {
       throw new Error(
-        `run(…) was handed ${target === undefined ? "undefined" : `a ${typeof target} with no \`execute\``} ` +
+        `run(…) was handed ${describeHanded(target, "execute")} ` +
           "rather than a tool name or a tool def. Pass the name the model calls, or the tool " +
           "FILE's default export.",
       );
     }
-    const { call } = resolveToolByDef(agent, target as { execute: (...args: never[]) => unknown });
+    const { call } = resolveEntry(agent, target);
     return await execute({ execute: call }, argsOrCtx, ctx);
   };
   return run as ToolRunner;

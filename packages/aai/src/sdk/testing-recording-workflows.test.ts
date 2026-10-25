@@ -59,6 +59,47 @@ describe("createRecordingWorkflows", () => {
     await expect(workflows.get("wrun_other")).resolves.toMatchObject({ key: "garage" });
   });
 
+  test("latest and live read the seeded runs by name, key and status; signalRun is recorded", async () => {
+    const workflows = createRecordingWorkflows({
+      workflows: declared,
+      runs: [
+        createRunSnapshot({
+          workflow: "remind",
+          key: "kitchen",
+          runId: "old",
+          status: "completed",
+          output: 1,
+        }),
+        createRunSnapshot({ workflow: "remind", key: "kitchen", runId: "going" }),
+        createRunSnapshot({
+          workflow: "remind",
+          key: "kitchen",
+          runId: "newest",
+          status: "failed",
+          error: "x",
+        }),
+        createRunSnapshot({ workflow: "remind", key: "session", runId: "sess" }),
+      ],
+    });
+    await expect(workflows.latest(remind, "kitchen")).resolves.toMatchObject({ runId: "newest" });
+    await expect(workflows.live(remind, "kitchen")).resolves.toMatchObject({ runId: "going" });
+    // `key` defaults to the literal "session", as the client's does.
+    await expect(workflows.latest("remind")).resolves.toMatchObject({ runId: "sess" });
+    await expect(workflows.live("remind", "garage")).resolves.toBeUndefined();
+    await expect(
+      workflows.signalRun(remind, "kitchen", "approved", { ok: 1 }, { holdMs: 0 }),
+    ).resolves.toBe(true);
+    expect(workflows.signals).toEqual([
+      {
+        workflow: "remind",
+        key: "kitchen",
+        label: "approved",
+        payload: { ok: 1 },
+        options: { holdMs: 0 },
+      },
+    ]);
+  });
+
   test("cancel marks an unfinished run and records every attempt", async () => {
     const workflows = createRecordingWorkflows({
       runs: [

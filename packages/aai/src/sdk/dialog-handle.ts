@@ -18,6 +18,7 @@
 
 import type {
   DialogPosition,
+  DialogSendFromChecked,
   DialogSendOptions,
   DialogTimeout,
   DialogToolDef,
@@ -152,10 +153,14 @@ export interface Dialog<E = { type: string }> {
    * cannot order it below an inline `execute` — see {@link DialogSendOptions}.
    * A `send`/`sendFrom` in both places is refused at declaration.
    */
-  tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(
-    def: DialogToolDef<P, R, E>,
-    options?: DialogSendOptions<R, E>,
-  ): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
+  tool<
+    P extends ToolInputSchema | undefined = ToolInputSchema,
+    R = unknown,
+    K extends string = string,
+  >(
+    def: DialogToolDef<P, R, E, K>,
+    options?: DialogSendOptions<R, E, K>,
+  ): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
   /**
    * A `syncState` projection of this dialog's position, so a client can render
    * the step the caller is on without the agent hand-rolling a sync channel.

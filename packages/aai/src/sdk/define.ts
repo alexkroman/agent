@@ -6,6 +6,7 @@ import { declaredPersonas } from "./_dialog-meta.ts";
 import { assertNoStrayFields } from "./_stray-fields.ts";
 import { KNOWN_AGENT_FIELDS } from "./agent-config.ts";
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
+import type { AgentMode } from "./agent-mode.ts";
 import type {
   AgentParams,
   DefaultedAgentField,
@@ -15,7 +16,7 @@ import type {
   TextAgentParams,
   WorkflowAppAgentParams,
 } from "./agent-params.ts";
-import { DEFAULT_MAX_STEPS } from "./constants.ts";
+import { ASSEMBLYAI_API_KEY_ENV, DEFAULT_MAX_STEPS } from "./constants.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { bindRosterDialogs, type Roster } from "./roster.ts";
@@ -23,6 +24,8 @@ import { rosterToolset } from "./roster-tools.ts";
 import type { ToolInputSchema } from "./schema.ts";
 import type { ResolvedAgentDef } from "./toolset.ts";
 import { type AgentDef, DEFAULT_SYSTEM_PROMPT, type ToolContext, type ToolDef } from "./types.ts";
+import type { AnyWorkflowDef } from "./workflow.ts";
+import { recordWorkflowNames } from "./workflow-names.ts";
 
 /**
  * Define a tool with a typed input schema and execute function.
@@ -89,6 +92,12 @@ export function tool<P extends ToolInputSchema | undefined = ToolInputSchema, R 
  * agent is a pipeline agent. {@link AgentDeclaration} documents what every
  * field means; the returned {@link AgentDef} is the resolved shape.
  *
+ * **The `workflows` map is kept as DECLARED on the result** (its literal keys
+ * and each def's own type — {@link AgentDefWith}), so a page can name a
+ * workflow through the agent: `useWorkflowSubmit<typeof agentDef>("digest")`
+ * types the name as the keys the agent declares and the output as that body's.
+ * A def without `workflows` is the plain {@link ModeAgentDef}.
+ *
  * **Tools are not declared here** — a tool is a FILE. `tools/echo.ts` that
  * default-exports `tool({ … })` is the tool `echo`, registered by existing, and
  * `agent({ tools })` is a compile error naming the file to create
@@ -124,7 +133,9 @@ export function tool<P extends ToolInputSchema | undefined = ToolInputSchema, R 
  *
  * @public
  */
-export function agent(def: PipelineAgentParams): ModeAgentDef<"pipeline">;
+export function agent<W extends WorkflowsMap = WorkflowsMap>(
+  def: PipelineAgentParams & WithWorkflows<W>,
+): AgentDefWith<"pipeline", W>;
 /**
  * Define a speech-to-speech agent: `mode: "s2s"` and its `s2s` descriptor. See
  * {@link S2sAgentParams}.
@@ -138,7 +149,9 @@ export function agent(def: PipelineAgentParams): ModeAgentDef<"pipeline">;
  *
  * @public
  */
-export function agent(def: S2sAgentParams): ModeAgentDef<"s2s">;
+export function agent<W extends WorkflowsMap = WorkflowsMap>(
+  def: S2sAgentParams & WithWorkflows<W>,
+): AgentDefWith<"s2s", W>;
 /**
  * Define a text agent: `mode: "text"`, driven over a message list by
  * `createTextAgent` rather than by a session socket. See {@link TextAgentParams}.
@@ -156,14 +169,18 @@ export function agent(def: S2sAgentParams): ModeAgentDef<"s2s">;
  *
  * @public
  */
-export function agent(def: TextAgentParams): ModeAgentDef<"text">;
+export function agent<W extends WorkflowsMap = WorkflowsMap>(
+  def: TextAgentParams & WithWorkflows<W>,
+): AgentDefWith<"text", W>;
 /**
  * Define a workflow app: `mode: "workflow-app"`. {@link workflowApp} is the
  * same member with the mode already set. See {@link WorkflowAppAgentParams}.
  *
  * @public
  */
-export function agent(def: WorkflowAppAgentParams): ModeAgentDef<"workflow-app">;
+export function agent<W extends WorkflowsMap = WorkflowsMap>(
+  def: Omit<WorkflowAppAgentParams, "workflows"> & { workflows: W },
+): AgentDefWith<"workflow-app", W>;
 /**
  * Any member of {@link AgentParams} — the signature a value typed as the whole
  * union resolves against (an options bag assembled elsewhere, a wrapper that
@@ -175,6 +192,44 @@ export function agent(def: AgentParams): AgentDef;
 export function agent(def: AgentParams): AgentDef {
   return buildAgent(def);
 }
+
+/**
+ * The workflows an agent may declare — `AgentDef["workflows"]` without the
+ * `undefined`. The constraint every `W` is inferred under.
+ *
+ * @public
+ */
+export type WorkflowsMap = NonNullable<AgentDef["workflows"]>;
+
+/**
+ * The `workflows` an {@link agent} overload infers `W` from — optional, as the
+ * declaration's is, and typed open so a literal map's keys and def types are
+ * what `W` becomes.
+ */
+type WithWorkflows<W extends WorkflowsMap> = { workflows?: W };
+
+/**
+ * What `agent()` and `workflowApp()` return for a declaration in mode `M`
+ * whose `workflows` map is `W`: {@link ModeAgentDef}, carrying `W` as declared
+ * — its literal keys and each def's own type — when one was declared, and
+ * nothing more when none was (`W` is then its constraint, the open map).
+ *
+ * The one place the declared map survives the lowering: `AgentDef` types
+ * `workflows` as the open `Record<string, WorkflowDef>`, which is right for
+ * every reader of a definition and wrong for a page naming one of its
+ * workflows by key — `useWorkflowSubmit<typeof agentDef>("digets")` typed the
+ * name `string` and the output `unknown`, so the app-typed hooks were
+ * unreachable from a template.
+ *
+ * @sealed
+ * @public
+ */
+export type AgentDefWith<M extends AgentMode, W extends WorkflowsMap> = string extends keyof W
+  ? ModeAgentDef<M>
+  : // `Omit` first: intersecting `W` onto the open map would leave `keyof`
+    // reading `string | keyof W`, which is `string` — the widening this exists
+    // to undo.
+    Omit<ModeAgentDef<M>, "workflows"> & { readonly workflows: W };
 
 /**
  * The shared body of {@link agent} and {@link workflowApp}.
@@ -189,6 +244,11 @@ function buildAgent(def: object): AgentDef {
   // rather than at `aai build` — and a raw `export default {...}` that skips
   // this function still meets the check at the config boundary.
   assertNoStrayFields(normalized, KNOWN_AGENT_FIELDS);
+  // A def declared only through `agent({ workflows })` is named here, so
+  // `workflowNameOf(def)` answers for it as it does for a discovered one.
+  if (isRecord(normalized.workflows)) {
+    recordWorkflowNames(normalized.workflows as Readonly<Record<string, AnyWorkflowDef>>);
+  }
   /**
    * `omitUndefined` because a spread lets an own key whose value is
    * `undefined` WIN over the default beneath it — `agent({ name, ...opts })`
@@ -288,7 +348,9 @@ function assertNoInlineTools(def: unknown): void {
  * one.
  *
  * `requiredEnv` defaults to {@link WORKFLOW_APP_REQUIRED_ENV} — the AssemblyAI
- * key every shipped workflow app reads; `requiredEnv: []` opts out.
+ * key every shipped workflow app reads; `requiredEnv: []` opts out. The
+ * `workflows` map comes back AS DECLARED ({@link AgentDefWith}), which is what
+ * lets a page write `useWorkflowSubmit<typeof app>("digest")`.
  *
  * @example
  * ```ts
@@ -309,12 +371,18 @@ function assertNoInlineTools(def: unknown): void {
  *
  * @public
  */
-export function workflowApp(def: Omit<WorkflowAppAgentParams, "mode">): AgentDef {
+export function workflowApp<W extends WorkflowsMap>(
+  def: Omit<WorkflowAppAgentParams, "mode" | "workflows"> & { workflows: W },
+): AgentDefWith<"workflow-app", W> {
   // A destructuring default rather than a spread beneath `def`, so an explicit
   // `requiredEnv: undefined` takes the default too — the same rule `buildAgent`
   // applies to the other defaulted fields through `omitUndefined`.
   const { requiredEnv = WORKFLOW_APP_REQUIRED_ENV, ...rest } = def;
-  return buildAgent({ ...rest, requiredEnv, mode: "workflow-app" });
+  // `buildAgent` answers the open `AgentDef`; the map it was handed is `W`.
+  return buildAgent({ ...rest, requiredEnv, mode: "workflow-app" }) as AgentDefWith<
+    "workflow-app",
+    W
+  >;
 }
 
 /**
@@ -332,7 +400,7 @@ export function workflowApp(def: Omit<WorkflowAppAgentParams, "mode">): AgentDef
  *
  * @public
  */
-export const WORKFLOW_APP_REQUIRED_ENV: readonly string[] = ["ASSEMBLYAI_API_KEY"];
+export const WORKFLOW_APP_REQUIRED_ENV: readonly string[] = [ASSEMBLYAI_API_KEY_ENV];
 
 /**
  * `AgentParams` with the author-only conveniences normalized away — what

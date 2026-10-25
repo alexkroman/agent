@@ -1,10 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, onTestFinished, test, vi } from "vitest";
 import { agent } from "./define.ts";
 import { stepFetch } from "./step-fetch.ts";
 import { stepGenerate } from "./step-generate.ts";
 import { stepNotifyClient } from "./step-notify-client.ts";
-import { stepReport } from "./step-report.ts";
+import { publishStepReporter, stepReport } from "./step-report.ts";
 import { stepSpeak } from "./step-speak.ts";
 import { stepTranscribePoll } from "./step-transcribe.ts";
 import { stepUploadInfo } from "./step-uploads.ts";
@@ -167,6 +167,22 @@ describe("installStubWorkflows", () => {
     await expect(workflows.recent("digest")).resolves.toHaveLength(3);
   });
 
+  test("latest is the first, live the first still going, and signalRun is delivered", async () => {
+    const workflows = installStubWorkflows({ runs: [runs[2] as (typeof runs)[number], ...runs] });
+    await expect(workflows.latest("digest")).resolves.toMatchObject({ runId: "c" });
+    await expect(workflows.live("digest", "caller-1")).resolves.toMatchObject({ runId: "a" });
+    await expect(workflows.signalRun("digest", "caller-1", "approved", { ok: true })).resolves.toBe(
+      true,
+    );
+    expect(vi.mocked(workflows.signalRun).mock.calls[0]).toEqual([
+      "digest",
+      "caller-1",
+      "approved",
+      { ok: true },
+    ]);
+    await expect(installStubWorkflows().live("digest")).resolves.toBeUndefined();
+  });
+
   test("cancelAll counts the unfinished runs, as one cancel per run would", async () => {
     const workflows = installStubWorkflows({ runs });
     await expect(workflows.cancelAll("digest", "caller-1")).resolves.toBe(2);
@@ -239,6 +255,29 @@ describe("installStubWorld", () => {
     await expect(stepFetch("https://example.test/elsewhere")).rejects.toThrow(
       "installStubWorld: no leg answers GET https://example.test/elsewhere",
     );
+  });
+
+  test("leaves a reporter already published in place — an eval's `run.reported` keeps reading", async () => {
+    const seen: unknown[] = [];
+    publishStepReporter((chunk) => {
+      seen.push(chunk);
+    });
+    onTestFinished(() => publishStepReporter(undefined));
+    const world = installStubWorld({});
+    await stepReport("still the harness's");
+    expect(seen).toEqual(["still the harness's"]);
+    expect(world.reported.lines).toEqual([]);
+    // `reporter: true` displaces it on purpose; `false` never publishes.
+    const forced = installStubWorld({ reporter: true });
+    await stepReport("now the stub's");
+    expect(forced.reported.lines).toEqual(["now the stub's"]);
+    expect(seen).toEqual(["still the harness's"]);
+  });
+
+  test("publishes its recording reporter when nothing is published", async () => {
+    const world = installStubWorld({ reporter: undefined });
+    await stepReport("recorded");
+    expect(world.reported.lines).toEqual(["recorded"]);
   });
 
   test("a `pages` handler is the last leg, and an unanswered request throws naming it", async () => {

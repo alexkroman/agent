@@ -115,6 +115,7 @@
  * @module step-errors
  */
 
+import { classifiedCall } from "./_step-or-fail.ts";
 import { throwFatalStepError, throwStepError } from "./_step-verdict.ts";
 import { isRecord } from "./is-record.ts";
 
@@ -189,7 +190,7 @@ export type ErrorClass = abstract new (...args: never[]) => Error;
  *
  * export function header(bytes: Uint8Array): WavFormat {
  *   return fatalOn((err) => err instanceof Error && err.name === "UnsupportedRecordingError", () =>
- *     parseWav(bytes),
+ *     parseWav(bytes, bytes.byteLength),
  *   );
  * }
  * ```
@@ -198,14 +199,7 @@ export type ErrorClass = abstract new (...args: never[]) => Error;
  */
 export function fatalOn<T>(isMatch: (err: unknown) => boolean, fn: () => T): T {
   const settle = (err: unknown): never => (isMatch(err) ? throwFatalStepError(err) : rethrow(err));
-  let out: T;
-  try {
-    out = fn();
-  } catch (err) {
-    return settle(err);
-  }
-  if (!isThenable(out)) return out;
-  return Promise.resolve(out).then(undefined, settle) as T;
+  return classifiedCall(fn, settle)();
 }
 
 /**
@@ -238,7 +232,7 @@ export type OrFatalOptions = {
  *
  * export function header(bytes: Uint8Array): WavFormat {
  *   // A WAV the cutter cannot read is a WAV it cannot read on the next attempt.
- *   return orFatal(() => parseWav(bytes), { when: UnsupportedRecordingError });
+ *   return orFatal(() => parseWav(bytes, bytes.byteLength), { when: UnsupportedRecordingError });
  * }
  * ```
  *
@@ -251,14 +245,6 @@ export function orFatal<T>(fn: () => T, options: OrFatalOptions): T {
 /** `throw`, as an expression — so a conditional can name both arms. */
 function rethrow(err: unknown): never {
   throw err;
-}
-
-/**
- * A thenable, recognised structurally — an async `fn` in a bundle with its own
- * Promise realm is still one. The same test `_step-or-fail.ts` makes.
- */
-function isThenable(value: unknown): value is PromiseLike<unknown> {
-  return typeof (value as { then?: unknown } | null | undefined)?.then === "function";
 }
 
 /**

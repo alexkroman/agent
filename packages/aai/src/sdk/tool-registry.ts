@@ -39,6 +39,7 @@
  */
 
 import { withCollectedSyncState } from "./_author-conveniences.ts";
+import { moduleNameOf, SPEC_RE } from "./_module-registry.ts";
 import { isRecord } from "./is-record.ts";
 import type { Toolset } from "./toolset.ts";
 import type { ToolDef } from "./types.ts";
@@ -72,12 +73,6 @@ const TOOL_NAME_MAX = 64;
  */
 const NON_TOOL_NAMES = new Set(["index"]);
 
-/** Extensions a tool module may be authored in. */
-const MODULE_EXT_RE = /\.(?:m?[jt]s|tsx)$/;
-
-/** A co-located spec is not a tool; `foo.test.ts` would register as `foo.test`. */
-const SPEC_RE = /\.(?:test|spec)$/;
-
 /**
  * `path → module namespace`, which is what both sources produce: Vite's
  * `import.meta.glob` (eager) and the static import list the CLI generates.
@@ -103,19 +98,16 @@ function isToolDef(value: unknown): value is ToolDef {
  * The name a path declares, with its extension dropped — NOT yet checked
  * against the grammar, because a co-located spec has to be skipped before its
  * name is judged. `echo.test.ts` is not a badly-named tool; it is not a tool.
- *
- * Paths arrive with whatever prefix their source used — `./tools/x.ts` from a
- * glob, `tools/x.ts` from the generated entry, an absolute path from a scan —
- * so only the part after the last `tools/` segment is read.
+ * The split and the extension set are `_module-registry.ts`'s.
  */
 function toolNameOf(path: string): string {
-  const afterDir = path.split(/(?:^|\/)tools\//).pop() ?? path;
-  if (afterDir.includes("/")) {
+  const { name, nested } = moduleNameOf(path, "tools");
+  if (nested) {
     throw new Error(
-      `${path} is nested inside tools/. A tool's name is its file name, and a nested file has no name a provider would accept — move it to tools/${afterDir.split("/").pop()} or keep it out of tools/.`,
+      `${path} is nested inside tools/. A tool's name is its file name, and a nested file has no name a provider would accept — move it to tools/${name.split("/").pop()}.ts or keep it out of tools/.`,
     );
   }
-  return afterDir.replace(MODULE_EXT_RE, "");
+  return name;
 }
 
 /**

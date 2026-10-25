@@ -201,6 +201,16 @@ describe("toolRunner handed the tool DEF", () => {
     );
   });
 
+  test("a def handed to a runner over something that is not an agent gets the agent sentence", async () => {
+    const run = toolRunner({ tools: { add_item: add } });
+    // The runner's bind check passed; the lookup is what sees the shape.
+    const broken = toolRunner as unknown as (agent: unknown) => ReturnType<typeof toolRunner>;
+    await expect(broken({ tools: 1 })(add, {})).rejects.toThrow(
+      "toolOf(agent, def) was handed a object with no `tools` rather than an agent definition",
+    );
+    expect(await run(add, {})).toMatchObject({ added: undefined });
+  });
+
   test("neither a name nor a def is refused by shape", async () => {
     const run = toolRunner(agentDef) as unknown as (target: unknown) => Promise<unknown>;
     await expect(run(undefined)).rejects.toThrow("was handed undefined rather than a tool name");

@@ -164,9 +164,7 @@ export function openSessionMemory(deps: {
       const report = (err: unknown): void => {
         logger.warn("onSessionEnd failed", { sid, error: errorMessage(err) });
       };
-      // TODO(integrator): `slots` is on `SessionEndContext` once S1's SDK change
-      // lands — drop the intersection.
-      const context: SessionEndContext & { readonly slots: SlotStore } = {
+      const context: SessionEndContext = {
         sessionId,
         env,
         lastEventIndex,

@@ -23,7 +23,7 @@ import { omitUndefined } from "./omit-undefined.ts";
 import { createRunSnapshot } from "./testing-workflows.ts";
 import type { AnyWorkflowDef } from "./workflow.ts";
 import type { WorkflowClient } from "./workflow-client.ts";
-import type { StartOptions } from "./workflow-options.ts";
+import { SESSION_KEY, type SignalOptions, type StartOptions } from "./workflow-options.ts";
 import { isTerminal, type WorkflowRunSnapshot } from "./workflow-run.ts";
 import { rejectingWorkflows } from "./workflow-unavailable.ts";
 
@@ -88,6 +88,8 @@ export type RecordingWorkflowsOptions = {
 export type RecordingWorkflows = WorkflowClient & {
   /** Every start, in order. */
   readonly starts: RecordedStart[];
+  /** Every `signalRun`, in order — delivered (`true`) without a run to deliver to. */
+  readonly signals: RecordedSignal[];
   /**
    * The starts of one workflow — by declared name or by def — or all of them.
    */
@@ -96,6 +98,21 @@ export type RecordingWorkflows = WorkflowClient & {
   readonly cancelled: string[];
   /** Add runs for the reads to answer from, e.g. inside a case before `say()`. */
   seed(...runs: WorkflowRunSnapshot[]): void;
+};
+
+/**
+ * One `signalRun` as a tool made it.
+ *
+ * @sealed
+ * @public
+ */
+export type RecordedSignal = {
+  /** The workflow's declared name. */
+  workflow: string;
+  key: string;
+  label: string;
+  payload: unknown;
+  options: SignalOptions | undefined;
 };
 
 /**
@@ -121,6 +138,7 @@ export function createRecordingWorkflows(
   const declared = options.workflows;
   const prefix = options.runIdPrefix ?? "wrun_rec_";
   const starts: RecordedStart[] = [];
+  const signals: RecordedSignal[] = [];
   const cancelled: string[] = [];
   const runs: WorkflowRunSnapshot[] = [...(options.runs ?? [])];
 
@@ -172,6 +190,27 @@ export function createRecordingWorkflows(
       const name = nameOf(workflow);
       return newestFirst((run) => run.workflow === name);
     }) as WorkflowClient["recent"],
+    // Read as the client reads them: the newest run under the key, and the
+    // newest one still going. `"session"` stays literal — a recorder has no
+    // session id to resolve it to, so a seeded run says it the same way.
+    latest: (async (workflow: string | AnyWorkflowDef, key: string = SESSION_KEY) => {
+      const name = nameOf(workflow);
+      return newestFirst((run) => run.workflow === name && run.key === key)[0];
+    }) as WorkflowClient["latest"],
+    live: (async (workflow: string | AnyWorkflowDef, key: string = SESSION_KEY) => {
+      const name = nameOf(workflow);
+      return newestFirst((run) => run.workflow === name && run.key === key && !isTerminal(run))[0];
+    }) as WorkflowClient["live"],
+    signalRun: (async (
+      workflow: string | AnyWorkflowDef,
+      key: string,
+      label: string,
+      payload?: unknown,
+      options?: SignalOptions,
+    ) => {
+      signals.push({ workflow: nameOf(workflow), key, label, payload, options });
+      return true;
+    }) as WorkflowClient["signalRun"],
     async cancel(runId: string) {
       cancelled.push(runId);
       const at = runs.findIndex((run) => run.runId === runId);
@@ -198,6 +237,7 @@ export function createRecordingWorkflows(
     ),
     ...recording,
     starts,
+    signals,
     cancelled,
     started(workflow) {
       if (workflow === undefined) return [...starts];

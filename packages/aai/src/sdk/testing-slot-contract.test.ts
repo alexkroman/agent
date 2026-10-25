@@ -44,11 +44,44 @@ describe("expectSlotContract", () => {
     ).not.toThrow();
   });
 
-  test("an `empty` seed that differs from the default drifts the empty frame from the default's projection", () => {
+  test("a slot declaring `empty` is held to its empty frame, not to the seeded default", () => {
     const log = sessionSlot("log", (): Log => ({ lines: ["seed"], total: 0 }), {
       empty: (): Log => ({ lines: [], total: 0 }),
+      view: (value) => ({ count: value.lines.length }),
     });
-    expect(() => expectSlotContract(log)).toThrow("projected() is not the view of the default");
+    expect(() =>
+      expectSlotContract(log, {
+        write: (draft) => {
+          draft.lines.push("more");
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  test("a seeded slot whose `after` derives a field passes too — the hook applies to the blank", () => {
+    const log = sessionSlot("log", (): Log => ({ lines: ["seed"], total: -1 }), {
+      empty: (): Log => ({ lines: [], total: -1 }),
+      after: (value) => {
+        value.total = value.lines.length;
+      },
+      view: (value) => ({ count: value.lines.length, total: value.total }),
+    });
+    expect(() => expectSlotContract(log)).not.toThrow();
+  });
+
+  test("a projection that disagrees with the stored blank is named", () => {
+    // A `projected` that was rebuilt by hand, projecting a different frame.
+    const log = sessionSlot("log", (): Log => ({ lines: [], total: 0 }));
+    const broken = {
+      ...log,
+      projected: Object.assign(
+        (value?: unknown) => (value === undefined ? { lines: ["ghost"], total: 0 } : value),
+        log.projected,
+      ),
+    };
+    expect(() => expectSlotContract(broken)).toThrow(
+      "projected() is not the view of the slot's blank",
+    );
   });
 
   test("a default already past its restated cap is reported under that cap", () => {
@@ -70,6 +103,31 @@ describe("expectSlotContract", () => {
     const log = sessionSlot("log", (): Log => ({ lines: [], total: 0 }));
     expect(() => expectSlotContract(log, { write: () => undefined })).toThrow(
       "left the value equal to the default",
+    );
+  });
+
+  test("a declared cap is checked with no `caps` option at all, read off the handle", () => {
+    const wrongEnd = sessionSlot("wrong-end", () => ({ log: [] as string[] }), {
+      caps: { log: 2 },
+      // A slot whose hook keeps the OLDEST two: the cap then trims nothing.
+      after: (v) => {
+        v.log.splice(2);
+      },
+    });
+    expect(() => expectSlotContract(wrongEnd)).toThrow(
+      /caps\.log = 2 did not keep the newest 2 .* The slot trims the wrong end\./,
+    );
+    expect(() =>
+      expectSlotContract(
+        sessionSlot("declared-ok", () => ({ log: [] as string[] }), { caps: { log: 2 } }),
+      ),
+    ).not.toThrow();
+  });
+
+  test("a restated cap that disagrees with the declaration names both numbers", () => {
+    const slot = sessionSlot("disagree", () => ({ log: [] as string[] }), { caps: { log: 5 } });
+    expect(() => expectSlotContract(slot, { caps: { log: 2 } })).toThrow(
+      /The slot declares caps\.log = 5, not 2\./,
     );
   });
 

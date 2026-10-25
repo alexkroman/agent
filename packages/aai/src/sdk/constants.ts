@@ -491,3 +491,11 @@ export const WS_NORMAL_CLOSURE = 1000;
  * the argument its `media-src` needs is longer than the header.
  */
 export { AGENT_CSP } from "./agent-csp.ts";
+
+/**
+ * The agent-env variable the AssemblyAI key lives in — what every AssemblyAI
+ * stage descriptor's `envVar` names, what `stepGenerate`/`stepSpeak`/
+ * `stepTranscribe*` read by default, what `workflowApp()` requires by default
+ * (`WORKFLOW_APP_REQUIRED_ENV`) and what the test installers seed.
+ */
+export const ASSEMBLYAI_API_KEY_ENV: string = "ASSEMBLYAI_API_KEY";
