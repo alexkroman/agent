@@ -256,27 +256,16 @@ async function updateDependencies(io: ProjectIo, requested?: string[]): Promise<
  * chunked response does not send one.
  */
 async function readBodyCapped(response: Response, maxBytes: number): Promise<Uint8Array | null> {
-  if (!response.body) return new Uint8Array();
-  const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
   let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => undefined);
-      return null;
-    }
-    chunks.push(value);
+  // Leaving a `for await` over a web stream early cancels it, which is what
+  // releases the connection at the cap.
+  for await (const chunk of response.body ?? []) {
+    total += chunk.byteLength;
+    if (total > maxBytes) return null;
+    chunks.push(chunk);
   }
-  const bytes = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
+  return Buffer.concat(chunks, total);
 }
 
 async function downloadToWorkspace(io: ProjectIo, url: string, rel: string): Promise<string> {
