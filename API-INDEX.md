@@ -19,7 +19,7 @@ of it — and want the import.
 ## Contents
 
 - [Agent authoring](#agent-authoring) — 619 names
-- [Browser client](#browser-client) — 207 names
+- [Browser client](#browser-client) — 206 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
 - [Framework internals](#framework-internals) — 517 names
@@ -685,7 +685,6 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `ToolCallOutcome` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | How a page answers a tool call it ran — see `BrowserSession.sendToolResult`. |
 | `ToolCallRow`, `ToolCallRowProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The design system's console row for one tool invocation: a small outlined "TOOL" chip (or a custom `icon`), the tool title in mono, a truncated detail preview, … |
 | `ToolCallRowVariant` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | Size preset for `ToolCallRow`: `"default"` is the deployed agent UI's scale, `"compact"` the studio transcript's denser one. |
-| `ToolDisplayConfig` | type | `@alexkroman1/aai-ui` | `aai-ui:client` | Display configuration for a tool call in the UI, keyed by tool name. |
 | `UploadProgressBar` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow-files` | How far a form's files have got, rendered as a bar. |
 | `UploadStatus` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow-files` | What `WorkflowSubmission.upload` reports while the bytes are going. |
 | `UseClientRunsResult` | type | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | What `useClientRuns` returns. |

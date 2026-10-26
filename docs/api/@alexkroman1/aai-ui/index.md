@@ -1402,8 +1402,12 @@ Define and mount a client UI for a voice agent.
 
 **A custom component:** pass `component` and it is rendered inside the same
 providers instead of the default shell — beside a `sidebar` if one is given,
-in the same [SidebarLayout](#sidebarlayout). A provided `name` then also sets
-`document.title`, there being no shell header to show it in.
+in the same [SidebarLayout](#sidebarlayout). The page title is the HTML's own; a
+custom component that wants another sets `document.title` itself.
+
+The agent's name on the start card and in the header, and each tool's icon
+and label, are what the agent declared (`agent({ name })`, `tool({ ui })`),
+read from its `GET /client-config` body — not options here.
 
 Mounts into `target` — a CSS selector or DOM element, defaulting to
 `"#app"` — and throws `Element not found: <target>` when the selector
@@ -1433,10 +1437,8 @@ function OrderPanel() {
 }
 
 mountClient({
-  name: "Pizza Ordering",
   theme: { bg: "#1a1a1a", primary: "#e55" },
   sidebar: OrderPanel,
-  tools: { add_pizza: { icon: "🍕", label: "Adding pizza" } },
 });
 ```
 
@@ -6093,7 +6095,6 @@ type ClientConfig = Pick<VoiceSessionOptions,
   component?: ComponentType;
   css?: string;
   icon?: ReactNode;
-  name?: string;
   platformUrl?: string;
   sidebar?: ComponentType;
   sidebarPosition?: "left" | "right";
@@ -6101,7 +6102,6 @@ type ClientConfig = Pick<VoiceSessionOptions,
   subtitle?: string;
   target?: string | HTMLElement;
   theme?: ClientTheme;
-  tools?: ToolDisplayConfig;
 };
 ```
 
@@ -6162,16 +6162,6 @@ shell header once the session begins.
 
 Both, because they are one mark: an agent whose start screen shows a slice
 of pizza and whose header shows our logo reads as two products.
-
-##### name?
-
-```ts
-optional name?: string;
-```
-
-Agent name shown in the header and start screen — and, with a `component`,
-the page title, there being no shell header to put it in. Left out, the
-default shell asks the agent for its own declared name.
 
 ##### platformUrl?
 
@@ -6238,24 +6228,6 @@ optional theme?: ClientTheme;
 Theme colors — the five tokens, or `{ primary, mode: "dark" | "light" }`
 with the rest derived. See [ClientTheme](#clienttheme).
 
-##### tools?
-
-```ts
-optional tools?: ToolDisplayConfig;
-```
-
-Tool display OVERRIDES: icon and label keyed by tool name.
-
-The base is what each tool declared with `tool({ ui })`, served in the
-agent's `GET /client-config` body and merged underneath this per key — so
-a page that declares nothing here still shows every tool the way its
-author drew it, and this map is for the page that disagrees.
-
-Honoured with a custom `component` too: [mountClient](#mountclient) installs it into
-`ToolConfigContext`, and the consumer is `ToolCallBlock` — which a custom
-component renders as soon as it uses `MessageList` or `ChatView`, the usual
-way to build one.
-
 #### Remarks
 
 **One flat type, not a union of tiers.** `component` is what decides which
@@ -6263,13 +6235,15 @@ shell renders — absent, the default one (StartScreen + ChatView, optional
 sidebar); present, the caller's own component inside the same providers —
 and that decision is made at runtime, where every field can be honoured. It
 used to be a union whose two arms banned each other's fields with `?: never`,
-and the failure that shape produces is recorded twice in this file's history:
-`mountClient({ name, component })` and `mountClient({ component, tools })` were both
-the natural thing to write, both were refused with *"Type 'string' is not
-assignable to type 'undefined'"*, and both cost a build round each time
-before the ban was lifted. What was left banned was `sidebar` beside a
-`component`, which invited the identical failure for a combination
-[mountClient](#mountclient) can simply render.
+and the failure that shape produces is recorded in this file's history:
+`sidebar` beside a `component` was the natural thing to write, was refused
+with *"Type '…' is not assignable to type 'undefined'"*, and cost a build
+round each time, for a combination [mountClient](#mountclient) can simply render.
+
+The agent's name and each tool's icon and label are not options here: both
+come from the agent's own `GET /client-config` body — `agent({ name })` and
+`tool({ ui })` — which the mount looks up, so a page never restates what the
+agent already declared.
 
 ***
 
@@ -9409,26 +9383,6 @@ type ToolCallRowVariant = "default" | "compact";
 
 Size preset for [ToolCallRow](#toolcallrow): `"default"` is the deployed agent
 UI's scale, `"compact"` the studio transcript's denser one.
-
-***
-
-### ToolDisplayConfig
-
-```ts
-type ToolDisplayConfig = Record<string, {
-  icon?: string;
-  label?: string;
-}>;
-```
-
-**`Input`**
-
-Display configuration for a tool call in the UI, keyed by tool name.
-
-`mountClient({ tools })` is the OVERRIDE half of it: the base is what each
-tool declared with `tool({ ui })`, which the agent serves in its
-`GET /client-config` body and `mountClient()` merges underneath this, per
-key. An entry's `undefined` field is "no override", not "no icon".
 
 ***
 

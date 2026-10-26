@@ -88,19 +88,19 @@ mountClient({ component: MyApp });
 
 ### `mountClient()` config
 
-| Field          | Type                     | Default    | Description                                                          |
-| -------------- | ------------------------ | ---------- | -------------------------------------------------------------------- |
-| `name`         | `string`                 | the server | Page title; the agent's `name` unless overridden                     |
-| `component`    | `ComponentType`          | —          | Custom root component (tier 2)                                       |
-| `sidebar`      | `ComponentType`          | —          | Sidebar alongside default chat (tier 1)                              |
-| `sidebarWidth` | `string`                 | `"18rem"`  | CSS width of sidebar                                                 |
-| `theme`        | `ClientTheme`            | —          | `{ primary, mode?: "dark" \| "light" }`, or all five tokens (below)  |
-| `css`          | `string`                 | —          | A page stylesheet (`@keyframes`, a font face) — no `<style>` element |
-| `target`       | `string \| HTMLElement`  | `"#app"`   | Mount target                                                         |
-| `tools`        | `ToolDisplayConfig`      | the server | Icon/label OVERRIDES per tool name; declare them on `tool({ ui })`   |
-| `client`       | `string \| () => string` | —          | `?client=`; `"auto"` = per-browser id                                |
+| Field          | Type                     | Default   | Description                                                          |
+| -------------- | ------------------------ | --------- | -------------------------------------------------------------------- |
+| `component`    | `ComponentType`          | —         | Custom root component (tier 2)                                       |
+| `sidebar`      | `ComponentType`          | —         | Sidebar alongside default chat (tier 1)                              |
+| `sidebarWidth` | `string`                 | `"18rem"` | CSS width of sidebar                                                 |
+| `theme`        | `ClientTheme`            | —         | `{ primary, mode?: "dark" \| "light" }`, or all five tokens (below)  |
+| `css`          | `string`                 | —         | A page stylesheet (`@keyframes`, a font face) — no `<style>` element |
+| `target`       | `string \| HTMLElement`  | `"#app"`  | Mount target                                                         |
+| `client`       | `string \| () => string` | —         | `?client=`; `"auto"` = per-browser id                                |
 
-Beside a `component`, `sidebar` still renders.
+Beside a `component`, `sidebar` still renders. There is no `name` and no `tools`
+option: the shell shows the agent's own `agent({ name })`, and a tool's icon and
+label are `tool({ ui })` — both read from the agent's `client-config`.
 
 ### `useSession()` return type
 

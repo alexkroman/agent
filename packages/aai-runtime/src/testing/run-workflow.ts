@@ -128,15 +128,18 @@ const DEFAULT_RUN_KEY = "test";
  * against a validated input, so handing it an unvalidated one tests a call that
  * cannot happen.
  *
- * **Two forms.** Handed a DEF, the run is named by `options.name`, else by the
- * name the def was declared under (`workflowNameOf`, recorded when the agent
- * declaring it was lowered — a `virtual:aai/agent` import), else `"workflow"`.
- * Handed the AGENT and a workflow's name — `runWorkflow(agentDef, "digest",
- * input)`, with `agentDef` from `virtual:aai/agent` — the def is the one the
- * agent declares (or the build discovered in `workflows/`) under that name,
- * and the run carries that name, so a body that reads `ctx.workflow`, starts a
- * sibling by name or is found by `ctx.workflows.find` sees what a deployment
- * would. An unknown name throws, listing the ones the agent has.
+ * **Two forms.** Handed a DEF, the run is named by the name the def was
+ * declared under (`workflowNameOf`, recorded when the agent declaring it was
+ * lowered — a `virtual:aai/agent` import), else `"workflow"`; there is no
+ * `name` option. Handed the AGENT and a workflow's name —
+ * `runWorkflow(agentDef, "digest", input)`, with `agentDef` from
+ * `virtual:aai/agent` — the def is the one the agent declares (or the build
+ * discovered in `workflows/`) under that name, and the run carries that name,
+ * so a body that reads `ctx.workflow`, starts a sibling by name or is found by
+ * `ctx.workflows.find` sees what a deployment would. An unknown name throws,
+ * listing the ones the agent has. A spec that asserts on the name (a signal
+ * token, `ctx.workflow`) uses the agent form, which is the one a deployment
+ * runs.
  *
  * @example
  * ```ts
@@ -152,9 +155,7 @@ const DEFAULT_RUN_KEY = "test";
  *   },
  * });
  *
- * const run = await runWorkflow(digest, { url: "https://example.com/a" }, {
- *   name: "digest",
- * });
+ * const run = await runWorkflow(digest, { url: "https://example.com/a" });
  *
  * // It slept rather than blocking, and said for how long.
  * console.log(run.status, run.wakeAt);
@@ -192,13 +193,13 @@ export async function runWorkflow<App extends WorkflowAppLike, Name extends Work
   agent: App,
   name: Name,
   input: Record<string, unknown>,
-  options?: Omit<RunWorkflowOptions, "name">,
+  options?: RunWorkflowOptions,
 ): Promise<WorkflowTestHandle<WorkflowOutputOf<WorkflowDefOf<App, Name>>>>;
 export async function runWorkflow(
   first: WorkflowDef<ToolInputSchema, unknown> | WorkflowAppLike,
   second: string | Record<string, unknown>,
   third?: Record<string, unknown> | RunWorkflowOptions,
-  fourth?: Omit<RunWorkflowOptions, "name">,
+  fourth?: RunWorkflowOptions,
 ): Promise<WorkflowTestHandle<unknown>> {
   if (typeof second === "string") {
     const agent = first as WorkflowAppLike;
@@ -212,27 +213,30 @@ export async function runWorkflow(
       );
     }
     // The declared def is a `WorkflowDef` (`AnyWorkflowDef` is the reading's
-    // contravariant view of it); the explicit key wins over any recorded one.
+    // contravariant view of it); the agent's key wins over any recorded one.
     return runDef(
       def as WorkflowDef<ToolInputSchema, unknown>,
+      second,
       (third as Record<string, unknown> | undefined) ?? {},
-      { ...fourth, name: second },
+      fourth ?? {},
     );
   }
+  const def = first as WorkflowDef<ToolInputSchema, unknown>;
   return runDef(
-    first as WorkflowDef<ToolInputSchema, unknown>,
+    def,
+    workflowNameOf(def) ?? "workflow",
     second,
     (third as RunWorkflowOptions | undefined) ?? {},
   );
 }
 
-/** The def form — see {@link runWorkflow}. */
+/** Both forms, once the name is settled — see {@link runWorkflow}. */
 async function runDef<P extends ToolInputSchema, R>(
   def: WorkflowDef<P, R>,
+  name: string,
   input: Record<string, unknown>,
   options: RunWorkflowOptions,
 ): Promise<WorkflowTestHandle<R>> {
-  const name = options.name ?? workflowNameOf(def) ?? "workflow";
   const key = options.key ?? DEFAULT_RUN_KEY;
   const logger = options.logger ?? silentLogger;
   const maxDeliveries = options.maxDeliveries ?? DEFAULT_MAX_DELIVERIES;

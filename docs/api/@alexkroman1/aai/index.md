@@ -8713,7 +8713,7 @@ optional ui?: ToolUi;
 How a page displays this tool's calls — see [ToolUi](#toolui). Carried on the
 wire declaration (`ToolSchema.ui`) the way `messages` is, so the default
 client and a custom chrome render the same icon and label under `aai dev`
-and on the platform, with `mountClient({ tools })` as an override.
+and on the platform.
 
 ###### Inherited from
 
@@ -13219,7 +13219,7 @@ optional ui?: ToolUi;
 How a page displays this tool's calls — see [ToolUi](#toolui). Carried on the
 wire declaration (`ToolSchema.ui`) the way `messages` is, so the default
 client and a custom chrome render the same icon and label under `aai dev`
-and on the platform, with `mountClient({ tools })` as an override.
+and on the platform.
 
 ###### Inherited from
 
@@ -13513,7 +13513,7 @@ optional ui?: ToolUi;
 How a page displays this tool's calls — see [ToolUi](#toolui). Carried on the
 wire declaration (`ToolSchema.ui`) the way `messages` is, so the default
 client and a custom chrome render the same icon and label under `aai dev`
-and on the platform, with `mountClient({ tools })` as an override.
+and on the platform.
 
 ###### Inherited from
 
@@ -13934,7 +13934,7 @@ optional ui?: ToolUi;
 How a page displays this tool's calls — see [ToolUi](#toolui). Carried on the
 wire declaration (`ToolSchema.ui`) the way `messages` is, so the default
 client and a custom chrome render the same icon and label under `aai dev`
-and on the platform, with `mountClient({ tools })` as an override.
+and on the platform.
 
 ###### Inherited from
 
@@ -19683,7 +19683,7 @@ optional ui?: ToolUi;
 How a page displays this tool's calls — see [ToolUi](#toolui). Carried on the
 wire declaration (`ToolSchema.ui`) the way `messages` is, so the default
 client and a custom chrome render the same icon and label under `aai dev`
-and on the platform, with `mountClient({ tools })` as an override.
+and on the platform.
 
 ***
 
@@ -20153,12 +20153,11 @@ type ToolUi = {
 How a tool call is DISPLAYED by a page — the icon and the label a client
 shows while the call runs and once it lands. Nothing here reaches the model.
 
-Declared on the tool rather than in the page's `mountClient({ tools })` map
-because the tool is the one that knows what it does: a page that named every
-tool twice (once here, once in the map) drifted the moment a tool was
+Declared on the tool rather than in a map on the page because the tool is
+the one that knows what it does: a page that named every tool twice (once
+here, once in a `mountClient({ tools })` map) drifted the moment a tool was
 renamed, and a custom chrome had to restate the map or show raw names. The
-map stays as an OVERRIDE, keyed by the same name — see `ToolDisplayConfig` in
-`@alexkroman1/aai-ui`.
+page has no such map; this declaration is the one place the icon lives.
 
 #### Properties
 
@@ -20236,6 +20235,8 @@ type UngatedDef = {
 };
 ```
 
+**`Sealed`**
+
 What the UNGATED overloads of [SessionSlot.tool](#tool-1) and
 [SessionSlot.updateTool](#updatetool) say about `dialog`: a message, so the one
 line `tsc` prints for a gated def that fits no overload names the rule.
@@ -20250,6 +20251,12 @@ Its complaint used to be that `dialog` "does not exist in type
 fields to check. A def VARIABLE carrying a dialog is refused by it too,
 where a plain `Omit` would have let a non-fresh object match the ungated
 overload and lose its envelope.
+
+`@sealed` on the pattern of `DialogSendFromMisuse` and `SyncMutationMisuse`:
+a message TYPE is the SDK's to compose and an author's only to read, in what
+`tsc` prints — no author builds a value of it. (`check:api-shape` reaches it
+both ways, as it does every type in a `SessionSlot` method's parameter:
+`expectSlotContract(slot)` enters the handle as input, which flips them.)
 
 #### Properties
 

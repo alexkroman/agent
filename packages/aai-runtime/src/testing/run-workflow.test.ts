@@ -34,7 +34,7 @@ describe("a run that finishes on the first delivery", () => {
       }),
     });
 
-    const run = await runWorkflow(digest, { topic: "otters" }, { name: "digest" });
+    const run = await runWorkflow(digest, { topic: "otters" });
     expect(run.status).toBe("completed");
     expect(run.output).toEqual({ headline: "all about otters" });
     expect(run.deliveries).toBe(1);
@@ -471,10 +471,12 @@ describe("the driver's own limits", () => {
       run: (input: Record<string, unknown>) => input.topic,
     });
 
-    await expect(runWorkflow(typed, {}, { name: "typed" })).rejects.toThrow(
+    // The agent form, so the refusal names the workflow as a deployment would.
+    const app = { name: "App", workflows: { typed } };
+    await expect(runWorkflow(app, "typed", {})).rejects.toThrow(
       /workflow typed refused that input/,
     );
-    const ok = await runWorkflow(typed, { topic: "otters" }, { name: "typed" });
+    const ok = await runWorkflow(app, "typed", { topic: "otters" });
     expect(ok.output).toBe("otters");
   });
 
@@ -507,13 +509,14 @@ describe("the driver's own limits", () => {
       run: async (_input: Record<string, unknown>, ctx: WorkflowContext) =>
         ctx.waitForSignal("first"),
     });
-    const a = await runWorkflow(approve, {}, { name: "approve" });
+    const app = { name: "App", workflows: { approve } };
+    const a = await runWorkflow(app, "approve", {});
     expect(a.status).not.toBe("completed");
-    await expect(runWorkflow(approve, {}, { name: "approve", journal: a.journal })).rejects.toThrow(
+    await expect(runWorkflow(app, "approve", {}, { journal: a.journal })).rejects.toThrow(
       /run \S+ of "approve" is still live in this journal under the key "test".*key: "<another>"/,
     );
     // Its own key is the fix, and each run's signal then reaches its own body.
-    const b = await runWorkflow(approve, {}, { name: "approve", journal: a.journal, key: "b" });
+    const b = await runWorkflow(app, "approve", {}, { journal: a.journal, key: "b" });
     await b.signalRun("first", "for-b");
     expect(b.status).toBe("completed");
     expect(a.status).not.toBe("completed");
@@ -530,16 +533,9 @@ describe("the driver's own limits", () => {
       run: (input: Record<string, unknown>) => input.n,
     });
 
-    const one = await runWorkflow(
-      counter,
-      { n: 1 },
-      { name: "counter", journal: workflowJournal(journal) },
-    );
-    const two = await runWorkflow(
-      counter,
-      { n: 2 },
-      { name: "counter", journal: workflowJournal(journal) },
-    );
+    const app = { name: "App", workflows: { counter } };
+    const one = await runWorkflow(app, "counter", { n: 1 }, { journal: workflowJournal(journal) });
+    const two = await runWorkflow(app, "counter", { n: 2 }, { journal: workflowJournal(journal) });
     expect(one.runId).not.toBe(two.runId);
     // As a SET: `listRuns` orders by `createdAt` with the id breaking a tie, and
     // two runs started in the same millisecond carry ids minted from a uuid.

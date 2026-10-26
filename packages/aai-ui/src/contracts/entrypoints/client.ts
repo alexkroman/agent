@@ -16,5 +16,4 @@ export {
   type ClientConfigResponse,
   type ClientHandle,
   mountClient,
-  type ToolDisplayConfig,
 } from "../../index.ts";

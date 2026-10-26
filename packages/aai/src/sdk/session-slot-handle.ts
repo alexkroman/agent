@@ -93,6 +93,13 @@ export type GatedOutput<R> = Promise<
  * where a plain `Omit` would have let a non-fresh object match the ungated
  * overload and lose its envelope.
  *
+ * `@sealed` on the pattern of `DialogSendFromMisuse` and `SyncMutationMisuse`:
+ * a message TYPE is the SDK's to compose and an author's only to read, in what
+ * `tsc` prints — no author builds a value of it. (`check:api-shape` reaches it
+ * both ways, as it does every type in a `SessionSlot` method's parameter:
+ * `expectSlotContract(slot)` enters the handle as input, which flips them.)
+ *
+ * @sealed
  * @public
  */
 export type UngatedDef = {

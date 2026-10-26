@@ -388,7 +388,10 @@ module doc owns it, `packages/aai-runtime/DIALOG-CLAUDE.md` owns the knobs.
   `NoInfer<E> & { type: EventNameOf<NoInfer<E>> }` so a plain literal narrows;
   the gated overload stays FIRST (a zero-parameter arrow's return type is cached
   by the first overload that checks it); `UngatedDef` is the message a refused
-  gated def is reported with; `DialogSendFromGuard` fails `sendFrom: "count"` at
+  gated def is reported with — `@sealed`, as every message type is
+  (`DialogSendFromMisuse`, `SyncMutationMisuse`): the SDK composes it and an
+  author only reads it, and `check:api-shape` reaches it both ways through
+  `expectSlotContract(slot)`; `DialogSendFromGuard` fails `sendFrom: "count"` at
   the CALL (its doc says why `NoInfer` and the `unknown extends R` arm).
 - Types sit beside factories: `dialog-types.ts`/`dialog-handle.ts`,
   `session-slot-types.ts`, re-exported from the factories.

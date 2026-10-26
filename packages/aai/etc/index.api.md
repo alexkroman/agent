@@ -1849,7 +1849,7 @@ export interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDe
     schema: StandardSchemaV1<unknown, T>;
 }
 
-// @public
+// @public @sealed
 export type UngatedDef = {
     readonly dialog?: "this def declares `dialog`, so it is a GATED tool, and the gated overload refused it: one of `when`, `send`, `sendFrom` or `reset` does not fit that dialog, or `report` was declared on `tool`";
 };

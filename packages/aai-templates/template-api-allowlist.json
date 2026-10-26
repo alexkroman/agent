@@ -456,7 +456,6 @@
     "ToolCallOutcome",
     "ToolCallRowProps",
     "ToolCallRowVariant",
-    "ToolDisplayConfig",
     "UploadStatus",
     "UseClientRunsOptions",
     "UseClientRunsResult",

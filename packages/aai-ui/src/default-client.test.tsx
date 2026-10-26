@@ -52,18 +52,20 @@ describe("the prebuilt default client", () => {
     expect(mountClient).not.toHaveBeenCalled();
   });
 
-  test("mounts the voice CLIENT for every other agent", async () => {
+  test("mounts the voice CLIENT for every other agent, forwarding nothing", async () => {
+    // `mountClient()` takes no `name`: its default shell reads the agent's own
+    // from its `client-config` lookup, so there is nothing to hand it.
     const { mountPage, mountClient } = await bootWith({ name: "Support", page: "voice" });
-    expect(mountClient).toHaveBeenCalledWith({ name: "Support" });
+    expect(mountClient).toHaveBeenCalledWith({});
     expect(mountPage).not.toHaveBeenCalled();
   });
 
-  test("names no agent when the agent named none, so the shell asks for itself", async () => {
-    // `mountClient({ name })` treats an explicit name as final and skips its own
+  test("forwards no name to the page either when the agent named none", async () => {
+    // `mountPage({ name })` treats an explicit name as final and skips its own
     // lookup — so passing `undefined` through would leave the header blank
     // forever rather than falling back on the shell's own request.
-    const { mountClient } = await bootWith({ page: "voice" });
-    expect(mountClient).toHaveBeenCalledWith({});
+    const { mountPage } = await bootWith({ page: "static" });
+    expect(mountPage).toHaveBeenCalledWith({});
   });
 
   test("a failed lookup mounts the voice client — the front door it can always mount", async () => {

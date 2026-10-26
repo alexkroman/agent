@@ -2,23 +2,15 @@
 
 /** @jsxImportSource react */
 
-import { omitUndefined } from "@alexkroman1/aai/utils";
-import {
-  type ComponentType,
-  createElement,
-  type ReactNode,
-  useEffect,
-  useMemo,
-  useState,
-} from "react";
+import { type ComponentType, createElement, type ReactNode, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { pageBaseUrl, setPageTitle } from "./_utils.ts";
+import { pageBaseUrl } from "./_utils.ts";
 import { type ClientConfigResponse, fetchClientConfig } from "./client-config.ts";
 import { ChatView } from "./components/chat-view.tsx";
 import { SidebarLayout } from "./components/sidebar-layout.tsx";
 import { StartScreen } from "./components/start-screen.tsx";
-import { ToolConfigContext, type ToolDisplayConfig } from "./components/tool-config-context.ts";
+import { EMPTY_TOOL_DISPLAY, ToolConfigContext } from "./components/tool-config-context.ts";
 import { SessionProvider, ThemeProvider, useSessionSelector } from "./context.ts";
 import type { BrowserSession, SessionSnapshot } from "./session/index.ts";
 import { createBrowserSession } from "./session/index.ts";
@@ -41,13 +33,15 @@ import type { ClientTheme, VoiceSessionOptions } from "./types.ts";
  * sidebar); present, the caller's own component inside the same providers —
  * and that decision is made at runtime, where every field can be honoured. It
  * used to be a union whose two arms banned each other's fields with `?: never`,
- * and the failure that shape produces is recorded twice in this file's history:
- * `mountClient({ name, component })` and `mountClient({ component, tools })` were both
- * the natural thing to write, both were refused with *"Type 'string' is not
- * assignable to type 'undefined'"*, and both cost a build round each time
- * before the ban was lifted. What was left banned was `sidebar` beside a
- * `component`, which invited the identical failure for a combination
- * {@link mountClient} can simply render.
+ * and the failure that shape produces is recorded in this file's history:
+ * `sidebar` beside a `component` was the natural thing to write, was refused
+ * with *"Type '…' is not assignable to type 'undefined'"*, and cost a build
+ * round each time, for a combination {@link mountClient} can simply render.
+ *
+ * The agent's name and each tool's icon and label are not options here: both
+ * come from the agent's own `GET /client-config` body — `agent({ name })` and
+ * `tool({ ui })` — which the mount looks up, so a page never restates what the
+ * agent already declared.
  *
  * @input
  * @public
@@ -84,12 +78,6 @@ export type ClientConfig = Pick<
    */
   component?: ComponentType;
   /**
-   * Agent name shown in the header and start screen — and, with a `component`,
-   * the page title, there being no shell header to put it in. Left out, the
-   * default shell asks the agent for its own declared name.
-   */
-  name?: string;
-  /**
    * Optional sidebar component rendered alongside the main pane.
    *
    * Beside a `component` it is the custom component that becomes the main pane,
@@ -119,20 +107,6 @@ export type ClientConfig = Pick<
   subtitle?: string;
   /** Label of the start CTA. Defaults to `"Start Conversation"`. */
   buttonText?: string;
-  /**
-   * Tool display OVERRIDES: icon and label keyed by tool name.
-   *
-   * The base is what each tool declared with `tool({ ui })`, served in the
-   * agent's `GET /client-config` body and merged underneath this per key — so
-   * a page that declares nothing here still shows every tool the way its
-   * author drew it, and this map is for the page that disagrees.
-   *
-   * Honoured with a custom `component` too: {@link mountClient} installs it into
-   * `ToolConfigContext`, and the consumer is `ToolCallBlock` — which a custom
-   * component renders as soon as it uses `MessageList` or `ChatView`, the usual
-   * way to build one.
-   */
-  tools?: ToolDisplayConfig;
 };
 
 /**
@@ -247,9 +221,11 @@ type ShellDisplay = {
   // that cannot know which keys the caller wrote.
   [K in keyof Pick<
     ClientConfig,
-    "name" | "icon" | "subtitle" | "buttonText" | "sidebarWidth" | "sidebarPosition"
+    "icon" | "subtitle" | "buttonText" | "sidebarWidth" | "sidebarPosition"
   >]: ClientConfig[K] | undefined;
 } & {
+  /** The agent's declared name, from the mount's lookup — none until it lands. */
+  name: string | undefined;
   /** The sidebar component, already picked off the config. */
   Sidebar?: ComponentType | undefined;
 };
@@ -281,16 +257,17 @@ function DefaultShell({ name, icon, subtitle, buttonText, Sidebar, ...layout }: 
 /**
  * The session-config lookup the mount makes, and WHEN.
  *
- * The response feeds two things: the shell's title when the caller named no
- * agent, and every tool's declared icon and label (`tools`), which a custom
- * component's `ToolCallBlock` reads too. The timing rule is the one this file
- * has always had, kept because on the platform this endpoint is the BROKER
- * and a request to it can boot a sandbox: the lookup is issued at mount only
- * when the shell needs the name; otherwise it waits until the session has
- * STARTED — at which point the session's own per-attempt lookup is booting
- * that sandbox anyway, so the second request costs no boot. Either way it is
- * issued once; the session's own lookup stays separate (it re-brokers per
- * attempt, which this must not interfere with — see `session/dial.ts`).
+ * The response feeds two things: the default shell's title (the agent's own
+ * declared name), and every tool's declared icon and label (`tools`), which a
+ * custom component's `ToolCallBlock` reads too. The timing rule is the one
+ * this file has always had, kept because on the platform this endpoint is the
+ * BROKER and a request to it can boot a sandbox: the lookup is issued at mount
+ * only when the default shell renders, since its start card needs the name;
+ * under a custom `component` it waits until the session has STARTED — at
+ * which point the session's own per-attempt lookup is booting that sandbox
+ * anyway, so the second request costs no boot. Either way it is issued once;
+ * the session's own lookup stays separate (it re-brokers per attempt, which
+ * this must not interfere with — see `session/dial.ts`).
  */
 function useMountLookup(platformUrl: string, eager: boolean): ClientConfigResponse | null {
   const started = useSessionSelector(selectStarted);
@@ -311,25 +288,6 @@ function useMountLookup(platformUrl: string, eager: boolean): ClientConfigRespon
 
 /** Module-scope, for the reason `context.ts` hoists its own two selectors. */
 const selectStarted = (snapshot: SessionSnapshot): boolean => snapshot.started;
-
-/**
- * The agent's declared hints under the page's overrides, per key.
- *
- * Per KEY rather than per map, so `tools: { add_pizza: { label: "Adding" } }`
- * keeps the icon the tool declared; and the override goes through
- * `omitUndefined` first, so a present-but-undefined field (an options bag) is
- * "no override" rather than "no icon".
- */
-function mergeToolDisplay(
-  declared: ClientConfigResponse["tools"],
-  overrides: ToolDisplayConfig | undefined,
-): ToolDisplayConfig {
-  const merged: ToolDisplayConfig = { ...declared };
-  for (const [name, entry] of Object.entries(overrides ?? {})) {
-    merged[name] = { ...merged[name], ...omitUndefined(entry) };
-  }
-  return merged;
-}
 
 /**
  * The page-level stylesheet `mountClient({ css })` injects — see that field.
@@ -358,16 +316,11 @@ function PageCss({ css }: { css: string | undefined }): null {
  * session (`useMountLookup`).
  */
 function ClientRoot({ config, platformUrl }: { config: ClientConfig; platformUrl: string }) {
-  const resolved = useMountLookup(
-    platformUrl,
-    config.component === undefined && config.name === undefined,
-  );
-  const toolConfig = useMemo(
-    () => mergeToolDisplay(resolved?.tools, config.tools),
-    [resolved?.tools, config.tools],
-  );
+  const resolved = useMountLookup(platformUrl, config.component === undefined);
+  // The tool display config IS the agent's declaration (`tool({ ui })`, served
+  // in the lookup); a page has no map of its own to merge over it.
   return (
-    <ToolConfigContext.Provider value={toolConfig}>
+    <ToolConfigContext.Provider value={resolved?.tools ?? EMPTY_TOOL_DISPLAY}>
       <ThemeProvider value={config.theme}>
         <PageCss css={config.css} />
         {rootFor(config, resolved?.name)}
@@ -383,11 +336,11 @@ function ClientRoot({ config, platformUrl }: { config: ClientConfig; platformUrl
  * `sidebar` off — but the layout the default shell uses is right here, and
  * `mountClient({ component, sidebar })` names one pane and one aside, which is
  * exactly what it renders. Honouring the combination rather than ignoring it is
- * the same call this file already made for `name` and `tools`.
+ * the same call this file makes for every display field.
  *
- * The default shell renders immediately — optimistically — with whatever name
- * it has; `serverName` arrives from the mount's lookup when the caller named
- * none, and an explicit `mountClient({ name })` wins over it.
+ * The default shell renders immediately — optimistically — without a name;
+ * `serverName` arrives from the mount's lookup, which is the agent's own
+ * `agent({ name })`.
  */
 function rootFor(config: ClientConfig, serverName: string | undefined) {
   const Custom = config.component;
@@ -395,7 +348,7 @@ function rootFor(config: ClientConfig, serverName: string | undefined) {
   if (!Custom) {
     return (
       <DefaultShell
-        name={config.name ?? serverName}
+        name={serverName}
         icon={config.icon}
         subtitle={config.subtitle}
         buttonText={config.buttonText}
@@ -427,8 +380,12 @@ function rootFor(config: ClientConfig, serverName: string | undefined) {
  *
  * **A custom component:** pass `component` and it is rendered inside the same
  * providers instead of the default shell — beside a `sidebar` if one is given,
- * in the same {@link SidebarLayout}. A provided `name` then also sets
- * `document.title`, there being no shell header to show it in.
+ * in the same {@link SidebarLayout}. The page title is the HTML's own; a
+ * custom component that wants another sets `document.title` itself.
+ *
+ * The agent's name on the start card and in the header, and each tool's icon
+ * and label, are what the agent declared (`agent({ name })`, `tool({ ui })`),
+ * read from its `GET /client-config` body — not options here.
  *
  * Mounts into `target` — a CSS selector or DOM element, defaulting to
  * `"#app"` — and throws `Element not found: <target>` when the selector
@@ -443,10 +400,8 @@ function rootFor(config: ClientConfig, serverName: string | undefined) {
  * }
  *
  * mountClient({
- *   name: "Pizza Ordering",
  *   theme: { bg: "#1a1a1a", primary: "#e55" },
  *   sidebar: OrderPanel,
- *   tools: { add_pizza: { icon: "🍕", label: "Adding pizza" } },
  * });
  * ```
  *
@@ -494,10 +449,6 @@ export function mountClientWith(
     token: config.token,
     WebSocket: config.WebSocket,
   });
-
-  // The default shell renders `name` in its header; a custom component has no
-  // header, so the page title is where it goes.
-  setPageTitle(config.name);
 
   return {
     session,
