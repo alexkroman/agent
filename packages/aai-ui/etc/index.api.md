@@ -1126,7 +1126,7 @@ export type UseWorkflowRunResult<R = unknown> = {
 export function useWorkflowRuns<App extends WorkflowAppLike = never, Name extends WorkflowNameOf<App> = WorkflowNameOf<App>>(workflow: [App] extends [never] ? never : Name | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<WorkflowOutputOf<WorkflowDefOf<App, Name>>>;
 
 // @public (undocumented)
-export function useWorkflowRuns<R = unknown>(workflow: [WorkflowNameOf<R>] extends [never] ? string | undefined : never, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
+export function useWorkflowRuns<R = unknown>(workflow: [WorkflowsOf<R>] extends [never] ? string | undefined : never, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
 
 // @public @input
 export type UseWorkflowRunsOptions = {

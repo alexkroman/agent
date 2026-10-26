@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 616 names
+- [Agent authoring](#agent-authoring) — 617 names
 - [Browser client](#browser-client) — 207 names
 - [Testing and evals](#testing-and-evals) — 268 names
-- [Hosting and tooling](#hosting-and-tooling) — 248 names
-- [Framework internals](#framework-internals) — 516 names
+- [Hosting and tooling](#hosting-and-tooling) — 249 names
+- [Framework internals](#framework-internals) — 517 names
 
 ## Agent authoring
 
@@ -150,6 +150,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `DialogToolResult` | interface | `@alexkroman1/aai` |  | What a `Dialog.tool` answers on success. |
 | `DialogVoiceConfig` | interface | `@alexkroman1/aai` |  | The per-state voice settings a dialog declares — what `Dialog.voiceConfig` answers with, from the deepest active state that declares any of them. |
 | `DurableTranscript` | type | `@alexkroman1/aai/step` | `aai:transcribe` | What `transcribeUploadDurably` resolves with: the transcript, plus what the recording was CALLED. |
+| `EmptyWorkflows` | type | `@alexkroman1/aai` |  | What `W` is when a declaration names no `workflows`: the map with NO keys, not the open one. |
 | `EnvContext` | type | `@alexkroman1/aai/step` | `aai:step` | The part of a context a helper needs to reach an outside service: the agent's env, and a signal to stop on. |
 | `ErrorClass` | type | `@alexkroman1/aai/step-errors` |  | An error CLASS, as `orFatal` takes one: anything `new`-able that makes an `Error`, abstract or not. |
 | `EventNameOf` | type | `@alexkroman1/aai` |  | The `type` names of a dialog's event union — what a `sendFrom: "field"` key's value must be; `string` for an erased `E` (`AnyDialog`'s `unknown`), so every … |
@@ -1224,6 +1225,7 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `createTextAgent` | function | `@alexkroman1/aai-runtime` | `aai-runtime:text` | Create a text agent bound to one conversation. |
 | `createToolCallRepair` | function | `@alexkroman1/aai-runtime` | `aai-runtime:providers` | Build a `ToolCallRepairFunction` bound to a model. |
 | `decodeWorkspaceText` | function | `@alexkroman1/aai/workspace-files` |  |  |
+| `discoverModuleFiles` | function · `@internal` | `@alexkroman1/aai-cli/worker-bundler` |  |  |
 | `ensureSessionStateSchema` | function | `@alexkroman1/aai-runtime` | `aai-runtime:session-state` | Apply `sessionStateDdl` to a database this process OWNS, once, at boot. |
 | `ensureWorkflowJournalSchema` | function | `@alexkroman1/aai-runtime` | `aai-runtime:workflow` | Create the journal's tables on a database this deployment owns. |
 | `executeStart` | function | `@alexkroman1/aai-cli/start` |  | Serve the built agent and keep serving it: bind, announce, and shut down cleanly on a signal — from one process, or with `workers > 1` from a primary routing … |
@@ -1685,6 +1687,7 @@ trace or a type error can be traced back to something.
 | `isConvertibleSchema` | function | `@alexkroman1/aai/host-internal` |  | True when `value` is a schema `toToolJsonSchema` can convert. |
 | `isFallbackDescriptor` | function | `@alexkroman1/aai/host-internal` |  | Is `descriptor` a `fallback`? |
 | `isInvariantViolation` | function | `@alexkroman1/aai/internal` |  | Is `value` a broken invariant of ours, however deeply wrapped? |
+| `isRegistryModuleFile` | function | `@alexkroman1/aai/internal` |  | Whether a file of a registry directory is a MODULE of it — one of the extensions, and not a co-located spec or type test. |
 | `isTextAssetPath` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `isUniversal35Pro` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `jitteredBackoff`, `JitteredBackoffOptions` | function | `@alexkroman1/aai/internal` |  | How long to wait before attempt `attempt + 1`, in milliseconds. |

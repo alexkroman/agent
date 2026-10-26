@@ -4410,23 +4410,23 @@ import { z } from 'zod';
 export function addDays(iso: string, days: number): string;
 
 // @public
-export function agent<W extends WorkflowsMap = WorkflowsMap>(def: PipelineAgentParams & {
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(def: PipelineAgentParams & {
     workflows?: W;
 }): AgentDefWith<"pipeline", W>;
 
 // @public
-export function agent<W extends WorkflowsMap = WorkflowsMap>(def: S2sAgentParams & {
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(def: S2sAgentParams & {
     workflows?: W;
 }): AgentDefWith<"s2s", W>;
 
 // @public
-export function agent<W extends WorkflowsMap = WorkflowsMap>(def: TextAgentParams & {
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(def: TextAgentParams & {
     workflows?: W;
 }): AgentDefWith<"text", W>;
 
 // @public
-export function agent<W extends WorkflowsMap = WorkflowsMap>(def: Omit<WorkflowAppAgentParams, "workflows"> & {
-    workflows: W;
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(def: Omit<WorkflowAppAgentParams, "workflows"> & {
+    workflows?: W;
 }): AgentDefWith<"workflow-app", W>;
 
 // @public
@@ -4468,9 +4468,11 @@ export interface AgentDef extends Omit<AgentDeclaration, "syncState"> {
 
 // @public @sealed
 export type AgentDefWith<M extends AgentMode, W extends WorkflowsMap> = string extends keyof W ? ModeAgentDef<M> : // `Omit` first: intersecting `W` onto the open map would leave `keyof`
-Omit<ModeAgentDef<M>, "workflows"> & {
+Omit<ModeAgentDef<M>, "workflows"> & ([keyof W] extends [never] ? {
+    readonly workflows?: W;
+} : {
     readonly workflows: W;
-};
+});
 
 // @public
 export type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdict | Promise<GuardrailVerdict>;
@@ -4929,6 +4931,9 @@ export interface DialogVoiceConfig {
     readonly toolChoice?: ToolChoice;
     readonly voice?: string;
 }
+
+// @public
+export type EmptyWorkflows = Record<never, never>;
 
 // @public
 export function endSession(ctx: Pick<ToolContext, "sessionId">, options?: EndSessionOptions): boolean;
@@ -6312,14 +6317,14 @@ export function workflow<P extends ToolInputSchema = ToolInputSchema>(def: Omit<
 export const WORKFLOW_APP_REQUIRED_ENV: readonly string[];
 
 // @public
-export function workflowApp<W extends WorkflowsMap>(def: Omit<WorkflowAppAgentParams, "mode" | "workflows"> & {
-    workflows: W;
+export function workflowApp<W extends WorkflowsMap = EmptyWorkflows>(def: Omit<WorkflowAppAgentParams, "mode" | "workflows"> & {
+    workflows?: W;
 }): AgentDefWith<"workflow-app", W>;
 
 // @public @input
 export type WorkflowAppAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"> & {
     mode: "workflow-app";
-    workflows: NonNullable<AgentDeclaration["workflows"]>;
+    workflows?: AgentDeclaration["workflows"];
 };
 
 // @public
@@ -6538,6 +6543,7 @@ export const BOUNDARY_KEYS: {
         readonly routeError: "@alexkroman1/aai.routeError";
         readonly stepError: "@alexkroman1/aai.stepError";
         readonly keylessSynthesizer: "@alexkroman1/aai.speechSynthesizer.keyless";
+        readonly workflowDef: "@alexkroman1/aai.workflowDef";
     };
     readonly slots: {
         readonly channelOutbox: "@alexkroman1/aai.channelOutbox";
@@ -6878,6 +6884,9 @@ export class InvariantViolation extends Error {
 
 // @public
 export function isInvariantViolation(value: unknown): value is InvariantViolation;
+
+// @public
+export function isRegistryModuleFile(name: string): boolean;
 
 // @internal
 export function isTextAssetPath(assetPath: string): boolean;
@@ -15411,7 +15420,7 @@ export function mergeScaffoldManifest(existing: PackageManifest, scaffold: Packa
 export type PackageManifest = Record<string, unknown>;
 
 // @public
-export const PROJECT_GUIDE_POINTER = "# Agent instructions\n\nThis is an [aai](https://github.com/alexkroman/agent) voice-agent project. An agent is a directory\ncontaining `agent.ts`; the `aai` CLI bundles it and deploys it.\n\n## Read the SDK guide before writing agent code\n\nThe complete authoring guide ships inside the installed package:\n\n```text\nnode_modules/@alexkroman1/aai/AGENT_GUIDE.md\n```\n\nRead it with your file tools. It is version-matched by construction \u2014 it lives\nin the same tarball as the `@alexkroman1/aai` this project resolved, so it\ncannot describe a different release than the one being imported. Prefer it over\nanything remembered about the SDK, and over anything in this file.\n\nThe types are the second source of truth: the shipped declarations are in\n`node_modules/@alexkroman1/aai/dist/`. When the guide and the types disagree,\nthe types are what the compiler enforces.\n\n## Commands\n\n```sh\nnpm run dev            # Run locally on http://localhost:3000\nnpm test               # This project's suite, minus the evals\nnpm run test:agent     # Just agent.test.ts, via the CLI\nnpm run eval           # Drive a real session against a live model (spends money)\nnpm run build          # Bundle the agent\nnpm start              # Build, then self-host on http://127.0.0.1:3000\nnpm run publish:agent  # Publish to the managed platform\n```\n\nThe `aai` CLI is a devDependency, so it is in `node_modules/.bin` rather than\non `PATH`: reach it through these scripts or with `npx aai <command>`.\n\n## Project-specific notes\n\n<!-- Add conventions, gotchas and decisions for THIS agent below. -->\n";
+export const PROJECT_GUIDE_POINTER = "# Agent instructions\n\nThis is an [aai](https://github.com/alexkroman/agent) voice-agent project. An agent is a directory\ncontaining `agent.ts`; the `aai` CLI bundles it and deploys it.\n\n## Read the SDK guide before writing agent code\n\nThe complete authoring guide ships inside the installed package:\n\n```text\nnode_modules/@alexkroman1/aai/AGENT_GUIDE.md\n```\n\nRead it with your file tools. It is version-matched by construction \u2014 it lives\nin the same tarball as the `@alexkroman1/aai` this project resolved, so it\ncannot describe a different release than the one being imported. Prefer it over\nanything remembered about the SDK, and over anything in this file.\n\nThe types are the second source of truth: the shipped declarations are in\n`node_modules/@alexkroman1/aai/dist/`. When the guide and the types disagree,\nthe types are what the compiler enforces.\n\n## Commands\n\n```sh\nnpm run dev            # Run locally on http://localhost:3000\nnpm test               # This project's suite, minus the evals\nnpm run test:agent     # Just agent.test.ts, via the CLI\nnpm run eval           # Drive a real session against a live model (spends money)\nnpm run build          # Bundle the agent\nnpm start              # Build, then self-host on http://127.0.0.1:3000\nnpm run publish:agent  # Publish to the managed platform\n```\n\nThe `aai` CLI is a dependency of the project, so it is in `node_modules/.bin`\nrather than on `PATH`: reach it through these scripts or with `npx aai <command>`.\n\n## Project-specific notes\n\n<!-- Add conventions, gotchas and decisions for THIS agent below. -->\n";
 
 // @public
 export function readScaffoldFiles(dir: string): Promise<Record<string, string>>;
@@ -15565,6 +15574,9 @@ export type BuildWorkerOptions = {
     runtime?: boolean;
     omitVendors?: readonly string[];
 };
+
+// @internal
+export function discoverModuleFiles(cwd: string, dir: "tools" | "workflows"): Promise<string[]>;
 ```
 
 ## `@alexkroman1/aai-runtime/auth`
@@ -21935,7 +21947,7 @@ export type UseWorkflowRunResult<R = unknown> = {
 export function useWorkflowRuns<App extends WorkflowAppLike = never, Name extends WorkflowNameOf<App> = WorkflowNameOf<App>>(workflow: [App] extends [never] ? never : Name | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<WorkflowOutputOf<WorkflowDefOf<App, Name>>>;
 
 // @public (undocumented)
-export function useWorkflowRuns<R = unknown>(workflow: [WorkflowNameOf<R>] extends [never] ? string | undefined : never, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
+export function useWorkflowRuns<R = unknown>(workflow: [WorkflowsOf<R>] extends [never] ? string | undefined : never, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
 
 // @public @input
 export type UseWorkflowRunsOptions = {

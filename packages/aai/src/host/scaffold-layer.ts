@@ -122,8 +122,8 @@ npm start              # Build, then self-host on http://127.0.0.1:3000
 npm run publish:agent  # Publish to the managed platform
 \`\`\`
 
-The \`aai\` CLI is a devDependency, so it is in \`node_modules/.bin\` rather than
-on \`PATH\`: reach it through these scripts or with \`npx aai <command>\`.
+The \`aai\` CLI is a dependency of the project, so it is in \`node_modules/.bin\`
+rather than on \`PATH\`: reach it through these scripts or with \`npx aai <command>\`.
 
 ## Project-specific notes
 

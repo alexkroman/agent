@@ -13,23 +13,23 @@ import { z } from 'zod';
 export function addDays(iso: string, days: number): string;
 
 // @public
-export function agent<W extends WorkflowsMap = WorkflowsMap>(def: PipelineAgentParams & {
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(def: PipelineAgentParams & {
     workflows?: W;
 }): AgentDefWith<"pipeline", W>;
 
 // @public
-export function agent<W extends WorkflowsMap = WorkflowsMap>(def: S2sAgentParams & {
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(def: S2sAgentParams & {
     workflows?: W;
 }): AgentDefWith<"s2s", W>;
 
 // @public
-export function agent<W extends WorkflowsMap = WorkflowsMap>(def: TextAgentParams & {
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(def: TextAgentParams & {
     workflows?: W;
 }): AgentDefWith<"text", W>;
 
 // @public
-export function agent<W extends WorkflowsMap = WorkflowsMap>(def: Omit<WorkflowAppAgentParams, "workflows"> & {
-    workflows: W;
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(def: Omit<WorkflowAppAgentParams, "workflows"> & {
+    workflows?: W;
 }): AgentDefWith<"workflow-app", W>;
 
 // @public
@@ -71,9 +71,11 @@ export interface AgentDef extends Omit<AgentDeclaration, "syncState"> {
 
 // @public @sealed
 export type AgentDefWith<M extends AgentMode, W extends WorkflowsMap> = string extends keyof W ? ModeAgentDef<M> : // `Omit` first: intersecting `W` onto the open map would leave `keyof`
-Omit<ModeAgentDef<M>, "workflows"> & {
+Omit<ModeAgentDef<M>, "workflows"> & ([keyof W] extends [never] ? {
+    readonly workflows?: W;
+} : {
     readonly workflows: W;
-};
+});
 
 // @public
 export type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdict | Promise<GuardrailVerdict>;
@@ -532,6 +534,9 @@ export interface DialogVoiceConfig {
     readonly toolChoice?: ToolChoice;
     readonly voice?: string;
 }
+
+// @public
+export type EmptyWorkflows = Record<never, never>;
 
 // @public
 export function endSession(ctx: Pick<ToolContext, "sessionId">, options?: EndSessionOptions): boolean;
@@ -1915,14 +1920,14 @@ export function workflow<P extends ToolInputSchema = ToolInputSchema>(def: Omit<
 export const WORKFLOW_APP_REQUIRED_ENV: readonly string[];
 
 // @public
-export function workflowApp<W extends WorkflowsMap>(def: Omit<WorkflowAppAgentParams, "mode" | "workflows"> & {
-    workflows: W;
+export function workflowApp<W extends WorkflowsMap = EmptyWorkflows>(def: Omit<WorkflowAppAgentParams, "mode" | "workflows"> & {
+    workflows?: W;
 }): AgentDefWith<"workflow-app", W>;
 
 // @public @input
 export type WorkflowAppAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"> & {
     mode: "workflow-app";
-    workflows: NonNullable<AgentDeclaration["workflows"]>;
+    workflows?: AgentDeclaration["workflows"];
 };
 
 // @public

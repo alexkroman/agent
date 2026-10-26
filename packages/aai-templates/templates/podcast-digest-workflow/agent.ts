@@ -131,7 +131,7 @@ export default workflowApp({
   // The app's own line, for a reader of a list. `dailyDigest` above carries its
   // own description for a different reader — the workflow listing a form is
   // rendered from — and says the schedule, which is a fact about a run.
-  description: "Posts a recurring digest of new podcast episodes to Slack",
+  listing: "Posts a recurring digest of new podcast episodes to Slack",
   // The whole product. A workflow app is an agent whose work happens here.
   workflows: { dailyDigest },
 });

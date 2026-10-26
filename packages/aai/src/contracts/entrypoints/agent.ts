@@ -119,6 +119,9 @@ export {
   assemblyAIPipeline,
   type BuiltinTool,
   type ClientInboxOptions,
+  // What `W` is for a declaration with no `workflows`: the empty map, under
+  // which the def declares no names (`WorkflowNameOf` is `never`).
+  type EmptyWorkflows,
   type ModeAgentDef,
   type ModelTuning,
   type PipelineAgentParams,

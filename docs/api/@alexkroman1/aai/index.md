@@ -130,7 +130,7 @@ addDays("2026-01-01", -1); // "2025-12-31"
 #### Call Signature
 
 ```ts
-function agent<W extends Readonly<Record<string, WorkflowDef>> = Readonly<Record<string, WorkflowDef>>>(def: PipelineAgentParams & {
+function agent<W extends Readonly<Record<string, WorkflowDef>> = EmptyWorkflows>(def: PipelineAgentParams & {
   workflows?: W;
 }): AgentDefWith<"pipeline", W>;
 ```
@@ -151,7 +151,9 @@ field means; the returned [AgentDef](#agentdef) is the resolved shape.
 and each def's own type — [AgentDefWith](#agentdefwith)), so a page can name a
 workflow through the agent: `useWorkflowSubmit<typeof agentDef>("digest")`
 types the name as the keys the agent declares and the output as that body's.
-A def without `workflows` is the plain [ModeAgentDef](#modeagentdef).
+A def without `workflows` declares NO names: the typed form refuses every
+name on it, and a `workflows/<name>.ts` the build discovers is reached by
+the untyped string form (the def's type cannot see the directory).
 
 **Tools are not declared here** — a tool is a FILE. `tools/echo.ts` that
 default-exports `tool({ … })` is the tool `echo`, registered by existing, and
@@ -162,7 +164,7 @@ default-exports `tool({ … })` is the tool `echo`, registered by existing, and
 
 ###### W
 
-`W` *extends* `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\> = `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\>
+`W` *extends* `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\> = [`EmptyWorkflows`](#emptyworkflows)
 
 ##### Parameters
 
@@ -209,7 +211,7 @@ export default agent({
 #### Call Signature
 
 ```ts
-function agent<W extends Readonly<Record<string, WorkflowDef>> = Readonly<Record<string, WorkflowDef>>>(def: Omit<AgentDeclaration, 
+function agent<W extends Readonly<Record<string, WorkflowDef>> = EmptyWorkflows>(def: Omit<AgentDeclaration, 
   | "mode"
   | "systemPrompt"
   | "greeting"
@@ -247,7 +249,7 @@ Define a speech-to-speech agent: `mode: "s2s"` and its `s2s` descriptor. See
 
 ###### W
 
-`W` *extends* `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\> = `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\>
+`W` *extends* `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\> = [`EmptyWorkflows`](#emptyworkflows)
 
 ##### Parameters
 
@@ -298,7 +300,7 @@ export default agent({ name: "Concierge", mode: "s2s", s2s: assemblyAIS2s() });
 #### Call Signature
 
 ```ts
-function agent<W extends Readonly<Record<string, WorkflowDef>> = Readonly<Record<string, WorkflowDef>>>(def: Omit<SharedAgentParams, "sttPrompt" | "telephony"> & Pick<AgentDeclaration, keyof AgentModelTuning> & {
+function agent<W extends Readonly<Record<string, WorkflowDef>> = EmptyWorkflows>(def: Omit<SharedAgentParams, "sttPrompt" | "telephony"> & Pick<AgentDeclaration, keyof AgentModelTuning> & {
   llm?: LlmSpec;
   mode: "text";
 } & {
@@ -313,7 +315,7 @@ Define a text agent: `mode: "text"`, driven over a message list by
 
 ###### W
 
-`W` *extends* `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\> = `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\>
+`W` *extends* `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\> = [`EmptyWorkflows`](#emptyworkflows)
 
 ##### Parameters
 
@@ -345,8 +347,8 @@ export default agent({
 #### Call Signature
 
 ```ts
-function agent<W extends Readonly<Record<string, WorkflowDef>> = Readonly<Record<string, WorkflowDef>>>(def: Omit<WorkflowAppAgentParams, "workflows"> & {
-  workflows: W;
+function agent<W extends Readonly<Record<string, WorkflowDef>> = EmptyWorkflows>(def: Omit<WorkflowAppAgentParams, "workflows"> & {
+  workflows?: W;
 }): AgentDefWith<"workflow-app", W>;
 ```
 
@@ -357,14 +359,14 @@ same member with the mode already set. See [WorkflowAppAgentParams](#workflowapp
 
 ###### W
 
-`W` *extends* `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\> = `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\>
+`W` *extends* `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\> = [`EmptyWorkflows`](#emptyworkflows)
 
 ##### Parameters
 
 ###### def
 
 `Omit`\<[`WorkflowAppAgentParams`](#workflowappagentparams), `"workflows"`\> & \{
-  `workflows`: `W`;
+  `workflows?`: `W`;
 \}
 
 ##### Returns
@@ -3991,8 +3993,8 @@ export default tool({
 ### workflowApp()
 
 ```ts
-function workflowApp<W extends Readonly<Record<string, WorkflowDef>>>(def: Omit<WorkflowAppAgentParams, "workflows" | "mode"> & {
-  workflows: W;
+function workflowApp<W extends Readonly<Record<string, WorkflowDef>> = EmptyWorkflows>(def: Omit<WorkflowAppAgentParams, "workflows" | "mode"> & {
+  workflows?: W;
 }): AgentDefWith<"workflow-app", W>;
 ```
 
@@ -4012,20 +4014,23 @@ one.
 `requiredEnv` defaults to [WORKFLOW\_APP\_REQUIRED\_ENV](#workflow_app_required_env) — the AssemblyAI
 key every shipped workflow app reads; `requiredEnv: []` opts out. The
 `workflows` map comes back AS DECLARED ([AgentDefWith](#agentdefwith)), which is what
-lets a page write `useWorkflowSubmit<typeof app>("digest")`.
+lets a page write `useWorkflowSubmit<typeof app>("digest")`. It is optional:
+an app whose workflows are all `workflows/<name>.ts` default exports
+declares none here (the build discovers them), and its page reaches them by
+the untyped string form.
 
 #### Type Parameters
 
 ##### W
 
-`W` *extends* `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\>
+`W` *extends* `Readonly`\<`Record`\<`string`, [`WorkflowDef`](#workflowdef)\>\> = [`EmptyWorkflows`](#emptyworkflows)
 
 #### Parameters
 
 ##### def
 
 `Omit`\<[`WorkflowAppAgentParams`](#workflowappagentparams), `"workflows"` \| `"mode"`\> & \{
-  `workflows`: `W`;
+  `workflows?`: `W`;
 \}
 
 #### Returns
@@ -15355,7 +15360,9 @@ As [StandardWebhookOptions.toleranceS](#tolerances).
 ### AgentDefWith
 
 ```ts
-type AgentDefWith<M extends AgentMode, W extends WorkflowsMap> = string extends keyof W ? ModeAgentDef<M> : Omit<ModeAgentDef<M>, "workflows"> & {
+type AgentDefWith<M extends AgentMode, W extends WorkflowsMap> = string extends keyof W ? ModeAgentDef<M> : Omit<ModeAgentDef<M>, "workflows"> & [keyof W] extends [never] ? {
+  workflows?: W;
+} : {
   workflows: W;
 };
 ```
@@ -15364,8 +15371,10 @@ type AgentDefWith<M extends AgentMode, W extends WorkflowsMap> = string extends 
 
 What `agent()` and `workflowApp()` return for a declaration in mode `M`
 whose `workflows` map is `W`: [ModeAgentDef](#modeagentdef), carrying `W` as declared
-— its literal keys and each def's own type — when one was declared, and
-nothing more when none was (`W` is then its constraint, the open map).
+— its literal keys and each def's own type — when one was declared; the
+optional EMPTY map when none was ([EmptyWorkflows](#emptyworkflows), which is what the
+runtime value is: absent); and the open map only when `W` was inferred as
+the open map itself (an options bag typed `Record<string, WorkflowDef>`).
 
 The one place the declared map survives the lowering: `AgentDef` types
 `workflows` as the open `Record<string, WorkflowDef>`, which is right for
@@ -16269,6 +16278,19 @@ Declaring one is what lets a dialog move on something the model did not do —
 the caller went quiet, barged in, hung up, or said something that called no
 tool. The runtime sends them through [Dialog.receive](#receive), which is wired up
 by listing the dialog in [AgentDeclaration.dialogs](#dialogs).
+
+***
+
+### EmptyWorkflows
+
+```ts
+type EmptyWorkflows = Record<never, never>;
+```
+
+What `W` is when a declaration names no `workflows`: the map with NO keys,
+not the open one. Under the open map `WorkflowNameOf<typeof agentDef>` was
+`string`, so `useWorkflowSubmit<typeof agentDef>("typo")` compiled against
+a def that declared nothing and typed the run's output `unknown`.
 
 ***
 
@@ -20303,7 +20325,7 @@ readonly $instruction: string;
 ```ts
 type WorkflowAppAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony" | WorkflowAppOnlyField | "workflows"> & {
   mode: "workflow-app";
-  workflows: NonNullable<AgentDeclaration["workflows"]>;
+  workflows?: AgentDeclaration["workflows"];
 };
 ```
 
@@ -20313,8 +20335,10 @@ The WORKFLOW-APP member — `mode: "workflow-app"`, the workflows that ARE the
 product, and nothing from the session half of the agent shape.
 `workflowApp()` is this member with `mode` already set.
 
-`workflows` is REQUIRED here, unlike on [AgentDeclaration](#agentdeclaration): a workflow
-app that declares none serves a form whose every submit is a 400.
+`workflows` is optional here as on [AgentDeclaration](#agentdeclaration): a workflow app
+whose every workflow is a `workflows/<name>.ts` default export declares
+none in `agent.ts` — discovery registers them, so the form it serves is
+not empty.
 
 #### Type Declaration
 
@@ -20326,10 +20350,10 @@ mode: "workflow-app";
 
 See [AgentDeclaration.mode](#mode).
 
-##### workflows
+##### workflows?
 
 ```ts
-workflows: NonNullable<AgentDeclaration["workflows"]>;
+optional workflows?: AgentDeclaration["workflows"];
 ```
 
 See [AgentDeclaration.workflows](#workflows) — the whole product.

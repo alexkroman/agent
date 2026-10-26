@@ -4216,7 +4216,7 @@ function History() {
 #### Call Signature
 
 ```ts
-function useWorkflowRuns<R = unknown>(workflow: [WorkflowNameOf<R>] extends [never] ? string | undefined : never, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
+function useWorkflowRuns<R = unknown>(workflow: [WorkflowsOf<R>] extends [never] ? string | undefined : never, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
 ```
 
 Read a workflow's recent runs.
@@ -4237,7 +4237,7 @@ The workflow's output type, so a completed run's `output` is
 
 ###### workflow
 
-\[[`WorkflowNameOf`](#workflownameof)\<`R`\>\] *extends* \[`never`\] ? `string` \| `undefined` : `never`
+\[[`WorkflowsOf`](#workflowsof)\<`R`\>\] *extends* \[`never`\] ? `string` \| `undefined` : `never`
 
 ###### options?
 

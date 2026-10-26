@@ -39,6 +39,9 @@
 // The bundle/runtime boundary: every key two copies of the SDK (host and agent
 // bundle) meet on, and the one way to reach a slot by it — see `_boundary.ts`.
 export { BOUNDARY_KEYS, type GlobalSlot, globalSlot, type SlotName } from "./sdk/_boundary.ts";
+// The one file rule both `tools/`/`workflows/` directory scans apply — the
+// CLI's generated worker entry and `virtual:aai/agent` (`host/testing-vite.ts`).
+export { isRegistryModuleFile } from "./sdk/_module-registry.ts";
 // The framework's own wire helpers — see `sdk/_wire-helpers.ts`'s module doc.
 export {
   capToolResult,

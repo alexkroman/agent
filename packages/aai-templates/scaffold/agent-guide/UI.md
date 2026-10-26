@@ -253,12 +253,17 @@ import type agentDef from "./agent.ts";
 **Every workflow hook takes the app type the same way** —
 `useWorkflowSubmit<typeof agentDef>("redline")`, `useWorkflowStream`,
 `useWorkflowRuns` — so the name is checked and the input and output are typed
-from the def. What `useWorkflowSubmit` hands back carries `timing`
-(press-to-settle `performance.now` marks) and `scope` (`"tab"` by default;
-`"browser"` with `{ key: { storage: "local" } }`), which
-`<WorkflowPendingNote submission={…}>` renders along with the upload's `paused`.
-`transcription-workflow` is the all-declared form; `link-digest-workflow` writes
-its form by hand, which is what the two are for.
+from the def. The typed form covers the workflows DECLARED in
+`agent({ workflows })` / `workflowApp({ workflows })`: a def that declares none
+refuses every name, and a `workflows/<name>.ts` the build discovers is not on
+the def's type, so reach it by the untyped string form
+(`useWorkflowSubmit("digest")`) or declare it to type the page. What
+`useWorkflowSubmit` hands back carries `timing` (press-to-settle
+`performance.now` marks) and `scope` (`"tab"` by default; `"browser"` with
+`{ key: { storage: "local" } }`), which `<WorkflowPendingNote submission={…}>`
+renders along with the upload's `paused`. `transcription-workflow` is the
+all-declared form; `link-digest-workflow` writes its form by hand, which is what
+the two are for.
 
 The usual shape — note `StartScreen` **wraps** the app rather than sitting
 beside it; writing `<StartScreen ... />` self-closing is a

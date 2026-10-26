@@ -4,7 +4,14 @@
  * two registries and the vitest plugin's directory scan.
  */
 import { describe, expect, test } from "vitest";
-import { isWorkflowDef, MODULE_EXT_RE, moduleNameOf, SPEC_RE } from "./_module-registry.ts";
+import {
+  isRegistryModuleFile,
+  isWorkflowDef,
+  MODULE_EXT_RE,
+  moduleNameOf,
+  SPEC_RE,
+} from "./_module-registry.ts";
+import { workflow } from "./workflow.ts";
 
 describe("SPEC_RE", () => {
   test.each([
@@ -57,12 +64,44 @@ describe("moduleNameOf", () => {
   });
 });
 
+describe("isRegistryModuleFile", () => {
+  test.each(["echo.ts", "echo.mts", "echo.tsx", "echo.js", "echo.mjs", "sub/echo.ts"])(
+    "%s is a module file (nesting is the registry's call, not the scan's)",
+    (name) => {
+      expect(isRegistryModuleFile(name)).toBe(true);
+    },
+  );
+
+  test.each(["echo.test.ts", "echo.spec.mts", "echo.test-d.ts", "echo.scenario.test.ts"])(
+    "%s is a spec, not a module",
+    (name) => {
+      expect(isRegistryModuleFile(name)).toBe(false);
+    },
+  );
+
+  test.each(["README.md", "data.json", "echo"])("%s is not a module file", (name) => {
+    expect(isRegistryModuleFile(name)).toBe(false);
+  });
+});
+
 describe("isWorkflowDef", () => {
-  test("a def is anything with a `run` function; a helper, a declaration or a bag is not", () => {
-    expect(isWorkflowDef({ run: async () => ({}) })).toBe(true);
+  test("a def is what workflow() or a declaration's .body() answered — not any object with a `run`", () => {
+    expect(isWorkflowDef(workflow({ run: async () => ({}) }))).toBe(true);
+    expect(isWorkflowDef(workflow({ description: "half" }).body(async () => ({})))).toBe(true);
+    // The failure this pins: a `{ description, run }` helper default-exported
+    // from `workflows/` registered as a workflow with no input validation.
+    expect(isWorkflowDef({ description: "x", run: async () => ({}) })).toBe(false);
     expect(isWorkflowDef({ description: "x", body: () => ({}) })).toBe(false);
     expect(isWorkflowDef({ status: "completed" })).toBe(false);
     expect(isWorkflowDef("digest")).toBe(false);
     expect(isWorkflowDef(undefined)).toBe(false);
+  });
+
+  test("the brand is non-enumerable, so a def still equals its own fields", () => {
+    const def = workflow({ description: "d", run: async () => 1 });
+    expect(def).toEqual({ description: "d", run: def.run });
+    expect(Object.keys(def)).toEqual(["description", "run"]);
+    // A spread drops it: the copy is a new object nobody declared.
+    expect(isWorkflowDef({ ...def })).toBe(false);
   });
 });

@@ -470,6 +470,7 @@
     "DialogToolDef",
     "DialogToolResult",
     "DialogVoiceConfig",
+    "EmptyWorkflows",
     "EndSessionOptions",
     "EventNameOf",
     "GatedOutput",
@@ -805,6 +806,7 @@
     "globalSlot",
     "invariant",
     "isInvariantViolation",
+    "isRegistryModuleFile",
     "isTextAssetPath",
     "jitteredBackoff",
     "linkConfirmationCode",
@@ -1415,7 +1417,8 @@
   ],
   "@alexkroman1/aai-cli/worker-bundler": [
     "BuildWorkerOptions",
-    "buildWorker"
+    "buildWorker",
+    "discoverModuleFiles"
   ],
   "@alexkroman1/aai-runtime/auth": [
     "SESSION_AUTH_PROTOCOL_PREFIX",

@@ -33,7 +33,7 @@ import { pathToFileURL } from "node:url";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { describe, expect, vi } from "vitest";
 import { linkSdkNodeModules, test } from "./_test-utils.ts";
-import { buildWorker } from "./worker-bundler.ts";
+import { buildWorker, discoverModuleFiles } from "./worker-bundler.ts";
 
 /**
  * Per-case budget for a real bundler pass. The integration tier's number, because
@@ -59,6 +59,57 @@ async function loadWorker(
   };
   return mod.default;
 }
+
+describe("discoverModuleFiles (the directory read, before any build)", () => {
+  test("both directories are read recursively, by the SDK's one file rule, sorted", async ({
+    tmpDir: dir,
+  }) => {
+    // The failure this pins: `workflows/` was read FLAT, so a nested
+    // `workflows/sub/x.ts` default-exporting a def was never handed to the
+    // registry, whose "nested" refusal was dead code; and the extension rule
+    // was this file's own, so it disagreed with `virtual:aai/agent`.
+    for (const file of [
+      "tools/echo.ts",
+      "tools/page.tsx",
+      "tools/alt.mts",
+      "tools/sub/nested.ts",
+      "tools/echo.test.ts",
+      "tools/README.md",
+      "workflows/digest.ts",
+      "workflows/sub/x.ts",
+      "workflows/lib/helper.mjs",
+      "workflows/digest.test-d.ts",
+      "workflows/notes.txt",
+    ]) {
+      await fs.mkdir(path.dirname(path.join(dir, file)), { recursive: true });
+      await fs.writeFile(path.join(dir, file), "export const x = 1;\n", "utf-8");
+    }
+    expect(await discoverModuleFiles(dir, "tools")).toEqual([
+      "alt.mts",
+      "echo.ts",
+      "page.tsx",
+      "sub/nested.ts",
+    ]);
+    expect(await discoverModuleFiles(dir, "workflows")).toEqual([
+      "digest.ts",
+      "lib/helper.mjs",
+      "sub/x.ts",
+    ]);
+  });
+
+  test("a missing directory is nothing to discover", async ({ tmpDir: dir }) => {
+    expect(await discoverModuleFiles(dir, "workflows")).toEqual([]);
+  });
+
+  test("a FILE where the directory should be is refused naming it, not a raw ENOTDIR", async ({
+    tmpDir: dir,
+  }) => {
+    await fs.writeFile(path.join(dir, "workflows"), "export default 1;\n", "utf-8");
+    await expect(discoverModuleFiles(dir, "workflows")).rejects.toThrow(
+      /workflows is a file, but `workflows\/` must be a DIRECTORY: one file per workflow/,
+    );
+  });
+});
 
 describe("tool discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
   test("a file in tools/ becomes a tool named for the file", async ({ tmpDir: dir }) => {

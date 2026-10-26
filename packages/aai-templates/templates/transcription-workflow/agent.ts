@@ -180,6 +180,6 @@ export default workflowApp({
   name: "Transcription Desk",
   // The listing line. It names all THREE routes because choosing between them
   // is the product.
-  description: "Transcribes a recording three ways: chunked, streaming while it uploads, or batch",
+  listing: "Transcribes a recording three ways: chunked, streaming while it uploads, or batch",
   workflows: { transcribe, transcribeStream, transcribeBatch },
 });

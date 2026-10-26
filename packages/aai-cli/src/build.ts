@@ -104,6 +104,9 @@ const SYSTEM_PROMPT_FILE = "system-prompt.md";
 /** What {@link systemPromptSource} reports when nothing declared a prompt. */
 const FRAMEWORK_DEFAULT_PROMPT_SOURCE = "the framework default (DEFAULT_SYSTEM_PROMPT)";
 
+/** What it reports for a workflow app, which runs no model and cannot declare one. */
+const WORKFLOW_APP_PROMPT_SOURCE = "none (workflow app)";
+
 /**
  * Which of the three possible authors of this agent's system prompt actually
  * wrote the one in the bundle.
@@ -123,10 +126,15 @@ const FRAMEWORK_DEFAULT_PROMPT_SOURCE = "the framework default (DEFAULT_SYSTEM_P
  * have imported the file and composed it, which is neither "the file" nor
  * "agent.ts" alone.
  */
-async function systemPromptSource(
+export async function systemPromptSource(
   cwd: string,
   declared: AgentDef["systemPrompt"],
+  mode: AgentDef["mode"],
 ): Promise<string> {
+  // A workflow app has no prompt to source: `assertModeFields` refuses one
+  // declared, and the default on its def addresses a model that never runs.
+  // Reporting "the framework default" there read as a prompt that shipped.
+  if (mode === "workflow-app") return WORKFLOW_APP_PROMPT_SOURCE;
   // A RESOLVER has no source to name and no file it could be composing: it is
   // computed per request from the session, and there is no session here to ask
   // it with. Reported as itself rather than guessed at — this line exists to
@@ -279,7 +287,7 @@ export async function executeBuild(
   // session at build time to call one with, so `systemPromptSource` reports it
   // as a resolver rather than inventing a value — the same thing
   // `withSystemPrompt` and `toAgentConfig` do with one.
-  const systemPrompt = await systemPromptSource(cwd, agentDef.systemPrompt);
+  const systemPrompt = await systemPromptSource(cwd, agentDef.systemPrompt, agentDef.mode);
   ui.log.info(`System prompt: ${systemPrompt}`);
   ui.log.success("Build complete");
 

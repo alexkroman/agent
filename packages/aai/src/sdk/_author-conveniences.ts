@@ -42,6 +42,7 @@ import { omitUndefined } from "./omit-undefined.ts";
 import { stageMembers } from "./providers/fallback.ts";
 import { normalizeLlm } from "./providers/llm/shared/from-string.ts";
 import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
+import type { StateProjection } from "./session-state.ts";
 
 /**
  * Returns a NEW object (never mutates); non-objects pass through untouched
@@ -135,17 +136,32 @@ function takeNumber(group: Record<string, unknown>, key: string): number | undef
  * after `agent.ts`, so a slot synced in one of those registers after the agent
  * was built, and the next pass is where every module has evaluated ("A
  * collected `syncState` is re-collected at the lowering" in
- * `_sync-registry.ts`). An explicit `syncState` always wins, and a workflow
- * app collects nothing: it opens no session, and `assertModeFields` has
- * already refused a declared one.
+ * `_sync-registry.ts`).
+ *
+ * An explicit `syncState` always wins, and a workflow app syncs nothing: it
+ * opens no session, and `assertModeFields` has already refused a declared one.
+ * Both still CLAIM what is registered and unclaimed, and warn once naming the
+ * slots left out: an unclaimed projection is collected by the NEXT def built
+ * in the process, so a `sync: true` slot in a workflow app's module graph
+ * used to reach the voice agent declared after it (a template suite, a
+ * monorepo spec), and one a tools file declared beside an explicit
+ * `syncState` was dropped with nothing saying so.
  */
 function resolveSyncState(
   declared: unknown,
   mode: AgentMode | undefined,
 ): Record<string, unknown> | undefined {
-  if (mode === "workflow-app") return undefined;
+  if (mode === "workflow-app") {
+    warnUnsyncedSlots(claimUnsyncedProjections(), "a workflow app, which opens no session");
+    return undefined;
+  }
   if (declared !== undefined && !isCollectedSyncState(declared)) {
-    return normalizeSyncState(declared);
+    const record = normalizeSyncState(declared);
+    warnUnsyncedSlots(
+      claimUnsyncedProjections().filter((projection) => record[projection.key] !== projection),
+      "an agent whose explicit `syncState` replaces the collected set",
+    );
+    return record;
   }
   const fresh = claimUnsyncedProjections();
   if (fresh.length === 0) return declared === undefined ? undefined : declared;
@@ -155,20 +171,50 @@ function resolveSyncState(
   return record;
 }
 
+/** The sentences already printed — one line per set of slots, not one per pass. */
+const warnedUnsynced = new Set<string>();
+
+/**
+ * Say which `sync: true` slots a def is NOT syncing, once per sentence.
+ * `console.warn` through `globalThis` for `_prompt-duplicate-warning.ts`'s
+ * reason: this module runs in a browser bundle too, so no Node logger.
+ */
+function warnUnsyncedSlots(left: readonly StateProjection[], where: string): void {
+  if (left.length === 0) return;
+  const one = left.length === 1;
+  const names = left.map((projection) => `"${projection.key}"`).join(", ");
+  const line = [
+    one ? "The slot" : "The slots",
+    names,
+    "declared `sync: true` but",
+    one ? "sits" : "sit",
+    `in ${where}, so`,
+    one ? "it is" : "they are",
+    "not synced to the page. Drop `sync: true`, or add the projection to `syncState`.",
+  ].join(" ");
+  if (warnedUnsynced.has(line)) return;
+  warnedUnsynced.add(line);
+  (globalThis as { console?: { warn?: (...args: unknown[]) => void } }).console?.warn?.(
+    `[aai] ${line}`,
+  );
+}
+
 /**
  * `def` with a `syncState` the registry collected re-collected — the lowering
  * step `withTools` runs after every module has evaluated; see
- * {@link resolveSyncState}. A def whose `syncState` was declared, or that has
- * nothing new to collect, is handed back as it is.
+ * {@link resolveSyncState}. A def that has nothing new to collect is handed
+ * back as it is; one whose `syncState` was declared (or a workflow app) is
+ * handed back too, after claiming and warning about what the modules loaded
+ * since `agent()` ran registered `sync: true` — a tools file's slot.
  */
 export function withCollectedSyncState<D extends object>(def: D): D {
   const { syncState: declared, mode } = def as {
     readonly syncState?: unknown;
     readonly mode?: unknown;
   };
-  if (declared !== undefined && !isCollectedSyncState(declared)) return def;
   const syncState = resolveSyncState(declared, isAgentMode(mode) ? mode : undefined);
   if (syncState === undefined || syncState === declared) return def;
+  if (declared !== undefined && !isCollectedSyncState(declared)) return def;
   return { ...def, syncState };
 }
 

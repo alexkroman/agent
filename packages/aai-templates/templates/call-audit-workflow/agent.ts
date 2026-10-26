@@ -132,7 +132,7 @@ export const audit = workflow({
 
 export default workflowApp({
   name: "Call Audit",
-  description:
+  listing:
     "Turns a recorded call into a written and spoken audit — headline, risks and follow-up actions",
   workflows: { audit },
 });

@@ -14,7 +14,7 @@
  */
 
 import { type DefaultToolResult, sessionSlot } from "@alexkroman1/aai";
-import type { WorkflowSummary } from "@alexkroman1/aai/workflow-api";
+import type { AnyWorkflowDef, WorkflowSummary } from "@alexkroman1/aai/workflow-api";
 import { expectTypeOf, test } from "vitest";
 import type { TestWorkflow } from "./_workflow-test-defs.ts";
 import type { FormValues } from "./components/form-types.ts";
@@ -292,6 +292,8 @@ type Digest = TestWorkflow<{ url: string }, { title: string }>;
 type Recap = TestWorkflow<{ sessionId: string }, { summary: string }>;
 type OneApp = { name: string; workflows: { digest: Digest } };
 type TwoApp = { name: string; workflows: { digest: Digest; recap: Recap } };
+/** What `agent({ name })` / `workflowApp({ name })` answer: the EMPTY map, optional. */
+type NoneApp = { name: string; workflows?: Record<never, never> };
 
 test("the readings over an agent: its names, and the def under one", () => {
   expectTypeOf<WorkflowNameOf<TwoApp>>().toEqualTypeOf<"digest" | "recap">();
@@ -371,6 +373,33 @@ test("a def and an app each resolve to their own overload, and nothing else", ()
   expectTypeOf<WorkflowFieldsProps["workflow"]>().toEqualTypeOf<
     WorkflowSummary | string | undefined
   >();
+});
+
+/**
+ * An app that declares NO workflows (its workflows are `workflows/<name>.ts`
+ * files the build discovers, which its type cannot see) declares no NAMES, so
+ * the typed form refuses every name on it — it does not fall through to the
+ * def/output overload and compile against a string. The failure this pins:
+ * `useWorkflowSubmit<typeof agentDef>("typo")` compiled with `run.output`
+ * `unknown`. Discovered workflows are reached by the untyped string form.
+ */
+test("the agent form refuses every name on a def that declares no workflows", () => {
+  expectTypeOf<WorkflowNameOf<NoneApp>>().toEqualTypeOf<never>();
+  // The submit and stream hooks: the def form's constraint refuses an app.
+  expectTypeOf<NoneApp>().not.toExtend<AnyWorkflowDef>();
+  // The runs hook: its output form reads the MAP, so an empty map is refused
+  // where an output type (no map at all) is not. `Parameters` reads the LAST
+  // applicable overload, which for an app is that output form.
+  expectTypeOf<Parameters<typeof useWorkflowRuns<NoneApp>>[0]>().toEqualTypeOf<never>();
+  // (`useWorkflowRuns<Quote>("quotes")`, the output form over a type with no
+  // map, is pinned in the next test.)
+  // The component: one signature, so its `workflow` prop takes no name.
+  expectTypeOf<WorkflowFieldsProps<NoneApp>["workflow"]>().toEqualTypeOf<
+    WorkflowSummary | undefined
+  >();
+  // Untyped, the discovered workflow is reached by its string name.
+  expectTypeOf(useWorkflowSubmit("digest").run).not.toBeNever();
+  expectTypeOf(useWorkflowRuns("digest")).toEqualTypeOf<UseWorkflowRunsResult<unknown>>();
 });
 
 test("useWorkflowStream, useWorkflowRuns and <WorkflowFields> take the agent form too", () => {

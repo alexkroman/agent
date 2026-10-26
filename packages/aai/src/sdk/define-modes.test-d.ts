@@ -92,8 +92,9 @@ test("the fields a mode lacks are absent from its member", () => {
   expectTypeOf<Extract<keyof AgentModelTuning, keyof TextAgentParams>>().toEqualTypeOf<
     keyof AgentModelTuning
   >();
-  // A workflow app's product is required.
-  expectTypeOf<WorkflowAppAgentParams["workflows"]>().toEqualTypeOf<Workflows>();
+  // A workflow app's product is optional on the member too: a discovery-only
+  // app declares its workflows as `workflows/<name>.ts` files, not here.
+  expectTypeOf<WorkflowAppAgentParams["workflows"]>().toEqualTypeOf<Workflows | undefined>();
 });
 
 type S2s = { name: string; mode: "s2s"; s2s: S2sProvider };
@@ -151,8 +152,9 @@ test("a workflow app carries only what a page and a deploy read", () => {
   expectTypeOf<AgentAccepts<App & { maxSteps: number }>>().toEqualTypeOf<false>();
   expectTypeOf<AgentAccepts<App & { llm: string }>>().toEqualTypeOf<false>();
   expectTypeOf<AgentAccepts<App & { telephony: true }>>().toEqualTypeOf<false>();
-  // The workflows ARE the product.
-  expectTypeOf<AgentAccepts<{ name: string; mode: "workflow-app" }>>().toEqualTypeOf<false>();
+  // The workflows ARE the product, and a discovery-only app declares them as
+  // files — so an app naming none in `agent.ts` is accepted.
+  expectTypeOf<AgentAccepts<{ name: string; mode: "workflow-app" }>>().toEqualTypeOf<true>();
   // `workflowApp()` sets the mode itself.
   type AppParams = Parameters<typeof workflowApp>[0];
   expectTypeOf<"mode" extends keyof AppParams ? true : false>().toEqualTypeOf<false>();

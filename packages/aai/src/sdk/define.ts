@@ -96,7 +96,9 @@ export function tool<P extends ToolInputSchema | undefined = ToolInputSchema, R 
  * and each def's own type — {@link AgentDefWith}), so a page can name a
  * workflow through the agent: `useWorkflowSubmit<typeof agentDef>("digest")`
  * types the name as the keys the agent declares and the output as that body's.
- * A def without `workflows` is the plain {@link ModeAgentDef}.
+ * A def without `workflows` declares NO names: the typed form refuses every
+ * name on it, and a `workflows/<name>.ts` the build discovers is reached by
+ * the untyped string form (the def's type cannot see the directory).
  *
  * **Tools are not declared here** — a tool is a FILE. `tools/echo.ts` that
  * default-exports `tool({ … })` is the tool `echo`, registered by existing, and
@@ -133,7 +135,7 @@ export function tool<P extends ToolInputSchema | undefined = ToolInputSchema, R 
  *
  * @public
  */
-export function agent<W extends WorkflowsMap = WorkflowsMap>(
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(
   def: PipelineAgentParams & { workflows?: W },
 ): AgentDefWith<"pipeline", W>;
 /**
@@ -149,7 +151,7 @@ export function agent<W extends WorkflowsMap = WorkflowsMap>(
  *
  * @public
  */
-export function agent<W extends WorkflowsMap = WorkflowsMap>(
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(
   def: S2sAgentParams & { workflows?: W },
 ): AgentDefWith<"s2s", W>;
 /**
@@ -169,7 +171,7 @@ export function agent<W extends WorkflowsMap = WorkflowsMap>(
  *
  * @public
  */
-export function agent<W extends WorkflowsMap = WorkflowsMap>(
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(
   def: TextAgentParams & { workflows?: W },
 ): AgentDefWith<"text", W>;
 /**
@@ -178,8 +180,8 @@ export function agent<W extends WorkflowsMap = WorkflowsMap>(
  *
  * @public
  */
-export function agent<W extends WorkflowsMap = WorkflowsMap>(
-  def: Omit<WorkflowAppAgentParams, "workflows"> & { workflows: W },
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(
+  def: Omit<WorkflowAppAgentParams, "workflows"> & { workflows?: W },
 ): AgentDefWith<"workflow-app", W>;
 /**
  * Any member of {@link AgentParams} — the signature a value typed as the whole
@@ -202,10 +204,22 @@ export function agent(def: AgentParams): AgentDef {
 export type WorkflowsMap = NonNullable<AgentDef["workflows"]>;
 
 /**
+ * What `W` is when a declaration names no `workflows`: the map with NO keys,
+ * not the open one. Under the open map `WorkflowNameOf<typeof agentDef>` was
+ * `string`, so `useWorkflowSubmit<typeof agentDef>("typo")` compiled against
+ * a def that declared nothing and typed the run's output `unknown`.
+ *
+ * @public
+ */
+export type EmptyWorkflows = Record<never, never>;
+
+/**
  * What `agent()` and `workflowApp()` return for a declaration in mode `M`
  * whose `workflows` map is `W`: {@link ModeAgentDef}, carrying `W` as declared
- * — its literal keys and each def's own type — when one was declared, and
- * nothing more when none was (`W` is then its constraint, the open map).
+ * — its literal keys and each def's own type — when one was declared; the
+ * optional EMPTY map when none was ({@link EmptyWorkflows}, which is what the
+ * runtime value is: absent); and the open map only when `W` was inferred as
+ * the open map itself (an options bag typed `Record<string, WorkflowDef>`).
  *
  * The one place the declared map survives the lowering: `AgentDef` types
  * `workflows` as the open `Record<string, WorkflowDef>`, which is right for
@@ -222,7 +236,11 @@ export type AgentDefWith<M extends AgentMode, W extends WorkflowsMap> = string e
   : // `Omit` first: intersecting `W` onto the open map would leave `keyof`
     // reading `string | keyof W`, which is `string` — the widening this exists
     // to undo.
-    Omit<ModeAgentDef<M>, "workflows"> & { readonly workflows: W };
+    Omit<ModeAgentDef<M>, "workflows"> &
+      // No `| undefined` on the optional member: `AgentDef.workflows` has none
+      // either, and under `exactOptionalPropertyTypes` adding it would make
+      // the result unassignable to the open definition.
+      ([keyof W] extends [never] ? { readonly workflows?: W } : { readonly workflows: W });
 
 /**
  * The shared body of {@link agent} and {@link workflowApp}.
@@ -343,7 +361,10 @@ function assertNoInlineTools(def: unknown): void {
  * `requiredEnv` defaults to {@link WORKFLOW_APP_REQUIRED_ENV} — the AssemblyAI
  * key every shipped workflow app reads; `requiredEnv: []` opts out. The
  * `workflows` map comes back AS DECLARED ({@link AgentDefWith}), which is what
- * lets a page write `useWorkflowSubmit<typeof app>("digest")`.
+ * lets a page write `useWorkflowSubmit<typeof app>("digest")`. It is optional:
+ * an app whose workflows are all `workflows/<name>.ts` default exports
+ * declares none here (the build discovers them), and its page reaches them by
+ * the untyped string form.
  *
  * @example
  * ```ts
@@ -364,8 +385,8 @@ function assertNoInlineTools(def: unknown): void {
  *
  * @public
  */
-export function workflowApp<W extends WorkflowsMap>(
-  def: Omit<WorkflowAppAgentParams, "mode" | "workflows"> & { workflows: W },
+export function workflowApp<W extends WorkflowsMap = EmptyWorkflows>(
+  def: Omit<WorkflowAppAgentParams, "mode" | "workflows"> & { workflows?: W },
 ): AgentDefWith<"workflow-app", W> {
   // A destructuring default rather than a spread beneath `def`, so an explicit
   // `requiredEnv: undefined` takes the default too — the same rule `buildAgent`
