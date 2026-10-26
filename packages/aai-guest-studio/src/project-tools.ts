@@ -245,6 +245,29 @@ async function updateDependencies(io: ProjectIo, requested?: string[]): Promise<
   }
 }
 
+/**
+ * The response body, or null once it passes `maxBytes` — read chunk by chunk
+ * and CANCELLED at the cap, never buffered whole and measured after.
+ *
+ * Bound the read, not the kept value (the rule `fetchCappedText` follows for
+ * the web builtins, which this package cannot import): `arrayBuffer()` then a
+ * size check let a model-chosen URL that streams forever fill guest memory
+ * until V8 refused the allocation, and `content-length` is no guard — a
+ * chunked response does not send one.
+ */
+async function readBodyCapped(response: Response, maxBytes: number): Promise<Uint8Array | null> {
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  // Leaving a `for await` over a web stream early cancels it, which is what
+  // releases the connection at the cap.
+  for await (const chunk of response.body ?? []) {
+    total += chunk.byteLength;
+    if (total > maxBytes) return null;
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, total);
+}
+
 async function downloadToWorkspace(io: ProjectIo, url: string, rel: string): Promise<string> {
   let abs: string;
   try {
@@ -258,10 +281,13 @@ async function downloadToWorkspace(io: ProjectIo, url: string, rel: string): Pro
   } catch (err) {
     return `Error: fetch failed: ${errorMessage(err)}`;
   }
-  if (!response.ok) return `Error: ${url} answered ${response.status} ${response.statusText}`;
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > MAX_STUDIO_FILE_BYTES) {
-    return `Error: response is ${bytes.byteLength} bytes (max ${MAX_STUDIO_FILE_BYTES}) — too large to sync to the project`;
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    return `Error: ${url} answered ${response.status} ${response.statusText}`;
+  }
+  const bytes = await readBodyCapped(response, MAX_STUDIO_FILE_BYTES);
+  if (bytes === null) {
+    return `Error: response is over ${MAX_STUDIO_FILE_BYTES} bytes — too large to sync to the project`;
   }
   let text: string;
   try {

@@ -27,6 +27,18 @@
 export const RUN_CODE_TIMEOUT_MS = 5000;
 
 /**
+ * Characters of console output one `run_code` call keeps; past it the rest is
+ * dropped and the result says so.
+ *
+ * Counted IN the worker, as each line is logged: the output used to be an
+ * unbounded array cloned whole to the harness thread, so a model-authored
+ * `for` loop of `console.log` handed the harness a 400 MB string (measured)
+ * inside the 5s budget — memory every voice session on the sandbox shares,
+ * for a tool result no model can read.
+ */
+export const RUN_CODE_OUTPUT_MAX_CHARS = 100_000;
+
+/**
  * Wall-clock cap for a single guest tool execution. RE-EXPORTED rather than
  * mirrored: `@alexkroman1/aai/internal` is a subpath tsdown already bundles
  * (`harness.ts` imports it), so the caps' argument applies here too and one

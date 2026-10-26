@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { CodingGrepError, grepWorkspace } from "./coding-grep.ts";
+import { CodingGrepError, grepWorkspace, grepWorkspaceBounded } from "./coding-grep.ts";
 
 const FILES = {
   "agent.ts":
@@ -96,5 +96,47 @@ describe("grepWorkspace", () => {
 
   test("rejects an empty pattern", () => {
     expect(() => grepWorkspace(FILES, "")).toThrow(/must not be empty/);
+  });
+});
+
+describe("grepWorkspaceBounded", () => {
+  test("answers exactly what the in-process search answers", async () => {
+    for (const [pattern, opts] of [
+      ["rollDice", {}],
+      ["^export", {}],
+      ["ROLLDICE", { ignoreCase: true }],
+      ["tool({})", { literal: true }],
+      ["const rollDice", { context: 1 }],
+      ["rollDice", { glob: "*.ts", limit: 1 }],
+      ["nothingHere", {}],
+    ] as const) {
+      expect(await grepWorkspaceBounded(FILES, pattern, opts)).toBe(
+        grepWorkspace(FILES, pattern, opts),
+      );
+    }
+  });
+
+  test("refuses a bad regex on the calling thread, like the plain search", async () => {
+    await expect(grepWorkspaceBounded(FILES, "[unclosed")).rejects.toThrow(CodingGrepError);
+    await expect(grepWorkspaceBounded(FILES, "")).rejects.toThrow(/must not be empty/);
+  });
+
+  test("a catastrophically backtracking pattern times out instead of wedging the thread", async () => {
+    // Forty `a`s and a `!` under `(a+)+$` backtracks for days in process — a
+    // timer on the same thread never fires (27 `a`s measured 12s). The worker
+    // is terminated at the deadline, and the event loop stays live meanwhile.
+    const evil = { "a.ts": `${"a".repeat(40)}!` };
+    let ticks = 0;
+    const ticker = setInterval(() => {
+      ticks += 1;
+    }, 10);
+    try {
+      await expect(grepWorkspaceBounded(evil, "(a+)+$", {}, 300)).rejects.toThrow(
+        /timed out after 300ms[\s\S]*literal: true/,
+      );
+    } finally {
+      clearInterval(ticker);
+    }
+    expect(ticks).toBeGreaterThan(0);
   });
 });
