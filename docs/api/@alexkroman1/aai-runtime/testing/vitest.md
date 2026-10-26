@@ -91,11 +91,33 @@ runner is handed in, so a case reads `run(addItem, { … })` typed, or
 
 #### Example
 
-```ts no-check
-import agentDef from "virtual:aai/agent";
+```ts
+// file: agent.ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({ name: "Orders" });
+
+// file: tools/add_item.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Add an item to the order",
+  inputSchema: z.object({ item: z.string() }),
+  execute: ({ item }) => ({ added: item }),
+});
+
+// file: agent.test.ts
+import { deployedAgent } from "@alexkroman1/aai/testing";
 import { describeAgent } from "@alexkroman1/aai/testing/vitest";
 import { expect, test } from "vitest";
+import authored from "./agent.ts";
 import addItem from "./tools/add_item.ts";
+
+// Under vitest, `import agentDef from "virtual:aai/agent"` is this line.
+const agentDef = deployedAgent(authored, {
+  tools: import.meta.glob("./tools/*.ts", { eager: true }),
+});
 
 describeAgent(agentDef, (run) => {
   test("adds the item", async () => {
@@ -293,13 +315,27 @@ seeding lives with the installers.
 
 #### Example
 
-```ts no-check
+```ts
+// file: workflows/digest.ts
+import { stepFetch, stepGenerateJson } from "@alexkroman1/aai/step";
+import { z } from "zod";
+
+export async function digest(input: { url: string }) {
+  const page = await (await stepFetch(input.url)).text();
+  return stepGenerateJson(`One headline for: ${page}`, {
+    schema: z.object({ headline: z.string() }),
+  });
+}
+
+// file: digest.test.ts
 import { installStubWorld } from "@alexkroman1/aai/testing/vitest";
+import { expect, test } from "vitest";
+import { digest } from "./workflows/digest.ts";
 
 test("the digest reads the page and asks the model", async () => {
   const world = installStubWorld({
-    model: '{"headline":"Otters use tools","points":["They do."]}',
-    pages: { "https://example.com/otters": { body: PAGE_HTML } },
+    model: '{"headline":"Otters use tools"}',
+    pages: { "https://example.com/otters": { body: "<p>Otters use tools.</p>" } },
   });
   await digest({ url: "https://example.com/otters" });
   expect(world.model[0]?.prompt).toContain("Otters");

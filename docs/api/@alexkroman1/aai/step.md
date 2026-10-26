@@ -2402,7 +2402,7 @@ from the body, `retryable: false`, when the budget
 
 #### Example
 
-```ts no-check
+```ts
 import { stepReport, transcribeUploadDurably } from "@alexkroman1/aai/step";
 import type { WorkflowContext } from "@alexkroman1/aai/workflow-api";
 

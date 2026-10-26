@@ -237,7 +237,20 @@ overrides' `workflow` winning, and `"workflow"` for a def no agent declares.
 
 ##### Example
 
-```ts no-check
+```ts
+// file: shared.ts
+import { workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const recap = workflow({
+  description: "Write up a recording",
+  input: z.object({ recording: z.string() }),
+  output: z.object({ headline: z.string(), points: z.array(z.string()) }),
+  run: async () => ({ headline: "…", points: [] }),
+});
+
+// file: recap.test.ts
+import { createRunSnapshot } from "@alexkroman1/aai/testing";
 import { recap } from "./shared.ts";
 
 const done = createRunSnapshot(recap, {
@@ -1839,11 +1852,18 @@ await run.advanceSleep();
 console.log(run.status, run.output, run.deliveries);
 ```
 
-**The agent form, from a project's own spec**
+**The agent form: the name is checked against what the agent declares**
 
-```ts no-check
+```ts
+import { agent, workflow } from "@alexkroman1/aai";
 import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
-import agentDef from "virtual:aai/agent";
+import { z } from "zod";
+
+const digest = workflow({
+  input: z.object({ url: z.string() }),
+  run: async ({ url }, ctx) => ({ text: await ctx.step("read", () => `the page at ${url}`) }),
+});
+const agentDef = agent({ name: "Digest", workflows: { digest } });
 
 const run = await runWorkflow(agentDef, "digest", { url: "https://example.com/a" });
 ```
@@ -1939,11 +1959,18 @@ await run.advanceSleep();
 console.log(run.status, run.output, run.deliveries);
 ```
 
-**The agent form, from a project's own spec**
+**The agent form: the name is checked against what the agent declares**
 
-```ts no-check
+```ts
+import { agent, workflow } from "@alexkroman1/aai";
 import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
-import agentDef from "virtual:aai/agent";
+import { z } from "zod";
+
+const digest = workflow({
+  input: z.object({ url: z.string() }),
+  run: async ({ url }, ctx) => ({ text: await ctx.step("read", () => `the page at ${url}`) }),
+});
+const agentDef = agent({ name: "Digest", workflows: { digest } });
 
 const run = await runWorkflow(agentDef, "digest", { url: "https://example.com/a" });
 ```
@@ -2909,13 +2936,35 @@ When `def` was never registered by a deployed agent.
 
 #### Example
 
-```ts no-check
-import agentDef from "virtual:aai/agent";
-import placeOrder from "./tools/place_order.ts";
-import { toolNameOf } from "@alexkroman1/aai/testing";
+```ts
+// file: agent.ts
+import { agent } from "@alexkroman1/aai";
 
-void agentDef; // importing the deployed agent is what records the names
-toolNameOf(placeOrder); // "place_order"
+export default agent({ name: "Orders" });
+
+// file: tools/place_order.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Place the order",
+  inputSchema: z.object({ item: z.string() }),
+  execute: ({ item }) => ({ placed: item }),
+});
+
+// file: agent.test.ts
+import { deployedAgent, toolNameOf } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+import authored from "./agent.ts";
+import placeOrder from "./tools/place_order.ts";
+
+// Lowering the agent is what records the names; under vitest, importing it
+// as `virtual:aai/agent` does the same.
+deployedAgent(authored, { tools: import.meta.glob("./tools/*.ts", { eager: true }) });
+
+test("the model calls the tool by its file name", () => {
+  expect(toolNameOf(placeOrder)).toBe("place_order");
+});
 ```
 
 ***
@@ -3039,8 +3088,22 @@ the tool file's default export — the object the deployed agent registered —
 so it is found in the table by identity and the result keeps the type its
 `execute` declares, gate included:
 
-```ts no-check
+```ts
+// file: tools/add_item.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Add an item to the order",
+  inputSchema: z.object({ item: z.string() }),
+  execute: ({ item }) => ({ added: item }),
+});
+
+// file: agent.test.ts
+import type { ToolRunner } from "@alexkroman1/aai/testing";
 import addItem from "./tools/add_item.ts";
+
+declare const run: ToolRunner; // `toolRunner(agentDef)`, as above
 
 const { added } = await run(addItem, { item: "apple" }); // typed: `added` is a string
 ```

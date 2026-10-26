@@ -4450,14 +4450,27 @@ Start a workflow from a form, and follow the run it creates.
 
 ##### Examples
 
-```tsx no-check
+```tsx
+// file: agent.ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const digest = workflow({
+  input: z.object({ url: z.string() }),
+  output: z.object({ title: z.string() }),
+  run: async ({ url }) => ({ title: url }),
+});
+
+export default agent({ name: "Digest", workflows: { digest } });
+
+// file: client.tsx
 import { Form, SubmitButton, TextField, useWorkflowSubmit } from "@alexkroman1/aai-ui";
 import type { digest } from "./agent.ts";
 
 function DigestForm() {
-  const { submit, run, pending, error } = useWorkflowSubmit<typeof digest>("digest");
+  const { submitForm, run, pending, error } = useWorkflowSubmit<typeof digest>("digest");
   return (
-    <Form onSubmit={(values) => submit(values)} error={error}>
+    <Form onSubmit={(values) => submitForm(values)} error={error}>
       <TextField name="url" label="Link" type="url" required />
       <SubmitButton pending={pending}>Digest</SubmitButton>
       {run?.status === "completed" && <p>{run.output.title}</p>}
@@ -4468,11 +4481,31 @@ function DigestForm() {
 
 **Named through the agent, so the name is checked**
 
-```tsx no-check
+```tsx
+// file: agent.ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const digest = workflow({
+  input: z.object({ url: z.string() }),
+  output: z.object({ title: z.string() }),
+  run: async ({ url }) => ({ title: url }),
+});
+
+export default agent({ name: "Digest", workflows: { digest } });
+
+// file: client.tsx
 import { useWorkflowSubmit } from "@alexkroman1/aai-ui";
 import type agentDef from "./agent.ts";
 
-const { submit } = useWorkflowSubmit<typeof agentDef>("digest");
+export function DigestForm() {
+  const { submit } = useWorkflowSubmit<typeof agentDef>("digest"); // "digset" would not compile
+  return (
+    <button type="button" onClick={() => submit({ url: "https://example.com/a" })}>
+      Digest
+    </button>
+  );
+}
 ```
 
 #### Call Signature
@@ -4524,14 +4557,27 @@ The workflow DEFINITION, which types both halves of the
 
 ##### Examples
 
-```tsx no-check
+```tsx
+// file: agent.ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const digest = workflow({
+  input: z.object({ url: z.string() }),
+  output: z.object({ title: z.string() }),
+  run: async ({ url }) => ({ title: url }),
+});
+
+export default agent({ name: "Digest", workflows: { digest } });
+
+// file: client.tsx
 import { Form, SubmitButton, TextField, useWorkflowSubmit } from "@alexkroman1/aai-ui";
 import type { digest } from "./agent.ts";
 
 function DigestForm() {
-  const { submit, run, pending, error } = useWorkflowSubmit<typeof digest>("digest");
+  const { submitForm, run, pending, error } = useWorkflowSubmit<typeof digest>("digest");
   return (
-    <Form onSubmit={(values) => submit(values)} error={error}>
+    <Form onSubmit={(values) => submitForm(values)} error={error}>
       <TextField name="url" label="Link" type="url" required />
       <SubmitButton pending={pending}>Digest</SubmitButton>
       {run?.status === "completed" && <p>{run.output.title}</p>}
@@ -4542,11 +4588,31 @@ function DigestForm() {
 
 **Named through the agent, so the name is checked**
 
-```tsx no-check
+```tsx
+// file: agent.ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const digest = workflow({
+  input: z.object({ url: z.string() }),
+  output: z.object({ title: z.string() }),
+  run: async ({ url }) => ({ title: url }),
+});
+
+export default agent({ name: "Digest", workflows: { digest } });
+
+// file: client.tsx
 import { useWorkflowSubmit } from "@alexkroman1/aai-ui";
 import type agentDef from "./agent.ts";
 
-const { submit } = useWorkflowSubmit<typeof agentDef>("digest");
+export function DigestForm() {
+  const { submit } = useWorkflowSubmit<typeof agentDef>("digest"); // "digset" would not compile
+  return (
+    <button type="button" onClick={() => submit({ url: "https://example.com/a" })}>
+      Digest
+    </button>
+  );
+}
 ```
 
 ***
@@ -13304,7 +13370,20 @@ generic. `podcast-digest-workflow`'s `client.tsx` composed exactly that.
 
 #### Example
 
-```tsx no-check
+```tsx
+// file: agent.ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const dailyDigest = workflow({
+  input: z.object({ hour: z.number() }),
+  output: z.object({ posted: z.string() }),
+  run: async ({ hour }) => ({ posted: `daily at ${hour}:00` }),
+});
+
+export default agent({ name: "Digest", workflows: { dailyDigest } });
+
+// file: client.tsx
 import type { WorkflowSubmissionOf } from "@alexkroman1/aai-ui";
 import type { dailyDigest } from "./agent.ts";
 

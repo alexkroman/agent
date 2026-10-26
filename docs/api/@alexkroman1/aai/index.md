@@ -22144,17 +22144,27 @@ The cost is stated rather than hidden: with no `output` schema, `R` is
 body. Declare `output` to type a completed run's result, which is the
 documented way to type it in either form.
 
-```ts no-check
-// agent.ts
+```ts
+// file: agent.ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+import { digestFlow } from "./workflows/digest.ts";
+
 export const digest = workflow({
   description: "Research a topic overnight",
   input: z.object({ topic: z.string() }),
   output: z.object({ headline: z.string() }),
 }).body(digestFlow);
 
-// workflows/digest.ts
+export default agent({ name: "Researcher", workflows: { digest } });
+
+// file: workflows/digest.ts
+import type { WorkflowContext, WorkflowInputOf } from "@alexkroman1/aai";
+import { stepGenerate } from "@alexkroman1/aai/step";
+import type { digest } from "../agent.ts";
+
 export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
-  return { headline: await ctx.step("research", () => research(input.topic)) };
+  return { headline: await ctx.step("research", () => stepGenerate(`Headline: ${input.topic}`)) };
 }
 ```
 
