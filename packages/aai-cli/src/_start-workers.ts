@@ -197,12 +197,20 @@ export interface WorkerLike {
 }
 
 /**
- * Is this process a `--workers` worker? What `cluster.isWorker` reads
- * (`NODE_UNIQUE_ID`, set by `cluster.fork`), plus the slot only our fork sets —
- * without importing `node:cluster`.
+ * Is this process a `--workers` worker? The slot only our fork sets, plus the
+ * IPC channel `cluster.fork` opens — without importing `node:cluster`.
+ *
+ * Not `NODE_UNIQUE_ID`, though `cluster.fork` sets it: Node's bootstrap
+ * DELETES it from a worker's `process.env` before any user code runs, so a
+ * check on it was false in every real worker. Each one then took the
+ * single-process path and bound the primary's port itself, and
+ * `aai start --workers` failed every boot with EADDRINUSE.
  */
-export function isStartWorker(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.NODE_UNIQUE_ID !== undefined && env[SLOT_ENV] !== undefined;
+export function isStartWorker(
+  env: NodeJS.ProcessEnv = process.env,
+  hasIpc: boolean = process.send !== undefined,
+): boolean {
+  return hasIpc && env[SLOT_ENV] !== undefined;
 }
 
 /** `node:cluster`, loaded on demand — see the import note at the top. */

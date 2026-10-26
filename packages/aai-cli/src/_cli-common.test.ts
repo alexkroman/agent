@@ -218,9 +218,16 @@ describe("runCommand", () => {
   test("json mode: a `start --workers` worker's verdict goes to stderr, not the primary's stdout", async () => {
     // Every forked worker runs this same command on the primary's stdout; a
     // worker that could not bind its port wrote a second result line there.
-    vi.stubEnv("NODE_UNIQUE_ID", "1");
+    // A worker is the slot our fork sets plus the IPC channel `cluster.fork`
+    // opens (`isStartWorker`), so both are stood in for here.
     vi.stubEnv(SLOT_ENV, "0");
-    await runCommand({ json: true }, async () => fail("command_failed", "port in use"), ui);
+    const send = process.send;
+    process.send = () => true;
+    try {
+      await runCommand({ json: true }, async () => fail("command_failed", "port in use"), ui);
+    } finally {
+      process.send = send;
+    }
     expect(ui.stdout).toEqual([]);
     expect(JSON.parse(ui.stderr.join(""))).toMatchObject({ ok: false, error: "port in use" });
     expect(exitSpy).toHaveBeenCalledWith(1);

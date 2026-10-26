@@ -28,10 +28,10 @@ function emittedWorker(connected = true) {
 
 describe("isStartWorker", () => {
   test("only a cluster-forked process our fork gave a slot", () => {
-    expect(isStartWorker({ NODE_UNIQUE_ID: "1", AAI_START_SLOT: "0" })).toBe(true);
-    expect(isStartWorker({ AAI_START_SLOT: "0" })).toBe(false);
-    expect(isStartWorker({ NODE_UNIQUE_ID: "1" })).toBe(false);
-    expect(isStartWorker({})).toBe(false);
+    expect(isStartWorker({ AAI_START_SLOT: "0" }, true)).toBe(true);
+    expect(isStartWorker({ AAI_START_SLOT: "0" }, false)).toBe(false);
+    expect(isStartWorker({}, true)).toBe(false);
+    expect(isStartWorker({}, false)).toBe(false);
   });
 });
 
