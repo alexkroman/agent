@@ -323,7 +323,14 @@ export function turnCalling(
  * starting anything, two is the finding a dedupe check exists to prevent, and
  * both throw naming what the turn did start.
  *
- * ```ts no-check
+ * ```ts
+ * import type { AnyWorkflowDef } from "@alexkroman1/aai/workflow-api";
+ * import { type EvalSession, type EvalWorkflows, evalRunOf } from "@alexkroman1/aai-runtime/eval";
+ *
+ * declare const recap: AnyWorkflowDef<{ headline: string }>; // the def `agent.ts` declares
+ * declare const workflows: EvalWorkflows; // `openEvalWorkflows(…)`
+ * declare const session: EvalSession; // `openEvalSession({ agent: agentDef, workflows })`
+ *
  * const started = await session.say("Can you write up that recording for me?");
  * const runId = evalRunOf(started, recap);
  * const run = await workflows.settle(runId, recap);

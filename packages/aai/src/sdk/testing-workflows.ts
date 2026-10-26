@@ -85,7 +85,20 @@ export function createRunSnapshot<R = unknown>(
  * overrides' `workflow` winning, and `"workflow"` for a def no agent declares.
  *
  * @example
- * ```ts no-check
+ * ```ts
+ * // file: shared.ts
+ * import { workflow } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
+ * export const recap = workflow({
+ *   description: "Write up a recording",
+ *   input: z.object({ recording: z.string() }),
+ *   output: z.object({ headline: z.string(), points: z.array(z.string()) }),
+ *   run: async () => ({ headline: "…", points: [] }),
+ * });
+ *
+ * // file: recap.test.ts
+ * import { createRunSnapshot } from "@alexkroman1/aai/testing";
  * import { recap } from "./shared.ts";
  *
  * const done = createRunSnapshot(recap, {

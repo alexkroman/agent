@@ -162,10 +162,17 @@ const DEFAULT_RUN_KEY = "test";
  * console.log(run.status, run.output, run.deliveries);
  * ```
  *
- * @example The agent form, from a project's own spec
- * ```ts no-check
+ * @example The agent form: the name is checked against what the agent declares
+ * ```ts
+ * import { agent, workflow } from "@alexkroman1/aai";
  * import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
- * import agentDef from "virtual:aai/agent";
+ * import { z } from "zod";
+ *
+ * const digest = workflow({
+ *   input: z.object({ url: z.string() }),
+ *   run: async ({ url }, ctx) => ({ text: await ctx.step("read", () => `the page at ${url}`) }),
+ * });
+ * const agentDef = agent({ name: "Digest", workflows: { digest } });
  *
  * const run = await runWorkflow(agentDef, "digest", { url: "https://example.com/a" });
  * ```
