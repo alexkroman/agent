@@ -193,7 +193,9 @@ Five rules, and each is an error rather than advice if you get it wrong:
   ```
 
   A `ToolFailure` from `require` or `prepare` is the tool's whole result and
-  opens no window. From inside a plain `tool()` the same shape is
+  opens no window; one RETURNED from `execute`, `report` or `commit` stores
+  nothing, like a throw — a body that mutated the draft and then declined has
+  declined. From inside a plain `tool()` the same shape is
   `slot.transact(ctx, { require?, prepare, commit })`.
 
 - **Report from the stored value, never the draft.** A count read off the draft
@@ -201,8 +203,9 @@ Five rules, and each is an error rather than advice if you get it wrong:
   the draft when the body returns — `report` is the one reading that cannot
   disagree with the next `get`.
 - **Hold plain data.** Objects, arrays, strings, numbers, booleans and null. A
-  `Map`, a `Set`, a `Date` or a class instance is refused with the field named,
-  because none of them survives being stored.
+  `Map`, a `Set`, a `Date`, a function or a class instance is refused with the
+  slot and the field named — at declaration for a plain default, on the store
+  otherwise — because none of them survives being stored.
 - **State is STORED on the platform**, so a crash or a redeploy no longer loses
   it — the platform keeps a session's slots on its own database and there is
   nothing to enable. Under `aai dev` it lives in memory for the life of the
@@ -346,7 +349,9 @@ export default orderSlot.updateTool({
 **`when` is optional**: omitted, the tool is legal in every state, never
 refuses, and still answers the `{ ...position, result }` envelope and honours
 `send`/`sendFrom` — the shape of a tool that reports where the conversation is,
-or restarts it (`reset: true` restarts the dialog before the body runs).
+or restarts it (`reset: true` restarts the dialog once `require`/`prepare` have
+passed, right before the body; its `send` goes to the restarted dialog). An
+event the current state does not declare is a no-op, not an error.
 `emergency-dispatch-agent` and `tabletop-rpg-agent` are the worked examples.
 
 **`procedure()` runs a flow YOU drive, with no model in the loop.** Where a

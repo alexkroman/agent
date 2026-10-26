@@ -29,7 +29,7 @@ import { INSTRUCTION_KEY, instructionOf, stripInstruction } from "./tool-instruc
 import { isToolFailure, type ToolFailure, type ToolRefusal, toolRefusal } from "./utils.ts";
 
 /** An event as the gate sends it: the machine form's `EventObject`. */
-type GateEvent = { readonly type: string };
+export type GateEvent = { readonly type: string };
 
 /**
  * A function type whose parameters are compared BIVARIANTLY, as a method's
@@ -64,17 +64,40 @@ export type CompiledGate = {
   /**
    * The refusal for a call made where `when` does not allow it, or `undefined`
    * when the body may run. The ONE gate: every path — the runtime, a subagent,
-   * a spec — runs it. Also starts the dialog over when `reset` was declared.
+   * a spec — runs it.
    */
   refuse(ctx: SlotHolder): ToolRefusal | undefined;
+  /**
+   * Start the dialog over, when `reset` was declared — called once every
+   * setup stage (`require`, `prepare`) has passed and right before the body,
+   * so a tool that fails in its setup leaves the conversation where it was.
+   * Nothing otherwise.
+   */
+  enter(ctx: SlotHolder): void;
+  /**
+   * The event the settled result decides, or `undefined` to stay put — and
+   * for a {@link ToolFailure}, always `undefined`, since nothing is sent on
+   * one. Separate from {@link CompiledGate.settle} so a caller with a
+   * mutation window can decide INSIDE it: a field-name `sendFrom` whose field
+   * holds no event name throws here, and inside the window that throw
+   * discards the draft instead of leaving a stored mutation behind a tool the
+   * model was told failed.
+   */
+  decide(result: unknown): GateEvent | undefined;
   /**
    * The body's settled result as the tool answers it: a failure unchanged and
    * nothing sent; a success wrapped in the position after the transition. A
    * `withInstruction` the body attached is LIFTED onto the envelope — the
    * runtime reads `$instruction` off whatever a tool returned, so one buried
    * under `result` would reach neither the model nor the stripper.
+   *
+   * @param event - What {@link CompiledGate.decide} answered for `result`.
    */
-  settle<S>(ctx: SlotHolder, result: S | ToolFailure): DialogToolResult<S> | ToolFailure;
+  settle<S>(
+    ctx: SlotHolder,
+    result: S | ToolFailure,
+    event: GateEvent | undefined,
+  ): DialogToolResult<S> | ToolFailure;
 };
 
 /**
@@ -135,27 +158,34 @@ export function compileDialogGate(
       // The refusal says where the conversation IS and what it expects there —
       // what the model recovers from.
       const at = readDialog(dialog, ctx);
-      if (!here(at)) {
-        const expectation =
-          at.position.instruction ?? `reach ${(allowed ?? []).join(" or ")} first`;
-        return toolRefusal("dialog", dialogRefusalMessage(at.position.state, expectation));
-      }
-      // AFTER the gate: `when` describes the position the call was made in.
+      if (here(at)) return;
+      const expectation = at.position.instruction ?? `Reach ${(allowed ?? []).join(" or ")} first.`;
+      return toolRefusal("dialog", dialogRefusalMessage(at.position.state, expectation));
+    },
+    // AFTER the gate and the setup stages: `when` describes the position the
+    // call was made in, and a `require`/`prepare` failure is a tool that did
+    // not run, which must not restart the conversation either.
+    enter: (ctx) => {
       if (gate.reset === true) dialog.reset(ctx);
     },
-    settle: (ctx, result) => {
-      // A failed tool did not do the thing, so the dialog must not move past
-      // it. See DialogGate.send.
+    // A failed tool did not do the thing, so the dialog must not move past
+    // it. See DialogGate.send.
+    decide: (result) => (isToolFailure(result) ? undefined : eventFor(result)),
+    settle: (ctx, result, event) => {
       if (isToolFailure(result)) return result;
-      const event = eventFor(result);
       // A step's tool calls run CONCURRENTLY, so a sibling may have moved the
       // dialog during the body. The gate is RE-CHECKED (synchronously, right
       // before the send) so the event cannot fire a transition out of a state
       // this tool was never allowed in — see `DialogGate.when` — and the
       // position is re-READ, since the one at the refusal may describe a
-      // conversation moved on.
+      // conversation moved on. Not under `reset`: the send was declared for
+      // the dialog this tool just started over, which `when` (checked on the
+      // position BEFORE the reset) says nothing about.
       const at = readDialog(dialog, ctx);
-      const moved = event === undefined || !here(at) ? at.position : dialog.send(ctx, event);
+      const moved =
+        event === undefined || (gate.reset !== true && !here(at))
+          ? at.position
+          : dialog.send(ctx, event);
       // The instruction travels on the ENVELOPE, where the runtime looks.
       const instruction = instructionOf(result);
       if (instruction === undefined) return { ...moved, result };

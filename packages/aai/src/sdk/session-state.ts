@@ -182,8 +182,20 @@ function describe(value: unknown): string {
  * @internal
  */
 export function freezeStorable<T>(value: T, path: string): T {
-  walk(value, path, { ancestors: new Set(), done: new WeakSet() });
+  walk(value, path, { ancestors: new Set(), done: new WeakSet(), finish: Object.freeze });
   return value;
+}
+
+/**
+ * The same check as {@link freezeStorable}, without the freeze — for a value
+ * that is about to be checked for someone ELSE: a slot's plain default, which
+ * is cloned per install and stays the author's own object.
+ *
+ * @throws SlotValueError naming the path, as `freezeStorable` does.
+ * @internal
+ */
+export function assertStorable(value: unknown, path: string): void {
+  walk(value, path, { ancestors: new Set(), done: new WeakSet(), finish: () => undefined });
 }
 
 /**
@@ -201,7 +213,12 @@ export function freezeStorable<T>(value: T, path: string): T {
  * separately, so a hydrated value holds two equal objects where the live one held
  * one. That matters only to code comparing by identity.
  */
-type Walk = { ancestors: Set<object>; done: WeakSet<object> };
+type Walk = {
+  ancestors: Set<object>;
+  done: WeakSet<object>;
+  /** What a validated node meets last: `Object.freeze`, or nothing for a check-only walk. */
+  finish: (object: object) => void;
+};
 
 function walk(value: unknown, path: string, seen: Walk): void {
   if (value === null) return;
@@ -250,7 +267,7 @@ function walk(value: unknown, path: string, seen: Walk): void {
   }
   seen.ancestors.delete(object);
   seen.done.add(object);
-  Object.freeze(object);
+  seen.finish(object);
 }
 
 /**

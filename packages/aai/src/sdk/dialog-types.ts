@@ -162,8 +162,11 @@ export type DialogSendFromMisuse<K extends string, Keys extends string> = {
  * was written) is the function form, or none, and passes through.
  *
  * In RETURN position for the reason {@link DialogSendFrom} gives: a check
- * intersected into the parameter type is a conditional over `R`, which stops
- * `R` being inferred from a context-sensitive `execute` at all.
+ * intersected into the parameter type is a conditional over `R`, which is
+ * resolved for the contextual type before a context-sensitive `execute` has
+ * settled `R`. {@link DialogSendFromGuard} is the parameter-position half
+ * that gets around it, and is what makes the misuse fail at the CALL; this
+ * stays as the type the failed call still reads as.
  *
  * @public
  */
@@ -172,6 +175,49 @@ export type DialogSendFromChecked<K extends string, R, E, T> = string extends K
   : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>]
     ? T
     : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+
+/**
+ * The call-site half of {@link DialogSendFromChecked}: `unknown` (no
+ * constraint) unless the field-name `sendFrom` written as `K` names no field
+ * of the success result holding an event of `E`, in which case
+ * `{ sendFrom: DialogSendFromMisuse }` — which the literal `"count"` cannot
+ * satisfy, so the CALL fails on the `sendFrom` line.
+ *
+ * Intersected into the def (and the second argument) of every gated tool
+ * factory, always under `NoInfer`. The return-position check alone only bit
+ * once the misuse type was assigned somewhere that wanted a `ToolDef`, and a
+ * `tools/<name>.ts` default export never is: `aai typecheck` is plain `tsc`
+ * over an untyped `AgentDef`, so `sendFrom: "count"` compiled and threw on
+ * the first call.
+ *
+ * Two arms keep it inert while `R` is still being inferred, which is what
+ * {@link DialogSendFromChecked}'s doc meant by a parameter-position check
+ * stopping inference. The contextual type of the `sendFrom` property is
+ * computed BEFORE a context-sensitive `execute` (unannotated parameters) has
+ * settled `R`, with `R` read as `unknown`; a conditional that resolved to the
+ * misuse arm then would intersect `never` into that contextual type and widen
+ * the literal `"next"` to `string`, failing every field-name `sendFrom` on
+ * such a body. `unknown extends R` answers `unknown` for that pass, and the
+ * applicability check that follows inference sees the settled `R`. The
+ * `NoInfer` is the other half: a string literal inferred against the `keyof`
+ * inside {@link DialogSendFromKey} is an inference site for `R` (TypeScript's
+ * `LiteralKeyof` priority), and without it `R` collected an empty-object
+ * candidate from the misuse arm.
+ *
+ * @typeParam K - The literal the field-name form was written as; `string`
+ *   when the function form (or nothing) was.
+ * @typeParam R - What the tool's `execute` returns, failure arm included.
+ * @typeParam E - The machine's event union.
+ *
+ * @public
+ */
+export type DialogSendFromGuard<K extends string, R, E> = string extends K
+  ? unknown
+  : unknown extends R
+    ? unknown
+    : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>]
+      ? unknown
+      : { sendFrom: DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>> };
 
 /**
  * The second argument of {@link Dialog.tool} (and of a gated slot tool): the
@@ -238,10 +284,14 @@ export interface DialogGate<R, E, K extends string = string> {
    * Start the dialog over BEFORE the body runs — for a setup tool (`start_order`,
    * `new_claim`) that begins a fresh pass through the conversation.
    *
-   * `when`, if declared, is checked against the position before the reset, and
-   * the post-body send sees the reset position; the two rarely belong on one
-   * tool. The initial state's `onEnter` does not fire on a reset, the same as
-   * on a fresh session.
+   * `when`, if declared, is checked against the position before the reset.
+   * The reset itself is applied once every setup stage has passed — after a
+   * slot tool's `require` and `prepare`, right before the body — so a tool
+   * refused by its own precondition leaves the conversation where it was.
+   * The post-body `send`/`sendFrom` is sent to the RESET dialog and is not
+   * re-checked against `when` (it was declared for the dialog this tool just
+   * started over, which `when` says nothing about). The initial state's
+   * `onEnter` does not fire on a reset, the same as on a fresh session.
    */
   reset?: true;
   /**
@@ -252,6 +302,11 @@ export interface DialogGate<R, E, K extends string = string> {
    * that failed did not do the thing, so a dialog that advanced anyway would
    * leave the conversation a step ahead of reality — the single most expensive
    * bug this primitive can have, since every later gate is then wrong too.
+   *
+   * An event the CURRENT state does not declare (none of its own `on` keys,
+   * nor an ancestor's) is a no-op, as it is for `Dialog.send`: XState drops an
+   * unhandled event, the position is answered unchanged, and nothing is
+   * logged — the same for `sendFrom`.
    */
   send?: E;
   /**

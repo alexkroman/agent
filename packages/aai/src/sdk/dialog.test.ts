@@ -187,7 +187,7 @@ describe("tool gating", () => {
     const bare = dialog("bare", machine);
     const gated = bare.tool({ description: "Only at the end", when: "end", execute: () => "ran" });
     const out = await runToolDef(gated, createToolContext());
-    expect(out).toMatchObject({ error: expect.stringContaining("reach end first") });
+    expect(out).toMatchObject({ error: expect.stringContaining("Reach end first.") });
   });
 
   test("the body does NOT run when the gate refuses", async () => {

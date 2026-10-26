@@ -18,7 +18,12 @@
  */
 
 import type { DeepReadonly } from "./deep-readonly.ts";
-import type { DialogSendFromChecked, DialogSendOptions, DialogToolResult } from "./dialog-types.ts";
+import type {
+  DialogSendFromChecked,
+  DialogSendFromGuard,
+  DialogSendOptions,
+  DialogToolResult,
+} from "./dialog-types.ts";
 import type { ToolInputSchema } from "./schema.ts";
 import type {
   RejectThenable,
@@ -71,6 +76,28 @@ export type SlotDraftOf<S extends SessionSlot<string, unknown, unknown>> =
 export type GatedOutput<R> = Promise<
   DialogToolResult<Exclude<Awaited<R>, ToolFailure>> | ToolFailure
 >;
+
+/**
+ * What the UNGATED overloads of {@link SessionSlot.tool} and
+ * {@link SessionSlot.updateTool} say about `dialog`: a message, so the one
+ * line `tsc` prints for a gated def that fits no overload names the rule.
+ *
+ * A call matching no overload is reported against the LAST one, and that is
+ * the ungated overload (the gated one must come first: a zero-parameter
+ * `sendFrom` arrow's return type is cached by whichever overload checks it
+ * first, and only the gated one has the event union to narrow it against).
+ * Its complaint used to be that `dialog` "does not exist in type
+ * `SlotToolDef`", which pointed the author at the wrong field; now the
+ * `dialog` line says that the gated overload refused the def and which
+ * fields to check. A def VARIABLE carrying a dialog is refused by it too,
+ * where a plain `Omit` would have let a non-fresh object match the ungated
+ * overload and lose its envelope.
+ *
+ * @public
+ */
+export type UngatedDef = {
+  readonly dialog?: "this def declares `dialog`, so it is a GATED tool, and the gated overload refused it: one of `when`, `send`, `sendFrom` or `reset` does not fit that dialog, or `report` was declared on `tool`";
+};
 
 /**
  * A named slot of per-session state, created by {@link sessionSlot}.
@@ -209,7 +236,9 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    * runs before the read, `send`/`sendFrom` after a success, and the tool
    * answers the {@link DialogToolResult} envelope exactly as {@link Dialog.tool}
    * does — which is why that overload's output is wrapped and async. A
-   * `require` precondition runs before the body on either overload.
+   * `require` precondition runs before the body on either overload. A
+   * field-name `sendFrom` naming a field that holds no event is refused at
+   * the call ({@link DialogSendFromGuard}).
    *
    * @example
    * ```ts
@@ -231,11 +260,13 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     E extends { type: string } = { type: string },
     K extends string = string,
   >(
-    def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E, K>,
+    def: SlotToolDef<P, DeepReadonly<T>, R> &
+      SlotDialogGate<R, E, K> &
+      NoInfer<DialogSendFromGuard<K, Awaited<R>, E>>,
     options?: DialogSendOptions<Awaited<R>, E, K>,
   ): DialogSendFromChecked<K, Awaited<R>, E, ToolDef<P, GatedOutput<R>>>;
   tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(
-    def: SlotToolDef<P, DeepReadonly<T>, R>,
+    def: SlotToolDef<P, DeepReadonly<T>, R> & UngatedDef,
   ): ToolDef<P, R>;
   /**
    * Define a MUTATING tool over this slot: the body runs inside
@@ -296,16 +327,19 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     E extends { type: string } = { type: string },
     K extends string = string,
   >(
-    def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>,
+    def: SlotPreparedToolDef<P, T, Prep, R, R2> &
+      SlotDialogGate<R2, E, K> &
+      RejectThenable<R> &
+      NoInfer<DialogSendFromGuard<K, Awaited<R2>, E>>,
     options?: DialogSendOptions<R2, E, K>,
-  ): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
+  ): DialogSendFromChecked<K, Awaited<R2>, E, ToolDef<P, GatedOutput<R2>>>;
   updateTool<
     P extends ToolInputSchema | undefined = ToolInputSchema,
     Prep = unknown,
     R = unknown,
     R2 = R,
   >(
-    def: SlotPreparedToolDef<P, T, Prep, R, R2> & RejectThenable<R>,
+    def: SlotPreparedToolDef<P, T, Prep, R, R2> & RejectThenable<R> & UngatedDef,
   ): ToolDef<P, Promise<R2 | ToolFailure>>;
   updateTool<
     P extends ToolInputSchema | undefined = ToolInputSchema,
@@ -314,11 +348,14 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
     E extends { type: string } = { type: string },
     K extends string = string,
   >(
-    def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>,
+    def: SlotUpdateToolDef<P, T, R, R2> &
+      SlotDialogGate<R2, E, K> &
+      RejectThenable<R> &
+      NoInfer<DialogSendFromGuard<K, Awaited<R2>, E>>,
     options?: DialogSendOptions<R2, E, K>,
-  ): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
+  ): DialogSendFromChecked<K, Awaited<R2>, E, ToolDef<P, GatedOutput<R2>>>;
   updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R>(
-    def: SlotUpdateToolDef<P, T, R, R2> & RejectThenable<R>,
+    def: SlotUpdateToolDef<P, T, R, R2> & RejectThenable<R> & UngatedDef,
   ): ToolDef<P, R2 | Extract<R, ToolFailure>>;
   /**
    * An await ahead of a synchronous window, from inside a plain `tool()`: the
@@ -328,7 +365,8 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    * and again right before the window); a {@link ToolFailure} from either ends
    * the transaction as its result, and nothing is stored. `commit` is the
    * window — handed the draft and what `prepare` produced — and its return is
-   * the transaction's.
+   * the transaction's; a {@link ToolFailure} it RETURNS stores nothing either,
+   * like a throw.
    *
    * @example
    * ```ts

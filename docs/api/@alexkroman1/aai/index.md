@@ -9,7 +9,7 @@ The AAI voice-agent SDK — the AUTHORING surface, and only that.
 | the agent | [agent](#agent) — one object; [AgentDef](#agentdef) documents every field and default, [AgentParams](#agentparams) which combinations are legal |
 | a tool | [tool](#tool-2) — but a tool is a FILE: `tools/<name>.ts` default-exporting one IS the tool `<name>`, and `agent({ tools })` is a compile error |
 | session state | [sessionSlot](#sessionslot-1) — a typed named slot; `slot.tool()` reads it, `slot.updateTool()` writes it, `slot.projected` shows it to the browser |
-| conversation order | [dialog](#dialog-2) — a tool declared `when` simply does not run outside those states |
+| conversation order | [dialog](#dialog-3) — a tool declared `when` simply does not run outside those states |
 | work that outlives the call | [workflow](#workflow-3) — journaled, resumable; [workflowApp](#workflowapp) for an agent whose front door is a form |
 | a second tool loop | [speaker](#speaker-1), reached with `ctx.delegate` |
 | who is speaking | [roster](#roster-3) — `speaks: true` entries the session hands the caller between, with `handoff` |
@@ -34,7 +34,7 @@ pipeline on one `ASSEMBLYAI_API_KEY`. Set any subset of `stt`, `llm`, `tts`
 to swap a stage; the rest keep the default.
 
 **Three primitives here run a defined process, and they are not
-interchangeable.** A [dialog](#dialog-2) gates a CONVERSATION — what the agent may
+interchangeable.** A [dialog](#dialog-3) gates a CONVERSATION — what the agent may
 say or do next, across turns. A [procedure](#procedure-2) runs ONE UNIT OF WORK inside
 a single tool call. A [workflow](#workflow-3) runs DURABLY, outliving the session.
 
@@ -1033,7 +1033,7 @@ export const claim = dialog("claim", {
 ##### Remarks
 
 **Three primitives here run a defined process; pick by SCOPE.** A
-[dialog](#dialog-2) gates a CONVERSATION — what the agent may say or do next,
+[dialog](#dialog-3) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
 OF WORK inside a single tool call, never stored. A [workflow](#workflow-3) runs
 DURABLY, outliving the session.
@@ -2008,7 +2008,7 @@ export default tool({
 #### Remarks
 
 **Three primitives here run a defined process; pick by SCOPE.** A
-[dialog](#dialog-2) gates a CONVERSATION — what the agent may say or do next,
+[dialog](#dialog-3) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
 OF WORK inside a single tool call, never stored. A [workflow](#workflow-3) runs
 DURABLY, outliving the session.
@@ -2818,7 +2818,10 @@ A fresh value: a FACTORY, called once per session on first
   access (and again on `reset`), or the plain VALUE, which the slot
   `structuredClone`s on every install so no two sessions share it. A shared
   module-level default therefore no longer needs the
-  `() => structuredClone(DEFAULT)` wrapper — pass `DEFAULT`. A slot whose
+  `() => structuredClone(DEFAULT)` wrapper — pass `DEFAULT`. A plain value
+  a durable slot could not store — a class instance, a `Date`, a `Map`, a
+  function field — is refused HERE, naming the slot and the field, by the
+  same check every store runs. A slot whose
   value IS a function (a virtual slot holding a callback) must use the
   factory form, since a function argument is read as one.
 
@@ -3676,7 +3679,7 @@ under, so this takes no `name`.
 ##### Remarks
 
 **Three primitives here run a defined process; pick by SCOPE.** A
-[dialog](#dialog-2) gates a CONVERSATION — what the agent may say or do next,
+[dialog](#dialog-3) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
 OF WORK inside a single tool call, never stored. A [workflow](#workflow-3) runs
 DURABLY, outliving the session.
@@ -3779,7 +3782,7 @@ under, so this takes no `name`.
 ##### Remarks
 
 **Three primitives here run a defined process; pick by SCOPE.** A
-[dialog](#dialog-2) gates a CONVERSATION — what the agent may say or do next,
+[dialog](#dialog-3) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
 OF WORK inside a single tool call, never stored. A [workflow](#workflow-3) runs
 DURABLY, outliving the session.
@@ -3913,7 +3916,7 @@ under, so this takes no `name`.
 ##### Remarks
 
 **Three primitives here run a defined process; pick by SCOPE.** A
-[dialog](#dialog-2) gates a CONVERSATION — what the agent may say or do next,
+[dialog](#dialog-3) gates a CONVERSATION — what the agent may say or do next,
 across turns, persisted in a session slot. A [procedure](#procedure-2) runs ONE UNIT
 OF WORK inside a single tool call, never stored. A [workflow](#workflow-3) runs
 DURABLY, outliving the session.
@@ -4338,7 +4341,7 @@ SDK is read by the model.
 optional dialogs?: readonly AnyDialog[];
 ```
 
-The dialogs this agent runs — see [dialog](#dialog-2). **Declaring one here is
+The dialogs this agent runs — see [dialog](#dialog-3). **Declaring one here is
 what wires it to the SESSION**: its `@`-prefixed transitions fire (see
 [DialogSessionEventName](#dialogsessioneventname)), its states' `timeout` deadlines are armed,
 and its [DialogVoiceConfig](#dialogvoiceconfig) is applied per state — none of which a
@@ -5273,7 +5276,7 @@ SDK is read by the model.
 optional dialogs?: readonly AnyDialog[];
 ```
 
-The dialogs this agent runs — see [dialog](#dialog-2). **Declaring one here is
+The dialogs this agent runs — see [dialog](#dialog-3). **Declaring one here is
 what wires it to the SESSION**: its `@`-prefixed transitions fire (see
 [DialogSessionEventName](#dialogsessioneventname)), its states' `timeout` deadlines are armed,
 and its [DialogVoiceConfig](#dialogvoiceconfig) is applied per state — none of which a
@@ -7420,7 +7423,7 @@ The tool's name, as the subagent's model called it.
 
 **`Sealed`**
 
-A dialog statechart bound to a session, created by [dialog](#dialog-2).
+A dialog statechart bound to a session, created by [dialog](#dialog-3).
 
 #### Type Parameters
 
@@ -7635,7 +7638,7 @@ gets the transition the state declared.
 ##### tool()
 
 ```ts
-tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K>, options?: DialogSendOptions<R, E, K>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<
+tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>, options?: DialogSendOptions<R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<
   | ToolFailure
 | DialogToolResult<R>>>>;
 ```
@@ -7671,11 +7674,11 @@ A `send`/`sendFrom` in both places is refused at declaration.
 
 ###### def
 
-[`DialogToolDef`](#dialogtooldef)\<`P`, `R`, `E`, `K`\>
+[`DialogToolDef`](#dialogtooldef)\<`P`, `R`, `E`, `K`\> & `NoInfer`\<[`DialogSendFromGuard`](#dialogsendfromguard)\<`K`, `R`, `E`\>\>
 
 ###### options?
 
-[`DialogSendOptions`](#dialogsendoptions)\<`R`, `E`, `K`\>
+[`DialogSendOptions`](#dialogsendoptions)\<`R`, `E`, `K`\> & `NoInfer`\<[`DialogSendFromGuard`](#dialogsendfromguard)\<`K`, `R`, `E`\>\>
 
 ###### Returns
 
@@ -7771,10 +7774,14 @@ optional reset?: true;
 Start the dialog over BEFORE the body runs — for a setup tool (`start_order`,
 `new_claim`) that begins a fresh pass through the conversation.
 
-`when`, if declared, is checked against the position before the reset, and
-the post-body send sees the reset position; the two rarely belong on one
-tool. The initial state's `onEnter` does not fire on a reset, the same as
-on a fresh session.
+`when`, if declared, is checked against the position before the reset.
+The reset itself is applied once every setup stage has passed — after a
+slot tool's `require` and `prepare`, right before the body — so a tool
+refused by its own precondition leaves the conversation where it was.
+The post-body `send`/`sendFrom` is sent to the RESET dialog and is not
+re-checked against `when` (it was declared for the dialog this tool just
+started over, which `when` says nothing about). The initial state's
+`onEnter` does not fire on a reset, the same as on a fresh session.
 
 ##### send?
 
@@ -7789,6 +7796,11 @@ on. Omit both this and `sendFrom` for a tool that reads without advancing.
 that failed did not do the thing, so a dialog that advanced anyway would
 leave the conversation a step ahead of reality — the single most expensive
 bug this primitive can have, since every later gate is then wrong too.
+
+An event the CURRENT state does not declare (none of its own `on` keys,
+nor an ancestor's) is a no-op, as it is for `Dialog.send`: XState drops an
+unhandled event, the position is answered unchanged, and nothing is
+logged — the same for `sendFrom`.
 
 ##### sendFrom?
 
@@ -7926,7 +7938,7 @@ readonly id: string;
 
 **`Input`**
 
-Options for [dialog](#dialog-2).
+Options for [dialog](#dialog-3).
 
 #### Properties
 
@@ -8043,7 +8055,7 @@ The transition the result decides — see [DialogGate.sendFrom](#sendfrom).
 
 **`Input`**
 
-A dialog's shape as a plain state map — the argument to the [dialog](#dialog-2)
+A dialog's shape as a plain state map — the argument to the [dialog](#dialog-3)
 overload that takes no XState machine. See [DialogStateSpec](#dialogstatespec).
 
 #### Properties
@@ -8105,7 +8117,7 @@ explain it. A declared `instruction?: string` makes that a typo the compiler
 catches.
 
 A dialog that needs anything beyond these six passes a machine instead — the
-[dialog](#dialog-2) overload taking one is not going away, and `procedure()` is
+[dialog](#dialog-3) overload taking one is not going away, and `procedure()` is
 where full XState lives.
 
 #### Properties
@@ -8599,10 +8611,14 @@ optional reset?: true;
 Start the dialog over BEFORE the body runs — for a setup tool (`start_order`,
 `new_claim`) that begins a fresh pass through the conversation.
 
-`when`, if declared, is checked against the position before the reset, and
-the post-body send sees the reset position; the two rarely belong on one
-tool. The initial state's `onEnter` does not fire on a reset, the same as
-on a fresh session.
+`when`, if declared, is checked against the position before the reset.
+The reset itself is applied once every setup stage has passed — after a
+slot tool's `require` and `prepare`, right before the body — so a tool
+refused by its own precondition leaves the conversation where it was.
+The post-body `send`/`sendFrom` is sent to the RESET dialog and is not
+re-checked against `when` (it was declared for the dialog this tool just
+started over, which `when` says nothing about). The initial state's
+`onEnter` does not fire on a reset, the same as on a fresh session.
 
 ###### Inherited from
 
@@ -8621,6 +8637,11 @@ on. Omit both this and `sendFrom` for a tool that reads without advancing.
 that failed did not do the thing, so a dialog that advanced anyway would
 leave the conversation a step ahead of reality — the single most expensive
 bug this primitive can have, since every later gate is then wrong too.
+
+An event the CURRENT state does not declare (none of its own `on` keys,
+nor an ancestor's) is a no-op, as it is for `Dialog.send`: XState drops an
+unhandled event, the position is answered unchanged, and nothing is
+logged — the same for `sendFrom`.
 
 ###### Inherited from
 
@@ -11743,7 +11764,7 @@ tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, E ext
   type: string;
 } = {
   type: string;
-}, K extends string = string>(def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E, K>, options?: DialogSendOptions<Awaited<R>, E, K>): DialogSendFromChecked<K, Awaited<R>, E, ToolDef<P, GatedOutput<R>>>;
+}, K extends string = string>(def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E, K> & NoInfer<DialogSendFromGuard<K, Awaited<R>, E>>, options?: DialogSendOptions<Awaited<R>, E, K>): DialogSendFromChecked<K, Awaited<R>, E, ToolDef<P, GatedOutput<R>>>;
 ```
 
 Define a READ-ONLY tool over this slot: `execute` is handed the frozen
@@ -11763,7 +11784,9 @@ covariant, so the tool stays assignable to `ToolDef<ToolInputSchema>`.
 runs before the read, `send`/`sendFrom` after a success, and the tool
 answers the [DialogToolResult](#dialogtoolresult) envelope exactly as [Dialog.tool](#tool)
 does — which is why that overload's output is wrapped and async. A
-`require` precondition runs before the body on either overload.
+`require` precondition runs before the body on either overload. A
+field-name `sendFrom` naming a field that holds no event is refused at
+the call ([DialogSendFromGuard](#dialogsendfromguard)).
 
 ###### Type Parameters
 
@@ -11791,7 +11814,7 @@ does — which is why that overload's output is wrapped and async. A
 
 ###### def
 
-[`SlotToolDef`](#slottooldef)\<`P`, [`DeepReadonly`](#deepreadonly)\<`T`\>, `R`\> & [`SlotDialogGate`](#slotdialoggate)\<`R`, `E`, `K`\>
+[`SlotToolDef`](#slottooldef)\<`P`, [`DeepReadonly`](#deepreadonly)\<`T`\>, `R`\> & [`SlotDialogGate`](#slotdialoggate)\<`R`, `E`, `K`\> & `NoInfer`\<[`DialogSendFromGuard`](#dialogsendfromguard)\<`K`, `Awaited`\<`R`\>, `E`\>\>
 
 ###### options?
 
@@ -11819,7 +11842,7 @@ export default cartSlot.tool({
 ###### Call Signature
 
 ```ts
-tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
+tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R> & UngatedDef): ToolDef<P, R>;
 ```
 
 ###### Type Parameters
@@ -11836,7 +11859,7 @@ tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: 
 
 ###### def
 
-[`SlotToolDef`](#slottooldef)\<`P`, [`DeepReadonly`](#deepreadonly)\<`T`\>, `R`\>
+[`SlotToolDef`](#slottooldef)\<`P`, [`DeepReadonly`](#deepreadonly)\<`T`\>, `R`\> & [`UngatedDef`](#ungateddef)
 
 ###### Returns
 
@@ -11855,7 +11878,8 @@ non-tool form of [SlotPreparedToolDef](#slotpreparedtooldef).
 and again right before the window); a [ToolFailure](#toolfailure) from either ends
 the transaction as its result, and nothing is stored. `commit` is the
 window — handed the draft and what `prepare` produced — and its return is
-the transaction's.
+the transaction's; a [ToolFailure](#toolfailure) it RETURNS stores nothing either,
+like a throw.
 
 ###### Type Parameters
 
@@ -11981,7 +12005,7 @@ updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unkno
   type: string;
 } = {
   type: string;
-}, K extends string = string>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
+}, K extends string = string>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R> & NoInfer<DialogSendFromGuard<K, Awaited<R2>, E>>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, Awaited<R2>, E, ToolDef<P, GatedOutput<R2>>>;
 ```
 
 Define a MUTATING tool over this slot: the body runs inside
@@ -12051,7 +12075,7 @@ error's — the model-facing channel, not the client's.
 
 ###### def
 
-[`SlotPreparedToolDef`](#slotpreparedtooldef)\<`P`, `T`, `Prep`, `R`, `R2`\> & [`SlotDialogGate`](#slotdialoggate)\<`R2`, `E`, `K`\> & `RejectThenable`\<`R`\>
+[`SlotPreparedToolDef`](#slotpreparedtooldef)\<`P`, `T`, `Prep`, `R`, `R2`\> & [`SlotDialogGate`](#slotdialoggate)\<`R2`, `E`, `K`\> & `RejectThenable`\<`R`\> & `NoInfer`\<[`DialogSendFromGuard`](#dialogsendfromguard)\<`K`, `Awaited`\<`R2`\>, `E`\>\>
 
 ###### options?
 
@@ -12059,7 +12083,7 @@ error's — the model-facing channel, not the client's.
 
 ###### Returns
 
-[`DialogSendFromChecked`](#dialogsendfromchecked)\<`K`, `R2`, `E`, [`ToolDef`](#tooldef)\<`P`, [`GatedOutput`](#gatedoutput)\<`R2`\>\>\>
+[`DialogSendFromChecked`](#dialogsendfromchecked)\<`K`, `Awaited`\<`R2`\>, `E`, [`ToolDef`](#tooldef)\<`P`, [`GatedOutput`](#gatedoutput)\<`R2`\>\>\>
 
 ###### Example
 
@@ -12082,7 +12106,7 @@ export default cartSlot.updateTool({
 ###### Call Signature
 
 ```ts
-updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unknown, R = unknown, R2 = R>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & RejectThenable<R>): ToolDef<P, Promise<ToolFailure | R2>>;
+updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unknown, R = unknown, R2 = R>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & RejectThenable<R> & UngatedDef): ToolDef<P, Promise<ToolFailure | R2>>;
 ```
 
 ###### Type Parameters
@@ -12107,7 +12131,7 @@ updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unkno
 
 ###### def
 
-[`SlotPreparedToolDef`](#slotpreparedtooldef)\<`P`, `T`, `Prep`, `R`, `R2`\> & `RejectThenable`\<`R`\>
+[`SlotPreparedToolDef`](#slotpreparedtooldef)\<`P`, `T`, `Prep`, `R`, `R2`\> & `RejectThenable`\<`R`\> & [`UngatedDef`](#ungateddef)
 
 ###### Returns
 
@@ -12120,7 +12144,7 @@ updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown,
   type: string;
 } = {
   type: string;
-}, K extends string = string>(def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
+}, K extends string = string>(def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R> & NoInfer<DialogSendFromGuard<K, Awaited<R2>, E>>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, Awaited<R2>, E, ToolDef<P, GatedOutput<R2>>>;
 ```
 
 ###### Type Parameters
@@ -12153,7 +12177,7 @@ updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown,
 
 ###### def
 
-[`SlotUpdateToolDef`](#slotupdatetooldef)\<`P`, `T`, `R`, `R2`\> & [`SlotDialogGate`](#slotdialoggate)\<`R2`, `E`, `K`\> & `RejectThenable`\<`R`\>
+[`SlotUpdateToolDef`](#slotupdatetooldef)\<`P`, `T`, `R`, `R2`\> & [`SlotDialogGate`](#slotdialoggate)\<`R2`, `E`, `K`\> & `RejectThenable`\<`R`\> & `NoInfer`\<[`DialogSendFromGuard`](#dialogsendfromguard)\<`K`, `Awaited`\<`R2`\>, `E`\>\>
 
 ###### options?
 
@@ -12161,12 +12185,12 @@ updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown,
 
 ###### Returns
 
-[`DialogSendFromChecked`](#dialogsendfromchecked)\<`K`, `R2`, `E`, [`ToolDef`](#tooldef)\<`P`, [`GatedOutput`](#gatedoutput)\<`R2`\>\>\>
+[`DialogSendFromChecked`](#dialogsendfromchecked)\<`K`, `Awaited`\<`R2`\>, `E`, [`ToolDef`](#tooldef)\<`P`, [`GatedOutput`](#gatedoutput)\<`R2`\>\>\>
 
 ###### Call Signature
 
 ```ts
-updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R>(def: SlotUpdateToolDef<P, T, R, R2> & RejectThenable<R>): ToolDef<P, R2 | Extract<R, ToolFailure>>;
+updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R>(def: SlotUpdateToolDef<P, T, R, R2> & RejectThenable<R> & UngatedDef): ToolDef<P, R2 | Extract<R, ToolFailure>>;
 ```
 
 ###### Type Parameters
@@ -12187,7 +12211,7 @@ updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown,
 
 ###### def
 
-[`SlotUpdateToolDef`](#slotupdatetooldef)\<`P`, `T`, `R`, `R2`\> & `RejectThenable`\<`R`\>
+[`SlotUpdateToolDef`](#slotupdatetooldef)\<`P`, `T`, `R`, `R2`\> & `RejectThenable`\<`R`\> & [`UngatedDef`](#ungateddef)
 
 ###### Returns
 
@@ -12322,6 +12346,13 @@ missing. Caps still apply after it, on every path.
 may have left the draft in a shape the hook itself cannot handle, and an
 error thrown from the hook would replace the one that actually explains the
 failure. Nothing is stored in that case either.
+
+**A throw from it on a value the SLOT produced is framed**: on the default
+and on the `empty` frame the error names the slot and the phase ("failed
+on the default", "on the empty frame"), with the hook's own error as its
+`cause`, since a hook written for a populated value is most often tripped
+by the blank the slot made for it. On a caller's own value (`set`, a draft)
+it is the caller's error, unchanged.
 
 **It runs INSIDE the mutation window, so it is synchronous too** — an
 `async` hook is a compile error naming the rule — see `RejectThenable`,
@@ -12651,7 +12682,14 @@ A [SessionSlot.tool](#tool-1) or [SessionSlot.updateTool](#updatetool) declaring
 refusal before, the transition and the `{ ...position, result }` envelope
 after, nothing sent on a [ToolFailure](#toolfailure) — around its own read or update
 window. `E` is read from the dialog handle alone (`NoInfer` on the gate's
-own fields), so a misspelled event is reported at `send`, not at `dialog`.
+own fields): with `send: E` an inference site too, a misspelled event was
+simply inferred INTO `E`, and `Dialog<E>` — whose every `E` sits in a
+bivariant method parameter — still accepted the handle.
+
+**A misuse is still reported on the `dialog:` line**, not at `send`: an
+overload that fails every candidate is reported against the LAST one, the
+ungated overload, where `dialog` is the first thing wrong. What that line
+says is [UngatedDef](#ungateddef)'s message, which names the gate fields to check.
 
 #### Extends
 
@@ -12697,10 +12735,14 @@ optional reset?: true;
 Start the dialog over BEFORE the body runs — for a setup tool (`start_order`,
 `new_claim`) that begins a fresh pass through the conversation.
 
-`when`, if declared, is checked against the position before the reset, and
-the post-body send sees the reset position; the two rarely belong on one
-tool. The initial state's `onEnter` does not fire on a reset, the same as
-on a fresh session.
+`when`, if declared, is checked against the position before the reset.
+The reset itself is applied once every setup stage has passed — after a
+slot tool's `require` and `prepare`, right before the body — so a tool
+refused by its own precondition leaves the conversation where it was.
+The post-body `send`/`sendFrom` is sent to the RESET dialog and is not
+re-checked against `when` (it was declared for the dialog this tool just
+started over, which `when` says nothing about). The initial state's
+`onEnter` does not fire on a reset, the same as on a fresh session.
 
 ###### Inherited from
 
@@ -12720,6 +12762,11 @@ that failed did not do the thing, so a dialog that advanced anyway would
 leave the conversation a step ahead of reality — the single most expensive
 bug this primitive can have, since every later gate is then wrong too.
 
+An event the CURRENT state does not declare (none of its own `on` keys,
+nor an ancestor's) is a no-op, as it is for `Dialog.send`: XState drops an
+unhandled event, the position is answered unchanged, and nothing is
+logged — the same for `sendFrom`.
+
 ###### Inherited from
 
 [`DialogGate`](#dialoggate).[`send`](#send-1)
@@ -12727,44 +12774,29 @@ bug this primitive can have, since every later gate is then wrong too.
 ##### sendFrom?
 
 ```ts
-optional sendFrom?: DialogSendFrom<Awaited<R>, NoInfer<E>, K>;
+optional sendFrom?: DialogSendFrom<Awaited<R>, NoInfer<E> & {
+  type: EventNameOf<NoInfer<E>>;
+}, K>;
 ```
 
-The event to send, decided by the RESULT — for a tool whose outcome picks
-the transition. Return `undefined` to stay put.
+[DialogGate.sendFrom](#sendfrom), with the function form's return spelled so a
+plain `{ type: "QUOTED" }` literal keeps its literal.
 
-Separate from `send` rather than a union with it because a union of an
-event and a function of one cannot be narrowed by `typeof`: an event type is
-generic here, so TypeScript cannot rule out that it is itself callable, and
-the check would need a cast to compile. Two fields are also the clearer
-authoring surface — the static case stays a literal. Declaring both is an
-error.
+On [Dialog.tool](#tool) `E` is fixed by the handle, so the arrow's
+contextual return type is the concrete union and the literal narrows.
+Here `E` is a type parameter of the SAME call, and `NoInfer<E>`'s
+apparent type is its constraint, `{ type: string }` — so a bare
+`() => ({ type: "QUOTED" })` inferred `{ type: string }` (a zero-parameter
+arrow is checked before `dialog` has supplied `E`, and its return type is
+cached), failed the gated overload, and the author was told `dialog` does
+not exist on `SlotToolDef`. Intersecting `{ type: EventNameOf<NoInfer<E>> }`
+puts an INSTANTIABLE type (an indexed access over the type parameter,
+constrained to `string`) in the `type` property's contextual position,
+which is a literal context; once `E` is known the intersection is `E`
+itself, so a payload an event declares is still required and
+`{ type: "TYPO" }` is still refused.
 
-**`NoInfer` is what makes the parameter mean anything.** `R` is inferred
-from `execute`, and a bare `(result: R) => …` here puts `R` in a SECOND
-inference position — so which one wins is decided by the object literal's
-source order. A `sendFrom` written ABOVE `execute` inferred `R = unknown`
-from its own parameter, and then compiled: the narrowing an author wrote it
-for silently stopped meaning anything, with no error anywhere and no way to
-tell the two orderings apart by reading either one. `NoInfer<R>` takes this
-position out of the running, so `execute` decides `R` in both orderings and
-a typo'd property is a `TS2551` in both.
-
-**`Exclude<…, ToolFailure>` is the other half, and it was already true at
-run time**: the failure check returns before `sendFrom` is reached, so a
-failure is never handed to it. Saying so in the type is what lets a body
-declared `Order | ToolFailure` be narrowed here without the author
-re-checking a case that cannot arrive.
-
-**The string form reads the event off the result** — `sendFrom: "next"`
-sends `{ type: result.next }`, or stays put when the field is `undefined`.
-Typed as a key whose value is `E["type"] | undefined`
-([DialogSendFromKey](#dialogsendfromkey)), it needs no callback and so no ordering: an
-inline `(result) => …` written ABOVE an inline-arrow `execute` still sees
-`unknown` (`TS18046`), and the field name does not. The other way around
-that rule is the second argument, [DialogSendOptions](#dialogsendoptions).
-
-###### Inherited from
+###### Overrides
 
 [`DialogGate`](#dialoggate).[`sendFrom`](#sendfrom)
 
@@ -12895,6 +12927,11 @@ The async half: handed the args and the FROZEN value (no draft exists yet),
 it awaits what the body needs — a model call, an HTTP lookup — and answers
 it, or a [ToolFailure](#toolfailure) that becomes the tool's result with no window
 opened. `require`, if declared, is re-run on the fresh value afterwards.
+
+The failure is read STRUCTURALLY (`isToolFailure`): any record with a
+string `error` field is one, so a fetched payload that happens to carry
+`error: ""` ends the tool here. Rename or strip that field before
+answering it.
 
 ###### Parameters
 
@@ -13090,6 +13127,13 @@ derived field `after` recalculates is not on the draft when the body
 returns. Reporting from the stored value is the only reading that cannot
 disagree with the next `get`. A `sendFrom` on a gated tool sees the
 reported value.
+
+**It runs INSIDE the window**, on the value about to be stored, so a
+[ToolFailure](#toolfailure) it returns — or a throw — stores nothing, like the
+body's own; it may not write the slot. A `report` that answers a promise
+is settled after the window closed, and a failure it then resolves to
+cannot discard. It reads the value BEFORE the dialog's `send`, so what an
+`onEnter` hook writes to this slot during the move is not in `stored`.
 
 **Skipped when the body returned a [ToolFailure](#toolfailure)**, which is answered
 unchanged: a failure has no partial result to complete.
@@ -13500,7 +13544,9 @@ What `commit` returns.
 commit(draft: T, prepared: Prep): R;
 ```
 
-The synchronous window, handed the draft and what `prepare` produced.
+The synchronous window, handed the draft and what `prepare` produced. A
+[ToolFailure](#toolfailure) it returns stores nothing, like a throw — see
+[SlotUpdateToolDef.execute](#execute-3).
 
 ###### Parameters
 
@@ -13602,12 +13648,19 @@ What the tool answers after `report`; `R` without one.
 ```ts
 execute(
    args: InferSchemaOutput<P>, 
-   value: T, 
+   draft: T, 
    ctx: ToolContext
 ): R;
 ```
 
-The tool body, handed this session's slot value alongside the usual args.
+The mutation body: handed the DRAFT, stored when it returns.
+
+**A [ToolFailure](#toolfailure) it RETURNS stores nothing**, exactly as a throw
+does: the draft's mutations are discarded, nothing is pushed to the
+client, and the failure is the tool's whole result. The gate's rule is
+that a failed tool did not do the thing, and the slot keeps the same
+rule — a body that pushed an item and then answered `toolFailure(…)` has
+declined, not half-succeeded.
 
 ###### Parameters
 
@@ -13615,7 +13668,7 @@ The tool body, handed this session's slot value alongside the usual args.
 
 [`InferSchemaOutput`](#inferschemaoutput)\<`P`\>
 
-###### value
+###### draft
 
 `T`
 
@@ -13627,7 +13680,7 @@ The tool body, handed this session's slot value alongside the usual args.
 
 `R`
 
-###### Inherited from
+###### Overrides
 
 [`SlotToolDef`](#slottooldef).[`execute`](#execute-2)
 
@@ -13797,6 +13850,13 @@ derived field `after` recalculates is not on the draft when the body
 returns. Reporting from the stored value is the only reading that cannot
 disagree with the next `get`. A `sendFrom` on a gated tool sees the
 reported value.
+
+**It runs INSIDE the window**, on the value about to be stored, so a
+[ToolFailure](#toolfailure) it returns — or a throw — stores nothing, like the
+body's own; it may not write the slot. A `report` that answers a promise
+is settled after the window closed, and a failure it then resolves to
+cannot discard. It reads the value BEFORE the dialog's `send`, so what an
+`onEnter` hook writes to this slot during the move is not in `stored`.
 
 **Skipped when the body returned a [ToolFailure](#toolfailure)**, which is answered
 unchanged: a failure has no partial result to complete.
@@ -16148,8 +16208,11 @@ arm) holding an event of `E`, in which case [DialogSendFromMisuse](#dialogsendfr
 was written) is the function form, or none, and passes through.
 
 In RETURN position for the reason [DialogSendFrom](#dialogsendfrom) gives: a check
-intersected into the parameter type is a conditional over `R`, which stops
-`R` being inferred from a context-sensitive `execute` at all.
+intersected into the parameter type is a conditional over `R`, which is
+resolved for the contextual type before a context-sensitive `execute` has
+settled `R`. [DialogSendFromGuard](#dialogsendfromguard) is the parameter-position half
+that gets around it, and is what makes the misuse fail at the CALL; this
+stays as the type the failed call still reads as.
 
 #### Type Parameters
 
@@ -16168,6 +16231,64 @@ intersected into the parameter type is a conditional over `R`, which stops
 ##### T
 
 `T`
+
+***
+
+### DialogSendFromGuard
+
+```ts
+type DialogSendFromGuard<K extends string, R, E> = string extends K ? unknown : unknown extends R ? unknown : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? unknown : {
+  sendFrom: DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+};
+```
+
+The call-site half of [DialogSendFromChecked](#dialogsendfromchecked): `unknown` (no
+constraint) unless the field-name `sendFrom` written as `K` names no field
+of the success result holding an event of `E`, in which case
+`{ sendFrom: DialogSendFromMisuse }` — which the literal `"count"` cannot
+satisfy, so the CALL fails on the `sendFrom` line.
+
+Intersected into the def (and the second argument) of every gated tool
+factory, always under `NoInfer`. The return-position check alone only bit
+once the misuse type was assigned somewhere that wanted a `ToolDef`, and a
+`tools/<name>.ts` default export never is: `aai typecheck` is plain `tsc`
+over an untyped `AgentDef`, so `sendFrom: "count"` compiled and threw on
+the first call.
+
+Two arms keep it inert while `R` is still being inferred, which is what
+[DialogSendFromChecked](#dialogsendfromchecked)'s doc meant by a parameter-position check
+stopping inference. The contextual type of the `sendFrom` property is
+computed BEFORE a context-sensitive `execute` (unannotated parameters) has
+settled `R`, with `R` read as `unknown`; a conditional that resolved to the
+misuse arm then would intersect `never` into that contextual type and widen
+the literal `"next"` to `string`, failing every field-name `sendFrom` on
+such a body. `unknown extends R` answers `unknown` for that pass, and the
+applicability check that follows inference sees the settled `R`. The
+`NoInfer` is the other half: a string literal inferred against the `keyof`
+inside [DialogSendFromKey](#dialogsendfromkey) is an inference site for `R` (TypeScript's
+`LiteralKeyof` priority), and without it `R` collected an empty-object
+candidate from the misuse arm.
+
+#### Type Parameters
+
+##### K
+
+`K` *extends* `string`
+
+The literal the field-name form was written as; `string`
+  when the function form (or nothing) was.
+
+##### R
+
+`R`
+
+What the tool's `execute` returns, failure arm included.
+
+##### E
+
+`E`
+
+The machine's event union.
 
 ***
 
@@ -20064,6 +20185,39 @@ The known modes are written INLINE rather than as an exported closed
 `KnownTurnDetectionMode` half: inline they are only the autocomplete of an
 open type, so a mode added here is a compatible change, where a published
 closed union that grows is not assignable back to the one it grew from.
+
+***
+
+### UngatedDef
+
+```ts
+type UngatedDef = {
+  dialog?: "this def declares `dialog`, so it is a GATED tool, and the gated overload refused it: one of `when`, `send`, `sendFrom` or `reset` does not fit that dialog, or `report` was declared on `tool`";
+};
+```
+
+What the UNGATED overloads of [SessionSlot.tool](#tool-1) and
+[SessionSlot.updateTool](#updatetool) say about `dialog`: a message, so the one
+line `tsc` prints for a gated def that fits no overload names the rule.
+
+A call matching no overload is reported against the LAST one, and that is
+the ungated overload (the gated one must come first: a zero-parameter
+`sendFrom` arrow's return type is cached by whichever overload checks it
+first, and only the gated one has the event union to narrow it against).
+Its complaint used to be that `dialog` "does not exist in type
+`SlotToolDef`", which pointed the author at the wrong field; now the
+`dialog` line says that the gated overload refused the def and which
+fields to check. A def VARIABLE carrying a dialog is refused by it too,
+where a plain `Omit` would have let a non-fresh object match the ungated
+overload and lose its envelope.
+
+#### Properties
+
+##### dialog?
+
+```ts
+readonly optional dialog?: "this def declares `dialog`, so it is a GATED tool, and the gated overload refused it: one of `when`, `send`, `sendFrom` or `reset` does not fit that dialog, or `report` was declared on `tool`";
+```
 
 ***
 

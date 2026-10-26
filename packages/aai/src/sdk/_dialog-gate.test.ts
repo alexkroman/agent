@@ -152,6 +152,35 @@ describe("`reset: true`", () => {
     claim.send(ctx, { type: "VERIFIED" });
     expect(await runToolDef(restart, ctx)).toMatchObject({ state: "verifying", result: "fresh" });
   });
+
+  test("the `send` was declared for the RESET dialog, so `when` is not re-checked against it", async () => {
+    // `when: "quoting"` excludes the initial state, and the gate used to
+    // re-check it on the post-reset position before sending: the event was
+    // silently dropped and the tool answered `verifying` with no symptom.
+    const claim = claimFlow();
+    const ctx = createToolContext();
+    claim.send(ctx, { type: "VERIFIED" });
+    const restart = claim.tool({
+      description: "Start over from quoting, verified already",
+      when: "quoting",
+      reset: true,
+      send: { type: "VERIFIED" },
+      execute: () => "fresh",
+    });
+    expect(await runToolDef(restart, ctx)).toMatchObject({ state: "quoting", result: "fresh" });
+    expect(claim.position(ctx).state).toBe("quoting");
+  });
+
+  test("a refusal text with no state instruction is a sentence", async () => {
+    const bare = dialog("bare", {
+      initial: "start",
+      states: { start: { on: { GO: "end" } }, end: { final: true } },
+    });
+    const gated = bare.tool({ description: "At the end", when: "end", execute: () => 1 });
+    expect(await runToolDef(gated, createToolContext())).toMatchObject({
+      error: 'Not available yet: this conversation is at "start". Reach end first.',
+    });
+  });
 });
 
 describe("`sendFrom` as a field name", () => {
@@ -334,6 +363,25 @@ describe("`onEnter`", () => {
     });
     expect(() => flow.send(ctx, { type: "GO" })).toThrow("not ready");
     expect(flow.position(ctx).state).toBe("a");
+  });
+
+  test("a hook that sends to its OWN dialog is refused by name, and the move is discarded", () => {
+    const ctx = createToolContext();
+    const flow = dialog("self-send", {
+      initial: "a",
+      states: {
+        a: { on: { GO: "b" } },
+        b: { onEnter: (c) => flow.send(c, { type: "ON" }), on: { ON: "c" } },
+        c: { final: true },
+      },
+    });
+    // Named for what it is — not the slot's set/reset/update message.
+    expect(() => flow.send(ctx, { type: "GO" })).toThrow(
+      /onEnter hook of dialog "self-send" sent \{ type: "ON" \} to its own dialog/,
+    );
+    expect(flow.position(ctx).state).toBe("a");
+    // The refusal is per window: the next send is an ordinary one.
+    expect(() => flow.send(ctx, { type: "GO" })).toThrow(/its own dialog/);
   });
 
   test("the snapshot stays plain JSON — the hook is not in it", () => {

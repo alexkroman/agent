@@ -16,12 +16,7 @@
  * @module
  */
 
-import {
-  INSTRUCTION_KEY,
-  instructionOf,
-  safeJsonParse,
-  stripInstruction,
-} from "@alexkroman1/aai/utils";
+import { INSTRUCTION_KEY, isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 
 /**
  * What a result's instruction is prefixed with in the model's copy. Its own
@@ -47,14 +42,23 @@ export type SplitResult = {
 };
 
 /**
- * Take the reserved `$instruction` key out of a result string.
+ * Take the reserved `$instruction` key out of a result string — at EVERY
+ * depth, with the sentences joined into the one instruction.
  *
- * A result that is not JSON, not a record, or carries no instruction comes
- * back as it was, by identity — an ordinary tool's result is untouched, and
- * never parsed: this runs on EVERY tool result, ahead of a second parse in
+ * A result that is not JSON, or carries no instruction, comes back as it
+ * was, by identity — an ordinary tool's result is untouched, and never
+ * parsed: this runs on EVERY tool result, ahead of a second parse in
  * `compactRecordsForModel`, so a result without the key's spelling is let
  * through on a substring test alone. `parse` is a seam for the spec that
  * pins that; every caller takes the default.
+ *
+ * Below the top level too, because that is where the key ends up when a body
+ * answers a LIST of `withInstruction` rows, or nests one under a field: the
+ * key is reserved by its spelling, not by its position, and left in place it
+ * reached the page as data and the model as a `$instruction` COLUMN of the
+ * rows table rather than as the `[instruction]` line. The sentences are
+ * joined in encounter order (depth-first, a record's own key before its
+ * fields), once each, so three rows carrying the same sentence instruct once.
  */
 export function splitInstruction(
   raw: string,
@@ -62,9 +66,30 @@ export function splitInstruction(
 ): SplitResult {
   if (!raw.includes(INSTRUCTION_LITERAL)) return { result: raw };
   const parsed = parse(raw);
-  const instruction = instructionOf(parsed);
-  if (instruction === undefined) return { result: raw };
-  return { result: JSON.stringify(stripInstruction(parsed)), instruction };
+  const sentences: string[] = [];
+  const stripped = stripDeep(parsed, sentences);
+  if (sentences.length === 0) return { result: raw };
+  return { result: JSON.stringify(stripped), instruction: [...new Set(sentences)].join(" ") };
+}
+
+/**
+ * `value` with every string-valued `$instruction` taken out, the sentences
+ * pushed onto `sentences` in encounter order. Rebuilt rather than patched:
+ * the caller re-serializes it, so identity buys nothing.
+ */
+function stripDeep(value: unknown, sentences: string[]): unknown {
+  if (Array.isArray(value)) return value.map((element) => stripDeep(element, sentences));
+  if (!isRecord(value)) return value;
+  const { [INSTRUCTION_KEY]: instruction, ...rest } = value;
+  // A non-string under the key is not an instruction (`instructionOf` reads
+  // it the same way): kept, as a tool's own data.
+  const own = typeof instruction === "string";
+  if (own) sentences.push(instruction);
+  const out: Record<string, unknown> = {};
+  for (const [key, property] of Object.entries(own ? rest : value)) {
+    out[key] = stripDeep(property, sentences);
+  }
+  return out;
 }
 
 /** The model's copy: the shaped result, then the instruction under its label. */

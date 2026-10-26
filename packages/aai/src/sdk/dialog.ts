@@ -116,6 +116,7 @@ export type {
   DialogPosition,
   DialogSendFrom,
   DialogSendFromChecked,
+  DialogSendFromGuard,
   DialogSendFromKey,
   DialogSendFromMisuse,
   DialogSendOptions,
@@ -380,6 +381,9 @@ export function dialog(
     omitUndefined({ durable: options.durable }),
   );
 
+  /** Sessions with a `send` window open right now, for the hook refusal in `send`. */
+  const sending = new Set<string>();
+
   /** Read the position without writing anything. */
   const position = (ctx: SlotHolder): DialogPosition =>
     withActor(readState(slot.get(ctx)), positionOf);
@@ -397,20 +401,34 @@ export function dialog(
    * discards the move along with its own effects on the stored value. A
    * restored snapshot runs no entry action, so nothing re-fires on a read.
    */
-  const send = (ctx: SlotHolder, event: DialogEventOf): DialogPosition =>
-    slot.update(ctx, (draft) => {
-      const entered: string[] = [];
-      const actor = actorFor(draft, entered);
-      try {
-        actor.send(event);
-        draft.snapshot = actor.getPersistedSnapshot();
-        const at = positionOf(actor);
-        for (const path of entered) hooks.get(path)?.(ctx);
-        return at;
-      } finally {
-        actor.stop();
-      }
-    });
+  const send = (ctx: SlotHolder, event: DialogEventOf): DialogPosition => {
+    // A hook that sends to the dialog it is a hook OF would hit the slot's
+    // own nested-window refusal, whose message talks about set/reset/update
+    // and never mentions `send`. Named here, where the rule is the dialog's.
+    if (sending.has(ctx.sessionId)) {
+      throw new Error(
+        `An onEnter hook of dialog "${key}" sent { type: "${event.type}" } to its own dialog, while the move that entered the state is still being stored. A hook may write other slots and other dialogs; the next move of this one belongs on the tool that makes it (send/sendFrom), or on the state's own timeout.`,
+      );
+    }
+    sending.add(ctx.sessionId);
+    try {
+      return slot.update(ctx, (draft) => {
+        const entered: string[] = [];
+        const actor = actorFor(draft, entered);
+        try {
+          actor.send(event);
+          draft.snapshot = actor.getPersistedSnapshot();
+          const at = positionOf(actor);
+          for (const path of entered) hooks.get(path)?.(ctx);
+          return at;
+        } finally {
+          actor.stop();
+        }
+      });
+    } finally {
+      sending.delete(ctx.sessionId);
+    }
+  };
 
   const matches = (ctx: SlotHolder, state: string): boolean =>
     withActor(readState(slot.get(ctx)), (a) => a.getSnapshot().matches(state));
@@ -504,12 +522,13 @@ export function dialog(
           // Read BEFORE the body runs — what the caller's turn is allowed to do.
           const refused = gate.refuse(ctx);
           if (refused) return refused;
+          gate.enter(ctx);
           // ANNOTATED rather than inferred: `await` on `R | ToolFailure |
           // Promise<R | ToolFailure>` yields `Awaited<R> | ToolFailure`, and
           // `Awaited<R>` is not the `R` the envelope promises. The annotation
           // settles that once, where the alternative is a cast at the one call.
           const result: R | ToolFailure = await execute(args, ctx);
-          return gate.settle(ctx, result);
+          return gate.settle(ctx, result, gate.decide(result));
         },
       };
       return minted;

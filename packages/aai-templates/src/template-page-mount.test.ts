@@ -97,14 +97,19 @@ function pageKind(name: string, def: { mode?: string; telephony?: unknown } | un
 }
 
 beforeAll(async () => {
-  await Promise.all(
-    Object.entries(agentModules).map(async ([path, load]) => {
-      const mod = (await load()) as { default?: { mode?: string; telephony?: unknown } };
-      const name = path.split("/")[2] ?? "";
-      // Absent reads as "voice" everywhere else, so it reads that way here.
-      agentPages.set(path, pageKind(name, mod.default));
-    }),
-  );
+  // ONE AT A TIME, not `Promise.all`: every template's `agent()` collects the
+  // `sync: true` slots registered in this file's one SDK instance that no def
+  // has claimed yet (`_sync-registry.ts`), and three templates key a synced
+  // slot "game". Loaded concurrently, two of them could register before
+  // either agent ran, and whichever `agent()` came first refused its own
+  // `syncState` for projecting "game" twice — a race in this spec, not in
+  // the templates, which each bundle alone.
+  for (const [path, load] of Object.entries(agentModules)) {
+    const mod = (await load()) as { default?: { mode?: string; telephony?: unknown } };
+    const name = path.split("/")[2] ?? "";
+    // Absent reads as "voice" everywhere else, so it reads that way here.
+    agentPages.set(path, pageKind(name, mod.default));
+  }
 }, 60_000);
 
 /** The `page` a template resolved to, or a failure naming the template. */

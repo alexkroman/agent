@@ -98,6 +98,89 @@ describe("a gated slot tool", () => {
     expect(flow.position(ctx).state).toBe("shopping");
   });
 
+  test("a RETURNED failure stores nothing, gated or not — the draft's mutations are discarded", async () => {
+    // The gate's rule is that a failed tool did not do the thing; the slot
+    // used to store the draft anyway, so the page showed what the model was
+    // told had failed.
+    const cartSlot = sessionSlot("cart", emptyCart);
+    const flow = checkoutFlow();
+    const gated = cartSlot.updateTool({
+      description: "Mutate, then decline",
+      dialog: flow,
+      send: { type: "QUOTED" },
+      execute: (_args, cart) => {
+        cart.items.push("mutated");
+        return toolFailure("declined");
+      },
+    });
+    const plain = cartSlot.updateTool({
+      description: "Mutate, then decline, ungated",
+      execute: (_args, cart) => {
+        cart.items.push("mutated");
+        return toolFailure("declined");
+      },
+    });
+    const ctx = createToolContext();
+    expect(await runToolDef(gated, ctx)).toEqual({ error: "declined" });
+    expect(cartSlot.get(ctx).items).toEqual([]);
+    expect(plain.execute({}, ctx)).toEqual({ error: "declined" });
+    expect(cartSlot.get(ctx).items).toEqual([]);
+    expect(flow.position(ctx).state).toBe("shopping");
+  });
+
+  test("`reset` is applied after `require` and `prepare` have passed, so a failed setup tool does not restart the dialog", async () => {
+    const cartSlot = sessionSlot("cart", emptyCart);
+    const flow = checkoutFlow();
+    const ctx = createToolContext();
+    flow.send(ctx, { type: "QUOTED" });
+    const required = cartSlot.updateTool({
+      description: "Restart, requiring",
+      dialog: flow,
+      reset: true,
+      require: () => toolFailure("nope"),
+      execute: () => "fresh",
+    });
+    expect(await runToolDef(required, ctx)).toEqual({ error: "nope" });
+    expect(flow.position(ctx).state).toBe("paying");
+    const prepared = cartSlot.updateTool({
+      description: "Restart, preparing",
+      dialog: flow,
+      reset: true,
+      prepare: async () => toolFailure("not yet"),
+      execute: () => "fresh",
+    });
+    expect(await runToolDef(prepared, ctx)).toEqual({ error: "not yet" });
+    expect(flow.position(ctx).state).toBe("paying");
+    // Once they pass, the reset precedes the window: the body sees the start.
+    const restart = cartSlot.updateTool({
+      description: "Restart",
+      dialog: flow,
+      reset: true,
+      prepare: async () => 1,
+      execute: (_args, _cart, _n, c) => flow.position(c).state,
+    });
+    expect(await runToolDef(restart, ctx)).toMatchObject({ state: "shopping", result: "shopping" });
+  });
+
+  test("a field-name `sendFrom` whose field holds no event name is refused INSIDE the window, storing nothing", async () => {
+    const cartSlot = sessionSlot("cart", emptyCart);
+    const flow = checkoutFlow();
+    const add = cartSlot.updateTool({
+      description: "Add",
+      dialog: flow,
+      sendFrom: "next",
+      // The erased shape an untyped caller reaches the gate with.
+      execute: (_args, cart): { next?: "QUOTED" } => {
+        cart.items.push("a");
+        return JSON.parse('{"next":42}');
+      },
+    });
+    const ctx = createToolContext();
+    await expect(runToolDef(add, ctx)).rejects.toThrow(/"next" field holds number/);
+    expect(cartSlot.get(ctx).items).toEqual([]);
+    expect(flow.position(ctx).state).toBe("shopping");
+  });
+
   test("`sendFrom` — callback, field name, or second argument — decides the transition", async () => {
     const cartSlot = sessionSlot("cart", emptyCart);
     const flow = checkoutFlow();
@@ -362,6 +445,57 @@ describe("`report`", () => {
     expect(report).not.toHaveBeenCalled();
   });
 
+  test("runs INSIDE the window: a failure it returns, or a throw, stores nothing", () => {
+    const cartSlot = sessionSlot("cart", emptyCart);
+    const declined = cartSlot.updateTool({
+      description: "Add, then decline in report",
+      execute: (_args, cart) => {
+        cart.items.push("a");
+        return { added: "a" };
+      },
+      report: () => toolFailure("declined"),
+    });
+    const thrown = cartSlot.updateTool({
+      description: "Add, then throw in report",
+      execute: (_args, cart) => {
+        cart.items.push("a");
+        return { added: "a" };
+      },
+      report: () => {
+        throw new Error("boom");
+      },
+    });
+    const ctx = createToolContext();
+    expect(declined.execute({}, ctx)).toEqual({ error: "declined" });
+    expect(cartSlot.get(ctx).items).toEqual([]);
+    expect(() => thrown.execute({}, ctx)).toThrow("boom");
+    expect(cartSlot.get(ctx).items).toEqual([]);
+  });
+
+  test("a `report` answering a promise is settled after the window, and a gated `sendFrom` reads it", async () => {
+    const cartSlot = sessionSlot("cart", emptyCart);
+    const flow = checkoutFlow();
+    const add = cartSlot.updateTool({
+      description: "Add, reported later",
+      dialog: flow,
+      sendFrom: "next",
+      execute: (_args, cart) => {
+        cart.items.push("a");
+        return { added: "a" };
+      },
+      report: async (stored, partial): Promise<{ added: string; next: "QUOTED" | undefined }> => ({
+        ...partial,
+        next: stored.items.length > 0 ? "QUOTED" : undefined,
+      }),
+    });
+    const ctx = createToolContext();
+    expect(await runToolDef(add, ctx)).toMatchObject({
+      state: "paying",
+      result: { added: "a", next: "QUOTED" },
+    });
+    expect(cartSlot.get(ctx).items).toEqual(["a"]);
+  });
+
   test("`sendFrom` sees the reported value", async () => {
     const cartSlot = sessionSlot("cart", emptyCart);
     const flow = checkoutFlow();
@@ -436,6 +570,20 @@ describe("`transact`", () => {
     });
     gate.resolve();
     expect(await call).toEqual({ error: "quoted" });
+  });
+
+  test("a failure RETURNED from `commit` stores nothing, like a throw", async () => {
+    const cartSlot = sessionSlot("cart", emptyCart);
+    const ctx = createToolContext();
+    const result = await cartSlot.transact(ctx, {
+      prepare: async () => 1,
+      commit: (cart) => {
+        cart.items.push("mutated");
+        return toolFailure("declined");
+      },
+    });
+    expect(result).toEqual({ error: "declined" });
+    expect(cartSlot.get(ctx).items).toEqual([]);
   });
 
   test("the window is synchronous", async () => {
