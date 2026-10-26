@@ -185,9 +185,12 @@ export function composio<K extends string = "default">(
     if (held !== undefined) return held;
     configOf(kind);
     // Without the caller's signal — see the module doc.
-    const id = createSession({ env: ctx.env }, user, kind);
+    return remember(key, createSession({ env: ctx.env }, user, kind));
+  }
+
+  /** Hold `id` under `key` until it fails: a failure is not remembered, so the next call tries again. */
+  function remember(key: string, id: Promise<string>): Promise<string> {
     const release = sessions.claim(key, id);
-    // A failure is not remembered: the next call tries again.
     id.catch(() => release());
     return id;
   }
@@ -211,10 +214,18 @@ export function composio<K extends string = "default">(
         throw err;
       }
       // Only the caller still holding the lost id forgets it: a concurrent
-      // caller that already remade the session must not have it deleted.
+      // caller that already remade the session must not have it deleted. The
+      // remake is CLAIMED before the first await, so a concurrent caller that
+      // lost the same id joins it — with the entry merely dropped, that caller
+      // made its own session from a store whose delete had not landed yet,
+      // read the lost id back, and cached it again for both of them.
       if (sessions.owns(key, held)) {
-        sessions.delete(key);
-        await store.delete(user, kind, { env: ctx.env });
+        void remember(
+          key,
+          Promise.resolve()
+            .then(() => store.delete(user, kind, { env: ctx.env }))
+            .then(() => createSession({ env: ctx.env }, user, kind)),
+        );
       }
       const fresh = await sessionId(ctx, user, kind);
       return await api<T>(ctx, method, `/tool_router/session/${enc(fresh)}${path}`, body);
