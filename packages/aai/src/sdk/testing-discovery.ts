@@ -43,7 +43,6 @@
  * different hat. `import.meta.glob` keeps every module in one graph.
  */
 
-import { recordToolNames } from "./_testing-tool-names.ts";
 import type { AgentSystemPrompt } from "./agent-instructions.ts";
 import { withWorkflows, workflowRegistry } from "./manifest-workflows.ts";
 import { withSystemPrompt } from "./system-prompt-file.ts";
@@ -72,17 +71,15 @@ import { type ToolModules, toolRegistry, withTools } from "./tool-registry.ts";
  * {@link runTool} next door, and it hands back the def it was given — so the
  * caller keeps the type it passed in.
  *
- * It also RECORDS each def's name (`_testing-tool-names.ts`): this is the one
- * step that pairs a file's default export with the name the model calls, and a
- * reader handed the def later (`toolNameOf`, the eval's `toolResultIn(calls,
- * def)`) has nowhere else to learn it.
+ * `withTools` is also what RECORDS each def's name (`_testing-tool-names.ts`),
+ * pairing a file's default export with the name the model calls, so a reader
+ * handed the def later (`toolNameOf`, the eval's `toolResultIn(calls, def)`)
+ * can learn it.
  *
  * @internal
  */
 export function withDiscoveredTools<D extends ToolBearingAgent>(def: D, modules: ToolModules): D {
-  const registry = toolRegistry(modules);
-  recordToolNames(registry);
-  return withTools(def, registry);
+  return withTools(def, toolRegistry(modules));
 }
 
 /**

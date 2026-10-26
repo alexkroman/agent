@@ -15,12 +15,15 @@
  * `aai-evals` for a case that must profile rather than bisect — and reads the
  * facts from here.
  *
- * **Every reader that takes a SCHEMA takes it because the alternative is a cast,
+ * **Every reader is TYPED by what it reads, because the alternative is a cast,
  * and a cast is silent exactly when the thing it describes changed shape** —
- * which is the regression an eval exists to catch. Tool arguments are produced
- * by the model, tool results and state frames cross the wire serialized, so all
- * three are `unknown` and `String(args.code ?? "")` turns an argument the model
- * renamed into `""`. Four of the eight readers here are SINGULAR/PLURAL pairs
+ * which is the regression an eval exists to catch. A tool reader takes the tool's
+ * DEF — the file's default export, or a speaker's `tools` entry — and answers
+ * the types that def's `execute` declares, the wire name read off the def
+ * (`toolNameOf`); a state reader takes the slot's PROJECTION, or a slot name
+ * and a schema, since a frame crosses the wire serialized and
+ * `String(args.code ?? "")` turns a field the agent renamed into `""`. Four of
+ * the eight readers here are SINGULAR/PLURAL pairs
  * (`toolResultIn`/`toolResultsIn`, `lastStateIn`/`statesIn`) and the asymmetry
  * between each pair is deliberate: the singular throws when there is nothing to
  * read, because for it that can only be a mistake, and the plural answers `[]`,
@@ -51,17 +54,11 @@ import type {
   ToolInputSchema,
 } from "@alexkroman1/aai";
 import { formatSchemaIssues } from "@alexkroman1/aai/host-internal";
-// The name a deployed agent registered a def under: what lets every reader
-// below take the DEF, typed, where it takes the string. Runner-free, like
+// The name an agent registered a def under: what lets every tool reader below
+// take the DEF, typed, and still match the wire by name. Runner-free, like
 // everything on that subpath, so `/eval` stays importable without vitest.
 import { toolNameOf } from "@alexkroman1/aai/testing";
 import { type INSTRUCTION_KEY, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-
-/**
- * A tool as a reader may name it: the string the model calls, or the DEF the
- * tool file exports — which carries the result type the string cannot.
- */
-type ToolName = string | ToolDef<ToolInputSchema>;
 
 /**
  * The result `D`'s `execute` declares, WITHOUT the `$instruction` key a
@@ -79,11 +76,6 @@ export type EvalToolOutput<D extends ToolDef<ToolInputSchema>> =
       ? Omit<O, typeof INSTRUCTION_KEY>
       : O
     : never;
-
-/** The wire name of `tool`, however it was named. */
-function nameOf(tool: ToolName): string {
-  return typeof tool === "string" ? tool : toolNameOf(tool);
-}
 
 /** One tool call, paired with its result when the stream carries one. */
 export type EvalToolCall = {
@@ -180,9 +172,9 @@ export function toolCallsInEvents(events: readonly SessionEvent[]): readonly Eva
  * of its own rather than folded into the diagnostic.
  *
  * Names only: a claim about what a tool was ASKED for goes through
- * {@link toolArgsIn} with a schema, because `args` is `unknown` on the wire and
- * reading a field off it by hand is how an argument the model renamed becomes
- * `""`.
+ * {@link toolArgsIn} with the tool's def, because `args` is `unknown` on the
+ * wire and reading a field off it by hand is how an argument the model renamed
+ * becomes `""`.
  */
 export function toolNames(calls: readonly EvalToolCall[]): readonly string[] {
   return calls.map((call) => call.name);
@@ -315,31 +307,20 @@ export function lastStateIn<T>(
  * not.
  *
  * `call.result` is a string on the wire and a tool is under no obligation to put
- * JSON in it — `run_code` prints whatever the snippet printed, so "Saturday" and
+ * JSON in it — a tool whose `execute` answers a string is serialized as that
+ * string, and `run_code` prints whatever the snippet printed, so "Saturday" and
  * "3.106855" are ordinary results. Both readers used to call `JSON.parse`
  * unguarded, which turned one into
  * `SyntaxError: Unexpected token 'S', "Saturday" is not valid JSON` thrown from
  * inside this file, naming neither the tool, nor the case, nor the value. It
  * failed a real template eval whose own assertion was
- * `toolResultsIn(...).join("\n")` — a caller that had asked for no schema and
- * therefore wanted exactly that text.
- *
- * So: no schema means the caller will read whatever came back, and a string is
- * what came back. A SCHEMA is different — it is a declaration that the result
- * has a shape, so non-JSON there is a real mismatch and throws with the tool,
- * the position and the offending text in the message, which is what the bare
- * `SyntaxError` failed to say.
+ * `toolResultsIn(...).join("\n")` — a caller that wanted exactly that text.
  */
-function parseToolResult(raw: string, name: string, at: number, hasSchema: boolean): unknown {
+function parseToolResult(raw: string): unknown {
   try {
     return JSON.parse(raw);
-  } catch (cause) {
-    if (!hasSchema) return raw;
-    throw new Error(
-      `the ${ordinal(at)} call to "${name}" answered text, not JSON, but a schema was ` +
-        `supplied: ${JSON.stringify(raw.slice(0, 200))}`,
-      { cause },
-    );
+  } catch {
+    return raw;
   }
 }
 
@@ -359,7 +340,7 @@ function requireCallsTo(calls: readonly EvalToolCall[], name: string): readonly 
 }
 
 /**
- * The result of the LAST call to `name` in `calls`, parsed.
+ * The result of the LAST call to `tool` in `calls`, parsed and typed by the def.
  *
  * One of three result readers, told apart by how many calls the claim allows:
  * {@link toolResultIn} — EXACTLY one (zero or two throw); this — at least one,
@@ -376,46 +357,45 @@ function requireCallsTo(calls: readonly EvalToolCall[], name: string): readonly 
  * on an answer and the settled one is what the caller was told.
  *
  * ```ts
+ * // file: tools/game_state_score.ts
+ * import { tool } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
+ * export default tool({
+ *   description: "Award points",
+ *   inputSchema: z.object({ points: z.number() }),
+ *   execute: ({ points }) => ({ score: points }),
+ * });
+ *
+ * // file: agent.eval.test.ts
  * import {
  *   type EvalTurn,
  *   lastToolResultIn,
  *   toolCallsInTurns,
  * } from "@alexkroman1/aai-runtime/eval";
- * import { z } from "zod";
+ * import gameStateScore from "./tools/game_state_score.ts";
  *
  * export function finalScore(turns: readonly EvalTurn[]): number {
  *   const calls = toolCallsInTurns(turns);
  *   // The score as it finally stood, even if the narrator awarded twice.
- *   const scored = lastToolResultIn(calls, "game_state_score", z.object({ score: z.number() }));
- *   return scored.score;
+ *   return lastToolResultIn(calls, gameStateScore).score;
  * }
  * ```
  */
 export function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(
   calls: readonly EvalToolCall[],
   tool: D,
-): EvalToolOutput<D>;
-export function lastToolResultIn<T = unknown>(
-  calls: readonly EvalToolCall[],
-  name: string,
-  schema?: StandardSchemaV1<unknown, T>,
-): T;
-export function lastToolResultIn<T = unknown>(
-  calls: readonly EvalToolCall[],
-  tool: ToolName,
-  schema?: StandardSchemaV1<unknown, T>,
-): T {
-  const name = nameOf(tool);
-  const matching = requireCallsTo(calls, name);
+): EvalToolOutput<D> {
+  const matching = requireCallsTo(calls, toolNameOf(tool));
   // Hand the single last call to the reader that already parses one, so the
-  // parse, the never-completed check and the schema path have one spelling.
-  return toolResultIn([matching.at(-1) as EvalToolCall], name, schema);
+  // parse and the never-completed check have one spelling.
+  return toolResultIn([matching.at(-1) as EvalToolCall], tool);
 }
 
 /**
- * The result of the ONE call to `name` in `calls`, parsed — zero calls or two
- * throw. {@link lastToolResultIn} allows repeats; {@link toolResultsIn} reads
- * them all.
+ * The result of the ONE call to `tool` in `calls`, parsed and typed by the def
+ * — zero calls or two throw. {@link lastToolResultIn} allows repeats;
+ * {@link toolResultsIn} reads them all.
  *
  * `EvalToolCall.result` is the serialized string the model was handed, so every
  * eval that asserts on what a tool ANSWERED was parsing and indexing it by
@@ -423,94 +403,80 @@ export function lastToolResultIn<T = unknown>(
  * parse is the THROW: a `find` that misses answers `undefined`, and a case then
  * asserts against nothing and passes. This names what was called instead.
  *
- * **Handed the tool's DEF, the result is TYPED** — `InferToolOutput<typeof
- * placeOrder>`, the type its `execute` declares, minus the `$instruction` key
- * a `withInstruction` result carries (the runtime strips it before the frame
- * is recorded, so the wire value never has it) — and the wire name is read off
- * the def (`toolNameOf`), so a renamed file fails here by name. For a
- * `dialog.tool` the envelope type is known (`DialogToolResult<R> | ToolFailure`),
- * so `dialogResultSchema` is no longer needed to read one; `expectToolOk`
- * unwraps it. The def form parses JSON and claims the shape; a result whose
- * shape has to be PROVED still takes the string and a schema.
+ * **The tool is its DEF** — a `tools/` file's default export, or a speaker's
+ * `tools` entry for a roster tool — and the result is TYPED by it:
+ * `InferToolOutput<typeof placeOrder>`, the type its `execute` declares, minus
+ * the `$instruction` key a `withInstruction` result carries (the runtime strips
+ * it before the frame is recorded, so the wire value never has it). The wire
+ * name is read off the def (`toolNameOf`), so a renamed file fails here by
+ * name. For a `dialog.tool` the envelope type is known
+ * (`DialogToolResult<R> | ToolFailure`), and `expectToolOk` unwraps it. A
+ * refusal the GATE answered (a roster entry off the line) parses as the
+ * `ToolFailure` arm, which `isToolFailure` narrows.
  */
 export function toolResultIn<D extends ToolDef<ToolInputSchema>>(
   calls: readonly EvalToolCall[],
   tool: D,
-): EvalToolOutput<D>;
-export function toolResultIn<T = unknown>(
-  calls: readonly EvalToolCall[],
-  name: string,
-  schema?: StandardSchemaV1<unknown, T>,
-): T;
-export function toolResultIn<T = unknown>(
-  calls: readonly EvalToolCall[],
-  tool: ToolName,
-  schema?: StandardSchemaV1<unknown, T>,
-): T {
-  const name = nameOf(tool);
+): EvalToolOutput<D> {
+  const name = toolNameOf(tool);
   const matching = requireCallsTo(calls, name);
   if (matching.length > 1) {
     throw new Error(`${matching.length} calls to "${name}" — read them off toolCalls yourself`);
   }
   const call = matching[0];
   if (call?.result === undefined) throw new Error(`the call to "${name}" never completed`);
-  const parsed = parseToolResult(call.result, name, 0, schema !== undefined);
-  if (schema === undefined) return parsed as T;
-  return validate(schema, parsed, `"${name}"'s result`);
+  return parseToolResult(call.result) as EvalToolOutput<D>;
 }
 
 /**
- * Every call to `name` in `calls`, with its ARGUMENTS — what the agent asked
- * for, in call order.
+ * Every call to `tool` in `calls`, with its ARGUMENTS — what the agent asked
+ * for, in call order, typed by the def's `inputSchema`.
  *
  * The plural half of {@link toolResultIn}, and the one that was missing: nine
  * eval files wrote `calls.filter((c) => c.name === X).map((c) => c.args.…)` and
  * three of them wrapped it in a local `codeIn`/`fetchedUrls`/`drugsIn` reader —
  * twenty-two `.filter((c) => c.name === …)` sites across the corpus.
  *
- * **Pass the SCHEMA when the case reads a FIELD.** `args` is
- * `Record<string, unknown>` on the wire — the model produced it and nothing
- * validated it, since the tool executor is where a bad call is rejected — so the
- * alternative is `String(c.args.code ?? "")`, which turns an argument the model
- * renamed, or never sent, into `""`. That is a claim about the agent silently
- * becoming a claim about nothing: an eval asserting `codeIn(turn)` contains
- * `Math.PI` passes on an empty string only if the case ALSO asserted the call
- * happened, and three of them did not. With a schema, arguments that stopped
- * matching FAIL naming the field.
+ * `args` is `Record<string, unknown>` on the wire — the model produced it, and
+ * the tool executor validated it against `inputSchema` before `execute` ran —
+ * so the def's input type is what each call carried, and a case reads a field
+ * off it with no cast. The alternative, `String(c.args.code ?? "")`, turns an
+ * argument the model renamed, or never sent, into `""`: a claim about the
+ * agent silently becoming a claim about nothing.
  *
  * ZERO calls answers `[]` rather than throwing, unlike {@link toolResultIn} —
  * "it never called this" is a claim the plural form is used to make
- * (`expect(toolArgsIn(calls, "run_code")).toHaveLength(0)`), where for the
+ * (`expect(toolArgsIn(calls, runCode)).toHaveLength(0)`), where for the
  * singular it can only be a mistake.
  */
 export function toolArgsIn<D extends ToolDef<ToolInputSchema>>(
   calls: readonly EvalToolCall[],
   tool: D,
-): readonly InferToolInput<D>[];
-export function toolArgsIn<T>(
+): readonly InferToolInput<D>[] {
+  return callsTo(calls, toolNameOf(tool)).map((call) => call.args as InferToolInput<D>);
+}
+
+/**
+ * {@link toolArgsIn} by NAME and schema — for the BUILTIN readers next door
+ * (`run-code.ts`), and nothing else. A builtin has no def a case could import,
+ * so the reader that owns its name reads it by that name, and proves the shape
+ * through a schema since no def types it. Not on the barrel: a case names a
+ * tool by its def.
+ */
+export function builtinToolArgsIn<T>(
   calls: readonly EvalToolCall[],
   name: string,
   schema: StandardSchemaV1<unknown, T>,
-): readonly T[];
-export function toolArgsIn(
-  calls: readonly EvalToolCall[],
-  name: string,
-): readonly Record<string, unknown>[];
-export function toolArgsIn<T>(
-  calls: readonly EvalToolCall[],
-  tool: ToolName,
-  schema?: StandardSchemaV1<unknown, T>,
-): readonly (T | Record<string, unknown>)[] {
-  const name = nameOf(tool);
+): readonly T[] {
   return callsTo(calls, name).map((call, at) =>
-    schema === undefined ? call.args : validate(schema, call.args, `"${name}" call ${at}'s args`),
+    validate(schema, call.args, `"${name}" call ${at}'s args`),
   );
 }
 
 /**
- * Every call to `name` in `calls`, with its RESULT parsed — what each answered,
- * in call order. The plural of {@link toolResultIn} (exactly one) and
- * {@link lastToolResultIn} (the last of several).
+ * Every call to `tool` in `calls`, with its RESULT parsed and typed by the def
+ * — what each answered, in call order. The plural of {@link toolResultIn}
+ * (exactly one) and {@link lastToolResultIn} (the last of several).
  *
  * {@link toolResultIn} refuses more than one call on purpose: "the one call to
  * X" is the common claim and two of them is usually a finding. The plural is the
@@ -524,26 +490,13 @@ export function toolArgsIn<T>(
 export function toolResultsIn<D extends ToolDef<ToolInputSchema>>(
   calls: readonly EvalToolCall[],
   tool: D,
-): readonly EvalToolOutput<D>[];
-export function toolResultsIn<T = unknown>(
-  calls: readonly EvalToolCall[],
-  name: string,
-  schema?: StandardSchemaV1<unknown, T>,
-): readonly T[];
-export function toolResultsIn<T = unknown>(
-  calls: readonly EvalToolCall[],
-  tool: ToolName,
-  schema?: StandardSchemaV1<unknown, T>,
-): readonly T[] {
-  const name = nameOf(tool);
+): readonly EvalToolOutput<D>[] {
+  const name = toolNameOf(tool);
   return callsTo(calls, name).map((call, at) => {
     if (call.result === undefined) {
       throw new Error(`the ${ordinal(at)} call to "${name}" never completed`);
     }
-    const parsed = parseToolResult(call.result, name, at, schema !== undefined);
-    return schema === undefined
-      ? (parsed as T)
-      : validate(schema, parsed, `"${name}" result ${at}`);
+    return parseToolResult(call.result) as EvalToolOutput<D>;
   });
 }
 

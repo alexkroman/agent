@@ -27,12 +27,6 @@ const whoAmI = tool({
   }),
 });
 
-const identity = z.object({
-  client: z.string().nullable(),
-  phone: z.string().nullable(),
-  call: z.string().nullable(),
-});
-
 /** A calling agent's gate: only a call it placed gets a session, and nothing else does. */
 const caller = withTools(
   agent({
@@ -56,7 +50,7 @@ describeEval(
       "every case runs as the suite's client, phone and call",
       async ({ session }) => {
         const turn = await session.say("who is this?");
-        expect(toolResultIn(turn.toolCalls, "who_am_i", identity)).toEqual({
+        expect(toolResultIn(turn.toolCalls, whoAmI)).toEqual({
           client: "eval-kitchen-speaker",
           phone: "+15035550100",
           call: "call_7f3a",
@@ -69,7 +63,7 @@ describeEval(
       "a case overrides one field and keeps the suite's others",
       async ({ session }) => {
         const turn = await session.say("who is this?");
-        expect(toolResultIn(turn.toolCalls, "who_am_i", identity)).toEqual({
+        expect(toolResultIn(turn.toolCalls, whoAmI)).toEqual({
           client: "eval-hallway-speaker",
           phone: "+15035550100",
           call: "call_7f3a",
@@ -82,7 +76,7 @@ describeEval(
       "a case's `null` clears the suite's client id and phone, and keeps its call",
       async ({ session }) => {
         const turn = await session.say("who is this?");
-        expect(toolResultIn(turn.toolCalls, "who_am_i", identity)).toEqual({
+        expect(toolResultIn(turn.toolCalls, whoAmI)).toEqual({
           client: null,
           phone: null,
           call: "call_7f3a",

@@ -317,9 +317,6 @@ export function expectDeployable<const D extends {
 export function expectDialogOk<R>(result: R): [Exclude<R, ToolFailure>] extends [DialogToolResult<infer V>] ? DialogToolResult<V> : DialogToolResult<unknown>;
 
 // @public
-export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
-
-// @public
 export function expectDialogRefused(result: unknown, state?: string): ToolFailure;
 
 // @public
@@ -334,9 +331,6 @@ export function expectSlotContract<K extends string, T, V>(slot: SessionSlot<K, 
 
 // @public
 export function expectToolOk<R>(result: R): R extends DialogToolResult<infer V> ? V : Exclude<R, ToolFailure>;
-
-// @public
-export function expectToolOk<T>(result: unknown): T;
 
 // @public
 export type FetchRouteHandler = (request: FetchRouteRequest) => StubStepAnswer | undefined | Promise<StubStepAnswer | undefined>;
@@ -648,9 +642,6 @@ export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
 export function runTool<T extends {
     readonly execute: (...args: never[]) => unknown;
 }>(tool: T, argsOrCtx?: Parameters<T["execute"]>[0] | ToolContext, ctx?: ToolContext): Promise<Awaited<ReturnType<T["execute"]>>>;
-
-// @public
-export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
 
 // @public @sealed
 export interface SaidLine {
@@ -1603,14 +1594,9 @@ export function toolNameOf(def: ToolDef<ToolInputSchema>): string;
 export function toolOf(agent: ToolBearingAgent, name: string): ToolDef;
 
 // @public @sealed
-export interface ToolRunner {
-    // (undocumented)
-    <T extends {
-        readonly execute: (...args: never[]) => unknown;
-    }>(tool: T, argsOrCtx?: Parameters<T["execute"]>[0] | ToolContext, ctx?: ToolContext): Promise<Awaited<ReturnType<T["execute"]>>>;
-    // (undocumented)
-    (name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
-}
+export type ToolRunner = <T extends {
+    readonly execute: (...args: never[]) => unknown;
+}>(tool: T, argsOrCtx?: Parameters<T["execute"]>[0] | ToolContext, ctx?: ToolContext) => Promise<Awaited<ReturnType<T["execute"]>>>;
 
 // @public
 export function toolRunner(agent: ToolBearingAgent): ToolRunner;

@@ -4,7 +4,16 @@ import { isToolFailure } from "@alexkroman1/aai/utils";
 import { createToolContext, toolOf } from "@alexkroman1/aai-runtime/testing";
 import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
 import { describe, expect, test } from "vitest";
-import { billing, desk, deskSlot, support, triage, whichDesk } from "./shared.ts";
+import {
+  billing,
+  billingTools,
+  desk,
+  deskSlot,
+  support,
+  supportTools,
+  triage,
+  whichDesk,
+} from "./shared.ts";
 import verifyAccount from "./tools/verify_account.ts";
 
 /** Whether a result is the desk's "not verified" refusal. */
@@ -13,8 +22,13 @@ function refusal(result: unknown): string {
   return result.error;
 }
 
-// `run` is typed by the def for the one tool that is a FILE (`verify_account`);
-// the desks' own tools are reached by name, the way the model reaches them.
+// `run` takes a tool's DEF and is typed by it: the one FILE tool's default
+// export (`verify_account`), each desk's entry on its `tools` map, and the
+// minted `handoff` through `toolOf`, since no file or map carries it.
+const { lookup_invoice: lookupInvoice, issue_refund: issueRefund } = billingTools;
+const { run_diagnostic: runDiagnostic, schedule_technician: scheduleTechnician } = supportTools;
+const handoff = toolOf(agentDef, HANDOFF_TOOL_NAME);
+
 describeAgent(agentDef, (run) => {
   describe("the roster", () => {
     test("triage answers the phone, and every persona's tools plus `handoff` are on the agent", () => {
@@ -58,16 +72,12 @@ describeAgent(agentDef, (run) => {
     test("spoken digits are tolerated, a mismatch is refused, and nobody is handed off", async () => {
       const ctx = createToolContext();
       expect(
-        await run(
-          "verify_account",
-          { accountNumber: "10 01", zip: "94107", needs: "support" },
-          ctx,
-        ),
+        await run(verifyAccount, { accountNumber: "10 01", zip: "94107", needs: "support" }, ctx),
       ).toMatchObject({ to: "support" });
 
       const other = createToolContext();
       const result = await run(
-        "verify_account",
+        verifyAccount,
         { accountNumber: "1001", zip: "00000", needs: "billing" },
         other,
       );
@@ -80,7 +90,7 @@ describeAgent(agentDef, (run) => {
   describe("a desk's tools are its own", () => {
     test("a billing tool called while triage speaks is refused, naming who is and how to hand off", async () => {
       const ctx = createToolContext();
-      const error = refusal(await run("lookup_invoice", {}, ctx));
+      const error = refusal(await run(lookupInvoice, ctx));
       expect(error).toContain("belongs to the billing persona");
       expect(error).toContain("triage is speaking");
       expect(error).toContain(HANDOFF_TOOL_NAME);
@@ -88,43 +98,43 @@ describeAgent(agentDef, (run) => {
 
     test("after the handoff the same tool runs, over the slot triage wrote", async () => {
       const ctx = createToolContext();
-      await run("verify_account", { accountNumber: "1001", zip: "94107", needs: "billing" }, ctx);
-      expect(await run("lookup_invoice", {}, ctx)).toEqual({
+      await run(verifyAccount, { accountNumber: "1001", zip: "94107", needs: "billing" }, ctx);
+      expect(await run(lookupInvoice, ctx)).toEqual({
         invoices: [
           { id: "INV-1001-1", amount: 59.0, status: "paid" },
           { id: "INV-1001-2", amount: 79.5, status: "open" },
         ],
       });
-      expect(await run("issue_refund", { invoiceId: "INV-1001-2" }, ctx)).toEqual({
+      expect(await run(issueRefund, { invoiceId: "INV-1001-2" }, ctx)).toEqual({
         refunded: "INV-1001-2",
         amount: 79.5,
       });
       // The refund is in the slot, so a second look shows it and a second refund is refused.
-      expect(await run("lookup_invoice", { invoiceId: "INV-1001-2" }, ctx)).toEqual({
+      expect(await run(lookupInvoice, { invoiceId: "INV-1001-2" }, ctx)).toEqual({
         invoices: [{ id: "INV-1001-2", amount: 79.5, status: "refunded" }],
       });
-      expect(refusal(await run("issue_refund", { invoiceId: "INV-1001-2" }, ctx))).toContain(
+      expect(refusal(await run(issueRefund, { invoiceId: "INV-1001-2" }, ctx))).toContain(
         "already been refunded",
       );
       // And support's tools are still not billing's.
-      expect(refusal(await run("run_diagnostic", {}, ctx))).toContain("support persona");
+      expect(refusal(await run(runDiagnostic, ctx))).toContain("support persona");
     });
 
     test("support verifies a caller who came straight to it, then diagnoses and books", async () => {
       const ctx = createToolContext();
       // The model routed here on the caller's words, before any verification.
-      await run(HANDOFF_TOOL_NAME, { persona: "support", note: "Says the line is down." }, ctx);
+      await run(handoff, { persona: "support", note: "Says the line is down." }, ctx);
       expect(desk.active(ctx)).toBe(support);
-      expect(refusal(await run("run_diagnostic", {}, ctx))).toContain("not verified");
+      expect(refusal(await run(runDiagnostic, ctx))).toContain("not verified");
 
       // `verify_account` is everyone's, and handing off to the desk already
       // speaking changes nothing.
-      await run("verify_account", { accountNumber: "2002", zip: "10001", needs: "support" }, ctx);
-      expect(await run("run_diagnostic", {}, ctx)).toEqual({
+      await run(verifyAccount, { accountNumber: "2002", zip: "10001", needs: "support" }, ctx);
+      expect(await run(runDiagnostic, ctx)).toEqual({
         line: "no-signal",
         needsTechnician: true,
       });
-      expect(await run("schedule_technician", { day: "Tuesday", window: "morning" }, ctx)).toEqual({
+      expect(await run(scheduleTechnician, { day: "Tuesday", window: "morning" }, ctx)).toEqual({
         booked: { day: "Tuesday", window: "morning" },
       });
       expect(deskSlot.get(ctx).appointment).toEqual({ day: "Tuesday", window: "morning" });
@@ -132,11 +142,11 @@ describeAgent(agentDef, (run) => {
 
     test("a healthy line gets no technician", async () => {
       const ctx = createToolContext();
-      await run("verify_account", { accountNumber: "1001", zip: "94107", needs: "support" }, ctx);
+      await run(verifyAccount, { accountNumber: "1001", zip: "94107", needs: "support" }, ctx);
       // Dana's line is intermittent; make the point with the refusal path on a
       // fixture whose line IS healthy would need a third account — so assert the
       // guard's message through the shared helper instead.
-      expect(await run("run_diagnostic", {}, ctx)).toEqual({
+      expect(await run(runDiagnostic, ctx)).toEqual({
         line: "intermittent",
         needsTechnician: true,
       });
@@ -146,11 +156,11 @@ describeAgent(agentDef, (run) => {
   describe("handing back", () => {
     test("billing can hand the caller to support and back, and the slot survives every hop", async () => {
       const ctx = createToolContext();
-      await run("verify_account", { accountNumber: "1001", zip: "94107", needs: "billing" }, ctx);
-      await run(HANDOFF_TOOL_NAME, { persona: "support" }, ctx);
+      await run(verifyAccount, { accountNumber: "1001", zip: "94107", needs: "billing" }, ctx);
+      await run(handoff, { persona: "support" }, ctx);
       expect(desk.position(ctx)).toMatchObject({ speaker: support, from: "billing" });
-      expect(await run("run_diagnostic", {}, ctx)).toMatchObject({ line: "intermittent" });
-      await run(HANDOFF_TOOL_NAME, { persona: "triage" }, ctx);
+      expect(await run(runDiagnostic, ctx)).toMatchObject({ line: "intermittent" });
+      await run(handoff, { persona: "triage" }, ctx);
       expect(desk.active(ctx)).toBe(triage);
       expect(deskSlot.get(ctx).verified?.name).toBe("Dana");
       expect(whichDesk.execute({}, ctx)).toEqual({ persona: "triage" });

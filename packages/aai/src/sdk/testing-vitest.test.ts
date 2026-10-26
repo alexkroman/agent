@@ -368,20 +368,19 @@ describeAgent(
     test("hands the body the typed runner and the agent", async () => {
       expect(def.name).toBe("Desk");
       expect(await run(addItem, { item: "apple" })).toEqual({ added: "apple" });
-      expect(await run("add_item", { item: "pear" })).toEqual({ added: "pear" });
     });
   },
 );
 
 describeAgent(agent({ name: "Mute" }), (run) => {
   test("a tool-less agent keeps its deployable case, and the runner refuses at the call", async () => {
-    await expect(run("anything")).rejects.toThrow("declares no tools");
+    await expect(run(addItem)).rejects.toThrow("declares no tools");
   });
 
   test("the refusal names the helper the author called, not `toolRunner`", async () => {
     // `toolRunner` appears nowhere in a `describeAgent` suite; a sentence
     // naming it sends the author looking for a call they never wrote.
-    await expect(run("anything")).rejects.toThrow(/^describeAgent\(agent, …\) was handed/);
-    await expect(run("anything")).rejects.not.toThrow(/toolRunner\(/);
+    await expect(run(addItem)).rejects.toThrow(/^describeAgent\(agent, …\) was handed/);
+    await expect(run(addItem)).rejects.not.toThrow(/toolRunner\(/);
   });
 });

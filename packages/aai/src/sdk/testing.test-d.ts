@@ -79,7 +79,7 @@ test("the overrides NAME every ToolContext field, and no other", () => {
   expectTypeOf<Exclude<Own, keyof ToolContext>>().toEqualTypeOf<never>();
 });
 
-test("runTool handed the TOOL is typed end to end; by name it answers unknown", async () => {
+test("runTool takes the TOOL and is typed end to end; a name is not a tool", async () => {
   const addItem = tool({
     description: "Add an item",
     inputSchema: z.object({ item: z.string() }),
@@ -90,15 +90,18 @@ test("runTool handed the TOOL is typed end to end; by name it answers unknown", 
     added: string;
     count: number;
   }>();
-  // The context may stand in for the arguments, as in the name form.
+  // The context may stand in for the arguments.
   expectTypeOf(runTool(addItem, ctx)).resolves.toEqualTypeOf<{ added: string; count: number }>();
   // The arguments are checked against what `execute` takes.
   expectTypeOf<{ item: number }>().not.toExtend<Parameters<typeof runTool<typeof addItem>>[1]>();
   // Matched on `execute` alone: a bare object with one is a tool too.
   const bare = { execute: (args: { n: number }) => args.n * 2 };
   expectTypeOf(await runTool(bare, { n: 2 })).toEqualTypeOf<number>();
-  // The name form is unchanged.
-  expectTypeOf(runTool({ tools: { add_item: addItem } }, "add_item", ctx)).resolves.toBeUnknown();
+  // The tool position takes a DEF: neither an agent nor the tool's name is one.
+  expectTypeOf<string>().not.toExtend<Parameters<typeof runTool>[0]>();
+  expectTypeOf<{ tools: Record<string, typeof addItem> }>().not.toExtend<
+    Parameters<typeof runTool>[0]
+  >();
 });
 
 test("expectToolOk infers: a plain result loses its failure arm, an envelope is unwrapped", async () => {
@@ -114,10 +117,13 @@ test("expectToolOk infers: a plain result loses its failure arm, an envelope is 
   const gated = (envelope: DialogToolResult<{ quoted: number }> | ToolFailure) =>
     expectToolOk(envelope);
   expectTypeOf(gated).returns.toEqualTypeOf<{ quoted: number }>();
-  // The name form answers `unknown`, so the type argument still says what it is…
-  const named = (answered: unknown) => expectToolOk<{ id: string }>(answered);
-  expectTypeOf(named).returns.toEqualTypeOf<{ id: string }>();
-  // …and without one, it stays `unknown` rather than inventing a shape.
+  // There is no CLAIMED form: a written type argument is the parameter's type,
+  // so `expectToolOk<{ id: string }>(x)` compiles only when `x` already is one…
+  expectTypeOf<Parameters<typeof expectToolOk<{ id: string }>>[0]>().toEqualTypeOf<{
+    id: string;
+  }>();
+  expectTypeOf<unknown>().not.toExtend<Parameters<typeof expectToolOk<{ id: string }>>[0]>();
+  // …and an `unknown` result stays `unknown` rather than inventing a shape.
   const bare = (answered: unknown) => expectToolOk(answered);
   expectTypeOf(bare).returns.toBeUnknown();
 });
@@ -130,7 +136,7 @@ test("expectDeployable's config names only what the specs read — not the confi
   expectTypeOf<DeployedConfig["systemPrompt"]>().toEqualTypeOf<string>();
 });
 
-test("a runner handed the DEF is typed end to end; by name it still answers unknown", async () => {
+test("a runner takes the DEF and is typed end to end; the tool's name is not a tool", async () => {
   const addItem = tool({
     description: "Add an item",
     inputSchema: z.object({ item: z.string() }),
@@ -153,8 +159,8 @@ test("a runner handed the DEF is typed end to end; by name it still answers unkn
     }): Promise<DialogToolResult<{ quoted: number }> | ToolFailure> => toolFailure("no"),
   };
   expectTypeOf(expectToolOk(await run(gated, { id: "o1" }))).toEqualTypeOf<{ quoted: number }>();
-  // The name form is unchanged.
-  expectTypeOf(run("add_item", { item: "apple" })).resolves.toBeUnknown();
+  // A string in the tool position is a compile error: a name is not a def.
+  expectTypeOf<string>().not.toExtend<Parameters<typeof run>[0]>();
 });
 
 test("createRunSnapshot handed the def types `output` by it", () => {

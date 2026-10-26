@@ -1011,14 +1011,9 @@ type ToolMessagesInput = {
 };
 
 // @public @sealed
-interface ToolRunner {
-    // (undocumented)
-    <T extends {
-        readonly execute: (...args: never[]) => unknown;
-    }>(tool: T, argsOrCtx?: Parameters<T["execute"]>[0] | ToolContext, ctx?: ToolContext): Promise<Awaited<ReturnType<T["execute"]>>>;
-    // (undocumented)
-    (name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
-}
+type ToolRunner = <T extends {
+    readonly execute: (...args: never[]) => unknown;
+}>(tool: T, argsOrCtx?: Parameters<T["execute"]>[0] | ToolContext, ctx?: ToolContext) => Promise<Awaited<ReturnType<T["execute"]>>>;
 
 // @public @input
 type ToolStartMessage = {

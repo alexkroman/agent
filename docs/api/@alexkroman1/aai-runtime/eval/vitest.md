@@ -313,13 +313,14 @@ function dialogResultSchema<T extends ZodType<unknown, unknown, $ZodTypeInternal
 
 The envelope a gated tool answers with, as a schema around the tool's own.
 
-[expectDialogOk](../testing.md#expectdialogok) unwraps a value a spec HOLDS. An eval holds the
-serialized copy the model was handed and reads it back through a schema —
-`toolResultIn(turn.toolCalls, "set_stay", schema)` — so it needs the same
-envelope as a schema rather than as a function, and three shipped evals had
-each written it out: `z.object({ result, state: z.string(), done:
-z.boolean() })`, under a comment saying the shape was the SDK's. It is, and
-this is where it lives: `result` is whatever the author's `execute` returned,
+[expectDialogOk](../testing.md#expectdialogok) unwraps a value a spec HOLDS. A harness that holds the
+SERIALIZED copy the model was handed — a transcript, a recording — reads it
+back through a schema, so it needs the same envelope as a schema rather than
+as a function, and three shipped evals had each written it out:
+`z.object({ result, state: z.string(), done: z.boolean() })`, under a comment
+saying the shape was the SDK's. It is, and this is where it lives (an eval
+reading a live turn takes the DEF instead: `toolResultIn(turn.toolCalls,
+setStay)` is typed by it). `result` is whatever the author's `execute` returned,
 `state` is where the call landed, `done` whether that state is final, and
 `instruction` is the state's own brief when it declares one — the fields of
 [DialogToolResult](../../aai/index.md#dialogtoolresult), which a `dialog.tool` writes and no tool file does.
@@ -359,8 +360,7 @@ What the tool's `execute` answers with.
 import { dialogResultSchema } from "@alexkroman1/aai/testing";
 import { z } from "zod";
 
-// In an eval: `toolResultIn(turn.toolCalls, "set_stay", Stay)`. Holding the
-// serialized result yourself, it is the same parse:
+// Holding the serialized result yourself, it is one parse:
 const Stay = dialogResultSchema(z.object({ options: z.string() }));
 const stay = Stay.parse(
   JSON.parse('{"result":{"options":"garden view"},"state":"booking.room","done":false}'),

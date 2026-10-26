@@ -11,8 +11,16 @@
  * route's shared state reached the case through a module-level `let`.
  */
 
-import { agent, type SessionEvent, sessionSlot, tool, withInstruction } from "@alexkroman1/aai";
+import {
+  agent,
+  type BuiltinTool,
+  type SessionEvent,
+  sessionSlot,
+  tool,
+  withInstruction,
+} from "@alexkroman1/aai";
 import { createStubWorkflows } from "@alexkroman1/aai/testing";
+import { builtinTool } from "@alexkroman1/aai/tools";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { expectTypeOf, test } from "vitest";
 import { z } from "zod";
@@ -151,8 +159,14 @@ test("a reader handed the tool DEF answers the def's own types", () => {
   const calls: readonly EvalToolCall[] = [];
   expectTypeOf(toolResultIn(calls, placeOrder)).toEqualTypeOf<{ id: string; item: string }>();
   expectTypeOf(toolArgsIn(calls, placeOrder)).toEqualTypeOf<readonly { item: string }[]>();
-  // The string form is unchanged.
-  expectTypeOf(toolResultIn(calls, "place_order")).toBeUnknown();
+  // A tool's NAME is not a tool: the string form is a compile error…
+  expectTypeOf<string>().not.toExtend<Parameters<typeof toolResultIn>[1]>();
+  // …and a BUILTIN, which has no file to import, is reached as a def too.
+  expectTypeOf(toolResultIn(calls, builtinTool("workflow_cancel"))).toBeUnknown();
+  expectTypeOf<Parameters<typeof builtinTool>[0]>().toEqualTypeOf<BuiltinTool>();
+  expectTypeOf<string>().not.toExtend<Parameters<typeof lastToolResultIn>[1]>();
+  expectTypeOf<string>().not.toExtend<Parameters<typeof toolResultsIn>[1]>();
+  expectTypeOf<string>().not.toExtend<Parameters<typeof toolArgsIn>[1]>();
 });
 
 test("a result's `$instruction` is not readable off a def-typed reader — the wire never carries it", () => {

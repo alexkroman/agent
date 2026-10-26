@@ -30,11 +30,13 @@ describe("toolNameOf", () => {
     expect(() => toolNameOf(inline)).toThrow('described as "Built in a spec"');
   });
 
-  test("a ROSTER tool's remedy is its name string, since no lowering records one", () => {
+  test("a ROSTER tool is named by `agent({ roster })`, under its key on the speaker's map", () => {
     // A persona's tool is minted under the speaker by `agent({ roster })`, never
     // discovered from a file: `deployedAgent` on such an agent throws "no
     // project files", and `virtual:aai/agent` records the same nothing. The
-    // sentence used to offer only those two, neither of which helps.
+    // roster lowering is therefore what records it — importing `agent.ts` is
+    // enough — so `run(billing.tools.lookup_invoice)` reaches the tool the way
+    // a file's default export does.
     const lookupInvoice = tool({ description: "Look up an invoice", execute: () => "ok" });
     const billing = speaker({
       name: "billing",
@@ -43,10 +45,17 @@ describe("toolNameOf", () => {
       systemPrompt: "You are the billing desk.",
       tools: { lookup_invoice: lookupInvoice },
     });
+    expect(() => toolNameOf(lookupInvoice)).toThrow(/no agent registered/);
     expect(agent({ name: "Desk", roster: roster([billing]) }).name).toBe("Desk");
-    expect(() => toolNameOf(lookupInvoice)).toThrow(
-      /A tool declared on a persona's `tools` \(a roster\).*read it by its NAME string instead.*toolResultIn\(calls, "lookup_invoice"\)/,
+    expect(toolNameOf(lookupInvoice)).toBe("lookup_invoice");
+  });
+
+  test("the remedy names both lowerings, and the inline def's lack of one", () => {
+    const inline = tool({ description: "Built in a spec", execute: () => "ok" });
+    expect(() => toolNameOf(inline)).toThrow(
+      /speaker's `tools` \(a roster\) is named when `agent\(\{ roster \}\)` runs/,
     );
+    expect(() => toolNameOf(inline)).toThrow(/never been lowered and has no name/);
   });
 
   test("the same def lowered again under another name answers the LAST name", () => {

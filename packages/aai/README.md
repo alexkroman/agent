@@ -551,18 +551,20 @@ export default notesSlot.updateTool({
 });
 
 // file: agent.test.ts
-import { createToolContext, deployedAgent, runTool } from "@alexkroman1/aai-runtime/testing";
+import { createToolContext, deployedAgent, toolRunner } from "@alexkroman1/aai-runtime/testing";
 import { expect, test } from "vitest";
 import authored from "./agent.ts";
+import addNote from "./tools/add_note.ts";
 
 const agentDef = deployedAgent(authored, {
   tools: import.meta.glob("./tools/*.ts", { eager: true }),
 });
+const run = toolRunner(agentDef);
 
 test("saves a note", async () => {
-  expect(await runTool(agentDef, "add_note", { text: "milk" }, createToolContext())).toEqual({
-    saved: 1,
-  });
+  // Typed by the tool's own def: `saved` is a number, no cast.
+  const { saved } = await run(addNote, { text: "milk" }, createToolContext());
+  expect(saved).toBe(1);
 });
 ```
 

@@ -271,15 +271,25 @@ export function expectCalled(
  * of them is about the agent ignoring the tool.
  *
  * ```ts
- * import { type EvalSession, toolResultIn, turnCalling } from "@alexkroman1/aai-runtime/eval";
+ * // file: tools/cancel_pending_order.ts
+ * import { tool } from "@alexkroman1/aai";
  * import { z } from "zod";
+ *
+ * export default tool({
+ *   description: "Stage a cancellation",
+ *   inputSchema: z.object({ orderId: z.string() }),
+ *   execute: () => ({ state: "pending" }),
+ * });
+ *
+ * // file: agent.eval.test.ts
+ * import { type EvalSession, toolResultIn, turnCalling } from "@alexkroman1/aai-runtime/eval";
+ * import cancelPendingOrder from "./tools/cancel_pending_order.ts";
  *
  * export async function stagesBeforeCommitting(session: EvalSession): Promise<string> {
  *   const turns = await session.sayAll(["I want to cancel W1234", "Go ahead."]);
  *   // The turn it staged in, whichever that turned out to be.
  *   const staging = turnCalling(turns, "cancel_pending_order");
- *   return toolResultIn(staging.toolCalls, "cancel_pending_order", z.object({ state: z.string() }))
- *     .state;
+ *   return toolResultIn(staging.toolCalls, cancelPendingOrder).state;
  * }
  * ```
  */

@@ -182,11 +182,22 @@ read**, and name what actually happened. A `find` that misses answers
 A realistic case using three of them:
 
 ```ts
+// file: tools/add_pizza.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Add a pizza to the order",
+  inputSchema: z.object({ size: z.string(), toppings: z.array(z.string()) }),
+  execute: () => ({ total: "$18.00" }),
+});
+
+// file: agent.eval.test.ts
 import { errorsIn, toolNames, toolResultIn } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/testing/vitest";
 import agentDef from "virtual:aai/agent";
 import { expect } from "vitest";
-import { z } from "zod";
+import addPizza from "./tools/add_pizza.ts";
 
 describeEval(agentDef, (test) => {
   test(
@@ -198,9 +209,9 @@ describeEval(agentDef, (test) => {
       // pizza, or adding it twice, are both real findings.
       expect(toolNames(turn.toolCalls)).toEqual(["add_pizza"]);
 
-      // Parsed, so a result that stopped matching fails naming the field.
-      const priced = z.object({ total: z.string() });
-      expect(toolResultIn(turn.toolCalls, "add_pizza", priced).total).toBe("$18.00");
+      // Read through the DEF: typed by the tool's own `execute`, and a throw
+      // naming what WAS called when `add_pizza` was not.
+      expect(toolResultIn(turn.toolCalls, addPizza).total).toBe("$18.00");
 
       // Over the whole session: a failure prints the errors themselves.
       expect(errorsIn(session.events())).toEqual([]);
@@ -225,11 +236,22 @@ your own — is in the [SDK reference](/agent/reference/) under
 recorded tool order is the agent's and not the harness's:
 
 ```ts
+// file: tools/cancel_order.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Stage a cancellation",
+  inputSchema: z.object({ order_id: z.string() }),
+  execute: () => ({ state: "pending" }),
+});
+
+// file: agent.eval.test.ts
 import { toolResultIn, turnCalling } from "@alexkroman1/aai-runtime/eval";
 import { describeEval } from "@alexkroman1/aai-runtime/testing/vitest";
 import agentDef from "virtual:aai/agent";
 import { expect } from "vitest";
-import { z } from "zod";
+import cancelOrder from "./tools/cancel_order.ts";
 
 describeEval(agentDef, (test) => {
   test(
@@ -239,8 +261,7 @@ describeEval(agentDef, (test) => {
 
       // The turn it staged in, whichever that turned out to be.
       const staging = turnCalling(turns, "cancel_order");
-      const staged = z.object({ state: z.string() });
-      expect(toolResultIn(staging.toolCalls, "cancel_order", staged).state).toBe("pending");
+      expect(toolResultIn(staging.toolCalls, cancelOrder).state).toBe("pending");
     },
     {
       stubReply: [

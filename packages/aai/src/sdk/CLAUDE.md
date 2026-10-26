@@ -136,14 +136,21 @@ detail; the rules:
   `import()` is refused (it loads a second copy of the SDK). Bounded to
   `ToolBearingAgent & { systemPrompt }` so `AgentDef` stays off this contract;
   `expectDeployable` returns the narrow `DeployedConfig`.
-- **`runTool(tool, args?, ctx?)`** is typed end to end; the name form answers
-  `unknown` (import the tool file instead of casting) and runs through the
-  toolset's GATE. Args and ctx are told apart by SHAPE; an omitted context is a
-  distinct session.
+- **A tool is run by its DEF, never by its name.** `runTool(tool, args?, ctx?)`
+  is typed end to end and UNGATED (the tool body alone); `toolRunner(agent)` —
+  what `describeAgent` hands a suite — resolves the def in the agent's table by
+  IDENTITY and runs it through the toolset's GATE. The def is the tool file's
+  default export, or a speaker's `tools` entry for a roster tool: `withTools`
+  and `rosterToolset` record each def's name (`_testing-tool-names.ts`), so the
+  eval's `toolResultIn(calls, def)` family reads both the same way. A string in
+  the tool position is a compile error (`testing.test-d.ts`);
+  `toolOf(agent, name)` stays as the LOOKUP for a description or a minted tool.
+  Args and ctx are told apart by SHAPE; an omitted context is a distinct
+  session.
 - **`expectToolOk`** takes ANY tool's result — a dialog envelope unwrapped, a
-  plain value passed through — and INFERS: a typed result loses its failure arm,
-  `expectToolOk<T>(unknown)` is the claimed form for the name lookup. Never copy
-  an `ok<T>()` helper into a spec.
+  plain value passed through — and INFERS: a typed result loses its failure arm.
+  There is no claimed `expectToolOk<T>(unknown)` form. Never copy an `ok<T>()`
+  helper into a spec.
 - **`stubGateway`** (global `fetch`, you install) / **`installStubGateway`**
   (global `fetch`, installed) / **`stubGatewayRoute`** (a `stepFetch` route to
   compose); never import the second under the first's name.

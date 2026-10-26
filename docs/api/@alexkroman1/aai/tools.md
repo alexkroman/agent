@@ -1,6 +1,7 @@
 # tools
 
-`@alexkroman1/aai/tools` — the network builtins, callable from your own tool code.
+`@alexkroman1/aai/tools` — the network builtins, callable from your own tool
+code, and `builtinTool(name)`, any builtin as the DEF a spec reads it through.
 
 A FACADE. The subpath resolves here rather than at `agent-tools.ts`, which buys two
 things the direct form could not. That module can be SPLIT as it grows without
@@ -14,6 +15,59 @@ wildcard form re-exports whatever arrives, and needs a `noReExportAll`
 suppression the escape-hatch ratchet only lets move down.
 
 ## Functions
+
+### builtinTool()
+
+```ts
+function builtinTool(name: BuiltinTool): ToolDef;
+```
+
+The builtin tool `name`, as a DEF — the handle a spec or an eval reads a
+builtin through, the way it reads any other tool through the tool's def.
+
+A tool is reached by its def, never by its name string: a `tools/` file's
+default export, a speaker's `tools` entry. A builtin has neither — it is
+minted by the runtime from the name an agent lists in `builtinTools`, with
+the runtime's own dependencies injected — so this is the import that stands
+in for the file: `toolResultIn(turn.toolCalls, builtinTool("workflow_cancel"))`
+reads what the deployed agent's `workflow_cancel` answered, matched by the
+name the def was minted under.
+
+What comes back is a REAL def, built with no injected dependencies: the
+static builtins (`think`, `calculate`, …) execute as deployed; a network
+builtin takes the SSRF-screened default fetch; `run_code` refuses outside a
+sandbox and the three `workflow_*` builtins describe a run by its status
+sentence alone, since no agent's `describeRun` was handed in. It is not in
+any agent's tool table — the runtime merges builtins in at session start —
+so a `toolRunner` does not find it; a spec that wants to CALL one calls its
+`execute` directly, with a `createToolContext()`.
+
+#### Parameters
+
+##### name
+
+[`BuiltinTool`](index.md#builtintool)
+
+#### Returns
+
+[`ToolDef`](index.md#tooldef)
+
+#### Throws
+
+When `name` is not a builtin this SDK ships, naming the ones it does.
+
+#### Example
+
+```ts
+import { builtinTool } from "@alexkroman1/aai/tools";
+import { createToolContext } from "@alexkroman1/aai/testing";
+
+const calculate = builtinTool("calculate");
+const answer = await calculate.execute({ expression: "6 * 7" }, createToolContext());
+console.log(answer); // the builtin's own result
+```
+
+***
 
 ### fetchJson()
 

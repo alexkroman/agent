@@ -2,7 +2,9 @@
 /**
  * Capability contract: `builtins`.
  *
- * The keyless network builtins callable directly from tool code.
+ * The keyless network builtins callable directly from tool code, and
+ * `builtinTool(name)` — any builtin as the DEF a spec or an eval reads it
+ * through, since a builtin has no `tools/` file to import.
  *
  * Re-exported from `@alexkroman1/aai/tools`. This file is not shipped and nothing
  * imports it — it exists so `pnpm check:api-contracts` can extract a report
@@ -11,6 +13,7 @@
  */
 
 export {
+  builtinTool,
   type CallOptions,
   type FetchJsonOptions,
   fetchJson,

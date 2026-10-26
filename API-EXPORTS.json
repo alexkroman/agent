@@ -1238,6 +1238,7 @@
     "CallOptions",
     "FetchJsonOptions",
     "UntypedJsonBody",
+    "builtinTool",
     "fetchJson",
     "visitWebpage",
     "webSearch"
