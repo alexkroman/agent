@@ -22,6 +22,7 @@ import {
   oweExitCode,
   resultLine,
 } from "./_output.ts";
+import { isStartWorker } from "./_start-workers.ts";
 import { defaultUi, type Ui } from "./_ui.ts";
 import { AGENT_ENTRY, errorMessage, fileExists, resolveCwd } from "./_utils.ts";
 
@@ -334,6 +335,17 @@ export async function setup(opts?: { agent?: boolean }): Promise<string> {
 }
 
 /**
+ * The JSON result line, on stdout — except from a `start --workers` worker,
+ * a fork of this same command on the primary's stdout, which owes ONE line:
+ * the primary's. A worker's own verdict (a port it could not bind) goes to
+ * stderr, beside the primary's notice about it.
+ */
+async function writeResultLine(result: CommandResult<unknown>, ui: Ui): Promise<void> {
+  if (isStartWorker()) ui.writeErr(resultLine(result));
+  else await ui.writeResult(resultLine(result));
+}
+
+/**
  * Run a command body with standard output-mode resolution, error handling,
  * and result emission.
  *
@@ -383,7 +395,7 @@ export async function runCommand(
   oweExitCode(result.ok ? 0 : 1);
   // Await the flush before exiting: on a pipe (the JSON-mode case) stdout is
   // async, so process.exit() would truncate the JSON line just queued.
-  if (mode === "json") await ui.writeResult(resultLine(result));
+  if (mode === "json") await writeResultLine(result, ui);
   if (!result.ok) process.exit(1);
 }
 
