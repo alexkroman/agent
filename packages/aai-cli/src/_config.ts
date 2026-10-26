@@ -9,7 +9,7 @@ import { sleep } from "@alexkroman1/aai/internal";
 import envPaths from "env-paths";
 import { z } from "zod";
 import { CliError } from "./_output.ts";
-import { errorMessage, isEexist, readJson, writeJson } from "./_utils.ts";
+import { errorMessage, isEexist, readJson, serverOrigin, writeJson } from "./_utils.ts";
 
 /**
  * `.aai/project.json` lives in the working tree, so everything in it is
@@ -140,24 +140,6 @@ export type GlobalConfig = {
    */
   approvedServers?: string[];
 };
-
-/**
- * Origin of `url`, or `null` when it is not an absolute http(s) URL.
- *
- * Non-HTTP schemes are rejected rather than returned: `new URL()` yields the
- * opaque origin `"null"` for them, which would otherwise flow on as if it
- * were a real origin.
- */
-export function serverOrigin(url: string): string | null {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
-  return parsed.origin;
-}
 
 /** Bounded so a stuck lock degrades to the old racy write, never a hang. */
 const CONFIG_LOCK_TIMEOUT_MS = 2000;

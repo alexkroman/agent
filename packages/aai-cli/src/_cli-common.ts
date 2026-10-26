@@ -22,9 +22,8 @@ import {
   oweExitCode,
   resultLine,
 } from "./_output.ts";
-import { isStartWorker } from "./_start-workers.ts";
 import { defaultUi, type Ui } from "./_ui.ts";
-import { AGENT_ENTRY, errorMessage, fileExists, resolveCwd } from "./_utils.ts";
+import { AGENT_ENTRY, errorMessage, fileExists, parseServerFlag, resolveCwd } from "./_utils.ts";
 
 /** Shared arg definitions for citty commands. */
 export const sharedArgs = {
@@ -162,7 +161,9 @@ function judgeFlag(
         };
   }
   if (type !== "string" || raw.includes("=")) return { takesNext: false };
-  if (next === undefined || next === "--" || flagToken(next) !== null) {
+  // Any dash-led next token, `-5` included: citty's parser reads it as a flag,
+  // not this one's value, and hands the flag "" without a word.
+  if (next === undefined || next === "--" || (next.startsWith("-") && next !== "-")) {
     return {
       problem: `${token} needs a value (one starting with "-" is written ${token}=VALUE)`,
       takesNext: false,
@@ -213,32 +214,6 @@ export function wantsVersionElsewhere(argv: readonly string[]): boolean {
  */
 export function builtinWithValue(argv: readonly string[]): string | undefined {
   return flagRegion(argv).find((raw) => /^(--help|-h|--version|-v)=/.test(raw));
-}
-
-/**
- * `--server`'s value, checked: an absolute http(s) URL, or a `usage` error
- * naming the flag.
- *
- * `--server=` used to read as "not given" (`if (explicit)` in `_agent.ts`), so
- * the API key went to the DEFAULT origin — ignoring the project's approved
- * `serverUrl` too — when the user had plainly meant to name one.
- */
-export function checkServerFlag(value: unknown): string {
-  const text = typeof value === "string" ? value.trim() : "";
-  let protocol: string | undefined;
-  try {
-    protocol = new URL(text).protocol;
-  } catch {
-    /* not a URL — refused below */
-  }
-  if (protocol !== "http:" && protocol !== "https:") {
-    throw new CliError(
-      "usage",
-      `--server must be an absolute http(s) URL; got ${JSON.stringify(value)}.`,
-      "Pass e.g. `--server https://example.com`, or leave --server out to use the project's server.",
-    );
-  }
-  return text;
 }
 
 /**
@@ -335,17 +310,6 @@ export async function setup(opts?: { agent?: boolean }): Promise<string> {
 }
 
 /**
- * The JSON result line, on stdout — except from a `start --workers` worker,
- * a fork of this same command on the primary's stdout, which owes ONE line:
- * the primary's. A worker's own verdict (a port it could not bind) goes to
- * stderr, beside the primary's notice about it.
- */
-async function writeResultLine(result: CommandResult<unknown>, ui: Ui): Promise<void> {
-  if (isStartWorker()) ui.writeErr(resultLine(result));
-  else await ui.writeResult(resultLine(result));
-}
-
-/**
  * Run a command body with standard output-mode resolution, error handling,
  * and result emission.
  *
@@ -395,7 +359,7 @@ export async function runCommand(
   oweExitCode(result.ok ? 0 : 1);
   // Await the flush before exiting: on a pipe (the JSON-mode case) stdout is
   // async, so process.exit() would truncate the JSON line just queued.
-  if (mode === "json") await writeResultLine(result, ui);
+  if (mode === "json") await ui.writeResult(resultLine(result));
   if (!result.ok) process.exit(1);
 }
 
@@ -494,7 +458,7 @@ export function defineExec<const T extends ArgsDef, P extends CwdPolicy>(
           // `?? []`: a spec calling `run` directly may hand in args without `_`.
           if (spec.extraPositionals !== "own") refuseExtraPositionals(spec, args._ ?? []);
           const server: unknown = (args as Record<string, unknown>).server;
-          if ("server" in spec.args && server !== undefined) checkServerFlag(server);
+          if ("server" in spec.args && server !== undefined) parseServerFlag(server);
           return spec.run({ args, mode, cwd: await resolvePolicyCwd(spec.cwd), ui });
         },
         ui,

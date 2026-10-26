@@ -36,6 +36,13 @@ describe("isStartWorker", () => {
 });
 
 describe("nodeCluster", () => {
+  test("forks workers whose stdout is the primary's STDERR", () => {
+    // A worker runs this same command; on the primary's stdout its own result
+    // line would be a second one after `--json`'s.
+    nodeCluster(cluster);
+    expect(cluster.settings.stdio).toEqual(["inherit", 2, "inherit", "ipc"]);
+  });
+
   test("wraps an emitting worker ONCE, forwarding messages, kills and sends", () => {
     const adapter = nodeCluster(cluster);
     const raw = emittedWorker();

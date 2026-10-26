@@ -145,8 +145,12 @@ export async function executeDev(
   // used to be awaited unbounded and never killed, so a hung hook kept the
   // command from returning and outlived Ctrl-C.
   const startupHook = new AbortController();
+  let startupRun: Promise<unknown> | undefined;
   cleanup = async () => {
     startupHook.abort();
+    // Stopped BEFORE the withdrawal runs: during its SIGTERM grace a startup
+    // hook could still finish registering the URL the withdrawal just removed.
+    if (startupRun !== undefined) await startupRun;
     // The hook's withdrawal first, while the URL it names still answers.
     // Each `await` is guarded rather than written `await tunnel?.close()`: an
     // awaited `undefined` still yields, and a plain `aai dev` must start its
@@ -167,9 +171,10 @@ export async function executeDev(
     // line it cannot get anywhere else.
     ui.notify("info", `Public URL: ${publicUrl}`);
     if (hook) {
-      await runHook(ui, runHookCommand, hook, publicUrl, opts.cwd, HOOK_STARTUP_TIMEOUT_MS, {
+      startupRun = runHook(ui, runHookCommand, hook, publicUrl, opts.cwd, HOOK_STARTUP_TIMEOUT_MS, {
         signal: startupHook.signal,
       });
+      await startupRun;
     }
   }
   ui.log.info("Press Ctrl-C to stop");

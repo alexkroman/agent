@@ -10,8 +10,9 @@
 
 import { beforeEach, describe, expect, vi } from "vitest";
 import { DEFAULT_SERVER, resolveServerUrl } from "./_agent.ts";
-import { readProjectConfig, serverOrigin, writeProjectConfig } from "./_config.ts";
+import { readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { test } from "./_test-utils.ts";
+import { serverOrigin } from "./_utils.ts";
 
 // resolveServerUrl short-circuits to the dev server when running inside this
 // monorepo, which would mask the config path these tests exercise. Stubbed

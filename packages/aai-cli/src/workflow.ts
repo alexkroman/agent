@@ -28,7 +28,11 @@
  */
 
 import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import type { WorkflowRunSnapshot, WorkflowSummary } from "@alexkroman1/aai/workflow-api";
+import type {
+  WorkflowRunSnapshot,
+  WorkflowRunStatus,
+  WorkflowSummary,
+} from "@alexkroman1/aai/workflow-api";
 import { createWorkflowApiClient, type WorkflowApi } from "@alexkroman1/aai/workflow-api";
 import { getServerInfo } from "./_agent.ts";
 import { DEFAULT_REQUEST_TIMEOUT_MS } from "./_api-client.ts";
@@ -144,28 +148,20 @@ function agentBaseUrl(raw: string): string {
  * the server already running.
  */
 async function target(cwd: string, opts: WorkflowOptions, deps: WorkflowDeps): Promise<Target> {
+  const client = (baseUrl: string): WorkflowApi =>
+    createWorkflowApiClient({
+      baseUrl,
+      timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
+      ...omitUndefined({ token: opts.token }),
+    });
   if (opts.agent !== undefined) {
     const baseUrl = agentBaseUrl(opts.agent);
-    return {
-      api: createWorkflowApiClient({
-        baseUrl,
-        timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
-        ...omitUndefined({ token: opts.token }),
-      }),
-      name: baseUrl,
-    };
+    return { api: client(baseUrl), name: baseUrl };
   }
   const config = await deps.readProjectConfig(cwd);
   if (!config?.slug) throw new CliError("no_deployment", NO_DEPLOYMENT, HINT_AGENT);
   const { serverUrl, slug } = await deps.getServerInfo(cwd, opts.server);
-  return {
-    api: createWorkflowApiClient({
-      baseUrl: `${serverUrl}/${slug}`,
-      timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
-      ...omitUndefined({ token: opts.token }),
-    }),
-    name: slug,
-  };
+  return { api: client(`${serverUrl}/${slug}`), name: slug };
 }
 
 /**
@@ -251,20 +247,22 @@ function checked<T>(
   };
 }
 
-const RUN_STATUSES: ReadonlySet<unknown> = new Set([
-  "pending",
-  "running",
-  "completed",
-  "failed",
-  "cancelled",
-]);
+/** Every `WorkflowRunStatus` — a record, so a new status fails to compile here. */
+const RUN_STATUSES: Readonly<Record<WorkflowRunStatus, true>> = {
+  pending: true,
+  running: true,
+  completed: true,
+  failed: true,
+  cancelled: true,
+};
 
 /** A run as this command prints it: an id, a known status, and the fields `formatRun` reads. */
 function isRun(value: unknown): value is Run {
   return (
     isRecord(value) &&
     typeof value.runId === "string" &&
-    RUN_STATUSES.has(value.status) &&
+    typeof value.status === "string" &&
+    Object.hasOwn(RUN_STATUSES, value.status) &&
     (value.key === undefined || typeof value.key === "string") &&
     (value.status !== "failed" || typeof value.error === "string")
   );

@@ -66,9 +66,7 @@ export function projectNameFromDir(dir: string): string | null {
  * overwrites — so it gets the slug grammar and the `-preview` refusal too.
  */
 export function isUsableProjectName(name: string): boolean {
-  return (
-    name.length <= MAX_SLUG_LENGTH && !name.endsWith(PREVIEW_SLUG_SUFFIX) && isSlugShaped(name)
-  );
+  return !name.endsWith(PREVIEW_SLUG_SUFFIX) && isSlugShaped(name);
 }
 
 /**
@@ -110,20 +108,6 @@ export type StudioDeps = {
 };
 
 export const REAL_STUDIO_DEPS: StudioDeps = { resolveDeployTarget, apiRequest };
-
-/**
- * A whole workspace each way (up to `MAX_WORKSPACE_FILES` ×
- * `MAX_WORKSPACE_FILE_BYTES`, ~25 MB) — minutes on a slow uplink, so not
- * `apiRequest`'s one-minute default.
- */
-const WORKSPACE_TRANSFER_TIMEOUT_MS = 300_000;
-
-/**
- * Publish runs the in-guest `aai deploy` (its own deadline is 330 s,
- * `WORKSPACE_DEPLOY_TIMEOUT_MS` in `aai-studio-server`) after the broker may
- * have cold-started the sandbox — so ten minutes, comfortably over both.
- */
-const PUBLISH_TIMEOUT_MS = 600_000;
 
 /** `GET /studio/projects/:project` — see `projectPayload` server-side. */
 export type StudioProject = {
@@ -167,7 +151,6 @@ export function fetchStudioProject(
     apiKey,
     action: "pull",
     allow404: true,
-    timeoutMs: WORKSPACE_TRANSFER_TIMEOUT_MS,
     // Checked rather than cast, like the project list above. `null` is the real
     // 404 answer (the push existence probe) and passes through; a 200 whose body
     // lacks `files` used to die inside `materializeFiles` on
@@ -209,7 +192,6 @@ export function pushStudioSource(
     action: "push",
     method: "PUT",
     body,
-    timeoutMs: WORKSPACE_TRANSFER_TIMEOUT_MS,
     // Not idempotent in effect (a retried create can double-fire previews),
     // but a replayed identical push is a no-op server-side, so retries are
     // safe — keep the default transient-failure retry.
@@ -252,6 +234,5 @@ export function publishStudioProject(
     // A retried publish re-runs a whole in-sandbox build; surface the
     // failure instead.
     retry: 0,
-    timeoutMs: PUBLISH_TIMEOUT_MS,
   });
 }

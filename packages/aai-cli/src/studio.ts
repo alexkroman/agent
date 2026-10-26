@@ -124,12 +124,7 @@ function screenPulledPath(
     throw unsafePull(rel, "an empty, `.` or `..` segment");
   }
   const abs = path.resolve(dir, rel);
-  // `isPathInside`, not a third copy of the line: this was open-coded here and
-  // in `aai-guest/studio-workspace-fs.ts`, and both copies were correct only
-  // for an absolute, normalized, trailing-slash-free `dir` — a precondition
-  // nothing stated, so a `dir` with a trailing separator refused every path in
-  // the tree. `aai-runtime/internal` is a permitted import here; `aai-server`
-  // and `aai-guest` are not.
+  // `isPathInside`, the one containment check (correct for any `dir` shape).
   if (!isPathInside(dir, abs)) throw unsafePull(rel, "it escapes the project directory");
   for (let i = 1; i < segments.length; i++) {
     const parent = segments.slice(0, i).join("/");

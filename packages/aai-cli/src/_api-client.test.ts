@@ -2,7 +2,13 @@
 
 import { MAX_WORKSPACE_FILE_BYTES, MAX_WORKSPACE_FILES } from "@alexkroman1/aai/workspace-files";
 import { describe, expect, test, vi } from "vitest";
-import { apiRequest, HINT_INVALID_API_KEY, MAX_RESPONSE_BYTES } from "./_api-client.ts";
+import {
+  apiRequest,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  HINT_INVALID_API_KEY,
+  MAX_RESPONSE_BYTES,
+  requestTimeoutMs,
+} from "./_api-client.ts";
 
 /** Mock fetch returning a JSON Response with the given status/body. */
 function mockFetch(status: number, body: unknown = {}) {
@@ -330,6 +336,18 @@ describe("redirects are refused, never followed", () => {
 });
 
 describe("every attempt has a deadline", () => {
+  test("the routes that take minutes get their own, the rest the default", () => {
+    // The in-guest `aai deploy` alone may take 330 s; Publish waits on it.
+    expect(requestTimeoutMs("publish")).toBeGreaterThan(330_000);
+    // A deploy uploads a bundle and spawns a sandbox, and must report its own
+    // timeout before the in-guest 330 s kills it.
+    expect(requestTimeoutMs("deploy")).toBeGreaterThan(DEFAULT_REQUEST_TIMEOUT_MS);
+    expect(requestTimeoutMs("deploy")).toBeLessThan(330_000);
+    expect(requestTimeoutMs("push")).toBeGreaterThan(DEFAULT_REQUEST_TIMEOUT_MS);
+    expect(requestTimeoutMs("pull")).toBeGreaterThan(DEFAULT_REQUEST_TIMEOUT_MS);
+    expect(requestTimeoutMs("list")).toBe(DEFAULT_REQUEST_TIMEOUT_MS);
+  });
+
   test("a server that never answers fails with the timeout, once, not 'check your network'", async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(
       (_url, init) =>

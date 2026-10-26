@@ -31,7 +31,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { isDeepStrictEqual, parseEnv } from "node:util";
 import { CliError } from "./_output.ts";
-import { errorCode, readTextIfPresent, writeFileAtomic } from "./_utils.ts";
+import { lstatOrNull, readTextIfPresent, writeFileAtomic } from "./_utils.ts";
 
 /** A name `parseEnv` and a shell both accept. */
 export const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -187,13 +187,8 @@ export function localEnvPath(cwd: string): string {
  * became a project file full of AWS keys). `undefined` when there is no file.
  */
 async function editableMode(file: string): Promise<number | undefined> {
-  let stat: Awaited<ReturnType<typeof fs.lstat>>;
-  try {
-    stat = await fs.lstat(file);
-  } catch (err) {
-    if (errorCode(err) === "ENOENT") return undefined;
-    throw err;
-  }
+  const stat = await lstatOrNull(file);
+  if (stat === null) return undefined;
   if (stat.isSymbolicLink()) {
     throw new CliError(
       "dotenv_symlink",

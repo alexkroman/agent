@@ -177,6 +177,12 @@ export const HOOK_STARTUP_TIMEOUT_MS = 60_000;
 /** How long a stopped hook gets between SIGTERM and SIGKILL. */
 export const HOOK_KILL_GRACE_MS = 2000;
 
+/**
+ * Whether the hook gets its own process group. Not on Windows: there is no
+ * `process.kill(-pgid)`, and `detached` opens a new console window instead.
+ */
+const PROCESS_GROUPS = process.platform !== "win32";
+
 /** Signal a process GROUP — the seam a spec replaces to watch the signals. */
 export type KillGroupFn = (pgid: number, signal: NodeJS.Signals) => void;
 
@@ -222,13 +228,19 @@ export async function runPublicUrlHook(
   const child = spawn(command, {
     cwd: opts.cwd,
     shell: true,
-    detached: true,
+    detached: PROCESS_GROUPS,
     stdio: ["ignore", "inherit", "inherit"],
     env: { ...process.env, PUBLIC_URL: url, AAI_PUBLIC_URL: url },
   });
-  const done = new Promise<number | null>((resolve, reject) => {
+  // A spawn failure is RECORDED, not raced: the abort below must not turn a
+  // hook that could not start into a silent stop.
+  let spawnError: unknown;
+  const done = new Promise<number | null>((resolve) => {
     child.once("exit", (code) => resolve(code));
-    child.once("error", reject);
+    child.once("error", (err) => {
+      spawnError = err;
+      resolve(null);
+    });
   });
   let outcome: number | null | typeof STOPPED;
   try {
@@ -237,10 +249,11 @@ export async function runPublicUrlHook(
       fallback: () => STOPPED,
       ...omitUndefined({ signal: opts.signal }),
     });
-  } catch (err) {
-    if (!opts.signal?.aborted) throw err;
+  } catch {
+    // Only the abort rejects: `done` never does.
     outcome = STOPPED;
   }
+  if (spawnError !== undefined) throw spawnError;
   if (outcome !== STOPPED) return outcome;
   await stopGroup(child, done, opts.killGroup ?? killGroupDefault, opts.killGraceMs);
   return null;
@@ -249,7 +262,8 @@ export async function runPublicUrlHook(
 /**
  * SIGTERM the hook's group, give it `graceMs` to go, then SIGKILL the group
  * whether or not the shell has exited — a grandchild ignoring SIGTERM outlives
- * its shell. A child with no pid (it never started) is signalled directly.
+ * its shell. A child with no pid (it never started), or one on Windows (no
+ * groups), is signalled directly.
  */
 async function stopGroup(
   child: TunnelChild,
@@ -258,7 +272,7 @@ async function stopGroup(
   graceMs = HOOK_KILL_GRACE_MS,
 ): Promise<void> {
   const signal = (sig: NodeJS.Signals): void => {
-    if (child.pid === undefined) child.kill(sig);
+    if (child.pid === undefined || !PROCESS_GROUPS) child.kill(sig);
     else killGroup(child.pid, sig);
   };
   signal("SIGTERM");

@@ -203,6 +203,21 @@ describe("runPublicUrlHook (fake child)", () => {
     expect(slow.kill).not.toHaveBeenCalled();
   });
 
+  test("a spawn error is reported even when shutdown aborts the wait", async () => {
+    const broken = new FakeChild();
+    const abort = new AbortController();
+    const done = runPublicUrlHook("x", URL, {
+      cwd: "/p",
+      signal: abort.signal,
+      killGraceMs: 5,
+      spawn: fakeSpawn(broken).asSpawn,
+      killGroup: vi.fn(),
+    });
+    broken.emit("error", new Error("spawn /bin/sh ENOENT"));
+    abort.abort();
+    await expect(done).rejects.toThrow("ENOENT");
+  });
+
   test("an abort stops it like a timeout does", async () => {
     const slow = Object.assign(new FakeChild(), { pid: 7 });
     const killGroup = vi.fn();

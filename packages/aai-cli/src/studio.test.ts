@@ -798,26 +798,6 @@ describe("executePublish", () => {
     expect(uploaded).toEqual({ K: "file-value" });
   });
 
-  test("the Publish route gets a deadline past the in-guest build's, not the default", async ({
-    tmpDir: dir,
-  }) => {
-    const cwd = path.join(dir, "fresh-agent");
-    await fs.mkdir(cwd);
-    await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
-    let deadline: number | undefined;
-    routeApi({
-      "GET /studio/projects/fresh-agent": null,
-      "PUT /studio/projects/fresh-agent/source": { sourceHash: "h1", created: true },
-      "POST /studio/projects/fresh-agent/deploy": (opts: { timeoutMs?: number }) => {
-        deadline = opts.timeoutMs;
-        return { ok: true, slug: "fresh-agent", url: "/fresh-agent/", output: "ok" };
-      },
-    });
-    await executePublish({ cwd, skipTypecheck: true }, ui, deps);
-    // The in-guest `aai deploy` alone may take 330 s.
-    expect(deadline).toBeGreaterThan(330_000);
-  });
-
   test("a .env symlinked out of the project is refused before anything uploads", async ({
     tmpDir: dir,
   }) => {

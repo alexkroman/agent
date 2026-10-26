@@ -12,7 +12,7 @@
 import { defineCommand } from "citty";
 import { defineExec, platformArgs } from "./_cli-common.ts";
 import { CliError } from "./_output.ts";
-import { parseDecimalInt } from "./_ui.ts";
+import { parseDecimalInt } from "./_utils.ts";
 
 /**
  * The most runs one `aai workflow runs` asks for: the runtime's

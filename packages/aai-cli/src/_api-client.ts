@@ -29,9 +29,32 @@ export const HINT_INVALID_API_KEY =
 export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
 
 /**
+ * The routes that legitimately take minutes, by the `action` every request
+ * names — one table, so a heavy route cannot inherit the default by omission.
+ *
+ * - `pull`/`push`: a whole workspace each way (up to `MAX_WORKSPACE_FILES` ×
+ *   `MAX_WORKSPACE_FILE_BYTES`, ~25 MB), minutes on a slow uplink.
+ * - `publish`: the in-guest `aai deploy` (330 s, `WORKSPACE_DEPLOY_TIMEOUT_MS`
+ *   in `aai-studio-server`) after the broker may cold-start the sandbox.
+ * - `deploy`: a gzipped worker bundle up, then the slug lock and a sandbox
+ *   spawn server-side — kept under the in-guest 330 s, so the CLI reports its
+ *   own timeout rather than being killed by it.
+ */
+const ACTION_TIMEOUT_MS: Readonly<Record<string, number>> = {
+  pull: 300_000,
+  push: 300_000,
+  publish: 600_000,
+  deploy: 300_000,
+};
+
+/** The per-attempt deadline a request for `action` gets by default. */
+export function requestTimeoutMs(action: string): number {
+  return ACTION_TIMEOUT_MS[action] ?? DEFAULT_REQUEST_TIMEOUT_MS;
+}
+
+/**
  * The largest decoded response body accepted — counted as it streams, so a
- * compression bomb is cut off at the cap rather than inflated into memory (a
- * ~1 GB gzip bomb took the CLI to 3 GB RSS).
+ * compression bomb is cut off at the cap rather than inflated into memory.
  *
  * Derived from the biggest legitimate answer, `aai pull`'s whole workspace:
  * at most `MAX_WORKSPACE_FILES` files of `MAX_WORKSPACE_FILE_BYTES`, and JSON
@@ -89,9 +112,8 @@ export function isGuardError(
  * default: follow a redirect, wait forever, or buffer an unbounded body.
  *
  * - **Redirects are refused, never followed** (`redirect: "manual"`, then any
- *   3xx throws). fetch re-sends a 307/308's BODY to the new location, across
- *   origins: `aai secret put` delivered `{"OPENAI_KEY":"sk_live…"}` to the
- *   redirect target and reported success.
+ *   3xx throws): fetch re-sends a 307/308's BODY — a secret value, a
+ *   workspace — to the new location, across origins.
  * - **One deadline covers the whole attempt** — headers AND body, since a
  *   server that sends headers and then trickles is the same hang. It wraps
  *   each read with `p-timeout`, so it holds for an injected fetch that ignores
@@ -199,8 +221,7 @@ export type ApiRequestOptions = {
   retryDelay?: number;
   /**
    * Per-attempt deadline, response body included (default
-   * {@link DEFAULT_REQUEST_TIMEOUT_MS}). A route that legitimately works for
-   * minutes — Publish builds in a sandbox — passes its own.
+   * {@link requestTimeoutMs} for `action`). Tests shrink it.
    */
   timeoutMs?: number;
   /** Decoded response cap (default {@link MAX_RESPONSE_BYTES}); tests shrink it. */
@@ -247,7 +268,7 @@ export async function apiRequest<T = unknown>(url: string, opts: ApiRequestOptio
   // `timeout` is not used — it clears once headers arrive, so a trickled body
   // still hung.)
   const fetch = guardedFetch(opts.fetch ?? globalThis.fetch, {
-    timeoutMs: opts.timeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
+    timeoutMs: opts.timeoutMs ?? requestTimeoutMs(opts.action),
     maxBytes: opts.maxResponseBytes ?? MAX_RESPONSE_BYTES,
   });
   const client = ofetch.create({}, { fetch });

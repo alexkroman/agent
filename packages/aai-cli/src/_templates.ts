@@ -106,19 +106,35 @@ export function scaffoldDir(): string {
  * thing the rule asks about it, and `package.json`'s content the one thing it
  * merges.
  *
- * Every path the scaffold could write is screened ({@link refuseUnsafeTarget})
- * BEFORE the existence probe, and that ordering is the fix for a real escape:
- * the probe was a `readFile`, a DANGLING link (`.gitignore -> ~/x`) read as
- * ENOENT, and the write that followed created the link's target outside the
- * project. A symlink anywhere on a scaffold path is now refused outright.
+ * Only the paths the rule will WRITE are screened ({@link refuseUnsafeTarget}),
+ * after the existence probe: a file the project already has is left alone, so
+ * a `CLAUDE.md -> AGENTS.md` link is fine, while a DANGLING one reads as
+ * missing, lands in the write set, and is refused rather than written through.
  */
 export async function layerScaffold(targetDir: string): Promise<void> {
-  const scaffold = await readScaffoldFiles(scaffoldDir());
-  const paths = scaffoldTargets(scaffold);
-  await Promise.all(paths.map((rel) => refuseUnsafeTarget(targetDir, rel)));
+  const writes = await planScaffold(targetDir);
+  await Promise.all(
+    Object.entries(writes).map(([rel, content]) =>
+      writeFileNoFollow(path.join(targetDir, rel), content),
+    ),
+  );
+}
+
+/** Each scaffold directory, read once per process — it cannot change under a run. */
+const scaffoldReads = new Map<string, Promise<Record<string, string>>>();
+
+/** What {@link layerScaffold} would write into `targetDir`, every path screened. */
+async function planScaffold(targetDir: string): Promise<Record<string, string>> {
+  const dir = scaffoldDir();
+  let read = scaffoldReads.get(dir);
+  if (!read) {
+    read = readScaffoldFiles(dir);
+    scaffoldReads.set(dir, read);
+  }
+  const scaffold = await read;
   const existing: Record<string, string> = {};
   await Promise.all(
-    paths.map(async (rel) => {
+    [...Object.keys(scaffold), "CLAUDE.md"].map(async (rel) => {
       try {
         existing[rel] = await fs.readFile(path.join(targetDir, rel), "utf-8");
       } catch {
@@ -128,27 +144,18 @@ export async function layerScaffold(targetDir: string): Promise<void> {
     }),
   );
   const writes = layerScaffoldFiles(existing, scaffold);
-  await Promise.all(
-    Object.entries(writes).map(([rel, content]) =>
-      writeFileNoFollow(path.join(targetDir, rel), content),
-    ),
-  );
-}
-
-/** Every path {@link layerScaffold} may write: the scaffold's, plus the guide pointer. */
-function scaffoldTargets(scaffold: Record<string, string>): string[] {
-  return [...Object.keys(scaffold), "CLAUDE.md"];
+  await Promise.all(Object.keys(writes).map((rel) => refuseUnsafeTarget(targetDir, rel)));
+  return writes;
 }
 
 /**
- * Screen `targetDir` for every path {@link layerScaffold} may write, without
+ * Screen `targetDir` for what {@link layerScaffold} would write, without
  * writing anything — for a caller that writes OTHER files first (`aai pull`,
  * `aai init`) and must refuse before the first of them rather than leave a
- * half-written tree when the scaffold step refuses.
+ * half-written tree. Its own writes only shrink the set the later layer adds.
  */
 export async function refuseUnsafeScaffoldTargets(targetDir: string): Promise<void> {
-  const paths = scaffoldTargets(await readScaffoldFiles(scaffoldDir()));
-  await Promise.all(paths.map((rel) => refuseUnsafeTarget(targetDir, rel)));
+  await planScaffold(targetDir);
 }
 
 /**

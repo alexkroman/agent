@@ -301,10 +301,12 @@ export async function executeSecretList(
     // A name is the SERVER's string, printed into the user's terminal: one
     // holding a newline (or an escape sequence) could fake further output
     // lines. A name no secret can have is shown quoted and escaped, and flagged.
+    let odd = 0;
     for (const v of vars) {
-      ui.log.message(ENV_NAME_RE.test(v) ? `  ${v}` : `  ${JSON.stringify(v)} (not a valid name)`);
+      const valid = ENV_NAME_RE.test(v);
+      if (!valid) odd++;
+      ui.log.message(valid ? `  ${v}` : `  ${JSON.stringify(v)} (not a valid name)`);
     }
-    const odd = vars.filter((v) => !ENV_NAME_RE.test(v)).length;
     if (odd > 0) {
       ui.log.warn(
         `${odd} ${plural(odd, "name")} from ${target} ${odd === 1 ? "is" : "are"} not a valid secret name — shown escaped.`,

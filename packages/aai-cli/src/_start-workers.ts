@@ -43,6 +43,7 @@ import type { Cluster, Worker } from "node:cluster";
 import type { Socket } from "node:net";
 import { availableParallelism } from "node:os";
 import type { ClientNotifier } from "@alexkroman1/aai/host-internal";
+import { parseDecimalInt } from "./_utils.ts";
 
 /** Process-env override for the worker count, for a container that cannot pass flags. */
 export const WORKERS_ENV = "AAI_WORKERS";
@@ -63,12 +64,13 @@ export function parseWorkers(
 ): number {
   const trimmed = value.trim().toLowerCase();
   if (trimmed === "auto") return Math.max(1, cpus());
-  if (!/^\d+$/.test(trimmed) || Number(trimmed) < 1) {
+  const n = parseDecimalInt(trimmed, 1, Number.MAX_SAFE_INTEGER);
+  if (n === undefined) {
     throw new Error(
       `${source} must be a positive integer or "auto" (got ${JSON.stringify(value)})`,
     );
   }
-  return Number(trimmed);
+  return n;
 }
 
 /** Env overrides for the drain timeout (seconds) and the per-worker call cap. */
@@ -94,11 +96,12 @@ export function resolvePositiveInt(
   const [raw, source] =
     flag !== undefined ? [flag, flagName] : [env[envName]?.trim() || undefined, envName];
   if (raw === undefined) return fallback;
-  if (!/^\d+$/.test(raw.trim()) || Number(raw) < 1) {
+  const n = parseDecimalInt(raw.trim(), 1, Number.MAX_SAFE_INTEGER);
+  if (n === undefined) {
     const what = unit ? `a positive whole number of ${unit}` : "a positive integer";
     throw new Error(`${source} must be ${what} (got ${JSON.stringify(raw)})`);
   }
-  return Number(raw);
+  return n;
 }
 
 /** The worker count: the flag, then {@link WORKERS_ENV}, then 1. */
@@ -201,10 +204,7 @@ export interface WorkerLike {
  * IPC channel `cluster.fork` opens — without importing `node:cluster`.
  *
  * Not `NODE_UNIQUE_ID`, though `cluster.fork` sets it: Node's bootstrap
- * DELETES it from a worker's `process.env` before any user code runs, so a
- * check on it was false in every real worker. Each one then took the
- * single-process path and bound the primary's port itself, and
- * `aai start --workers` failed every boot with EADDRINUSE.
+ * deletes it from a worker's `process.env` before any user code runs.
  */
 export function isStartWorker(
   env: NodeJS.ProcessEnv = process.env,
@@ -226,11 +226,19 @@ export interface ClusterLike {
 }
 
 /**
+ * A worker's stdio: stdin and stderr inherited, stdout pointed at the
+ * primary's STDERR. The primary owns stdout's one `--json` result line, and a
+ * worker runs this same command, so anything it prints there would be a
+ * second one.
+ */
+export const WORKER_STDIO = ["inherit", 2, "inherit", "ipc"] as const;
+
+/**
  * `node:cluster` behind {@link ClusterLike}. Structured-clone IPC, because a
  * relayed notice can carry audio (`Uint8Array`), which JSON would mangle.
  */
 export function nodeCluster(cluster: Cluster): ClusterLike {
-  cluster.setupPrimary({ serialization: "advanced" });
+  cluster.setupPrimary({ serialization: "advanced", stdio: [...WORKER_STDIO] });
   const wrapped = new Map<Worker, WorkerLike>();
   const like = (worker: Worker): WorkerLike => {
     let handle = wrapped.get(worker);

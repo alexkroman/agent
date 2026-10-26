@@ -16,10 +16,10 @@
  */
 
 import { constants } from "node:fs";
-import { lstat, mkdir, open } from "node:fs/promises";
+import { mkdir, open } from "node:fs/promises";
 import path from "node:path";
 import { CliError } from "./_output.ts";
-import { errorCode } from "./_utils.ts";
+import { lstatOrNull } from "./_utils.ts";
 
 /**
  * Refuse `rel` under `root` when any EXISTING part of it is a symlink, or
@@ -55,16 +55,6 @@ export async function refuseUnsafeTarget(root: string, rel: string): Promise<voi
         "Move it aside, or use a fresh directory.",
       );
     }
-  }
-}
-
-/** `lstat`, or null when nothing is there. */
-async function lstatOrNull(p: string): Promise<Awaited<ReturnType<typeof lstat>> | null> {
-  try {
-    return await lstat(p);
-  } catch (err) {
-    if (errorCode(err) === "ENOENT") return null;
-    throw err;
   }
 }
 

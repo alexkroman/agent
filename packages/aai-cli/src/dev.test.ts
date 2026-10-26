@@ -223,6 +223,8 @@ describe("executeDev --tunnel / --on-public-url", () => {
         startupSignal = (o as { signal?: AbortSignal }).signal;
         // Hangs until stopped, as a stuck publish script would.
         await new Promise((resolve) => startupSignal?.addEventListener("abort", resolve));
+        // Its process group takes a moment to go after the abort (SIGTERM grace).
+        await new Promise((resolve) => setTimeout(resolve, 20));
         f.events.push("startup-hook.stopped");
         return null;
       });
@@ -246,6 +248,11 @@ describe("executeDev --tunnel / --on-public-url", () => {
           "startup-hook.stopped",
           "hook:./publish.sh:",
         ]),
+      );
+      // The withdrawal waits for the startup run to be STOPPED: inside its grace
+      // it could still register the URL the withdrawal removes.
+      expect(f.events.indexOf("startup-hook.stopped")).toBeLessThan(
+        f.events.indexOf("hook:./publish.sh:"),
       );
       // Stopped by the shutdown, not failed: no warning for it.
       expect(mockNotify).not.toHaveBeenCalledWith(

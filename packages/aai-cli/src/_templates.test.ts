@@ -340,4 +340,21 @@ describe("layerScaffold", () => {
     // Screened before ANY write, so the rest of the scaffold did not land either.
     expect(await fileExists(path.join(target, "package.json"))).toBe(false);
   });
+
+  test("a symlink at a path the project already HAS is left alone, not refused", async ({
+    tmpDir: dir,
+  }) => {
+    // `CLAUDE.md -> AGENTS.md` is a common layout, and the layer never writes
+    // a file that exists — so only the paths it will write are screened.
+    await useFakeRoot(dir);
+    const target = path.join(dir, "pulled");
+    await fs.mkdir(target);
+    await fs.writeFile(path.join(target, "AGENTS.md"), "# mine\n");
+    await fs.symlink("AGENTS.md", path.join(target, "CLAUDE.md"));
+
+    await layerScaffold(target);
+    expect((await fs.lstat(path.join(target, "CLAUDE.md"))).isSymbolicLink()).toBe(true);
+    expect(await fs.readFile(path.join(target, "AGENTS.md"), "utf-8")).toBe("# mine\n");
+    expect(await fileExists(path.join(target, "package.json"))).toBe(true);
+  });
 });

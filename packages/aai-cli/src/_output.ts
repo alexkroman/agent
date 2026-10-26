@@ -153,10 +153,8 @@ export function stripAnsi(text: string): string {
  * Only the HUMAN-TEXT fields are cleaned (`error`, `hint`, `data.warnings`),
  * by {@link stripAnsi}: they are sentences a `jq -r` prints to a terminal, and
  * a diagnostic or a server's error body can carry colour or an OSC 52. DATA is
- * emitted verbatim (JSON-escaped): stripping the whole serialized line used to
- * rewrite it, so `aai init $'\e[31mred'` reported a `dir` ending `/red` while
- * it created a directory whose name holds the ESC byte — and missed OSC, which
- * `jq -r` then handed the terminal.
+ * emitted verbatim (JSON-escaped), since a stripped `dir` would name a
+ * directory that does not exist.
  */
 export function resultLine(result: CommandResult<unknown>): string {
   return `${JSON.stringify(cleanHumanFields(result))}\n`;
@@ -207,9 +205,9 @@ export function oweExitCode(code: number | undefined): void {
  * Install an `'error'` listener on stdout so a broken pipe doesn't crash the
  * CLI with an unhandled `'error'` event. EPIPE (consumer went away, e.g.
  * `aai … --json | head -1`) exits quietly WITH THE CODE THE RUN OWES — what
- * {@link oweExitCode} last recorded, else 1 (nothing has succeeded yet). It
- * used to be a flat `exit(0)`, so a failing `aai list | <closed>` passed under
- * `pipefail`. Anything else is reported on stderr and exits 1.
+ * {@link oweExitCode} last recorded, else 1 (nothing has succeeded yet), so a
+ * failure still fails under `pipefail`. Anything else is reported on stderr
+ * and exits 1.
  */
 export function installStdoutGuard(stream: NodeJS.EventEmitter = process.stdout): void {
   stream.on("error", (err: NodeJS.ErrnoException) => {

@@ -17,6 +17,7 @@ import { styleText } from "node:util";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import * as clack from "@clack/prompts";
 import { CliError, sanitizeTerminalText, writeLine } from "./_output.ts";
+import { parseDecimalInt } from "./_utils.ts";
 
 /** The levels a command reports at. `message` is an unadorned line. */
 export type LogLevel = "info" | "success" | "error" | "warn" | "step" | "message";
@@ -92,6 +93,9 @@ const noop = () => {
  * is SGR.
  */
 const safe = (text: string): string => sanitizeTerminalText(text, { keepSgr: true });
+/** {@link safe} for an optional label, hint or spinner message. */
+const safeOpt = (text: string | undefined): string | undefined =>
+  text === undefined ? undefined : safe(text);
 
 /** `opts` with its `message` made {@link safe} — the shape every clack prompt takes. */
 function safeMessage<T extends { message: string }>(opts: T): T {
@@ -155,8 +159,8 @@ export function createUi(term: UiTerm = clack): Ui {
           options: opts.options.map((o) => ({
             ...o,
             ...omitUndefined({
-              label: o.label === undefined ? undefined : safe(o.label),
-              hint: o.hint === undefined ? undefined : safe(o.hint),
+              label: safeOpt(o.label),
+              hint: safeOpt(o.hint),
             }),
           })),
         }),
@@ -164,8 +168,8 @@ export function createUi(term: UiTerm = clack): Ui {
         if (silenced) return { start: noop, stop: noop };
         const spin = term.spinner();
         return {
-          start: (message) => spin.start(message === undefined ? undefined : safe(message)),
-          stop: (message) => spin.stop(message === undefined ? undefined : safe(message)),
+          start: (message) => spin.start(safeOpt(message)),
+          stop: (message) => spin.stop(safeOpt(message)),
         };
       },
       intro: (title) => {
@@ -199,20 +203,6 @@ export function unwrapCancel<T>(ui: Ui, result: T, message = "Cancelled"): Exclu
 /** Format a URL for display. */
 export function fmtUrl(url: string): string {
   return styleText("cyanBright", url);
-}
-
-/**
- * A flag value as a whole number in `[min, max]`, or `undefined` when it is
- * not one — DECIMAL DIGITS ONLY.
- *
- * `Number()` is not a parser for this: it reads `0x10` as 16, `1e3` as 1000,
- * `""`/`"  "` as 0 and `1.0` as 1, so `--port 0x10` bound port 16 and
- * `--limit ""` asked for zero runs, each without a word.
- */
-export function parseDecimalInt(raw: string, min: number, max: number): number | undefined {
-  if (!/^\d{1,15}$/.test(raw)) return undefined;
-  const n = Number(raw);
-  return n >= min && n <= max ? n : undefined;
 }
 
 /**

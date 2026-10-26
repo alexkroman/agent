@@ -3,8 +3,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parseEnv } from "node:util";
+import { isPathInside } from "@alexkroman1/aai-runtime/internal";
 import { CliError } from "./_output.ts";
-import { errorCode } from "./_utils.ts";
+import { errorCode, lstatOrNull } from "./_utils.ts";
 
 /**
  * One dotenv file's entries, or `{}` when it is not there.
@@ -145,14 +146,7 @@ export async function readUploadableEnv(
 
 /** Refuse `file` when it is a symlink whose real path leaves `cwd`. */
 async function assertInsideProject(cwd: string, file: string): Promise<void> {
-  let isLink: boolean;
-  try {
-    isLink = (await fs.lstat(file)).isSymbolicLink();
-  } catch (err) {
-    if (errorCode(err) === "ENOENT") return;
-    throw err;
-  }
-  if (!isLink) return;
+  if (!(await lstatOrNull(file))?.isSymbolicLink()) return;
   const [root, real] = await Promise.all([
     fs.realpath(cwd),
     fs.realpath(file).catch((err: unknown) => {
@@ -161,9 +155,7 @@ async function assertInsideProject(cwd: string, file: string): Promise<void> {
       throw err;
     }),
   ]);
-  if (real === undefined) return;
-  const rel = path.relative(root, real);
-  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+  if (real !== undefined && !isPathInside(root, real)) {
     throw new CliError(
       "unsafe_env_file",
       `${file} is a symlink to ${real}, outside the project — its contents will not be uploaded as secrets.`,

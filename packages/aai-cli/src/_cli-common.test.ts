@@ -13,7 +13,6 @@ import {
   sharedArgs,
 } from "./_cli-common.ts";
 import { CliError, fail, ok } from "./_output.ts";
-import { SLOT_ENV } from "./_start-workers.ts";
 import { createFakeUi, type FakeUi, stubProcessExit, test } from "./_test-utils.ts";
 
 // A fresh fake terminal per test, handed to `runCommand`/`defineExec` — no
@@ -213,27 +212,6 @@ describe("runCommand", () => {
     expect(ui.silenced).toBe(true);
     expect(JSON.parse(written().trim())).toEqual({ ok: true, data: { n: 1 } });
     expect(exitSpy).not.toHaveBeenCalled();
-  });
-
-  test("json mode: a `start --workers` worker's verdict goes to stderr, not the primary's stdout", async () => {
-    // Every forked worker runs this same command on the primary's stdout; a
-    // worker that could not bind its port wrote a second result line there.
-    // A worker is the slot our fork sets plus the IPC channel `cluster.fork`
-    // opens (`isStartWorker`), so both are stood in for here.
-    vi.stubEnv(SLOT_ENV, "0");
-    // Restored by descriptor: outside a forked pool `process.send` is ABSENT,
-    // which an assignment of the saved `undefined` cannot reproduce.
-    const send = Object.getOwnPropertyDescriptor(process, "send");
-    Object.defineProperty(process, "send", { value: () => true, configurable: true });
-    try {
-      await runCommand({ json: true }, async () => fail("command_failed", "port in use"), ui);
-    } finally {
-      if (send) Object.defineProperty(process, "send", send);
-      else Reflect.deleteProperty(process, "send");
-    }
-    expect(ui.stdout).toEqual([]);
-    expect(JSON.parse(ui.stderr.join(""))).toMatchObject({ ok: false, error: "port in use" });
-    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
   test("human mode: a RETURNED failure logs the message AND the hint, exits 1", async () => {

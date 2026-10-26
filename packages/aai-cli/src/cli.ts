@@ -561,9 +561,10 @@ if (process.env.VITEST !== "true") {
     }
     const valued = builtinWithValue(argv);
     if (valued !== undefined) {
+      const flag = valued.split("=")[0];
       await reportAndExit(
-        `${valued.split("=")[0]} takes no value.`,
-        `Pass it bare: \`${named.join(" ")} ${valued.split("=")[0]}\`.`,
+        `${flag} takes no value.`,
+        `Pass it bare: \`${named.join(" ")} ${flag}\`.`,
       );
     }
     if (wantsVersionElsewhere(argv)) await printVersionAndExit(argv);

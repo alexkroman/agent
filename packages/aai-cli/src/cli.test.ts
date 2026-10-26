@@ -378,15 +378,18 @@ describe("strict numbers", () => {
     },
   );
 
-  test("--limit -Infinity says the flag needs a value, not 'unknown option'", async ({
-    tmpDir: dir,
-  }) => {
-    const { stdout } = await runBin(["workflow", "runs", "wf", "--limit", "-Infinity"], dir);
-    expect(JSON.parse(stdout.trim())).toMatchObject({
-      code: "usage",
-      error: expect.stringContaining("--limit needs a value"),
-    });
-  });
+  // citty reads a dash-led token as a flag, so `--limit -5` reached the
+  // command as `limit: ""` — a negative NUMBER included, not only `-Infinity`.
+  test.for(["-Infinity", "-5"])(
+    "--limit %s says the flag needs a value, not 'unknown option'",
+    async (value, { tmpDir: dir }) => {
+      const { stdout } = await runBin(["workflow", "runs", "wf", "--limit", value], dir);
+      expect(JSON.parse(stdout.trim())).toMatchObject({
+        code: "usage",
+        error: expect.stringContaining("--limit needs a value"),
+      });
+    },
+  );
 });
 
 describe("`--` before a command", () => {

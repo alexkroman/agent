@@ -1,10 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { readFileSync } from "node:fs";
+import { readFileSync, type Stats } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 // The `/utils` subpath is deliberately zod-free, so re-exporting from it
 // keeps `aai --help` from paying zod's startup cost (the root barrel would).
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
+import { CliError } from "./_output.ts";
 
 export { errorDetail, errorMessage } from "@alexkroman1/aai/utils";
 
@@ -227,4 +228,65 @@ export function formatCappedList(items: readonly string[], max = MAX_NAMED_ITEMS
   const named = items.slice(0, max).join(", ");
   const rest = items.length - max;
   return rest > 0 ? `${named}, and ${rest} more` : named;
+}
+
+/**
+ * Origin of `url`, or `null` when it is not an absolute http(s) URL.
+ *
+ * Non-HTTP schemes are rejected rather than returned: `new URL()` yields the
+ * opaque origin `"null"` for them, which would otherwise flow on as if it
+ * were a real origin.
+ */
+export function serverOrigin(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  return parsed.origin;
+}
+
+/**
+ * A `--server` value, trimmed, or a usage error. The ONE rule for the flag
+ * that decides where the API key goes: `defineExec` applies it to every
+ * command declaring `--server`, and `resolveServerUrl` again for a caller that
+ * is not a command. PROVIDED is the test, not truthy — `--server=` read as
+ * "not given" sent the key to the default origin.
+ */
+export function parseServerFlag(value: unknown): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (serverOrigin(text) === null) {
+    throw new CliError(
+      "usage",
+      `--server must be an absolute http(s) URL; got ${JSON.stringify(value)}.`,
+      "Pass e.g. `--server https://example.com`, or leave --server out to use the project's server.",
+    );
+  }
+  return text;
+}
+
+/** `lstat`, or null when nothing is there — the link itself, never its target. */
+export async function lstatOrNull(p: string): Promise<Stats | null> {
+  try {
+    return await fs.lstat(p);
+  } catch (err) {
+    if (errorCode(err) === "ENOENT") return null;
+    throw err;
+  }
+}
+
+/**
+ * A flag value as a whole number in `[min, max]`, or `undefined` when it is
+ * not one — DECIMAL DIGITS ONLY.
+ *
+ * `Number()` is not a parser for this: it reads `0x10` as 16, `1e3` as 1000,
+ * `""`/`"  "` as 0 and `1.0` as 1, so `--port 0x10` bound port 16 and
+ * `--limit ""` asked for zero runs, each without a word.
+ */
+export function parseDecimalInt(raw: string, min: number, max: number): number | undefined {
+  if (!/^\d{1,15}$/.test(raw)) return undefined;
+  const n = Number(raw);
+  return n >= min && n <= max ? n : undefined;
 }

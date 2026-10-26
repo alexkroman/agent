@@ -81,13 +81,20 @@ export async function executeDelete(
   const { cwd } = opts;
   const { config, serverUrl, apiKey } = await deps.resolveDeployTarget(cwd, opts.server);
 
-  if (config?.studioProject) {
-    const project = config.studioProject;
-    const what = `studio project ${project} and all of its deployed agents`;
-    if (!(await confirmDelete(what, opts, ui))) {
-      ui.log.info("Cancelled — nothing was deleted.");
-      return ok({ cancelled: true });
-    }
+  const project = config?.studioProject;
+  // `requireDeployedSlug(config)`, not a second `getServerInfo` — that would
+  // re-run `resolveDeployTarget` (config reads, `ensureApiKey`, and with
+  // `--server` the cross-process config lock) for what is already in scope.
+  const slug = project ? undefined : requireDeployedSlug(config);
+  const what = project
+    ? `studio project ${project} and all of its deployed agents`
+    : `the deployed agent ${slug}`;
+  if (!(await confirmDelete(what, opts, ui))) {
+    ui.log.info("Cancelled — nothing was deleted.");
+    return ok({ cancelled: true });
+  }
+
+  if (project) {
     ui.log.step(`Deleting studio project ${project} (and its deployed agents)`);
     await deps.apiRequest(studioProjectApiUrl(serverUrl, project), {
       method: "DELETE",
@@ -105,19 +112,10 @@ export async function executeDelete(
     // takes the first-push path and recreates the project. `serverUrl` is
     // kept deliberately: it is still where this directory should publish.
     await writeProjectConfig(cwd, { serverUrl });
-    return ok({ project, ...omitUndefined({ slug: config.slug }) });
+    return ok({ project, ...omitUndefined({ slug: config?.slug }) });
   }
 
-  // `requireDeployedSlug(config)`, not a second `getServerInfo` — that call
-  // re-ran `resolveDeployTarget`, i.e. a second project-config read, a second
-  // global-config read, a second `ensureApiKey`, and (with `--server`) a second
-  // `approveServer`, which takes the cross-process config lock. Everything it
-  // would have returned is already in scope.
-  const slug = requireDeployedSlug(config);
-  if (!(await confirmDelete(`the deployed agent ${slug}`, opts, ui))) {
-    ui.log.info("Cancelled — nothing was deleted.");
-    return ok({ cancelled: true });
-  }
+  if (slug === undefined) throw new Error("unreachable: no studio project and no slug");
   ui.log.step(`Deleting ${slug}`);
   await runDelete({ url: serverUrl, slug, apiKey }, deps.apiRequest);
   ui.log.success(`Deleted ${serverUrl}/${slug}`);
