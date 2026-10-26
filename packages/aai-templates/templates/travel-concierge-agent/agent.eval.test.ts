@@ -44,6 +44,7 @@ import {
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import { tripSlot } from "./shared.ts";
+import updateTicket from "./tools/update_ticket.ts";
 
 /**
  * The `syncState` frames, in stream order, UP TO the first `confirm_action`.
@@ -101,7 +102,7 @@ describeEval(agentDef, (test) => {
       // the read-back before the staging — and `turnCalling`'s throw names
       // every turn's tool list AND tells the two findings apart: no
       // `update_ticket` at all, or calls that were all refused by the desk gate.
-      const staging = turnCalling(turns, "update_ticket", stagedSomething);
+      const staging = turnCalling(turns, updateTicket, stagedSomething);
       const attempts = toolCallsInTurns(turns).filter((call) => call.name === "update_ticket");
       // The staging call itself, by INDEX, because what follows it in the same
       // turn is the subject of the assertion below.

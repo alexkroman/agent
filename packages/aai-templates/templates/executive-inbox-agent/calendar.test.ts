@@ -143,12 +143,12 @@ describe("send_calendar_invite", () => {
     // bad value never reaches `execute` — where the pair of regexes this
     // replaced accepted `2026-02-30T99:99`.
     await expect(
-      parseToolInput(agentDef, "send_calendar_invite", { ...INVITE, date: "2026-02-30" }),
+      parseToolInput(sendCalendarInvite, { ...INVITE, date: "2026-02-30" }),
     ).rejects.toThrow();
     await expect(
-      parseToolInput(agentDef, "send_calendar_invite", { ...INVITE, startTime: "9:00" }),
+      parseToolInput(sendCalendarInvite, { ...INVITE, startTime: "9:00" }),
     ).rejects.toThrow();
-    await expect(parseToolInput(agentDef, "send_calendar_invite", INVITE)).resolves.toMatchObject({
+    await expect(parseToolInput(sendCalendarInvite, INVITE)).resolves.toMatchObject({
       date: "2026-03-18",
     });
   });

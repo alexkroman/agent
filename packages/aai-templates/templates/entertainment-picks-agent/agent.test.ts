@@ -1,5 +1,4 @@
 import agentDef from "virtual:aai/agent";
-import type { InferToolInput } from "@alexkroman1/aai";
 // The failure vocabulary from the subpath that DECLARES it — `/utils` is the
 // zero-dependency half a tool body (and a page) reaches for, and `client.tsx`
 // takes the same guard from the same place.
@@ -21,13 +20,6 @@ import { CATEGORIES, MOODS, nightSlot } from "./shared.ts";
 // model's call would and is typed by the def — arguments and result.
 import recommend from "./tools/recommend.ts";
 import revisit from "./tools/revisit.ts";
-
-/**
- * What `recommend` takes, read off the tool itself rather than hand-typed as
- * `{ category: string; mood: string }` — which was WEAKER than the schema and
- * nothing made it fail when the schema moved.
- */
-type RecommendInput = InferToolInput<typeof recommend>;
 
 describeAgent(agentDef, (run) => {
   describe("entertainment-picks-agent template", () => {
@@ -128,10 +120,7 @@ describeAgent(agentDef, (run) => {
     });
 
     test("the schema accepts a category/mood pair from the enums", async () => {
-      const parsed = await parseToolInput<RecommendInput>(agentDef, "recommend", {
-        category: "movie",
-        mood: "cozy",
-      });
+      const parsed = await parseToolInput(recommend, { category: "movie", mood: "cozy" });
       expect(parsed).toEqual({ category: "movie", mood: "cozy" });
     });
 
@@ -143,7 +132,7 @@ describeAgent(agentDef, (run) => {
       // `.validate` may be sync or async, so a missing `await` leaves `.issues`
       // undefined and the negative test passes for the wrong reason.
       expect(
-        await toolInputIssues(agentDef, "recommend", { category: "movie", mood: "melancholy" }),
+        await toolInputIssues(recommend, { category: "movie", mood: "melancholy" }),
       ).toBeDefined();
     });
   });

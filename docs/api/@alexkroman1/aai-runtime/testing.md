@@ -1286,36 +1286,35 @@ test("the voice survives parsing", async () => {
 ### parseToolInput()
 
 ```ts
-function parseToolInput<T = Record<string, unknown>>(
-   agent: ToolBearingAgent, 
-   name: string, 
-   value: unknown
-): Promise<T>;
+function parseToolInput<D extends ToolDef<ToolInputSchema>>(tool: D, value: unknown): Promise<InferToolInput<D>>;
 ```
 
-Validate `value` against the input schema of the tool `name`.
+Validate `value` against `tool`'s input schema, typed by the def.
 
-[parseSchemaInput](#parseschemainput) with the lookup done — including `toolOf`'s "no such
-tool" sentence, which names the tools that DO exist, since a lookup that
-misses is nearly always a rename.
+[parseSchemaInput](#parseschemainput) with the schema read off the def — the same def
+`runTool` takes and the eval readers match by: the tool file's default
+export, a speaker's `tools` entry, `toolOf(agentDef, name)` for a minted tool.
+The parsed value is `InferToolInput<typeof tool>`, what `execute` receives,
+so a schema that stopped defaulting a field fails at compile time in the spec
+that reads it, and a name string in the tool position does not compile. No
+agent is needed: validation is the schema's alone, and the toolset's gate
+(a roster not on the line, a dialog out of state) runs only on a CALL.
+
+A failure names the tool by the name its agent registered it under when one
+did (`Tool add_pizza refused that input: …`), else by its description — a def
+built inline in a spec is as valid a subject here as a lowered one.
 
 #### Type Parameters
 
-##### T
+##### D
 
-`T` = `Record`\<`string`, `unknown`\>
-
-What the schema produces.
+`D` *extends* [`ToolDef`](../aai/index.md#tooldef)\<[`ToolInputSchema`](../aai/index.md#toolinputschema)\>
 
 #### Parameters
 
-##### agent
+##### tool
 
-[`ToolBearingAgent`](#toolbearingagent)
-
-##### name
-
-`string`
+`D`
 
 ##### value
 
@@ -1323,27 +1322,37 @@ What the schema produces.
 
 #### Returns
 
-`Promise`\<`T`\>
+`Promise`\<[`InferToolInput`](../aai/index.md#infertoolinput)\<`D`\>\>
 
 #### Throws
 
-When the agent declares no tool called `name` (see `toolOf`), when
-  that tool declares no `inputSchema`, or when the schema refuses `value`.
+When the tool declares no `inputSchema`, or when the schema refuses
+  `value`.
 
 #### Example
 
 ```ts
-import agentDef from "virtual:aai/agent";
-import { parseToolInput } from "@alexkroman1/aai/testing";
-import { expect } from "vitest";
+// file: tools/add_pizza.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
 
-const parsed = await parseToolInput<{ quantity: number }>(agentDef, "add_pizza", {
-  size: "small",
-  crust: "thin",
-  toppings: [],
+export default tool({
+  description: "Add a pizza to the order",
+  inputSchema: z.object({ size: z.enum(["small", "large"]), quantity: z.number().default(1) }),
+  execute: ({ size, quantity }) => ({ size, quantity }),
 });
-// The schema's own default, which is the thing worth asserting here.
-expect(parsed.quantity).toBe(1);
+
+// file: agent.test.ts
+import { parseToolInput } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+import addPizza from "./tools/add_pizza.ts";
+
+test("add_pizza defaults the quantity", async () => {
+  const parsed = await parseToolInput(addPizza, { size: "small" });
+  // The schema's own default, which is the thing worth asserting here — and
+  // `parsed` is typed by the def, so a dropped field is a compile error.
+  expect(parsed.quantity).toBe(1);
+});
 ```
 
 ***
@@ -2731,30 +2740,23 @@ test("the step files its summary", async () => {
 ### toolInputIssues()
 
 ```ts
-function toolInputIssues(
-   agent: ToolBearingAgent, 
-   name: string, 
-   value: unknown
-): Promise<
+function toolInputIssues(tool: ToolDef<ToolInputSchema>, value: unknown): Promise<
   | readonly StandardSchemaIssue[]
 | undefined>;
 ```
 
-The issues the tool `name`'s input schema found in `value`, or `undefined`.
+The issues `tool`'s input schema found in `value`, or `undefined`.
 
 The negative half of [parseToolInput](#parsetoolinput) — the assertion behind "a mood
 outside the enum is refused by the schema", which is the one thing standing
-between an LLM's untyped tool call and the tool body.
+between an LLM's untyped tool call and the tool body. Takes the def, as
+[parseToolInput](#parsetoolinput) does.
 
 #### Parameters
 
-##### agent
+##### tool
 
-[`ToolBearingAgent`](#toolbearingagent)
-
-##### name
-
-`string`
+[`ToolDef`](../aai/index.md#tooldef)\<[`ToolInputSchema`](../aai/index.md#toolinputschema)\>
 
 ##### value
 
@@ -2768,19 +2770,30 @@ between an LLM's untyped tool call and the tool body.
 
 #### Throws
 
-When the agent declares no such tool, or when it declares no
-  `inputSchema`. A tool that takes no arguments accepts anything, and saying
-  so out loud beats answering `undefined` — which reads as "accepted".
+When the tool declares no `inputSchema`. A tool that takes no
+  arguments accepts anything, and saying so out loud beats answering
+  `undefined` — which reads as "accepted".
 
 #### Example
 
 ```ts
-import agentDef from "virtual:aai/agent";
+// file: tools/recommend.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Recommend something for tonight",
+  inputSchema: z.object({ mood: z.enum(["cozy", "tense", "silly"]) }),
+  execute: ({ mood }) => ({ picks: [mood] }),
+});
+
+// file: agent.test.ts
 import { toolInputIssues } from "@alexkroman1/aai/testing";
 import { expect, test } from "vitest";
+import recommend from "./tools/recommend.ts";
 
 test("recommend refuses a mood off its list", async () => {
-  expect(await toolInputIssues(agentDef, "recommend", { mood: "melancholy" })).toBeDefined();
+  expect(await toolInputIssues(recommend, { mood: "melancholy" })).toBeDefined();
 });
 ```
 

@@ -11896,6 +11896,9 @@ type GuardrailVerdict = true | string;
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S extends undefined ? Record<string, never> : never;
 
+// @public
+type InferToolInput<T extends ToolDef> = Parameters<T["execute"]>[0];
+
 // @public @input
 interface InterruptionTuning {
     backoffMs?: number;
@@ -11952,7 +11955,7 @@ interface ModelTuning {
 export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<T>;
 
 // @public
-export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAgent, name: string, value: unknown): Promise<T>;
+export function parseToolInput<D extends ToolDef<ToolInputSchema>>(tool: D, value: unknown): Promise<InferToolInput<D>>;
 
 // @public @input
 interface PipelineTuning {
@@ -13032,7 +13035,7 @@ type ToolFailure = {
 };
 
 // @public
-export function toolInputIssues(agent: ToolBearingAgent, name: string, value: unknown): Promise<readonly StandardSchemaIssue[] | undefined>;
+export function toolInputIssues(tool: ToolDef<ToolInputSchema>, value: unknown): Promise<readonly StandardSchemaIssue[] | undefined>;
 
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
@@ -16950,7 +16953,7 @@ export interface TtsWordTiming {
 export const TURN_ENDS: ReadonlySet<SessionEvent["type"]>;
 
 // @public
-export function turnCalling(turns: readonly EvalTurn[], name: string, where?: (call: EvalToolCall) => boolean): EvalTurn;
+export function turnCalling(turns: readonly EvalTurn[], tool: ToolDef, where?: (call: EvalToolCall) => boolean): EvalTurn;
 
 // @public
 export type Unsubscribe = () => void;
@@ -17838,7 +17841,7 @@ export interface TtsWordTiming {
 export const TURN_ENDS: ReadonlySet<SessionEvent["type"]>;
 
 // @public
-export function turnCalling(turns: readonly EvalTurn[], name: string, where?: (call: EvalToolCall) => boolean): EvalTurn;
+export function turnCalling(turns: readonly EvalTurn[], tool: ToolDef, where?: (call: EvalToolCall) => boolean): EvalTurn;
 
 // @public
 export type Unsubscribe = () => void;
@@ -21345,7 +21348,7 @@ export interface TtsWordTiming {
 export const TURN_ENDS: ReadonlySet<SessionEvent["type"]>;
 
 // @public
-export function turnCalling(turns: readonly EvalTurn[], name: string, where?: (call: EvalToolCall) => boolean): EvalTurn;
+export function turnCalling(turns: readonly EvalTurn[], tool: ToolDef, where?: (call: EvalToolCall) => boolean): EvalTurn;
 
 // @public
 export type Unsubscribe = () => void;

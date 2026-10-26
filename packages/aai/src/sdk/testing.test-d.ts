@@ -14,6 +14,7 @@ import { expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import type { ToolContextOverrides } from "./_testing-context.ts";
 import { createToolContext } from "./_testing-context.ts";
+import { parseToolInput, type toolInputIssues } from "./_testing-schema.ts";
 import { expectToolOk } from "./_testing-tool-results.ts";
 import { tool } from "./define.ts";
 import type { DialogToolResult } from "./dialog-types.ts";
@@ -77,6 +78,29 @@ test("the overrides NAME every ToolContext field, and no other", () => {
   >;
   expectTypeOf<Exclude<keyof ToolContext, Own>>().toEqualTypeOf<never>();
   expectTypeOf<Exclude<Own, keyof ToolContext>>().toEqualTypeOf<never>();
+});
+
+test("parseToolInput takes the TOOL and answers its parsed input; a name is not a tool", async () => {
+  const addItem = tool({
+    description: "Add an item",
+    inputSchema: z.object({ item: z.string(), quantity: z.number().default(1) }),
+    execute: ({ item, quantity }) => ({ added: item, count: quantity }),
+  });
+  // Typed by the def — `InferToolInput<typeof addItem>` — with no claim to make.
+  expectTypeOf(await parseToolInput(addItem, { item: "apple" })).toEqualTypeOf<{
+    item: string;
+    quantity: number;
+  }>();
+  // The `(agent, name, value)` form is gone: a string is not a tool…
+  expectTypeOf<string>().not.toExtend<Parameters<typeof parseToolInput>[0]>();
+  expectTypeOf<string>().not.toExtend<Parameters<typeof toolInputIssues>[0]>();
+  // …and neither is the agent that declares one.
+  expectTypeOf<{ tools: Record<string, typeof addItem> }>().not.toExtend<
+    Parameters<typeof parseToolInput>[0]
+  >();
+  expectTypeOf<{ tools: Record<string, typeof addItem> }>().not.toExtend<
+    Parameters<typeof toolInputIssues>[0]
+  >();
 });
 
 test("runTool takes the TOOL and is typed end to end; a name is not a tool", async () => {

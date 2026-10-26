@@ -113,7 +113,6 @@
     "SttProvider",
     "ToolCompletionMessage",
     "ToolConditionOperator",
-    "ToolDef",
     "ToolDelayedMessage",
     "ToolInputSchema",
     "ToolMessageCondition",

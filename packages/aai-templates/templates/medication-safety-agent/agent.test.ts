@@ -220,13 +220,12 @@ describe("check_drug_interaction", () => {
     // The other half of the claim above, asked of the schema directly rather
     // than through `~standard`: `min(2)` counts ENTRIES and `min(1)` counts
     // CHARACTERS, so `"   "` is a valid entry and the refusal is the body's.
-    expect(
-      await toolInputIssues(agentDef, "check_drug_interaction", { drugs: ["ibuprofen", "   "] }),
-    ).toBeUndefined();
+    // The def built over the fake declares the same schema the deployed one
+    // does — the factory is what `tools/check_drug_interaction.ts` exports.
+    const def = checkDrugInteraction(label);
+    expect(await toolInputIssues(def, { drugs: ["ibuprofen", "   "] })).toBeUndefined();
     // And the schema is still doing its own half — one drug is not a check.
-    expect(
-      await toolInputIssues(agentDef, "check_drug_interaction", { drugs: ["ibuprofen"] }),
-    ).toBeDefined();
+    expect(await toolInputIssues(def, { drugs: ["ibuprofen"] })).toBeDefined();
   });
 });
 

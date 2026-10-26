@@ -190,15 +190,15 @@ describe("tool registry", () => {
    *
    * `toolInputIssues` asks the tool's OWN schema and answers a list rather than
    * throwing, which is what lets this be soft: a rename should name every entry
-   * it invalidated, not just the first.
+   * it invalidated, not just the first. The table is keyed by NAME, so the def
+   * is looked up — `toolOf` is the lookup — rather than imported.
    */
   test("every SAMPLE_ARGS entry satisfies its tool's own input schema", async () => {
     for (const [name, args] of Object.entries(SAMPLE_ARGS)) {
+      const def = toolOf(retailAgent, name);
       // A no-argument tool declares no schema, and there is nothing to check.
-      if (toolOf(retailAgent, name).inputSchema === undefined) continue;
-      expect
-        .soft(await toolInputIssues(retailAgent, name, args), `SAMPLE_ARGS["${name}"]`)
-        .toBeUndefined();
+      if (def.inputSchema === undefined) continue;
+      expect.soft(await toolInputIssues(def, args), `SAMPLE_ARGS["${name}"]`).toBeUndefined();
     }
   });
 });

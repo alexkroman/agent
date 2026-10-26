@@ -3,7 +3,7 @@
   "capability": "eval-assert",
   "epoch": 2,
   "rule": 3,
-  "sha256": "f59649c10064c61b120c2849398bb5cec000db37784bd8e2273f083572b25919",
+  "sha256": "f9d38dfabcfb43d8e8bdb50d069bcd8a4ecfe88492dea4d3939018c61d34cf8a",
   "exports": [
     "EvalToolCall",
     "EvalToolOutput",
@@ -33,5 +33,5 @@
     "transcriptOf",
     "turnCalling"
   ],
-  "rollup": "37652a796d50531c28037af2883988235fa9d0c5cf16e878e29f9be296afdffb"
+  "rollup": "42e173c5c9c1665379a610d59f5f89e8019319bc9172240b7e688fd79b7bcca2"
 }

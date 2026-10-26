@@ -166,9 +166,13 @@ detail; the rules:
 - **`expectToolOk`/`expectDialogOk`** fail AT the call quoting the refusal;
   `expectDialogRefused`/`dialogRefusalPattern` mirror them (`_dialog-refusal.ts`
   owns the sentence); `dialogResultSchema` is the envelope as zod.
-- **`parseToolInput`/`toolInputIssues`** (and `parseSchemaInput`/
-  `schemaInputIssues`) — never reach through `["~standard"].validate`, which may
-  be async.
+- **`parseToolInput(def, value)`/`toolInputIssues(def, value)`** (and
+  `parseSchemaInput`/`schemaInputIssues` for a bare schema) — take the DEF, no
+  agent: the schema is on it and the gate runs only on a call. The parsed value
+  is `InferToolInput<typeof def>`; a failure names the tool by its registered
+  name (`describeToolForMessage`, `_testing-tool-names.ts`) or, for a def never
+  lowered, by its description. Never reach through `["~standard"].validate`,
+  which may be async.
 - **`stubTranscribe`** stages a refusal as an HTTP STATUS so the SDK's own
   classifier runs. `stubUploads` answers `{ restore, writes, read }`.
 - **`stubSpeech` needs no credential** — it marks its synthesizer

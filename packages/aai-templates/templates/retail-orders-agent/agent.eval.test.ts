@@ -44,6 +44,7 @@ import {
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import { retailSlot } from "./store.ts";
+import cancelPendingOrder from "./tools/cancel_pending_order.ts";
 import transferToHumanAgents from "./tools/transfer_to_human_agents.ts";
 
 /** Harper Brown: exactly ONE pending order, which is what makes "cancel my
@@ -155,7 +156,7 @@ describeEval(retailAgent, (test) => {
       // at all, naming every turn's tool list: a desk that talked through all
       // five without staging is the finding, and "expected undefined to be
       // defined" is not a report of it.
-      const staging = turnCalling(turns, "cancel_pending_order");
+      const staging = turnCalling(turns, cancelPendingOrder);
       const staged = staging.toolCalls.find((c) => c.name === "cancel_pending_order");
       expect(staged?.result).toMatch(/NOTHING HAS CHANGED YET/);
       // The gate is a POSITION, and this is it moving: the tool reported the
