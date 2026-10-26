@@ -54,6 +54,18 @@ export {
   type DialogMachine,
   type DialogOptions,
   type DialogPosition,
+  // `dialog.tool(def, { sendFrom })` and the `sendFrom: "field"` key form;
+  // `EventNameOf` is the type `DialogSendFromKey` is spelled in.
+  type DialogSendFrom,
+  // What `dialog.tool()` answers: the def, or the misuse marker naming the
+  // result fields that DO hold an event name when `sendFrom: "field"` names none.
+  type DialogSendFromChecked,
+  // The call-site half of that check: intersected into `dialog.tool`'s def,
+  // so `sendFrom: "count"` is refused at the call, not on a later assignment.
+  type DialogSendFromGuard,
+  type DialogSendFromKey,
+  type DialogSendFromMisuse,
+  type DialogSendOptions,
   type DialogSessionEventName,
   type DialogSpec,
   type DialogStateSpec,
@@ -63,4 +75,5 @@ export {
   type DialogToolResult,
   type DialogVoiceConfig,
   dialog,
+  type EventNameOf,
 } from "../../index.ts";

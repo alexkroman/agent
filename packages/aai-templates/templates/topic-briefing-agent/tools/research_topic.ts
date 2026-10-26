@@ -1,4 +1,4 @@
-import { tool, toolFailure } from "@alexkroman1/aai";
+import { toolFailure, withInstruction } from "@alexkroman1/aai";
 import { mapSettled, partitionSettled } from "@alexkroman1/aai/step";
 import { z } from "zod";
 import { briefingSlot, MAX_ANGLES, researchAngle } from "../shared.ts";
@@ -21,11 +21,10 @@ import { briefingSlot, MAX_ANGLES, researchAngle } from "../shared.ts";
  * is missing and offer to retry it. `Infinity` is the width `allSettled` had:
  * `MAX_ANGLES` already bounds the fan-out at the schema.
  *
- * **The await comes first, then the mutation.** `slot.update`'s window is
- * synchronous by contract, so the fan-out finishes before the board is touched
- * and the whole write lands at once.
+ * `prepare` is the fan-out; `execute` is the window that writes the board,
+ * so the whole write lands at once.
  */
-export default tool({
+export default briefingSlot.updateTool({
   description:
     "Research a topic across several angles at once and report what each one " +
     "found. Use this when the caller asks about something you would need to " +
@@ -42,7 +41,7 @@ export default tool({
           "stand on its own: a researcher has not heard the conversation.",
       ),
   }),
-  async execute(args, ctx) {
+  async prepare(args, _board, ctx) {
     const angles = args.angles.map((angle) => angle.trim()).filter((angle) => angle.length > 0);
     if (angles.length === 0) {
       return toolFailure("No angles to research — say what the caller wants looked up.");
@@ -58,23 +57,21 @@ export default tool({
         `Every angle failed. The first said: ${failed[0]?.error ?? "no reason given"}`,
       );
     }
-    const summaries = ok.map((one) => one.value);
-    const failures = failed.map((one) => ({ angle: one.item, error: one.error }));
-
-    return briefingSlot.update(ctx, (board) => {
-      board.topic = args.topic;
-      board.findings.push(...summaries);
-      return {
-        topic: args.topic,
-        findings: summaries,
-        failed: failures,
-        message:
-          "Give the caller the through-line first, in one or two sentences, then " +
-          "the angles. Do not read the summaries out verbatim." +
-          (failures.length > 0
-            ? " Mention which angle you could not get to and offer to try it again."
-            : ""),
-      };
-    });
+    return {
+      summaries: ok.map((one) => one.value),
+      failures: failed.map((one) => ({ angle: one.item, error: one.error })),
+    };
+  },
+  execute(args, board, { summaries, failures }) {
+    board.topic = args.topic;
+    board.findings.push(...summaries);
+    return withInstruction(
+      { topic: args.topic, findings: summaries, failed: failures },
+      "Give the caller the through-line first, in one or two sentences, then " +
+        "the angles. Do not read the summaries out verbatim." +
+        (failures.length > 0
+          ? " Mention which angle you could not get to and offer to try it again."
+          : ""),
+    );
   },
 });

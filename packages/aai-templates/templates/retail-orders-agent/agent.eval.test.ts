@@ -8,7 +8,8 @@
  * readback and the one-customer-per-call rule all live in that file.
  */
 import retailAgent from "virtual:aai/agent";
-import type { SessionEvent } from "@alexkroman1/aai";
+import { type DialogToolResult, isToolFailure, type SessionEvent } from "@alexkroman1/aai";
+import type { ToolFailure } from "@alexkroman1/aai/utils";
 // An EVAL: does this desk actually behave? Run it with `aai eval`.
 //
 // `agent.test.ts` drives each tool directly and asserts about its result;
@@ -35,7 +36,6 @@ import {
   describeEval,
   describeTurn,
   dialogRefusalPattern,
-  dialogResultSchema,
   expectToolBeforeSpeech,
   lastStateIn,
   toolNames,
@@ -43,7 +43,9 @@ import {
   turnCalling,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
+import { retailSlot } from "./store.ts";
+import cancelPendingOrder from "./tools/cancel_pending_order.ts";
+import transferToHumanAgents from "./tools/transfer_to_human_agents.ts";
 
 /** Harper Brown: exactly ONE pending order, which is what makes "cancel my
  *  pending order" unambiguous — `resolveOrder` refuses a reference that matches
@@ -63,28 +65,14 @@ const PUBLIC_TOOLS = new Set([
   "transfer_to_human_agents",
 ]);
 
-/**
- * What the BROWSER is sent, as this eval reads it.
- *
- * Parsed rather than cast: `state.updated` carries `unknown`, and a schema that
- * stops matching is a loud failure naming the field, where a cast would hand
- * the assertions `undefined` and fail three lines later. It names only the
- * fields asserted below, so `storeView` may grow without touching this.
- */
-const ProjectedStore = z.object({
-  customer: z.object({ userId: z.string() }).nullable(),
-  orders: z.array(z.object({ orderId: z.string(), status: z.string() })),
-  pending: z.object({ kind: z.string(), readBack: z.string() }).nullable(),
-});
+/** The latest projection the session pushed, or undefined if it pushed none. */
+const projection = (events: readonly SessionEvent[]) => lastStateIn(events, retailSlot.projected);
 
-/**
- * The latest projection the session pushed, or undefined if it pushed none.
- *
- * `lastStateIn` is the SDK's reader; the schema is what is worth passing to it,
- * for the reason above — a frame that stopped matching fails naming the field.
- */
-const projection = (events: readonly SessionEvent[]) =>
-  lastStateIn(events, "retail", ProjectedStore);
+/** A gated tool's envelope, position kept, or a throw quoting the refusal. */
+function landed<R>(answer: DialogToolResult<R> | ToolFailure): DialogToolResult<R> {
+  if (isToolFailure(answer)) throw new Error(`tool refused: ${answer.error}`);
+  return answer;
+}
 
 /** The status the projection carries for `orderId` — the one fact "did anything
  *  change?" turns on. `undefined` covers both "no projection yet" and "not this
@@ -109,10 +97,6 @@ const STAGE_TURN = [
   "So that would cancel your pending order and refund one thousand two hundred dollars " +
     "and fifty-seven cents to your Visa. Is that right?",
 ] as const;
-
-/** The handoff, inside the dialog envelope — `transferred` is a TERMINAL state,
- *  so `done` is the flow saying there is nowhere left to go. */
-const Transferred = dialogResultSchema(z.object({}).loose());
 
 describeEval(retailAgent, (test) => {
   test(
@@ -172,7 +156,7 @@ describeEval(retailAgent, (test) => {
       // at all, naming every turn's tool list: a desk that talked through all
       // five without staging is the finding, and "expected undefined to be
       // defined" is not a report of it.
-      const staging = turnCalling(turns, "cancel_pending_order");
+      const staging = turnCalling(turns, cancelPendingOrder);
       const staged = staging.toolCalls.find((c) => c.name === "cancel_pending_order");
       expect(staged?.result).toMatch(/NOTHING HAS CHANGED YET/);
       // The gate is a POSITION, and this is it moving: the tool reported the
@@ -271,11 +255,7 @@ describeEval(retailAgent, (test) => {
       // Read as a SHAPE, not as a substring of the result's own JSON: this
       // claim is about the flow's position, and nothing about it is about
       // serialization.
-      const handed = toolResultIn(
-        transfer ? [transfer] : [],
-        "transfer_to_human_agents",
-        Transferred,
-      );
+      const handed = landed(toolResultIn(transfer ? [transfer] : [], transferToHumanAgents));
       expect(handed.state).toBe("transferred");
       expect(handed.done).toBe(true);
 

@@ -19,6 +19,7 @@ export default deskFlow.tool({
     "Record the guest's name, email and/or phone for the booking - any subset, the moment each is " +
     "given. A spelled name or email is recorded as spelled. Call again to correct a detail.",
   when: AFTER_EXTRAS,
+  sendFrom: "next",
   inputSchema: z.object({
     firstName: z.string().min(1).optional(),
     lastName: z.string().min(1).optional(),
@@ -67,5 +68,4 @@ export default deskFlow.tool({
         next: nextStep(d),
       };
     }),
-  sendFrom: (result) => ({ type: result.next }),
 });

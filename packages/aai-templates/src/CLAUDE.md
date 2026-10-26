@@ -50,9 +50,10 @@ or use `stubTranscribe`'s `otherwise` where that fake owns the slot.
 
 A `workflow()` declaration goes where its importers can reach it: the six
 `workflowApp()`s declare in `agent.ts`; `research-handoff-agent` and
-`meeting-recap-agent` declare in `shared.ts`, because their tools import the def
-and a tool importing `agent.ts` closes a cycle through `virtual:aai/agent`. A
-session slot is declared in `shared.ts`. The module doc numbers each rule.
+`meeting-recap-agent` default-export theirs from `workflows/<name>.ts`, where
+discovery registers it and their tools import it, because a tool importing
+`agent.ts` closes a cycle through `virtual:aai/agent`. A session slot is
+declared in `shared.ts`. The module doc numbers each rule.
 
 ## `templates.test.ts` — pins that fail only on a user's machine
 

@@ -20,10 +20,10 @@ replay engine, crashes, signals — is "Testing a workflow body" in
 
 **A test file imports testing names from two doors, and only those two:**
 
-| Import from                               | For                                                                                                         |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `@alexkroman1/aai-runtime/testing`        | everything that installs nothing — `runTool`, `createToolContext`, `expectToolOk`, the stubs, `runWorkflow` |
-| `@alexkroman1/aai-runtime/testing/vitest` | everything that installs or restores (`installStubGateway`, `installStubStepFetch`, …) and the eval suites  |
+| Import from                               | For                                                                                                                                 |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `@alexkroman1/aai-runtime/testing`        | everything that installs nothing — `createToolContext`, `expectToolOk`, `expectSlotContract`, `fireEvent`, the stubs, `runWorkflow` |
+| `@alexkroman1/aai-runtime/testing/vitest` | everything that installs or restores (`installStubGateway`, `installStubWorld`, …), `describeAgent` and the eval suites             |
 
 `vitest.config.ts` is the one exception: it imports `defineAgentTestConfig` from
 `@alexkroman1/aai/testing/vite`. (The helpers are declared in
@@ -54,42 +54,68 @@ plugin that serves it; a scaffolded project already has it. For a runner that is
 not vitest, `deployedAgent` on `@alexkroman1/aai-runtime/testing` is the same
 thing written out.
 
-**Call a tool with `runTool(tool, args, ctx)`**: passed the tool itself, the
-result is typed by its `execute` — no `as` cast (the `runTool(agent, "name", …)`
-form answers `unknown`). **Unwrap it with `expectToolOk(result)`**, which INFERS
-the type: it subtracts the `ToolFailure` arm of a plain `tool()`'s result (and
-unwraps a gated dialog tool's envelope), throwing with the refusal quoted when
-the tool refused. Do not copy an `ok<T>()` helper into a spec; pass a type
-argument only for a result that arrives as `unknown`.
+**Open the suite with `describeAgent(agentDef, (run) => …)`**: a `describe`
+named after the agent whose first case is "is deployable" (`expectDeployable`; a
+config the platform refuses is a spec measuring nothing), handed the agent's
+typed runner. **A tool is reached by its DEF, never by its name string.**
+`run(toolDef, args, ctx?)` is typed end to end: handed the def, the arguments
+are checked and the result is what `execute` returns — no `as` cast — and the
+def is resolved in the agent's table by identity, so a dialog gate or a roster
+still refuses it as it would the model. The def is the tool file's default
+export (`import placeOrder from "./tools/place_order.ts"`); for a roster tool it
+is the speaker's `tools` entry (`billing.tools.lookup_invoice` — keep the map in
+a named const so it stays typed); for a tool the roster minted (`handoff`,
+`delegate`) it is `toolOf(agentDef, HANDOFF_TOOL_NAME)`; for a builtin it is
+`builtinTool("workflow_cancel")` from `@alexkroman1/aai/tools`, which no
+`toolRunner` runs (the runtime merges builtins in at session start) but every
+eval reader takes. A string in the tool position is a compile error. **The
+schema is asked through the same def**: `parseToolInput(def, value)` answers the
+parsed input typed as `execute` receives it (a dropped default is a compile
+error in the spec that reads it) and `toolInputIssues(def, value)` the issues or
+`undefined` — no agent, since validation is the schema's alone and the gate runs
+only on a call. **Unwrap a result that may be a refusal with
+`expectToolOk(result)`**, which subtracts the `ToolFailure` arm (and a gated
+tool's envelope) and throws quoting the refusal; `expectDialogRefused(result)`
+asserts a gate HELD. Do not copy an `ok<T>()` helper into a spec, and do not
+claim a result's type — `expectToolOk<T>(…)` takes no claim; the def already
+types it.
 
-```ts
-import { tool, toolFailure } from "@alexkroman1/aai";
-import { expectToolOk, runTool } from "@alexkroman1/aai-runtime/testing";
+```ts no-check
+import agentDef from "virtual:aai/agent";
+import { expectToolOk } from "@alexkroman1/aai-runtime/testing";
+import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect, test } from "vitest";
-import { z } from "zod";
+import placeOrder from "./tools/place_order.ts";
 
-// In a spec this is `import placeOrder from "./tools/place_order.ts"`.
-const placeOrder = tool({
-  description: "Place the order",
-  inputSchema: z.object({ item: z.string() }),
-  execute: async ({ item }) => (item ? { id: "ord_1" } : toolFailure("Name an item.")),
-});
-
-test("places the order", async () => {
-  const order = expectToolOk(await runTool(placeOrder, { item: "pizza" }));
-  expect(order.id).toBe("ord_1");
+describeAgent(agentDef, (run) => {
+  test("places the order", async () => {
+    const order = expectToolOk(await run(placeOrder, { item: "pizza" }));
+    expect(order.id).toBe("ord_1");
+  });
 });
 ```
 
-`expectDeployable(agentDef)` runs the build's checks and returns a
-`DeployedConfig` (`name`, `systemPrompt`, `mode`, `builtinTools`, …) to assert
-on.
+`expectDeployable(agentDef)` on its own returns a `DeployedConfig` (`name`,
+`systemPrompt`, `mode`, `builtinTools`, …) to assert on. **A slot's contract is
+one call**: `expectSlotContract(slot, { write, caps })` asserts the projected
+default agrees with the view, that two sessions never share a value (`write`
+proves it through one of them) and that each cap keeps the NEWEST entries.
 
 **A hand-built `ctx` is `createToolContext()`** — every field inert, `send`
-recorded on `ctx.sent`, a real slot store, a fresh `sessionId` per call. Its
-`generate` and `delegate` take a SCRIPT (`{ reply }` for every call,
-`{ routes }` keyed by system prompt or subagent name) and hand the fake back on
-`ctx.model` and `ctx.desk`, whose `calls` a spec asserts on.
+recorded on `ctx.sent`, a real slot store, a fresh `sessionId` per call,
+`turn: 0` and `now: Date.now` unless pinned
+(`createToolContext({ turn: 3, now: () => 1_700_000_000_000 })` makes "on the
+third turn" and an opening-hours check exact). Its `generate` and `delegate`
+take a SCRIPT (`{ reply }` for every call, `{ routes }` keyed by system prompt
+or subagent name) and hand the fake back on `ctx.model` and `ctx.desk`, whose
+`calls` a spec asserts on.
+
+**An `events` handler is driven with `fireEvent`**:
+`await fireEvent(agentDef, sessionEvent("userTranscript.committed", { text }), ctx)`
+dispatches the typed handler then `"*"`, the way the session does — except that
+a throw propagates and an async handler is awaited, since the spec is reading
+the outcome. `sessionEvent(type, fields, meta?)` builds the event with its
+envelope, and a field the event does not have is a compile error.
 
 ```ts
 import { createToolContext } from "@alexkroman1/aai-runtime/testing";
@@ -114,7 +140,15 @@ its feature needs. **A fake that fills a process-wide slot is INSTALLED** from
 restores it afterwards: `installStubGateway(replies)` answers a step's model
 calls (`stepGenerate`, `stepGenerateJson`) and returns the calls it saw. Call it
 by its own name — do not alias it to `stubGateway`, which is the non-installing
-builder it wraps.
+builder it wraps. **It also seeds `ASSEMBLYAI_API_KEY`** for the test, so a spec
+never writes `vi.stubEnv` for it; the one spec whose subject is the missing-key
+refusal passes `apiKey: false`, which ensures there is NO key for that test even
+when the shell exports one. A workflow that calls a model AND fetches a page AND
+transcribes installs them all at once:
+`installStubWorld({ model, pages, transcribe, speech, uploads })` (with
+`uploads: { files, writable }`) composes the seams in the one order that works
+and hands back every fake's call log (`world.model`, `world.provider`,
+`world.reported`, …).
 
 ## Evals: `agent.eval.test.ts`
 
@@ -124,10 +158,22 @@ an eval's harness needs — `describeEval`, the readers and claims,
 `evalSimulation`, and stubs like `stubGatewayRoute` — is on
 `@alexkroman1/aai-runtime/testing/vitest`:
 
-```ts no-check
+```ts
+// file: tools/look_up.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Look an order up",
+  inputSchema: z.object({ orderId: z.string() }),
+  execute: ({ orderId }) => ({ orderId, status: "shipped" }),
+});
+
+// file: agent.eval.test.ts
+import agentDef from "virtual:aai/agent";
 import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import agentDef from "./agent.ts";
+import lookUp from "./tools/look_up.ts";
 
 describeEval(agentDef, (test) => {
   test(
@@ -135,7 +181,10 @@ describeEval(agentDef, (test) => {
     async ({ session }) => {
       // `say()` returns THAT turn — the reply, its tool calls, its events.
       const turn = await session.say("where is order W1234?");
-      expectCalled(turn, "look_up");
+      // A claim takes the tool's DEF, never its name string: the file's default
+      // export (`builtinTool("run_code")` for a builtin), matched by the name the
+      // agent registered it under, so a renamed file fails here by name.
+      expectCalled(turn, lookUp);
       expect(turn.text).toMatch(/shipped/i);
     },
     // What a SCRIPTED model answers with when there is no key (below).
@@ -197,6 +246,26 @@ The `outbound-call-agent` template walks a three-level tree this way.
 `network: evalNetwork({ state, routes })` answers every tool, builtin and step
 `fetch`, refusing the rest: `ctx.network`. `workflows` takes a client or
 per-case factory: `ctx.workflowClient`. A failure prints the conversation.
+
+**Read what a turn did through the DEF, not a schema you restate.**
+`toolResultIn(turn.toolCalls, placeOrder)` is typed by the tool's `execute` and
+throws naming what WAS called when the tool was not (exactly once;
+`toolResultsIn` for several; `lastToolResultIn` for the settled last;
+`toolArgsIn` for what the model asked); `turnCalling(turns, def)` is the turn a
+`sayAll` call reached it in. The def is the same one `run` takes — a file's
+default export, a speaker's `tools` entry, `toolOf(agentDef, name)` for a minted
+tool, `builtinTool(name)` for a builtin — and the readers take no name string.
+`lastStateIn(session.events(), slot.projected)` is the frame the page saw, typed
+by the projection and checked against its default keys, so a field the view
+gained or lost fails here instead of being cast past;
+`customEventsIn(events, "order.progress")` is typed by `ClientEventMap`. **An
+agent that hands off to a run** declares its step HTTP on the suite —
+`describeEval(agentDef, define, { steps: { routes, hold: "first" } })` — and the
+harness installs the step fetch per case, parks the first answered request so
+the run is observably in flight (`ctx.steps.held`, `release()`), and releases
+and settles every run when the case ends. `evalRunOf(turn, def)` is the id of
+the one run that turn started, read off the session's record of
+`ctx.workflows.start` rather than parsed out of the tool's answer.
 
 No eval can see anything below the audio boundary — when the agent decides you
 stopped talking, barge-in, two sentences merging into one turn. Those need

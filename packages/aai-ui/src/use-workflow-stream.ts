@@ -85,8 +85,7 @@ import type {
   WorkflowOutputOf,
 } from "@alexkroman1/aai/workflow-api";
 import { useCallback } from "react";
-import { useRunControls } from "./_run-controls.ts";
-import { useSubmissionState } from "./_submission-state.ts";
+import { type BeginSubmission, useSubmission } from "./_submission.ts";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import { fileFields, filesOf } from "./_workflow-files.ts";
 import {
@@ -96,14 +95,15 @@ import {
   sendThroughGate,
   type UploadGate,
 } from "./upload/index.ts";
-import type {
-  UploadStatus,
-  UseWorkflowSubmitOptions,
-  WorkflowSubmission,
-} from "./use-workflow-form.ts";
-import { useWorkflowRun } from "./use-workflow-run.ts";
+import type { UseWorkflowSubmitOptions } from "./use-workflow-form.ts";
 import type { WorkflowApi } from "./workflow-client.ts";
-import type { SubmitInputOf } from "./workflow-def-types.ts";
+import type {
+  SubmitInputOf,
+  WorkflowAppLike,
+  WorkflowDefOf,
+  WorkflowNameOf,
+} from "./workflow-def-types.ts";
+import type { UploadStatus, WorkflowSubmission } from "./workflow-submission.ts";
 
 /**
  * Options for {@link useWorkflowStream}.
@@ -156,13 +156,13 @@ export type UseWorkflowStreamOptions = {
 /**
  * What {@link useWorkflowStream} returns: a {@link WorkflowSubmission}, exactly.
  *
- * The same eight fields `useWorkflowSubmit` returns, of which this hook is a
+ * The same fields `useWorkflowSubmit` returns, of which this hook is a
  * drop-in sibling — same `<Form>`, same `<UploadProgressBar>`, same
- * `<WorkflowProgress>`. An ALIAS rather than a second declaration of the eight:
+ * `<WorkflowProgress>`. An ALIAS rather than a second declaration of them:
  * the two have to agree field for field to be drop-in, and two copies of a type
  * that have to agree are two copies that can stop agreeing.
  *
- * Exactly two of the fields mean something different here, and both differences
+ * Exactly three of the fields mean something different here, and all three
  * follow from WHEN the run is created — it exists before its bytes do:
  *
  * - `submit()` resolves when the UPLOAD finishes, not when the run is accepted;
@@ -172,6 +172,9 @@ export type UseWorkflowStreamOptions = {
  * - `run` is set from the moment the run EXISTS, which here is before the bytes
  *   are in. That is what lets a page render `<WorkflowProgress>` beside the
  *   upload bar rather than after it.
+ * - `scope` is always `"none"`: the run is reading the bytes THIS page sends,
+ *   so a reload does not orphan it, it ENDS it — and `<WorkflowPendingNote>`
+ *   says so instead of promising the run will be found again.
  */
 export type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmission<R, I>;
 
@@ -200,85 +203,91 @@ export type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmiss
  *
  * @public
  */
+export function useWorkflowStream<
+  App extends WorkflowAppLike = never,
+  Name extends WorkflowNameOf<App> = WorkflowNameOf<App>,
+>(
+  workflow: Name,
+  options?: UseWorkflowStreamOptions,
+): WorkflowStreamSubmission<
+  WorkflowOutputOf<WorkflowDefOf<App, Name>>,
+  SubmitInputOf<WorkflowDefOf<App, Name>>
+>;
+// The def form, told apart as `useWorkflowSubmit`'s is: `App = never` above
+// declines an un-parameterized call, and the constraint refuses an app.
 export function useWorkflowStream<D extends AnyWorkflowDef>(
   workflow: string,
+  options?: UseWorkflowStreamOptions,
+): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
+export function useWorkflowStream(
+  workflow: string,
   options: UseWorkflowStreamOptions = {},
-): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>> {
+): WorkflowStreamSubmission<unknown, never> {
   const { api, key, intervalMs, parallel } = options;
   const getClient = useWorkflowApiRef(api);
 
-  // The form's statechart, shared with `useWorkflowSubmit` — see
-  // `_submission-state.ts`. No lookup: this hook REFUSES `recover` (see
-  // `UseWorkflowStreamOptions`), so every run it reports is one this mount
-  // started, and `startedHere` still moves with `submit`/`reset` rather than
-  // being a constant `true`, because a page shares its markup with
-  // `useWorkflowSubmit` pages that read the same field.
-  const form = useSubmissionState();
-  const { runId, actions } = form;
-
-  const tracked = useWorkflowRun<WorkflowOutputOf<D>>(runId, omitUndefined({ api, intervalMs }));
-  // Same two controls as `useWorkflowSubmit` — this hook returns an ALIAS of
-  // that hook's type, so a field missing here is a lie in the shared type.
-  const { wake, cancel } = useRunControls(runId, getClient);
-
-  const submit = useCallback(
-    (input: unknown) => {
-      const client = getClient();
+  // What this hook IS, as against its sibling: the run starts on a minted id
+  // and the bytes follow. Everything after the body — the watch, the controls,
+  // the stopwatch, the return — is `useSubmission`'s.
+  const begin = useCallback<BeginSubmission>(
+    (input, client) => {
       const gate = createUploadGate();
-      return actions.submit(gate, async ({ progress, started: adopt }) => {
-        let started: string | undefined;
-        try {
-          // The declaration decides which property is an upload, and it is READ
-          // rather than taken as an option so the page cannot disagree with the
-          // workflow — see `beginRun`.
-          const id = randomUploadId();
-          const begun = await beginRun({ client, workflow, input, id, ...omitUndefined({ key }) });
-          started = begun.runId;
-          const chosen = begun.file;
-          adopt(started);
-          if (!chosen) return;
-          // Coalesced for the reason `useWorkflowSubmit` coalesces — see
-          // `upload/report.ts`.
-          await streamFile({
-            client,
-            gate,
-            id,
-            file: chosen,
-            parallel,
-            report: coalesceUploadReports(progress),
-          });
-          // See the module doc: the run is asleep between polls, so without this it
-          // learns the upload is complete a poll interval late. Best-effort.
-          await client.wake(started).catch(() => undefined);
-        } catch (err: unknown) {
-          // Whether this submission FAILED or was ABANDONED (`reset()`, the next
-          // `submit()` — the machine reports only the former), the RUN has to
-          // go: a run left behind waits for bytes that will never come, until
-          // its own abandonment bound — failing long after the page said so.
-          // Best-effort: a failing cancel must not replace the error that
-          // caused it.
-          if (started) await client.cancel(started).catch(() => undefined);
-          throw err;
-        }
-      });
+      return {
+        gate,
+        work: async ({ progress, started: adopt }) => {
+          let started: string | undefined;
+          try {
+            // The declaration decides which property is an upload, and it is READ
+            // rather than taken as an option so the page cannot disagree with the
+            // workflow — see `beginRun`.
+            const id = randomUploadId();
+            const begun = await beginRun({
+              client,
+              workflow,
+              input,
+              id,
+              ...omitUndefined({ key }),
+            });
+            started = begun.runId;
+            const chosen = begun.file;
+            adopt(started);
+            if (!chosen) return;
+            // Coalesced for the reason `useWorkflowSubmit` coalesces — see
+            // `upload/report.ts`.
+            await streamFile({
+              client,
+              gate,
+              id,
+              file: chosen,
+              parallel,
+              report: coalesceUploadReports(progress),
+            });
+            // See the module doc: the run is asleep between polls, so without this it
+            // learns the upload is complete a poll interval late. Best-effort.
+            await client.wake(started).catch(() => undefined);
+          } catch (err: unknown) {
+            // Whether this submission FAILED or was ABANDONED (`reset()`, the next
+            // `submit()` — the machine reports only the former), the RUN has to
+            // go: a run left behind waits for bytes that will never come, until
+            // its own abandonment bound — failing long after the page said so.
+            // Best-effort: a failing cancel must not replace the error that
+            // caused it.
+            if (started) await client.cancel(started).catch(() => undefined);
+            throw err;
+          }
+        },
+      };
     },
-    [workflow, key, parallel, getClient, actions],
+    [workflow, key, parallel],
   );
 
-  return {
-    submit,
-    submitForm: submit,
-    reset: actions.reset,
-    wake,
-    cancel,
-    pauseUpload: actions.pauseUpload,
-    resumeUpload: actions.resumeUpload,
-    run: tracked.run,
-    startedHere: form.startedHere,
-    pending: form.busy || tracked.polling,
-    upload: form.upload,
-    error: form.startError ?? tracked.error,
-  };
+  // No lookup: this hook REFUSES `recover` (see `UseWorkflowStreamOptions`),
+  // so every run it reports is one this mount started — and `startedHere`
+  // still moves with `submit`/`reset` rather than being a constant `true`,
+  // because a page shares its markup with `useWorkflowSubmit` pages that read
+  // the same field. Nothing will find the run again, so `scope` is `"none"`
+  // — see `WorkflowStreamSubmission`.
+  return useSubmission({ getClient, api, intervalMs, scope: "none", begin });
 }
 
 /**

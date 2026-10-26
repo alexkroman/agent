@@ -12,8 +12,10 @@
  * the fixture silently stops resembling what a tool will actually be handed.
  */
 
+import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
-import type { WorkflowClient } from "./workflow.ts";
+import type { AnyWorkflowDef, WorkflowClient } from "./workflow.ts";
+import { workflowNameOf } from "./workflow-names.ts";
 import type { WorkflowRunBase, WorkflowRunSnapshot } from "./workflow-run.ts";
 import { rejectingWorkflows } from "./workflow-unavailable.ts";
 
@@ -65,13 +67,81 @@ const DEFAULT_CREATED_AT = Date.UTC(2026, 0, 1);
  * @public
  */
 export function createRunSnapshot<R = unknown>(
-  overrides: RunSnapshotOverrides<R> = {},
+  overrides?: RunSnapshotOverrides<R>,
+): WorkflowRunSnapshot<R>;
+/**
+ * Build a {@link WorkflowRunSnapshot} of a run of `workflow`, with `output`
+ * TYPED by the def.
+ *
+ * The def carries `R` — what its body returns, or what its `output` schema
+ * declares — so `createRunSnapshot(recap, { status: "completed", output })`
+ * checks `output` against it, where the bare form takes whatever `R` the
+ * caller names. A fixture whose output stopped matching the body is then a
+ * compile error in the spec rather than a page that renders `undefined`.
+ *
+ * The def names the run too, when it can: `workflow` is the key the def was
+ * declared under (`workflowNameOf`, recorded when the agent is lowered — a
+ * `virtual:aai/agent` import, `withWorkflows`, `workflowRegistry`), the
+ * overrides' `workflow` winning, and `"workflow"` for a def no agent declares.
+ *
+ * @example
+ * ```ts
+ * // file: shared.ts
+ * import { workflow } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
+ * export const recap = workflow({
+ *   description: "Write up a recording",
+ *   input: z.object({ recording: z.string() }),
+ *   output: z.object({ headline: z.string(), points: z.array(z.string()) }),
+ *   run: async () => ({ headline: "…", points: [] }),
+ * });
+ *
+ * // file: recap.test.ts
+ * import { createRunSnapshot } from "@alexkroman1/aai/testing";
+ * import { recap } from "./shared.ts";
+ *
+ * const done = createRunSnapshot(recap, {
+ *   status: "completed",
+ *   output: { headline: "…", points: [] }, // typed by `recap`
+ * }); // `workflow` is "recap" once the agent declaring it has been imported
+ * ```
+ *
+ * @public
+ */
+export function createRunSnapshot<R>(
+  workflow: AnyWorkflowDef<R>,
+  overrides?: RunSnapshotOverrides<R>,
+): WorkflowRunSnapshot<R>;
+export function createRunSnapshot<R = unknown>(
+  first?: RunSnapshotOverrides<R> | AnyWorkflowDef<R>,
+  second?: RunSnapshotOverrides<R>,
 ): WorkflowRunSnapshot<R> {
+  // A def is told from an overrides bag by its `run`: no snapshot field is a
+  // function, and every workflow def has one. Structural on purpose, unlike
+  // the registry's `isWorkflowDef`: a fixture def typed `WorkflowDef` by hand
+  // is a def here, where the question is only "which argument is which".
+  const def =
+    isRecord(first) && typeof (first as { run?: unknown }).run === "function"
+      ? (first as AnyWorkflowDef<R>)
+      : undefined;
+  const overrides: RunSnapshotOverrides<R> =
+    def !== undefined ? (second ?? {}) : ((first ?? {}) as RunSnapshotOverrides<R>);
   const base: WorkflowRunBase = {
     runId: overrides.runId ?? DEFAULT_RUN_ID,
-    workflow: overrides.workflow ?? DEFAULT_WORKFLOW,
+    workflow:
+      overrides.workflow ??
+      (def === undefined ? undefined : workflowNameOf(def)) ??
+      DEFAULT_WORKFLOW,
     createdAt: overrides.createdAt ?? DEFAULT_CREATED_AT,
-    ...omitUndefined({ key: overrides.key }),
+    // Every optional base field the overrides name, so a fixture built with a
+    // `label` or a `startedAt` is the snapshot a page would read for it.
+    ...omitUndefined({
+      key: overrides.key,
+      label: overrides.label,
+      startedAt: overrides.startedAt,
+      settledAt: overrides.settledAt,
+    }),
   };
   if (!("status" in overrides) || overrides.status === undefined)
     return { ...base, status: "running" };

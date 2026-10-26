@@ -1,8 +1,7 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { tool, toolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { digitsOf, normalizeCode, speakCode, spokenDate } from "../records.ts";
 import { hotelSlot } from "../session.ts";
-import { note } from "../shared.ts";
 
 /** Failed lookups before a human takes over — their `_attempts >= 3`. */
 export const MAX_VERIFY_ATTEMPTS = 3;
@@ -13,13 +12,18 @@ export const MAX_VERIFY_ATTEMPTS = 3;
  * the ONLY two paths: last name plus code, or last name plus the card's last
  * four. Email is not a verification field and is not accepted here.
  *
- * Success fills `verifiedCode`, which every booking tool reads through
- * `requireVerified` — so the desk verifies once per call, and a tool that
+ * Success fills `verifiedCode`, which every booking tool gates on with
+ * `require: verified` — so the desk verifies once per call, and a tool that
  * needs a verified booking refuses with the sentence naming this one. Their
  * three-strike rule is the counter: past it the result says to stop trying and
  * record a `verification_help` followup for a manager.
+ *
+ * A plain `tool()` rather than `hotelSlot.updateTool`, because a strike is a
+ * STATE CHANGE the failure itself reports: an `updateTool` body that returns a
+ * `ToolFailure` stores nothing (the tool did not do the thing), so the counter
+ * is its own `update`, written before the failure is answered.
  */
-export default hotelSlot.updateTool({
+export default tool({
   description:
     "Verify the caller against their room booking: last name plus confirmation code (HTL-XXXX), " +
     "or last name plus the last four digits of the card on file. Call it BEFORE any lookup, " +
@@ -33,7 +37,8 @@ export default hotelSlot.updateTool({
       .describe("As the caller read it, e.g. 'H T L dash A B 1 2'"),
     cardLast4: z.string().optional().describe("The last four digits of the card on file"),
   }),
-  execute({ lastName, confirmationCode, cardLast4 }, hotel) {
+  execute({ lastName, confirmationCode, cardLast4 }, ctx) {
+    const hotel = hotelSlot.get(ctx);
     const wantedName = lastName.trim().toLowerCase();
     const code = confirmationCode === undefined ? null : normalizeCode(confirmationCode);
     const digits = cardLast4 === undefined ? null : digitsOf(cardLast4);
@@ -55,16 +60,19 @@ export default hotelSlot.updateTool({
         (digits === null || b.cardLast4 === digits),
     );
     if (match === undefined) {
-      hotel.verifyAttempts += 1;
+      const verifyAttempts = hotelSlot.update(ctx, (h) => {
+        h.verifyAttempts += 1;
+        return h.verifyAttempts;
+      });
       const cancelled = hotel.bookings.some(
         (b) =>
           b.status === "cancelled" &&
           b.lastName.toLowerCase() === wantedName &&
           (code === null || normalizeCode(b.code) === code),
       );
-      if (hotel.verifyAttempts >= MAX_VERIFY_ATTEMPTS) {
+      if (verifyAttempts >= MAX_VERIFY_ATTEMPTS) {
         return toolFailure(
-          `verification failed ${hotel.verifyAttempts} times - don't keep trying. Apologize, then call ` +
+          `verification failed ${verifyAttempts} times - don't keep trying. Apologize, then call ` +
             'record_followup with kind "verification_help" so a manager can follow up.',
         );
       }
@@ -77,12 +85,14 @@ export default hotelSlot.updateTool({
       return toolFailure(
         `No confirmed booking found via ${code === null ? "card" : "code"} for that last name. Politely ask the ` +
           `caller to repeat, or offer the other path (${code === null ? "the confirmation code" : "the card's last four"}). ` +
-          `Attempt ${hotel.verifyAttempts} of ${MAX_VERIFY_ATTEMPTS}.`,
+          `Attempt ${verifyAttempts} of ${MAX_VERIFY_ATTEMPTS}.`,
       );
     }
-    hotel.verifiedCode = match.code;
-    hotel.verifyAttempts = 0;
-    note(hotel, `Verified ${match.code} (${match.lastName})`);
+    hotelSlot.update(ctx, (h) => {
+      h.verifiedCode = match.code;
+      h.verifyAttempts = 0;
+      h.log.push(`Verified ${match.code} (${match.lastName})`);
+    });
     return {
       verified: true,
       code: match.code,

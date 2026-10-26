@@ -33,6 +33,14 @@ describe("mountClient", () => {
     container = document.createElement("div");
     container.id = "app";
     document.body.appendChild(container);
+    // The default shell looks the agent up at mount (its start card shows the
+    // agent's own name), so every mount below meets a lookup: an empty answer
+    // by default, which a test with something to say about it restubs. The
+    // shared config's `unstubGlobals` undoes both.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}", { status: 200 })),
+    );
   });
 
   afterEach(() => {
@@ -41,13 +49,12 @@ describe("mountClient", () => {
 
   it("throws when target selector does not match", () => {
     expect(() =>
-      mountClient({ name: "Test", target: "#nonexistent", platformUrl: "http://localhost:3000" }),
+      mountClient({ target: "#nonexistent", platformUrl: "http://localhost:3000" }),
     ).toThrow("Element not found: #nonexistent");
   });
 
   it("renders the default shell when no component is given", () => {
     const handle = mountClient({
-      name: "Test Agent",
       target: "#app",
       platformUrl: "http://localhost:3000",
     });
@@ -72,7 +79,6 @@ describe("mountClient", () => {
 
   it("dispose unmounts and disconnects", () => {
     const handle = mountClient({
-      name: "Test",
       target: "#app",
       platformUrl: "http://localhost:3000",
     });
@@ -82,7 +88,6 @@ describe("mountClient", () => {
 
   it("dispose invokes the session core's Symbol.dispose", () => {
     const handle = mountClient({
-      name: "Test",
       target: "#app",
       platformUrl: "http://localhost:3000",
     });
@@ -94,7 +99,6 @@ describe("mountClient", () => {
 
   it("Symbol.dispose aliases dispose", () => {
     const handle = mountClient({
-      name: "Test",
       target: "#app",
       platformUrl: "http://localhost:3000",
     });
@@ -151,20 +155,105 @@ describe("mountClient", () => {
     handle.dispose();
   });
 
-  it("does not look up client-config at all when the caller named the agent", async () => {
-    // The response's only consumer is the name fallback, and on the platform
-    // this endpoint is the BROKER — a request able to boot a sandbox, issued to
-    // fill in a value the caller already supplied.
-    const fetchSpy = vi.fn(async () => new Response("{}", { status: 200 }));
+  it("looks up client-config ONCE at mount for the default shell", async () => {
+    // The default shell's start card shows the agent's own name, so the lookup
+    // is issued at mount — and once: on the platform this endpoint is the
+    // BROKER, and a request to it can boot a sandbox.
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ name: "Server Name", page: "voice" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
     vi.stubGlobal("fetch", fetchSpy);
+    const handle = mountClient({ target: "#app", platformUrl: "http://localhost:3000" });
+    await vi.waitFor(() => expect(container).toHaveTextContent("Server Name"));
+    await flushEffects();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    handle.dispose();
+  });
+
+  it("installs the agent's declared tool hints as served — the page has no map of its own", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              name: "Server Name",
+              page: "voice",
+              tools: { add_pizza: { icon: "🍕", label: "Adding pizza" }, lookup: { icon: "🔎" } },
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          ),
+      ),
+    );
+    let seen: ToolDisplayConfig | undefined;
+    function Probe() {
+      seen = useToolConfig();
+      return null;
+    }
+    // The lookup is issued at mount; the sidebar (rendered once the shell is
+    // past its start card) reads the served map, because the provider wraps
+    // whichever root renders. `ClientConfig` has no `tools` to merge over it:
+    // a tool's icon and label are `tool({ ui })`, declared once, on the tool.
+    createSession.mockReturnValueOnce(startedCore());
     const handle = mountClient({
-      name: "Test",
+      sidebar: Probe,
       target: "#app",
       platformUrl: "http://localhost:3000",
     });
-    await vi.waitFor(() => expect(container).toHaveTextContent("Test"));
-    expect(fetchSpy).not.toHaveBeenCalled();
+    await vi.waitFor(() =>
+      expect(seen).toEqual({
+        add_pizza: { icon: "🍕", label: "Adding pizza" },
+        lookup: { icon: "🔎" },
+      }),
+    );
     handle.dispose();
+  });
+
+  it("under a custom component, looks the hints up once the session has STARTED, not before", async () => {
+    const fetchSpy = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ page: "voice", tools: { lookup: { label: "Looking" } } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchSpy);
+    const core = createMockSessionCore({ running: false, started: false });
+    createSession.mockReturnValueOnce(core);
+    let seen: ToolDisplayConfig | undefined;
+    function Probe() {
+      seen = useToolConfig();
+      return null;
+    }
+    const handle = mountClient({
+      component: Probe,
+      target: "#app",
+      platformUrl: "http://localhost:3000",
+    });
+    await flushEffects();
+    // A custom component has no start card to name, so nothing in the response
+    // is needed before the session starts.
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(seen).toEqual({});
+    // Starting is what boots the sandbox on the platform, so the lookup
+    // riding behind it costs no boot of its own.
+    core.update({ started: true });
+    await vi.waitFor(() => expect(seen).toEqual({ lookup: { label: "Looking" } }));
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    handle.dispose();
+  });
+
+  it("injects `css` into the head for the life of the mount, and removes it on dispose", () => {
+    const css = ".aai-glow { box-shadow: 0 0 6px var(--aai-primary); }";
+    const handle = mountClient({ css, target: container });
+    const sheet = document.head.querySelector("style[data-aai-css]");
+    expect(sheet?.textContent).toBe(css);
+    handle.dispose();
+    expect(document.head.querySelector("style[data-aai-css]")).toBeNull();
   });
 
   it("derives platformUrl from location.href when not provided", () => {
@@ -173,65 +262,24 @@ describe("mountClient", () => {
       pathname: "/agent/",
       href: "https://example.com/agent/",
     });
-    const handle = mountClient({ name: "Test", target: container });
+    const handle = mountClient({ target: container });
     expect(createSession).toHaveBeenCalledWith(
       expect.objectContaining({ platformUrl: "https://example.com/agent/" }),
     );
     handle.dispose();
   });
 
-  /**
-   * `name` alongside `component` used to be `never`, which failed with
-   * "Type 'string' is not assignable to type 'undefined'" — a message that
-   * explains nothing, on the most natural thing to write. Two different
-   * models wrote it and each spent a build round on it. It is allowed now,
-   * and it means something: the page title, since a custom component has no
-   * shell header to show it in.
-   */
-  it("uses name as the page title, including with a custom component", () => {
-    const before = document.title;
-    const handle = mountClient({
-      name: "Pizza Palace",
-      component: () => null,
-      target: container,
-    });
-    expect(document.title).toBe("Pizza Palace");
-    handle.dispose();
-    document.title = before;
-  });
-
-  it("leaves the page title alone when no name is given", () => {
+  it("leaves the page title alone — the HTML's own title stands under either tier", () => {
+    // `mountClient()` takes no `name`: the default shell shows the agent's own
+    // (from its `client-config`), and a custom component owns the page, so a
+    // title the HTML shipped is never clobbered by the mount.
     document.title = "Shipped by the HTML";
-    const handle = mountClient({ component: () => null, target: container });
+    const custom = mountClient({ component: () => null, target: container });
     expect(document.title).toBe("Shipped by the HTML");
-    handle.dispose();
-  });
-
-  /**
-   * `tools` alongside `component` used to be `never` — the same shape of bug
-   * as `name` above, and found the same way: four starters in one eval run
-   * wrote `mountClient({ component, tools })` and each lost a build round to
-   * "Type '{ … }' is not assignable to type 'undefined'".
-   *
-   * It was never a default-shell option like `sidebar`. The provider wraps
-   * whichever root is rendered, and `ToolCallBlock` reads it — so a custom
-   * component gets the labels the moment it renders `MessageList` or
-   * `ChatView`. This asserts the value actually arrives, rather than only
-   * that the type now permits it.
-   */
-  it("passes tool display config to a custom component", () => {
-    let seen: ToolDisplayConfig | undefined;
-    function Probe() {
-      seen = useToolConfig();
-      return null;
-    }
-    const handle = mountClient({
-      component: Probe,
-      tools: { add_pizza: { label: "Adding pizza", icon: "🍕" } },
-      target: container,
-    });
-    expect(seen).toEqual({ add_pizza: { label: "Adding pizza", icon: "🍕" } });
-    handle.dispose();
+    custom.dispose();
+    const shell = mountClient({ target: container, platformUrl: "http://localhost:3000" });
+    expect(document.title).toBe("Shipped by the HTML");
+    shell.dispose();
   });
 
   it("defaults tool display config to empty for a custom component", () => {
@@ -274,7 +322,6 @@ describe("mountClient", () => {
    */
   it("forwards icon, subtitle and buttonText to the start screen", () => {
     const handle = mountClient({
-      name: "Solo RPG",
       icon: createElement("span", { "data-testid": "mark" }, "*"),
       subtitle: "A Narrative Solo-RPG Engine",
       buttonText: "Begin Your Story",
@@ -297,7 +344,6 @@ describe("mountClient", () => {
     }
     createSession.mockReturnValueOnce(startedCore());
     const handle = mountClient({
-      name: "T",
       sidebar: Aside,
       sidebarPosition: "right",
       target: container,

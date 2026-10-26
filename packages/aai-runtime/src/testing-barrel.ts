@@ -21,7 +21,7 @@
  *   run: async (_input, ctx) => await ctx.waitFor<{ approved: boolean }>("approval:1"),
  * });
  *
- * const run = await runWorkflow(approve, { draft: "…" }, { name: "approve" });
+ * const run = await runWorkflow(approve, { draft: "…" });
  * console.log(run.status); // "running" — parked on the reviewer
  *
  * await run.signal("approval:1", { approved: true });
@@ -45,7 +45,7 @@
  * import { runTextAgent } from "@alexkroman1/aai-runtime/testing";
  *
  * const run = await runTextAgent(
- *   agent({ name: "Desk", mode: "text", systemPrompt: "Be brief." }),
+ *   agent({ name: "Desk", mode: "text" }),
  *   "where is order 7?",
  *   { script: [{ text: "It shipped yesterday." }] },
  * );
@@ -80,6 +80,7 @@
 // gains and this door lacks fails there rather than in an author's import.
 export {
   createRecordingWorkflows,
+  createRouteContext,
   createRunSnapshot,
   createSlotStore,
   createStubWorkflows,
@@ -96,26 +97,36 @@ export {
   expectDialogOk,
   expectDialogRefused,
   expectPromptBuiltinsDeclared,
+  expectSlotContract,
   expectToolOk,
   type FetchRouteHandler,
   type FetchRouteHit,
   type FetchRouteRequest,
   type FetchRoutesOptions,
   type FetchRouteTable,
+  type FiredEvent,
+  fireEvent,
   isEvent,
   type ProjectFiles,
   parseSchemaInput,
   parseToolInput,
+  type RecordedSignal,
   type RecordedSleep,
   type RecordedStart,
   type RecordedStep,
   type RecordingWorkflows,
   type RecordingWorkflowsOptions,
+  type RouteContextOverrides,
   type RunSnapshotOverrides,
+  routeHandlerOf,
+  routeOf,
   runGuardrail,
   runTool,
   type SaidLine,
   type SentEvent,
+  type SessionEventFields,
+  type SessionEventRest,
+  type SlotContractOptions,
   STUB_SPEECH_PCM_BYTES,
   type StubClientInbox,
   type StubClientInboxCall,
@@ -161,6 +172,7 @@ export {
   type StubUploadsOptions,
   type StubUploadWrite,
   schemaInputIssues,
+  sessionEvent,
   stubClientInbox,
   stubClientTranscript,
   stubDelegate,
@@ -181,6 +193,7 @@ export {
   type ToolContextOverrides,
   type ToolRunner,
   toolInputIssues,
+  toolNameOf,
   toolOf,
   toolRunner,
   WORKFLOW_CONTEXT_NOW,
@@ -197,15 +210,13 @@ export {
   type TextAgentTestRun,
   type TextAgentTestToolCall,
 } from "./testing/run-text-agent.ts";
-export {
-  DEFAULT_MAX_DELIVERIES,
-  runWorkflow,
-} from "./testing/run-workflow.ts";
+export { DEFAULT_MAX_DELIVERIES, runWorkflow } from "./testing/run-workflow.ts";
 export type {
   RunWorkflowOptions,
   WorkflowTestHandle,
   WorkflowTestRead,
   WorkflowTestRun,
+  WorkflowTestSignalOptions,
   WorkflowTestStep,
   WorkflowTestWait,
 } from "./testing/run-workflow-types.ts";

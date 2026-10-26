@@ -292,6 +292,33 @@ describe("createServerForRuntime", () => {
   });
 });
 
+describe("GET /client-config on a static page", () => {
+  let server: ReturnType<typeof createServerForRuntime> | null = null;
+
+  afterEach(async () => {
+    await server?.close();
+    server = null;
+  });
+
+  test("carries no greeting: a static page opens no session to say it in", async () => {
+    // The failure this pins: a workflow app's config carried the voice
+    // default ("Hey there! I'm an AI voice assistant…") beside `page: "static"`.
+    const { runtime } = makeRuntime({ name: "static-agent" });
+    server = createServerForRuntime({
+      runtime,
+      name: "static-agent",
+      greeting: "Hey there! I'm an AI voice assistant.",
+      page: "static",
+      logger: silentLogger,
+    });
+    await server.listen(0);
+
+    const { status, body } = await get(`http://localhost:${server.port}/client-config`);
+    expect(status).toBe(200);
+    expect(JSON.parse(body)).toEqual({ name: "static-agent", page: "static" });
+  });
+});
+
 describe("createServerForRuntime static client dir", () => {
   let server: ReturnType<typeof createServerForRuntime> | null = null;
   let dir: string | null = null;

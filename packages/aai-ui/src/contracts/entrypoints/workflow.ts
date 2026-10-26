@@ -44,6 +44,9 @@ export {
   WORKFLOW_STATUS_LABELS,
   type WorkflowApi,
   type WorkflowApiOptions,
+  // Hooks typed by the APP def (`useWorkflowSubmit<typeof agentDef>("name")`),
+  // and what a submission records about itself.
+  type WorkflowDefOf,
   type WorkflowInputOf,
   type WorkflowOutputOf,
   WorkflowPendingNote,
@@ -57,5 +60,8 @@ export {
   type WorkflowRunStatus,
   type WorkflowStreamSubmission,
   type WorkflowSubmission,
+  type WorkflowSubmissionOf,
+  type WorkflowSubmissionScope,
+  type WorkflowSubmissionTiming,
   type WorkflowSummary,
 } from "../../index.ts";

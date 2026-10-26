@@ -62,6 +62,21 @@ the router parses, so they cannot drift.
   unfilled slot THROWS (`aai dev` does not publish one yet). `client.ts`'s
   inline composition still owes a fold onto `workflowWebhookUrl`.
 
+## The run key rides the STEP table, and a held signal rides process memory
+
+`start({ key })` appends one entry `key!` (`replay/run-key.ts`) before the first
+dispatch, because the key index answers nothing by run id and no backend's run
+row has a column for it — the step table is in every backend and read whole at
+the top of each walk. The walk REACHES it (`readRunKey`), or the divergence
+watch counts it as skipped work. `signal(token, payload, { holdMs })` for a
+token nothing holds is kept in `held-signals.ts` — bounded, process-local, the
+courtesy for a tool that signals a run it just started — and taken by the wait
+through the journal's own `deliverHook` when the hook is claimed. A sleep's
+`correlationId` defaults to its label (`replay/waits.ts`).
+`startedAt`/`settledAt` ride `setStatus`'s patch (`RunStatusPatch`) and are
+stored by the memory journal; Postgres and the platform carry no column yet and
+ignore them.
+
 ## `AAI_PUBLIC_BASE_URL` is what a THIRD PARTY dials, not what the guest dials
 
 `resolvePlatformQueue` (`platform-world.ts`) resolves the base every platform

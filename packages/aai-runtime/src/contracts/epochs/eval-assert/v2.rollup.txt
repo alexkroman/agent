@@ -1,0 +1,207 @@
+import { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
+import type { ClientEventMap } from '@alexkroman1/aai';
+import type { InferToolInput } from '@alexkroman1/aai';
+import type { InferToolOutput } from '@alexkroman1/aai';
+import { INSTRUCTION_KEY } from '@alexkroman1/aai/utils';
+import type { SessionEvent } from '@alexkroman1/aai';
+import type { StandardSchemaV1 } from '@alexkroman1/aai';
+import type { StateProjection } from '@alexkroman1/aai';
+import type { ToolDef } from '@alexkroman1/aai';
+import type { ToolInputSchema } from '@alexkroman1/aai';
+import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
+import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
+
+// @public
+export function completedOutput<R>(run: EvalWorkflowRun<R>): R;
+
+// @public
+export function customEventsIn<K extends keyof ClientEventMap & string>(events: readonly SessionEvent[], name: K): readonly {
+    readonly event: K;
+    readonly data: ClientEventMap[K];
+}[];
+
+// @public (undocumented)
+export function customEventsIn(events: readonly SessionEvent[], name?: string): readonly {
+    readonly event: string;
+    readonly data: unknown;
+}[];
+
+// @public
+export function describeToolCalls(calls: readonly EvalToolCall[]): string;
+
+// @public
+export function describeTurn(turn: EvalTurn): string;
+
+// @public
+export function errorsIn(events: readonly SessionEvent[]): readonly SessionEvent<"error.reported">[];
+
+// @public @sealed
+type EvalEmitted = {
+    readonly namespace: string;
+    readonly chunk: unknown;
+};
+
+// @public @sealed
+type EvalNetwork<State = unknown> = {
+    readonly fetch: typeof globalThis.fetch;
+    readonly state: State;
+    requests(filter?: EvalRequestFilter): readonly EvalRequest[];
+    calls(host: string | RegExp): readonly EvalRequest[];
+    refused(): readonly EvalRequest[];
+    expectNoOutbound(filter: EvalRequestFilter): void;
+    expectNothingRefused(): void;
+    reset(): void;
+};
+
+// @public @sealed
+type EvalRequest = {
+    readonly method: string;
+    readonly url: URL;
+    readonly host: string;
+    readonly headers: Readonly<Record<string, string>>;
+    readonly text: string;
+    readonly body: unknown;
+    readonly outcome: "routed" | "passthrough" | "refused" | (string & {});
+    readonly route?: string;
+    readonly status?: number;
+};
+
+// @public
+type EvalRequestFilter = string | RegExp | ((request: EvalRequest) => boolean);
+
+// @public
+export function evalRunOf(turn: EvalTurn, workflow: string | AnyWorkflowDef): string;
+
+// @public @sealed
+type EvalSession = {
+    readonly id: string;
+    readonly refused: string | undefined;
+    readonly ended: boolean;
+    say(text: string): Promise<EvalTurn>;
+    sayAll(lines: readonly string[]): Promise<readonly EvalTurn[]>;
+    events(): readonly SessionEvent[];
+    said(): readonly string[];
+    toolCalls(): readonly EvalToolCall[];
+    close(): Promise<void>;
+};
+
+// @public @sealed
+type EvalSleep = {
+    readonly label: string;
+    readonly duration: string | number | Date;
+};
+
+// @public
+export type EvalToolCall = {
+    readonly toolCallId: string;
+    readonly name: string;
+    readonly args: Record<string, unknown>;
+    readonly result?: string;
+};
+
+// @public
+export type EvalToolOutput<D extends ToolDef<ToolInputSchema>> = InferToolOutput<D> extends infer O ? O extends Record<string, unknown> ? Omit<O, typeof INSTRUCTION_KEY> : O : never;
+
+// @public
+export type EvalTurn = {
+    readonly text: string;
+    readonly events: readonly SessionEvent[];
+    readonly toolCalls: readonly EvalToolCall[];
+    readonly completed: boolean;
+    readonly errors: readonly SessionEvent<"error.reported">[];
+    readonly endedSession?: boolean;
+    readonly dtmf?: readonly string[];
+    readonly workflowStarts?: readonly EvalWorkflowStart[];
+};
+
+// @public @sealed
+type EvalWorkflowRun<R = unknown> = {
+    readonly runId: string;
+    readonly workflow: string;
+    readonly key: string | undefined;
+    readonly status: WorkflowRunStatus;
+    readonly output: R | undefined;
+    readonly error: string | undefined;
+    readonly completed: boolean;
+    readonly reported: readonly string[];
+    readonly emitted: readonly EvalEmitted[];
+    readonly slept: readonly EvalSleep[];
+    readonly elapsedMs: number | undefined;
+    readonly snapshot: WorkflowRunSnapshot<R>;
+};
+
+// @public @sealed
+export type EvalWorkflowStart = {
+    readonly workflow: string;
+    readonly def: AnyWorkflowDef | undefined;
+    readonly runId: string;
+};
+
+// @public
+export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...tools: readonly ToolDef[]): void;
+
+// @public
+export function expectToolBeforeSpeech(turn: EvalTurn): void;
+
+// @public
+export function lastStateIn<V>(events: readonly SessionEvent[], projection: StateProjection<V>): V | undefined;
+
+// @public (undocumented)
+export function lastStateIn<T>(events: readonly SessionEvent[], slot: string, schema: StandardSchemaV1<unknown, T>): T | undefined;
+
+// @public (undocumented)
+export function lastStateIn(events: readonly SessionEvent[], slot: string): unknown;
+
+// @public (undocumented)
+export function lastStateIn(events: readonly SessionEvent[]): Readonly<Record<string, unknown>> | undefined;
+
+// @public
+export function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
+
+// @public
+export function runCodeIn(calls: readonly EvalToolCall[]): string;
+
+// @public
+export function runCodeOutput(calls: readonly EvalToolCall[]): string;
+
+// @public
+export function saidIn(events: readonly SessionEvent[]): readonly string[];
+
+// @public
+export function statesIn<V>(events: readonly SessionEvent[], projection: StateProjection<V>): readonly V[];
+
+// @public (undocumented)
+export function statesIn<T>(events: readonly SessionEvent[], slot: string, schema: StandardSchemaV1<unknown, T>): readonly T[];
+
+// @public (undocumented)
+export function statesIn(events: readonly SessionEvent[], slot: string): readonly unknown[];
+
+// @public (undocumented)
+export function statesIn(events: readonly SessionEvent[]): readonly Readonly<Record<string, unknown>>[];
+
+// @public
+export function toolArgsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly InferToolInput<D>[];
+
+// @public
+export function toolCallsInEvents(events: readonly SessionEvent[]): readonly EvalToolCall[];
+
+// @public
+export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolCall[];
+
+// @public
+export function toolNames(calls: readonly EvalToolCall[]): readonly string[];
+
+// @public
+export function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
+
+// @public
+export function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly EvalToolOutput<D>[];
+
+// @public
+export function transcriptOf(session: Pick<EvalSession, "events">, network?: EvalNetwork): string;
+
+// @public
+export const TURN_ENDS: ReadonlySet<SessionEvent["type"]>;
+
+// @public
+export function turnCalling(turns: readonly EvalTurn[], tool: ToolDef, where?: (call: EvalToolCall) => boolean): EvalTurn;

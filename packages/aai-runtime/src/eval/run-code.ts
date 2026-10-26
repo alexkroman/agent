@@ -29,18 +29,18 @@
 
 import { RUN_CODE_REFUSAL } from "@alexkroman1/aai/host-internal";
 import { z } from "zod";
-import { type EvalToolCall, ordinal, toolArgsIn } from "./events.ts";
+import { builtinToolArgsIn, type EvalToolCall, ordinal } from "./events.ts";
 import { createVmRunCode } from "./vm-run-code.ts";
 
 /** The builtin's name, as the model calls it. */
 const RUN_CODE = "run_code";
 
 /**
- * What a `run_code` call carries. Read through `toolArgsIn` WITH a schema —
- * `args` is `Record<string, unknown>` on the wire, the model wrote it and
- * nothing validated it, so a `String(args.code ?? "")` turns an argument the
- * model renamed, or never sent, into `""`, and every claim about the code
- * becomes a claim about an empty string.
+ * What a `run_code` call carries. Read through `builtinToolArgsIn` WITH a
+ * schema — a builtin has no def a case could import to type it, `args` is
+ * `Record<string, unknown>` on the wire, and a `String(args.code ?? "")` turns
+ * an argument the model renamed, or never sent, into `""`, so every claim about
+ * the code becomes a claim about an empty string.
  */
 const RunCodeArgs = z.object({ code: z.string() });
 
@@ -102,7 +102,7 @@ function runCodeRefusedMessage(what: string): string {
  * ```
  */
 export function runCodeIn(calls: readonly EvalToolCall[]): string {
-  return toolArgsIn(calls, RUN_CODE, RunCodeArgs)
+  return builtinToolArgsIn(calls, RUN_CODE, RunCodeArgs)
     .map((args) => args.code)
     .join("\n");
 }

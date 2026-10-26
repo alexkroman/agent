@@ -99,7 +99,6 @@ export const DEEPGRAM_DEFAULT_ENDPOINTING_MS: number = 1500;
  *
  * export default agent({
  *   name: "Support",
- *   systemPrompt: "You are a support agent. Be brief.",
  *   stt: deepgramStt({ model: "nova-3", language: "en" }),
  * });
  * ```

@@ -20,9 +20,12 @@
 import { compile } from "html-to-text";
 import { z } from "zod";
 import { agentToolsToSchemas, type ToolSchema } from "../sdk/_internal-types.ts";
+import { recordToolNames } from "../sdk/_testing-tool-names.ts";
+import type { BuiltinTool } from "../sdk/builtin-tools.ts";
 import { HTML_ACCEPT, MAX_HTML_BYTES, MAX_JSON_BYTES, MAX_PAGE_CHARS } from "../sdk/constants.ts";
 import { toolset } from "../sdk/toolset.ts";
 import type { ToolDef } from "../sdk/types.ts";
+import type { AnyWorkflowDef } from "../sdk/workflow.ts";
 import { builtinCover } from "./_builtin-cover.ts";
 import { calculate } from "./_calculate.ts";
 import { fetchCappedJson, fetchCappedText } from "./_fetch-capped.ts";
@@ -35,6 +38,7 @@ import { readNotes, writeNote } from "./session-notes.ts";
 import { builtinFetch } from "./ssrf.ts";
 import { createTextMe } from "./text-me.ts";
 import { createWebSearch } from "./web-search.ts";
+import { WORKFLOW_BUILTINS } from "./workflow-builtins.ts";
 
 // Compiled once: `convert()` rebuilds the selector index per call (116 µs vs
 // 3.5 µs), and this runs on every `visit_webpage`.
@@ -303,6 +307,13 @@ export type BuiltinToolOptions = {
    * without it, run_code refuses to evaluate code in this process.
    */
   runCode?: RunCodeExecutor;
+  /**
+   * The agent's declared workflows, for the three run builtins
+   * (`workflow_status`, `workflow_progress`, `workflow_cancel`): what each
+   * SAYS about a run is the def's own `describeRun`/`cancelNote`. Absent, every
+   * line is the status sentence `describeRun` falls back to.
+   */
+  workflows?: Readonly<Record<string, AnyWorkflowDef>> | undefined;
 };
 
 /** Resolved builtin tool definitions, keyed by tool name. */
@@ -384,10 +395,79 @@ export function resolveBuiltin(
   name: string,
   options?: BuiltinToolOptions,
 ): (ToolDef & { guidance?: string }) | undefined {
+  const def = mintBuiltin(name, options);
+  // A builtin's name is minted HERE, nowhere else — so this is where the def
+  // learns it (`_testing-tool-names.ts`), as a file tool does in `withTools`
+  // and a roster tool in `rosterToolset`. It is what lets a spec read one by
+  // its def: `toolResultIn(turn.toolCalls, builtinTool("workflow_cancel"))`.
+  if (def !== undefined) recordToolNames({ [name]: def });
+  return def;
+}
+
+/** The lookup behind {@link resolveBuiltin}: which record, which factory. */
+function mintBuiltin(
+  name: string,
+  options?: BuiltinToolOptions,
+): (ToolDef & { guidance?: string }) | undefined {
   if (Object.hasOwn(SANDBOX_BUILTINS, name)) return SANDBOX_BUILTINS[name]?.(options?.runCode);
   if (Object.hasOwn(FETCH_BUILTINS, name)) return FETCH_BUILTINS[name]?.(options?.fetch);
+  // Built per resolve, like the fetch ones: what they SAY is the agent's own.
+  if (Object.hasOwn(WORKFLOW_BUILTINS, name)) return WORKFLOW_BUILTINS[name]?.(options?.workflows);
   if (Object.hasOwn(STATIC_BUILTINS, name)) return STATIC_BUILTINS[name];
   return undefined;
+}
+
+/** Every name {@link resolveBuiltin} answers, for the throw that names them. */
+const BUILTIN_NAMES: readonly string[] = [
+  ...Object.keys(SANDBOX_BUILTINS),
+  ...Object.keys(FETCH_BUILTINS),
+  ...Object.keys(WORKFLOW_BUILTINS),
+  ...Object.keys(STATIC_BUILTINS),
+];
+
+/**
+ * The builtin tool `name`, as a DEF — the handle a spec or an eval reads a
+ * builtin through, the way it reads any other tool through the tool's def.
+ *
+ * A tool is reached by its def, never by its name string: a `tools/` file's
+ * default export, a speaker's `tools` entry. A builtin has neither — it is
+ * minted by the runtime from the name an agent lists in `builtinTools`, with
+ * the runtime's own dependencies injected — so this is the import that stands
+ * in for the file: `toolResultIn(turn.toolCalls, builtinTool("workflow_cancel"))`
+ * reads what the deployed agent's `workflow_cancel` answered, matched by the
+ * name the def was minted under.
+ *
+ * What comes back is a REAL def, built with no injected dependencies: the
+ * static builtins (`think`, `calculate`, …) execute as deployed; a network
+ * builtin takes the SSRF-screened default fetch; `run_code` refuses outside a
+ * sandbox and the three `workflow_*` builtins describe a run by its status
+ * sentence alone, since no agent's `describeRun` was handed in. It is not in
+ * any agent's tool table — the runtime merges builtins in at session start —
+ * so a `toolRunner` does not find it; a spec that wants to CALL one calls its
+ * `execute` directly, with a `createToolContext()`.
+ *
+ * @throws When `name` is not a builtin this SDK ships, naming the ones it does.
+ *
+ * @example
+ * ```ts
+ * import { builtinTool } from "@alexkroman1/aai/tools";
+ * import { createToolContext } from "@alexkroman1/aai/testing";
+ *
+ * const calculate = builtinTool("calculate");
+ * const answer = await calculate.execute({ expression: "6 * 7" }, createToolContext());
+ * console.log(answer); // the builtin's own result
+ * ```
+ *
+ * @public
+ */
+export function builtinTool(name: BuiltinTool): ToolDef {
+  const def = resolveBuiltin(name);
+  if (def === undefined) {
+    throw new Error(
+      `builtinTool("${name}") names no builtin this SDK ships. The builtins are: ${BUILTIN_NAMES.join(", ")}.`,
+    );
+  }
+  return def;
 }
 
 /** Resolved builtins with defs, schemas, and guidance computed in a single pass. */

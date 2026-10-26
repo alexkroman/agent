@@ -28,6 +28,7 @@
  */
 
 import type http from "node:http";
+import type { ToolUi } from "@alexkroman1/aai";
 import { isBlankSecret } from "@alexkroman1/aai/host-internal";
 import { parseWsUpgradeParams } from "@alexkroman1/aai/internal";
 import { buildClientConfig, CLIENT_CONFIG_PATH } from "@alexkroman1/aai/protocol";
@@ -48,6 +49,8 @@ export type DevClientConfigSource = {
   name: string;
   greeting?: string | undefined;
   page?: "voice" | "static" | undefined;
+  /** Each tool's declared icon and label — see `ToolDef.ui`. */
+  tools?: Record<string, ToolUi> | undefined;
 };
 
 /** The part of an `http.ServerResponse` the `client-config` answer writes. */

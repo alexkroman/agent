@@ -107,7 +107,8 @@ import type {
   WorkflowContext,
 } from "@alexkroman1/aai";
 import type { StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
-import type { JournalStore, SleepRecord } from "../journal/types.ts";
+import { takeHeldSignal } from "../held-signals.ts";
+import { JournalConflictError, type JournalStore, type SleepRecord } from "../journal/types.ts";
 import { waitTokenDiverged } from "./divergence.ts";
 import { checkWorkflowValue, waitPayloadRefused } from "./schema.ts";
 import type { SuspendController } from "./suspend.ts";
@@ -179,6 +180,46 @@ function deadlineOf(
 function overInSnapshot(record: SleepRecord | undefined, now: number): boolean {
   if (record === undefined) return false;
   return record.woken || now >= record.wakeAt;
+}
+
+/**
+ * A hook token another run already holds, said in the author's terms.
+ *
+ * The journal's sentence names the token and the run holding it; what it
+ * cannot say is WHY two runs derived one token, which is the thing to fix. A
+ * signal token is `<workflow>:<key>:<label>` with no run component
+ * (`sdk/workflow-signals.ts`), so two runs of one workflow under one key — a
+ * caller's "run it again" while the first is parked — collide at the first
+ * `ctx.waitForSignal(label)`, and the ordinary fix is a distinct key for the
+ * second run. The label and key are read back off the token when it carries
+ * this workflow's prefix; a hand-derived token gets the general sentence.
+ *
+ * Still a {@link JournalConflictError}: the class is what tells the engine
+ * this is a verdict about the run rather than a store to retry.
+ */
+function hookHeldElsewhere(
+  workflow: string,
+  token: string,
+  conflict: JournalConflictError,
+): JournalConflictError {
+  const prefix = `${workflow}:`;
+  const rest = token.startsWith(prefix) ? token.slice(prefix.length) : undefined;
+  const at = rest?.lastIndexOf(":") ?? -1;
+  const derived =
+    rest !== undefined && at > 0
+      ? { key: rest.slice(0, at), label: rest.slice(at + 1) }
+      : undefined;
+  const why =
+    derived === undefined
+      ? "A hook token is claimed by ONE live wait, so two runs that derive the same token " +
+        "collide; derive it from something unique to the run, or start the second run under " +
+        "a distinct StartOptions.key."
+      : `This run of ${JSON.stringify(workflow)} under key ${JSON.stringify(derived.key)} reached ` +
+        `ctx.waitForSignal(${JSON.stringify(derived.label)}) while another run under the same key ` +
+        "is parked on it: a signal token is derived from the workflow, the key and the label, " +
+        "with no run component, so one live wait may hold it at a time. A second concurrent run " +
+        "needs a distinct StartOptions.key, or the first one answered or cancelled.";
+  return new JournalConflictError(`${conflict.message}. ${why}`);
 }
 
 /** What {@link createWaitMethods} needs to answer one walk's waits. */
@@ -286,11 +327,13 @@ export function createWaitMethods(
     if (overInSnapshot(snapshot.get(key), Date.now())) return;
     const slot = suspend.enter();
     try {
+      // The label is the wait's name to a reader, so it is the id a targeted
+      // `wakeUp` addresses by default — `SleepOptions.correlationId`.
       const record = await journal.claimSleep(
         runId,
         key,
         wakeAtFrom(until),
-        sleepOptions?.correlationId,
+        sleepOptions?.correlationId ?? label,
       );
       // Woken early, or the moment has passed — either way the wait is over. A
       // deadline in the past is not an error: a run resuming after a long outage
@@ -372,6 +415,20 @@ export function createWaitMethods(
   }
 
   /**
+   * A signal that arrived BEFORE this wait was claimed, held for it
+   * (`workflow/held-signals.ts`), delivered now — through the journal, so what
+   * the body reads is the same journaled payload every later walk reads.
+   * `undefined` when nothing was held, or the delivery found no hook after all.
+   */
+  async function answerHeld(key: string, token: string): Promise<{ payload: unknown } | undefined> {
+    const held = takeHeldSignal(token);
+    if (held === undefined) return undefined;
+    if ((await journal.deliverHook(token, held.payload)) === undefined) return undefined;
+    const answered = await journal.claimHook(runId, key, token);
+    return answered.delivered ? { payload: answered.payload } : undefined;
+  }
+
+  /**
    * The payload a wait resolves: checked against the schema, or handed on.
    *
    * The ONE place a payload becomes a value the body sees, which is why both
@@ -413,7 +470,10 @@ export function createWaitMethods(
     const schema = waitOptions?.schema;
     try {
       const key = `hook!${token}#${occurrence}`;
-      const record = await journal.claimHook(runId, key, token);
+      const record = await journal.claimHook(runId, key, token).catch((err: unknown) => {
+        if (JournalConflictError.is(err)) throw hookHeldElsewhere(workflow, token, err);
+        throw err;
+      });
       // Is the record this wait's own? `claimHook` is idempotent on the KEY, so
       // what comes back on a replay was written by whichever wait reached that
       // key first — and its token is the one field in the answer that says which
@@ -429,6 +489,8 @@ export function createWaitMethods(
       // so a re-walk reads what was delivered rather than registering a second
       // wait.
       if (record.delivered) return await payloadOf<T>(token, record.payload, schema);
+      const early = await answerHeld(key, token);
+      if (early !== undefined) return await payloadOf<T>(token, early.payload, schema);
       // No deadline: nothing but a signal ends this, so the wait contributes no
       // wake time — `undefined` is what tells `earliestDeadline` to skip it.
       const timeoutMs = deadlineOf(waitOptions);

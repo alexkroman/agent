@@ -223,6 +223,27 @@ async function drain(stream: ReadableStream<unknown>): Promise<unknown[]> {
 }
 
 describe("the device-workflow additions, in an eval", () => {
+  test("a signal with a HOLD is kept, and the body's waitFor takes it — production's courtesy", async () => {
+    const gate = workflow({
+      run: async (_input, ctx) => ({ answer: await ctx.waitFor<{ ok: boolean }>("approval:1") }),
+    });
+    const active = open({ gate });
+    // Signalled BEFORE the run exists, as a tool answering the run it is about
+    // to start does; `true` means taken, exactly as the real adapter answers.
+    expect(await active.adapter.signal("approval:1", { ok: true }, { holdMs: 60_000 })).toBe(true);
+    const runId = await active.adapter.start("gate", [{}]);
+    await active.record(runId)?.settled;
+    expect(active.record(runId)?.status).toBe("completed");
+    expect(active.record(runId)?.output).toEqual({ answer: { ok: true } });
+  });
+
+  test("the key-index write rides the start, as it does on the real engine", async () => {
+    const active = open({ narrator });
+    const index = vi.fn(async (_runId: string) => undefined);
+    const runId = await active.adapter.start("narrator", [{ topic: "otters" }], { index });
+    expect(index).toHaveBeenCalledWith(runId);
+  });
+
   test("a dedupeKey answers the first run", async () => {
     const active = open({ thrower });
     const first = await active.adapter.start("thrower", [{}], { dedupeKey: "evt_1" });

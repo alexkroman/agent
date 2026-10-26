@@ -16,16 +16,27 @@ One import serves a unit spec and an eval file alike:
   stubs a case composes with.
 
 ```ts
-import type { AgentDef } from "@alexkroman1/aai";
-import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/testing/vitest";
+// file: tools/look_up.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
 
-declare const agentDef: AgentDef;
+export default tool({
+  description: "Look an order up",
+  inputSchema: z.object({ orderId: z.string() }),
+  execute: ({ orderId }) => ({ orderId, status: "shipped" }),
+});
+
+// file: agent.eval.test.ts
+import agentDef from "virtual:aai/agent";
+import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/testing/vitest";
+import lookUp from "./tools/look_up.ts";
 
 describeEval(agentDef, (test) => {
   test(
     "looks the order up before answering",
     async ({ session }) => {
-      expectCalled(await session.say("where is order W1234?"), "look_up");
+      // The claim takes the tool's DEF, matched by the name the agent registered.
+      expectCalled(await session.say("where is order W1234?"), lookUp);
     },
     { stubReply: "Order W1234 shipped yesterday." },
   );
@@ -39,6 +50,96 @@ the SDK stubs `eval-stubs`, and the other installers `testing-stubs`.
 pulls it; `/testing` and `/eval` stay importable without it.
 
 ## Functions
+
+### describeAgent()
+
+```ts
+function describeAgent<D extends ToolBearingAgent & {
+  llm?: unknown;
+  name: string;
+  stt?: unknown;
+  tts?: unknown;
+}>(agent: D, define: (run: ToolRunner, agent: D) => void): void;
+```
+
+Declare a suite for one deployed agent: the built-in "is deployable" case,
+then the body, handed the typed [ToolRunner](../testing.md#toolrunner) for the agent.
+
+Every shipped template's spec opened with the same two things — a
+`describe(agentDef.name, …)` whose first case was `expectDeployable(agentDef)`,
+and `const run = toolRunner(agentDef)` above it. The deployable case is the
+one no agent spec should be without (a config the platform refuses is a spec
+measuring nothing), and binding the runner is the line every file repeated.
+
+The body takes vitest's own `test`/`expect` from `vitest` as usual; only the
+runner is handed in, so a case reads `run(addItem, { … })` typed by the def
+— a tool file's default export, or a speaker's `tools` entry — and gated as
+the agent gates it.
+
+#### Type Parameters
+
+##### D
+
+`D` *extends* [`ToolBearingAgent`](../testing.md#toolbearingagent) & \{
+  `llm?`: `unknown`;
+  `name`: `string`;
+  `stt?`: `unknown`;
+  `tts?`: `unknown`;
+\}
+
+#### Parameters
+
+##### agent
+
+`D`
+
+##### define
+
+(`run`: [`ToolRunner`](../testing.md#toolrunner), `agent`: `D`) => `void`
+
+#### Returns
+
+`void`
+
+#### Example
+
+```ts
+// file: agent.ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({ name: "Orders" });
+
+// file: tools/add_item.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Add an item to the order",
+  inputSchema: z.object({ item: z.string() }),
+  execute: ({ item }) => ({ added: item }),
+});
+
+// file: agent.test.ts
+import { deployedAgent } from "@alexkroman1/aai/testing";
+import { describeAgent } from "@alexkroman1/aai/testing/vitest";
+import { expect, test } from "vitest";
+import authored from "./agent.ts";
+import addItem from "./tools/add_item.ts";
+
+// Under vitest, `import agentDef from "virtual:aai/agent"` is this line.
+const agentDef = deployedAgent(authored, {
+  tools: import.meta.glob("./tools/*.ts", { eager: true }),
+});
+
+describeAgent(agentDef, (run) => {
+  test("adds the item", async () => {
+    const { added } = await run(addItem, { item: "apple" });
+    expect(added).toBe("apple");
+  });
+});
+```
+
+***
 
 ### installStubClientInbox()
 
@@ -78,10 +179,59 @@ console.log(inbox.calls[0]?.clientId); // "kitchen"
 
 ***
 
+### installStubFfmpeg()
+
+```ts
+function installStubFfmpeg(script?: StubFfmpegScript): StubFfmpeg;
+```
+
+Route every ffmpeg-family spawn through `script`, restored when this test
+finishes.
+
+The fake never times out and never honours the run's abort signal: a child
+that hangs is not something a script can express, and the deadline
+machinery it would exercise is the SDK's own, tested in `ffmpeg.test.ts`.
+
+#### Parameters
+
+##### script?
+
+[`StubFfmpegScript`](#stubffmpegscript)
+
+#### Returns
+
+[`StubFfmpeg`](#stubffmpeg)
+
+#### Example
+
+```ts
+import { probeMedia, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
+import { installStubFfmpeg } from "@alexkroman1/aai-runtime/testing/vitest";
+import { writeFile } from "node:fs/promises";
+import { expect, test } from "vitest";
+
+test("a scripted ffmpeg answers each call by its args", async () => {
+  const ffmpeg = installStubFfmpeg(async ({ args }) => {
+    if (args.includes("-show_streams")) {
+      return { stdout: '{"streams":[{"codec_type":"audio"}],"format":{"duration":"1.0"}}' };
+    }
+    // A transcode's output is whatever the script writes at the out path.
+    await writeFile(args.at(-1) ?? "", new Uint8Array(32_000));
+    return {};
+  });
+  const info = await probeMedia("call.m4a");
+  expect(info.durationSec).toBe(1);
+  await runFfmpeg(["-i", "call.m4a", "out.wav"]);
+  expect(ffmpeg.calls).toHaveLength(2);
+});
+```
+
+***
+
 ### installStubGateway()
 
 ```ts
-function installStubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGatewayCall[];
+function installStubGateway(replies: string | readonly string[], options?: InstallStubGatewayOptions): StubGatewayCall[];
 ```
 
 Install a fake LLM gateway as the global `fetch`, and return its call log.
@@ -101,6 +251,11 @@ before the next test. Install per test (the test body or a `beforeEach`);
 one installed in `beforeAll` is gone before the first test runs. Without
 `unstubGlobals`, `vi.unstubAllGlobals()` is the explicit undo.
 
+**It also seeds `ASSEMBLYAI_API_KEY`** for the test when the process holds
+none, since `stepGenerate` refuses by name without one and the fake never
+reads it — `apiKey: false` ensures there is NONE, whatever the shell exports.
+Either way the previous value is put back when the test finishes.
+
 #### Parameters
 
 ##### replies
@@ -112,7 +267,7 @@ Completion contents, in order; the last repeats — see
 
 ##### options?
 
-[`StubGatewayOptions`](../testing.md#stubgatewayoptions)
+[`InstallStubGatewayOptions`](#installstubgatewayoptions)
 
 #### Returns
 
@@ -166,32 +321,6 @@ test finishes.
 function installStubWorkflows(options?: StubWorkflowsOptions): WorkflowClient;
 ```
 
-A `ctx.workflows` whose reads answer from one fixture and whose every method
-is a `vi.fn`.
-
-`createStubWorkflows` (`@alexkroman1/aai/testing`) is the framework-agnostic
-base: it REJECTS every method, so a tool reaching for one the spec did not
-stub says so. That is the right default and it is not the shape a spec of a
-workflow-driving agent wants, because such a tool reads two or three methods
-per call and asserts on `start`. Both shipped workflow templates therefore
-opened with the same fifteen lines — a `vi.fn` per method, answering from one
-`runs` array — byte-identical apart from the workflow name in `listing`.
-
-**It is on this subpath because `vi.fn` is the content.** The methods have to
-be spies: a spec asserts `expect(workflows.start).toHaveBeenCalledWith(def,
-input)` and re-points one per test with
-`vi.mocked(workflows.lastLine).mockResolvedValue("…")`. A plain-function
-version would be a different helper that neither template could use.
-
-**What it does NOT answer is deliberate.** `stream`, `streamTail`, `signal`
-and `publicWebhookUrl` fall through to the rejecting base, because a tool
-reading a progress channel by hand is the hazard `lastLine` exists to remove
-— see `WorkflowClient.lastLine`, where composing `streamTail` + `stream` in
-the wrong order waits forever with no error. A spec that really is testing
-one of those overrides it, which reads as the deliberate act it is.
-
-Spread it to replace a method for one test: `{ ...installStubWorkflows(), signal }`.
-
 #### Parameters
 
 ##### options?
@@ -202,25 +331,262 @@ Spread it to replace a method for one test: `{ ...installStubWorkflows(), signal
 
 [`WorkflowClient`](../../aai/index.md#workflowclient)
 
+***
+
+### installStubWorld()
+
+```ts
+function installStubWorld(options?: StubWorldOptions): StubWorld;
+```
+
+Install every seam a workflow step reaches through, composed in the one
+order that works, and seed the credential — restored when this test
+finishes.
+
+A step's HTTP goes through ONE published `stepFetch`, so a flow that calls a
+model AND fetches a page AND transcribes a recording cannot install three
+fakes: whichever published last answers everything. The composition every
+workflow spec therefore hand-wrote is the gateway route in FRONT of the page
+stub (`model.route(request) ?? page()`), and in front of both the
+transcription fake holding the slot with the pair as its `otherwise`. Get
+the order wrong and the page stub answers the gateway's request with HTML,
+which `stepGenerate` retries against until its budget runs out; a shipped
+template carries a paragraph warning about exactly this. Here the order is
+fixed, and a spec names only the legs it has.
+
+It also seeds `ASSEMBLYAI_API_KEY` (`apiKey: false` ensures there is none
+instead), because `stepGenerate` refuses by name without one and the fake
+never reads it; the previous value is put back when the test finishes. `stubGatewayRoute` itself
+cannot seed anything — it installs nothing and owns no lifetime — so the
+seeding lives with the installers.
+
+`installStubReporter` is installed too, so what the steps narrated is on
+`reported` without a second call — unless a reporter is already published
+(an eval's), which is left in place: `reporter` decides. A SECOND world in
+one test replaces the first's reporter along with its other legs, so the
+world a spec holds last is the one whose `reported` records.
+
+#### Parameters
+
+##### options?
+
+[`StubWorldOptions`](#stubworldoptions)
+
+#### Returns
+
+[`StubWorld`](#stubworld)
+
 #### Example
 
 ```ts
-import { createRunSnapshot, createToolContext } from "@alexkroman1/aai/testing";
-import { installStubWorkflows } from "@alexkroman1/aai/testing/vitest";
+// file: workflows/digest.ts
+import { stepFetch, stepGenerateJson } from "@alexkroman1/aai/step";
+import { z } from "zod";
 
-const workflows = installStubWorkflows({
-  names: ["recap"],
-  runs: [createRunSnapshot({ workflow: "recap", status: "running" })],
+export async function digest(input: { url: string }) {
+  const page = await (await stepFetch(input.url)).text();
+  return stepGenerateJson(`One headline for: ${page}`, {
+    schema: z.object({ headline: z.string() }),
+  });
+}
+
+// file: digest.test.ts
+import { installStubWorld } from "@alexkroman1/aai/testing/vitest";
+import { expect, test } from "vitest";
+import { digest } from "./workflows/digest.ts";
+
+test("the digest reads the page and asks the model", async () => {
+  const world = installStubWorld({
+    model: '{"headline":"Otters use tools"}',
+    pages: { "https://example.com/otters": { body: "<p>Otters use tools.</p>" } },
+  });
+  await digest({ url: "https://example.com/otters" });
+  expect(world.model[0]?.prompt).toContain("Otters");
 });
-const ctx = createToolContext({ workflows });
 ```
 
 ## Type Aliases
+
+### InstallStubGatewayOptions
+
+```ts
+type InstallStubGatewayOptions = StubGatewayOptions & {
+  apiKey?: string | false;
+};
+```
+
+**`Input`**
+
+Options for [installStubGateway](#installstubgateway): `stubGateway`'s, plus the credential.
+
+#### Type Declaration
+
+##### apiKey?
+
+```ts
+optional apiKey?: string | false;
+```
+
+The `ASSEMBLYAI_API_KEY` to seed for this test, when the process holds
+none — see [installStubWorld](#installstubworld). Defaults to a recognizable stub
+value; `false` ENSURES there is none for the test (a key the shell exports
+is stubbed away and put back afterwards), for the one spec whose subject
+IS the missing-key refusal.
+
+***
+
+### StubFfmpeg
+
+```ts
+type StubFfmpeg = {
+  calls: StubFfmpegCall[];
+};
+```
+
+**`Sealed`**
+
+The installed fake.
+
+#### Properties
+
+##### calls
+
+```ts
+readonly calls: StubFfmpegCall[];
+```
+
+Every spawn so far, in order.
+
+***
+
+### StubFfmpegCall
+
+```ts
+type StubFfmpegCall = {
+  args: readonly string[];
+  binary: string;
+  stdin: Uint8Array | undefined;
+};
+```
+
+**`Sealed`**
+
+One spawn, as the fake saw it.
+
+#### Properties
+
+##### args
+
+```ts
+readonly args: readonly string[];
+```
+
+The argv, exactly as the caller built it (standing flags included).
+
+##### binary
+
+```ts
+readonly binary: string;
+```
+
+The binary the SDK resolved — `ffmpeg`, `ffprobe`, or whatever the env named.
+
+##### stdin
+
+```ts
+readonly stdin: Uint8Array | undefined;
+```
+
+Bytes the run handed to stdin, for an argv that reads `pipe:0`.
+
+***
+
+### StubFfmpegReply
+
+```ts
+type StubFfmpegReply = {
+  exitCode?: number;
+  spawnError?: Error;
+  stderr?: string;
+  stdout?: string | Uint8Array;
+};
+```
+
+**`Input`**
+
+What the scripted child does with one spawn.
+
+Every field is optional: an empty reply is a child that printed nothing and
+exited `0`.
+
+#### Properties
+
+##### exitCode?
+
+```ts
+readonly optional exitCode?: number;
+```
+
+Exit code. Defaults to `0`; anything else is an `exit` failure.
+
+##### spawnError?
+
+```ts
+readonly optional spawnError?: Error;
+```
+
+Fail the SPAWN itself with this error instead of running — `ENOENT`, say.
+
+##### stderr?
+
+```ts
+readonly optional stderr?: string;
+```
+
+What the child wrote to stderr — `loudnorm`'s block, an error line.
+
+##### stdout?
+
+```ts
+readonly optional stdout?: string | Uint8Array;
+```
+
+What the child wrote to stdout — ffprobe's JSON, or a `pipe:1` output.
+
+***
+
+### StubFfmpegScript
+
+```ts
+type StubFfmpegScript = (call: StubFfmpegCall) => 
+  | StubFfmpegReply
+  | undefined
+| Promise<StubFfmpegReply | undefined>;
+```
+
+**`Input`**
+
+Called once per spawn, with the argv. May be async, and may write files.
+
+#### Parameters
+
+##### call
+
+[`StubFfmpegCall`](#stubffmpegcall)
+
+#### Returns
+
+  \| [`StubFfmpegReply`](#stubffmpegreply)
+  \| `undefined`
+  \| `Promise`\<[`StubFfmpegReply`](#stubffmpegreply) \| `undefined`\>
+
+***
 
 ### StubWorkflowsOptions
 
 ```ts
 type StubWorkflowsOptions = {
+  agent?: WorkflowAppLike;
   lastLine?: unknown;
   names?: readonly string[];
   runId?: string;
@@ -237,6 +603,16 @@ answer "nothing has run" — which is the arm a `*_status` tool branches on
 first and the one most specs of one want.
 
 #### Properties
+
+##### agent?
+
+```ts
+optional agent?: WorkflowAppLike;
+```
+
+The agent under test, whose declared `workflows` are what `listing()`
+reports — so a renamed workflow is read off the def rather than restated.
+Pass `agentDef`; an explicit `names` wins over it.
 
 ##### lastLine?
 
@@ -255,7 +631,8 @@ optional names?: readonly string[];
 ```
 
 Workflow names `listing()` reports, in order — normally the one the agent
-under test declares. Defaults to none, i.e. an agent declaring no workflow.
+under test declares. Defaults to the keys of [StubWorkflowsOptions.agent](#agent)'s
+`workflows`, else none, i.e. an agent declaring no workflow.
 
 ##### runId?
 
@@ -276,6 +653,189 @@ the other two with the whole list. One list rather than three, because a
 spec asserting what a tool REPORTS is describing one world, and three
 fixtures that can disagree about it is a way to write a passing test for a
 state the platform cannot produce. Build them with `createRunSnapshot`.
+
+***
+
+### StubWorld
+
+```ts
+type StubWorld = {
+  files: StubUploads | undefined;
+  model: StubGatewayCall[];
+  provider: StubTranscribeCall[];
+  reported: StubReporter;
+  speech: StubSpeechCall[];
+};
+```
+
+**`Sealed`**
+
+What [installStubWorld](#installstubworld) returns: every fake's call log, live.
+
+#### Properties
+
+##### files
+
+```ts
+readonly files: StubUploads | undefined;
+```
+
+The upload store itself — `undefined` when `uploads` was not named. Read a
+file back with `read`; what a step wrote (under `writable`) is `writes`.
+
+##### model
+
+```ts
+readonly model: StubGatewayCall[];
+```
+
+Every completion request the gateway answered, decoded.
+
+##### provider
+
+```ts
+readonly provider: StubTranscribeCall[];
+```
+
+Every transcription request, by leg — empty when `transcribe` was not named.
+
+##### reported
+
+```ts
+readonly reported: StubReporter;
+```
+
+What the steps narrated and emitted (`installStubReporter`) — empty, and
+recording nothing, when the world left a published reporter in place
+(see `StubWorldOptions.reporter`).
+
+##### speech
+
+```ts
+readonly speech: StubSpeechCall[];
+```
+
+Every line the synthesizer was asked to say — empty when `speech` was not named.
+
+***
+
+### StubWorldOptions
+
+```ts
+type StubWorldOptions = {
+  apiKey?: string | false;
+  model?: string | readonly string[];
+  pages?:   | FetchRouteTable
+     | readonly FetchRouteHandler[]
+     | FetchRouteHandler;
+  reporter?: boolean;
+  speech?: StubSpeechOptions | true;
+  transcribe?: StubTranscribeOptions;
+  uploads?: StubUploadsOptions & {
+     files?: Readonly<Record<string, StubUpload>>;
+  };
+};
+```
+
+**`Input`**
+
+What [installStubWorld](#installstubworld) may be told: one entry per seam a step reaches
+through, each optional, each installed only when named.
+
+#### Properties
+
+##### apiKey?
+
+```ts
+readonly optional apiKey?: string | false;
+```
+
+The `ASSEMBLYAI_API_KEY` to seed for this test, when the process holds
+none. Defaults to a recognizable stub value; `false` ensures there is
+none for the test, whatever the shell exports.
+
+##### model?
+
+```ts
+readonly optional model?: string | readonly string[];
+```
+
+What the LLM gateway answers, in order, the last repeating — `stubGatewayRoute`'s
+replies. Routed FIRST, on the completions path, before every other leg:
+a page stub answering the gateway's request with HTML is the footgun this
+ordering exists for (the summarize step retries six times against it).
+Absent, a completion request falls through to the other legs.
+
+##### pages?
+
+```ts
+readonly optional pages?: 
+  | FetchRouteTable
+  | readonly FetchRouteHandler[]
+  | FetchRouteHandler;
+```
+
+Everything else a step fetches — a page, a vendor API — as a
+`stubFetchRoutes` table, an ordered handler list (what `describeEval`'s
+`steps.routes` takes too) or one handler. The LAST leg: a request it does
+not answer is a finding and throws naming the method and URL, never an
+empty `200` a step would try to parse — after a `transcribe.otherwise` of
+your own has declined it.
+
+##### reporter?
+
+```ts
+readonly optional reporter?: boolean;
+```
+
+Publish the recording reporter (`installStubReporter`). Defaults to
+publishing one only when NO reporter is published yet — inside
+`describeEval` the harness's reporter is what `run.reported` reads, and a
+stub published over it emptied that log — or when the one published is an
+EARLIER world's, which this one replaces like every other leg (its
+`reported` then records; the earlier world's stops). `false` never
+publishes one; `true` always does.
+
+##### speech?
+
+```ts
+readonly optional speech?: StubSpeechOptions | true;
+```
+
+Publish a recording synthesizer — `installStubSpeech`'s options, or `true` for the defaults.
+
+##### transcribe?
+
+```ts
+readonly optional transcribe?: StubTranscribeOptions;
+```
+
+Answer AssemblyAI's transcription endpoints — `installStubTranscribe`'s
+options. When present, the transcription fake OWNS the published step
+fetch and the gateway and `pages` legs are its `otherwise`, which is the
+only order that works: publishing replaces, so two fakes cannot both hold
+the slot. An `otherwise` of your own runs after both.
+
+##### uploads?
+
+```ts
+readonly optional uploads?: StubUploadsOptions & {
+  files?: Readonly<Record<string, StubUpload>>;
+};
+```
+
+Publish an in-memory upload store — `installStubUploads`'s two arguments
+as one object: the `files` it holds by id, beside its options (`writable`,
+`idPrefix`). `{}` publishes an empty read-only store; `{ writable: true }`
+one a step may write into, read back on `files`.
+
+###### Type Declaration
+
+###### files?
+
+```ts
+readonly optional files?: Readonly<Record<string, StubUpload>>;
+```
 
 ## References
 
@@ -471,6 +1031,12 @@ Re-exports [EvalRoute](../eval.md#evalroute)
 
 ***
 
+### evalRunOf
+
+Re-exports [evalRunOf](../eval.md#evalrunof)
+
+***
+
 ### EvalRunOptions
 
 Re-exports [EvalRunOptions](../eval.md#evalrunoptions)
@@ -510,6 +1076,18 @@ Re-exports [EvalSimulationOptions](../eval.md#evalsimulationoptions)
 ### EvalSleep
 
 Re-exports [EvalSleep](../eval.md#evalsleep)
+
+***
+
+### EvalSteps
+
+Re-exports [EvalSteps](../eval/vitest.md#evalsteps)
+
+***
+
+### EvalStepsOptions
+
+Re-exports [EvalStepsOptions](../eval/vitest.md#evalstepsoptions)
 
 ***
 
@@ -561,6 +1139,12 @@ Re-exports [EvalToolCall](../eval.md#evaltoolcall)
 
 ***
 
+### EvalToolOutput
+
+Re-exports [EvalToolOutput](../eval.md#evaltooloutput)
+
+***
+
 ### EvalTurn
 
 Re-exports [EvalTurn](../eval.md#evalturn)
@@ -594,6 +1178,12 @@ Re-exports [EvalWorkflows](../eval.md#evalworkflows)
 ### EvalWorkflowsOptions
 
 Re-exports [EvalWorkflowsOptions](../eval.md#evalworkflowsoptions)
+
+***
+
+### EvalWorkflowStart
+
+Re-exports [EvalWorkflowStart](../eval.md#evalworkflowstart)
 
 ***
 

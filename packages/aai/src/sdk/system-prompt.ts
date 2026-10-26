@@ -21,6 +21,12 @@
 import type { AgentConfig } from "./_internal-types.ts";
 import { warnDuplicatedDefaultPrompt } from "./_prompt-duplicate-warning.ts";
 import {
+  type AgentPromptContext,
+  type AgentSystemPrompt,
+  appendPromptContext,
+} from "./agent-instructions.ts";
+import type { AgentSessionContext } from "./agent-session-context.ts";
+import {
   PROMPT_LISTENING,
   PROMPT_PERSONALITY,
   PROMPT_ROLE,
@@ -38,7 +44,7 @@ export {
 } from "./system-prompt-sections.ts";
 
 /**
- * Default system prompt used when `systemPrompt` is not provided.
+ * Default system prompt used when the agent keeps no `system-prompt.md`.
  *
  * A general-purpose base for any kind of voice agent — assistant,
  * support, tutor, game, companion. It covers only what every spoken
@@ -61,21 +67,13 @@ export {
  * 5. `## TOOLS` — never fabricate, act first and ask second, report results
  *    rather than intentions, and the mis-hearing retry ladder.
  *
- * **`agent({ systemPrompt })` does NOT replace any of it — it is APPENDED.**
- * `buildSystemPrompt` always emits these sections and then adds your
- * prompt last, under a header saying it overrides them where they conflict. So
- * write only your own domain rules:
+ * **Your `system-prompt.md` does NOT replace any of it — it is APPENDED.**
+ * `buildSystemPrompt` always emits these sections and then adds the file's
+ * text last, under a header saying it overrides them where they conflict. So
+ * write only your own domain rules — `Only discuss items in the catalog.` is a
+ * complete file — and nothing in `agent.ts`: the prompt is not a parameter.
  *
- * ```ts
- * import { agent } from "@alexkroman1/aai";
- *
- * export default agent({
- *   name: "Cart",
- *   systemPrompt: "Only discuss items in the catalog.",
- * });
- * ```
- *
- * **Do not interpolate this constant into that string.** This doc used to show
+ * **Do not interpolate this constant into that file.** This doc used to show
  * exactly that (`` `${DEFAULT_SYSTEM_PROMPT}\n\nOnly discuss…` ``) on the false
  * premise that it was replaced, which sent the ~10,000-character voice core
  * twice — the repetition this module's whole section split exists to prevent,
@@ -97,7 +95,7 @@ export {
 // in every API report as a TYPE an author's code could come to depend on, and
 // a wording change was a type change nobody could classify. The text is a
 // BEHAVIOUR: reviewed in this module's diff, pinned by `system-prompt.test.ts`,
-// and owed a changeset for every agent that omits `systemPrompt`.
+// and owed a changeset for every agent that keeps no `system-prompt.md`.
 export const DEFAULT_SYSTEM_PROMPT: string =
   `${PROMPT_ROLE}\n\n${PROMPT_PERSONALITY}\n\n${PROMPT_SPEAKING}\n\n${PROMPT_LISTENING}\n\n${PROMPT_TOOLS}` as const;
 
@@ -150,8 +148,6 @@ export function buildSystemPrompt(
   config: AgentConfig,
   options: { hasTools: boolean; voice?: boolean; toolGuidance?: readonly string[] | undefined },
 ): string {
-  const custom = stripDefaultPrefix(config.systemPrompt);
-
   const today = new Date().toLocaleDateString("en-US", DATE_FORMAT_OPTIONS);
 
   const sections: string[] = [PROMPT_ROLE, PROMPT_PERSONALITY, PROMPT_SPEAKING, PROMPT_LISTENING];
@@ -170,7 +166,11 @@ export function buildSystemPrompt(
     sections.push(`Built-in tool usage:\n${options.toolGuidance.join("\n")}`);
   }
 
-  if (custom !== undefined) sections.push(agentInstructionsSection(custom));
+  // The author section over the STATIC halves — the same composition
+  // `resolveAgentInstructions` makes per session when either half is a
+  // resolver (`toAgentConfig` put nothing here for one).
+  const own = authorSection(config.systemPrompt, config.promptContext);
+  if (own !== undefined) sections.push(agentInstructionsSection(own));
 
   return sections.join("\n\n");
 }
@@ -225,6 +225,54 @@ export function agentInstructionsSection(instructions: string): string {
  */
 function stripDefaultPrefix(systemPrompt: string | undefined): string | undefined {
   if (systemPrompt === undefined || systemPrompt === "") return undefined;
+  return authorInstructions(systemPrompt);
+}
+
+/**
+ * The whole author section for one request: the agent's `systemPrompt` half
+ * (prefix-stripped, as {@link buildSystemPrompt} strips a static one) with its
+ * `promptContext` half appended under it, each half static or RESOLVED from
+ * `ctx` — the one composition the runtime's per-session resolver and the text
+ * agent make, so a dynamic prompt cannot land under a different precedence
+ * claim, or strip the default differently, from a fixed one. `undefined` when
+ * both halves are empty.
+ *
+ * The runtime hands this the agent DEF (either half may be a function) once
+ * per model request; `buildSystemPrompt` composes the same section from the
+ * serialized config's static halves through `authorSection`.
+ *
+ * @internal
+ */
+export function resolveAgentInstructions(
+  agent: {
+    readonly systemPrompt?: AgentSystemPrompt | undefined;
+    readonly promptContext?: AgentPromptContext | undefined;
+  },
+  ctx: AgentSessionContext,
+): string | undefined {
+  const resolved = (half: AgentSystemPrompt | undefined): string | undefined =>
+    typeof half === "function" ? half(ctx) : half;
+  return authorSection(resolved(agent.systemPrompt), resolved(agent.promptContext));
+}
+
+/** The author section over two STATIC halves — see {@link resolveAgentInstructions}. */
+function authorSection(
+  systemPrompt: string | undefined,
+  promptContext: string | undefined,
+): string | undefined {
+  return appendPromptContext(stripDefaultPrefix(systemPrompt), promptContext);
+}
+
+/**
+ * The author's own instructions out of a `systemPrompt` string — the
+ * prefix-stripping half of `stripDefaultPrefix`. Exported for a runtime that
+ * composes a STATIC prompt with a DYNAMIC `promptContext` by hand;
+ * {@link resolveAgentInstructions} is the whole composition and the one to
+ * reach for. `undefined` when nothing is left (the default, or nothing).
+ *
+ * @internal
+ */
+export function authorInstructions(systemPrompt: string): string | undefined {
   const leading = systemPrompt.startsWith(DEFAULT_SYSTEM_PROMPT);
   if (leading || systemPrompt.includes(DEFAULT_SYSTEM_PROMPT)) {
     warnDuplicatedDefaultPrompt(systemPrompt, {

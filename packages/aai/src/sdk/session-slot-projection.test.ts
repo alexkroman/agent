@@ -13,6 +13,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import { rawConfig } from "./_test-utils.ts";
 import { agent } from "./define.ts";
 import { sessionSlot } from "./session-slot.ts";
 import { createToolContext } from "./testing.ts";
@@ -87,45 +88,79 @@ describe("projected", () => {
   });
 });
 
-describe("agent({ syncState }) takes projections and keys them by slot name", () => {
+describe("syncState is collected, never authored", () => {
   /** Past the overloads on purpose — the run-time half an untyped config meets. */
   const untyped = (syncState: unknown) =>
     agent({ name: "Shop", syncState } as Parameters<typeof agent>[0]);
-  const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }));
+  /** The config boundary, which a raw `export default {...}` reaches without `agent()`. */
+  const raw = (syncState: unknown) => rawConfig({ name: "Shop", syncState });
 
-  test("one projection resolves to one entry under its slot's name", () => {
-    const def = agent({ name: "Shop", syncState: cartSlot.projected });
-    expect(def.syncState).toEqual({ cart: cartSlot.projected });
-  });
-
-  test("a list resolves to one entry per slot, in order", () => {
-    const def = agent({ name: "Shop", syncState: [cartSlot.projected, prefsSlot.projected] });
-    expect(Object.keys(def.syncState ?? {})).toEqual(["cart", "prefs"]);
-    expect(def.syncState?.prefs).toBe(prefsSlot.projected);
-  });
-
-  test("a record key that disagrees with its slot is refused, naming the slot", () => {
-    expect(() => untyped({ basket: cartSlot.projected })).toThrow(
-      /`syncState.basket` projects the "cart" slot — pass the projection itself/,
+  test("agent() refuses the key, naming the slot option that replaces it", () => {
+    expect(() => untyped(cartSlot.projected)).toThrow(
+      /sessionSlot\(key, create, \{ view, sync: true \}\)/,
+    );
+    expect(() => untyped([cartSlot.projected])).toThrow(
+      /agent\(\{ syncState \}\) is not how a slot reaches the browser/,
     );
   });
 
-  test("two projections of one slot are refused", () => {
-    expect(() => untyped([cartSlot.projected, cartSlot.projected])).toThrow(
-      /projects the "cart" slot twice/,
-    );
+  test("a sync: true slot reaches the def keyed by its own name", () => {
+    const synced = sessionSlot("synced-shop", () => ({ items: 0 }), {
+      view: (c) => c,
+      sync: true,
+    });
+    expect(agent({ name: "Shop" }).syncState).toEqual({ "synced-shop": synced.projected });
   });
 
-  test("an entry that is not a projection is refused with the spelling to write", () => {
-    expect(() => untyped({ cart: { items: [] } })).toThrow(
-      /`syncState.cart` is not a slot projection — write `syncState: cartSlot.projected`/,
+  test("the config boundary keeps a collected record and refuses the authored forms", () => {
+    // A lowered def's record crosses `toAgentConfig` (host-only, stripped from
+    // the wire) — and one built by another SDK copy is validated and kept.
+    expect(() => raw({ cart: cartSlot.projected })).not.toThrow();
+    expect(() => raw(cartSlot.projected)).toThrow(/`syncState` is not authored/);
+    expect(() => raw([cartSlot.projected])).toThrow(/`syncState` is not authored/);
+    // A record key that disagrees with its slot would publish one name and
+    // render another.
+    expect(() => raw({ basket: cartSlot.projected })).toThrow(
+      /`syncState.basket` is not that slot's own projection/,
     );
-    expect(() => untyped([{ items: [] }])).toThrow(/`syncState\[0\]` is not a slot projection/);
-    expect(() => untyped("cart")).toThrow(/takes a slot projection or a list of them/);
+    expect(() => raw({ cart: { items: [] } })).toThrow(
+      /`syncState.cart` is not that slot's own projection/,
+    );
+  });
+});
+
+describe("the pre-push frame", () => {
+  test("runs the slot's after hook, so it matches the stored shape", () => {
+    const derived = sessionSlot(
+      "derived",
+      (): { items: string[]; count: number } => ({ items: [], count: -1 }),
+      {
+        after: (value) => {
+          value.count = value.items.length;
+        },
+      },
+    );
+    expect(derived.projected()).toEqual({ items: [], count: 0 });
   });
 
-  test("normalizing is idempotent, as toAgentConfig re-normalizes agent()'s output", () => {
-    const def = agent({ name: "Shop", syncState: [cartSlot.projected] });
-    expect(untyped(def.syncState).syncState).toEqual(def.syncState);
+  test("projects `empty()` instead of the seeded default, hooked and capped alike", () => {
+    const seeded = sessionSlot(
+      "seeded",
+      (): { catalogue: string[]; count: number } => ({ catalogue: ["a", "b", "c"], count: -1 }),
+      {
+        empty: () => ({ catalogue: [], count: -1 }),
+        caps: { catalogue: 2 },
+        after: (value) => {
+          value.count = value.catalogue.length;
+        },
+      },
+    );
+    expect(seeded.projected()).toEqual({ catalogue: [], count: 0 });
+    // The seed is still what a session installs, and a stored value projects as is.
+    expect(seeded.get(createToolContext())).toEqual({ catalogue: ["b", "c"], count: 3 });
+    expect(seeded.projected({ catalogue: ["z"], count: 1 })).toEqual({
+      catalogue: ["z"],
+      count: 1,
+    });
   });
 });

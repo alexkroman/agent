@@ -155,15 +155,8 @@ function clock(at: number): string {
 
 mountClient({
   component: App,
-  name: "Home Assistant",
   // This browser's own ?client= id: what lets a reminder or a finished research job find
   // this page again after the session ends (useInbox holds the socket it arrives on).
   client: "auto",
-  theme: {
-    bg: "#0c0c0e",
-    primary: "#6d8bff",
-    text: "#e7e7ea",
-    surface: "#18181b",
-    border: "#2a2a30",
-  },
+  theme: { primary: "#6d8bff", mode: "dark" },
 });

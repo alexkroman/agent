@@ -20,21 +20,8 @@
 // desk offers it rather than reciting the briefing — is a judgement about
 // phrasing, which is the kind of claim these evals stay away from.
 
-/**
- * The def a DEPLOYED agent runs: authored, plus what `tools/` declares, plus
- * its PROMPT.
- *
- * Taken from `virtual:aai/agent` rather than a hand-written glob: the plugin
- * expands it against THIS file's own directory, so the spec needs no glob and
- * no shared helper — which matters because this file SHIPS, and a scaffolded
- * project has no repo helper to import. `agent.ts` here is three fields, so an
- * eval driving it alone would measure an agent with no tools and the FRAMEWORK
- * DEFAULT prompt — i.e. a desk that has never heard of a researcher, on which
- * every claim below would pass or fail for the wrong reason. The reasoning is
- * spelled out in `../code-interpreter-agent/agent.eval.test.ts`.
- */
 import agentDef from "virtual:aai/agent";
-import { countWords } from "@alexkroman1/aai/utils";
+import { countWords, isToolFailure } from "@alexkroman1/aai/utils";
 import {
   describeEval,
   describeTurn,
@@ -44,6 +31,9 @@ import {
 import { expect } from "vitest";
 import { z } from "zod";
 import { MAX_ANGLES } from "./shared.ts";
+import briefingSoFar from "./tools/briefing_so_far.ts";
+import researchTopic from "./tools/research_topic.ts";
+import verifyClaim from "./tools/verify_claim.ts";
 
 /**
  * Every tool the desk declares — the two that reach the outside world through a
@@ -67,39 +57,6 @@ const DESK_TOOLS: readonly string[] = [
   "delegate",
 ];
 
-/**
- * What `research_topic` answers with, as a schema rather than a cast.
- *
- * `toolResultIn` takes one for the reason `entertainment-picks-agent`'s spec records: a result
- * that stopped carrying `findings` FAILS here naming the field, where a cast
- * hands the assertions `undefined` and fails a line later on something
- * unrelated.
- */
-const BriefingResult = z.object({
-  topic: z.string(),
-  findings: z.array(z.object({ angle: z.string(), summary: z.string() })),
-  failed: z.array(z.object({ angle: z.string() })),
-});
-
-/** What `briefing_so_far` answers with on an EMPTY board. */
-const EmptyRecap = z.object({
-  topic: z.null(),
-  findings: z.array(z.unknown()).length(0),
-  message: z.string(),
-});
-
-/** What `verify_claim` answers with. */
-// `verdict` is the parsed WORD now, so the eval can pin the enum rather than
-// asserting a sentence is non-empty. `null` is the unaccepted case, and it
-// arrives WITH `unusable` — the tool's own name for a checker that never
-// returned its schema.
-const Verdict = z.object({
-  claim: z.string(),
-  verdict: z.enum(["confirmed", "contradicted", "unclear"]).nullable(),
-  detail: z.string(),
-  unusable: z.string().optional(),
-});
-
 describeEval(agentDef, (test) => {
   test(
     "a recap on an empty board costs no researcher",
@@ -114,7 +71,10 @@ describeEval(agentDef, (test) => {
       expect(toolNames(turn.toolCalls), describeTurn(turn)).toEqual(["briefing_so_far"]);
       // And the slot really resolved: an empty board reports itself as empty
       // rather than throwing or answering with a half-built shape.
-      expect(toolResultIn(turn.toolCalls, "briefing_so_far", EmptyRecap).topic).toBeNull();
+      expect(toolResultIn(turn.toolCalls, briefingSoFar)).toMatchObject({
+        topic: null,
+        findings: [],
+      });
     },
     {
       stubReply: [
@@ -147,7 +107,8 @@ describeEval(agentDef, (test) => {
 
       // What came back is what the researchers concluded, not what the desk
       // believes: every finding carries prose, and the board holds the topic.
-      const result = toolResultIn(turn.toolCalls, "research_topic", BriefingResult);
+      const result = toolResultIn(turn.toolCalls, researchTopic);
+      if (isToolFailure(result)) throw new Error(result.error);
       expect(result.findings).not.toEqual([]);
       for (const finding of result.findings) expect(finding.summary.length).toBeGreaterThan(40);
 
@@ -179,7 +140,8 @@ describeEval(agentDef, (test) => {
       // confidently about nothing.
       const calls = turn.toolCalls.filter((call) => call.name === "verify_claim");
       expect(calls, describeTurn(turn)).toHaveLength(1);
-      const verdict = toolResultIn(turn.toolCalls, "verify_claim", Verdict);
+      const verdict = toolResultIn(turn.toolCalls, verifyClaim);
+      if (isToolFailure(verdict)) throw new Error(verdict.error);
       expect(countWords(verdict.claim)).toBeGreaterThan(3);
       // A word the desk can act on, not a sentence it must read one out of —
       // or the honest unresolved path, which is the SAME contract seen from the

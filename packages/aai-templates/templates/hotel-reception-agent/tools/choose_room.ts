@@ -22,6 +22,7 @@ export default deskFlow.tool({
     "they stated one. Call ONLY after the caller has named a type. The result lists the extras to " +
     "offer next - there is no total yet.",
   when: AFTER_STAY,
+  sendFrom: "next",
   inputSchema: z.object({
     roomType: z.enum(ROOM_TYPES).describe("Exactly as the caller chose it"),
     smokingRoom: z
@@ -89,5 +90,4 @@ export default deskFlow.tool({
         next: nextStep(d),
       };
     }),
-  sendFrom: (result) => ({ type: result.next }),
 });

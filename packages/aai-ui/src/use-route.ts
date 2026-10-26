@@ -8,13 +8,23 @@
  * dropped — `useWorkflowRuns`' rule), a read landing after unmount, and a
  * failure rendered as an empty answer. `data` is KEPT through a failed re-read,
  * so a poll that hiccups does not blank the panel; `error` says it is stale.
+ * It is NOT kept across a change of `path`: the answer is remembered with the
+ * path it came from, so a page switching from one record to the next never
+ * shows the previous one under the new id while the first read is in flight.
+ *
+ * The poll is `repeatUntil`'s loop (`_repeat-until.ts`), re-armed from the
+ * SETTLED read rather than on an interval — a slow route would otherwise
+ * stack overlapping reads — and stopped by `until`, by a change of what is
+ * read, and by unmount, with the in-flight request aborted on the same signal.
  *
  * @module
  */
 
 import { errorMessage } from "@alexkroman1/aai";
 import { createEpoch, type Epoch } from "@alexkroman1/aai/internal";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { repeatUntil } from "./_repeat-until.ts";
 import { useOptionalSessionCore } from "./context.ts";
 import { routeFetch } from "./route-fetch.ts";
 
@@ -24,15 +34,31 @@ import { routeFetch } from "./route-fetch.ts";
  * @input
  * @public
  */
-export type UseRouteOptions = {
-  /** Read again every this many ms, while mounted. Default: never. */
+export type UseRouteOptions<T = unknown> = {
+  /**
+   * Read again every this many ms, while mounted. `0` or unset: never. A
+   * negative or `NaN` value throws rather than polling as fast as the route
+   * answers.
+   */
   pollMs?: number | undefined;
+  /**
+   * Stop polling once an answer satisfies this — a call that is over, a job
+   * that has settled. Judged on every read, the first included; `reload()`
+   * still works afterwards. Read per request, so an inline function is fine.
+   */
+  until?: ((value: T) => boolean) | undefined;
   /**
    * The `?client=` to send. Default: the session's client
    * (`session.identity.clientId()`, read per request) inside `mountClient()`,
    * none on a page with no session.
    */
   client?: string | undefined;
+  /**
+   * Extra request headers, as `routeFetch`'s — an `authorization` for a route
+   * behind `apiKeyRoute`. Read per request, so an inline object does not
+   * re-trigger the read.
+   */
+  headers?: Readonly<Record<string, string>> | undefined;
 };
 
 /**
@@ -42,9 +68,12 @@ export type UseRouteOptions = {
  * @public
  */
 export type UseRouteResult<T> = {
-  /** The last answer, kept through a failed re-read. `undefined` until the first. */
+  /**
+   * The last answer for THIS `path`, kept through a failed re-read.
+   * `undefined` until the first, and again whenever `path` changes.
+   */
   data: T | undefined;
-  /** Why the LAST read failed — the route's `{ error }` when it said — or `undefined`. */
+  /** Why the LAST read of this `path` failed — the route's `{ error }` when it said — or `undefined`. */
   error: string | undefined;
   /** Whether a read is in flight. */
   loading: boolean;
@@ -54,7 +83,7 @@ export type UseRouteResult<T> = {
 
 /**
  * `GET` one of the agent's own routes, on mount, on `reload()` and every
- * `pollMs` — see this module's doc.
+ * `pollMs` until `until` says so — see this module's doc.
  *
  * @example A list that re-reads after each delete
  * ```tsx
@@ -84,56 +113,119 @@ export type UseRouteResult<T> = {
  * }
  * ```
  *
+ * @example A call followed until it is over
+ * ```tsx
+ * import { useRoute } from "@alexkroman1/aai-ui";
+ *
+ * type Call = { status: string; transcript: { role: string; text: string }[] };
+ *
+ * function LiveCall({ id }: { id: string }) {
+ *   const { data } = useRoute<Call>(`/calls/${id}`, {
+ *     pollMs: 2000,
+ *     until: (call) => call.status === "completed",
+ *   });
+ *   return <ol>{data?.transcript.map((line, i) => <li key={String(i)}>{line.text}</li>)}</ol>;
+ * }
+ * ```
+ *
  * @typeParam T - The shape the route answers. Not checked.
  * @param path - The route's path as declared, without `/api`. `null` reads nothing.
- * @param options - `pollMs` and `client`; see {@link UseRouteOptions}.
+ * @param options - `pollMs`, `until`, `client` and `headers`; see {@link UseRouteOptions}.
  * @returns The answer, the last error, and `reload`; see {@link UseRouteResult}.
  *
  * @public
  */
 export function useRoute<T = unknown>(
   path: string | null,
-  options: UseRouteOptions = {},
+  options: UseRouteOptions<T> = {},
 ): UseRouteResult<T> {
   const session = useOptionalSessionCore();
   const { pollMs, client } = options;
-  const [data, setData] = useState<T | undefined>(undefined);
-  const [error, setError] = useState<string | undefined>(undefined);
+  if (pollMs !== undefined && !(Number.isFinite(pollMs) && pollMs >= 0)) {
+    // `repeatUntil` would hand a negative interval to `setTimeout`, which
+    // clamps it to zero: a poll re-armed the instant each read settles.
+    throw new Error(`useRoute: pollMs must be a non-negative number, not ${String(pollMs)}`);
+  }
+  // The answer is remembered WITH the path it answers, and read back only
+  // while that is still the path: a change of `path` therefore reads as no
+  // answer yet, in the same render, with no reset effect and no stale frame.
+  const [answer, setAnswer] = useState<Answer<T> | undefined>(undefined);
   const [loading, setLoading] = useState(path !== null);
+
+  // Read per request rather than named as dependencies: an inline `until` or
+  // `headers` literal is a new identity every render, and a read re-armed on
+  // every render is a read that never settles. See `_submission-state.ts`
+  // for the same pattern.
+  const perRequest = useRef({ until: options.until, headers: options.headers });
+  perRequest.current = { until: options.until, headers: options.headers };
 
   // Bumped by each read as it starts and by the unmount — see the module doc.
   const epochRef = useRef<Epoch | undefined>(undefined);
   epochRef.current ??= createEpoch();
   const epoch = epochRef.current;
 
+  /**
+   * One read. Resolves whether the poll (if any) is FINISHED: `until` was
+   * satisfied. A read that was superseded by a newer one (a `reload()`, or the
+   * unmount's bump) answers `false` — its ANSWER is nobody's, but the poll is
+   * still owed its next tick: `true` here would stop `repeatUntil` for good on
+   * the first reload during a poll. The unmount is what stops the loop, through
+   * its own `stop()`, and a loop whose signal is aborted never re-arms.
+   */
+  const read = useCallback(
+    async (signal?: AbortSignal): Promise<boolean> => {
+      if (path === null) return true;
+      epoch.bump();
+      const mine = epoch.current();
+      setLoading(true);
+      const { until, headers } = perRequest.current;
+      try {
+        const answer = await routeFetch<T>("GET", path, undefined, {
+          ...omitUndefined({ client: client ?? session?.identity.clientId(), headers, signal }),
+        });
+        if (!epoch.isCurrent(mine)) return false;
+        setAnswer({ path, data: answer, error: undefined });
+        setLoading(false);
+        return until?.(answer) === true;
+      } catch (err: unknown) {
+        if (!epoch.isCurrent(mine)) return false;
+        // The last data is kept only when it is this path's.
+        setAnswer((prior) => ({
+          path,
+          data: prior?.path === path ? prior.data : undefined,
+          error: errorMessage(err),
+        }));
+        setLoading(false);
+        return false;
+      }
+    },
+    [path, client, session, epoch],
+  );
+
   const reload = useCallback((): void => {
-    if (path === null) return;
-    epoch.bump();
-    const mine = epoch.current();
-    setLoading(true);
-    const who = client ?? session?.identity.clientId();
-    routeFetch<T>("GET", path, undefined, who ? { client: who } : {})
-      .then((answer) => {
-        if (!epoch.isCurrent(mine)) return;
-        setData(answer);
-        setError(undefined);
-        setLoading(false);
-      })
-      .catch((err: unknown) => {
-        if (!epoch.isCurrent(mine)) return;
-        setError(errorMessage(err));
-        setLoading(false);
-      });
-  }, [path, client, session, epoch]);
+    void read();
+  }, [read]);
 
   useEffect(() => {
-    reload();
-    const timer = pollMs ? setInterval(reload, pollMs) : undefined;
+    // The poll's first tick IS the mount read, so a polled route is not read
+    // twice at mount. `0` and unset both mean one read, aborted on unmount
+    // the same way a poll's in-flight read is.
+    const polling = pollMs !== undefined && pollMs > 0;
+    const stop = polling
+      ? repeatUntil(pollMs, read)
+      : ((controller) => {
+          void read(controller.signal);
+          return () => controller.abort();
+        })(new AbortController());
     return () => {
-      clearInterval(timer);
+      stop();
       epoch.bump();
     };
-  }, [reload, pollMs, epoch]);
+  }, [read, pollMs, epoch]);
 
-  return { data, error, loading, reload };
+  const current = answer?.path === path ? answer : undefined;
+  return { data: current?.data, error: current?.error, loading, reload };
 }
+
+/** One read's outcome, tagged with the path it answers. */
+type Answer<T> = { path: string; data: T | undefined; error: string | undefined };

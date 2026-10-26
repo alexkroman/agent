@@ -3,8 +3,10 @@
 import type { Message } from "@alexkroman1/aai";
 import type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
+import { withInstruction } from "@alexkroman1/aai/utils";
 import type { Tool, ToolExecutionOptions } from "ai";
 import { describe, expect, test, vi } from "vitest";
+import { TOOL_INSTRUCTION_LABEL } from "./result-instruction.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
 
 const schemas: ToolSchema[] = [
@@ -243,6 +245,37 @@ describe("toVercelTools — message snapshot isolation", () => {
       type: "text",
       value:
         "3 records (key column: key): key | color | price\na | red | 1\nb | blue | 2\nc | green | 3",
+    });
+  });
+
+  test("an instruction reaches the model's copy alone; the stream part and the record are stripped", async () => {
+    const raw = JSON.stringify(withInstruction({ ok: true }, "Say so in one word."));
+    const recordToolResult = vi.fn();
+    const tools = toVercelTools(schemas, {
+      executeTool: vi.fn(async () => raw),
+      sessionId: "s",
+      messages: () => [],
+      recordToolResult,
+    });
+    const result = await runTool(
+      tools.get_weather,
+      { city: "SF" },
+      { toolCallId: "tc-i", messages: [] },
+    );
+    expect(result).toBe('{"ok":true}');
+    expect(recordToolResult).toHaveBeenCalledWith(
+      expect.objectContaining({ content: '{"ok":true}' }),
+    );
+    // Kept under the call id: `toModelOutput` cannot rebuild it from the
+    // stripped string, which is all the stream part carries.
+    const forModel = await tools.get_weather?.toModelOutput?.({
+      toolCallId: "tc-i",
+      input: { city: "SF" },
+      output: result,
+    });
+    expect(forModel).toEqual({
+      type: "text",
+      value: `{"ok":true}\n\n${TOOL_INSTRUCTION_LABEL} Say so in one word.`,
     });
   });
 });

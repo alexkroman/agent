@@ -26,28 +26,40 @@
  * The DevKit recorded a run under its COMPILER's identifier while ours was the
  * key in `agent({ workflows })`, and the missing translation silently emptied
  * `recent` and mislabelled every snapshot. The engine now records the declared
- * name, so `nameByDef` is the only index; why it maps by IDENTITY is `resolve`'s.
- * `findByKey`/`cancelAll` are composed of `find`/`cancel` in `client-keyed.ts`.
+ * name, so the declared map is the only index — read by IDENTITY through
+ * `declaredWorkflowName` (`sdk/workflow-names.ts`), which is `resolve`'s to
+ * explain. `findByKey`/`cancelAll` are composed of `find`/`cancel` in
+ * `client-keyed.ts`.
  */
 
-import { formatSchemaIssues, toToolJsonSchema } from "@alexkroman1/aai/host-internal";
+import {
+  declaredWorkflowName,
+  formatSchemaIssues,
+  nearestNames,
+  SESSION_KEY,
+  toToolJsonSchema,
+  workflowSignalToken,
+} from "@alexkroman1/aai/host-internal";
 import { mapConcurrent } from "@alexkroman1/aai/step";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
-import type {
-  AnyWorkflowDef,
-  FindByKeyOptions,
-  FindOptions,
-  StartOptions,
-  StreamOptions,
-  WakeUpOptions,
-  WorkflowClient,
-  WorkflowDef,
-  WorkflowRunSnapshot,
-  WorkflowSummary,
+import {
+  type AnyWorkflowDef,
+  DEFAULT_SIGNAL_HOLD_MS,
+  type FindByKeyOptions,
+  type FindOptions,
+  type SignalOptions,
+  type StartOptions,
+  type StreamOptions,
+  type WakeUpOptions,
+  type WorkflowClient,
+  type WorkflowDef,
+  type WorkflowRunSnapshot,
+  type WorkflowSummary,
+  workflowNameOf,
 } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "../logger.ts";
 import { WorkflowRequestError } from "./_request-error.ts";
-import { cancelAllByKey, findByKeyAcross, keyedFind } from "./client-keyed.ts";
+import { cancelAllByKey, findByKeyAcross, keyedFind, liveByKey } from "./client-keyed.ts";
 import { resolveFindLimit, type WorkflowKeyStore } from "./keys.ts";
 import { normalizeRunLabel } from "./run-label.ts";
 import { workflowWebhookUrl } from "./serve.ts";
@@ -112,34 +124,23 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
   const { workflows, keys, wdk, publicUrl, logger } = opts;
 
   /**
-   * The index over `agent({ workflows })`: a def to the key it is declared
-   * under.
+   * The declared name of a workflow, by IDENTITY against `agent({ workflows })`.
    *
-   * FIRST key wins, matching `Object.entries` order — the same def declared
-   * under two keys is legitimate (see `resolve`) and a run of it carries no
-   * trace of which one a caller meant, so the choice has to be deterministic.
+   * Identity rather than a `name` field on the def is what keeps that record the
+   * single source of the name: a workflow declared twice under two keys is a
+   * legitimate (if odd) thing to write — the FIRST key wins, deterministically —
+   * and the def cannot know which key a caller meant. It also means a rename is
+   * one edit — the key — rather than two that can disagree. The lookup is
+   * `declaredWorkflowName`'s: the name the lowering recorded on the def, when
+   * this map agrees with it, else a scan of the map.
    *
    * **There used to be a second index here, and its disappearance is the shape
    * of the DevKit removal.** A workflow had two identities: the key an author
    * declared it under, and the `workflowId` a compile-time transform stamped
    * onto the body (`workflow//{file}//{export}`). Everything downstream — the
    * run record's `workflowName`, `listRuns`'s filter — spoke the second one, so
-   * this map existed to translate back. The engine now takes the declared name
+   * a map existed to translate back. The engine now takes the declared name
    * directly, the two identities are one, and the translation is gone with it.
-   */
-  const nameByDef = new Map<AnyWorkflowDef, string>();
-  for (const [name, def] of Object.entries(workflows)) {
-    if (!nameByDef.has(def)) nameByDef.set(def, name);
-  }
-
-  /**
-   * The declared name of a workflow, by IDENTITY against `agent({ workflows })`.
-   *
-   * Identity rather than a `name` field on the def is what keeps that record the
-   * single source of the name: a workflow declared twice under two keys is a
-   * legitimate (if odd) thing to write, and the def cannot know which key a
-   * caller meant. It also means a rename is one edit — the key — rather than two
-   * that can disagree.
    *
    * The reverse direction, name → def, is a plain lookup; `resolve` accepts
    * either so every overloaded method can take `WorkflowDef | string` without
@@ -152,7 +153,7 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
         throw new WorkflowRequestError(unknownWorkflowMessage(workflow, Object.keys(workflows)));
       return { name: workflow, def };
     }
-    const name = nameByDef.get(workflow);
+    const name = declaredWorkflowName(workflows, workflow);
     const declared = name === undefined ? undefined : workflows[name];
     if (name !== undefined && declared) return { name, def: declared };
     // A def that is not in the record cannot be started: nothing maps it to a
@@ -160,7 +161,10 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     // declared set because the usual cause is a workflow written and not wired
     // into `agent({ workflows })`.
     throw new WorkflowRequestError(
-      unknownWorkflowMessage(workflow.description ?? "(unnamed)", Object.keys(workflows)),
+      unknownWorkflowMessage(
+        workflowNameOf(workflow) ?? workflow.description ?? "(unnamed)",
+        Object.keys(workflows),
+      ),
     );
   }
 
@@ -215,7 +219,12 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       // `parseWorkflowName` takes.
       workflow: record.workflowName,
       createdAt: new Date(record.createdAt).getTime(),
-      ...omitUndefined({ key, label: record.label }),
+      ...omitUndefined({
+        key,
+        label: record.label,
+        startedAt: record.startedAt,
+        settledAt: record.settledAt,
+      }),
     };
     switch (record.status) {
       case "completed":
@@ -245,6 +254,27 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
   /** `find` for one declared name — shared with `findByKey` and `cancelAll`. */
   const findOne = keyedFind({ keys, wdk, toSnapshot, concurrency: RUN_READ_CONCURRENCY });
 
+  /**
+   * `signalRun`'s delivery: the hold stands ONLY for a run still going.
+   *
+   * A token carries no run id, so a hold outlives the run it was meant for and
+   * the next run under the key took a stale answer as its own — a cancelled
+   * approval re-approving the one started after it. With no `pending` or
+   * `running` run under the key there is nothing the hold could be for, so
+   * nothing is held and `false` ("nobody is waiting") is the honest answer. The
+   * read is skipped when no hold was asked for.
+   */
+  async function signalLive(
+    name: string,
+    key: string,
+    token: string,
+    payload: unknown,
+    holdMs: number,
+  ): Promise<boolean> {
+    const live = holdMs > 0 && (await liveByKey(name, findOne, key)) !== undefined;
+    return await wdk.signal(token, payload, { holdMs: live ? holdMs : 0 });
+  }
+
   return {
     async start(
       workflow: AnyWorkflowDef | string,
@@ -257,27 +287,36 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       // an unlabelled start calls the adapter exactly as it always did.
       const label = normalizeRunLabel(options?.label);
       const args = [validated];
+      // `"session"` means the session id, and THIS client has none — it is the
+      // per-runtime client a body, a route or a script holds. A session-scoped
+      // client (`workflow/client-session.ts`) has already resolved it, so what
+      // reaches here as the literal is a key nobody can look up: dropped, as
+      // `StartOptions.key` says, rather than indexed as five letters.
+      const key = options?.key === SESSION_KEY ? undefined : options?.key;
+      // The key-index write, handed to the engine to run beside its own
+      // journaling of the key (`WdkStartOptions.index`). A failed key write
+      // must not fail the `start`: the run is already created, so throwing
+      // here would tell the caller nothing happened while the work proceeds
+      // unreachably. Losing the index entry costs a later `find`, which is
+      // recoverable; losing the runId the caller was about to be handed is not.
+      const index =
+        key === undefined
+          ? undefined
+          : (runId: string) =>
+              keys.record(name, key, runId).catch((err: unknown) => {
+                logger.warn?.("Workflow correlation key not recorded", {
+                  workflow: name,
+                  runId,
+                  error: errorMessage(err),
+                });
+              });
       // `dedupeKey` is the ENGINE's to honour — it derives the run id from it, so
-      // two racing starts meet at one `createRun` (`workflow/engine.ts`).
-      const startOptions = omitUndefined({ label, dedupeKey: options?.dedupeKey });
-      const runId = await (Object.keys(startOptions).length === 0
+      // two racing starts meet at one `createRun` (`workflow/engine.ts`) — and so
+      // is `key`, which it journals for the body to read back as `ctx.key`.
+      const startOptions = omitUndefined({ label, dedupeKey: options?.dedupeKey, key, index });
+      return await (Object.keys(startOptions).length === 0
         ? wdk.start(name, args)
         : wdk.start(name, args, startOptions));
-      if (options?.key !== undefined) {
-        // A failed key write must not fail the `start`: the run is already
-        // created and running, so throwing here would tell the caller nothing
-        // happened while the work proceeds unreachably. Losing the index entry
-        // costs a later `find`, which is recoverable; losing the runId the caller
-        // was about to be handed is not.
-        await keys.record(name, options.key, runId).catch((err: unknown) => {
-          logger.warn?.("Workflow correlation key not recorded", {
-            workflow: name,
-            runId,
-            error: errorMessage(err),
-          });
-        });
-      }
-      return runId;
     },
 
     get(runId: string): Promise<WorkflowRunSnapshot | undefined> {
@@ -290,6 +329,23 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       options?: FindOptions,
     ): Promise<WorkflowRunSnapshot[]> {
       return findOne(resolve(workflow).name, key, resolveFindLimit(options?.limit));
+    },
+
+    async latest(
+      workflow: AnyWorkflowDef | string,
+      key?: string,
+    ): Promise<WorkflowRunSnapshot | undefined> {
+      // `find` with a limit of one — newest first, so the head is the answer.
+      return (await findOne(resolve(workflow).name, keyOnThisClient("latest", key), 1))[0];
+    },
+
+    // `async` so the key refusal is a rejection like every other failure here,
+    // never a synchronous throw out of a promise-returning method.
+    async live(
+      workflow: AnyWorkflowDef | string,
+      key?: string,
+    ): Promise<WorkflowRunSnapshot | undefined> {
+      return await liveByKey(resolve(workflow).name, findOne, keyOnThisClient("live", key));
     },
 
     findByKey(key: string, options?: FindByKeyOptions): Promise<WorkflowRunSnapshot[]> {
@@ -323,13 +379,34 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
       return wdk.wakeUp(runId, ids && ids.length > 0 ? ids : undefined);
     },
 
-    signal(token: string, payload?: unknown): Promise<boolean> {
+    signal(token: string, payload?: unknown, options?: SignalOptions): Promise<boolean> {
       // `payload` defaults to `{}` rather than passing `undefined` through: a
       // hook resolves WITH its payload, so a body awaiting one and reading a
       // field off it would throw on a signal sent for its arrival alone. An
       // empty object is the "I am only telling you it happened" value, and it
       // survives the serialization a hook payload crosses.
-      return wdk.signal(token, payload ?? {});
+      // The options bag carries only what was asked: a signal with no hold
+      // reaches the adapter with an empty one, which it reads as none.
+      return wdk.signal(token, payload ?? {}, omitUndefined({ holdMs: options?.holdMs }));
+    },
+
+    signalRun(
+      workflow: AnyWorkflowDef | string,
+      key: string,
+      label: string,
+      payload?: unknown,
+      options?: SignalOptions,
+    ): Promise<boolean> {
+      // The token the body derived — `ctx.waitForSignal(label)` — from the
+      // same three parts, so neither side spells it (`sdk/workflow-signals.ts`).
+      // Resolved SYNCHRONOUSLY, so an undeclared workflow is refused at the
+      // call as `find`'s is.
+      const { name } = resolve(workflow);
+      const token = workflowSignalToken(name, key, label);
+      // Held by default: the ordinary caller is a tool answering a run it has
+      // just started, which has not reached its wait yet.
+      const holdMs = options?.holdMs ?? DEFAULT_SIGNAL_HOLD_MS;
+      return signalLive(name, key, token, payload ?? {}, holdMs);
     },
 
     streamTail(runId: string, options?: StreamOptions): Promise<number> {
@@ -465,8 +542,36 @@ function safeJsonSchema(
   }
 }
 
-/** One message for both directions of `createWorkflowClient`'s name resolution. */
-function unknownWorkflowMessage(named: string, declared: readonly string[]): string {
+/**
+ * One message for both directions of `createWorkflowClient`'s name resolution,
+ * and for `runWorkflow`'s agent form — naming the declared set and, when one
+ * is a slip away, the name that was probably meant.
+ *
+ * @internal
+ */
+export function unknownWorkflowMessage(named: string, declared: readonly string[]): string {
   const list = declared.length > 0 ? declared.join(", ") : "(none)";
-  return `Workflow "${named}" is not declared on this agent. Declared workflows: ${list}.`;
+  const [near] = nearestNames(named, declared, { maxNames: 1 });
+  const hint = near === undefined ? "" : ` Did you mean "${near}"?`;
+  return `Workflow "${named}" is not declared on this agent. Declared workflows: ${list}.${hint}`;
+}
+
+/**
+ * The key `latest`/`live` look up on THIS client, which has no session.
+ *
+ * Both default to the literal `"session"`, which a session-scoped client
+ * (`workflow/client-session.ts`) resolves to its session id before the call
+ * reaches here; `start` DROPS the same literal here for the same reason. A
+ * route, a body or a script holding this per-runtime client and calling
+ * either keyless was answered `undefined` — a silent nothing, indistinguishable
+ * from "no such run". Refused by name instead, as `signalTokenFor` refuses a
+ * missing key.
+ */
+function keyOnThisClient(method: "latest" | "live", key: string | undefined): string {
+  if (key !== undefined && key !== SESSION_KEY) return key;
+  throw new Error(
+    `workflows.${method}(): the key "session" means the session id, and this client has no ` +
+      "session — it is the per-runtime client a route, a body or a script holds. Pass the key " +
+      'the run was started with; a tool\'s ctx.workflows resolves "session" itself.',
+  );
 }

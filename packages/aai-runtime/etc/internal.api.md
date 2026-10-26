@@ -9,6 +9,7 @@ import type { AgentEnv } from '@alexkroman1/aai/host-internal';
 import type { ClientNotifier } from '@alexkroman1/aai/host-internal';
 import { ClientSink } from '@alexkroman1/aai/protocol';
 import { ClientToolCall } from '@alexkroman1/aai/internal';
+import type { ClientTranscriptMessage } from '@alexkroman1/aai/step';
 import { CONTAINED_ENV } from '@alexkroman1/aai/host-internal';
 import type { Db as Db_2 } from '@alexkroman1/aai/internal';
 import type { DelegateOptions } from '@alexkroman1/aai';
@@ -50,11 +51,12 @@ import type { streamText } from 'ai';
 import type { ToolChoice } from '@alexkroman1/aai';
 import type { ToolSet } from 'ai';
 import type { Toolset } from '@alexkroman1/aai/manifest';
+import type { ToolUi } from '@alexkroman1/aai';
 import { UPLOAD_CHUNK_BYTES } from '@alexkroman1/aai/host-internal';
 import { UPLOAD_PART_BYTES } from '@alexkroman1/aai/host-internal';
 import { UPLOAD_TOKEN_RE } from '@alexkroman1/aai/host-internal';
-import type { UploadInfo } from '@alexkroman1/aai/step';
 import type { UploadReader } from '@alexkroman1/aai/host-internal';
+import type { UploadRecord } from '@alexkroman1/aai/step';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 import { z } from 'zod';
@@ -267,6 +269,7 @@ type ExecuteToolCallOptions = {
     speech?: SessionSpeech | undefined;
     signal?: AbortSignal | undefined;
     workflows?: WorkflowClient | undefined;
+    turn?: number | undefined;
     timeoutMs?: number | undefined;
 };
 
@@ -381,17 +384,12 @@ export type JournalConformanceSuite = {
     journalIds: (label: string) => () => string;
 };
 
-// @public
+// @public (undocumented)
 export type JournalStore = {
     createRun(record: RunRecord): Promise<void>;
     getRun(runId: string): Promise<RunRecord | undefined>;
     listRuns(workflow: string, limit: number): Promise<RunRecord[]>;
-    setStatus(runId: string, next: RunStatus, patch?: {
-        output?: unknown;
-        error?: {
-            message: string;
-        };
-    }, expect?: readonly RunStatus[]): Promise<boolean>;
+    setStatus(runId: string, next: RunStatus, patch?: RunStatusPatch, expect?: readonly RunStatus[]): Promise<boolean>;
     readSteps(runId: string): Promise<StepEntry[]>;
     readStep(runId: string, key: string): Promise<StepEntry | undefined>;
     claimAttempt(runId: string, key: string, holder: string, leaseMs: number): Promise<number>;
@@ -595,10 +593,22 @@ export type RunRecord = {
     } | undefined;
     codeVersion?: string | undefined;
     label?: string | undefined;
+    startedAt?: number | undefined;
+    settledAt?: number | undefined;
 };
 
 // @public
 export type RunStatus = WorkflowRunStatus;
+
+// @public
+export type RunStatusPatch = {
+    output?: unknown;
+    error?: {
+        message: string;
+    };
+    startedAt?: number;
+    settledAt?: number;
+};
 
 // @public @input
 type RuntimeServerOptions = {
@@ -609,6 +619,7 @@ type RuntimeServerOptions = {
     env?: Record<string, string>;
     hostBaseAgent?: AgentDef;
     greeting?: string;
+    tools?: Record<string, ToolUi> | undefined;
     uploadBroker?: string;
     upgrade?: ServerUpgradeHook | undefined;
     request?: ServerRequestHook | undefined;
@@ -753,6 +764,8 @@ export type SessionDirectory = {
     claimWiring(sessionId: string, wiring: SessionWiring): () => boolean;
     emitter(sessionId: string): SessionEmitter | undefined;
     meter(sessionId: string): UsageMeter | undefined;
+    turn(sessionId: string): number;
+    workflows(sessionId: string): WorkflowClient | undefined;
     readonly speech: SpeechDirectory;
     live(): IterableIterator<ServerSession>;
     ids(): IterableIterator<string>;
@@ -772,6 +785,7 @@ export type SessionEventLog = SessionEventStream & {
         final?: boolean;
     }): Promise<void>;
     hydrate(sessionId: string): Promise<void>;
+    transcript(sessionId: string): readonly ClientTranscriptMessage[];
     discard(sessionId: string): void;
     clear(): void;
 };
@@ -891,6 +905,8 @@ export type SessionWiring = {
     sink: ClientSink;
     emitter: SessionEmitter;
     meter: UsageMeter;
+    turns: TurnCounter;
+    workflows: WorkflowClient | undefined;
 };
 
 // @internal
@@ -1042,6 +1058,14 @@ export type TransportEventBody<K extends TransportEventType = TransportEventType
 // @public
 export type TransportEventType = Exclude<SessionEventType, SessionSourcedEventType>;
 
+// @internal
+export type TurnCounter = {
+    readonly count: number;
+    committed(): void;
+    seed(messages: readonly Message[]): void;
+    reset(): void;
+};
+
 export { UPLOAD_CHUNK_BYTES }
 
 export { UPLOAD_PART_BYTES }
@@ -1078,15 +1102,15 @@ export type UploadStore = UploadReader & {
     open(id: string): Promise<OpenUpload | undefined>;
     create(meta: UploadMeta, body: AsyncIterable<Uint8Array>, options?: {
         limit?: number;
-    }): Promise<UploadInfo>;
+    }): Promise<UploadRecord>;
     stream(id: string, meta: UploadMeta, body: AsyncIterable<Uint8Array>, options?: {
         limit?: number;
-    }): Promise<UploadInfo>;
+    }): Promise<UploadRecord>;
     beginParts(id: string, meta: UploadMeta, total: number, options?: {
         limit?: number;
-    }): Promise<UploadInfo>;
-    writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadInfo>;
-    recordParts(id: string, offsets: readonly number[]): Promise<UploadInfo>;
+    }): Promise<UploadRecord>;
+    writePart(id: string, offset: number, body: AsyncIterable<Uint8Array>): Promise<UploadRecord>;
+    recordParts(id: string, offsets: readonly number[]): Promise<UploadRecord>;
 };
 
 // @internal

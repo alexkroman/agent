@@ -36,8 +36,12 @@
  * eight children without re-entering the parent.
  */
 
-import type { AnyDialog, ToolChoice } from "@alexkroman1/aai";
+import type { DialogSpec, SlotHolder, ToolChoice } from "@alexkroman1/aai";
 import { dialog } from "@alexkroman1/aai";
+import { bookingStatus } from "./booking.ts";
+import { digitsOf, type Ticket } from "./records.ts";
+import { hotelSlot } from "./session.ts";
+import { addTicket } from "./shared.ts";
 
 /**
  * The two owed-SPEECH states forbid a tool call outright.
@@ -160,30 +164,59 @@ const deskSpec = {
       instruction:
         "The caller is gone. Do nothing further on this call - no booking, no lookup, no " +
         "callback promise.",
+      // The write no tool can make, because the caller is gone: their
+      // `abandoned_booking` followup, the one lead a dropped booking leaves.
+      onEnter: recordAbandonedBooking,
     },
   },
-} as const;
+} as const satisfies DialogSpec;
 
 /**
  * The call's position, on its own slot key beside `hotelSlot`.
  *
  * `hungUp` is `final`: a booking abandoned mid-flow by a hang-up must not be
- * confirmed by a model that keeps talking to a dead line. Their
- * `abandoned_booking` followup is the human half of the same case, and it is
- * written by `events.ts` on the SAME event — a transition decides what may
- * still be done, a handler records what happened, and neither does the other's
- * job.
+ * confirmed by a model that keeps talking to a dead line, and its `onEnter`
+ * is where the human half of the same case is recorded.
  */
 export const deskFlow = dialog("desk", deskSpec);
 
 /**
- * What `agent({ dialogs })` is handed — the line that wires
- * `@userTranscript.committed` and `@session.timedOut` to the dialog. Without
- * it the two owed states could never be left.
+ * File the abandoned booking, if there was one, and return the ticket —
+ * `record_followup(kind: "abandoned_booking")`, which their receptionist
+ * called when a caller said they would ring back and nobody can call once the
+ * caller is gone. Answers `null` when no booking flow was open, which is the
+ * common case and the one that must write nothing but the log line.
  */
-export const DIALOGS: readonly AnyDialog[] = [deskFlow];
+export function recordAbandonedBooking(ctx: SlotHolder): Ticket | null {
+  return hotelSlot.update(ctx, (hotel) => {
+    hotel.log.push("Caller gone - call ended");
+    const d = hotel.draft;
+    if (d === null) return null;
+    // Cleared first: the sidebar's "Booking in progress" is a claim about a
+    // live call, and the ledger entry below is what replaces it.
+    hotel.draft = null;
+    const who = [d.firstName, d.lastName].filter(Boolean).join(" ") || "name not given";
+    const phone = d.phone === null ? "no number" : digitsOf(d.phone) || d.phone;
+    return addTicket(hotel, "followup", "FUP", `abandoned_booking: ${who} dropped mid-booking`, {
+      kind: "abandoned_booking",
+      callerName: who,
+      callerPhone: phone,
+      // WHERE they got to, in the same words `bookingStatus` gives the model,
+      // so whoever picks the lead up knows what is still to ask for.
+      summary: `${d.mode === "modify" ? "modification" : "new booking"} abandoned - ${bookingStatus(d)}`,
+      status: "open",
+    });
+  });
+}
 
-/** Every state a recording tool may run in: the whole booking flow. */
+/**
+ * Every state a recording tool may run in: the whole booking flow.
+ *
+ * Each recording tool is `deskFlow.tool` around `hotelSlot.update`, the step
+ * it landed on read off the result's `next` field (`sendFrom: "next"`); the
+ * failure arm every one of them can answer is subtracted before the field is
+ * read, so nothing is sent for a refusal.
+ */
 export const IN_BOOKING = "booking";
 
 /**

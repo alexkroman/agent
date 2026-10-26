@@ -6,24 +6,17 @@
  * Mounted with `mountPage()`: nobody talks to this agent from the browser —
  * it talks on the phone — so the page opens no session and asks for no
  * microphone. It is one more caller of `/api/v1/calls`, written against the
- * same contract (`api-types.ts`) the curl example is.
- *
- * ## Why it fetches by hand
- *
- * Every route checks `Authorization` (see `api.ts`), and `routeFetch` /
- * `useRoute` send no headers. So {@link callsApi} is the same few lines with
- * the header added: resolve `api/…` against the page's DIRECTORY (an agent
- * served below `/:slug/` reaches its own `/:slug/api`), send JSON, and turn a
- * failure into the route's own `{ error }` sentence.
+ * same contract (`api-types.ts`) the curl example is: `routeFetch` to place a
+ * call, `useRoute` to follow one until it is over and to keep the list fresh,
+ * each carrying the `Authorization` every route checks (`api.ts`).
  *
  * The key is kept in `localStorage` so a reload does not ask again; a browser
  * that refuses storage just asks each time.
  */
 
-import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
-import { mountPage } from "@alexkroman1/aai-ui";
+import { mountPage, routeFetch, useRoute } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
-import { type ReactNode, type SyntheticEvent, useCallback, useEffect, useState } from "react";
+import { type ReactNode, type SyntheticEvent, useCallback, useState } from "react";
 import type { CallList, CallRecord } from "./api-types.ts";
 
 const KEY_STORAGE = "outbound-caller.api-key";
@@ -55,30 +48,8 @@ function storeKey(key: string): void {
   }
 }
 
-/** One call to the agent's own `/api` routes, with the API key attached. */
-async function callsApi<T>(
-  method: "GET" | "POST",
-  path: string,
-  key: string,
-  body?: unknown,
-): Promise<T> {
-  const url = new URL(`api${path}`, new URL(".", window.location.href));
-  // Every request carries a content type, so a GET and a POST build one way.
-  const res = await fetch(url, {
-    method,
-    headers: { authorization: key, "content-type": "application/json" },
-    ...omitUndefined({ body: body === undefined ? undefined : JSON.stringify(body) }),
-  });
-  const json: unknown = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    const said = isRecord(json) && typeof json.error === "string" ? json.error : undefined;
-    throw new Error(said ?? `${method} ${path}: ${res.status}`);
-  }
-  return json as T;
-}
-
-function isFinished(call: CallRecord | undefined): boolean {
-  return call?.status === "completed" || call?.status === "failed";
+function isFinished(call: CallRecord): boolean {
+  return call.status === "completed" || call.status === "failed";
 }
 
 /** A pill for where a call is, or how it went once it is over. */
@@ -105,7 +76,9 @@ function Transcript({ call }: { call: CallRecord }): ReactNode {
   if (call.transcript.length === 0) {
     return (
       <p className="text-sm opacity-60">
-        {isFinished(call) ? "Nothing was said on this call." : "Waiting for the call to connect…"}
+        {isFinished(call)
+          ? "Nothing was said on this call."
+          : (call.summary ?? "Waiting for the call to connect…")}
       </p>
     );
   }
@@ -131,36 +104,15 @@ function Transcript({ call }: { call: CallRecord }): ReactNode {
 }
 
 function CallDetail({ id, apiKey }: { id: string; apiKey: string }): ReactNode {
-  const [call, setCall] = useState<CallRecord | undefined>(undefined);
-  const [error, setError] = useState<string | undefined>(undefined);
-  const finished = isFinished(call);
-
-  useEffect(() => {
-    setCall(undefined);
-    setError(undefined);
-  }, [id]);
-
-  useEffect(() => {
-    if (finished) return;
-    let stopped = false;
-    const read = () =>
-      callsApi<CallRecord>("GET", `/v1/calls/${encodeURIComponent(id)}`, apiKey)
-        .then((answer) => {
-          if (!stopped) setCall(answer);
-        })
-        .catch((err: unknown) => {
-          if (!stopped) setError(err instanceof Error ? err.message : String(err));
-        });
-    void read();
-    const timer = setInterval(() => void read(), LIVE_POLL_MS);
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-    };
-  }, [id, apiKey, finished]);
+  const { data: call, error } = useRoute<CallRecord>(`/v1/calls/${encodeURIComponent(id)}`, {
+    pollMs: LIVE_POLL_MS,
+    until: isFinished,
+    headers: { authorization: apiKey },
+  });
 
   if (error !== undefined) return <p className="text-sm text-red-500">{error}</p>;
   if (call === undefined) return <p className="text-sm opacity-60">Loading…</p>;
+  const finished = isFinished(call);
   return (
     <article className="flex flex-col gap-4">
       <header className="flex flex-wrap items-center gap-3">
@@ -172,7 +124,7 @@ function CallDetail({ id, apiKey }: { id: string; apiKey: string }): ReactNode {
         <span className="ml-auto font-mono text-xs opacity-60">{call.id}</span>
       </header>
       {call.error !== undefined && <p className="text-sm text-red-500">{call.error}</p>}
-      {call.summary !== undefined && (
+      {finished && call.summary !== undefined && (
         <section className="rounded-lg border border-aai-border p-3">
           <h3 className="mb-1 text-xs uppercase opacity-60">Summary</h3>
           <p className="text-pretty text-sm leading-relaxed">{call.summary}</p>
@@ -209,11 +161,16 @@ function NewCall({
     setBusy(true);
     setError(undefined);
     try {
-      const placed = await callsApi<CallRecord>("POST", "/v1/calls", apiKey, {
-        phone_number: phone.trim(),
-        prompt,
-        ...(webhook.trim() === "" ? {} : { webhook_url: webhook.trim() }),
-      });
+      const placed = await routeFetch<CallRecord>(
+        "POST",
+        "/v1/calls",
+        {
+          phone_number: phone.trim(),
+          prompt,
+          ...(webhook.trim() === "" ? {} : { webhook_url: webhook.trim() }),
+        },
+        { headers: { authorization: apiKey } },
+      );
       onPlaced(placed);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -274,44 +231,19 @@ function NewCall({
 }
 
 function CallsList({
-  apiKey,
+  calls,
+  error,
   selected,
   onSelect,
-  refresh,
 }: {
-  apiKey: string;
+  calls: CallRecord[] | undefined;
+  error: string | undefined;
   selected: string | undefined;
   onSelect: (id: string) => void;
-  refresh: number;
 }): ReactNode {
-  const [calls, setCalls] = useState<CallRecord[]>([]);
-  const [error, setError] = useState<string | undefined>(undefined);
-
-  // `refresh` is a dependency on purpose: placing a call bumps it, so the new
-  // call shows without waiting for the next poll.
-  useEffect(() => {
-    if (apiKey === "") return;
-    let stopped = false;
-    const read = () =>
-      callsApi<CallList>("GET", "/v1/calls", apiKey)
-        .then((answer) => {
-          if (stopped) return;
-          setCalls(answer.calls);
-          setError(undefined);
-        })
-        .catch((err: unknown) => {
-          if (!stopped) setError(err instanceof Error ? err.message : String(err));
-        });
-    void read();
-    const timer = setInterval(() => void read(), LIST_POLL_MS);
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-    };
-  }, [apiKey, refresh]);
-
   if (error !== undefined) return <p className="text-sm text-red-500">{error}</p>;
-  if (calls.length === 0) return <p className="text-sm opacity-60">No calls yet.</p>;
+  if (calls === undefined || calls.length === 0)
+    return <p className="text-sm opacity-60">No calls yet.</p>;
   return (
     <ul className="flex flex-col gap-1">
       {calls.map((call) => (
@@ -338,7 +270,11 @@ function CallsList({
 export function App(): ReactNode {
   const [apiKey, setApiKey] = useState(readStoredKey);
   const [selected, setSelected] = useState<string | undefined>(undefined);
-  const [refresh, setRefresh] = useState(0);
+  // `null` while there is no key: the list is not read until there is one.
+  const list = useRoute<CallList>(apiKey === "" ? null : "/v1/calls", {
+    pollMs: LIST_POLL_MS,
+    headers: { authorization: apiKey },
+  });
 
   const saveKey = useCallback((key: string) => {
     setApiKey(key);
@@ -351,7 +287,7 @@ export function App(): ReactNode {
         <h1 className="text-balance text-2xl">Outbound Caller</h1>
         <p className="text-pretty text-sm opacity-70">
           Give the agent a number and a task. It places the call, carries out the task, and the
-          transcript appears here as the conversation happens.
+          transcript appears here once the call is over.
         </p>
       </header>
 
@@ -376,7 +312,8 @@ export function App(): ReactNode {
               apiKey={apiKey}
               onPlaced={(call) => {
                 setSelected(call.id);
-                setRefresh((n) => n + 1);
+                // So the new call shows without waiting for the next poll.
+                list.reload();
               }}
             />
           </div>
@@ -386,10 +323,10 @@ export function App(): ReactNode {
               <p className="text-sm opacity-60">Enter the API key to see calls.</p>
             ) : (
               <CallsList
-                apiKey={apiKey}
+                calls={list.data?.calls}
+                error={list.error}
                 selected={selected}
                 onSelect={setSelected}
-                refresh={refresh}
               />
             )}
           </div>

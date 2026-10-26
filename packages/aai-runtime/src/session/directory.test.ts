@@ -6,6 +6,7 @@
 import { describe, expect, test, vi } from "vitest";
 import type { ServerSession } from "./core-types.ts";
 import { createSessionDirectory, type SessionWiring } from "./directory.ts";
+import { createTurnCounter } from "./turn-counter.ts";
 
 /** A session double: only the members the directory's readers touch. */
 function session(announce = vi.fn(() => true)): ServerSession {
@@ -21,6 +22,8 @@ function wiring(): SessionWiring {
     sink: {} as SessionWiring["sink"],
     emitter: {} as SessionWiring["emitter"],
     meter: {} as SessionWiring["meter"],
+    turns: createTurnCounter(),
+    workflows: undefined,
   };
 }
 
@@ -67,6 +70,16 @@ describe("createSessionDirectory", () => {
     expect(releaseNext()).toBe(true);
     expect(directory.emitter("s-1")).toBeUndefined();
     expect(directory.meter("s-1")).toBeUndefined();
+  });
+
+  test("the turn count follows the id, and an unknown id reads 0", () => {
+    const directory = createSessionDirectory();
+    expect(directory.turn("s-9")).toBe(0);
+    const owned = wiring();
+    directory.claimWiring("s-1", owned);
+    owned.turns.committed();
+    owned.turns.committed();
+    expect(directory.turn("s-1")).toBe(2);
   });
 
   test("clear drops every registry", () => {

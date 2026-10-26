@@ -7,8 +7,6 @@ export default gameSlot.updateTool({
     value: z.string().describe("Room name to move to"),
   }),
   execute(args, game) {
-    // `moves` is NOT bumped here: a turn is counted once, by the
-    // `userTranscript.committed` hook in `agent.ts`. See `recordTurn`.
     game.currentRoom = args.value;
     return { currentRoom: game.currentRoom, moves: game.moves };
   },

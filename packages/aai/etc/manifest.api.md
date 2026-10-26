@@ -18,7 +18,8 @@ export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 // @internal
 export const AgentConfigSchema: z.ZodObject<{
     name: z.ZodString;
-    description: z.ZodOptional<z.ZodString>;
+    listing: z.ZodOptional<z.ZodString>;
+    promptContext: z.ZodOptional<z.ZodString>;
     systemPrompt: z.ZodDefault<z.ZodString>;
     greeting: z.ZodDefault<z.ZodString>;
     sttPrompt: z.ZodOptional<z.ZodString>;
@@ -67,22 +68,10 @@ export const AgentConfigSchema: z.ZodObject<{
     }, z.core.$strict>>;
     errorPhrase: z.ZodOptional<z.ZodString>;
     startFailurePhrase: z.ZodOptional<z.ZodString>;
-    stt: z.ZodOptional<z.ZodObject<{
-        kind: z.ZodString;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-    }, z.core.$strip>>;
-    llm: z.ZodOptional<z.ZodObject<{
-        kind: z.ZodString;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-    }, z.core.$strip>>;
-    tts: z.ZodOptional<z.ZodObject<{
-        kind: z.ZodString;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-    }, z.core.$strip>>;
-    s2s: z.ZodOptional<z.ZodObject<{
-        kind: z.ZodString;
-        options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-    }, z.core.$strip>>;
+    stt: z.ZodOptional<z.ZodType<ProviderDescriptor<string, Record<string, unknown>>, unknown, z.core.$ZodTypeInternals<ProviderDescriptor<string, Record<string, unknown>>, unknown>>>;
+    llm: z.ZodOptional<z.ZodType<ProviderDescriptor<string, Record<string, unknown>>, unknown, z.core.$ZodTypeInternals<ProviderDescriptor<string, Record<string, unknown>>, unknown>>>;
+    tts: z.ZodOptional<z.ZodType<ProviderDescriptor<string, Record<string, unknown>>, unknown, z.core.$ZodTypeInternals<ProviderDescriptor<string, Record<string, unknown>>, unknown>>>;
+    s2s: z.ZodOptional<z.ZodType<ProviderDescriptor<string, Record<string, unknown>>, unknown, z.core.$ZodTypeInternals<ProviderDescriptor<string, Record<string, unknown>>, unknown>>>;
     mode: z.ZodOptional<z.ZodEnum<{
         pipeline: "pipeline";
         s2s: "s2s";
@@ -103,8 +92,9 @@ export const AgentConfigSchema: z.ZodObject<{
 }, z.core.$strip>;
 
 // @public
-export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt" | "mcpServers"> & {
+export type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt" | "promptContext" | "mcpServers"> & {
     systemPrompt?: AgentSystemPrompt;
+    promptContext?: AgentPromptContext | undefined;
     mcpServers?: McpServers | undefined;
     mode?: AgentMode | undefined;
 } & {
@@ -124,9 +114,8 @@ export function agentConfigWarnings(config: {
 }): string[];
 
 // @public @input
-interface AgentDeclaration extends PipelineTuning, PipelinePhrases, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox {
+interface AgentDeclaration extends PipelineTuning, PipelinePhrases, AgentModelTuning, AgentGuardrails, AgentObservation, AgentVoicePresets, AgentSessionLifecycle, AgentRoutes, AgentClientInbox, AgentInstructions, AgentListing {
     builtinTools?: readonly BuiltinTool[];
-    description?: string;
     dialogs?: readonly AnyDialog[];
     greeting: string;
     idleTimeoutMs?: number;
@@ -148,8 +137,7 @@ interface AgentDeclaration extends PipelineTuning, PipelinePhrases, AgentModelTu
 }
 
 // @public @sealed
-interface AgentDef extends Omit<AgentDeclaration, "syncState"> {
-    syncState?: Readonly<Record<string, StateProjection>>;
+interface AgentDef extends AgentDeclaration {
     tools: ToolMap;
 }
 
@@ -160,6 +148,16 @@ type AgentGuardrail = (text: string, ctx: AgentSessionContext) => GuardrailVerdi
 interface AgentGuardrails {
     inputGuardrails?: readonly AgentGuardrail[];
     outputGuardrails?: readonly AgentGuardrail[];
+}
+
+// @public @input
+interface AgentInstructions {
+    promptContext?: AgentPromptContext;
+}
+
+// @public @input
+interface AgentListing {
+    listing?: string;
 }
 
 // @public
@@ -174,8 +172,11 @@ interface AgentModelTuning extends ModelTuning {
 // @public @input
 interface AgentObservation {
     events?: SessionEventHandlers;
-    syncState?: SyncStateDeclaration;
+    syncState?: Readonly<Record<string, StateProjection>>;
 }
+
+// @public
+type AgentPromptContext = string | ((ctx: AgentSessionContext) => string);
 
 // @public @input
 interface AgentRoutes {
@@ -187,6 +188,7 @@ interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
     slots: SlotStore;
+    turn: number;
 }
 
 // @public @input
@@ -230,13 +232,15 @@ type AnyWorkflowDef<R = unknown> = {
     uploads?: readonly string[];
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
+    describeRun?(run: never): string;
+    cancelNote?: string | undefined;
 };
 
 // @public
 type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | "workflow_status" | "workflow_progress" | "workflow_cancel" | (string & {});
 
 // @public @input
 interface ClientEventMap {
@@ -328,15 +332,16 @@ interface Dialog<E = {
     reset(ctx: SlotHolder): DialogPosition;
     send(ctx: SlotHolder, event: E): DialogPosition;
     timeout(ctx: SlotHolder): DialogTimeout | undefined;
-    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>, options?: DialogSendOptions<R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
 // @public @input
-interface DialogGate<R, E> {
+interface DialogGate<R, E, K extends string = string> {
+    reset?: true;
     send?: E;
-    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
-    when: string | readonly string[];
+    sendFrom?: DialogSendFrom<R, E, K>;
+    when?: string | readonly string[];
 }
 
 // @public @sealed
@@ -345,6 +350,33 @@ interface DialogPosition {
     readonly instruction?: string;
     readonly persona?: string;
     readonly state: string;
+}
+
+// @public
+type DialogSendFrom<R, E, K extends string = string> = ((result: NoInfer<Exclude<R, ToolFailure>>) => E | undefined) | K;
+
+// @public
+type DialogSendFromChecked<K extends string, R, E, T> = string extends K ? T : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? T : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+
+// @public
+type DialogSendFromGuard<K extends string, R, E> = string extends K ? unknown : unknown extends R ? unknown : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? unknown : {
+    sendFrom: DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+};
+
+// @public
+type DialogSendFromKey<S, E> = keyof {
+    [K in keyof S as S[K] extends EventNameOf<E> | undefined ? K : never]: never;
+} & string;
+
+// @public @sealed
+type DialogSendFromMisuse<K extends string, Keys extends string> = {
+    readonly "sendFrom names a result field that holds no event name of this dialog": K;
+    readonly "the fields that do": Keys;
+};
+
+// @public @input
+interface DialogSendOptions<R, E, K extends string = string> {
+    sendFrom: DialogSendFrom<R, E, K>;
 }
 
 // @public @input
@@ -356,7 +388,7 @@ interface DialogTimeout {
 }
 
 // @public @input
-interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
+interface DialogToolDef<P extends ToolInputSchema | undefined, R, E, K extends string = string> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E, K> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
 }
 
@@ -372,6 +404,11 @@ interface DialogVoiceConfig {
     readonly toolChoice?: ToolChoice;
     readonly voice?: string;
 }
+
+// @public
+type EventNameOf<E> = (E & {
+    type: string;
+})["type"];
 
 // @public @input
 type FindByKeyOptions = {
@@ -443,7 +480,7 @@ export const HOST_ONLY_AGENT_FIELDS: readonly ["tools", "syncState", "workflows"
 export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
 
 // @public
-type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S extends undefined ? Record<string, never> : never;
 
 // @public @input
 interface InterruptionTuning {
@@ -526,11 +563,22 @@ interface PipelineTuning {
 }
 
 // @public @input
+type PollFirstWait = {
+    waitFor: string | undefined;
+    timeoutMs: number;
+    schema?: StandardSchemaV1 | undefined;
+};
+
+// @public @input
 type PollOptions<T> = {
     everyMs: number;
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
+    first?: PollFirstWait | undefined;
+    slowAfterMs?: number | undefined;
+    onSlow?: string | undefined;
 };
 
 // @public @sealed
@@ -538,6 +586,7 @@ type PollResult<T> = {
     value: T;
     done: boolean;
     checks: number;
+    woken?: boolean;
 };
 
 // @public
@@ -549,10 +598,7 @@ interface ProviderDescriptor<Kind extends string, Options> {
 }
 
 // @internal
-export const ProviderDescriptorSchema: z.ZodObject<{
-    kind: z.ZodString;
-    options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}, z.core.$strip>;
+export const ProviderDescriptorSchema: z.ZodType<ProviderDescriptor<string, Record<string, unknown>>>;
 
 // @public
 type RandomSource = () => number;
@@ -600,6 +646,7 @@ interface Roster<N extends string = string> {
 interface RouteContext {
     clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
     env: Readonly<Partial<Record<string, string>>>;
+    sessionTranscript(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
     signal: AbortSignal;
     speech(sessionId: string): SessionSpeech | undefined;
     workflows: WorkflowClient;
@@ -679,6 +726,8 @@ interface SessionEndContext {
     env: Readonly<Partial<Record<string, string>>>;
     lastEventIndex: number;
     sessionId: string;
+    slots: SlotStore;
+    transcript: readonly ClientTranscriptMessage[];
     workflows: WorkflowClient;
 }
 
@@ -881,6 +930,11 @@ interface SessionSpeech {
 }
 
 // @public @input
+type SignalOptions = {
+    holdMs?: number;
+};
+
+// @public @input
 interface SilenceNudge {
     afterMs: number;
     prompt?: string;
@@ -1013,6 +1067,7 @@ type StepClientTranscriptOptions = {
 // @public @input
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
+    maxWaits?: number;
     schema?: S | undefined;
 };
 
@@ -1031,9 +1086,6 @@ type StreamOptions = {
 type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
 };
-
-// @public
-type SyncStateDeclaration = StateProjection | readonly StateProjection[];
 
 // @public
 type TelephonyAccess = boolean | readonly TelephonyCarrier[];
@@ -1082,15 +1134,18 @@ type ToolContext = {
     deadlineAt: number;
     workflows: WorkflowClient;
     random: RandomSource;
+    turn: number;
+    now(): number;
 };
 
 // @public @input
-type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined, R = unknown> = {
     description: string;
-    inputSchema?: P;
+    inputSchema?: P | undefined;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
+    ui?: ToolUi;
 };
 
 // @public @input
@@ -1158,7 +1213,7 @@ type ToolRefusal = ToolFailure & {
 type ToolRefusalReason = "unknown_tool" | "invalid_arguments" | "cancelled" | "persona" | "dialog" | "roster" | (string & {});
 
 // @public
-export type ToolRegistry = Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+export type ToolRegistry = Readonly<Record<string, ToolDef>>;
 
 // @public
 export function toolRegistry(modules: ToolModules): ToolRegistry;
@@ -1170,6 +1225,7 @@ export type ToolSchema = {
     description: string;
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
+    ui?: ToolUi | undefined;
 };
 
 // @internal
@@ -1250,6 +1306,7 @@ export const ToolSchemaSchema: z.ZodObject<{
             }>>;
         }, z.core.$strip>>>;
     }, z.core.$strip>>;
+    ui: z.ZodOptional<z.ZodType<ToolUi>>;
 }, z.core.$strip>;
 
 // @public
@@ -1288,6 +1345,23 @@ export interface ToolTable {
     resolve(name: string): ResolvedTool | undefined;
     readonly tools: readonly ResolvedTool[];
 }
+
+// @public @input
+type ToolUi = {
+    icon?: string | undefined;
+    label?: string | undefined;
+};
+
+// @internal
+export function toolUiMap(agent: ToolUiSource): Record<string, ToolUi> | undefined;
+
+// @internal
+export type ToolUiSource = {
+    readonly tools: Readonly<Record<string, {
+        readonly ui?: ToolUi | undefined;
+    }>>;
+    readonly toolsets?: readonly Toolset[] | undefined;
+};
 
 // @public
 type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
@@ -1359,6 +1433,14 @@ export function withTools<D extends {
 }>(def: D, registry: ToolRegistry): D;
 
 // @public
+export function withWorkflows<D extends object>(def: D, registry: WorkflowRegistry, options?: WithWorkflowsOptions): D;
+
+// @public @input
+export type WithWorkflowsOptions = {
+    warn?: ((message: string) => void) | undefined;
+};
+
+// @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
 // @public @sealed
@@ -1370,6 +1452,10 @@ type WorkflowClient = {
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    latest<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key?: string): Promise<WorkflowRunSnapshot<R> | undefined>;
+    latest(workflow: string, key?: string): Promise<WorkflowRunSnapshot | undefined>;
+    live<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key?: string): Promise<WorkflowRunSnapshot<R> | undefined>;
+    live(workflow: string, key?: string): Promise<WorkflowRunSnapshot | undefined>;
     findByKey(key: string, options?: FindByKeyOptions): Promise<WorkflowRunSnapshot[]>;
     cancelAll<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string): Promise<number>;
     cancelAll(workflow: string, key: string): Promise<number>;
@@ -1377,7 +1463,9 @@ type WorkflowClient = {
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
-    signal(token: string, payload?: unknown): Promise<boolean>;
+    signal(token: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
+    signalRun<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, label: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
+    signalRun(workflow: string, key: string, label: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
@@ -1389,6 +1477,7 @@ type WorkflowClient = {
 type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
+    readonly key: string | undefined;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     now(): Promise<number>;
@@ -1401,6 +1490,12 @@ type WorkflowContext = {
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
+    report<const Name extends string>(name: Name & Literal<Name>, line: string): Promise<void>;
+    signalToken(label: string): string;
+    waitForSignal<S extends StandardSchemaV1>(label: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
+    waitForSignal<S extends StandardSchemaV1>(label: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    waitForSignal<T = unknown>(label: string): Promise<T>;
+    waitForSignal<T = unknown>(label: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
 // @public @input
@@ -1411,6 +1506,8 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
     onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
+    describeRun?(run: WorkflowRunSnapshot<R>): string;
+    cancelNote?: string | undefined;
 };
 
 // @public @sealed
@@ -1429,6 +1526,15 @@ type WorkflowFailureHandler<I = unknown> = WorkflowFailureHook<I> | {
 // @public
 type WorkflowFailureHook<I = unknown> = (error: Error, context: WorkflowFailureContext<I>) => Promise<void> | void;
 
+// @public
+export type WorkflowModules = Readonly<Record<string, unknown>>;
+
+// @public
+export type WorkflowRegistry = Readonly<Record<string, WorkflowDef>>;
+
+// @public
+export function workflowRegistry(modules: WorkflowModules): WorkflowRegistry;
+
 // @public @sealed
 type WorkflowRunBase = {
     runId: string;
@@ -1436,6 +1542,8 @@ type WorkflowRunBase = {
     createdAt: number;
     key?: string;
     label?: string;
+    startedAt?: number;
+    settledAt?: number;
 };
 
 // @public

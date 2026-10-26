@@ -3,11 +3,10 @@
  * Specs for the transcription desk's declaration, its WAV arithmetic, and its
  * steps.
  *
- * A step is an ordinary exported async function, so its retries, its
- * `FatalError` guards, its HTTP handling and its merge are all testable
- * directly. **And one of the three bodies IS driven**, on the real replay
- * engine — `transcribeBatch`, in the last block, which is the flow that reaches
- * no ffmpeg. The other two normalize the recording first and this repo's test
+ * A step is an ordinary exported async function, so its `FatalError` guards,
+ * its HTTP handling and its merge are all testable directly. **And one of the
+ * three bodies IS driven**, on the real replay engine — `transcribeBatch`, in
+ * the last block, which is the flow that reaches no ffmpeg. The other two normalize the recording first and this repo's test
  * environment has no ffmpeg, so their durability stays `aai-cli`'s
  * `dev-workflow.scenario.test.ts`'s. Saying which of the three is covered is
  * the point: a body test dressed up as a durability test would be the worse
@@ -20,19 +19,26 @@
 
 import { readdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { stepReadUpload, type UploadRange, WAV_HEADER_BYTES } from "@alexkroman1/aai/step";
+import {
+  stepReadUpload,
+  TRANSCRIBE_DURABLY_STEPS,
+  type UploadRange,
+  WAV_HEADER_BYTES,
+} from "@alexkroman1/aai/step";
 import { DEFAULT_RETRY_DELAY_MS, FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
-import { createWorkflowContext, runWorkflow } from "@alexkroman1/aai-runtime/testing";
+import {
+  createWorkflowContext,
+  runWorkflow,
+  type StubTranscribeOptions,
+} from "@alexkroman1/aai-runtime/testing";
 import {
   installStubReporter,
-  installStubStepFetch,
-  installStubTranscribe,
   installStubUploads,
+  installStubWorld,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import agentDef, { transcribe, transcribeBatch, transcribeStream } from "./agent.ts";
-import { createJob, pollTranscript, uploadToProvider } from "./workflows/batch.ts";
 import {
   downsampleSegment,
   NORMALIZED_CHANNELS,
@@ -156,23 +162,6 @@ function wavFile(
 }
 
 describe("the agent declares its three workflows", () => {
-  test("under the names the REST route resolves them by", () => {
-    // The page starts a run by these strings, so a rename is a runtime 400 rather
-    // than a compile error — which is what makes pinning them worth a test.
-    // `arrayContaining` rather than an exact key list: a fourth desk of your own
-    // is an invited edit and must not redden a test you did not write. These
-    // three NAMES stay pinned, deliberately — the page starts a run by each
-    // string, so renaming one is a runtime 400 rather than a compile error, and
-    // this is the only thing that says so. Rename here and in `client.tsx`
-    // together.
-    expect(Object.keys(agentDef.workflows ?? {})).toEqual(
-      expect.arrayContaining(["transcribe", "transcribeStream", "transcribeBatch"]),
-    );
-    expect(agentDef.workflows?.transcribe).toBe(transcribe);
-    expect(agentDef.workflows?.transcribeStream).toBe(transcribeStream);
-    expect(agentDef.workflows?.transcribeBatch).toBe(transcribeBatch);
-  });
-
   test("all three take `recording` as an UPLOAD, which is what makes one picker serve them", () => {
     // There is no second kind of declaration: `recording` carries an upload id in
     // every flow, and the streaming one differs only in that the CLIENT chose the id
@@ -191,12 +180,6 @@ describe("the agent declares its three workflows", () => {
     // voice agent that STARTS a workflow, `research-handoff-agent` is that template,
     // and this line is what tells you you are on the wrong one.
     expect(Object.keys(agentDef.tools ?? {})).toEqual([]);
-  });
-
-  test("declaring the key its steps read, so a deploy checks for it", () => {
-    // Without this a missing credential is discovered by the first run, minutes
-    // after the deploy reported success.
-    expect(agentDef.requiredEnv).toContain("ASSEMBLYAI_API_KEY");
   });
 });
 
@@ -759,34 +742,24 @@ describe("transcribeSegment", () => {
   const FORMAT: WavFormat = { ...MONO_16K, dataStart: 44, dataEnd: 44 + 320_000 };
   const SEGMENT = { index: 0, start: 44, end: 44 + 32_000, startMs: 0, endMs: 1000 };
 
-  beforeEach(() => {
-    // `stepEnv` falls back to the process env when no host has published one,
-    // which is exactly the case a spec is: there is no agent env in this
-    // process. `unstubEnvs` clears it before the next test.
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-  });
-
   /**
-   * Publishes the recording and answers the sync endpoint.
-   *
-   * `installStubTranscribe` routes AssemblyAI's four legs off the SDK's own
-   * endpoint constants, so this file no longer re-types the wire — and it fills a
-   * published `stepFetch` rather than `vi.stubGlobal("fetch", …)`, because the
-   * step calls `stepFetch`, which reaches a published slot rather than the global
-   * (see `sdk/step-fetch.ts` for why it has to: HTTP/1.1, so a batch of segments
-   * gets a socket each instead of N streams on one connection). Stubbing the
-   * global still passes, because an unpublished slot falls back to it, and would
-   * be asserting against a path production does not take.
-   *
-   * A refusal is staged as a STATUS, which is what makes the classification specs
-   * below a test of the SDK's reading of it rather than of an error a fake minted.
+   * Publishes `bytes` of recording and answers the sync endpoint, with the
+   * credential the step reads seeded. A refusal is staged as a STATUS, which is
+   * what makes the classification specs below a test of the SDK's reading of
+   * it rather than of an error a fake minted.
    */
+  function world(bytes: number, transcribe: StubTranscribeOptions = { text: "hello there" }) {
+    return installStubWorld({
+      uploads: { files: { [UPLOAD_ID]: { bytes: new Uint8Array(bytes), name: "standup.wav" } } },
+      transcribe,
+    });
+  }
+
   function stubProvider(failure?: { status: number; message: string; retryAfterSeconds?: number }) {
-    publishRecording(new Uint8Array(FORMAT.dataEnd));
-    return installStubTranscribe({
+    return world(FORMAT.dataEnd, {
       text: "hello there",
       failure: failure === undefined ? undefined : { leg: "sync", ...failure },
-    }).calls;
+    }).provider;
   }
 
   test("sends the segment as a WAV named after its index", async () => {
@@ -830,8 +803,7 @@ describe("transcribeSegment", () => {
       dataStart: 44,
       dataEnd: 44 + 192_000,
     };
-    publishRecording(new Uint8Array(stereo.dataEnd));
-    const calls = installStubTranscribe({ text: "hello there" }).calls;
+    const calls = world(stereo.dataEnd).provider;
 
     await transcribeSegment(UPLOAD_ID, stereo, {
       index: 0,
@@ -871,8 +843,7 @@ describe("transcribeSegment", () => {
       dataStart: 44,
       dataEnd: 44 + 96_000,
     };
-    publishRecording(new Uint8Array(wide.dataEnd));
-    installStubTranscribe({ text: "never reached" });
+    world(wide.dataEnd, { text: "never reached" });
 
     await expect(
       transcribeSegment(UPLOAD_ID, wide, {
@@ -899,8 +870,7 @@ describe("transcribeSegment", () => {
       dataStart: 44,
       dataEnd: 44 + 24_000,
     };
-    publishRecording(new Uint8Array(narrow.dataEnd));
-    installStubTranscribe({ text: "never reached" });
+    world(narrow.dataEnd, { text: "never reached" });
 
     await expect(
       transcribeSegment(UPLOAD_ID, narrow, {
@@ -918,8 +888,8 @@ describe("transcribeSegment", () => {
     // page stitches whatever has arrived, so the transcript renders growing
     // instead of appearing when the last segment does. The reporter is the SDK's
     // published slot, which is the same seam `stepReport()` goes through.
-    const reported = installStubReporter();
     stubProvider();
+    const reported = installStubReporter();
 
     await transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT);
 
@@ -936,9 +906,15 @@ describe("transcribeSegment", () => {
     expect(reported.lines.some((line) => line.startsWith("Transcribing"))).toBe(true);
   });
 
-  test("fails FATALLY with no API key rather than retrying five times", async () => {
+  test("fails FATALLY with no API key rather than retrying", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
-    stubProvider();
+    installStubWorld({
+      uploads: {
+        files: { [UPLOAD_ID]: { bytes: new Uint8Array(FORMAT.dataEnd), name: "standup.wav" } },
+      },
+      transcribe: { text: "hello there" },
+      apiKey: false,
+    });
     await expect(transcribeSegment(UPLOAD_ID, FORMAT, SEGMENT)).rejects.toThrow(
       /ASSEMBLYAI_API_KEY/,
     );
@@ -986,16 +962,11 @@ describe("transcribeSegment", () => {
     );
   });
 
-  test("is raised on both of the classic flow's I/O steps, and on nothing else", async () => {
-    // The policy is an argument to `ctx.step` now, so it is observable only at
-    // the CALL — which is exactly the kind of thing a property on the function
-    // could not have said differently, `transcribeSegment` being called from two
-    // flows. `runSteps: false` with a skeleton of results: no provider, no
-    // ffmpeg, no bytes.
-    //
-    // `transcribeStreamFlow`'s own `transcribeSegment` call carries the same
-    // budget and is asserted with that flow, not here — this drives only
-    // `transcribeFlow`.
+  test("is raised on the one I/O step, and on nothing else", async () => {
+    // The policy is an argument to `ctx.step`, so it is observable only at the
+    // CALL. `runSteps: false` with a skeleton of results: no provider, no
+    // ffmpeg, no bytes. The fan-out waits out a rate limit with `maxWaits`
+    // instead of a raised budget.
     const ctx = createWorkflowContext({
       runSteps: false,
       results: {
@@ -1017,21 +988,22 @@ describe("transcribeSegment", () => {
     });
     await transcribeFlow({ recording: UPLOAD_ID }, ctx);
 
-    const segments = ctx.steps.filter((step) => step.name === "transcribeSegment");
-    expect(segments.length).toBeGreaterThan(0);
+    const budgets = new Map(ctx.steps.map((step) => [step.name, step.maxAttempts]));
     // The EXACT budget, not `toBeGreaterThan(3)`: the value is a literal at the
     // call site, so a typo'd `maxAttempts: 4` is what this should catch.
-    for (const step of segments) expect(step.maxAttempts).toBe(6);
-    // The OTHER raised step, whose assertion the migration dropped along with
-    // the `normalizeRecording.maxRetries` property it used to read.
-    const budgets = new Map(ctx.steps.map((step) => [step.name, step.maxAttempts]));
     expect(budgets.get("normalizeRecording")).toBe(6);
-    // And the two that take the default, which is the other half of the claim.
+    // And the three that take the default, which is the other half of the claim.
     // Asserted as PRESENT-with-no-budget rather than as `get(…) === undefined`,
     // which a step the body never reached at all would also satisfy.
-    for (const name of ["mergeTranscript", "splitRecording"]) {
+    for (const name of ["mergeTranscript", "splitRecording", "transcribeSegment"]) {
       expect(budgets.has(name)).toBe(true);
       expect(budgets.get(name)).toBeUndefined();
+    }
+    // The segment step's rate limit is a WAIT budget — on that step alone.
+    const waits = new Map(ctx.steps.map((step) => [step.name, step.maxWaits]));
+    expect(waits.get("transcribeSegment")).toBe(3);
+    for (const name of ["normalizeRecording", "mergeTranscript", "splitRecording"]) {
+      expect(waits.get(name)).toBeUndefined();
     }
   });
 });
@@ -1243,141 +1215,6 @@ describe("the streaming flow", () => {
  * is terminal, the file is streamed rather than buffered) rather than about
  * arithmetic this flow does not do.
  */
-describe("the async flow", () => {
-  beforeEach(() => {
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "sk-test");
-  });
-
-  /**
-   * Answer the async API, recording what was sent.
-   *
-   * `installStubTranscribe` routes the three legs off the SDK's own endpoint
-   * constants — so a spec cannot pass because the fake and the step agree on a
-   * typo — and it restores itself when the test ends.
-   */
-  function stubBatch(options: Parameters<typeof installStubTranscribe>[0] = {}) {
-    return installStubTranscribe({ audioUrl: "https://cdn.example/abc", ...options }).calls;
-  }
-
-  test("uploadToProvider streams the file and answers with the provider's URL", async () => {
-    publishRecording(new Uint8Array(5000), "standup.wav");
-    const calls = stubBatch();
-    await expect(uploadToProvider(UPLOAD_ID)).resolves.toEqual({
-      audioUrl: "https://cdn.example/abc",
-    });
-    expect(calls.map((one) => one.url)).toEqual(["https://api.assemblyai.com/v2/upload"]);
-  });
-
-  test("the file is STREAMED, so a step never holds a whole recording", async () => {
-    publishRecording(new Uint8Array(5000), "standup.wav");
-    const calls = stubBatch();
-    await uploadToProvider(UPLOAD_ID);
-    // The fake drains a streaming body into bytes, so what this asserts is that
-    // every byte went out — the streaming is what keeps a gigabyte off the heap, and
-    // the bytes arriving intact is what says the windowing is right.
-    const sent = calls[0]?.body;
-    expect(sent).toBeInstanceOf(Uint8Array);
-    expect(sent instanceof Uint8Array ? sent.length : -1).toBe(5000);
-  });
-
-  test("the upload is a SEPARATE step, so a failed submit does not re-send the file", async () => {
-    // Found by running it: as one step, a 400 on the create call retried the whole
-    // thing five times and re-uploaded 24 MB on each attempt. The split is what makes
-    // a retry of the cheap half cost the cheap half.
-    publishRecording(new Uint8Array(5000));
-    const calls = stubBatch({ failure: { leg: "submit", status: 400, message: "bad field" } });
-    await expect(createJob("https://cdn.example/abc")).rejects.toBeInstanceOf(FatalError);
-    // One call, and it is not the upload.
-    expect(calls).toHaveLength(1);
-    expect(calls[0]?.url).toBe("https://api.assemblyai.com/v2/transcript");
-  });
-
-  test("createJob asks for `speech_models`, plural — the singular field is a 400", async () => {
-    publishRecording(new Uint8Array(10));
-    const calls = stubBatch({ jobIdPrefix: "tr_" });
-    await expect(createJob("https://cdn.example/abc")).resolves.toEqual({ id: "tr_1" });
-    const sent = JSON.parse(String(calls[0]?.body)) as Record<string, unknown>;
-    // The async API deprecated `speech_model` and answers 400 for any current model
-    // name passed to it — which is how the first live run of this flow failed. The
-    // STREAMING API still uses the singular field, so neither is "the" spelling.
-    expect(sent).toMatchObject({ speech_models: ["universal-3-5-pro"] });
-    expect(sent.speech_model).toBeUndefined();
-  });
-
-  test("a job the provider gave up on is TERMINAL, not polled forever", async () => {
-    publishRecording(new Uint8Array(10));
-    stubBatch({ jobError: "audio too quiet" });
-    // The provider has decided; no number of polls changes it, so this must not come
-    // back as "not done yet".
-    await expect(pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).rejects.toBeInstanceOf(FatalError);
-  });
-
-  test("pollTranscript answers `done` on completed and not before", async () => {
-    publishRecording(new Uint8Array(10));
-    stubBatch({ pendingPolls: 1 });
-    await expect(pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).resolves.toEqual({ done: false });
-  });
-
-  test("an unknown status is NOT done, so a new one cannot end a run early", async () => {
-    publishRecording(new Uint8Array(10));
-    // Raw rather than `stubTranscribe`: a body with no status at all is not a
-    // shape the fake can stage, and it is the whole point of this spec.
-    installStubStepFetch(() => ({ body: {} }));
-    await expect(pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).resolves.toMatchObject({
-      done: false,
-    });
-  });
-
-  test("a completed poll carries the transcript — ONE request, not two", async () => {
-    publishRecording(new Uint8Array(10), "standup.wav");
-    // It used to poll for a status and then fetch the identical URL again for the
-    // text the poll already had in its hand.
-    const calls = stubBatch({ text: "  hello there  ", durationSec: 12.5 });
-    await expect(pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).resolves.toMatchObject({
-      done: true,
-      transcript: {
-        source: "standup.wav",
-        // Not a fudge: the async API transcribed the recording in one piece, which is
-        // the difference this flow is here to show.
-        segments: 1,
-        durationMs: 12_500,
-        words: 2,
-        transcript: "hello there",
-      },
-    });
-    expect(calls).toHaveLength(1);
-  });
-
-  test("a rate limit is RETRYABLE, so a busy minute does not fail the run", async () => {
-    publishRecording(new Uint8Array(10));
-    stubBatch({ failure: { leg: "poll", status: 429, message: "slow down" } });
-    await expect(pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT)).rejects.toBeInstanceOf(
-      RetryableError,
-    );
-  });
-
-  test("all three flows report the same SHAPE, which is what lets one page render any", async () => {
-    publishRecording(new Uint8Array(10), "standup.wav");
-    stubBatch({ text: "hi", durationSec: 1 });
-    const progress = await pollTranscript(UPLOAD_ID, "tr_1", STARTED_AT);
-    if (!progress.done) return expect.fail("the stub reports a completed job");
-    const batched = progress.transcript;
-    // One key set, so the page's summary line renders every flow's output. A field on
-    // one flow and not the others is a panel that shows it for some runs and not
-    // others, with nothing saying why.
-    expect(Object.keys(batched).sort()).toEqual([
-      "durationMs",
-      "elapsedMs",
-      "segments",
-      "source",
-      "transcript",
-      "words",
-    ]);
-    // And the wall clock really is measured from what it was handed.
-    expect(batched.elapsedMs).toBeGreaterThan(0);
-  });
-});
-
 describe("normalizing the recording", () => {
   /**
    * The CONVERSION is not driven here, and the reason is the tier rather than the
@@ -1665,7 +1502,8 @@ describe("the conversion, up to the spawn", () => {
     // The `finally`, on the path that matters: a guest's disk is small, and a step
     // that leaked a directory per failed run would fill it.
     vi.stubEnv("AAI_FFPROBE_PATH", "/nonexistent/aai-test/ffprobe");
-    const leaked = (names: string[]) => names.filter((n) => n.startsWith("aai-normalize-"));
+    // `transcodeUpload`'s own temp directory, under the SDK's prefix.
+    const leaked = (names: string[]) => names.filter((n) => n.startsWith("aai-step-"));
     const before = leaked(await readdir(tmpdir()));
     publishRecording(new Uint8Array([0, 0, 0, 0x20, 0x66, 0x74, 0x79, 0x70]), "standup.m4a");
     installStubReporter();
@@ -1944,36 +1782,35 @@ describe("nextPollDelay", () => {
  */
 describe("the batch run is DURABLE", () => {
   const INPUT = { recording: UPLOAD_ID };
+  const { upload, submit, poll } = TRANSCRIBE_DURABLY_STEPS;
 
-  beforeEach(() => {
-    installStubUploads({
-      [UPLOAD_ID]: { bytes: new Uint8Array(4096), name: "standup.wav", type: "audio/wav" },
-    });
-    installStubReporter();
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
-  });
+  /** The store holding the recording, and the async API answering for it. */
+  function world(transcribe: StubTranscribeOptions) {
+    return installStubWorld({
+      uploads: { files: { [UPLOAD_ID]: { bytes: new Uint8Array(4096), name: "standup.wav" } } },
+      transcribe,
+    }).provider;
+  }
 
   test("parks on the poll cadence with the upload already journaled", async () => {
-    const provider = installStubTranscribe({ pendingPolls: 1, text: "We shipped it." });
+    const calls = world({ pendingPolls: 1, text: "We shipped it." });
     const started = Date.now();
-    const run = await runWorkflow(transcribeBatch, INPUT, { name: "transcribeBatch" });
+    const run = await runWorkflow(agentDef, "transcribeBatch", INPUT);
 
     expect(run.status).toBe("running");
     expect(run.wakeAt).toBeGreaterThan(started);
-    expect(run.steps.map((step) => step.key)).toEqual([
-      "createJob#0",
-      "pollTranscript#0",
-      "uploadToProvider#0",
-    ]);
-    // The clock the body read alongside the upload is journaled too, in its own
+    expect(new Set(run.steps.map((step) => step.key))).toEqual(
+      new Set([`${upload}#0`, `${submit}#0`, `${poll}#0`]),
+    );
+    // The clock the body read ahead of the upload is journaled too, in its own
     // reserved key space — `run.reads`, not `run.steps`.
     expect(run.reads.map((read) => read.key)).toEqual(["now!0"]);
-    expect(provider.calls.filter((call) => call.leg === "upload")).toHaveLength(1);
+    expect(calls.filter((call) => call.leg === "upload")).toHaveLength(1);
   });
 
   test("resumes past the poll without moving the recording again", async () => {
-    const provider = installStubTranscribe({ pendingPolls: 1, text: "We shipped it." });
-    const run = await runWorkflow(transcribeBatch, INPUT, { name: "transcribeBatch" });
+    const calls = world({ pendingPolls: 1, text: "We shipped it.", durationSec: 12.5 });
+    const run = await runWorkflow(agentDef, "transcribeBatch", INPUT);
     await run.advanceSleep();
 
     expect(run.status).toBe("completed");
@@ -1982,52 +1819,70 @@ describe("the batch run is DURABLE", () => {
       // ONE, which is the difference this flow exists to show against the two
       // that segment.
       segments: 1,
+      // The FILENAME, off the journaled upload step.
       source: "standup.wav",
+      durationMs: 12_500,
+      words: 3,
     });
     expect(run.deliveries).toBe(2);
     // The whole recording crossed the wire once, on the first walk.
-    expect(provider.calls.filter((call) => call.leg === "upload")).toHaveLength(1);
-    expect(provider.calls.filter((call) => call.leg === "submit")).toHaveLength(1);
+    expect(calls.filter((call) => call.leg === "upload")).toHaveLength(1);
+    expect(calls.filter((call) => call.leg === "submit")).toHaveLength(1);
+  });
+
+  test("all three flows report the same SHAPE, which is what lets one page render any", async () => {
+    world({ text: "hi", durationSec: 1 });
+    const run = await runWorkflow(agentDef, "transcribeBatch", INPUT);
+
+    expect(run.status).toBe("completed");
+    // One key set, so the page's summary line renders every flow's output. A field on
+    // one flow and not the others is a panel that shows it for some runs and not
+    // others, with nothing saying why.
+    expect(Object.keys(run.output as Transcript).sort()).toEqual([
+      "durationMs",
+      "elapsedMs",
+      "segments",
+      "source",
+      "transcript",
+      "words",
+    ]);
   });
 
   test("reports the elapsed from the run's OWN start, not the resuming walk's", async () => {
-    // The affordance's claim. `ctx.now()` is journaled under its own key, so the
-    // second walk re-reads the first walk's instant — and `elapsedMs`, which the
-    // poll step computes as `Date.now() - startedAt`, therefore counts the whole
-    // run rather than the delivery it finished on.
-    const provider = installStubTranscribe({ pendingPolls: 1, text: "We shipped it." });
-    const run = await runWorkflow(transcribeBatch, INPUT, { name: "transcribeBatch" });
+    // `ctx.now()` is journaled under its own key at each end, so the second
+    // walk re-reads the first walk's instant — and `elapsedMs` therefore counts
+    // the whole run rather than the delivery it finished on.
+    const calls = world({ pendingPolls: 1, text: "We shipped it." });
+    const run = await runWorkflow(agentDef, "transcribeBatch", INPUT);
     await run.advanceSleep();
 
     expect(run.status).toBe("completed");
+    expect(run.reads.map((read) => read.key)).toEqual(["now!0", "now!1"]);
     // A journaled clock cannot go backwards across a resume, and a re-read one
     // routinely would — the second walk starts later than the first.
-    expect(run.output?.elapsedMs).toBeGreaterThanOrEqual(0);
-    expect(provider.calls.filter((call) => call.leg === "poll")).toHaveLength(2);
+    expect((run.output as Transcript).elapsedMs).toBeGreaterThanOrEqual(0);
+    expect(calls.filter((call) => call.leg === "poll")).toHaveLength(2);
   });
 
   test("a worker that dies before the job is created re-uploads, because nothing settled", async () => {
     // The other side of exactly-once, and the honest one: a step whose entry was
     // never written IS re-run, because the journal is what makes a step skippable
     // and a crashed one left none.
-    const provider = installStubTranscribe({ text: "We shipped it." });
-    const run = await runWorkflow(transcribeBatch, INPUT, {
-      name: "transcribeBatch",
-      crashAt: "createJob",
-    });
+    const calls = world({ text: "We shipped it." });
+    const run = await runWorkflow(agentDef, "transcribeBatch", INPUT, { crashAt: submit });
 
     expect(run.crashed).toBe(true);
-    expect(run.steps.map((step) => step.name)).toEqual(["uploadToProvider"]);
-    // The clock the body read in the same `Promise.all` survived the crash with
-    // it, which is what makes the resumed run's elapsed the WHOLE run's.
+    expect(run.steps.map((step) => step.name)).toEqual([upload]);
+    // The clock the body read ahead of the upload survived the crash with it,
+    // which is what makes the resumed run's elapsed the WHOLE run's.
     expect(run.reads.map((read) => read.key)).toEqual(["now!0"]);
-    expect(provider.calls.filter((call) => call.leg === "submit")).toHaveLength(0);
+    expect(calls.filter((call) => call.leg === "submit")).toHaveLength(0);
 
     await run.restart();
     expect(run.status).toBe("completed");
     // The upload SURVIVED — it settled before the crash — and only the job
     // creation was re-issued.
-    expect(provider.calls.filter((call) => call.leg === "upload")).toHaveLength(1);
-    expect(provider.calls.filter((call) => call.leg === "submit")).toHaveLength(1);
+    expect(calls.filter((call) => call.leg === "upload")).toHaveLength(1);
+    expect(calls.filter((call) => call.leg === "submit")).toHaveLength(1);
   });
 });

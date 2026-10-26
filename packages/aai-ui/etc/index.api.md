@@ -19,7 +19,7 @@ import type { FormHTMLAttributes } from 'react';
 import { FunctionComponent } from 'react';
 import type { InputHTMLAttributes } from 'react';
 import { isTerminal } from '@alexkroman1/aai/workflow-api';
-import type { JSX } from 'react';
+import { JSX } from 'react';
 import { MemoExoticComponent } from 'react';
 import { ReactNode } from 'react';
 import type { SelectHTMLAttributes } from 'react';
@@ -29,10 +29,14 @@ import type { TextareaHTMLAttributes } from 'react';
 import type { UploadParallelOption } from '@alexkroman1/aai/workflow-api';
 import type { UploadProgress } from '@alexkroman1/aai/workflow-api';
 import { WorkflowApi } from '@alexkroman1/aai/workflow-api';
+import { WorkflowAppLike } from '@alexkroman1/aai/workflow-api';
+import { WorkflowDefOf } from '@alexkroman1/aai/workflow-api';
 import { WorkflowInputOf } from '@alexkroman1/aai/workflow-api';
+import { WorkflowNameOf } from '@alexkroman1/aai/workflow-api';
 import { WorkflowOutputOf } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunSnapshot } from '@alexkroman1/aai/workflow-api';
 import { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
+import { WorkflowsOf } from '@alexkroman1/aai/workflow-api';
 import { WorkflowSummary } from '@alexkroman1/aai/workflow-api';
 
 // @public
@@ -164,15 +168,14 @@ export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSess
     target?: string | HTMLElement;
     platformUrl?: string;
     theme?: ClientTheme;
+    css?: string;
     component?: ComponentType;
-    name?: string;
     sidebar?: ComponentType;
     sidebarWidth?: string;
     sidebarPosition?: "left" | "right";
     icon?: ReactNode;
     subtitle?: string;
     buttonText?: string;
-    tools?: ToolDisplayConfig;
 };
 
 export { ClientConfigResponse }
@@ -191,7 +194,23 @@ export { ClientRunsResponse }
 export { ClientRunStatus }
 
 // @public @input
-export type ClientTheme = {
+export type ClientTheme = (ClientThemeTokens & {
+    mode?: undefined;
+}) | (ClientThemePreset & {
+    bg?: undefined;
+    text?: undefined;
+    surface?: undefined;
+    border?: undefined;
+});
+
+// @public @input
+export type ClientThemePreset = {
+    primary: string;
+    mode?: "dark" | "light";
+};
+
+// @public @input
+export type ClientThemeTokens = {
     bg?: string;
     primary?: string;
     text?: string;
@@ -341,6 +360,7 @@ export function Field(input: {
 // @public
 export function fieldKindFor(schema: unknown, options?: {
     upload?: boolean | undefined;
+    render?: WorkflowFieldRender | undefined;
 }): WorkflowFieldKind;
 
 // @public @input
@@ -355,6 +375,7 @@ export type FieldShell = {
 export function FileField(input: FieldShell & {
     read?: FileReadMode;
     upload?: boolean;
+    as?: FileValueShape | undefined;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
 // @public
@@ -368,6 +389,9 @@ export type FileValue = {
     lastModified: number;
     content?: string;
 };
+
+// @public
+export type FileValueShape = "file" | "namedText";
 
 // @public
 export function Form(input: FormProps): JSX.Element;
@@ -463,6 +487,12 @@ export function mountClient(config: ClientConfig): ClientHandle;
 // @public
 export function mountPage(config?: PageConfig): PageHandle;
 
+// @public @sealed
+export type NamedTextValue = {
+    name: string;
+    text: string;
+};
+
 // @public
 export function NumberField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element;
 
@@ -504,6 +534,7 @@ export function routeFetch<T = unknown>(method: RouteMethod, path: string, body?
 export type RouteFetchOptions = {
     client?: string | undefined;
     baseUrl?: string | undefined;
+    headers?: Readonly<Record<string, string>> | undefined;
     signal?: AbortSignal | undefined;
 };
 
@@ -628,8 +659,14 @@ export type SessionSnapshot = {
 export function SessionStateDot(input: SessionStateDotProps): ReactNode;
 
 // @public @input
+export type SessionStateDotColors = Partial<Readonly<Record<AgentState | SessionStateDotGroup, string>>>;
+
+// @public
+export type SessionStateDotGroup = "idle" | "live" | "busy";
+
+// @public @input
 export type SessionStateDotProps = {
-    colors?: Partial<Readonly<Record<AgentState, string>>> | undefined;
+    colors?: SessionStateDotColors | undefined;
     labels?: Partial<Readonly<Record<AgentState, string>>> | undefined;
     pulse?: boolean | undefined;
     className?: string | undefined;
@@ -684,10 +721,15 @@ export function SubmitButton(input: {
 export type SubmitInputOf<D> = [WorkflowInputOf<D>] extends [never] ? undefined : WorkflowInputOf<D>;
 
 // @public
-export function TextAreaField(input: FieldShell & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): JSX.Element;
+export function TextAreaField(input: FieldShell & {
+    split?: TextSplitMode | undefined;
+} & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): JSX.Element;
 
 // @public
 export function TextField(props: FieldShell & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className">): JSX.Element;
+
+// @public
+export type TextSplitMode = "none" | "lines";
 
 // @public @sealed
 export type ToolCallInfo = {
@@ -723,12 +765,6 @@ export interface ToolCallRowProps {
 
 // @public
 export type ToolCallRowVariant = "default" | "compact";
-
-// @public
-export type ToolDisplayConfig = Record<string, {
-    icon?: string;
-    label?: string;
-}>;
 
 // @public
 export function UploadProgressBar(input: {
@@ -906,7 +942,7 @@ export type UsePushToTalkResult = {
 };
 
 // @public
-export function useRoute<T = unknown>(path: string | null, options?: UseRouteOptions): UseRouteResult<T>;
+export function useRoute<T = unknown>(path: string | null, options?: UseRouteOptions<T>): UseRouteResult<T>;
 
 // @public
 export function useRouteMutation(options?: UseRouteMutationOptions): UseRouteMutationResult;
@@ -926,9 +962,11 @@ export type UseRouteMutationResult = {
 };
 
 // @public @input
-export type UseRouteOptions = {
+export type UseRouteOptions<T = unknown> = {
     pollMs?: number | undefined;
+    until?: ((value: T) => boolean) | undefined;
     client?: string | undefined;
+    headers?: Readonly<Record<string, string>> | undefined;
 };
 
 // @public @sealed
@@ -1077,7 +1115,10 @@ export type UseWorkflowRunResult<R = unknown> = {
 };
 
 // @public
-export function useWorkflowRuns<R = unknown>(workflow: string | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
+export function useWorkflowRuns<App extends WorkflowAppLike = never, Name extends WorkflowNameOf<App> = WorkflowNameOf<App>>(workflow: [App] extends [never] ? never : Name | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<WorkflowOutputOf<WorkflowDefOf<App, Name>>>;
+
+// @public (undocumented)
+export function useWorkflowRuns<R = unknown>(workflow: [WorkflowsOf<R>] extends [never] ? string | undefined : never, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
 
 // @public @input
 export type UseWorkflowRunsOptions = {
@@ -1112,6 +1153,9 @@ export type UseWorkflowsResult = {
 };
 
 // @public
+export function useWorkflowStream<App extends WorkflowAppLike = never, Name extends WorkflowNameOf<App> = WorkflowNameOf<App>>(workflow: Name, options?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<WorkflowDefOf<App, Name>>, SubmitInputOf<WorkflowDefOf<App, Name>>>;
+
+// @public (undocumented)
 export function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, options?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 
 // @public @input
@@ -1123,12 +1167,17 @@ export type UseWorkflowStreamOptions = {
 };
 
 // @public
+export function useWorkflowSubmit<App extends WorkflowAppLike = never, Name extends WorkflowNameOf<App> = WorkflowNameOf<App>>(workflow: Name, options?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<WorkflowDefOf<App, Name>>, SubmitInputOf<WorkflowDefOf<App, Name>>>;
+
+// @public (undocumented)
 export function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, options?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 
 // @public @input
 export type UseWorkflowSubmitOptions = {
     api?: WorkflowApi;
-    key?: string;
+    key?: string | {
+        readonly storage?: "session" | "local" | undefined;
+    };
     recover?: boolean;
     wait?: number;
     intervalMs?: number;
@@ -1167,15 +1216,28 @@ export type WorkflowApiOptions = {
     token?: string;
 };
 
-// @public
-export type WorkflowFieldKind = "text" | "number" | "select" | "checkbox" | "file" | "none" | (string & {});
+export { WorkflowAppLike }
+
+export { WorkflowDefOf }
 
 // @public
-export function WorkflowFields(input: {
-    workflow?: WorkflowSummary | string | undefined;
-}): JSX.Element | null;
+export type WorkflowFieldKind = "text" | "number" | "select" | "checkbox" | "file" | "lines" | "namedText" | "none" | (string & {});
+
+// @public
+export type WorkflowFieldRender = "lines" | "namedText";
+
+// @public
+export function WorkflowFields<App extends WorkflowAppLike = WorkflowAppLike>(input: WorkflowFieldsProps<App>): JSX.Element | null;
+
+// @public @input
+export type WorkflowFieldsProps<App extends WorkflowAppLike = WorkflowAppLike> = {
+    workflow?: WorkflowSummary | WorkflowNameOf<App> | undefined;
+    render?: Readonly<Record<string, WorkflowFieldRender>> | undefined;
+};
 
 export { WorkflowInputOf }
+
+export { WorkflowNameOf }
 
 export { WorkflowOutputOf }
 
@@ -1188,9 +1250,11 @@ export type WorkflowPendingNoteProps = {
         readonly pending: boolean;
         readonly startedHere: boolean;
         readonly run: WorkflowRun | undefined;
+        readonly scope?: WorkflowSubmissionScope | undefined;
+        readonly upload?: UploadStatus | undefined;
     };
     subject?: string | undefined;
-    scope?: "tab" | "browser" | undefined;
+    scope?: WorkflowSubmissionScope | undefined;
     className?: string | undefined;
 };
 
@@ -1231,6 +1295,8 @@ export type WorkflowRunPanelProps<O> = {
 
 export { WorkflowRunStatus }
 
+export { WorkflowsOf }
+
 // @public
 export type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmission<R, I>;
 
@@ -1248,6 +1314,20 @@ export type WorkflowSubmission<R = unknown, I = unknown> = {
     pauseUpload: () => void;
     resumeUpload: () => void;
     error: string | undefined;
+    timing: WorkflowSubmissionTiming;
+    scope: WorkflowSubmissionScope;
+};
+
+// @public
+export type WorkflowSubmissionOf<D> = WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
+
+// @public
+export type WorkflowSubmissionScope = "tab" | "browser" | "none";
+
+// @public @sealed
+export type WorkflowSubmissionTiming = {
+    submittedAt?: number | undefined;
+    settledAt?: number | undefined;
 };
 
 export { WorkflowSummary }

@@ -36,25 +36,12 @@
  *
  * ## What it needs
  *
- * - **`ASSEMBLYAI_API_KEY` in the agent env** — `.env` under `aai dev`,
- *   `aai secret put ASSEMBLYAI_API_KEY` once deployed. One key covers all
- *   three services this uses: transcription, the LLM Gateway, and the voice.
- *   `requiredEnv` below is what makes a deploy check for it rather than letting
- *   the first run find out.
- * - **A `DATABASE_URL`** — a secret when deployed, `.env` under `aai dev`, and a
- *   Postgres you bring since the platform provisions none. REQUIRED here, and
- *   more so than for most workflow apps: an upload's record is a row, and this
- *   app uses uploads at BOTH ends — the recording coming in and the summary
- *   going out.
- *
- * ## The recording is UPLOADED, and the run carries its id
- *
- * A workflow's input is journaled and replayed on every resume, so a
- * recording's BYTES cannot live in it. So the file goes to
- * `POST /workflows/uploads` (the browser does this for you: `uploads` below is
- * what makes `<WorkflowFields>` render a file picker, and `useWorkflowSubmit`
- * stores the file before starting the run), the input carries the returned id,
- * and the step that needs the bytes streams them out with `stepReadUpload`.
+ * `ASSEMBLYAI_API_KEY` in the agent env — `.env` under `aai dev`, `aai secret
+ * put ASSEMBLYAI_API_KEY` once deployed. One key covers all three services this
+ * uses: transcription, the LLM Gateway, and the voice. It is `workflowApp()`'s
+ * default `requiredEnv`, so a deploy checks for it. Uploads at both ends — the
+ * recording in, the summary out — are platform storage with nothing to
+ * provision.
  *
  * ## It is scriptable, which is the other half of having an API
  *
@@ -77,9 +64,8 @@
 
 import { workflow, workflowApp } from "@alexkroman1/aai";
 import { ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
-import type { WorkflowDef } from "@alexkroman1/aai/workflow-api";
 import { z } from "zod";
-import { type SpokenSummary, spokenSummaryFlow } from "./workflows/summarize.ts";
+import { spokenSummaryFlow } from "./workflows/summarize.ts";
 
 /**
  * The voices the form offers: the SDK's library voices, as the tuple `z.enum`
@@ -96,15 +82,10 @@ import { type SpokenSummary, spokenSummaryFlow } from "./workflows/summarize.ts"
 export const VOICES = ASSEMBLYAI_TTS_VOICES;
 
 /**
- * The run input, as its own const.
- *
- * Named rather than inline because {@link spokenSummary} carries an explicit
- * type, and that annotation is what lets `workflows/summarize.ts` name
- * `WorkflowInputOf<typeof spokenSummary>` for its body's parameter: the body's
- * own signature would otherwise be part of what infers this declaration's type,
- * and TypeScript refuses the cycle (`TS7022`).
+ * The run input. Named so the body can take
+ * `WorkflowInputOf<typeof spokenSummaryInput>` — the schema's own output.
  */
-const spokenSummaryInput = z.object({
+export const spokenSummaryInput = z.object({
   // A plain string, because an upload id is what the run really receives.
   // What makes it a file picker rather than a text box is the `uploads` line
   // below.
@@ -116,19 +97,18 @@ const spokenSummaryInput = z.object({
 });
 
 /**
- * The declaration: schema, description, and the directive body.
+ * The declaration: schema, description, and the body.
  *
  * Exported so `WorkflowOutputOf<typeof spokenSummary>` names the output type in
  * one place — including from `client.tsx`, where `import type` is erased and so
- * bundles nothing server-side — and so `workflows/summarize.ts` can name
- * `WorkflowInputOf<typeof spokenSummary>` for the body's parameter.
+ * bundles nothing server-side.
  */
-export const spokenSummary: WorkflowDef<typeof spokenSummaryInput, SpokenSummary> = workflow({
+export const spokenSummary = workflow({
   description: "Transcribe a recording, summarize it, and read the summary back as audio",
   input: spokenSummaryInput,
   // The one line that makes the form take a file: `<WorkflowFields>` renders a
   // picker for this property, `useWorkflowSubmit` stores the chosen file, and
-  // the step that transcribes it reads it back with `stepReadUpload`.
+  // the step that transcribes it reads it back.
   uploads: ["recording"],
   run: spokenSummaryFlow,
 });
@@ -138,11 +118,6 @@ export default workflowApp({
   // The listing line — a registry row, the studio's picker, `aai list`; never
   // the model, which a workflow app does not have. It names what comes OUT,
   // which is what tells this desk apart from every other one that takes audio.
-  description: "Turns a recording into a written summary and an audio one you can play back",
+  listing: "Turns a recording into a written summary and an audio one you can play back",
   workflows: { spokenSummary },
-  // Checked at deploy time, so a missing key is a warning naming it rather than
-  // a run that fails on its second step. A workflow app declares no providers,
-  // so this is the only thing that can name the credential its steps read — and
-  // this one key covers transcription, the model and the voice alike.
-  requiredEnv: ["ASSEMBLYAI_API_KEY"],
 });

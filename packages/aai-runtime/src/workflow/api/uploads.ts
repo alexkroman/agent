@@ -57,7 +57,7 @@
 import type http from "node:http";
 import { UPLOAD_CLAIM_BATCH, UPLOAD_TOKEN_RE } from "@alexkroman1/aai/host-internal";
 import { requestQuery, WORKFLOW_API_PREFIX } from "@alexkroman1/aai/internal";
-import type { UploadInfo } from "@alexkroman1/aai/step";
+import type { UploadRecord } from "@alexkroman1/aai/step";
 import { decodePathSegment } from "../../_path-decode.ts";
 import type { Logger } from "../../logger.ts";
 import type { UploadMeta, UploadStore } from "../uploads.ts";
@@ -121,7 +121,7 @@ export function uploadIdOr400(
 }
 
 /** What `POST` and `PUT /workflows/uploads` answer with. */
-export type UploadCreated = UploadInfo & {
+export type UploadCreated = UploadRecord & {
   /**
    * Present and `true` when a part's bytes go to the PLATFORM rather than here.
    *
@@ -183,7 +183,7 @@ async function answerWholeUpload(
   res: http.ServerResponse,
   logger: Logger,
   message: string,
-  write: () => Promise<UploadInfo>,
+  write: () => Promise<UploadRecord>,
 ): Promise<void> {
   try {
     const info = await write();

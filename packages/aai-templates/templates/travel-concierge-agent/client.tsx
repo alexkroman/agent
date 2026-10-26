@@ -120,27 +120,6 @@ function ItinerarySidebar() {
 }
 
 mountClient({
-  name: "Swiss Air Concierge",
   sidebar: ItinerarySidebar,
-  theme: {
-    bg: "#0d1117",
-    primary: "#e35d5b",
-    text: "#eef2f6",
-    surface: "#161d27",
-    border: "#232c38",
-  },
-  tools: {
-    to_flight_assistant: { icon: "\u{2708}", label: "Flight desk" },
-    to_hotel_assistant: { icon: "\u{1F3E8}", label: "Hotel desk" },
-    to_car_rental_assistant: { icon: "\u{1F697}", label: "Car desk" },
-    to_excursion_assistant: { icon: "\u{1F5FA}", label: "Excursions desk" },
-    complete_or_escalate: { icon: "\u{21A9}", label: "Back to concierge" },
-    confirm_action: { icon: "\u{2705}", label: "Applying change" },
-    cancel_action: { icon: "\u{274C}", label: "Discarding change" },
-    update_ticket: { icon: "\u{1F39F}", label: "Staging ticket change" },
-    cancel_ticket: { icon: "\u{1F5D1}", label: "Staging cancellation" },
-    book_hotel: { icon: "\u{1F6CF}", label: "Staging hotel" },
-    book_car_rental: { icon: "\u{1F511}", label: "Staging car" },
-    book_excursion: { icon: "\u{1F3AB}", label: "Staging excursion" },
-  },
+  theme: { primary: "#e35d5b", mode: "dark" },
 });

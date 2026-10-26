@@ -17,6 +17,7 @@ import { z } from "zod";
 import { makeLogger } from "../_logger-test-utils.ts";
 import { createWorkflowClient, type WdkAdapter, type WdkRunRecord } from "./client.ts";
 import { createMemoryKeyStore, type WorkflowKeyStore } from "./keys.ts";
+import type { WdkStartOptions } from "./wdk-types.ts";
 
 /** A workflow body. Identity is the key it is declared under, so this carries none. */
 function body<I, R>(result?: R): WorkflowBody<I, R> {
@@ -60,7 +61,12 @@ function record(over: Partial<WdkRunRecord> = {}): WdkRunRecord {
 
 function makeAdapter(over: Partial<WdkAdapter> = {}): WdkAdapter {
   return {
-    start: vi.fn(async () => "wrun_1"),
+    // The real engine runs the client's key-index write (`index`) before it
+    // hands the id back; the fake does the same, so the index is observable.
+    start: vi.fn(async (_name: string, _args: unknown[], options?: WdkStartOptions) => {
+      await options?.index?.("wrun_1");
+      return "wrun_1";
+    }),
     getRun: vi.fn(async () => record()),
     listRuns: vi.fn(async () => []),
     cancel: vi.fn(async () => true),
@@ -109,9 +115,14 @@ describe("starting a run", () => {
   test("resolves the declared name from the definition by identity", async () => {
     const { client, wdk, keys } = makeClient();
     await client.start(digest, { topic: "otters" }, { key: "sess-1" });
-    // The workflowId reaches WDK; the NAME is what the key index records, so a
+    // The workflowId reaches WDK, and so does the key — the engine journals it
+    // for the body's `ctx.key`; the NAME is what the key index records, so a
     // workflow moved between modules keeps its keys.
-    expect(wdk.start).toHaveBeenCalledWith(DIGEST_ID, [{ topic: "otters" }]);
+    expect(wdk.start).toHaveBeenCalledWith(DIGEST_ID, [{ topic: "otters" }], {
+      key: "sess-1",
+      // The index write rides the engine's start — see `WdkStartOptions.index`.
+      index: expect.any(Function),
+    });
     expect(await keys.lookup("digest", "sess-1", 10)).toEqual(["wrun_1"]);
   });
 
@@ -386,7 +397,8 @@ describe("signalling a parked run", () => {
     const signal = vi.fn(async () => true);
     const { client } = makeClient({ wdk: { signal } });
     await client.signal("retention:s_1", { keep: true });
-    expect(signal).toHaveBeenCalledWith("retention:s_1", { keep: true });
+    // An empty options bag: no hold was asked for, and `undefined` is not sent.
+    expect(signal).toHaveBeenCalledWith("retention:s_1", { keep: true }, {});
   });
 
   test("substitutes an EMPTY OBJECT for an omitted payload, not undefined", async () => {
@@ -396,7 +408,7 @@ describe("signalling a parked run", () => {
     const signal = vi.fn(async () => true);
     const { client } = makeClient({ wdk: { signal } });
     await client.signal("stop:s_1");
-    expect(signal).toHaveBeenCalledWith("stop:s_1", {});
+    expect(signal).toHaveBeenCalledWith("stop:s_1", {}, {});
   });
 });
 
@@ -585,6 +597,40 @@ describe("listing declared workflows", () => {
       // separately, so this is the pair that has to move together.
       properties: { everyDays: { default: 1 } },
       required: ["topic"],
+    });
+  });
+
+  test("serves the three shapes `<WorkflowFields>` reads for a nullable enum, a literal union and a numeric set", () => {
+    // Pinned against the real converter, because `aai-ui` has no zod to call:
+    // its `workflow-field-kind.test.ts` reads these three literals back. A
+    // REQUIRED nullable enum is an `anyOf` (where a bare nullable string is the
+    // type LIST), a union of literals is an `anyOf` of `const`s, and a numeric
+    // literal set is a numeric `enum` — each used to reach the form as no
+    // control, or as a `"1"` the schema then refused.
+    const choosy = workflow({
+      input: z.object({
+        tone: z.enum(["x", "y"]).nullable(),
+        mood: z.union([z.literal("p"), z.literal("q")]),
+        stars: z.literal([1, 2]),
+        note: z.string().nullable(),
+      }),
+      run: body(),
+    });
+    const { client } = makeClient({ workflows: { choosy } });
+    const [summary] = client.listing();
+    expect(summary?.inputSchema).toMatchObject({
+      properties: {
+        tone: { anyOf: [{ type: "string", enum: ["x", "y"] }, { type: "null" }] },
+        mood: {
+          anyOf: [
+            { type: "string", const: "p" },
+            { type: "string", const: "q" },
+          ],
+        },
+        stars: { type: "number", enum: [1, 2] },
+        note: { type: ["string", "null"] },
+      },
+      required: ["tone", "mood", "stars", "note"],
     });
   });
 

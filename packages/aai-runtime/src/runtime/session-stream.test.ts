@@ -233,7 +233,7 @@ describe("attachSessionStream — a client's prior sessions (`memory`)", () => {
     const backend = createMemoryStateBackend();
     const other = createSessionEventStream({ backend });
     for (const text of texts) other.append(backendSid, { type: "userTranscript.committed", text });
-    const ended = vi.fn<(lastEventIndex: number) => void>();
+    const ended = vi.fn<SessionMemory["ended"]>(async () => undefined);
     const memory: SessionMemory = {
       open: async () => (await readAllEvents(other, backendSid)).slice(),
       refused: undefined,
@@ -303,16 +303,50 @@ describe("attachSessionStream — a client's prior sessions (`memory`)", () => {
     stream.append(SID, { type: "speech.started" });
     stream.append(SID, { type: "speech.started" });
     let storedWhenTold = -1;
-    ended.mockImplementation(() => {
-      void backend.countEvents(SID).then((n) => {
-        storedWhenTold = n;
-      });
+    ended.mockImplementation(async () => {
+      storedWhenTold = await backend.countEvents(SID);
     });
 
     await core.stop();
 
-    expect(ended).toHaveBeenCalledWith(1);
+    expect(ended).toHaveBeenCalledWith(1, []);
     await vi.waitFor(() => expect(storedWhenTold).toBe(2));
+  });
+
+  test("the memory is handed the transcript from MEMORY: a resume's own log, then what this process said", async () => {
+    const backend = createMemoryStateBackend();
+    const before = createSessionEventStream({ backend });
+    before.append(SID, { type: "userTranscript.committed", text: "earlier" });
+    await before.flush(SID);
+    const { memory, ended } = priorMemory("other", []);
+    const core = makeMockCore();
+    const stream = createSessionEventStream({ backend });
+    attachSessionStream(core, { stream, sessionId: SID, resumed: true, memory });
+    await core.start();
+    stream.append(SID, { type: "agentTranscript.committed", text: "now" });
+    // The backend is not consulted on the way out: the lines are already held.
+    backend.readEvents = () => Promise.reject(new Error("store down"));
+
+    await core.stop();
+
+    expect(ended).toHaveBeenCalledWith(1, [
+      { role: "user", text: "earlier", at: expect.any(Number) },
+      { role: "assistant", text: "now", at: expect.any(Number) },
+    ]);
+  });
+
+  test("a second stop — a superseded reconnect plus its socket closing — tells the memory ONCE", async () => {
+    const { memory, ended } = priorMemory("earlier", []);
+    const core = makeMockCore();
+    attachSessionStream(core, {
+      stream: createSessionEventStream({ backend: createMemoryStateBackend() }),
+      sessionId: SID,
+      resumed: false,
+      memory,
+    });
+    await core.stop();
+    await core.stop();
+    expect(ended).toHaveBeenCalledTimes(1);
   });
 
   test("a session that recorded nothing ends at -1", async () => {
@@ -325,7 +359,7 @@ describe("attachSessionStream — a client's prior sessions (`memory`)", () => {
       memory,
     });
     await core.stop();
-    expect(ended).toHaveBeenCalledWith(-1);
+    expect(ended).toHaveBeenCalledWith(-1, []);
   });
 });
 

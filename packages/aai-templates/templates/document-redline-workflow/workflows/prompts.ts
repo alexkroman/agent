@@ -52,9 +52,6 @@ export const CRITIC_SYSTEM = [
   "it stands; 'revise' means at least one of your notes is worth another pass.",
   "Be willing to say 'ship': a piece that is already good does not improve by",
   "being sent round again, and every extra round costs the person waiting.",
-  // The shape comes from the schema, through `stepGenerateJson`. What is left
-  // is the judgement a schema cannot carry: how many notes, and in what order.
-  "Three notes at most, ordered by how much they matter.",
 ].join(" ");
 
 /** Their generation node re-entered with the critique in the conversation. */

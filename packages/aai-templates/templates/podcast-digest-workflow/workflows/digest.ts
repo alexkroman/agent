@@ -63,7 +63,7 @@ import {
 import { FatalError, orFail } from "@alexkroman1/aai/step-errors";
 import { errorMessage, plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import type { dailyDigest } from "../agent.ts";
+import type { digestInput } from "../agent.ts";
 import { discoverEpisodes, type Episode } from "./feeds.ts";
 import { describeDestination, sendDigestToSlack } from "./slack.ts";
 
@@ -112,14 +112,10 @@ const POLL_CONCURRENCY = 3;
 
 /**
  * What a run is started with — the schema's OUTPUT, so every `.default()` has
- * already run and nothing here is optional.
- *
- * Derived rather than restated. The hand-written version this replaces declared
- * six optional fields against a schema where all six carry a default, so the
- * body re-applied every one of them with `??` and a `.default(5)` beside a
- * `?? 3` could disagree with nothing reporting it.
+ * already run and nothing here is optional. Derived rather than restated, so a
+ * `.default(5)` and a `?? 3` cannot disagree with nothing reporting it.
  */
-export type DigestInput = WorkflowInputOf<typeof dailyDigest>;
+export type DigestInput = WorkflowInputOf<typeof digestInput>;
 
 export type IntervalUnit = "minutes" | "hours" | "days";
 
@@ -174,10 +170,20 @@ export type DailyDigestOutput = {
   } | null;
 };
 
-/** What the model must answer with, and what `orFail(stepGenerateJson)` enforces. */
+/**
+ * What the model must answer with, and what `orFail(stepGenerateJson)` enforces.
+ * The SDK renders it into the prompt as JSON Schema, so the per-field rules
+ * live on the fields.
+ */
 const SummaryReply = z.object({
-  summary: z.string().trim().min(1),
-  keyPoints: z.array(z.string().trim().min(1)).min(1).max(5),
+  summary: z.string().trim().min(1).describe("A few sentences"),
+  keyPoints: z
+    .array(z.string().trim().min(1))
+    .min(1)
+    .max(5)
+    .describe(
+      '3 to 5 concrete key points — decisions, numbers, names, claims — never "the hosts discussed several topics"',
+    ),
 });
 
 /**
@@ -215,16 +221,15 @@ export async function dailyDigestFlow(
     const episodes = await ctx.step("discoverEpisodes", () =>
       discoverEpisodes(input.podcastChannels, maxEpisodes),
     );
-    // `maxAttempts` was a `maxRetries` property on each function (4, 4, 5 —
-    // retries AFTER the first attempt, so 5, 5, 6 in all). It is an argument to
-    // the CALL now, which is where a policy belongs: the same function called
-    // from two places may deserve different patience.
+    // `maxWaits` on every provider step: a rate limit carrying `Retry-After`
+    // is waited out rather than charged as an attempt, so the default three
+    // are spent on the step's own failures.
     const jobs = await mapConcurrent(episodes, SUBMIT_CONCURRENCY, (episode) =>
-      ctx.step("submitTranscript", () => submitTranscript(episode), { maxAttempts: 5 }),
+      ctx.step("submitTranscript", () => submitTranscript(episode), { maxWaits: 3 }),
     );
     const transcripts = await waitForTranscripts(jobs, ctx);
     const digests = await mapConcurrent(transcripts, SUBMIT_CONCURRENCY, (transcript) =>
-      ctx.step("summarizeTranscript", () => summarizeTranscript(transcript), { maxAttempts: 6 }),
+      ctx.step("summarizeTranscript", () => summarizeTranscript(transcript), { maxWaits: 3 }),
     );
 
     // Both at once: the clock read does not depend on what Slack said, and the
@@ -314,7 +319,7 @@ async function waitForTranscripts(
 
   for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS && pending.length > 0; attempt += 1) {
     const polled = await mapConcurrent(pending, POLL_CONCURRENCY, (job) =>
-      ctx.step("pollTranscript", () => pollTranscript(job), { maxAttempts: 5 }),
+      ctx.step("pollTranscript", () => pollTranscript(job), { maxWaits: 3 }),
     );
     for (const state of polled) {
       if (state.transcriptStatus !== "submitted") settled.set(state.id, state);
@@ -436,14 +441,7 @@ export async function summarizeTranscript(state: TranscriptState): Promise<Episo
       "Transcript:",
       state.transcript.text.slice(0, MAX_TRANSCRIPT_CHARS),
     ].join("\n"),
-    {
-      schema: SummaryReply,
-      system:
-        "You summarize podcast transcripts for a daily digest. Reply with JSON only: " +
-        '{"summary": string, "keyPoints": string[]}. Keep the summary to a few sentences ' +
-        "and give 3 to 5 concrete key points — decisions, numbers, names, claims — never " +
-        '"the hosts discussed several topics".',
-    },
+    { schema: SummaryReply, system: "You summarize podcast transcripts for a daily digest." },
   );
 
   return {

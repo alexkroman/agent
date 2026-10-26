@@ -8,20 +8,14 @@ export default gameSlot.updateTool({
   inputSchema: z.object({
     value: z.string().describe("Item name to drop"),
   }),
+  // Dropping something the player never took is a sentence for the narrator,
+  // not a silent no-op reporting the unchanged inventory.
+  require: (game, { value }) =>
+    game.inventory.includes(value)
+      ? undefined
+      : toolFailure(`The player is not carrying ${value}, so there is nothing to drop.`),
   execute(args, game, ctx) {
-    // A drop of something the player never took used to answer with the
-    // unchanged inventory, leaving the narrator to notice the item was missing
-    // from a list it had asked a different question of. A `ToolFailure` is the
-    // SDK's way to say the sentence instead — recoverable, model-facing, and
-    // nothing is written on this path.
-    if (!game.inventory.includes(args.value)) {
-      return toolFailure(`The player is not carrying ${args.value}, so there is nothing to drop.`);
-    }
     game.inventory = game.inventory.filter((i) => i !== args.value);
-
-    // `ctx.random` rather than `Math.random`: in production it IS the global,
-    // and what it buys is a spec that can state which turns the scavenger took
-    // something instead of asserting a range.
     const takenByScavenger = ctx.random() < SCAVENGER_CHANCE;
     if (takenByScavenger) game.flags[SCAVENGER_FLAG] = true;
     return { inventory: game.inventory, takenByScavenger };

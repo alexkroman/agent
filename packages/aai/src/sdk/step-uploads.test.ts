@@ -9,6 +9,7 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { FatalError } from "./step-error-classes.ts";
 import {
   publishUploadReader,
   stepReadUpload,
@@ -75,9 +76,11 @@ describe("stepReadUpload", () => {
     expect(reads).toEqual([{ start: 0, end: 3 }]);
   });
 
-  test("fails by NAME on an id that names no upload", async () => {
+  test("fails by NAME on an id that names no upload, FATALLY — no attempt answers differently", async () => {
     publish(new Uint8Array(1));
-    await expect(stepReadUpload("upl_gone")).rejects.toThrow(/No upload with id upl_gone/);
+    const err = await stepReadUpload("upl_gone").catch((e: unknown) => e);
+    expect(err).toSatisfy(FatalError.is);
+    expect((err as Error).message).toMatch(/No upload with id upl_gone/);
   });
 
   test("fails with the fix when no store was published", async () => {
@@ -159,15 +162,51 @@ describe("stepUploadInfo", () => {
     await expect(stepUploadInfo("upl_1")).resolves.toEqual({
       id: "upl_1",
       name: "a.wav",
+      label: "a.wav",
       type: "audio/wav",
       size: 4,
       complete: true,
     });
   });
 
-  test("fails by name on a missing upload", async () => {
+  test("fails by name on a missing upload, fatally", async () => {
     publish(new Uint8Array(1));
-    await expect(stepUploadInfo("upl_gone")).rejects.toThrow(/No upload with id/);
+    const err = await stepUploadInfo("upl_gone").catch((e: unknown) => e);
+    expect(err).toSatisfy(FatalError.is);
+    expect((err as Error).message).toMatch(/No upload with id/);
+  });
+});
+
+describe("UploadInfo.label", () => {
+  test("is the filename when the uploader gave one", async () => {
+    publish(new Uint8Array([1]));
+    expect((await stepUploadInfo("upl_1")).label).toBe("a.wav");
+  });
+
+  test("falls back to the id for a nameless upload — and a whitespace name counts as none", async () => {
+    // `""` is what the store answers for an uploader that named nothing, and a
+    // progress line reading "Transcribing  " is the failure the fallback removes.
+    publish(new Uint8Array([1]), {
+      info: async (id) => ({ id, name: "   ", type: "", size: 1, complete: true }),
+    });
+    expect((await stepUploadInfo("upl_1")).label).toBe("upl_1");
+  });
+
+  test("rides every reader: a slice's record carries it too", async () => {
+    publish(new Uint8Array([1, 2, 3]));
+    const slice = await stepReadUpload("upl_1", { start: 0, end: 1 });
+    expect(slice.info.label).toBe("a.wav");
+  });
+
+  test("is derived HERE, not read off the store — a store cannot disagree with `name`", async () => {
+    // A fake that answers a `label` of its own is handed the SDK's rule anyway:
+    // the field is computed from `name`, so the two can never say different
+    // things about one upload.
+    publish(new Uint8Array([1]), {
+      info: async (id) =>
+        ({ id, name: "real.wav", label: "stale", type: "", size: 1, complete: true }) as never,
+    });
+    expect((await stepUploadInfo("upl_1")).label).toBe("real.wav");
   });
 });
 

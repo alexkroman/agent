@@ -8,16 +8,19 @@
 import { invariant } from "@alexkroman1/aai/internal";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "../logger.ts";
 import {
   composeSessionGreeting,
   createResumeFindings,
   createSessionCore,
+  createTurnCounter,
   type ServerSession,
   type SessionDirectory,
 } from "../session/index.ts";
 import type { ClientToolBroker } from "../tools/index.ts";
 import type { TransportCallbacks } from "../transports/types.ts";
+import { type RunNotifier, withNotify } from "../workflow/notify.ts";
 import { openSessionWiring } from "./session-controls.ts";
 import { openSessionMemory } from "./session-memory.ts";
 import { attachSessionState, type RuntimeSessionState } from "./session-state.ts";
@@ -44,7 +47,11 @@ export type SessionFactoryDeps = {
   /** Relay (host) mode's tool-result hook, when this runtime relays tools. */
   relayToolResult: HostRuntimeOptions["onToolResult"];
   /** What a session's memory and recall read — shared with the route table. */
-  recall: Omit<Parameters<typeof openSessionMemory>[0], "sessionId" | "prompt">;
+  recall: Omit<Parameters<typeof openSessionMemory>[0], "sessionId" | "prompt" | "slots">;
+  /** The runtime's `ctx.workflows`, scoped per session below; absent for an agent with none. */
+  workflows: WorkflowClient | undefined;
+  /** Watches the runs a tool asked to be told about — `workflow/notify.ts`. */
+  notifier: RunNotifier | undefined;
 };
 
 /** The runtime's `createSession`, over its runtime-scoped collaborators. */
@@ -57,10 +64,14 @@ export function createSessionFactory(
     // A resume under this id (same key, new socket) reclaims its tool state —
     // cancel the sweep the previous session's stop() scheduled.
     sessionState.sweeps.cancel(sessionOpts.id);
+    // The committed-turn count: `ctx.turn` for a tool, and `turn` on the
+    // context a resolver or guardrail is handed — so it exists BEFORE the
+    // wiring that builds that context.
+    const turns = createTurnCounter();
     // Everything one session is wired with before its transport exists — the
     // event emitter and its hooks, the dialogs that address the prompt, the
     // token meter and the guardrails. See `session-controls.ts`.
-    const { dialogs, personas, emitter, usage, guardrails } = openSessionWiring({
+    const { dialogs, personas, emitter, usage, guardrails, slots } = openSessionWiring({
       agent,
       env,
       sessionId: sessionOpts.id,
@@ -71,9 +82,18 @@ export function createSessionFactory(
       transport: () => transport,
       logger,
       speech: sessions.speech.of(sessionOpts.id),
+      turns,
       ...omitUndefined({ commitSessionState: tools.commitSessionState }),
     });
-    const wiring = { sink: sessionOpts.client, emitter, meter: usage };
+    const wiring = {
+      sink: sessionOpts.client,
+      emitter,
+      meter: usage,
+      turns,
+      // Scoped to THIS session once, here, and read per tool call by id
+      // (`tools.ts`), as the meter and the turn count are.
+      workflows: withNotify(deps.workflows, deps.notifier, sessionOpts.id),
+    };
     const releaseWiring = sessions.claimWiring(sessionOpts.id, wiring);
 
     // Late-bound: callbacks are built before the ServerSession, filled in below.
@@ -100,7 +120,13 @@ export function createSessionFactory(
     const findings = createResumeFindings();
     const { id, skipGreeting, resumed } = sessionOpts;
     // Before the transport, which reads the greeting `sessionContext` answered.
-    const memory = openSessionMemory({ ...deps.recall, sessionId: id, prompt: dialogs.prompt });
+    const memory = openSessionMemory({
+      ...deps.recall,
+      sessionId: id,
+      prompt: dialogs.prompt,
+      // The SAME slot view the hooks and resolvers read (`session-controls.ts`).
+      slots,
+    });
     const transport = deps.buildTransport({
       sessionOpts: {
         ...sessionOpts,
@@ -129,6 +155,7 @@ export function createSessionFactory(
       logger,
       ...omitUndefined({ onToolResult: deps.relayToolResult }),
       clientTools: deps.clientTools,
+      turns: wiring.turns,
     });
 
     // Hydration in, reclamation out — `attachSessionState` owns both orderings

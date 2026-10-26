@@ -85,20 +85,9 @@ function OrderSidebar() {
   );
 }
 
+// The name and each tool's icon and label come from the agent (`agent.ts`,
+// `tool({ ui })` in `tools/`), served with the client config.
 mountClient({
-  name: "Pizza Palace",
   sidebar: OrderSidebar,
-  theme: {
-    bg: "#1a1008",
-    primary: "#E8A025",
-    text: "#f5f0e8",
-    surface: "#2a1f10",
-    border: "#3d2e18",
-  },
-  tools: {
-    add_pizza: { icon: "\u{1F355}", label: "Adding pizza" },
-    remove_pizza: { icon: "\u{1F5D1}", label: "Removing pizza" },
-    update_pizza: { icon: "\u{270F}", label: "Updating pizza" },
-    place_order: { icon: "\u{2705}", label: "Placing order" },
-  },
+  theme: { primary: "#E8A025", mode: "dark" },
 });

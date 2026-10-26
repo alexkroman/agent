@@ -21,6 +21,7 @@ import type { Logger } from "../logger.ts";
 import type { ClientToolBroker } from "../tools/index.ts";
 import type { Transport, TransportEventBody } from "../transports/types.ts";
 import type { SessionEmitter } from "./emitter.ts";
+import type { TurnCounter } from "./turn-counter.ts";
 
 /**
  * Configuration for {@link createSessionCore}.
@@ -65,6 +66,13 @@ export type ServerSessionOptions = {
    * changes nothing about how the session emits tool calls.
    */
   clientTools?: Pick<ClientToolBroker, "answer">;
+  /**
+   * The session's committed-turn counter (`turn-counter.ts`), claimed in the
+   * directory beside the meter so a tool call reads `ctx.turn` by session id.
+   * The core is what sees a turn commit, a history restore and a clear, so it
+   * is what drives it. Absent, the count is kept but reachable by nobody.
+   */
+  turns?: TurnCounter | undefined;
 };
 
 /**

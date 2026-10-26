@@ -15,7 +15,8 @@
  * import { createTextAgent } from "@alexkroman1/aai-runtime";
  *
  * const chat = createTextAgent({
- *   agent: agent({ name: "Helper", mode: "text", systemPrompt: "Be brief." }),
+ *   // The prompt is the project's `system-prompt.md`, lowered by the build.
+ *   agent: agent({ name: "Helper", mode: "text" }),
  *   env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
  * });
  * const result = chat.stream({ messages: [{ role: "user", content: "hi" }] });
@@ -55,16 +56,13 @@
  */
 
 import type { AgentSessionContext, Message } from "@alexkroman1/aai";
-import {
-  createDetachedSlotStore,
-  staticSystemPrompt,
-  systemPromptResolver,
-} from "@alexkroman1/aai/host-internal";
+import { createDetachedSlotStore, resolveAgentInstructions } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_MAX_STEPS } from "@alexkroman1/aai/internal";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
 import { agentToolsets, agentToolsToSchemas } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { type LanguageModel, stepCountIs, streamText, type ToolSet } from "ai";
 import {
   composePreparers,
@@ -74,6 +72,7 @@ import {
 import { createGenerateFn } from "../generate.ts";
 import { consoleLogger } from "../logger.ts";
 import { resolveLlm } from "../providers/resolve.ts";
+import { userTurnsIn } from "../session/index.ts";
 import { createSubagentRunner } from "../subagent.ts";
 import {
   createFatalToolLatch,
@@ -87,6 +86,7 @@ import {
   withFatalSignal,
 } from "../tools/index.ts";
 import { createUsageMeter } from "../usage-meter.ts";
+import { forSession } from "../workflow/client-session.ts";
 import { createTextAgentEvents } from "./events.ts";
 import { toContextMessages } from "./messages.ts";
 // Imported as well as re-exported below: a re-export does not bring a name into
@@ -252,13 +252,31 @@ export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
   });
 
   /**
-   * What a per-session author function is handed — a `systemPrompt` resolver
-   * here, and nothing else yet: guardrails are refused in text mode
-   * (`assertGuardrailScope`) because this door returns the model stream
-   * directly and owns no point at which to hold a reply.
+   * What a per-session author function is handed — a `systemPrompt` or
+   * `promptContext` resolver here, and nothing else yet: guardrails are
+   * refused in text mode (`assertGuardrailScope`) because this door returns
+   * the model stream directly and owns no point at which to hold a reply.
+   * Per TURN, because `turn` is the count of user messages in the history
+   * that turn was handed — what a session counts as committed transcripts.
    */
-  const sessionContext: AgentSessionContext = { sessionId, env, slots };
-  const instructions = systemPromptResolver(agent.systemPrompt);
+  const contextFor = (messages: readonly Message[]): AgentSessionContext => ({
+    sessionId,
+    env,
+    slots,
+    turn: userTurnsIn(messages),
+  });
+
+  /**
+   * `ctx.workflows` for one tool call: the runtime's client with `"session"`
+   * (and an absent start key) resolved to the call's session id — the same
+   * `forSession` the voice door's wiring applies (`runtime/session-factory.ts`,
+   * `runtime/tools.ts`). Handed in RAW, a tool's `ctx.workflows.start(def,
+   * input)` started a KEYLESS run: the body's `ctx.waitForSignal` threw, and
+   * the `workflow_*` builtins, keyed by `ctx.sessionId`, could not see what
+   * the conversation had started.
+   */
+  const workflowsFor = (callSessionId: string): WorkflowClient | undefined =>
+    options.workflows && forSession(options.workflows, callSessionId);
 
   const executeTool = createToolDispatcher(toolsets, (toolset, call) =>
     executeToolCall(call.name, call.args, {
@@ -269,8 +287,12 @@ export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
       // conversation, which is what makes its slots mean the same thing here as
       // in a session.
       sessionId: call.sessionId || sessionId,
-      workflows: options.workflows,
+      workflows: workflowsFor(call.sessionId || sessionId),
       messages: call.messages,
+      // One text agent is one conversation, and its turns ARE the user
+      // messages the caller hands each `stream()`: what a session counts as
+      // committed transcripts, this door counts off the history it was given.
+      turn: userTurnsIn(call.messages ?? []),
       generate,
       subagents,
       // A text agent's tools spend on the same meter its turns do — one
@@ -346,7 +368,8 @@ export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
       // agent's turns are not serialized (two `stream()` calls may overlap), so
       // a shared latch would let one run's fatal tool abort another's request.
       const fatalTool = createFatalToolLatch();
-      const turnTools = toolsFor(toContextMessages(turn.messages), fatalTool);
+      const messages = toContextMessages(turn.messages);
+      const turnTools = toolsFor(messages, fatalTool);
       // Opened before the request, so the turn's own user transcript is the
       // first event of it. `undefined` when nothing is listening, which is what
       // keeps an unobserved turn from installing a per-part callback at all.
@@ -364,12 +387,19 @@ export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
         // `system` is the AI SDK's key; `systemPrompt` is ours, at both levels.
         // A per-turn override wins; otherwise the agent's own, which may be a
         // RESOLVER called here — once per turn rather than once per step, since
-        // this door assembles one request and lets the SDK step it.
+        // this door assembles one request and lets the SDK step it. The agent's
+        // `promptContext` lands under EITHER, as the voice resolver composes it
+        // (`runtime/system-prompt.ts`): an override replaces the instructions,
+        // not the context the agent declared for every turn — so the override
+        // takes the prompt's place in the one resolver call.
         ...omitUndefined({
-          system:
-            turn.systemPrompt ??
-            instructions?.(sessionContext) ??
-            staticSystemPrompt(agent.systemPrompt),
+          system: resolveAgentInstructions(
+            {
+              systemPrompt: turn.systemPrompt ?? agent.systemPrompt,
+              promptContext: agent.promptContext,
+            },
+            contextFor(messages),
+          ),
         }),
         // PAIRED: a caller that appends each run's `response.messages` carries
         // forward whatever the last step left, and a tool call that step never

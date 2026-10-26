@@ -143,8 +143,15 @@ describe("step-files.ts itself", () => {
   // assertion above would pass over a barrel that had come to re-export
   // something else. Following the one hop is what keeps the test about
   // `step-files.ts` rather than about a filename.
-  test("the published facade re-exports this module and nothing else", () => {
+  test("the published facade re-exports this module and its two compositions, nothing else", () => {
     const direct = specifiers(join(SRC, "host/step-files-barrel.ts"));
-    expect(direct).toEqual(["./step-files.ts"]);
+    // `transcodeUpload` and `stepSpeakToUpload` are this module's three moves
+    // composed, with `/ffmpeg` in reach; each is a sibling rather than a growth
+    // of `step-files.ts`, and the walk above covers them from the same barrel.
+    expect(direct).toEqual([
+      "./step-files.ts",
+      "./step-files-speak.ts",
+      "./step-files-transcode.ts",
+    ]);
   });
 });

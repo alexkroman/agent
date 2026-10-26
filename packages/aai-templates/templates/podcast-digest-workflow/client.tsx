@@ -22,8 +22,8 @@
  * count, the same newest line, and the same Wake and Cancel buttons bound to
  * the same run.
  *
- * **This is the one workflow app that passes a `key` of its own, and it is
- * `useRunKey({ storage: "local" })`.** Its siblings let the hook mint one into
+ * **This is the one workflow app that asks for a `key` of its own, and it is
+ * `key: { storage: "local" }`.** Its siblings let the hook mint one into
  * `sessionStorage`, which dies with the tab and covers exactly the interruption
  * they have — a reload, a same-tab navigation, a crashed tab. A schedule
  * outlives all of that by design: closing the browser on Tuesday and coming
@@ -92,56 +92,34 @@ import {
   Form,
   mountPage,
   SubmitButton,
-  type SubmitInputOf,
-  useRunKey,
   useWorkflowSubmit,
+  type WorkflowDefOf,
   WorkflowFields,
   type WorkflowOutputOf,
   WorkflowPendingNote,
   WorkflowProgress,
   WorkflowRunError,
-  type WorkflowSubmission,
+  type WorkflowSubmissionOf,
 } from "@alexkroman1/aai-ui";
 // ERASED at build time, so naming the agent's own type costs the browser bundle
-// nothing — and it is what stops this file restating a shape `workflows/
-// digest.ts` already declares.
-import type { dailyDigest } from "./agent.ts";
+// nothing — and it is what lets the hook check the NAME below against the
+// `workflows` map `agent.ts` declares, and type the run's output off it.
+import type agentDef from "./agent.ts";
 
-/** The workflow this page drives. Matches the key in `workflowApp({ workflows })`. */
-const WORKFLOW = "dailyDigest";
-
-/**
- * What `useWorkflowSubmit` hands back for THIS workflow, named so a component
- * can take one as a prop.
- *
- * The hook's own return is inferred, so a page that renders everything in one
- * function never needs this. A page that splits does, and there is no way to
- * write it from the outside without these three: `WorkflowSubmission` is the
- * shape, and its two parameters are the run's OUTPUT and what `submit()`
- * accepts — which is what `<WorkflowPendingNote submission={…}>` already asks
- * for one of, and what a `ReturnType<typeof useWorkflowSubmit>` cannot say
- * because the hook is generic.
- */
-type DigestSubmission = WorkflowSubmission<
-  WorkflowOutputOf<typeof dailyDigest>,
-  SubmitInputOf<typeof dailyDigest>
->;
+/** The one workflow this app declares, read off the agent by its name. */
+type DailyDigest = WorkflowDefOf<typeof agentDef, "dailyDigest">;
 
 export function App() {
-  // This BROWSER's handle on its schedules — minted once and kept for as long
-  // as storage lives for this origin, which is the option this template exists
-  // to argue for. See the module doc.
-  const key = useRunKey({ storage: "local" });
-  // Did THIS load start the schedule? A later load cannot have, and that is the
-  // only way the page can tell "scheduled just now" from "still running from
-  // Tuesday" — the hook reports the run, not who asked for it.
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
   // `run.output` instead of `unknown`. `error` is the agent's own sentence for a
   // rejected input — better copy than anything this page could write, and the
   // reason there is no `try`/`catch` here.
-  // The key REPLACES the tab-scoped one the hook would mint; the lookup that
-  // reads it back on the next load happens either way.
-  const submission = useWorkflowSubmit<typeof dailyDigest>(WORKFLOW, { key });
+  // `key: { storage: "local" }` is this BROWSER's handle on its schedules —
+  // minted once and kept for as long as storage lives for this origin, which
+  // is the option this template exists to argue for. See the module doc.
+  const submission = useWorkflowSubmit<typeof agentDef>("dailyDigest", {
+    key: { storage: "local" },
+  });
   const { submitForm, run, pending, error } = submission;
 
   return (
@@ -151,7 +129,7 @@ export function App() {
       {/* `submit()` resolves as soon as the run EXISTS — deliberately not when it
           finishes, which here could be a month away. */}
       <Form onSubmit={(values) => submitForm(values)} error={error}>
-        <WorkflowFields workflow={WORKFLOW} />
+        <WorkflowFields<typeof agentDef> workflow="dailyDigest" />
         <SubmitButton pending={pending}>
           {pending ? "Digest scheduled" : "Start digest"}
         </SubmitButton>
@@ -161,10 +139,10 @@ export function App() {
           snapshot alone — an id the agent never knew leaves `run` undefined,
           which would otherwise read as "still waiting" forever, and on a later
           load it is also true while the schedule is being looked up by key.
-          `scope="browser"` is the one thing this page says that the others do
-          not: the key above is `local`, so the promise is this BROWSER's rather
-          than this tab's, and closing the tab loses nothing. */}
-      <WorkflowPendingNote submission={submission} subject="schedule" scope="browser" />
+          The note reads `submission.scope` — `"browser"`, because the key above
+          is `local` — so it promises this BROWSER's return rather than this
+          tab's, and says closing the tab loses nothing. */}
+      <WorkflowPendingNote submission={submission} subject="schedule" />
 
       {/* The run's own narration, newest line only. `lines={1}` is the window;
           everything else — the replay, and the "serves no stream" case that is
@@ -187,13 +165,13 @@ export function App() {
 /**
  * Wake and Stop, bound to the run the page is following.
  *
- * It takes the whole SUBMISSION rather than the two callbacks, which is the
- * same shape `<WorkflowPendingNote>` asks for and the reason
- * {@link DigestSubmission} is written down: the pair is only meaningful for the
- * run this page is following, and passing them loose invites a caller to bind
- * them to something else.
+ * It takes the whole SUBMISSION rather than the two callbacks — typed by the
+ * def through `WorkflowSubmissionOf`, since the hook's own return is inferred
+ * only where it is called — because the pair is only meaningful for the run
+ * this page is following, and passing them loose invites a caller to bind them
+ * to something else.
  */
-function ScheduleControls({ submission }: { submission: DigestSubmission }) {
+function ScheduleControls({ submission }: { submission: WorkflowSubmissionOf<DailyDigest> }) {
   const { pending, wake, cancel } = submission;
   if (!pending) return null;
 
@@ -222,13 +200,13 @@ function ScheduleControls({ submission }: { submission: DigestSubmission }) {
 /**
  * What the finished run posted, last digest first.
  *
- * The prop is `WorkflowOutputOf<typeof dailyDigest>` — the workflow's own
- * output type, which is what the `completed` branch narrows `run.output` to.
+ * The prop is `WorkflowOutputOf<DailyDigest>` — the workflow's own output
+ * type, which is what the `completed` branch narrows `run.output` to.
  * Naming it is what keeps this component and `workflows/digest.ts` from
  * drifting: a field renamed there is a compile error here rather than
  * `undefined` on the page.
  */
-function LastDigest({ output }: { output: WorkflowOutputOf<typeof dailyDigest> }) {
+function LastDigest({ output }: { output: WorkflowOutputOf<DailyDigest> }) {
   return (
     <article className="flex flex-col gap-4">
       <p className="text-sm opacity-70">

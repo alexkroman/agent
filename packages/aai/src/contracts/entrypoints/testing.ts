@@ -13,14 +13,14 @@
  * Three families joined it, each because the same lines were being re-derived
  * in every project's specs rather than because the SDK grew a feature:
  *
- * - **The UNWRAPS.** `runTool` and `toolOf(...).execute(...)` answer `unknown` —
- *   the registry lookup is by string and discovery is a build step, so there is
- *   no tool map at the type level to recover the author's `R` from. `expectToolOk` and
- *   `expectDialogOk` are that recovery, and they THROW on a refusal quoting it,
- *   which is the half a cast cannot do: `(result as { result: Order }).result`
- *   reads `undefined` off a `ToolFailure` and fails several assertions later,
- *   with the sentence the dialog wrote about what has to happen first thrown
- *   away.
+ * - **The UNWRAPS.** A tool is run by its DEF (`runTool(theTool, …)`, a
+ *   `toolRunner`'s `run(theTool, …)`), so what comes back is typed by the def's
+ *   own `execute` — and `expectToolOk` / `expectDialogOk` subtract the
+ *   `ToolFailure` arm from that type, unwrapping a dialog's envelope on the way.
+ *   They THROW on a refusal quoting it, which is the half a cast cannot do:
+ *   `(result as { result: Order }).result` reads `undefined` off a
+ *   `ToolFailure` and fails several assertions later, with the sentence the
+ *   dialog wrote about what has to happen first thrown away.
  * - **The schema pair, twice over.** A tool's `inputSchema` and a workflow's
  *   `input` are both Standard Schemas, and asking one what it accepts by hand
  *   means optional-chaining the schema, narrowing on `.issues` and casting
@@ -50,8 +50,9 @@
  * off so the test-runner dependency is opt-in.
  *
  * **It is the head of a FAMILY.** The fakes for workflows, devices, the network,
- * step slots and the deployed def are `testing-workflow`, `testing-client`,
- * `testing-network`, `testing-steps` and `testing-deploy` — split off when this
+ * step slots, the deployed def and session events are `testing-workflow`,
+ * `testing-client`, `testing-network`, `testing-steps`, `testing-deploy` and
+ * `testing-events` — split off when this
  * contract reached 116 names, because each moves for a reason unrelated to a
  * tool's context and every move renumbered the one contract every template
  * spec imports. `aai-runtime`'s `testing-stubs` and `eval-stubs` doors mirror
@@ -64,22 +65,28 @@
  */
 
 export {
+  // `createRouteContext(overrides?)`: the `RouteContext` a route handler's spec
+  // hands in, every field supplied, beside `createToolContext`.
+  createRouteContext,
   createSlotStore,
   createToolContext,
   dialogRefusalPattern,
   dialogResultSchema,
   endSessionCalls,
-  eventsOf,
   expectDialogOk,
   expectDialogRefused,
+  // `toolNameOf(def)` beside `toolOf`; `expectSlotContract` asserts the three
+  // invariants of a slot's DECLARATION in one call.
+  expectSlotContract,
   expectToolOk,
-  isEvent,
   parseSchemaInput,
   parseToolInput,
+  type RouteContextOverrides,
   runGuardrail,
   runTool,
   type SaidLine,
   type SentEvent,
+  type SlotContractOptions,
   type StubDelegate,
   type StubDelegateCall,
   type StubDelegateReply,
@@ -98,6 +105,7 @@ export {
   type ToolContextOverrides,
   type ToolRunner,
   toolInputIssues,
+  toolNameOf,
   toolOf,
   toolRunner,
 } from "../../sdk/testing-barrel.ts";

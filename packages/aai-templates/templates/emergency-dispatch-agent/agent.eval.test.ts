@@ -14,7 +14,8 @@
  * this file SHIPS — it is what a scaffolded project runs.
  */
 import dispatchAgent from "virtual:aai/agent";
-import type { SessionEvent } from "@alexkroman1/aai";
+import { type DialogToolResult, isToolFailure, type SessionEvent } from "@alexkroman1/aai";
+import type { ToolFailure } from "@alexkroman1/aai/utils";
 // An EVAL: does the desk actually behave? Run it with `aai eval`.
 //
 // `agent.test.ts` drives each tool directly. What it cannot ask is whether the
@@ -37,7 +38,6 @@ import type { SessionEvent } from "@alexkroman1/aai";
 import {
   describeEval,
   dialogRefusalPattern,
-  dialogResultSchema,
   type EvalSession,
   lastStateIn,
   toolNames,
@@ -45,7 +45,10 @@ import {
   turnCalling,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
+import { dispatchSlot } from "./shared.ts";
+import incidentCreate from "./tools/incident_create.ts";
+import incidentUpdateStatus from "./tools/incident_update_status.ts";
+import resourcesDispatch from "./tools/resources_dispatch.ts";
 
 /** The six tools gated on `working` — the ones that refuse until something has
  *  been logged. Listed here so ADDING an ungated mutating tool is a deliberate
@@ -65,66 +68,14 @@ const FIRST_INCIDENT = "INC-0001";
 /** The second, for the case that logs two. */
 const SECOND_INCIDENT = "INC-0002";
 
-/**
- * What the BROWSER is sent, as this eval reads it.
- *
- * Parsed rather than cast: `state.updated` carries `unknown`, and a schema that
- * stops matching is a loud failure naming the field where a cast would hand the
- * assertions `undefined` and fail three lines later. It names only the fields
- * asserted below, so `dashboardView` may grow without touching this.
- */
-const ProjectedDashboard = z.object({
-  systemAlertLevel: z.string(),
-  incidents: z.array(
-    z.object({
-      id: z.string(),
-      severity: z.string(),
-      status: z.string(),
-      location: z.string(),
-    }),
-  ),
-});
+/** A gated tool's envelope, position kept, or a throw quoting the refusal. */
+function landed<R>(answer: DialogToolResult<R> | ToolFailure): DialogToolResult<R> {
+  if (isToolFailure(answer)) throw new Error(`tool refused: ${answer.error}`);
+  return answer;
+}
 
-/**
- * The three tool results asserted below, as SHAPES rather than as substrings of
- * their own JSON.
- *
- * These were `toMatch(/"newStatus":"resolved"/)` over the serialized result, and
- * one went as far as pinning adjacent key ORDER
- * (`/"callsign":"Medic-1","reason":"Currently dispatched"/`). Nothing in this
- * template is about serialization: a reordered field, a renamed sibling key or a
- * pretty-print would have broken tests that were never about any of that.
- *
- * `incident_create` is ungated and SPREADS its position, so `state` sits beside
- * its own fields; the other two are `callFlow.tool`s, so the SDK wraps them and
- * `dialogResultSchema` is that wrapper.
- */
-const Created = z.object({
-  recommendedSeverity: z.string(),
-  recommendedType: z.string(),
-  state: z.string(),
-});
-
-const Dispatch = dialogResultSchema(
-  z.object({
-    dispatched: z.array(z.object({ callsign: z.string() })),
-    failed: z.array(z.object({ callsign: z.string(), reason: z.string() })).optional(),
-  }),
-);
-
-const StatusChange = dialogResultSchema(
-  z.object({ newStatus: z.string(), timeline: z.array(z.string()) }),
-);
-
-/**
- * The latest dashboard the session pushed, or undefined if it pushed none.
- *
- * `lastStateIn` is the SDK's reader, and the schema is what it is worth passing:
- * a frame that stopped matching FAILS naming the field, where the cast this
- * replaced would have handed the assertions `undefined`.
- */
-const dashboard = (events: readonly SessionEvent[]) =>
-  lastStateIn(events, "dispatch", ProjectedDashboard);
+/** The latest dashboard the session pushed — what the browser would be rendering. */
+const dashboard = (events: readonly SessionEvent[]) => lastStateIn(events, dispatchSlot.projected);
 
 /** One incident as the browser sees it. */
 const boardEntry = (events: readonly SessionEvent[], id: string) =>
@@ -195,17 +146,17 @@ describeEval(dispatchAgent, (test) => {
 
       const logged = turn.toolCalls.find((c) => c.name === "incident_create");
       expect(logged?.args.location).toMatch(/oak/i);
-      const created = toolResultIn(turn.toolCalls, "incident_create", Created);
+      const created = landed(toolResultIn(turn.toolCalls, incidentCreate));
       // The recommendation is the desk's own scoring, not the model's opinion:
       // `recommendSeverity` reads "cardiac arrest" and `recommendType` reads
       // "cardiac". A model that paraphrased the emergency away would show up
       // here rather than in a sentence nobody checks.
-      expect(created).toMatchObject({
+      expect(created.result).toMatchObject({
         recommendedSeverity: "critical",
         recommendedType: "medical",
       });
-      // `incident_create` is ungated and SPREADS the position it landed in, so
-      // the model reads "confirm the severity and type" as part of this result.
+      // `incident_create` is ungated and still answers the position it landed
+      // in, so the model reads "confirm the severity and type" with the result.
       expect(created.state).toBe("working.triaging");
       // And the board the browser holds has it, at the severity the desk chose.
       expect(boardEntry(session.events(), FIRST_INCIDENT)).toMatchObject({
@@ -226,8 +177,8 @@ describeEval(dispatchAgent, (test) => {
       // a case pinned to turn two is a flake with a misleading name. A shift
       // that never dispatched at all fails HERE, with every turn's tool list in
       // the message, rather than as an `undefined` three assertions later.
-      const dispatching = turnCalling(turns, "resources_dispatch");
-      const rolled = toolResultIn(dispatching.toolCalls, "resources_dispatch", Dispatch);
+      const dispatching = turnCalling(turns, resourcesDispatch);
+      const rolled = landed(toolResultIn(dispatching.toolCalls, resourcesDispatch));
       // Units really assigned — `dispatched` is empty when every requested
       // callsign was busy, which is the case the fourth test owns.
       expect(rolled.result.dispatched.length).toBeGreaterThan(0);
@@ -269,7 +220,7 @@ describeEval(dispatchAgent, (test) => {
       // an earlier draft tried to assert here is the case below: a competent
       // dispatcher checks availability first and never triggers it, so it is
       // `{ scripted: true }` rather than weakened into this one.)
-      const resolved = toolResultIn(closed.slice(0, 1), "incident_update_status", StatusChange);
+      const resolved = landed(toolResultIn(closed.slice(0, 1), incidentUpdateStatus));
       expect(resolved.result.newStatus).toBe("resolved");
       // On the incident's TIMELINE, which is where the desk writes it — the
       // regex this replaces matched the sentence anywhere in the JSON without
@@ -320,14 +271,14 @@ describeEval(dispatchAgent, (test) => {
       const [first, second] = dispatches;
       // Medic-1 really rolled the first time — otherwise the refusal below is
       // about a unit that was never busy.
-      const firstRoll = toolResultIn(first ? [first] : [], "resources_dispatch", Dispatch);
+      const firstRoll = landed(toolResultIn(first ? [first] : [], resourcesDispatch));
       expect(firstRoll.result.dispatched.map((r) => r.callsign)).toContain("Medic-1");
       expect(firstRoll.state).toBe("working.monitoring");
       // And the second time the desk REFUSED rather than double-booking it:
       // `failed` carries the reason and `dispatched` is empty. The unit is
       // committed to ONE incident, which is the property a dispatch desk is
       // useless without and which no prompt can carry.
-      const secondRoll = toolResultIn(second ? [second] : [], "resources_dispatch", Dispatch);
+      const secondRoll = landed(toolResultIn(second ? [second] : [], resourcesDispatch));
       expect(secondRoll.result.dispatched).toEqual([]);
       expect(secondRoll.result.failed).toContainEqual({
         callsign: "Medic-1",

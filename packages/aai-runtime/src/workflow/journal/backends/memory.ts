@@ -31,6 +31,7 @@ import type {
   ResumableRun,
   RunRecord,
   RunStatus,
+  RunStatusPatch,
   SleepEntry,
   SleepRecord,
   StepEntry,
@@ -126,6 +127,21 @@ function earliestWake(slot: Slot): number | undefined {
     if (at === undefined || record.wakeAt < at) at = record.wakeAt;
   }
   return at;
+}
+
+/**
+ * Write a status patch onto the record — the additive rule `setStatus`
+ * states, plus FIRST WRITE WINS for the start instant: every delivery
+ * announces `running`, and only the first one is the run starting. See
+ * `RunStatusPatch`.
+ */
+function applyPatch(record: RunRecord, patch: RunStatusPatch): void {
+  if ("output" in patch) record.output = patch.output;
+  if (patch.error) record.error = patch.error;
+  if (patch.startedAt !== undefined && record.startedAt === undefined) {
+    record.startedAt = patch.startedAt;
+  }
+  if (patch.settledAt !== undefined) record.settledAt = patch.settledAt;
 }
 
 /** Is this run parked on somebody else's answer — an OPEN window? */
@@ -265,7 +281,7 @@ export function createMemoryJournal(): JournalStore {
     async setStatus(
       runId: string,
       next: RunStatus,
-      patch?: { output?: unknown; error?: { message: string } },
+      patch?: RunStatusPatch,
       expect?: readonly RunStatus[],
     ): Promise<boolean> {
       const slot = slotOf(runId);
@@ -273,8 +289,7 @@ export function createMemoryJournal(): JournalStore {
       if (expect && !expect.includes(slot.record.status)) return false;
       const wasTerminal = isTerminalStatus(slot.record.status);
       slot.record.status = next;
-      if (patch && "output" in patch) slot.record.output = patch.output;
-      if (patch?.error) slot.record.error = patch.error;
+      if (patch) applyPatch(slot.record, patch);
       // The one moment a run becomes a candidate for forgetting, so it is where
       // the sweep belongs — cheaper than a timer, and it cannot run while a
       // delivery is in flight.

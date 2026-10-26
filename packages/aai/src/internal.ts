@@ -39,6 +39,9 @@
 // The bundle/runtime boundary: every key two copies of the SDK (host and agent
 // bundle) meet on, and the one way to reach a slot by it — see `_boundary.ts`.
 export { BOUNDARY_KEYS, type GlobalSlot, globalSlot, type SlotName } from "./sdk/_boundary.ts";
+// The one file rule both `tools/`/`workflows/` directory scans apply — the
+// CLI's generated worker entry and `virtual:aai/agent` (`host/testing-vite.ts`).
+export { isRegistryModuleFile } from "./sdk/_module-registry.ts";
 // The framework's own wire helpers — see `sdk/_wire-helpers.ts`'s module doc.
 export {
   capToolResult,
@@ -249,6 +252,10 @@ export {
 // `/utils` module doc has always guarded, now guarded here too.
 export { formatSchemaIssues } from "./sdk/standard-schema.ts";
 export { TELEPHONY_CARRIERS } from "./sdk/telephony-config.ts";
+// The per-tool display hints `GET /client-config` carries, built by every
+// server holding the agent definition — the guest harness among them, which is
+// why this is on the zod-free subpath (`sdk/tool-ui.ts`).
+export { type ToolUiSource, toolUiMap } from "./sdk/tool-ui.ts";
 /**
  * The SERVER's half of the workflow HTTP API.
  *

@@ -64,11 +64,11 @@
  * puts the `AgentDef.subagents` field's signature on this capability rather than
  * on its own.
  *
- * `AgentSystemPrompt` is the type of `systemPrompt` after it widened from
- * `string` — the text, or a resolver that answers it. Contracted
- * here and not on a capability of their own: `systemPrompt` is the field an
- * `agent()` declaration cannot omit, and a resolver is a way of writing it
- * rather than a separate thing to write.
+ * `AgentSystemPrompt` is the type of `AgentDef.systemPrompt` — the text, or a
+ * resolver that answers it. Contracted here and not on a capability of its
+ * own: the field is what `system-prompt.md` lowers onto and what every reader
+ * of a definition reads, so it is part of what a definition looks like even
+ * though no `agent()` call writes it.
  *
  * **The three voice-preset names are here for the field-group reason above**,
  * with one addition. `AgentVoicePresets` is the fifth interface `AgentDef`
@@ -98,12 +98,20 @@ export {
   type AgentClientInbox,
   type AgentDeclaration,
   type AgentDef,
+  // `agent()`'s return for a declaration with a literal `workflows` map, and the
+  // constraint `W` is inferred under.
+  type AgentDefWith,
   type AgentGuardrail,
   type AgentGuardrails,
+  // `agent({ promptContext })` and `agent({ listing })`: the two halves `AgentDef` is
+  // cut from, and the env a `workflowApp()` requires by default.
+  type AgentInstructions,
+  type AgentListing,
   type AgentMode,
   type AgentModelTuning,
   type AgentObservation,
   type AgentParams,
+  type AgentPromptContext,
   type AgentSystemPrompt,
   type AgentVoicePresets,
   type AssemblyAIPipelineOptions,
@@ -111,6 +119,9 @@ export {
   assemblyAIPipeline,
   type BuiltinTool,
   type ClientInboxOptions,
+  // What `W` is for a declaration with no `workflows`: the empty map, under
+  // which the def declares no names (`WorkflowNameOf` is `never`).
+  type EmptyWorkflows,
   type ModeAgentDef,
   type ModelTuning,
   type PipelineAgentParams,
@@ -118,7 +129,6 @@ export {
   type ProviderDescriptor,
   type S2sAgentParams,
   type SharedAgentParams,
-  type SyncStateDeclaration,
   type TelephonyAccess,
   type TelephonyCarrier,
   type TextAgentParams,
@@ -127,6 +137,8 @@ export {
   type UsageLimits,
   VOICE_PRESETS,
   type VoicePresetName,
+  WORKFLOW_APP_REQUIRED_ENV,
   type WorkflowAppAgentParams,
+  type WorkflowsMap,
   workflowApp,
 } from "../../index.ts";

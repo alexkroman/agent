@@ -68,8 +68,19 @@
  */
 
 import type { ToolInputSchema, WorkflowDef } from "@alexkroman1/aai";
+import { workflowSignalToken } from "@alexkroman1/aai/host-internal";
 import { parseSchemaInput } from "@alexkroman1/aai/testing";
+import {
+  DEFAULT_SIGNAL_HOLD_MS,
+  type WorkflowAppLike,
+  type WorkflowDefOf,
+  type WorkflowNameOf,
+  type WorkflowOutputOf,
+  workflowNameOf,
+} from "@alexkroman1/aai/workflow-api";
 import { type Logger, silentLogger } from "../logger.ts";
+import { unknownWorkflowMessage } from "../workflow/client.ts";
+import { takeHeldSignal } from "../workflow/held-signals.ts";
 import {
   createInProcessWorkflowEngine,
   type InProcessWorkflowEngine,
@@ -78,6 +89,7 @@ import { createMemoryJournal } from "../workflow/journal/backends/memory.ts";
 import { journalStoreOf, workflowJournal } from "../workflow/journal/handle.ts";
 import { isTerminalStatus, type JournalStore, type SleepEntry } from "../workflow/journal/types.ts";
 import { type DeterminismKind, isDeterminismKey } from "../workflow/replay/determinism.ts";
+import { RUN_KEY_STEP } from "../workflow/replay/run-key.ts";
 import type {
   RunWorkflowOptions,
   WorkflowTestHandle,
@@ -101,6 +113,9 @@ export const DEFAULT_MAX_DELIVERIES = 50;
 /** One queued delivery, as the injected dispatcher receives it. */
 type Queued = { runId: string; at: number | undefined };
 
+/** The key a run is started with when the spec names none — see `RunWorkflowOptions.key`. */
+const DEFAULT_RUN_KEY = "test";
+
 /**
  * Start `def` with `input` and drive it until it finishes or parks.
  *
@@ -112,6 +127,19 @@ type Queued = { runId: string; at: number | undefined };
  * is what `ctx.workflows.start` does on every real path: a body is written
  * against a validated input, so handing it an unvalidated one tests a call that
  * cannot happen.
+ *
+ * **Two forms.** Handed a DEF, the run is named by the name the def was
+ * declared under (`workflowNameOf`, recorded when the agent declaring it was
+ * lowered — a `virtual:aai/agent` import), else `"workflow"`; there is no
+ * `name` option. Handed the AGENT and a workflow's name —
+ * `runWorkflow(agentDef, "digest", input)`, with `agentDef` from
+ * `virtual:aai/agent` — the def is the one the agent declares (or the build
+ * discovered in `workflows/`) under that name, and the run carries that name,
+ * so a body that reads `ctx.workflow`, starts a sibling by name or is found by
+ * `ctx.workflows.find` sees what a deployment would. An unknown name throws,
+ * listing the ones the agent has. A spec that asserts on the name (a signal
+ * token, `ctx.workflow`) uses the agent form, which is the one a deployment
+ * runs.
  *
  * @example
  * ```ts
@@ -127,9 +155,7 @@ type Queued = { runId: string; at: number | undefined };
  *   },
  * });
  *
- * const run = await runWorkflow(digest, { url: "https://example.com/a" }, {
- *   name: "digest",
- * });
+ * const run = await runWorkflow(digest, { url: "https://example.com/a" });
  *
  * // It slept rather than blocking, and said for how long.
  * console.log(run.status, run.wakeAt);
@@ -139,6 +165,21 @@ type Queued = { runId: string; at: number | undefined };
  * console.log(run.status, run.output, run.deliveries);
  * ```
  *
+ * @example The agent form: the name is checked against what the agent declares
+ * ```ts
+ * import { agent, workflow } from "@alexkroman1/aai";
+ * import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
+ * import { z } from "zod";
+ *
+ * const digest = workflow({
+ *   input: z.object({ url: z.string() }),
+ *   run: async ({ url }, ctx) => ({ text: await ctx.step("read", () => `the page at ${url}`) }),
+ * });
+ * const agentDef = agent({ name: "Digest", workflows: { digest } });
+ *
+ * const run = await runWorkflow(agentDef, "digest", { url: "https://example.com/a" });
+ * ```
+ *
  * @typeParam R - What the body returns, taken from the declaration.
  *
  * @public
@@ -146,9 +187,57 @@ type Queued = { runId: string; at: number | undefined };
 export async function runWorkflow<P extends ToolInputSchema, R>(
   def: WorkflowDef<P, R>,
   input: Record<string, unknown>,
-  options: RunWorkflowOptions = {},
+  options?: RunWorkflowOptions,
+): Promise<WorkflowTestHandle<R>>;
+export async function runWorkflow<App extends WorkflowAppLike, Name extends WorkflowNameOf<App>>(
+  agent: App,
+  name: Name,
+  input: Record<string, unknown>,
+  options?: RunWorkflowOptions,
+): Promise<WorkflowTestHandle<WorkflowOutputOf<WorkflowDefOf<App, Name>>>>;
+export async function runWorkflow(
+  first: WorkflowDef<ToolInputSchema, unknown> | WorkflowAppLike,
+  second: string | Record<string, unknown>,
+  third?: Record<string, unknown> | RunWorkflowOptions,
+  fourth?: RunWorkflowOptions,
+): Promise<WorkflowTestHandle<unknown>> {
+  if (typeof second === "string") {
+    const agent = first as WorkflowAppLike;
+    const def = agent.workflows?.[second];
+    if (def === undefined) {
+      // The client's own sentence (declared set, nearest name), so a spec and
+      // a tool are refused in the same words.
+      throw new Error(
+        `runWorkflow: ${unknownWorkflowMessage(second, Object.keys(agent.workflows ?? {}))} ` +
+          "Check the name, or register the def in agent({ workflows }) or as workflows/<name>.ts.",
+      );
+    }
+    // The declared def is a `WorkflowDef` (`AnyWorkflowDef` is the reading's
+    // contravariant view of it); the agent's key wins over any recorded one.
+    return runDef(
+      def as WorkflowDef<ToolInputSchema, unknown>,
+      second,
+      (third as Record<string, unknown> | undefined) ?? {},
+      fourth ?? {},
+    );
+  }
+  const def = first as WorkflowDef<ToolInputSchema, unknown>;
+  return runDef(
+    def,
+    workflowNameOf(def) ?? "workflow",
+    second,
+    (third as RunWorkflowOptions | undefined) ?? {},
+  );
+}
+
+/** Both forms, once the name is settled — see {@link runWorkflow}. */
+async function runDef<P extends ToolInputSchema, R>(
+  def: WorkflowDef<P, R>,
+  name: string,
+  input: Record<string, unknown>,
+  options: RunWorkflowOptions,
 ): Promise<WorkflowTestHandle<R>> {
-  const name = options.name ?? "workflow";
+  const key = options.key ?? DEFAULT_RUN_KEY;
   const logger = options.logger ?? silentLogger;
   const maxDeliveries = options.maxDeliveries ?? DEFAULT_MAX_DELIVERIES;
   const validated = def.input
@@ -171,10 +260,15 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
   // to resume at all.
   let crash: AbortController | undefined;
   let armed = options.crashAt;
-  // Set for the duration of ONE delivery by `expireWaits` — see its doc for why
-  // nothing public can end a `waitFor` window and why this answers the READ
-  // rather than rewriting the record.
-  let expiring = false;
+  // The deadline KEYS `expireWaits` has closed — see its doc for why nothing
+  // public can end a `waitFor` window and why this answers the READ rather
+  // than rewriting the record. Each call adds what was outstanding at the
+  // call, so a window the body opens during the delivery it triggers is not
+  // closed before it was ever open; and a key stays here for the rest of the
+  // run, because the window DID close (`closeHook` ran) and every later walk
+  // re-reads its deadline on the way past — answered as still open, the run
+  // would park on a window it already took the timeout branch of.
+  const expiring = new Set<string>();
   const store = journalStoreOf(options.journal) ?? createMemoryJournal();
   const journal: JournalStore = {
     ...store,
@@ -191,12 +285,17 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
       // Only a hook's DEADLINE, never an ordinary `ctx.sleep`: those are
       // `advanceSleep`'s, through the engine's own `wakeUp`, and folding the two
       // together is the exact mistake `SleepRecord.kind` exists to prevent.
-      if (!expiring || record.kind !== "hookTimeout") return record;
+      if (record.kind !== "hookTimeout" || !expiring.has(key)) return record;
       return { ...record, woken: true };
     },
   };
   const { resumableRuns } = store;
   if (resumableRuns) journal.resumableRuns = (limit) => resumableRuns.call(store, limit);
+
+  // A world handed in is one another run may still be LIVE in, and two live runs
+  // of one workflow under one key share their signal tokens — see
+  // `refuseLiveTwin` for what that did.
+  if (options.journal !== undefined) await refuseLiveTwin(store, name, key);
 
   const state = {
     engine: build(name, def, journal, logger, dispatch),
@@ -213,10 +312,26 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
     signalled: false,
   } as Mutable<R>;
 
-  const runId = await state.engine.start(name, [validated]);
+  const runId = await state.engine.start(name, [validated], { key });
+
+  /**
+   * Tokens this handle asked the engine to HOLD a payload for.
+   *
+   * A hold lives in process memory keyed by the token alone
+   * (`workflow/held-signals.ts`), so one this run never takes would be taken
+   * by the next spec's run under the same name, key and label. Dropped the
+   * moment the run is terminal (nothing of this run can take it any more) and
+   * on `close`.
+   */
+  const held = new Set<string>();
+  const dropHolds = (): void => {
+    for (const token of held) takeHeldSignal(token);
+    held.clear();
+  };
 
   const handle: WorkflowTestHandle<R> = {
     runId,
+    key,
     // The UNWRAPPED store: a second run handed this must not inherit this
     // run's crash arming or its window expiry.
     journal: workflowJournal(store),
@@ -258,24 +373,38 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
       await drain();
       return handle;
     },
-    async signal(token, payload) {
-      state.signalled = await state.engine.signal(token, payload);
+    async signal(token, payload, options) {
+      // `{}` for an absent payload and a hold only when asked — exactly what
+      // `ctx.workflows.signal` sends (`workflow/client.ts`), so a spec written
+      // against this handle reads the branch a tool's call would reach.
+      const holdMs = options?.holdMs ?? 0;
+      if (holdMs > 0) held.add(token);
+      state.signalled = await state.engine.signal(token, payload ?? {}, { holdMs });
       await drain();
       return handle;
     },
+    signalRun(label, payload, options) {
+      // The token the body derived (`sdk/workflow-signals.ts`), from the same
+      // three parts, so neither side spells it. Held by default, as
+      // `ctx.workflows.signalRun` holds: a signal sent while the body is still
+      // ahead of its wait (parked on a `ctx.sleep`, say) is kept for the wait
+      // rather than dropped with `signalled: false` — and, as there, only for a
+      // run still GOING: a finished run has no wait left to take it, and the
+      // payload would sit for the next run under the key.
+      const live = !isTerminalStatus(state.status);
+      return handle.signal(workflowSignalToken(name, key, label), payload, {
+        holdMs: live ? (options?.holdMs ?? DEFAULT_SIGNAL_HOLD_MS) : 0,
+      });
+    },
     async expireWaits() {
-      expiring = true;
-      try {
-        // A delivery of its own, because a parked run has nothing in flight: the
-        // window closes on the walk that re-reads it.
-        queue.push({ runId, at: undefined });
-        await drain();
-      } finally {
-        // Cleared whatever happened, so a later delivery reads the real
-        // deadlines — an expiry that leaked would close every window the run
-        // opens for the rest of the spec.
-        expiring = false;
+      // The windows open NOW — and only those: see the set's own comment.
+      for (const wait of await store.readSleeps(runId)) {
+        if (wait.kind === "hookTimeout" && !wait.woken) expiring.add(wait.key);
       }
+      // A delivery of its own, because a parked run has nothing in flight: the
+      // window closes on the walk that re-reads it.
+      queue.push({ runId, at: undefined });
+      await drain();
       return handle;
     },
     async restart() {
@@ -287,6 +416,7 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
     },
     async close() {
       state.engine.stop();
+      dropHolds();
     },
   };
 
@@ -345,14 +475,19 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
     state.error = record?.error?.message;
     const journaled = await journal.readSteps(runId);
     state.steps = journaled
-      .filter((entry) => !isDeterminismKey(entry.key))
+      // Neither a determinism read nor the run's own key entry is a STEP the
+      // body named (`workflow/replay/run-key.ts`).
+      .filter((entry) => !isDeterminismKey(entry.key) && entry.key !== RUN_KEY_STEP)
       .map(toStep)
       .sort(byCallSite);
     state.reads = journaled
       .filter((entry) => isDeterminismKey(entry.key))
       .map(toRead)
       .sort(byCallSite);
-    if (record && isTerminalStatus(record.status)) state.wakeAt = undefined;
+    if (record && isTerminalStatus(record.status)) {
+      state.wakeAt = undefined;
+      dropHolds();
+    }
     state.waits = (await store.readSleeps(runId)).map(toWait).sort(byKey);
     const owed = (await store.resumableRuns?.(RESUMABLE_SCAN_LIMIT)) ?? [];
     state.resumable = owed.some((one) => one.runId === runId);
@@ -360,6 +495,37 @@ export async function runWorkflow<P extends ToolInputSchema, R>(
 
   await drain();
   return handle;
+}
+
+/**
+ * Refuse a second run of `name` under `key` while a first is still live in the
+ * same journal.
+ *
+ * A signal token is derived from (workflow, key, label) — `workflowSignalToken`
+ * — so two live runs sharing all three HOLD THE SAME TOKENS: the second's body
+ * failed at its first `waitForSignal` ("token … is already held by run A"),
+ * and its `signalRun("first")` then reported `signalled: true` having woken run
+ * A, whose own later signal found nothing to answer. Both runs start under
+ * `DEFAULT_RUN_KEY` unless a spec says otherwise, which made the collision the
+ * default outcome of the documented "pass `journal` to start two runs in the
+ * same world". The engine's own message names the token; this one names the
+ * key and the fix, at the call that started the twin.
+ *
+ * Only a LIVE twin: a settled run holds no tokens, so sharing a world with one
+ * (the case the shared-journal spec exercises) is untouched.
+ */
+async function refuseLiveTwin(store: JournalStore, name: string, key: string): Promise<void> {
+  for (const record of await store.listRuns(name, RESUMABLE_SCAN_LIMIT)) {
+    if (isTerminalStatus(record.status)) continue;
+    const entry = await store.readStep(record.runId, RUN_KEY_STEP);
+    if (entry?.output !== key) continue;
+    throw new Error(
+      `runWorkflow: run ${record.runId} of "${name}" is still live in this journal under the ` +
+        `key ${JSON.stringify(key)}, so a second run under the same key would share its signal ` +
+        "tokens — a signalRun() meant for one reaches the other. Give the second run its own " +
+        `key — runWorkflow(…, { journal, key: "<another>" }) — or let the first settle first.`,
+    );
+  }
 }
 
 /** The mutable half of a handle — see the getters above. */

@@ -56,15 +56,21 @@
  */
 
 import type { AgentDef, SessionEvent } from "@alexkroman1/aai";
-import { claimDtmfSender, type ProviderEnv } from "@alexkroman1/aai/host-internal";
+import {
+  claimDtmfSender,
+  declaredWorkflowName,
+  type ProviderEnv,
+} from "@alexkroman1/aai/host-internal";
 import { invariant, sleep } from "@alexkroman1/aai/internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { silentLogger } from "../logger.ts";
 import { withHostCredentialFallback } from "../providers/host-env.ts";
 import { requiredProviderEnvVars } from "../providers/resolve.ts";
 import { createRuntimeWithSeams } from "../runtime/index.ts";
 import { SessionRefusedError } from "../session/index.ts";
+import { wrapStart } from "../workflow/_client-wrap.ts";
 import { credentialVerdict } from "./_credential-verdict.ts";
 import { type EvalSessionEnd, watchSessionEnd, watchSessionEndHook } from "./_session-end.ts";
 import { checkedIdentity, observeSessionContext, recordIdentity } from "./_session-identity.ts";
@@ -74,6 +80,7 @@ import type {
   EvalSession,
   EvalSessionOptions,
   EvalTurn,
+  EvalWorkflowStart,
   HostEvalSessionOptions,
 } from "./session-types.ts";
 import { installStubSpeechProviders, type StubSpeechProviders } from "./stub-speech.ts";
@@ -84,6 +91,7 @@ export type {
   EvalSession,
   EvalSessionOptions,
   EvalTurn,
+  EvalWorkflowStart,
   HostEvalSessionOptions,
 } from "./session-types.ts";
 
@@ -218,6 +226,13 @@ async function openWithFakes(
 
   const turnTimeoutMs = options.turnTimeoutMs ?? DEFAULT_TURN_TIMEOUT_MS;
   const providerEnv = options.providerEnv ?? withHostCredentialFallback({ ...options.env });
+  // Every `ctx.workflows.start` a tool makes, so a turn can report the run it
+  // started — read off the client the tools reach, like `pressed` below.
+  const starts: EvalWorkflowStart[] = [];
+  const workflows =
+    options.workflows === undefined
+      ? undefined
+      : recordingStarts(options.workflows, options.agent.workflows, starts);
   // The agent's own hook, watched rather than replaced — see `_session-identity.ts`.
   const observed = observeSessionContext(options.agent);
   // And its `onSessionEnd`, so the turn that hung up can wait for what it
@@ -242,7 +257,7 @@ async function openWithFakes(
     // One `omitUndefined` over the four optional seams rather than four
     // conditional spreads: `guard-invariants` rule 2.
     ...omitUndefined({
-      workflows: options.workflows,
+      workflows,
       runCode: options.runCode,
       fetch: options.fetch,
       toolTimeoutMs: options.toolTimeoutMs,
@@ -384,6 +399,7 @@ async function openWithFakes(
     invariant(stt !== undefined, "eval.session.stt.open", () => ({ sessionId }));
     const from = events.length;
     const pressedFrom = pressed.length;
+    const startsFrom = starts.length;
     // A push-to-talk agent answers only what was RELEASED: frame the utterance
     // as its client does, or the final is held and every case times out.
     const manual = options.agent.turnTaking?.detection === "manual";
@@ -407,6 +423,7 @@ async function openWithFakes(
       ...measuredTurn(what, events.slice(from), toolNames, "voice", options.agent),
       endedSession: ending.requested(),
       dtmf: pressed.slice(pressedFrom),
+      workflowStarts: starts.slice(startsFrom),
     };
   };
 
@@ -447,6 +464,33 @@ async function openWithFakes(
       fake.release();
     },
   };
+}
+
+/**
+ * `client` with its `start` RECORDED into `log`, everything else forwarded
+ * (`workflow/_client-wrap.ts`). The name is resolved the way the client
+ * resolves it — a def by IDENTITY against what the agent declares — so a start
+ * by def and a start by name record the same key, and `evalRunOf` can be asked
+ * with either.
+ */
+function recordingStarts(
+  client: WorkflowClient,
+  declared: AgentDef["workflows"],
+  log: EvalWorkflowStart[],
+): WorkflowClient {
+  return wrapStart(client, async (start, workflow, input, options) => {
+    const runId = await start(workflow, input, options);
+    const name =
+      typeof workflow === "string"
+        ? workflow
+        : (declaredWorkflowName(declared ?? {}, workflow) ?? workflow.description ?? "(unnamed)");
+    log.push({
+      workflow: name,
+      def: typeof workflow === "string" ? declared?.[workflow] : workflow,
+      runId,
+    });
+    return runId;
+  });
 }
 
 /**

@@ -22,7 +22,7 @@ import { agent, assemblyAIS2s } from "@alexkroman1/aai";
 
 export default agent({
   name: "Support",
-  systemPrompt: "Help callers with their orders.",
+  // The prompt is the system-prompt.md beside this file.
   mode: "s2s",
   s2s: assemblyAIS2s({ voice: "jane", keyterms: ["AssemblyAI"] }),
 });
@@ -55,14 +55,12 @@ import { agent, sessionSlot } from "@alexkroman1/aai";
 
 export const notesSlot = sessionSlot("notes", () => ({ items: [] as string[] }), {
   view: (notes) => ({ count: notes.items.length }),
+  sync: true,
 });
 
-export default agent({
-  name: "Notes",
-  systemPrompt: "You take short notes for the caller.",
-  // Show the slot to the browser client, read there with `useAgentState`.
-  syncState: notesSlot.projected,
-});
+// `sync: true` on the slot is what shows it to the browser client (read there
+// with `useAgentState`); the prompt is the system-prompt.md beside this file.
+export default agent({ name: "Notes" });
 ```
 
 - `agent()` — the agent definition; every field and default is documented on
@@ -96,13 +94,14 @@ fields the example above leaves out:
 import { agent, sessionSlot } from "@alexkroman1/aai";
 import { assemblyAITts } from "@alexkroman1/aai/tts";
 
+// `sync: true` is what the browser client renders with `useAgentState`.
 const cart = sessionSlot("cart", () => ({ items: [] as string[] }), {
   view: (c) => ({ count: c.items.length }),
+  sync: true,
 });
 
 export default agent({
   name: "Storefront",
-  systemPrompt: "You help callers order from the catalog. Confirm before charging.",
   greeting: "Storefront here — what are you after?",
   tts: assemblyAITts({ voice: "aai-michael" }),
   // Server-side helpers the model may call, on top of your own tool files.
@@ -110,8 +109,6 @@ export default agent({
   // Tool-calling steps per reply, and how long a pause ends the caller's turn.
   maxSteps: 6,
   turnTaking: { minSilenceMs: 1200 },
-  // What the browser client renders with `useAgentState`.
-  syncState: cart.projected,
   // Observe-only hooks over the session event stream.
   events: {
     "tool.called": (event) => {
@@ -183,9 +180,9 @@ caller is about to act on it.
 ```ts
 import { agent } from "@alexkroman1/aai";
 
+// system-prompt.md: "Use run_code for ANY math, counting, or data processing."
 export default agent({
   name: "Analyst",
-  systemPrompt: "Use run_code for ANY math, counting, or data processing.",
   builtinTools: ["web_search", "run_code"],
 });
 ```
@@ -432,9 +429,10 @@ import { agent, sessionSlot } from "@alexkroman1/aai";
 // `staffPin` is not in the view, so it never reaches the browser.
 export const cartSlot = sessionSlot("cart", () => ({ cart: [] as string[], staffPin: "" }), {
   view: (s) => ({ cart: s.cart }),
+  sync: true,
 });
 
-export default agent({ name: "Storefront", syncState: cartSlot.projected });
+export default agent({ name: "Storefront" }); // the `sync: true` slot is collected
 ```
 
 ```tsx
@@ -551,18 +549,20 @@ export default notesSlot.updateTool({
 });
 
 // file: agent.test.ts
-import { createToolContext, deployedAgent, runTool } from "@alexkroman1/aai-runtime/testing";
+import { createToolContext, deployedAgent, toolRunner } from "@alexkroman1/aai-runtime/testing";
 import { expect, test } from "vitest";
 import authored from "./agent.ts";
+import addNote from "./tools/add_note.ts";
 
 const agentDef = deployedAgent(authored, {
   tools: import.meta.glob("./tools/*.ts", { eager: true }),
 });
+const run = toolRunner(agentDef);
 
 test("saves a note", async () => {
-  expect(await runTool(agentDef, "add_note", { text: "milk" }, createToolContext())).toEqual({
-    saved: 1,
-  });
+  // Typed by the tool's own def: `saved` is a number, no cast.
+  const { saved } = await run(addNote, { text: "milk" }, createToolContext());
+  expect(saved).toBe(1);
 });
 ```
 
@@ -584,7 +584,7 @@ import { agent } from "@alexkroman1/aai";
 import { describeEval } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 
-const agentDef = agent({ name: "Support", systemPrompt: "Look orders up before answering." });
+const agentDef = agent({ name: "Support" }); // the prompt is system-prompt.md
 
 describeEval(agentDef, (test) => {
   test(

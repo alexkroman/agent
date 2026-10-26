@@ -14,7 +14,7 @@ import {
   useSessionStatus,
   useTheme,
 } from "./context.ts";
-import type { ClientTheme } from "./types.ts";
+import type { ClientTheme, ResolvedClientTheme } from "./types.ts";
 
 describe("useSession", () => {
   it("returns session snapshot from context", () => {
@@ -293,7 +293,7 @@ describe("useTheme", () => {
   });
 
   it("returns custom theme from provider", () => {
-    const theme: Required<ClientTheme> = {
+    const theme: ResolvedClientTheme = {
       bg: "#000",
       primary: "#f00",
       text: "#fff",

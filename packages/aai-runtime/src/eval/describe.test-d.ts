@@ -11,12 +11,33 @@
  * route's shared state reached the case through a module-level `let`.
  */
 
-import { agent } from "@alexkroman1/aai";
+import {
+  agent,
+  type BuiltinTool,
+  type SessionEvent,
+  sessionSlot,
+  tool,
+  withInstruction,
+} from "@alexkroman1/aai";
 import { createStubWorkflows } from "@alexkroman1/aai/testing";
+import { builtinTool } from "@alexkroman1/aai/tools";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { expectTypeOf, test } from "vitest";
-import { describeEval } from "./describe.ts";
+import { z } from "zod";
+import { describeEval, type EvalSteps } from "./describe.ts";
+import {
+  customEventsIn,
+  type EvalToolCall,
+  lastStateIn,
+  lastToolResultIn,
+  statesIn,
+  toolArgsIn,
+  toolResultIn,
+  toolResultsIn,
+} from "./events.ts";
 import { type EvalNetwork, evalNetwork } from "./network.ts";
+import type { EvalTurn } from "./session.ts";
+import { expectCalled, turnCalling } from "./turns.ts";
 
 type Row = { status: string };
 const def = agent({ name: "Types" });
@@ -121,4 +142,67 @@ test("a suite's workflows FACTORY types ctx.workflowClient, its attachments incl
       expectTypeOf(workflowClient).toEqualTypeOf<WorkflowClient | undefined>();
     });
   });
+});
+
+test("ctx.steps is the case's scripted step fetch, or absent", () => {
+  describeEval(def, (it) => {
+    it("may have none", async ({ steps }) => {
+      expectTypeOf(steps).toEqualTypeOf<EvalSteps | undefined>();
+    });
+  });
+});
+
+test("a reader handed the tool DEF answers the def's own types", () => {
+  const placeOrder = tool({
+    description: "Place the order",
+    inputSchema: z.object({ item: z.string() }),
+    execute: async ({ item }) => ({ id: "o1", item }),
+  });
+  const calls: readonly EvalToolCall[] = [];
+  expectTypeOf(toolResultIn(calls, placeOrder)).toEqualTypeOf<{ id: string; item: string }>();
+  expectTypeOf(toolArgsIn(calls, placeOrder)).toEqualTypeOf<readonly { item: string }[]>();
+  // A tool's NAME is not a tool: the string form is a compile error…
+  expectTypeOf<string>().not.toExtend<Parameters<typeof toolResultIn>[1]>();
+  // …and a BUILTIN, which has no file to import, is reached as a def too.
+  expectTypeOf(toolResultIn(calls, builtinTool("workflow_cancel"))).toBeUnknown();
+  expectTypeOf<Parameters<typeof builtinTool>[0]>().toEqualTypeOf<BuiltinTool>();
+  expectTypeOf<string>().not.toExtend<Parameters<typeof lastToolResultIn>[1]>();
+  expectTypeOf<string>().not.toExtend<Parameters<typeof toolResultsIn>[1]>();
+  expectTypeOf<string>().not.toExtend<Parameters<typeof toolArgsIn>[1]>();
+  // The turn reader takes the same def, and a builtin's.
+  const turns: readonly EvalTurn[] = [];
+  expectTypeOf(turnCalling(turns, placeOrder)).toEqualTypeOf<EvalTurn>();
+  expectTypeOf(turnCalling(turns, builtinTool("run_code"))).toEqualTypeOf<EvalTurn>();
+  expectTypeOf<string>().not.toExtend<Parameters<typeof turnCalling>[1]>();
+  // The claim takes defs too — each rest argument is a def, never a name.
+  expectTypeOf(expectCalled(turns, placeOrder, builtinTool("run_code"))).toBeVoid();
+  expectTypeOf<string>().not.toExtend<Parameters<typeof expectCalled>[1]>();
+});
+
+test("a result's `$instruction` is not readable off a def-typed reader — the wire never carries it", () => {
+  const plan = tool({
+    description: "Draft the plan",
+    inputSchema: z.object({ goal: z.string() }),
+    execute: async ({ goal }) => withInstruction({ steps: [goal] }, "Read it back."),
+  });
+  const calls: readonly EvalToolCall[] = [];
+  // The runtime strips the key before the `tool.completed` frame is recorded,
+  // so the type a spec reads is the result WITHOUT it.
+  expectTypeOf(toolResultIn(calls, plan)).toEqualTypeOf<{ steps: string[] }>();
+  expectTypeOf(lastToolResultIn(calls, plan)).toEqualTypeOf<{ steps: string[] }>();
+  expectTypeOf(toolResultsIn(calls, plan)).toEqualTypeOf<readonly { steps: string[] }[]>();
+  // A result that is no record — a tool answering a string — is itself.
+  const greet = tool({ description: "Greet", execute: async () => "hello" });
+  expectTypeOf(toolResultIn(calls, greet)).toEqualTypeOf<string>();
+});
+
+test("a state reader handed the PROJECTION answers the page's view", () => {
+  const cart = sessionSlot("cart", () => ({ items: [] as string[] }), {
+    view: (value) => ({ count: value.items.length }),
+  });
+  const events: readonly SessionEvent[] = [];
+  expectTypeOf(lastStateIn(events, cart.projected)).toEqualTypeOf<{ count: number } | undefined>();
+  expectTypeOf(statesIn(events, cart.projected)).toEqualTypeOf<readonly { count: number }[]>();
+  // With no declared client events, a custom event's data stays unknown.
+  expectTypeOf(customEventsIn(events, "wind_down")[0]?.data).toBeUnknown();
 });

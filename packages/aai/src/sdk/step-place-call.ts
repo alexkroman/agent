@@ -74,8 +74,19 @@ import {
   type TwilioRequest,
   twilioAdvice,
 } from "./_twilio-calls.ts";
+import {
+  assertCallBrief,
+  CALL_BRIEF_CHUNK_CHARS,
+  CALL_BRIEF_SECRET_ENV,
+  type CallBrief,
+  isCallBriefParameter,
+  MAX_CALL_BRIEF_PROMPT_CHARS,
+  signCallBrief,
+} from "./call-brief.ts";
+import type { PlacedCallStatus } from "./call-status.ts";
 import { redactCredentials } from "./channels/shared/outbox.ts";
 import { isRecord } from "./is-record.ts";
+import { MAX_CALL_PARAMETERS } from "./phone-webhook.ts";
 import { stepEnv } from "./step-env.ts";
 import { stepFetch } from "./step-fetch.ts";
 import { retryAfter } from "./step-retry.ts";
@@ -143,6 +154,22 @@ export type PlaceCallOptions = {
    * in `sessionContext`.
    */
   parameters?: Readonly<Record<string, string>>;
+  /**
+   * The call's BRIEF — the app's own call id and the task prompt — signed
+   * with the secret in `briefSecretEnv` and carried on the call as the
+   * parameters `call`, `sig` and `p0…pN` (`signCallBrief`), so the answering
+   * session reads it back with `readCallBrief(call, secret)` and refuses a stream that
+   * was not signed by this app. `parameters` may not use those names. The
+   * prompt is at most `MAX_CALL_BRIEF_PROMPT_CHARS`.
+   */
+  brief?: CallBrief;
+  /**
+   * The step-env variable holding the secret `brief` is signed with. Default
+   * `CALL_BRIEF_SECRET_ENV` (`"CALLS_API_KEY"`), which an empty string also
+   * means; the answering agent reads the same variable from its env. Unset
+   * with a `brief` is a non-retryable refusal.
+   */
+  briefSecretEnv?: string;
   /** Hard cap on the connected call, in seconds. Default `DEFAULT_CALL_TIME_LIMIT_S`. */
   timeLimitS?: number;
   /** How long it rings before `no-answer`, in seconds. Default `DEFAULT_CALL_RING_TIMEOUT_S`. */
@@ -174,54 +201,10 @@ export type CallStatusOptions = {
   signal?: AbortSignal;
 };
 
-/**
- * Where a placed call is. The last five are OVER — nothing moves off them:
- * `completed` (answered and hung up), `busy`, `no-answer`, `failed` (never
- * connected: a bad number, a carrier refusal), `canceled` (hung up by the API
- * before it was answered). Twilio's `initiated` reads as `queued`.
- */
-export type PlacedCallStatus =
-  | "queued"
-  | "ringing"
-  | "in-progress"
-  | "completed"
-  | "busy"
-  | "no-answer"
-  | "failed"
-  | "canceled"
-  | (string & {});
-
-/**
- * The {@link PlacedCallStatus} values nothing moves off — `completed`, `busy`,
- * `no-answer`, `failed`, `canceled`. What a loop following a call with
- * {@link stepCallStatus} stops on.
- *
- * Published because every body that dialled wrote its own copy of the list, and
- * a copy missing `canceled` polls a call the API already hung up until its
- * budget runs out.
- *
- * @public
- */
-export const CALL_OVER_STATUSES: ReadonlySet<PlacedCallStatus> = new Set<PlacedCallStatus>([
-  "completed",
-  "busy",
-  "no-answer",
-  "failed",
-  "canceled",
-]);
-
-/**
- * Whether a call in `status` is over — one of {@link CALL_OVER_STATUSES}.
- *
- * Takes a `string` rather than a {@link PlacedCallStatus} so a loop can start
- * from a status it made up (`"queued"`) or read back from its own store without
- * a cast; anything unknown is not over.
- *
- * @public
- */
-export function isCallOver(status: string): boolean {
-  return (CALL_OVER_STATUSES as ReadonlySet<string>).has(status);
-}
+// The status vocabulary and the "is it over" test live in `call-status.ts`
+// (this file is at the source-length cap); re-exported so the `/step` barrel
+// and every importer keep one path.
+export { CALL_OVER_STATUSES, isCallOver, type PlacedCallStatus } from "./call-status.ts";
 
 /**
  * The carrier refused, or never answered. `message` is a sentence a person can
@@ -360,6 +343,9 @@ const CARRIER_REQUEST_TIMEOUT_MS = 30_000;
  * @throws {PlaceCallError} On every failure — see the module doc.
  */
 export async function stepPlaceCall(options: PlaceCallOptions): Promise<PlacedCall> {
+  // The brief before the credentials: a prompt over the cap is the caller's
+  // problem whether or not Twilio is set up, and is reported as such.
+  const parameters = await callParameters(options);
   const credentials = resolveCredentials(options.carrier, options.credentials);
   const request = (() => {
     try {
@@ -367,7 +353,7 @@ export async function stepPlaceCall(options: PlaceCallOptions): Promise<PlacedCa
         to: options.to,
         from: options.from,
         agentUrl: answeringAgentUrl(options.agentUrl),
-        parameters: options.parameters ?? {},
+        parameters,
         timeLimitS: options.timeLimitS ?? DEFAULT_CALL_TIME_LIMIT_S,
         ringTimeoutS: options.ringTimeoutS ?? DEFAULT_CALL_RING_TIMEOUT_S,
       });
@@ -415,6 +401,51 @@ export async function stepCallStatus(options: CallStatusOptions): Promise<Placed
     );
   }
   return status;
+}
+
+/** The most `<Parameter>`s a brief takes: `call`, `sig`, and a chunk per `CALL_BRIEF_CHUNK_CHARS`. */
+const MAX_BRIEF_PARAMETERS = 2 + Math.ceil(MAX_CALL_BRIEF_PROMPT_CHARS / CALL_BRIEF_CHUNK_CHARS);
+
+/**
+ * The call's parameters: the caller's own, plus the signed brief when one is
+ * given. Every refusal here is the caller's to fix, so none is retryable. The
+ * brief's shape is checked before the secret is looked for, and the count
+ * against Twilio's limit is reported in terms of the brief — the caller sees
+ * `brief`, not the `p0…pN` it becomes.
+ */
+async function callParameters(
+  options: Pick<PlaceCallOptions, "parameters" | "brief" | "briefSecretEnv">,
+): Promise<Readonly<Record<string, string>>> {
+  const own = options.parameters ?? {};
+  if (options.brief === undefined) return own;
+  const refuse = (message: string): never => {
+    throw new PlaceCallError(message, { carrier: "twilio", retryable: false });
+  };
+  try {
+    assertCallBrief(options.brief);
+  } catch (err: unknown) {
+    refuse(errorMessage(err));
+  }
+  const taken = Object.keys(own).find(isCallBriefParameter);
+  if (taken !== undefined) {
+    refuse(`parameters.${taken} collides with the brief, which is carried as call, sig and p0…pN.`);
+  }
+  // `""` means the default too: an empty name is never a variable to read.
+  const named = options.briefSecretEnv;
+  const secretEnv = named === undefined || named === "" ? CALL_BRIEF_SECRET_ENV : named;
+  const secret = stepEnv(secretEnv)?.trim();
+  if (!secret) refuse(`${secretEnv} is not set, and the call's brief is signed with it.`);
+  const signed = await signCallBrief(options.brief, secret ?? "");
+  const ownCount = Object.keys(own).length;
+  const briefCount = Object.keys(signed).length;
+  if (ownCount + briefCount > MAX_CALL_PARAMETERS) {
+    refuse(
+      `The call would carry ${ownCount + briefCount} parameters, over the ${MAX_CALL_PARAMETERS} ` +
+        `Twilio allows: the brief takes up to ${MAX_BRIEF_PARAMETERS} (call, sig and p0…pN; ` +
+        `${briefCount} for this prompt), leaving ${MAX_CALL_PARAMETERS - briefCount} for \`parameters\`.`,
+    );
+  }
+  return { ...own, ...signed };
 }
 
 /** The credentials to use: the explicit pair, else the step env, else a refusal naming both keys. */

@@ -44,6 +44,34 @@ describe("createWorkerEvaluator", () => {
   });
 });
 
+describe("evalWorkerBundle prints a module-evaluation warning once per process", () => {
+  test("the same line from a second import of the same worker is dropped", async () => {
+    // The failure this pins: `aai build` evaluates the worker twice (the
+    // vendor pre-build, then the full build), and `withWorkflows`' name-clash
+    // warning — printed by the bundle's own SDK copy as the module evaluates —
+    // came out twice. The SDK cannot dedupe across copies; this process can.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const code = [
+        `console.warn('workflows/digest.ts default-exports a workflow, but agent({ workflows }) declares a different "digest".');`,
+        `console.warn("another line, printed once too");`,
+        `export default { name: "warns", tools: {} };`,
+      ].join("\n");
+      await evalWorkerBundle(code);
+      await evalWorkerBundle(code);
+      expect(warn.mock.calls.map(([line]) => line)).toEqual([
+        'workflows/digest.ts default-exports a workflow, but agent({ workflows }) declares a different "digest".',
+        "another line, printed once too",
+      ]);
+      // And `console.warn` is the caller's again once the import has settled.
+      console.warn("after");
+      expect(warn).toHaveBeenLastCalledWith("after");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
 /** Import a built worker and return its `__aaiConfig` self-description. */
 async function extractConfig(worker: string): Promise<Record<string, unknown>> {
   const mod = await import(`data:text/javascript;base64,${Buffer.from(worker).toString("base64")}`);

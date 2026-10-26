@@ -15,7 +15,7 @@
  * | registry | claimed by | read through |
  * | --- | --- | --- |
  * | the `ServerSession` | `attach.ts`, at resume takeover | {@link SessionDirectory.session}, {@link SessionDirectory.speech} |
- * | its {@link SessionWiring} | `../runtime/runtime.ts`'s `createSession` | {@link SessionDirectory.emitter} (`ctx.send`, a hook commit), {@link SessionDirectory.meter} (`ctx.generate`, `ctx.delegate`) |
+ * | its {@link SessionWiring} | `../runtime/session-factory.ts`'s `createSession` | {@link SessionDirectory.emitter} (`ctx.send`, a hook commit), {@link SessionDirectory.meter} (`ctx.generate`, `ctx.delegate`), {@link SessionDirectory.workflows} (`ctx.workflows`) |
  *
  * Each is an `OwnedMap` (`sdk/owned-map.ts`): a claim's release deletes the
  * entry only while that claim still owns it, which is what keeps an old
@@ -29,16 +29,26 @@
 
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
+import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import type { UsageMeter } from "../usage-meter.ts";
 import type { ServerSession } from "./core-types.ts";
 import type { SessionEmitter } from "./emitter.ts";
 import { type SpeechDirectory, speechDirectory } from "./speech.ts";
+import type { TurnCounter } from "./turn-counter.ts";
 
 /** What one session claims under its id beside the session itself. @internal */
 export type SessionWiring = {
   sink: ClientSink;
   emitter: SessionEmitter;
   meter: UsageMeter;
+  /** The committed-turn count `ctx.turn` reads — see `turn-counter.ts`. */
+  turns: TurnCounter;
+  /**
+   * This session's `ctx.workflows` — the runtime's client scoped to the
+   * session (`workflow/notify.ts`'s `withNotify`), built ONCE here rather than
+   * per tool call; `undefined` for an agent that declares none.
+   */
+  workflows: WorkflowClient | undefined;
 };
 
 /** See this module's header. @internal */
@@ -62,6 +72,10 @@ export type SessionDirectory = {
   emitter(sessionId: string): SessionEmitter | undefined;
   /** The token meter of whichever session holds `sessionId` now. */
   meter(sessionId: string): UsageMeter | undefined;
+  /** How many user turns the session holding `sessionId` has committed; `0` for none. */
+  turn(sessionId: string): number;
+  /** The session-scoped `ctx.workflows` of whichever session holds `sessionId` now. */
+  workflows(sessionId: string): WorkflowClient | undefined;
   /** `say` / `interrupt` / `announce` by id — see `speech.ts`. */
   readonly speech: SpeechDirectory;
   /** Every live session, for shutdown. */
@@ -84,6 +98,8 @@ export function createSessionDirectory(): SessionDirectory {
     claimWiring: (sessionId, wiring) => wirings.claim(sessionId, wiring),
     emitter: (sessionId) => wirings.get(sessionId)?.emitter,
     meter: (sessionId) => wirings.get(sessionId)?.meter,
+    turn: (sessionId) => wirings.get(sessionId)?.turns.count ?? 0,
+    workflows: (sessionId) => wirings.get(sessionId)?.workflows,
     speech: speechDirectory({ get: (sessionId) => sessions.get(sessionId) }),
     live: () => sessions.values(),
     ids: () => sessions.keys(),

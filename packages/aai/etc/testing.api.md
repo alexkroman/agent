@@ -14,6 +14,7 @@ interface AgentSessionContext {
     env: Readonly<Partial<Record<string, string>>>;
     sessionId: string;
     slots: SlotStore;
+    turn: number;
 }
 
 // @public
@@ -25,6 +26,14 @@ type AgentTranscriptRecovery = "turn-failed" | "session-failed" | (string & {});
 // @public
 type AnyDialog = Dialog<unknown>;
 
+// @public @sealed
+interface AnySessionEvent {
+    // (undocumented)
+    readonly meta: SessionEventMeta;
+    // (undocumented)
+    readonly type: string;
+}
+
 // @public @input
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
@@ -32,13 +41,15 @@ type AnyWorkflowDef<R = unknown> = {
     uploads?: readonly string[];
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
+    describeRun?(run: never): string;
+    cancelNote?: string | undefined;
 };
 
 // @public
 type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | "workflow_status" | "workflow_progress" | "workflow_cancel" | (string & {});
 
 // @public @input
 interface ClientEventMap {
@@ -91,7 +102,13 @@ type ClientUnreachableReason = "offline" | "busy" | "no-ack" | "disconnected" | 
 export function createRecordingWorkflows(options?: RecordingWorkflowsOptions): RecordingWorkflows;
 
 // @public
+export function createRouteContext(overrides?: RouteContextOverrides): RouteContext;
+
+// @public
 export function createRunSnapshot<R = unknown>(overrides?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
+
+// @public
+export function createRunSnapshot<R>(workflow: AnyWorkflowDef<R>, overrides?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
 
 // @public
 export function createSlotStore(): SlotStore;
@@ -104,6 +121,11 @@ export function createToolContext(overrides?: ToolContextOverrides): TestToolCon
 
 // @public
 export function createWorkflowContext(options?: WorkflowContextOptions): WorkflowContextRecorder;
+
+// @public
+type DeepReadonly<T> = T extends (...args: never[]) => unknown ? T : T extends readonly (infer E)[] ? readonly DeepReadonly<E>[] : T extends object ? {
+    readonly [K in keyof T]: DeepReadonly<T[K]>;
+} : T;
 
 // @public @sealed
 interface DelegateAnswer {
@@ -182,15 +204,16 @@ interface Dialog<E = {
     reset(ctx: SlotHolder): DialogPosition;
     send(ctx: SlotHolder, event: E): DialogPosition;
     timeout(ctx: SlotHolder): DialogTimeout | undefined;
-    tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(def: DialogToolDef<P, R, E>): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>, options?: DialogSendOptions<R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
 // @public @input
-interface DialogGate<R, E> {
+interface DialogGate<R, E, K extends string = string> {
+    reset?: true;
     send?: E;
-    sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
-    when: string | readonly string[];
+    sendFrom?: DialogSendFrom<R, E, K>;
+    when?: string | readonly string[];
 }
 
 // @public @sealed
@@ -212,6 +235,33 @@ export function dialogResultSchema<T extends z.ZodType>(result: T): z.ZodObject<
     instruction: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 
+// @public
+type DialogSendFrom<R, E, K extends string = string> = ((result: NoInfer<Exclude<R, ToolFailure>>) => E | undefined) | K;
+
+// @public
+type DialogSendFromChecked<K extends string, R, E, T> = string extends K ? T : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? T : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+
+// @public
+type DialogSendFromGuard<K extends string, R, E> = string extends K ? unknown : unknown extends R ? unknown : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? unknown : {
+    sendFrom: DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+};
+
+// @public
+type DialogSendFromKey<S, E> = keyof {
+    [K in keyof S as S[K] extends EventNameOf<E> | undefined ? K : never]: never;
+} & string;
+
+// @public @sealed
+type DialogSendFromMisuse<K extends string, Keys extends string> = {
+    readonly "sendFrom names a result field that holds no event name of this dialog": K;
+    readonly "the fields that do": Keys;
+};
+
+// @public @input
+interface DialogSendOptions<R, E, K extends string = string> {
+    sendFrom: DialogSendFrom<R, E, K>;
+}
+
 // @public @input
 interface DialogTimeout {
     readonly afterMs: number;
@@ -221,7 +271,7 @@ interface DialogTimeout {
 }
 
 // @public @input
-interface DialogToolDef<P extends ToolInputSchema, R, E> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E> {
+interface DialogToolDef<P extends ToolInputSchema | undefined, R, E, K extends string = string> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E, K> {
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
 }
 
@@ -244,6 +294,11 @@ export function endSessionCalls(ctx: Pick<ToolContext, "sessionId">): readonly {
 }[];
 
 // @public
+type EventNameOf<E> = (E & {
+    type: string;
+})["type"];
+
+// @public
 export function eventsOf<E extends {
     type: string;
 }, K extends E["type"]>(events: Iterable<E>, type: K): Extract<E, {
@@ -259,7 +314,7 @@ export function expectDeployable<const D extends {
 }>(def: D): DeployedConfig;
 
 // @public
-export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
+export function expectDialogOk<R>(result: R): [Exclude<R, ToolFailure>] extends [DialogToolResult<infer V>] ? DialogToolResult<V> : DialogToolResult<unknown>;
 
 // @public
 export function expectDialogRefused(result: unknown, state?: string): ToolFailure;
@@ -272,10 +327,10 @@ export function expectPromptBuiltinsDeclared(def: {
 }): BuiltinTool[];
 
 // @public
-export function expectToolOk<R>(result: R): R extends DialogToolResult<infer V> ? V : Exclude<R, ToolFailure>;
+export function expectSlotContract<K extends string, T, V>(slot: SessionSlot<K, T, V>, options?: SlotContractOptions<T>): void;
 
 // @public
-export function expectToolOk<T>(result: unknown): T;
+export function expectToolOk<R>(result: R): R extends DialogToolResult<infer V> ? V : Exclude<R, ToolFailure>;
 
 // @public
 export type FetchRouteHandler = (request: FetchRouteRequest) => StubStepAnswer | undefined | Promise<StubStepAnswer | undefined>;
@@ -321,6 +376,23 @@ type FindOptions = {
 };
 
 // @public @sealed
+export type FiredEvent = {
+    readonly typed: boolean;
+    readonly wildcard: boolean;
+    readonly dialogs: readonly string[];
+};
+
+// @public
+export function fireEvent(agent: {
+    readonly name?: string | undefined;
+    readonly events?: SessionEventHandlers | undefined;
+    readonly dialogs?: readonly AnyDialog[] | undefined;
+}, event: SessionEvent, ctx?: SessionEventContext): Promise<FiredEvent>;
+
+// @public @sealed
+type GatedOutput<R> = Promise<DialogToolResult<Exclude<Awaited<R>, ToolFailure>> | ToolFailure>;
+
+// @public @sealed
 type GenerateFn = {
     <S extends StandardSchemaV1>(options: GenerateOptions & {
         schema: S;
@@ -354,7 +426,10 @@ type GenerateResult = {
 type GuardrailVerdict = true | string;
 
 // @public
-type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S extends undefined ? Record<string, never> : never;
+
+// @public
+type InferToolInput<T extends ToolDef> = Parameters<T["execute"]>[0];
 
 // @public @input
 interface InterruptionTuning {
@@ -363,6 +438,9 @@ interface InterruptionTuning {
     minWords?: number;
     resumeFalseInterruption?: boolean;
 }
+
+// @public
+type IsAny<T> = 0 extends 1 & T ? true : false;
 
 // @public
 export function isEvent<E extends {
@@ -409,7 +487,7 @@ interface ModelTuning {
 export function parseSchemaInput<T = Record<string, unknown>>(schema: StandardSchemaV1 | undefined, value: unknown, what?: string): Promise<T>;
 
 // @public
-export function parseToolInput<T = Record<string, unknown>>(agent: ToolBearingAgent, name: string, value: unknown): Promise<T>;
+export function parseToolInput<D extends ToolDef<ToolInputSchema>>(tool: D, value: unknown): Promise<InferToolInput<D>>;
 
 // @public @input
 interface PipelineTuning {
@@ -422,11 +500,22 @@ interface PipelineTuning {
 type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed" | "busy" | "no-answer" | "failed" | "canceled" | (string & {});
 
 // @public @input
+type PollFirstWait = {
+    waitFor: string | undefined;
+    timeoutMs: number;
+    schema?: StandardSchemaV1 | undefined;
+};
+
+// @public @input
 type PollOptions<T> = {
     everyMs: number;
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
+    first?: PollFirstWait | undefined;
+    slowAfterMs?: number | undefined;
+    onSlow?: string | undefined;
 };
 
 // @public @sealed
@@ -434,11 +523,13 @@ type PollResult<T> = {
     value: T;
     done: boolean;
     checks: number;
+    woken?: boolean;
 };
 
 // @public @input
 export type ProjectFiles = {
     readonly tools?: Readonly<Record<string, unknown>>;
+    readonly workflows?: Readonly<Record<string, unknown>>;
     readonly systemPrompt?: string;
 };
 
@@ -452,6 +543,15 @@ interface ProviderDescriptor<Kind extends string, Options> {
 
 // @public
 type RandomSource = () => number;
+
+// @public @sealed
+export type RecordedSignal = {
+    workflow: string;
+    key: string;
+    label: string;
+    payload: unknown;
+    options: SignalOptions | undefined;
+};
 
 // @public @sealed
 export type RecordedSleep = {
@@ -473,11 +573,13 @@ export type RecordedStart = {
 export type RecordedStep = {
     name: string;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
 };
 
 // @public @sealed
 export type RecordingWorkflows = WorkflowClient & {
     readonly starts: RecordedStart[];
+    readonly signals: RecordedSignal[];
     started(workflow?: string | AnyWorkflowDef): RecordedStart[];
     readonly cancelled: string[];
     seed(...runs: WorkflowRunSnapshot[]): void;
@@ -489,6 +591,12 @@ export type RecordingWorkflowsOptions = {
     runs?: readonly WorkflowRunSnapshot[] | undefined;
     runIdPrefix?: string | undefined;
 };
+
+// @public
+type RejectThenable<R> = IsAny<R> extends true ? unknown : [R] extends [never] ? unknown : [R] extends [PromiseLike<unknown>] ? SyncMutationMisuse : unknown;
+
+// @public
+type RejectThenableResult<R> = IsAny<R> extends true ? R : [R] extends [never] ? R : [R] extends [PromiseLike<unknown>] ? SyncMutationMisuse : R;
 
 // @public @sealed
 interface RestoredToolCall {
@@ -504,6 +612,27 @@ interface RestoredToolCall {
     status: "pending" | "done";
 }
 
+// @public @sealed
+interface RouteContext {
+    clientTranscript(clientId: string, options?: StepClientTranscriptOptions): Promise<ClientTranscript>;
+    env: Readonly<Partial<Record<string, string>>>;
+    sessionTranscript(sessionId: string): Promise<readonly ClientTranscriptMessage[]>;
+    signal: AbortSignal;
+    speech(sessionId: string): SessionSpeech | undefined;
+    workflows: WorkflowClient;
+}
+
+// @public @input
+export type RouteContextOverrides = {
+    [K in keyof RouteContext]?: RouteContext[K] | undefined;
+};
+
+// @public
+export function routeHandlerOf(value: FetchRouteHandler | StubStepAnswer): FetchRouteHandler;
+
+// @public
+export function routeOf(routes: FetchRouteTable | readonly FetchRouteHandler[]): FetchRouteHandler;
+
 // @public
 export function runGuardrail(def: SpeakerDef, text: string, answer?: Partial<DelegateAnswer>): GuardrailVerdict;
 
@@ -516,9 +645,6 @@ export type RunSnapshotOverrides<R = unknown> = Partial<WorkflowRunBase> & ({
 export function runTool<T extends {
     readonly execute: (...args: never[]) => unknown;
 }>(tool: T, argsOrCtx?: Parameters<T["execute"]>[0] | ToolContext, ctx?: ToolContext): Promise<Awaited<ReturnType<T["execute"]>>>;
-
-// @public
-export function runTool(agent: ToolBearingAgent, name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext): Promise<unknown>;
 
 // @public @sealed
 export interface SaidLine {
@@ -573,6 +699,32 @@ type SessionErrorCode = "stt" | "llm" | "tts" | "tool" | "protocol" | "connectio
 
 // @public
 type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
+
+// @public
+export function sessionEvent<K extends SessionEventType>(type: K, ...rest: SessionEventRest<K>): SessionEvent<K>;
+
+// @public @sealed
+type SessionEventContext = {
+    sessionId: string;
+    env: Readonly<Partial<Record<string, string>>>;
+    slots: SlotStore;
+    speech: SessionSpeech;
+};
+
+// @public
+export type SessionEventFields<K extends SessionEventType> = {
+    [T in K]: Omit<SessionEventMap[T], "type" | "meta">;
+}[K];
+
+// @public
+type SessionEventHandler<E extends AnySessionEvent = SessionEvent> = (event: E, ctx: SessionEventContext) => unknown;
+
+// @public @input
+type SessionEventHandlers = {
+    [K in SessionEventType]?: SessionEventHandler<SessionEvent<K>>;
+} & {
+    "*"?: SessionEventHandler<AnySessionEvent>;
+};
 
 // @public @sealed
 interface SessionEventMap {
@@ -737,13 +889,59 @@ interface SessionEventMeta {
 }
 
 // @public
+export type SessionEventRest<K extends SessionEventType> = keyof SessionEventFields<K> extends never ? [fields?: SessionEventFields<K>, meta?: Partial<SessionEventMeta>] : [fields: SessionEventFields<K>, meta?: Partial<SessionEventMeta>];
+
+// @public
 type SessionEventType = Extract<keyof SessionEventMap, string>;
+
+// @public @sealed
+interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
+    readonly caps?: Readonly<Partial<Record<string, number>>>;
+    create(): T;
+    readonly durable: boolean;
+    readonly empty?: () => T;
+    get(ctx: SlotHolder): DeepReadonly<T>;
+    readonly key: K;
+    readonly projected: StateProjection<V>;
+    reset(ctx: SlotHolder): DeepReadonly<T>;
+    set(ctx: SlotHolder, value: T): DeepReadonly<T>;
+    snapshot(ctx: SlotHolder): T;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, E extends {
+        type: string;
+    } = {
+        type: string;
+    }, K extends string = string>(def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E, K> & NoInfer<DialogSendFromGuard<K, Awaited<R>, E>>, options?: DialogSendOptions<Awaited<R>, E, K>): DialogSendFromChecked<K, Awaited<R>, E, ToolDef<P, GatedOutput<R>>>;
+    // (undocumented)
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R> & UngatedDef): ToolDef<P, R>;
+    transact<Prep, R>(ctx: SlotHolder, tx: SlotTransaction<T, Prep, R>): Promise<R | ToolFailure>;
+    update<R>(ctx: SlotHolder, mutate: (draft: T) => R): RejectThenableResult<R>;
+    updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unknown, R = unknown, R2 = R, E extends {
+        type: string;
+    } = {
+        type: string;
+    }, K extends string = string>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R> & NoInfer<DialogSendFromGuard<K, Awaited<R2>, E>>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, Awaited<R2>, E, ToolDef<P, GatedOutput<R2>>>;
+    // (undocumented)
+    updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unknown, R = unknown, R2 = R>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & RejectThenable<R> & UngatedDef): ToolDef<P, Promise<R2 | ToolFailure>>;
+    // (undocumented)
+    updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R, E extends {
+        type: string;
+    } = {
+        type: string;
+    }, K extends string = string>(def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R> & NoInfer<DialogSendFromGuard<K, Awaited<R2>, E>>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, Awaited<R2>, E, ToolDef<P, GatedOutput<R2>>>;
+    // (undocumented)
+    updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R>(def: SlotUpdateToolDef<P, T, R, R2> & RejectThenable<R> & UngatedDef): ToolDef<P, R2 | Extract<R, ToolFailure>>;
+}
 
 // @public @sealed
 interface SessionSpeech {
     interrupt(): boolean;
     say(text: string, options?: SayOptions): SpeechHandle;
 }
+
+// @public @input
+type SignalOptions = {
+    holdMs?: number;
+};
 
 // @public @input
 interface SilenceNudge {
@@ -762,11 +960,33 @@ type SleepOptions = {
     correlationId?: string;
 };
 
+// @public @input
+export type SlotContractOptions<T> = {
+    readonly write?: ((draft: T) => void) | undefined;
+    readonly caps?: Readonly<Record<string, number>> | undefined;
+};
+
+// @public @input
+interface SlotDialogGate<R, E extends {
+    type: string;
+}, K extends string = string> extends DialogGate<Awaited<R>, NoInfer<E>, K> {
+    dialog: Dialog<E>;
+    sendFrom?: DialogSendFrom<Awaited<R>, NoInfer<E> & {
+        type: EventNameOf<NoInfer<E>>;
+    }, K>;
+}
+
 // @public @sealed
 type SlotHolder = {
     readonly slots: SlotStore;
     readonly sessionId: string;
 };
+
+// @public @input
+interface SlotPreparedToolDef<P extends ToolInputSchema | undefined, T, Prep, R, R2 = R> extends Omit<SlotUpdateToolDef<P, T, R, R2>, "execute"> {
+    execute(args: InferSchemaOutput<P>, draft: T, prepared: Prep, ctx: ToolContext): R;
+    prepare(args: InferSchemaOutput<P>, value: DeepReadonly<T>, ctx: ToolContext): Prep | ToolFailure | Promise<Prep | ToolFailure>;
+}
 
 // @public @sealed
 type SlotStore = {
@@ -775,6 +995,25 @@ type SlotStore = {
         durable?: boolean | undefined;
     }): void;
 };
+
+// @public @input
+interface SlotToolDef<P extends ToolInputSchema | undefined, V, R> extends Omit<ToolDef<P, R>, "execute"> {
+    execute(args: InferSchemaOutput<P>, value: V, ctx: ToolContext): R;
+    require?: (value: DeepReadonly<V>, args: InferSchemaOutput<P>) => ToolFailure | undefined;
+}
+
+// @public @input
+interface SlotTransaction<T, Prep, R> {
+    commit(draft: T, prepared: Prep): R;
+    prepare(value: DeepReadonly<T>): Prep | ToolFailure | Promise<Prep | ToolFailure>;
+    require?: (value: DeepReadonly<T>) => ToolFailure | undefined;
+}
+
+// @public @input
+interface SlotUpdateToolDef<P extends ToolInputSchema | undefined, T, R, R2 = R> extends SlotToolDef<P, T, R> {
+    execute(args: InferSchemaOutput<P>, draft: T, ctx: ToolContext): R;
+    report?: (stored: DeepReadonly<T>, partial: NoInfer<Exclude<R, ToolFailure>>) => R2;
+}
 
 // @public @input
 interface SpeakerDef<N extends string = string> extends Omit<ModelTuning, "maxRetries"> {
@@ -867,6 +1106,7 @@ type StepClientTranscriptOptions = {
 // @public @input
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
+    maxWaits?: number;
     schema?: S | undefined;
 };
 
@@ -1225,6 +1465,9 @@ export type StubUploadWrite = {
     bytes: Uint8Array;
 };
 
+// @public
+type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEFORE the mutation, not inside it: the draft is stored when the body returns, so an await inside one writes to a value that has already been stored";
+
 // @public @sealed
 export type TestToolContext = ToolContext & {
     readonly sent: SentEvent[];
@@ -1236,7 +1479,7 @@ export type TestToolContext = ToolContext & {
 
 // @public @input
 export type ToolBearingAgent = {
-    readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+    readonly tools: Readonly<Record<string, ToolDef>>;
     readonly dialogs?: readonly AnyDialog[] | undefined;
 };
 
@@ -1270,6 +1513,8 @@ type ToolContext = {
     deadlineAt: number;
     workflows: WorkflowClient;
     random: RandomSource;
+    turn: number;
+    now(): number;
 };
 
 // @public @input
@@ -1283,6 +1528,8 @@ export type ToolContextOverrides = {
     deadlineAt?: ToolContext["deadlineAt"] | undefined;
     workflows?: ToolContext["workflows"] | undefined;
     random?: ToolContext["random"] | undefined;
+    turn?: ToolContext["turn"] | undefined;
+    now?: ToolContext["now"] | undefined;
     speech?: ToolContext["speech"] | undefined;
     generate?: ToolContext["generate"] | StubGenerateScript | undefined;
     delegate?: ToolContext["delegate"] | StubDelegateScript | undefined;
@@ -1295,12 +1542,13 @@ export type ToolContextOverrides = {
 };
 
 // @public @input
-type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined, R = unknown> = {
     description: string;
-    inputSchema?: P;
+    inputSchema?: P | undefined;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
+    ui?: ToolUi;
 };
 
 // @public @input
@@ -1319,7 +1567,7 @@ type ToolFailure = {
 };
 
 // @public
-export function toolInputIssues(agent: ToolBearingAgent, name: string, value: unknown): Promise<readonly StandardSchemaIssue[] | undefined>;
+export function toolInputIssues(tool: ToolDef<ToolInputSchema>, value: unknown): Promise<readonly StandardSchemaIssue[] | undefined>;
 
 // @public
 type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
@@ -1343,10 +1591,15 @@ type ToolMessagesInput = {
 };
 
 // @public
-export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema>;
+export function toolNameOf(def: ToolDef<ToolInputSchema>): string;
 
 // @public
-export type ToolRunner = (name: string, argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext, ctx?: ToolContext) => Promise<unknown>;
+export function toolOf(agent: ToolBearingAgent, name: string): ToolDef;
+
+// @public @sealed
+export type ToolRunner = <T extends {
+    readonly execute: (...args: never[]) => unknown;
+}>(tool: T, argsOrCtx?: Parameters<T["execute"]>[0] | ToolContext, ctx?: ToolContext) => Promise<Awaited<ReturnType<T["execute"]>>>;
 
 // @public
 export function toolRunner(agent: ToolBearingAgent): ToolRunner;
@@ -1356,6 +1609,12 @@ type ToolStartMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
     blocking?: boolean | undefined;
+};
+
+// @public @input
+type ToolUi = {
+    icon?: string | undefined;
+    label?: string | undefined;
 };
 
 // @public
@@ -1381,6 +1640,11 @@ interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
 }
+
+// @public @sealed
+type UngatedDef = {
+    readonly dialog?: "this def declares `dialog`, so it is a GATED tool, and the gated overload refused it: one of `when`, `send`, `sendFrom` or `reset` does not fit that dialog, or `report` was declared on `tool`";
+};
 
 // @public @input
 interface UserTurnLimit {
@@ -1419,6 +1683,10 @@ type WorkflowClient = {
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    latest<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key?: string): Promise<WorkflowRunSnapshot<R> | undefined>;
+    latest(workflow: string, key?: string): Promise<WorkflowRunSnapshot | undefined>;
+    live<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key?: string): Promise<WorkflowRunSnapshot<R> | undefined>;
+    live(workflow: string, key?: string): Promise<WorkflowRunSnapshot | undefined>;
     findByKey(key: string, options?: FindByKeyOptions): Promise<WorkflowRunSnapshot[]>;
     cancelAll<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string): Promise<number>;
     cancelAll(workflow: string, key: string): Promise<number>;
@@ -1426,7 +1694,9 @@ type WorkflowClient = {
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
-    signal(token: string, payload?: unknown): Promise<boolean>;
+    signal(token: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
+    signalRun<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, label: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
+    signalRun(workflow: string, key: string, label: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
@@ -1438,6 +1708,7 @@ type WorkflowClient = {
 type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
+    readonly key: string | undefined;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     now(): Promise<number>;
@@ -1450,12 +1721,19 @@ type WorkflowContext = {
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
+    report<const Name extends string>(name: Name & Literal<Name>, line: string): Promise<void>;
+    signalToken(label: string): string;
+    waitForSignal<S extends StandardSchemaV1>(label: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
+    waitForSignal<S extends StandardSchemaV1>(label: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    waitForSignal<T = unknown>(label: string): Promise<T>;
+    waitForSignal<T = unknown>(label: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
 // @public @input
 export type WorkflowContextOptions = {
     runId?: string;
     workflow?: string;
+    key?: string;
     runSteps?: boolean;
     results?: Record<string, unknown>;
     hooks?: Record<string, unknown>;
@@ -1479,6 +1757,8 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
     onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
+    describeRun?(run: WorkflowRunSnapshot<R>): string;
+    cancelNote?: string | undefined;
 };
 
 // @public @sealed
@@ -1504,6 +1784,8 @@ type WorkflowRunBase = {
     createdAt: number;
     key?: string;
     label?: string;
+    startedAt?: number;
+    settledAt?: number;
 };
 
 // @public

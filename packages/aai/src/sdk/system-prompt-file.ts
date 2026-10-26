@@ -8,57 +8,45 @@
  * declares into a field on the definition, with the rules in one place and every
  * diagnostic naming the file.
  *
- * **Why a prompt is a file and a greeting is not.** A system prompt is a
- * DOCUMENT — a paragraph, headings, a bulleted list — and written inline it is
- * that document spelled as `\n\n` and `\n-` escapes inside a single-line string
- * literal: no wrapping, no preview, and one line in every diff no matter which
- * bullet changed. Prompt iteration is the main loop of authoring an agent, so
- * that is the edit landing in the least reviewable place available. A greeting is
- * one sentence with no structure to lose, and it crosses the wire in
- * `/client-config` beside `name` and `page`; those three are values and stay in
- * the call. The line is **a document goes in a file, a value stays in the call**.
+ * **The prompt is a file, and ONLY a file.** `AgentDef.systemPrompt` is not a
+ * parameter of `agent()` (`FrameworkOwnedField`, `agent-params.ts`; refused at
+ * run time too): a system prompt is a DOCUMENT — a paragraph, headings, a
+ * bulleted list — and written inline it is that document spelled as `\n\n` and
+ * `\n-` escapes inside a single-line string literal, one line in every diff no
+ * matter which bullet changed. Prompt iteration is the main loop of authoring
+ * an agent, so that is the edit landing in the least reviewable place
+ * available. A greeting is one sentence with no structure to lose, and it
+ * crosses the wire in `/client-config` beside `name` and `page`; those stay in
+ * the call. The line is **a document goes in a file, a value stays in the
+ * call** — and text computed beside the file (a menu, a line over a slot) is
+ * `agent({ promptContext })`, appended under it.
  *
  * **The filesystem read is deliberately NOT here**, for the reason
  * `tool-registry.ts` gives: the guest sandbox loads one ESM string and has no
  * directory to scan, so the read happens where the bundle is assembled and the
  * text arrives here already loaded.
- *
- * ## The file reaches a RESOLVER by the same import a composed string uses
- *
- * `AgentDef.systemPrompt` takes `string | ((ctx: AgentSessionContext) => string)`
- * (`agent-instructions.ts`), and a resolver is how an agent puts live session
- * state in front of the model without spending a tool call on it. There is
- * exactly one way for the file to reach one, and it is the one an author already
- * uses to compose a STRING out of it: `import prompt from
- * "./system-prompt.md?raw"` in `agent.ts`, closed over by the function. The
- * worked example is on `AgentSystemPrompt` — the type an author reads — and
- * `text-adventure-agent` and `tabletop-rpg-agent` are the shipped ones.
- *
- * One documented route in, not two: the `?raw` suffix is already what the
- * composed-string case takes, already type-checks under the scaffold's
- * `vite/client` reference, and already ships in four templates. A second
- * mechanism — this function partially applying the file into the resolver's
- * arguments — would read better in the one project that has a file and hand
- * `undefined` to every project that does not, since nothing calls this function
- * when there is no file to attach.
  */
 
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
 import type { AgentDef } from "./types.ts";
 
 /**
- * Attach a discovered `system-prompt.md` to an agent definition.
+ * Attach a discovered `system-prompt.md` to an agent definition — and the one
+ * door a HOST uses to set a prompt of its own on a lowered definition (the
+ * studio's coding agent, a runtime spec), since `agent()` refuses the key.
  *
  * Four outcomes, decided by comparing VALUES rather than by reading source:
  *
- * 1. The def carries the framework default — the author declared no
- *    `systemPrompt` — so the file becomes it.
- * 2. The def's prompt is a RESOLVER. Left alone: see below.
- * 3. The def's prompt CONTAINS the file's text: the author imported it, either
- *    verbatim or composed with more around it (a menu, a computed suffix). Left
- *    exactly as the author built it.
- * 4. None of those: a `system-prompt.md` exists and nothing reads it, while the
- *    agent declares a different prompt STRING. That is an ERROR.
+ * 1. The def carries the framework default — what every `agent()` call
+ *    returns — so the file becomes it.
+ * 2. The def's prompt is a RESOLVER. Left alone: a host that composes the
+ *    whole prompt per session owns it, and there is no text to compare.
+ * 3. The def's prompt CONTAINS the file's text: the file was applied already
+ *    (a re-lowering — `deployedAgent` over `virtual:aai/agent`'s def). Left
+ *    exactly as it is.
+ * 4. None of those: a `system-prompt.md` exists and nothing reads it, while
+ *    the def carries a different prompt STRING — a raw `export default {...}`
+ *    that skipped `agent()`, or a host that set one. That is an ERROR.
  *
  * **Outcome 4 is the whole point of the function.** "I edited
  * `system-prompt.md` and nothing changed" is the silent-absence failure tool
@@ -67,28 +55,19 @@ import type { AgentDef } from "./types.ts";
  * prompt that is quietly ignored produces an agent that behaves plausibly and
  * wrongly rather than one that visibly cannot do something.
  *
- * Comparing values is also what answers the question this could not otherwise
- * answer. "Does `agent.ts` reference the file?" invites either a scrape of
- * source text (fragile) or a question to the bundler's module graph (unavailable
- * at entry-generation time, since the entry is written before the build). The
- * resolved prompt answers it directly, and composition needs no special case.
+ * Comparing values is also what makes the question answerable at all: "does
+ * anything reference the file?" invites a scrape of source text or a question
+ * to the bundler's module graph (unavailable at entry-generation time, since
+ * the entry is written before the build). The resolved prompt answers it
+ * directly, and outcome 3 needs no special case.
  *
- * **Outcome 2 is where that method runs out, and refusing was the wrong
- * answer.** A resolver's text does not exist yet — it is computed per request
- * from a live session — so there is no value to search for the file's contents
- * in, and the check outcome 4 performs is simply undecidable for a function.
- * This used to throw, which cost the whole capability rather than buying
- * anything: 20 of the 29 shipped templates keep a `system-prompt.md`, so
- * dynamic instructions were unreachable from every real agent, and the remedy
- * the error suggested (import the file and compose it) produced another
- * function and threw again. What replaces the check is ownership — an author
- * who wrote a function has taken over composing the prompt, and the file
- * reaches it through the closure shown in this module's header.
- *
- * Outcome 1 cannot rescue a resolver either, and for a reason worth stating: a
- * function is never the framework default, so outcome 1's `===` can only ever
- * match a string. Every resolver reaches outcome 2, which is why that arm has
- * to be a decision rather than a fallthrough.
+ * **`promptContext` is not part of the comparison.** It is the field for an
+ * author who has a file AND a line to add under it — the whole point of it is
+ * that the file stays undeclared — so a def carrying one still reaches outcome
+ * 1, and the context rides through untouched for `buildSystemPrompt` to append
+ * under the file. Folding the context into `systemPrompt` here would make the
+ * next comparison (a rebuild, `deployedAgent` over the same def) outcome 3 by
+ * accident and `aai build`'s prompt-source report wrong.
  *
  * Generic in the def so a caller gets back the type it passed in —
  * `deployedAgent` (`@alexkroman1/aai/testing`) composes this with the tools
@@ -109,12 +88,11 @@ export function withSystemPrompt<D extends Pick<AgentDef, "systemPrompt">>(
     );
   }
   if (def.systemPrompt === DEFAULT_SYSTEM_PROMPT) return { ...def, systemPrompt: prompt };
-  // A RESOLVER, left exactly as the author built it — there is no text to
-  // search, and composing the file into one is the author's job (they may
-  // already have imported it). See outcome 2 above.
+  // A RESOLVER, left exactly as the host built it — there is no text to
+  // search. See outcome 2 above.
   if (typeof def.systemPrompt === "function") return def;
   if (def.systemPrompt.includes(trimmed)) return def;
   throw new Error(
-    'system-prompt.md exists and nothing reads it: agent.ts declares a different `systemPrompt` string. Either remove the field and let the file be the prompt, or import the file and build your prompt out of it — `import prompt from "./system-prompt.md?raw"`, then interpolate it into the string, or write `systemPrompt: (ctx) => ...` closing over it if the prompt has to see the live session.',
+    "system-prompt.md exists and nothing reads it: the agent definition carries a different `systemPrompt` string. The file IS the prompt — remove the field (an `agent()` call never writes it; a raw `export default {...}` or a host may have), and put text computed beside the file in `promptContext`.",
   );
 }

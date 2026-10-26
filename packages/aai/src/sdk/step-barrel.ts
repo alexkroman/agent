@@ -40,6 +40,8 @@
  *   {@link stepTranscribeUpload} / {@link stepTranscribeSubmit} /
  *   {@link stepTranscribePoll} for the async job API or
  *   {@link stepTranscribeSync} for the one-request one, back in.
+ *   {@link transcribeUploadDurably} is the async trio and the poll as ONE
+ *   body-side call over the body's `ctx` — the only name here that takes one.
  * - **Phone calls, outbound** — {@link stepPlaceCall} dials through Twilio and
  *   streams the answered call to an agent's `WS /phone`, with `<Parameter>`s
  *   the answering session reads as `call.parameters`; {@link stepCallStatus}
@@ -167,6 +169,17 @@ export {
   type TranscribeSubmitOptions,
   type Transcript,
 } from "./step-transcribe.ts";
+// The whole async job as a BODY-side composition over a `ctx` — `ctx.poll`'s
+// shape, for transcription.
+export {
+  type DurableTranscript,
+  TRANSCRIBE_DURABLY_STEPS,
+  TRANSCRIBE_POLL_EVERY_MS,
+  TRANSCRIBE_POLL_MAX_MS,
+  type TranscribeDurablyHost,
+  type TranscribeDurablyOptions,
+  transcribeUploadDurably,
+} from "./step-transcribe-durably.ts";
 export {
   stepTranscribeSync,
   TRANSCRIBE_SYNC_MODEL,
@@ -181,6 +194,9 @@ export {
   // does not export is a docs-build warning — which `treatWarningsAsErrors` makes a
   // failed build. `runtime-barrel.ts` carries the same note for the same reason.
   type UploadRange,
+  // `UploadInfo` is this plus its derived `label`, so a reader of the one
+  // signature has to be able to name the other.
+  type UploadRecord,
   type UploadSlice,
 } from "./step-uploads.ts";
 export { stepRequireCompleteUpload, UploadIncompleteError } from "./step-uploads-complete.ts";

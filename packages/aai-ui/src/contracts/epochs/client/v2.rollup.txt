@@ -1,0 +1,190 @@
+import { ClientConfigResponse } from '@alexkroman1/aai/protocol';
+import { ComponentType } from 'react';
+import type { DefaultToolResult } from '@alexkroman1/aai';
+import { ReactNode } from 'react';
+import type { SessionErrorCode } from '@alexkroman1/aai/protocol';
+
+// @public @sealed
+type AgentCustomEvent = {
+    readonly id: number;
+    readonly event: string;
+    readonly data: unknown;
+};
+
+// @public
+type AgentState = "disconnected" | "connecting" | "ready" | "listening" | "thinking" | "speaking" | "error" | (string & {});
+
+// @public
+type AgentStateFrame = Readonly<Record<string, unknown>>;
+
+// @public @sealed
+type BrowserSession = {
+    readonly [browserSessionBrand]: true;
+    getSnapshot(): SessionSnapshot;
+    subscribe(callback: () => void): () => void;
+    connect(options?: {
+        signal?: AbortSignal;
+    }): void;
+    cancel(): void;
+    readonly userTurn: UserTurnControls;
+    readonly identity: SessionIdentity;
+    sendText(text: string, options?: SendTextOptions): void;
+    sendToolResult(toolCallId: string, outcome: ToolCallOutcome): void;
+    setMicMuted(muted: boolean): void;
+    resetState(): void;
+    reset(): void;
+    disconnect(): void;
+    start(): void;
+    toggle(): void;
+    end(): void;
+    restart(): void;
+    resume(sessionId: string): void;
+    [Symbol.dispose](): void;
+};
+
+// @public
+const browserSessionBrand: unique symbol;
+
+// @public @sealed
+type ChatMessage = {
+    id: number;
+    role: "user" | "assistant" | (string & {});
+    content: string;
+};
+
+// @public @input
+export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "location" | "phone" | "client" | "token" | "WebSocket"> & {
+    target?: string | HTMLElement;
+    platformUrl?: string;
+    theme?: ClientTheme;
+    css?: string;
+    component?: ComponentType;
+    sidebar?: ComponentType;
+    sidebarWidth?: string;
+    sidebarPosition?: "left" | "right";
+    icon?: ReactNode;
+    subtitle?: string;
+    buttonText?: string;
+};
+
+export { ClientConfigResponse }
+
+// @public @sealed
+export type ClientHandle = {
+    session: BrowserSession;
+    dispose(): void;
+    [Symbol.dispose](): void;
+};
+
+// @public @input
+type ClientTheme = (ClientThemeTokens & {
+    mode?: undefined;
+}) | (ClientThemePreset & {
+    bg?: undefined;
+    text?: undefined;
+    surface?: undefined;
+    border?: undefined;
+});
+
+// @public @input
+type ClientThemePreset = {
+    primary: string;
+    mode?: "dark" | "light";
+};
+
+// @public @input
+type ClientThemeTokens = {
+    bg?: string;
+    primary?: string;
+    text?: string;
+    surface?: string;
+    border?: string;
+};
+
+// @public
+export function mountClient(config: ClientConfig): ClientHandle;
+
+// @public @input
+type SendTextOptions = {
+    connect?: boolean | undefined;
+};
+
+// @public @sealed
+type SessionError = {
+    readonly code: SessionErrorCode;
+    readonly message: string;
+    readonly fatal: boolean;
+};
+
+// @public @sealed
+type SessionIdentity = {
+    readonly platformUrl: string;
+    clientId(): string | undefined;
+    holderId(): string;
+    sessionId(): string | undefined;
+    ticket(): string | undefined | Promise<string | undefined>;
+};
+
+// @public @sealed
+type SessionSnapshot = {
+    readonly state: AgentState;
+    readonly recording: boolean;
+    readonly micMuted: boolean;
+    readonly apiUrl: string;
+    readonly contentVersion: number;
+    readonly messages: ChatMessage[];
+    readonly toolCalls: ToolCallInfo[];
+    readonly customEvents: AgentCustomEvent[];
+    readonly agentState: AgentStateFrame | null;
+    readonly userTranscript: string | null;
+    readonly agentTranscript: string | null;
+    readonly error: SessionError | null;
+    readonly started: boolean;
+    readonly running: boolean;
+};
+
+// @public @sealed
+type ToolCallInfo = {
+    callId: string;
+    name: string;
+    args: Record<string, DefaultToolResult>;
+    status: "pending" | "done" | (string & {});
+    result?: string | undefined;
+    seq: number;
+    afterMessageId: number;
+};
+
+// @public
+type ToolCallOutcome = {
+    result: unknown;
+} | {
+    error: string;
+};
+
+// @public @sealed
+type UserTurnControls = {
+    start(): void;
+    commit(): void;
+    clear(): void;
+};
+
+// @public @input
+type VoiceSessionOptions = {
+    platformUrl: string;
+    onSessionId?: ((sessionId: string) => void) | undefined;
+    resumeSessionId?: string | undefined;
+    location?: string | (() => string | undefined) | undefined;
+    phone?: string | (() => string | undefined) | undefined;
+    client?: string | (() => string | undefined) | undefined;
+    preConnectAudio?: boolean | undefined;
+    token?: string | ((attempt: {
+        readonly sessionId: string | undefined;
+    }) => string | undefined | Promise<string | undefined>) | undefined;
+    WebSocket?: WebSocketConstructor | undefined;
+};
+
+// @public @input
+type WebSocketConstructor = {
+    new (url: string | URL, protocols?: string | string[]): WebSocket;
+    readonly OPEN: number;
+};

@@ -16,6 +16,12 @@
  * `scripts/api-contracts.mjs`.
  */
 
+// Added with the typed-form wave: what `<FileField as="namedText">` and
+// `<TextAreaField split>` contribute (`NamedTextValue`, `FileValueShape`,
+// `TextSplitMode`), `<WorkflowFields>`'s props and render map, and the app-def
+// helpers its `name` prop is typed by (`WorkflowAppLike`, `WorkflowsOf`,
+// `WorkflowNameOf`) — shared with the workflow hooks, owned here beside the
+// component that renders the form so `workflow` stays under its export budget.
 export {
   CheckboxField,
   Field,
@@ -23,16 +29,24 @@ export {
   FileField,
   type FileReadMode,
   type FileValue,
+  type FileValueShape,
   Form,
   type FormProps,
   type FormValues,
   fieldKindFor,
   isFileValue,
+  type NamedTextValue,
   NumberField,
   SelectField,
   SubmitButton,
   TextAreaField,
   TextField,
+  type TextSplitMode,
+  type WorkflowAppLike,
   type WorkflowFieldKind,
+  type WorkflowFieldRender,
   WorkflowFields,
+  type WorkflowFieldsProps,
+  type WorkflowNameOf,
+  type WorkflowsOf,
 } from "../../index.ts";

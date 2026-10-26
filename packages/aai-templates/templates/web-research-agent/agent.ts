@@ -89,10 +89,9 @@ const mcpServers: McpServers | undefined = ARCHIVE ? { [ARCHIVE_KEY]: ARCHIVE } 
 
 export default agent({
   name: "Scout",
-  // The listing line — a registry row, `aai list`, the studio's picker. Never
-  // the model: the researcher rules are `system-prompt.md`'s. It names the
-  // citation because that is what separates Scout from a model guessing.
-  description: "Answers questions by searching the open web and citing what it found",
+  // Names the citation, because that is what separates Scout from a model
+  // guessing; the researcher rules themselves are `system-prompt.md`'s.
+  listing: "Answers questions by searching the open web and citing what it found",
   greeting:
     "Hey, I'm Scout. I search the web for answers. Try asking me something like, what happened in tech news today, or who won the last World Cup.",
   builtinTools: ["web_search", "visit_webpage"],

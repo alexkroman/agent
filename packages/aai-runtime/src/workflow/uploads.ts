@@ -46,7 +46,7 @@
  */
 
 import { MAX_WORKFLOW_UPLOAD_BYTES, type OpenUpload } from "@alexkroman1/aai/host-internal";
-import type { UploadInfo } from "@alexkroman1/aai/step";
+import type { UploadRecord } from "@alexkroman1/aai/step";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { UploadBackend } from "../uploads/index.ts";
 import {
@@ -317,12 +317,12 @@ export function createUnavailableUploadStore(missing: string): UploadStore {
       ),
     );
   return {
-    create: refuse<UploadInfo>,
-    stream: refuse<UploadInfo>,
-    beginParts: refuse<UploadInfo>,
-    writePart: refuse<UploadInfo>,
-    recordParts: refuse<UploadInfo>,
-    info: refuse<UploadInfo | undefined>,
+    create: refuse<UploadRecord>,
+    stream: refuse<UploadRecord>,
+    beginParts: refuse<UploadRecord>,
+    writePart: refuse<UploadRecord>,
+    recordParts: refuse<UploadRecord>,
+    info: refuse<UploadRecord | undefined>,
     open: refuse<OpenUpload | undefined>,
     read: refuse<Uint8Array>,
   };

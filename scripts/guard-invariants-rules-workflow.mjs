@@ -165,6 +165,12 @@ export const WORKFLOW_BODY_RULES = [
     re: `${NOT_MEMBER_BEFORE}(${NONDETERMINISTIC_READS})\\(`,
     paths: WORKFLOW_BODY_PATHSPECS,
     skipComments: true,
+    // A `workflow({ describeRun })` in the discovered `workflows/<name>.ts`
+    // runs on the HOST when a run is read back, never inside a replay, so a
+    // clock there re-executes nothing: its body is not the body this rule is
+    // about. The line scan cannot see the property boundary; `propertyBodyLines`
+    // can.
+    skipInside: ["describeRun"],
     samples: {
       matches: [
         "  const coin = Math.random() < 0.5 ? 'h' : 't';",

@@ -90,18 +90,20 @@ export type Cart = { items: string[] };
 
 export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [] }), {
   view: (cart) => ({ count: cart.items.length }),
+  sync: true,
 });
 ```
 
-**2. Push it from the agent.** `syncState` sends a fresh frame after every tool
-call:
+**2. The agent pushes it.** `sync: true` is the whole wiring: `agent()` collects
+every such slot, and a fresh frame goes out after every tool call. There is no
+`syncState` field to write.
 
 ```ts no-check
 // agent.ts
 import { agent } from "@alexkroman1/aai";
-import { cartSlot } from "./shared.ts";
+import "./shared.ts"; // the slot has to be declared in a module agent.ts imports
 
-export default agent({ name: "Store", syncState: cartSlot.projected });
+export default agent({ name: "Store" });
 ```
 
 **3. Read it in the browser** with the same object:
@@ -109,8 +111,8 @@ export default agent({ name: "Store", syncState: cartSlot.projected });
 argument, no slot name to repeat, and no empty frame to write by hand. See
 [Your own UI](/agent/more/custom-ui/).
 
-:::note[No `syncState`, nothing to receive] `useAgentState` only ever shows what
-an agent projects. An agent that declares no `syncState` pushes nothing, and the
+:::note[No `sync: true`, nothing to receive] `useAgentState` only ever shows
+what an agent projects. A slot not declared `sync: true` pushes nothing, and the
 hook has nothing to render. :::
 
 ### Why both ends pass the same object
@@ -124,7 +126,7 @@ have to agree, and nothing checks that they do.
 
 ### More than one slot
 
-`syncState` takes a list, one projection per slot the page shows. The browser
+Every slot declared `sync: true` is projected, one entry per slot. The browser
 frame is keyed by slot name, so each panel reads its own slot and re-renders
 only when that slot changes:
 
@@ -133,18 +135,16 @@ import { agent, sessionSlot } from "@alexkroman1/aai";
 
 const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }), {
   view: (cart) => ({ count: cart.items.length }),
+  sync: true,
 });
-const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }));
+const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }), { sync: true });
 
-export default agent({
-  name: "Store",
-  // The frame: { cart: { count }, prefs: { units } }.
-  syncState: [cartSlot.projected, prefsSlot.projected],
-});
+// The frame: { cart: { count }, prefs: { units } }.
+export default agent({ name: "Store" });
 ```
 
-The key must be the slot's own name; `agent()` refuses one that is not. A slot
-has one view — a panel that needs another shape derives it from that one.
+Two slots on one name are refused where the collision is named. A slot has one
+view — a panel that needs another shape derives it from that one.
 
 ## Next
 

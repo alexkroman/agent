@@ -96,7 +96,18 @@ export class TranscribeError extends Error {
  * NAME instead of as a 401 from the far side.
  */
 export function transcribeKey(opts: TranscribeRequestOptions): string {
-  return requireStepEnv(opts.apiKeyEnv ?? ASSEMBLYAI_STT_API_KEY_ENV);
+  try {
+    return requireStepEnv(opts.apiKeyEnv ?? ASSEMBLYAI_STT_API_KEY_ENV);
+  } catch (err) {
+    // A missing key is a REFUSAL of this family, `retryable: false`: the
+    // sentence `requireStepEnv` wrote, carried so `throwStepError`/`orFail`
+    // make it fatal and the engine does not spend three attempts finding the
+    // same gap. A plain `Error` here was unclassified, and unclassified is
+    // retried.
+    const refusal = transcribeRefusal(err instanceof Error ? err.message : String(err));
+    refusal.cause = err;
+    throw refusal;
+  }
 }
 
 /**

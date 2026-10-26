@@ -132,7 +132,6 @@ function toAgentConfig(source: AgentConfigSource): {
   clientInbox?: {
      sampleRate?: number;
   };
-  description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
@@ -143,10 +142,8 @@ function toAgentConfig(source: AgentConfigSource): {
      minWords?: number;
      resumeFalseInterruption?: boolean;
    };
-  llm?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
+  listing?: string;
+  llm?: ProviderDescriptor<string, Record<string, unknown>>;
   maxOutputTokens?: number;
   maxRetries?: number;
   maxSteps?: number;
@@ -158,12 +155,10 @@ function toAgentConfig(source: AgentConfigSource): {
   }>;
   mode?: "s2s" | "pipeline" | "text" | "workflow-app";
   name: string;
+  promptContext?: string;
   requiredEnv?: readonly string[];
   resetToolChoice?: boolean;
-  s2s?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
+  s2s?: ProviderDescriptor<string, Record<string, unknown>>;
   silence?: {
      deadAirCoverMs?: number;
      nudge?: {
@@ -172,10 +167,7 @@ function toAgentConfig(source: AgentConfigSource): {
      };
   };
   startFailurePhrase?: string;
-  stt?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
+  stt?: ProviderDescriptor<string, Record<string, unknown>>;
   sttPrompt?: string;
   systemPrompt: string;
   telephony?: boolean | readonly string[];
@@ -187,10 +179,7 @@ function toAgentConfig(source: AgentConfigSource): {
      toolName: string;
      type: "tool";
    };
-  tts?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
+  tts?: ProviderDescriptor<string, Record<string, unknown>>;
   turnTaking?: {
      detection?: string;
      maxSilenceMs?: number;
@@ -228,7 +217,6 @@ the runtime.
   clientInbox?: {
      sampleRate?: number;
   };
-  description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
@@ -239,10 +227,8 @@ the runtime.
      minWords?: number;
      resumeFalseInterruption?: boolean;
    };
-  llm?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
+  listing?: string;
+  llm?: ProviderDescriptor<string, Record<string, unknown>>;
   maxOutputTokens?: number;
   maxRetries?: number;
   maxSteps?: number;
@@ -254,12 +240,10 @@ the runtime.
   }>;
   mode?: "s2s" | "pipeline" | "text" | "workflow-app";
   name: string;
+  promptContext?: string;
   requiredEnv?: readonly string[];
   resetToolChoice?: boolean;
-  s2s?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
+  s2s?: ProviderDescriptor<string, Record<string, unknown>>;
   silence?: {
      deadAirCoverMs?: number;
      nudge?: {
@@ -268,10 +252,7 @@ the runtime.
      };
   };
   startFailurePhrase?: string;
-  stt?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
+  stt?: ProviderDescriptor<string, Record<string, unknown>>;
   sttPrompt?: string;
   systemPrompt: string;
   telephony?: boolean | readonly string[];
@@ -283,10 +264,7 @@ the runtime.
      toolName: string;
      type: "tool";
    };
-  tts?: {
-     kind: string;
-     options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  };
+  tts?: ProviderDescriptor<string, Record<string, unknown>>;
   turnTaking?: {
      detection?: string;
      maxSilenceMs?: number;
@@ -317,12 +295,6 @@ optional builtinTools?: readonly string[];
 {
   sampleRate?: number;
 }
-```
-
-##### description?
-
-```ts
-optional description?: string;
 ```
 
 ##### errorPhrase?
@@ -356,13 +328,16 @@ optional interruption?:
 };
 ```
 
+##### listing?
+
+```ts
+optional listing?: string;
+```
+
 ##### llm?
 
 ```ts
-{
-  kind: string;
-  options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}
+optional llm?: ProviderDescriptor<string, Record<string, unknown>>;
 ```
 
 ##### maxOutputTokens?
@@ -406,6 +381,12 @@ optional mode?: "s2s" | "pipeline" | "text" | "workflow-app";
 name: string;
 ```
 
+##### promptContext?
+
+```ts
+optional promptContext?: string;
+```
+
 ##### requiredEnv?
 
 ```ts
@@ -421,10 +402,7 @@ optional resetToolChoice?: boolean;
 ##### s2s?
 
 ```ts
-{
-  kind: string;
-  options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}
+optional s2s?: ProviderDescriptor<string, Record<string, unknown>>;
 ```
 
 ##### silence?
@@ -448,10 +426,7 @@ optional startFailurePhrase?: string;
 ##### stt?
 
 ```ts
-{
-  kind: string;
-  options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}
+optional stt?: ProviderDescriptor<string, Record<string, unknown>>;
 ```
 
 ##### sttPrompt?
@@ -494,10 +469,7 @@ optional toolChoice?:
 ##### tts?
 
 ```ts
-{
-  kind: string;
-  options: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-}
+optional tts?: ProviderDescriptor<string, Record<string, unknown>>;
 ```
 
 ##### turnTaking?
@@ -664,6 +636,12 @@ described by a type the caller did not already name. `builtinTools` joins the
 constraint as optional and widened to `readonly string[]`, so a def that
 carries none still passes and this module still names no builtin catalog.
 
+**It also RECORDS each def's name** (`_testing-tool-names.ts`). This is the
+one step every lowering goes through that pairs a def with the name the
+model calls, and a spec handed the def later — `toolResultIn(calls, def)`,
+`toolNameOf(def)` — has nowhere else to learn it. A `WeakMap` write per
+tool, so a lowering that nobody tests costs nothing.
+
 #### Type Parameters
 
 ##### D
@@ -687,6 +665,90 @@ carries none still passes and this module still names no builtin catalog.
 #### Returns
 
 `D`
+
+***
+
+### withWorkflows()
+
+```ts
+function withWorkflows<D extends object>(
+   def: D, 
+   registry: WorkflowRegistry, 
+   options?: WithWorkflowsOptions
+): D;
+```
+
+Attach a discovered registry to an agent definition, returning the def the
+runtime runs — a NEW object, for `withTools`' reason (the def a module
+exports is shared with every spec that imports it).
+
+**An explicit declaration wins a clash, and says so.** `withTools` refuses a
+name declared twice, because a tool's file IS its declaration and a second
+one is a contradiction. A workflow's declaration of record is still
+`agent({ workflows })`, and the common clash is benign — the author
+registered `workflows/digest.ts`'s def as `digest` and the file ALSO
+default-exports it, which is the same object under the same name. That case
+is silent. A DIFFERENT def under a declared name keeps the declared one and
+warns, naming the file, so the file's author learns it is not the one
+running rather than discovering it from a run that behaves like the other.
+The same def declared under ANOTHER name (`workflows: { nightly: digest }`
+beside `workflows/digest.ts`) registers ONCE, under the declared name, with
+a warning naming the file: a def under two names was listed twice by
+`GET /workflows` and could be started as either.
+
+Structural rather than `AgentDef`, and it hands back what it was given, as
+`withTools` does.
+
+#### Type Parameters
+
+##### D
+
+`D` *extends* `object`
+
+#### Parameters
+
+##### def
+
+`D`
+
+##### registry
+
+[`WorkflowRegistry`](#workflowregistry)
+
+##### options?
+
+[`WithWorkflowsOptions`](#withworkflowsoptions)
+
+#### Returns
+
+`D`
+
+***
+
+### workflowRegistry()
+
+```ts
+function workflowRegistry(modules: WorkflowModules): WorkflowRegistry;
+```
+
+The workflows a `workflows/` directory declares, from its already-loaded
+modules. Synchronous, like `toolRegistry`, so the generated entry carries no
+top-level `await`.
+
+A module that does not default-export a def is skipped (see the module
+doc) — except a bodyless two-phase declaration, which is refused naming
+`.body()`. One that is a def and is nested, misnamed or a duplicate is an
+error naming the file.
+
+#### Parameters
+
+##### modules
+
+[`WorkflowModules`](#workflowmodules)
+
+#### Returns
+
+[`WorkflowRegistry`](#workflowregistry)
 
 ## Interfaces
 
@@ -897,9 +959,10 @@ config that flows CLI → server → runtime unchanged.
 ### AgentConfigSource
 
 ```ts
-type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt" | "mcpServers"> & {
+type AgentConfigSource = Omit<AgentConfig, "mode" | "systemPrompt" | "promptContext" | "mcpServers"> & {
   mcpServers?: McpServers;
   mode?: AgentMode;
+  promptContext?: AgentPromptContext;
   systemPrompt?: AgentSystemPrompt;
 } & { [K in HostOnlyAgentField]?: unknown };
 ```
@@ -929,6 +992,14 @@ optional mode?: AgentMode;
 ```
 
 See `AgentDef.mode`; `undefined` from a spread means the default.
+
+##### promptContext?
+
+```ts
+optional promptContext?: AgentPromptContext;
+```
+
+The same widening for `promptContext`, whose function half is dropped the same way.
 
 ##### systemPrompt?
 
@@ -1052,7 +1123,7 @@ type ToolModules = Readonly<Record<string, unknown>>;
 ### ToolRegistry
 
 ```ts
-type ToolRegistry = Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+type ToolRegistry = Readonly<Record<string, ToolDef>>;
 ```
 
 A checked set of tools, keyed by the name the model calls.
@@ -1068,6 +1139,7 @@ type ToolSchema = {
   name: string;
   parameters: JSONSchema7;
   type: "function";
+  ui?: ToolUi;
 };
 ```
 
@@ -1119,6 +1191,18 @@ parameters: JSONSchema7;
 type: "function";
 ```
 
+##### ui?
+
+```ts
+optional ui?: ToolUi;
+```
+
+How a page displays the tool — see `ToolUi` (`tool-def.ts`). Rides here
+for the reason `messages` does: the deployed guest builds the declaration
+from the agent's own `ToolDef`s, and the pre-connection client config
+carries the same hints (`toolUiMap`, `tool-ui.ts`), so the default client
+renders the same thing everywhere. Absent for a tool that declares none.
+
 ***
 
 ### ToolSource
@@ -1129,6 +1213,62 @@ type ToolSource = "files" | "builtin" | "mcp" | "roster" | "subagent";
 
 Where a [Toolset](#toolset-1)'s tools come from — for a log line, a collision
 message, and a spec. It decides nothing about execution; the entry does.
+
+***
+
+### WithWorkflowsOptions
+
+```ts
+type WithWorkflowsOptions = {
+  warn?: (message: string) => void;
+};
+```
+
+**`Input`**
+
+What [withWorkflows](#withworkflows) may be told.
+
+#### Properties
+
+##### warn?
+
+```ts
+optional warn?: (message: string) => void;
+```
+
+Where a name-clash warning goes. Default `console.warn`, which under
+`aai build` and `aai dev` reaches the terminal; the studio passes its own.
+
+###### Parameters
+
+###### message
+
+`string`
+
+###### Returns
+
+`void`
+
+***
+
+### WorkflowModules
+
+```ts
+type WorkflowModules = Readonly<Record<string, unknown>>;
+```
+
+`path → module namespace`, as both sources produce it: the static import
+list the CLI generates, and a spec's `import.meta.glob` (eager).
+
+***
+
+### WorkflowRegistry
+
+```ts
+type WorkflowRegistry = Readonly<Record<string, WorkflowDef>>;
+```
+
+A checked set of workflows, keyed by the name they are started under.
 
 ## Variables
 

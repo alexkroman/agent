@@ -48,11 +48,11 @@ const PICKS: Record<Category, Record<Mood, string[]>> = {
 /**
  * `updateTool` rather than `tool`: the body is handed the night's own draft and
  * whatever it leaves behind is stored, so the log the client renders and the
- * value this returns to the model are written in one place. It must be
- * SYNCHRONOUS — the mutation is committed when it returns.
+ * value this returns to the model are written in one place.
  */
 export default nightSlot.updateTool({
   description: "Get recommendations for movies, music, or books based on mood.",
+  ui: { icon: "\u{1F989}", label: "Recommending" },
   inputSchema: z.object({
     category: z.enum(CATEGORIES),
     mood: z.enum(MOODS),

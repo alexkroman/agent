@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `@alexkroman1/aai/tools` — the network builtins, callable from your own tool code.
+ * `@alexkroman1/aai/tools` — the network builtins, callable from your own tool
+ * code, and `builtinTool(name)`, any builtin as the DEF a spec reads it through.
  *
  * A FACADE. The subpath resolves here rather than at `agent-tools.ts`, which buys two
  * things the direct form could not. That module can be SPLIT as it grows without
@@ -24,3 +25,4 @@ export {
   visitWebpage,
   webSearch,
 } from "./agent-tools.ts";
+export { builtinTool } from "./builtin-tools.ts";

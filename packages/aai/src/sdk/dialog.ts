@@ -50,7 +50,12 @@
  * @module dialog
  */
 
-import { type AnyStateMachine, createActor, type EventFromLogic } from "xstate";
+import {
+  type AnyStateMachine,
+  createActor,
+  type EventFromLogic,
+  type InspectionEvent,
+} from "xstate";
 import {
   assertDialogSessionEvents,
   assertDialogTimeouts,
@@ -58,11 +63,14 @@ import {
   assertNoSpecDelays,
   toDialogEventType,
 } from "./_dialog-events.ts";
+import { compileDialogGate } from "./_dialog-gate.ts";
 import { assertDialogGraph } from "./_dialog-graph.ts";
 import { toInstruction, toPersona, toTimeout, toVoiceConfig } from "./_dialog-meta.ts";
-import { dialogRefusalMessage } from "./_dialog-refusal.ts";
+import { type DialogReading, registerDialogReader } from "./_dialog-reader.ts";
 import {
   assertDialogSource,
+  ENTER_ACTION,
+  entryHooks,
   type FlowState,
   machineFromSpec,
   readState,
@@ -73,19 +81,21 @@ import type { Dialog, DialogMachine, DialogOptions } from "./dialog-handle.ts";
 import type {
   DialogEvent,
   DialogPosition,
+  DialogSendOptions,
   DialogSpec,
   DialogTimeout,
   DialogToolDef,
   DialogToolResult,
   DialogVoiceConfig,
 } from "./dialog-types.ts";
+import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import type { ToolInputSchema } from "./schema.ts";
 import type { SessionEvent } from "./session-event-map.ts";
 import { type SessionSlot, sessionSlot } from "./session-slot.ts";
 import type { SlotHolder, StateProjection } from "./session-state.ts";
 import type { ToolDef } from "./types.ts";
-import { isToolFailure, type ToolFailure, type ToolRefusal, toolRefusal } from "./utils.ts";
+import type { ToolFailure } from "./utils.ts";
 
 // The authoring vocabulary lives in its own two modules (this file was at the
 // 500-line cap, and `dialog-types.ts` reached it in turn), and every name is
@@ -104,6 +114,12 @@ export type {
   DialogEventNames,
   DialogGate,
   DialogPosition,
+  DialogSendFrom,
+  DialogSendFromChecked,
+  DialogSendFromGuard,
+  DialogSendFromKey,
+  DialogSendFromMisuse,
+  DialogSendOptions,
   DialogSessionEventName,
   DialogSpec,
   DialogStateSpec,
@@ -112,26 +128,21 @@ export type {
   DialogToolDef,
   DialogToolResult,
   DialogVoiceConfig,
+  EventNameOf,
 } from "./dialog-types.ts";
-
-/**
- * The success half of a settled tool body, as a type the compiler can SUBTRACT.
- *
- * The same test as {@link isToolFailure}, and it exists because NEGATING that
- * one does not subtract: the false branch of a `value is ToolFailure` test
- * leaves a generic `R | ToolFailure` exactly as it was, and `R` is not the
- * `Exclude<R, ToolFailure>` that {@link DialogGate.sendFrom} declares — a
- * conditional type is only assignable FROM a source assignable to BOTH its
- * branches, and nothing is assignable to `never`. A predicate's POSITIVE branch
- * can say it, so this is what lets the one call site hand `sendFrom` a narrowed
- * value with no cast. The body is still just the failure guard.
- */
-function isSuccess<T>(value: T | ToolFailure): value is Exclude<T, ToolFailure> {
-  return !isToolFailure(value);
-}
 
 /** The event type the implementation works in: every overload narrows it. */
 type DialogEventOf = EventFromLogic<AnyStateMachine>;
+
+/**
+ * The state path an {@link ENTER_ACTION} inspection event names, or `undefined`
+ * for every other event on the stream.
+ */
+function enteredPath(event: InspectionEvent): string | undefined {
+  if (event.type !== "@xstate.action" || event.action.type !== ENTER_ACTION) return undefined;
+  const params: unknown = event.action.params;
+  return isRecord(params) && typeof params.path === "string" ? params.path : undefined;
+}
 
 /**
  * Declare a dialog statechart for an agent's conversation.
@@ -239,6 +250,14 @@ export function dialog<E extends { type: string }>(
  * hand-written equivalent's and a `durable: true` dialog resumes across the
  * switch — see `machineFromSpec`.
  *
+ * **Write the spec inline, or hold it in a `const` with `satisfies
+ * DialogSpec` — never `as const`.** The `const S` parameter keeps every `on`
+ * name a literal on its own, and both forms keep the spec contextually typed,
+ * so an `onEnter: (ctx) => …` sees `ctx` as a `SlotHolder`. An `as const`
+ * assertion drops that contextual typing (the literal is typed before the
+ * parameter sees it), which is `TS7006` on every `onEnter` parameter and
+ * nothing gained.
+ *
  * @public
  */
 export function dialog<const S extends DialogSpec>(
@@ -280,6 +299,9 @@ export function dialog(
   // fundamental defect and its message should be the one an author sees first.
   assertDialogSessionEvents(key, machine);
   assertDialogTimeouts(key, machine);
+  // The spec form's `onEnter` hooks, by state path; a machine declares none
+  // here (XState's own `entry` is its mechanism).
+  const hooks = "transition" in source ? new Map<string, never>() : entryHooks(source);
 
   /**
    * A started actor for this session's stored snapshot.
@@ -291,9 +313,11 @@ export function dialog(
    * through the resume grace window, and on the platform it can resume in a
    * different sandbox entirely). The snapshot is the state; the actor is a
    * short-lived reader of it, and every caller here stops the one it made.
+   *
+   * @param entered - Where `send` collects the states the actor ENTERS, read
+   *   off XState's inspection stream; a reader passes nothing.
    */
-  const actorFor = (state: FlowState | undefined) => {
-    const restored = state?.snapshot;
+  const actorFor = (state: FlowState | undefined, entered?: string[]) => {
     // `AnyStateMachine` throughout the BODY, deliberately. A still-generic `M`
     // resolves `SnapshotFrom<M>` to nothing with members on it, so `.value`,
     // `.status`, `.matches()` and `.getMeta()` are all errors through the narrow
@@ -301,13 +325,17 @@ export function dialog(
     // the OVERLOADS, which is where it is worth having — `Dialog.machine`, and
     // `EventFromLogic<M>` on `send`, which is what types an author's events.
     const logic: AnyStateMachine = machine;
-    // Branched rather than passing `undefined`: under
-    // `exactOptionalPropertyTypes` an explicit `undefined` is not the same as an
-    // absent options argument, and `createActor`'s options are conditionally
-    // required.
-    const actor =
-      restored === undefined ? createActor(logic) : createActor(logic, { snapshot: restored });
-    return actor.start();
+    // `omitUndefined` rather than a branch per option: under
+    // `exactOptionalPropertyTypes` an explicit `undefined` is not the same as
+    // an absent option (guard-invariants rule 2).
+    const inspect =
+      entered === undefined
+        ? undefined
+        : (event: InspectionEvent): void => {
+            const path = enteredPath(event);
+            if (path !== undefined) entered.push(path);
+          };
+    return createActor(logic, omitUndefined({ snapshot: state?.snapshot, inspect })).start();
   };
 
   const positionOf = (actor: ReturnType<typeof actorFor>): DialogPosition => {
@@ -353,6 +381,9 @@ export function dialog(
     omitUndefined({ durable: options.durable }),
   );
 
+  /** Sessions with a `send` window open right now, for the hook refusal in `send`. */
+  const sending = new Set<string>();
+
   /** Read the position without writing anything. */
   const position = (ctx: SlotHolder): DialogPosition =>
     withActor(readState(slot.get(ctx)), positionOf);
@@ -364,20 +395,52 @@ export function dialog(
    * concurrent dialog tools in one LLM step safe — the loop runs a step's tool
    * calls concurrently, so a read-modify-write that yielded would lose one of
    * the two transitions.
+   *
+   * The `onEnter` hooks run in the same window, after the new snapshot is on
+   * the draft, in the order XState entered the states — so a hook that throws
+   * discards the move along with its own effects on the stored value. A
+   * restored snapshot runs no entry action, so nothing re-fires on a read.
    */
-  const send = (ctx: SlotHolder, event: DialogEventOf): DialogPosition =>
-    slot.update(ctx, (draft) =>
-      withActor(draft, (actor) => {
-        actor.send(event);
-        draft.snapshot = actor.getPersistedSnapshot();
-        return positionOf(actor);
-      }),
-    );
+  const send = (ctx: SlotHolder, event: DialogEventOf): DialogPosition => {
+    // A hook that sends to the dialog it is a hook OF would hit the slot's
+    // own nested-window refusal, whose message talks about set/reset/update
+    // and never mentions `send`. Named here, where the rule is the dialog's.
+    if (sending.has(ctx.sessionId)) {
+      throw new Error(
+        `An onEnter hook of dialog "${key}" sent { type: "${event.type}" } to its own dialog, while the move that entered the state is still being stored. A hook may write other slots and other dialogs; the next move of this one belongs on the tool that makes it (send/sendFrom), or on the state's own timeout.`,
+      );
+    }
+    sending.add(ctx.sessionId);
+    try {
+      return slot.update(ctx, (draft) => {
+        const entered: string[] = [];
+        const actor = actorFor(draft, entered);
+        try {
+          actor.send(event);
+          draft.snapshot = actor.getPersistedSnapshot();
+          const at = positionOf(actor);
+          for (const path of entered) hooks.get(path)?.(ctx);
+          return at;
+        } finally {
+          actor.stop();
+        }
+      });
+    } finally {
+      sending.delete(ctx.sessionId);
+    }
+  };
 
   const matches = (ctx: SlotHolder, state: string): boolean =>
     withActor(readState(slot.get(ctx)), (a) => a.getSnapshot().matches(state));
 
-  return {
+  /** Position and `matches` off ONE snapshot — what a gated call reads (`_dialog-reader.ts`). */
+  const read = (ctx: SlotHolder): DialogReading =>
+    withActor(readState(slot.get(ctx)), (a) => {
+      const snapshot = a.getSnapshot();
+      return { position: positionOf(a), matches: (state) => snapshot.matches(state) };
+    });
+
+  const handle: Dialog = {
     key,
     machine,
     position,
@@ -422,33 +485,25 @@ export function dialog(
           withActor(readState(value ?? create()), (a) => project(positionOf(a))),
         { key, create: create as () => unknown },
       ),
-    tool: <P extends ToolInputSchema = ToolInputSchema, R = unknown>(
+    // The public signature answers `DialogSendFromChecked<K, …>`, a check on
+    // the field-name `sendFrom` the body cannot satisfy generically — at run
+    // time it hands back the tool, and an untyped key is refused at the call.
+    tool: (<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(
       def: DialogToolDef<P, R, DialogEventOf>,
+      options?: DialogSendOptions<R, DialogEventOf>,
     ): ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>> => {
-      const allowed = typeof def.when === "string" ? [def.when] : def.when;
-      for (const state of allowed) {
-        if (valid.has(state)) continue;
-        throw new Error(
-          `Dialog "${key}" has no state "${state}", so a tool gated on it could never run. Its states are: ${[...valid].sort().join(", ")}.`,
-        );
-      }
-      if (def.send !== undefined && def.sendFrom !== undefined) {
-        throw new Error(
-          `A tool on dialog "${key}" declares both send and sendFrom. Pick one: send for a fixed transition, sendFrom when the result decides it.`,
-        );
-      }
-      const { execute, when: _when, send: fixed, sendFrom, ...rest } = def;
-      // ONE actor for the position and every `when`; the refusal says where the
-      // conversation IS and what it expects there — what the model recovers from.
-      const refusal = (ctx: SlotHolder): ToolRefusal | undefined => {
-        const { at, here } = withActor(readState(slot.get(ctx)), (a) => ({
-          at: positionOf(a),
-          here: allowed.some((state) => a.getSnapshot().matches(state)),
-        }));
-        if (here) return undefined;
-        const expectation = at.instruction ?? `reach ${allowed.join(" or ")} first`;
-        return toolRefusal("dialog", dialogRefusalMessage(at.state, expectation));
-      };
+      // The gate halves — the refusal, the failure rule, the sibling re-check
+      // and the envelope — are `_dialog-gate.ts`, shared with a slot tool that
+      // carries a `dialog`. Compiled at declaration, where `when` is checked.
+      const gate = compileDialogGate(handle, def, options);
+      const {
+        execute,
+        when: _when,
+        send: _send,
+        sendFrom: _sendFrom,
+        reset: _reset,
+        ...rest
+      } = def;
       const minted: ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>> = {
         // Spread rather than restating `inputSchema`, for the reason
         // `SessionSlot.tool` gives: rebuilding it field by field cannot preserve
@@ -465,37 +520,20 @@ export function dialog(
         // this primitive most needs not to have.
         execute: async (args, ctx): Promise<DialogToolResult<R> | ToolFailure> => {
           // Read BEFORE the body runs — what the caller's turn is allowed to do.
-          // The ONE gate: every path (the runtime, a subagent, a spec) runs it.
-          const refused = refusal(ctx);
+          const refused = gate.refuse(ctx);
           if (refused) return refused;
+          gate.enter(ctx);
           // ANNOTATED rather than inferred: `await` on `R | ToolFailure |
           // Promise<R | ToolFailure>` yields `Awaited<R> | ToolFailure`, and
-          // `Awaited<R>` is not the `Exclude<R, ToolFailure>` that `sendFrom`
-          // now promises its parameter is. The annotation settles that once,
-          // where the alternative is a cast at the one call.
+          // `Awaited<R>` is not the `R` the envelope promises. The annotation
+          // settles that once, where the alternative is a cast at the one call.
           const result: R | ToolFailure = await execute(args, ctx);
-          // A failed tool did not do the thing, so the dialog must not move past
-          // it. See DialogGate.send.
-          if (isToolFailure(result)) return result;
-          // `isSuccess` is that same test stated as a SUBTRACTION, and it is
-          // always true here — the failure returned on the line above. What the
-          // call buys is the narrowing from `R` to `Exclude<R, ToolFailure>`
-          // that `sendFrom`'s parameter now promises, which the NEGATION of a
-          // predicate cannot give a generic. See `isSuccess`. `fixed` is
-          // `undefined` whenever `sendFrom` is not, so the two arms cannot both
-          // contribute an event (declaring both throws at declaration).
-          const event = sendFrom !== undefined && isSuccess(result) ? sendFrom(result) : fixed;
-          // A step's tool calls run CONCURRENTLY, so a sibling may have moved the
-          // dialog during the await. The gate is RE-CHECKED (synchronously, right
-          // before the send) so the event cannot fire a transition out of a state
-          // this tool was never allowed in — see `DialogGate.when` — and the
-          // position is re-READ, since `at` describes a conversation moved on.
-          const stillHere = allowed.some((state) => matches(ctx, state));
-          const moved = event === undefined || !stillHere ? position(ctx) : send(ctx, event);
-          return { ...moved, result };
+          return gate.settle(ctx, result, gate.decide(result));
         },
       };
       return minted;
-    },
+    }) as Dialog["tool"],
   };
+  registerDialogReader(handle, read);
+  return handle;
 }

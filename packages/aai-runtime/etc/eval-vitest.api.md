@@ -5,17 +5,25 @@
 ```ts
 
 import type { AgentDef } from '@alexkroman1/aai';
-import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
+import { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
+import type { ClientEventMap } from '@alexkroman1/aai';
 import { createRecordingWorkflows } from '@alexkroman1/aai/testing';
 import { dialogRefusalPattern } from '@alexkroman1/aai/testing';
 import { dialogResultSchema } from '@alexkroman1/aai/testing';
 import { eventsOf } from '@alexkroman1/aai/testing';
+import { FetchRouteHandler } from '@alexkroman1/aai/testing';
+import { FetchRouteHit } from '@alexkroman1/aai/testing';
+import { FetchRouteRequest } from '@alexkroman1/aai/testing';
+import { FetchRouteTable } from '@alexkroman1/aai/testing';
 import type { InferSchemaOutput } from '@alexkroman1/aai';
+import type { InferToolInput } from '@alexkroman1/aai';
+import type { InferToolOutput } from '@alexkroman1/aai';
 import { installStubSpeech } from '@alexkroman1/aai/testing/vitest';
 import { installStubStepDelegate } from '@alexkroman1/aai/testing/vitest';
 import { installStubStepFetch } from '@alexkroman1/aai/testing/vitest';
 import { installStubTranscribe } from '@alexkroman1/aai/testing/vitest';
 import { installStubUploads } from '@alexkroman1/aai/testing/vitest';
+import { INSTRUCTION_KEY } from '@alexkroman1/aai/utils';
 import { isEvent } from '@alexkroman1/aai/testing';
 import { LlmProvider } from '@alexkroman1/aai/llm';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
@@ -25,6 +33,7 @@ import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { StandardSchemaV1 } from '@alexkroman1/aai';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
+import type { StateProjection } from '@alexkroman1/aai';
 import type { SttProvider } from '@alexkroman1/aai/stt';
 import { StubGatewayRoute } from '@alexkroman1/aai/testing';
 import { stubGatewayRoute } from '@alexkroman1/aai/testing';
@@ -36,6 +45,7 @@ import { StubTranscribe } from '@alexkroman1/aai/testing';
 import { StubTranscribeOptions } from '@alexkroman1/aai/testing';
 import { StubUploads } from '@alexkroman1/aai/testing';
 import { StubUploadsOptions } from '@alexkroman1/aai/testing';
+import type { ToolDef } from '@alexkroman1/aai';
 import type { ToolInputSchema } from '@alexkroman1/aai';
 import type { TtsProvider } from '@alexkroman1/aai/tts';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
@@ -78,6 +88,12 @@ export type CriterionVerdict = {
 };
 
 // @public
+export function customEventsIn<K extends keyof ClientEventMap & string>(events: readonly SessionEvent[], name: K): readonly {
+    readonly event: K;
+    readonly data: ClientEventMap[K];
+}[];
+
+// @public (undocumented)
 export function customEventsIn(events: readonly SessionEvent[], name?: string): readonly {
     readonly event: string;
     readonly data: unknown;
@@ -99,6 +115,7 @@ export function describeEval<Network extends EvalNetwork = never, Client extends
 export type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
     readonly workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
     readonly network?: EvalNetwork | (() => EvalNetwork);
+    readonly steps?: EvalStepsOptions;
 };
 
 // @public
@@ -114,7 +131,9 @@ export function describeToolCalls(calls: readonly EvalToolCall[]): string;
 export function describeTurn(turn: EvalTurn): string;
 
 // @public
-export function describeWorkflowEval(agent: AgentDef, define: (test: EvalWorkflowTest) => void, options?: Omit<EvalWorkflowsOptions, "agent">): void;
+export function describeWorkflowEval(agent: AgentDef, define: (test: EvalWorkflowTest) => void, options?: Omit<EvalWorkflowsOptions, "agent"> & {
+    readonly steps?: EvalStepsOptions | undefined;
+}): void;
 
 export { dialogRefusalPattern }
 
@@ -200,6 +219,9 @@ export type EvalRequestFilter = string | RegExp | ((request: EvalRequest) => boo
 // @public
 export type EvalRoute<State = undefined> = (request: Request, info: EvalRequest, state: State) => unknown;
 
+// @public
+export function evalRunOf(turn: EvalTurn, workflow: string | AnyWorkflowDef): string;
+
 // @public @input
 export type EvalRunOptions = StartOptions & {
     readonly timeoutMs?: number | undefined;
@@ -262,6 +284,21 @@ export type EvalSleep = {
     readonly duration: string | number | Date;
 };
 
+// @public @sealed
+export type EvalSteps = {
+    readonly requests: readonly FetchRouteRequest[];
+    readonly hits: readonly FetchRouteHit[];
+    readonly held: boolean;
+    release(): void;
+};
+
+// @public @input
+export type EvalStepsOptions = {
+    readonly routes: FetchRouteTable | readonly FetchRouteHandler[];
+    readonly hold?: "first" | "none" | ((request: FetchRouteRequest) => boolean) | undefined;
+    readonly drain?: boolean | undefined;
+};
+
 // @public
 export type EvalTest<Network extends EvalNetwork = never, Client extends WorkflowClient = never> = (name: string, body: (ctx: EvalTestContext & ([Network] extends [never] ? unknown : {
     readonly network: Network;
@@ -278,6 +315,7 @@ export type EvalTestContext = {
     readonly workflows: EvalWorkflows | undefined;
     readonly workflowClient: WorkflowClient | undefined;
     readonly network: EvalNetwork | undefined;
+    readonly steps: EvalSteps | undefined;
 };
 
 // @public @sealed
@@ -319,6 +357,9 @@ export type EvalToolCall = {
 };
 
 // @public
+export type EvalToolOutput<D extends ToolDef<ToolInputSchema>> = InferToolOutput<D> extends infer O ? O extends Record<string, unknown> ? Omit<O, typeof INSTRUCTION_KEY> : O : never;
+
+// @public
 export type EvalTurn = {
     readonly text: string;
     readonly events: readonly SessionEvent[];
@@ -327,6 +368,7 @@ export type EvalTurn = {
     readonly errors: readonly SessionEvent<"error.reported">[];
     readonly endedSession?: boolean;
     readonly dtmf?: readonly string[];
+    readonly workflowStarts?: readonly EvalWorkflowStart[];
 };
 
 // @public @input
@@ -393,6 +435,13 @@ export type EvalWorkflowsOptions = {
     readonly logger?: Logger | undefined;
 };
 
+// @public @sealed
+export type EvalWorkflowStart = {
+    readonly workflow: string;
+    readonly def: AnyWorkflowDef | undefined;
+    readonly runId: string;
+};
+
 // @public
 export type EvalWorkflowTest = (name: string, body: (ctx: EvalWorkflowTestContext) => Promise<void>, options?: EvalWorkflowCaseOptions) => void;
 
@@ -400,12 +449,13 @@ export type EvalWorkflowTest = (name: string, body: (ctx: EvalWorkflowTestContex
 export type EvalWorkflowTestContext = {
     readonly app: EvalWorkflows;
     readonly mode: EvalMode;
+    readonly steps: EvalSteps | undefined;
 };
 
 export { eventsOf }
 
 // @public
-export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...names: readonly string[]): void;
+export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...tools: readonly ToolDef[]): void;
 
 // @public
 export function expectToolBeforeSpeech(turn: EvalTurn): void;
@@ -454,6 +504,9 @@ export type JudgeCallOptions = {
 export type JudgeInput = SimulatedCall | readonly EvalTurn[] | Pick<EvalSession, "events"> | string;
 
 // @public
+export function lastStateIn<V>(events: readonly SessionEvent[], projection: StateProjection<V>): V | undefined;
+
+// @public (undocumented)
 export function lastStateIn<T>(events: readonly SessionEvent[], slot: string, schema: StandardSchemaV1<unknown, T>): T | undefined;
 
 // @public (undocumented)
@@ -463,7 +516,7 @@ export function lastStateIn(events: readonly SessionEvent[], slot: string): unkn
 export function lastStateIn(events: readonly SessionEvent[]): Readonly<Record<string, unknown>> | undefined;
 
 // @public
-export function lastToolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
+export function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 
 // @public
 export type LogContext = Record<string, unknown>;
@@ -618,6 +671,9 @@ export type SimulationTarget = {
 };
 
 // @public
+export function statesIn<V>(events: readonly SessionEvent[], projection: StateProjection<V>): readonly V[];
+
+// @public (undocumented)
 export function statesIn<T>(events: readonly SessionEvent[], slot: string, schema: StandardSchemaV1<unknown, T>): readonly T[];
 
 // @public (undocumented)
@@ -740,10 +796,7 @@ export { StubUploads }
 export { StubUploadsOptions }
 
 // @public
-export function toolArgsIn<T>(calls: readonly EvalToolCall[], name: string, schema: StandardSchemaV1<unknown, T>): readonly T[];
-
-// @public (undocumented)
-export function toolArgsIn(calls: readonly EvalToolCall[], name: string): readonly Record<string, unknown>[];
+export function toolArgsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly InferToolInput<D>[];
 
 // @public
 export function toolCallsInEvents(events: readonly SessionEvent[]): readonly EvalToolCall[];
@@ -755,10 +808,10 @@ export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolC
 export function toolNames(calls: readonly EvalToolCall[]): readonly string[];
 
 // @public
-export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
+export function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 
 // @public
-export function toolResultsIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): readonly T[];
+export function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly EvalToolOutput<D>[];
 
 // @public
 export function transcriptOf(session: Pick<EvalSession, "events">, network?: EvalNetwork): string;
@@ -814,7 +867,7 @@ export interface TtsWordTiming {
 export const TURN_ENDS: ReadonlySet<SessionEvent["type"]>;
 
 // @public
-export function turnCalling(turns: readonly EvalTurn[], name: string, where?: (call: EvalToolCall) => boolean): EvalTurn;
+export function turnCalling(turns: readonly EvalTurn[], tool: ToolDef, where?: (call: EvalToolCall) => boolean): EvalTurn;
 
 // @public
 export type Unsubscribe = () => void;

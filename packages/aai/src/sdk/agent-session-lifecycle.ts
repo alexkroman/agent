@@ -39,6 +39,8 @@
  */
 
 import type { SessionCall } from "./session-call.ts";
+import type { SlotStore } from "./session-state.ts";
+import type { ClientTranscriptMessage } from "./step-client-transcript.ts";
 import type { WorkflowClient } from "./workflow.ts";
 
 /**
@@ -189,6 +191,30 @@ export interface SessionEndContext {
   call?: SessionCall;
   /** The agent's environment — the same view a tool reads as `ctx.env`. */
   env: Readonly<Partial<Record<string, string>>>;
+  /**
+   * The session's slot storage, as `SessionEventContext.slots` is — so a fact a
+   * tool or a hook WROTE during the call ("went to voicemail", the order taken)
+   * is readable at its end through the slot that owns it: `slot.get(ctx)`,
+   * since a `SessionEndContext` is a `SlotHolder`. Reads only, in effect: the
+   * session is over and nothing commits a write made here.
+   */
+  slots: SlotStore;
+  /**
+   * What was SAID on this session, oldest first: every committed user and
+   * agent line, the shape `stepClientTranscript` answers per session. Read
+   * from the session's own flushed log, so it is here for a session that
+   * named no client (a phone call, a bare browser tab) as much as for one that
+   * did — which is what lets an app that places calls record how the call
+   * went without a client id to key a transcript read by.
+   *
+   * COMMITTED lines only: an interrupted reply holds the words estimated
+   * heard (the runtime's own record), and a line the transport spoke because
+   * the model could not (a `recovery` phrase) or a `say` with `record: false`
+   * is not here — the same rule the model's own history applies. Empty for a
+   * session that recorded nothing, and for a log the backend could not read
+   * (which is logged).
+   */
+  transcript: readonly ClientTranscriptMessage[];
   /**
    * The same `start()` surface a tool's `ctx.workflows` is. Start the run that
    * digests this session here, keyed so a second stop of the same session is a

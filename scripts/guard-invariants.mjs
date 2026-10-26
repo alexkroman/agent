@@ -64,6 +64,8 @@ import {
 } from "./guard-invariants-module-dirs.mjs";
 import { LINE_RULES, NODE_RULES, SCAN_CORPORA } from "./guard-invariants-rules.mjs";
 import {
+  propertyBodyLines,
+  readRepoFile,
   scanSymlinks,
   scanTemplateEscapingImports,
   scanUndeclaredGuestRoutes,
@@ -82,9 +84,30 @@ function isSelfReferential(file, ruleKey) {
   return scope === "*" || scope.includes(ruleKey);
 }
 
-/** Drop the matches a rule must not count: its own definition, and prose. */
+/**
+ * The lines a rule's `skipInside` exempts, per file — read once per file and
+ * rule, since a rule with the option scans a corpus of a dozen bodies.
+ * @type {Map<string, Set<number>>}
+ */
+const skippedLines = new Map();
+
+/** Is `match` inside the body of a property the rule's `skipInside` names? */
+function insideSkippedProperty(match, rule) {
+  if (rule.skipInside === undefined) return false;
+  const cacheKey = `${rule.key}\u0000${match.file}`;
+  let lines = skippedLines.get(cacheKey);
+  if (lines === undefined) {
+    const source = readRepoFile(match.file);
+    lines = source === undefined ? new Set() : propertyBodyLines(source, rule.skipInside);
+    skippedLines.set(cacheKey, lines);
+  }
+  return lines.has(Number(match.line));
+}
+
+/** Drop the matches a rule must not count: its own definition, prose, and an exempt property's body. */
 function countsAsViolation(match, rule) {
   if (isSelfReferential(match.file, rule.key)) return false;
+  if (insideSkippedProperty(match, rule)) return false;
   return !(rule.skipComments && isCommentOnly(match.text));
 }
 

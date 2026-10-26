@@ -15,7 +15,6 @@
  *
  * export default agent({
  *   name: "Support",
- *   systemPrompt: "You are a support agent. Be brief.",
  *   // `llm` and `tts` keep their AssemblyAI defaults.
  *   stt: deepgramStt({ model: "nova-3", language: "en" }),
  * });

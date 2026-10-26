@@ -3,7 +3,6 @@
   "unowned": [],
   "forgotten": [
     "DefaultedAgentField",
-    "InlineToolsField",
     "InlineToolsMisuse",
     "IsAny",
     "Literal",

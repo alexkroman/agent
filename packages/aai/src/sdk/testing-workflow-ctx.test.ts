@@ -47,6 +47,8 @@ describe("steps", () => {
     await expect(ctx.step("research", work)).resolves.toBeUndefined();
     expect(work).not.toHaveBeenCalled();
     expect(ctx.steps).toEqual([{ name: "research", maxAttempts: undefined }]);
+    await ctx.step("file", () => 1, { maxAttempts: 2, maxWaits: 3 });
+    expect(ctx.steps[1]).toEqual({ name: "file", maxAttempts: 2, maxWaits: 3 });
   });
 
   test("a supplied result wins over running, so one expensive step can be stubbed", async () => {

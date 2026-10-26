@@ -1,0 +1,31 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "testing",
+  "epoch": 2,
+  "rule": 3,
+  "sha256": "6b2a3424318b3273b29b8e54ccf711810d819b5ab705fa1846026bbf081fe1ed",
+  "exports": [
+    "DEFAULT_MAX_DELIVERIES",
+    "RunTextAgentOptions",
+    "RunWorkflowOptions",
+    "ScriptedTextStep",
+    "ScriptedToolCall",
+    "StubFfmpeg",
+    "StubFfmpegCall",
+    "StubFfmpegReply",
+    "StubFfmpegScript",
+    "TextAgentTestRun",
+    "TextAgentTestToolCall",
+    "WorkflowTestHandle",
+    "WorkflowTestRead",
+    "WorkflowTestRun",
+    "WorkflowTestSignalOptions",
+    "WorkflowTestStep",
+    "WorkflowTestWait",
+    "installStubFfmpeg",
+    "runTextAgent",
+    "runWorkflow",
+    "scriptedTextModel"
+  ],
+  "rollup": "1160d31b2e019c1814dbd0176857a9650c1efaf1c11f0f3e12139624ce5c278e"
+}

@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * The durable half of one phone call: dial, follow it, collect what was said,
- * write it up, and tell whoever asked.
+ * One phone call, start to finish — the declaration, and the durable half:
+ * dial, follow it, collect what was said, write it up, and tell whoever asked.
  *
  * Every call the API places is ONE run of this body, keyed by the call id, so
  * `GET /api/v1/calls/:id` is a read of the run and the finished
@@ -11,16 +11,17 @@
  *
  * 1. **`dial`** — `stepPlaceCall` asks Twilio to ring the number and, once it is
  *    answered, stream the audio to this agent's `WS /phone`, carrying the
- *    signed brief (`call-params.ts`). Two attempts at most: Twilio takes no
- *    idempotency key, so a retried dial whose first answer was lost rings the
- *    phone twice.
- * 2. **`ring`** — a short durable sleep and a status read, until the call is
+ *    signed brief. Two attempts at most: Twilio takes no idempotency key, so a
+ *    retried dial whose first answer was lost rings the phone twice.
+ * 2. **`ring`** — a `ctx.poll` of the carrier's status, until the call is
  *    answered or over. Polled, because a call nobody picks up never reaches a
  *    session, so nothing else would ever say "no answer".
  * 3. **The call itself** — once it is answered the run PARKS on
- *    {@link callEndedToken} until the session's `onSessionEnd` signals the
- *    transcript (`agent.ts`). Suspended, not blocked: a ten-minute call costs
- *    nothing while it runs. The window is the call's own time limit plus
+ *    `ctx.waitForSignal("callEnded")` until the session's `onSessionEnd`
+ *    signals the transcript (`agent.ts`, `signalRun(call, id, "callEnded")`):
+ *    the token is derived from the run's own key — the call id — on both
+ *    sides, so neither spells it. Suspended, not blocked: a ten-minute call
+ *    costs nothing while it runs. The window is the call's own time limit plus
  *    slack, and closing unanswered is an outcome, not a failure.
  * 4. **`summarize`** and **`webhook`** — one model call over the transcript,
  *    then one POST of the finished record to the caller's `webhook_url`.
@@ -33,15 +34,9 @@
  * `outcome: "failed"` and the sentence as `error`, so the API caller and the
  * webhook get the reason rather than a run that died. A retryable refusal (a
  * 429, a 5xx) is still thrown, so the engine's retry gets its turn.
- *
- * ## Why the transcript arrives by signal and not by a read
- *
- * The session's words live in the session, and the platform keeps no log a
- * step could read them back from afterwards. So the session hands them over
- * as it ends — the one moment it has them all and is done changing them.
  */
 
-import type { WorkflowContext } from "@alexkroman1/aai";
+import { MAX_CALL_BRIEF_PROMPT_CHARS, type WorkflowContext, workflow } from "@alexkroman1/aai";
 import {
   isCallOver,
   PlaceCallError,
@@ -56,24 +51,41 @@ import { orFail } from "@alexkroman1/aai/step-errors";
 import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import { z } from "zod";
 import type { CallOutcome, CallRecord, TranscriptTurn } from "../api-types.ts";
-import { signCall } from "../call-params.ts";
-import { callEndedToken } from "./tokens.ts";
+
+/** An E.164 number: a `+`, a country code, and up to fifteen digits in all. */
+const E164 = /^\+[1-9]\d{6,14}$/;
+
+/**
+ * What `POST /api/v1/calls` accepts. Field names are snake_case because they
+ * are the public API's, exactly as the curl example writes them.
+ */
+export const callRequest = z.object({
+  phone_number: z.string().regex(E164, "phone_number must be E.164, like +14155550132"),
+  prompt: z
+    .string()
+    .trim()
+    .min(1, "prompt is required")
+    .max(
+      MAX_CALL_BRIEF_PROMPT_CHARS,
+      `prompt is at most ${MAX_CALL_BRIEF_PROMPT_CHARS} characters`,
+    ),
+  webhook_url: z.url({ protocol: /^https?$/ }).optional(),
+});
+
+const callInput = callRequest.extend({
+  id: z.string().describe("This app's call id — the run is keyed by it"),
+  created_at: z.number().describe("Epoch ms the call was requested"),
+});
 
 /** What the API hands the run. */
-export type CallInput = {
-  id: string;
-  phone_number: string;
-  prompt: string;
-  webhook_url?: string | undefined;
-  created_at: number;
-};
+export type CallInput = z.infer<typeof callInput>;
 
 /** What the answering session signals as it ends. */
 export type CallEnded = {
   transcript: TranscriptTurn[];
-  /** The agent judged it was talking to an answering machine (`end_call`). */
-  voicemail: boolean;
   duration_seconds: number;
+  /** Whether the session reached an answering machine — `end_call` said so. */
+  voicemail: boolean;
 };
 
 /** The longest a call may last, in seconds — Twilio hangs up at this. */
@@ -83,10 +95,10 @@ export const CALL_TIME_LIMIT_S = 600;
 export const RING_POLL_MS = 5000;
 
 /**
- * How many ring polls before the run gives up on an answer — past Twilio's own
+ * How long the run rings before it gives up on an answer — past Twilio's own
  * 30-second ring timeout, so the carrier normally says `no-answer` first.
  */
-export const MAX_RING_POLLS = 12;
+export const RING_BUDGET_MS = 60_000;
 
 /**
  * How long the run waits for the session to hand over its transcript: the
@@ -97,29 +109,20 @@ export const CALL_WINDOW_MS = (CALL_TIME_LIMIT_S + 120) * 1000;
 /** A dial the carrier accepted, or the sentence it refused with. */
 export type Dialled = { callId: string } | { refused: string };
 
-/** The env keys the dial needs, read one at a time so a missing one is named. */
-function dialEnv(): { from: string; secret: string } {
-  return {
-    from: requireStepEnv("TWILIO_FROM_NUMBER"),
-    secret: requireStepEnv("CALLS_API_KEY"),
-  };
-}
-
 /**
  * Ask Twilio to ring `phone_number` and stream the answered call to this
- * agent — `stepPlaceCall` points it at the agent's own public URL. A refusal
- * nobody can retry past — a missing env key, a bad number, no public URL —
- * comes back as `{ refused }`; anything retryable is thrown.
+ * agent — `stepPlaceCall` points it at the agent's own public URL and signs
+ * the brief with `CALLS_API_KEY`, which the answering session verifies. A
+ * refusal nobody can retry past — a missing env key, a bad number, no public
+ * URL — comes back as `{ refused }`; anything retryable is thrown.
  */
 export async function dial(input: CallInput): Promise<Dialled> {
   try {
-    const env = dialEnv();
-    const parameters = await signCall({ id: input.id, prompt: input.prompt }, env.secret);
     const { callId } = await stepPlaceCall({
       carrier: "twilio",
       to: input.phone_number,
-      from: env.from,
-      parameters,
+      from: requireStepEnv("TWILIO_FROM_NUMBER"),
+      brief: { id: input.id, prompt: input.prompt },
       timeLimitS: CALL_TIME_LIMIT_S,
     });
     return { callId };
@@ -169,12 +172,16 @@ export function transcriptText(transcript: readonly TranscriptTurn[]): string {
     .join("\n");
 }
 
-/** Write the call up in two or three sentences, against the task it was given. */
+/**
+ * Write the call up in two or three sentences, against the task it was given.
+ * Whether it reached a person or a machine is not asked here: the session
+ * knew, and said so on the signal (`CallEnded.voicemail`).
+ */
 export async function summarize(
   prompt: string,
   transcript: readonly TranscriptTurn[],
-): Promise<string> {
-  const { summary } = await orFail(stepGenerateJson)(
+): Promise<z.infer<typeof Summary>> {
+  return await orFail(stepGenerateJson)(
     `The task the caller was given:\n${prompt}\n\nThe call:\n${transcriptText(transcript)}`,
     {
       schema: Summary,
@@ -183,7 +190,6 @@ export async function summarize(
         "and anything they asked for. Never invent details the call does not contain.",
     },
   );
-  return summary;
 }
 
 /** POST the finished record to the caller's webhook. A non-2xx is retried by the engine. */
@@ -229,18 +235,18 @@ export async function callFlow(input: CallInput, ctx: WorkflowContext): Promise<
     return await finish(input, callRecord(input, "failed", { error: dialled.refused }), ctx);
   }
 
-  let status: PlacedCallStatus = "queued";
-  for (let i = 0; i < MAX_RING_POLLS && !connected(status) && !isCallOver(status); i++) {
-    await ctx.sleep("ring", RING_POLL_MS);
-    status = await ctx.step("ring-status", () => readStatus(dialled.callId));
-  }
-  if (!connected(status)) {
-    return await finish(input, callRecord(input, unansweredOutcome(status), {}), ctx);
+  const rang = await ctx.poll("ring", () => readStatus(dialled.callId), {
+    everyMs: RING_POLL_MS,
+    maxMs: RING_BUDGET_MS,
+    done: (status) => connected(status) || isCallOver(status),
+  });
+  if (!connected(rang.value)) {
+    return await finish(input, callRecord(input, unansweredOutcome(rang.value), {}), ctx);
   }
 
-  const ended = await ctx.waitFor<CallEnded>(callEndedToken(input.id), {
-    timeoutMs: CALL_WINDOW_MS,
-  });
+  // The token is `<workflow>:<key>:callEnded` — the run's key is the call id
+  // (`api.ts` starts it so), and `onSessionEnd` answers with `signalRun`.
+  const ended = await ctx.waitForSignal<CallEnded>("callEnded", { timeoutMs: CALL_WINDOW_MS });
   if (ended === undefined) {
     return await finish(
       input,
@@ -251,17 +257,16 @@ export async function callFlow(input: CallInput, ctx: WorkflowContext): Promise<
     );
   }
 
-  const outcome: CallOutcome = ended.voicemail ? "voicemail" : "answered";
-  const summary =
+  const written =
     ended.transcript.length === 0
       ? undefined
       : await ctx.step("summarize", () => summarize(input.prompt, ended.transcript));
   return await finish(
     input,
-    callRecord(input, outcome, {
+    callRecord(input, ended.voicemail ? "voicemail" : "answered", {
       transcript: ended.transcript,
       duration_seconds: ended.duration_seconds,
-      ...omitUndefined({ summary }),
+      ...omitUndefined({ summary: written?.summary }),
     }),
     ctx,
   );
@@ -291,3 +296,25 @@ async function finish(
     };
   }
 }
+
+/** The declaration, registered as `call` by this file's name. */
+export default workflow({
+  description: "Place one phone call, follow it to the end, and write up what was said",
+  input: callInput,
+  run: callFlow,
+  // The one line `GET /v1/calls/:id` says about a call that is not over.
+  describeRun: (run) => {
+    const who = run.label ?? "the call";
+    switch (run.status) {
+      case "completed":
+        return `${who}: ${run.output.outcome}${run.output.summary === undefined ? "" : ` — ${run.output.summary}`}`;
+      case "failed":
+        return `${who} failed: ${run.error}`;
+      case "cancelled":
+        return `${who} was cancelled.`;
+      default:
+        return `${who}: dialled, waiting for the call to end.`;
+    }
+  },
+  cancelNote: "Cancelling the run does not hang up a call already in progress.",
+});

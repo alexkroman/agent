@@ -4,7 +4,7 @@ import { z } from "zod";
 import { toAgentConfig } from "./agent-config.ts";
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import { DEFAULT_MAX_STEPS, DEFAULT_MIN_TURN_SILENCE_MS } from "./constants.ts";
-import { agent, tool, workflowApp } from "./define.ts";
+import { agent, tool, WORKFLOW_APP_REQUIRED_ENV, workflowApp } from "./define.ts";
 import { dialog } from "./dialog.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { llm } from "./providers/llm/llm.ts";
@@ -69,13 +69,28 @@ describe("agent()", () => {
   // what make the call illegal, so there is nothing legal to pass.
   const agentMisuse = (config: Record<string, unknown>) => agent(config as never);
 
-  test("`system` is not a field — it was an alias of `systemPrompt` and is gone", () => {
-    // One concept, one name. The alias existed to match the Vercel AI SDK's
-    // spelling and made `agent({ system, systemPrompt })` representable, which
-    // then needed a runtime throw to forbid. It is now a stray field, so
-    // `assertNoStrayFields` reports it and points at the name that exists.
+  test("`system` is not a field — the prompt is a file, and the old alias says so", () => {
+    // One concept, one home. The alias existed to match the Vercel AI SDK's
+    // spelling; it is now a stray field, so `assertNoStrayFields` reports it
+    // and points at the file.
     expect(() => agentMisuse({ name: "t", system: "You are terse." })).toThrow(
-      /`system` \(renamed to `systemPrompt`\)/,
+      /`system` \(replaced by the `system-prompt.md` file beside agent.ts\)/,
+    );
+  });
+
+  test("`systemPrompt` and `syncState` are refused at run time, naming where each is declared", () => {
+    // The run-time twin of their absence from every member: neither bundler
+    // type-checks user code, and an options bag reaches `agent()` past the
+    // excess-property check.
+    expect(() => agentMisuse({ name: "t", systemPrompt: "Be terse." })).toThrow(
+      /the prompt IS a file. Write it in system-prompt.md/,
+    );
+    expect(() => agentMisuse({ name: "t", systemPrompt: () => "x" })).toThrow(/promptContext/);
+    expect(() => agentMisuse({ name: "t", syncState: {} })).toThrow(
+      /sessionSlot\(key, create, \{ view, sync: true \}\)/,
+    );
+    expect(() => agentMisuse({ name: "t", description: "A desk" })).toThrow(
+      /`description` \(renamed to `listing`\)/,
     );
   });
 
@@ -133,23 +148,13 @@ describe("agent()", () => {
     expect(def.tools).toEqual({});
   });
 
-  test("a systemPrompt thunk is kept AS A FUNCTION on the def", () => {
-    // The one thing `agent()` must not do with it: resolving here would make
-    // every dynamic prompt a snapshot of its first answer, and nothing
-    // downstream could tell that from a string the author wrote.
-    const systemPrompt = (): string => "computed";
-    expect(agent({ name: "Dynamic", systemPrompt }).systemPrompt).toBe(systemPrompt);
-  });
-
   test("preserves explicit values", () => {
     const def = agent({
       name: "Custom",
-      systemPrompt: "Be nice.",
       greeting: "Hello!",
       maxSteps: 10,
       builtinTools: ["web_search"],
     });
-    expect(def.systemPrompt).toBe("Be nice.");
     expect(def.greeting).toBe("Hello!");
     expect(def.maxSteps).toBe(10);
     expect(def.builtinTools).toEqual(["web_search"]);
@@ -184,7 +189,7 @@ describe("agent()", () => {
       stt,
       llm: stage,
       tts,
-      def: agent({ name: "t", systemPrompt: "p", stt, llm: stage, tts }),
+      def: agent({ name: "t", stt, llm: stage, tts }),
     };
   }
 
@@ -205,7 +210,7 @@ describe("agent()", () => {
   });
 
   test("agent without providers resolves to the default AssemblyAI pipeline", () => {
-    const def = agent({ name: "t", systemPrompt: "p" });
+    const def = agent({ name: "t" });
     const parsed = toAgentConfig(def);
     expect(parsed.mode).toBe("pipeline");
     expect(parsed.stt?.kind).toBe("assemblyai");
@@ -214,7 +219,7 @@ describe("agent()", () => {
   });
 
   test("agent with s2s descriptor resolves to mode 's2s'", () => {
-    const def = agent({ name: "t", systemPrompt: "p", mode: "s2s", s2s: assemblyAIS2s() });
+    const def = agent({ name: "t", mode: "s2s", s2s: assemblyAIS2s() });
     const parsed = toAgentConfig(def);
     expect(parsed.mode).toBe("s2s");
     expect(parsed.stt).toBeUndefined();
@@ -313,8 +318,42 @@ describe("workflowApp()", () => {
 
   test("is `agent()` underneath — same definition, so nothing downstream sees a second shape", () => {
     const viaHelper = workflowApp({ name: "Link Digest", workflows: { digest } });
-    const viaAgent = agent({ name: "Link Digest", workflows: { digest }, mode: "workflow-app" });
+    // `requiredEnv` is the one thing the helper adds — see the next cases.
+    const viaAgent = agent({
+      name: "Link Digest",
+      workflows: { digest },
+      mode: "workflow-app",
+      requiredEnv: WORKFLOW_APP_REQUIRED_ENV,
+    });
     expect(viaHelper).toEqual(viaAgent);
+  });
+
+  test("defaults `requiredEnv` to the AssemblyAI key, which every shipped app reads", () => {
+    // A workflow app declares no providers, so nothing else in its config names
+    // a credential — and a deploy's env check is the only thing standing between
+    // a missing key and a first run that 401s inside a step.
+    const def = workflowApp({ name: "Link Digest", workflows: { digest } });
+    expect(def.requiredEnv).toEqual(["ASSEMBLYAI_API_KEY"]);
+    expect(WORKFLOW_APP_REQUIRED_ENV).toEqual(["ASSEMBLYAI_API_KEY"]);
+  });
+
+  test("`requiredEnv: []` opts out of the default", () => {
+    const def = workflowApp({ name: "Fetch Only", workflows: { digest }, requiredEnv: [] });
+    expect(def.requiredEnv).toEqual([]);
+  });
+
+  test("a declared `requiredEnv` REPLACES the default rather than extending it", () => {
+    const def = workflowApp({
+      name: "Other Key",
+      workflows: { digest },
+      requiredEnv: ["OTHER_KEY"],
+    });
+    expect(def.requiredEnv).toEqual(["OTHER_KEY"]);
+  });
+
+  test('`agent({ mode: "workflow-app" })` keeps no such default — the helper is the opt-in', () => {
+    const def = agent({ name: "Raw", workflows: { digest }, mode: "workflow-app" });
+    expect(def.requiredEnv).toBeUndefined();
   });
 
   test("the agent defaults still fill, because AgentDef requires them", () => {

@@ -14,7 +14,7 @@
  * | `ToFlightBookingAssistant` & friends (delegation tools) | the four tools {@link SPECIALISTS} generates in `routing.ts` |
  * | `CompleteOrEscalate` | `complete_or_escalate`, which pops the same stack |
  * | `interrupt_before=["…_sensitive_tools"]` | {@link stageAction} + `confirm_action` |
- * | a specialist node's BOUND tool set | {@link deskTool} / {@link deskUpdateTool}, which every desk tool is declared through |
+ * | a specialist node's BOUND tool set | {@link deskGate}, the `require` every desk tool declares |
  * | `fetch_user_flight_information` (sqlite) | `lookup_booking` over {@link seedTrip} |
  *
  * **The dialog stack is what keeps a long call on the rails.** Their insight is
@@ -33,7 +33,7 @@
  * the desks as states, which is the port's own design question rather than a
  * fix. The stack itself is real state either way, which is what
  * `complete_or_escalate` pops and what the sidebar renders — and what
- * {@link deskTool} makes binding, so the position is never merely a label on
+ * {@link deskGate} makes binding, so the position is never merely a label on
  * work that happened somewhere else.
  *
  * **`interrupt_before` becomes a spoken confirmation, and that is not a
@@ -51,14 +51,11 @@ import {
   type DialogSpec,
   dialog,
   isClockTime,
-  type SlotToolDef,
+  type SlotValueOf,
   sessionSlot,
-  type ToolContext,
-  type ToolDef,
   type ToolFailure,
-  type ToolInputSchema,
 } from "@alexkroman1/aai";
-import { formatMoney, plural, roundMoney } from "@alexkroman1/aai/utils";
+import { formatMoney, plural, roundMoney, toolFailure } from "@alexkroman1/aai/utils";
 
 // ─── The booking world ───────────────────────────────────────────────────────
 // Their notebook downloads a sqlite database of a real airline's schedule and
@@ -217,6 +214,8 @@ export type DialogState = "primary" | SpecialistId;
 export interface Specialist {
   /** What the caller hears this desk called. */
   title: string;
+  /** The glyph the page shows beside the handoff to this desk. */
+  icon: string;
   /** The brief the model is handed on delegation. */
   instructions: string;
 }
@@ -237,6 +236,7 @@ export interface Specialist {
 export const SPECIALISTS: Record<SpecialistId, Specialist> = {
   flight: {
     title: "flight desk",
+    icon: "\u{2708}",
     instructions: [
       "You are now the flight desk. Handle searching and changing flights only.",
       "Search before you quote anything, and be persistent: if the first search",
@@ -263,6 +263,7 @@ export const SPECIALISTS: Record<SpecialistId, Specialist> = {
   },
   hotel: {
     title: "hotel desk",
+    icon: "\u{1F3E8}",
     instructions: [
       "You are now the hotel desk. Handle searching and booking hotels only.",
       "Ask which city and roughly what budget, then search. Offer at most three",
@@ -285,6 +286,7 @@ export const SPECIALISTS: Record<SpecialistId, Specialist> = {
   },
   car_rental: {
     title: "car rental desk",
+    icon: "\u{1F697}",
     instructions: [
       "You are now the car rental desk. Handle searching and booking cars only.",
       "Ask the city and how many days, then search. Name the vendor, the tier",
@@ -307,6 +309,7 @@ export const SPECIALISTS: Record<SpecialistId, Specialist> = {
   },
   excursion: {
     title: "excursions desk",
+    icon: "\u{1F5FA}",
     instructions: [
       "You are now the excursions desk. Handle recommending and booking things",
       "to do only. Ask the city and what kind of thing they enjoy, then search.",
@@ -387,34 +390,23 @@ export function seedTrip(): TripState {
 export const LOG_CAP = 40;
 
 /**
- * The call's state, as one typed slot.
- *
- * `after` holds the one invariant nothing else should have to remember: the
- * stack always has `primary` at the bottom, so a `complete_or_escalate` that
- * pops one too many cannot leave the session with no assistant at all.
+ * The call's state, as one typed slot. `after` holds the one invariant nothing
+ * else should have to remember: the stack always has `primary` at the bottom,
+ * so a `complete_or_escalate` that pops one too many cannot leave the session
+ * with no assistant at all. The log is capped on the slot because a hang-up
+ * and a reported error write it as well as the tools.
  */
 export const tripSlot = sessionSlot("trip", seedTrip, {
+  sync: true,
   view: tripView,
   after: (state) => {
     if (state.dialogState.length === 0) state.dialogState.push("primary");
   },
-  // The call log rides in every `syncState` frame, and its writers are no longer
-  // only tools — `call-events.ts` appends on a hang-up and on a reported error.
-  // The bound is declared here rather than at each push, and `LOG_CAP` is
-  // exported because a spec reads it.
   caps: { log: LOG_CAP },
 });
 
-/**
- * The call as a READ hands it out: deep-frozen, and typed to say so.
- *
- * The pure helpers below take this rather than {@link TripState}, which is the
- * widening a deep-readonly slot forces and the reason it is worth doing: a
- * mutable state still satisfies it, so every `updateTool` draft passes
- * unchanged, while a helper that WOULD have mutated stops compiling instead of
- * throwing at its first call.
- */
-export type FrozenTripState = DeepReadonly<TripState>;
+/** The call as a read hands it out — what the pure helpers below take. */
+export type FrozenTripState = SlotValueOf<typeof tripSlot>;
 
 export function activeAssistant(state: FrozenTripState): DialogState {
   return state.dialogState.at(-1) ?? "primary";
@@ -423,105 +415,32 @@ export function activeAssistant(state: FrozenTripState): DialogState {
 // ─── The desk gate ───────────────────────────────────────────────────────────
 
 /**
- * Is the call at `id`'s desk? A {@link ToolFailure} naming the way in if not.
+ * The `require` every desk tool declares: is the call at `id`'s desk? A
+ * {@link ToolFailure} naming the way in if not.
  *
- * **This is the narrowing their graph gets for free, and it used to be prose.**
- * Each specialist node there binds its own tool set, so a node physically cannot
- * call another desk's tools; a voice session has ONE model with ONE tool list
- * for its whole life, so for a long time the stack was real state that the model
- * was merely ASKED to respect — `agent.ts` said so in place, and this guide's
- * own eval predicted the failure. Measured: the prompt lost 0 of 5 live runs.
- * The caller said "I need a hotel in Boston" and the model called
- * `search_hotels` at the concierge desk every time, so `dialogState` said
- * `primary` while the call was plainly doing hotel work — a stack the sidebar
- * renders and nothing keeps true.
- *
- * A tool list cannot be narrowed mid-session, but a tool can REFUSE, and a
- * refusal is a thing the model recovers from inside the same turn: it reads the
- * failure, calls `to_hotel_assistant`, gets the desk's brief, and searches. So
- * the delegation is now structural — every desk tool is reachable only from its
- * own desk — and the brief the delegation returns is guaranteed to have been
- * read before any of that desk's work happens, which was the whole point of
- * handing it back as a tool result.
- *
- * It costs one wasted round trip the first time the model reaches past the
- * stack, which is the right price: the alternative is a desk whose position is
- * decoration.
- *
- * Not exported: {@link deskTool} and {@link deskUpdateTool} are the only callers,
- * which is what makes a desk tool unable to skip it.
+ * This is the narrowing their graph gets from binding a tool set per node. A
+ * voice session has ONE model with ONE tool list for its whole life, so for a
+ * long time the stack was real state the model was merely ASKED to respect —
+ * measured live, the prompt lost 0 of 5 runs, the model searching hotels from
+ * the concierge desk every time. A tool list cannot be narrowed mid-session,
+ * but a tool can REFUSE, and a refusal is a thing the model recovers from
+ * inside the same turn: it reads the failure, calls `to_hotel_assistant`, gets
+ * the desk's brief, and searches. So the brief is guaranteed to have been read
+ * before any of that desk's work happens, at the cost of one wasted round trip
+ * the first time the model reaches past the stack.
  */
-function requireDesk(state: FrozenTripState, id: SpecialistId): ToolFailure | undefined {
-  const at = activeAssistant(state);
-  if (at === id) return undefined;
-  const here = at === "primary" ? "the main concierge" : SPECIALISTS[at].title;
-  return {
-    error:
+export function deskGate(id: SpecialistId) {
+  return (state: FrozenTripState): ToolFailure | undefined => {
+    const at = activeAssistant(state);
+    if (at === id) return undefined;
+    const here = at === "primary" ? "the main concierge" : SPECIALISTS[at].title;
+    return toolFailure(
       `That tool belongs to the ${SPECIALISTS[id].title} and this call is at ${here}. ` +
-      `Nothing was searched, staged or booked. Call to_${id}_assistant with what the ` +
-      "caller asked for — its answer is that desk's brief — and then call this tool again. " +
-      "Do not tell the caller about any of this; they should hear one continuous conversation.",
+        `Nothing was searched, staged or booked. Call to_${id}_assistant with what the ` +
+        "caller asked for — its answer is that desk's brief — and then call this tool again. " +
+        "Do not tell the caller about any of this; they should hear one continuous conversation.",
+    );
   };
-}
-
-/**
- * What a desk tool declares: the slot's own {@link SlotToolDef}, with the schema
- * REQUIRED — `cancel_ticket` takes no arguments and passes `z.object({})`.
- *
- * One code path in the wrapper is worth more than a line saved at one call
- * site: `exactOptionalPropertyTypes` is on, so an `inputSchema` forwarded
- * through a spread arrives as `P | undefined`, which is not what "this tool
- * takes no arguments" means to the slot.
- */
-type DeskToolDef<P extends ToolInputSchema, V, R> = Omit<SlotToolDef<P, V, R>, "inputSchema"> & {
-  inputSchema: P;
-};
-
-/**
- * A desk's own tool: {@link requireDesk} first, then the body — declared once.
- *
- * Nine tools used to open with the same two lines, and a wrapper is what makes
- * the narrowing STRUCTURAL rather than remembered: their graph binds a tool set
- * per node, and the tenth desk tool written here cannot forget the gate the way
- * a copied prologue can. It is the per-agent wrapper `retail-orders-agent` demonstrates, at
- * its smallest — all this one adds is the gate, so what it takes is the SLOT's
- * OWN {@link SlotToolDef} rather than a spec of its own, and a tool file reads
- * exactly as it did minus the prologue.
- *
- * Two of them because the slot has two halves and choosing wrong is a compile
- * error: a search READS the frozen state, a staging tool takes the mutable
- * draft. `requireDesk` short-circuits before either body runs, so a refused call
- * really searches, stages and books nothing.
- */
-export function deskTool<P extends ToolInputSchema, R>(
-  id: SpecialistId,
-  def: DeskToolDef<P, FrozenTripState, R>,
-): ToolDef<P, R | ToolFailure> {
-  return tripSlot.tool<P, R | ToolFailure>({
-    description: def.description,
-    inputSchema: def.inputSchema,
-    execute: (args, trip, ctx) => requireDesk(trip, id) ?? def.execute(args, trip, ctx),
-  });
-}
-
-/**
- * {@link deskTool} for a tool that WRITES — the draft half of the slot.
- *
- * Its result type is FIXED at {@link StagedReadBack} rather than generic, and
- * that is the template's central rule stated as a type: a desk tool that touches
- * the draft may only STAGE. There is nothing else for one to answer — a body
- * that applied a change itself would have to invent a receipt, and the compiler
- * asks for the read-back instead.
- */
-export function deskUpdateTool<P extends ToolInputSchema>(
-  id: SpecialistId,
-  def: DeskToolDef<P, TripState, StagedReadBack | ToolFailure>,
-): ToolDef<P, StagedReadBack | ToolFailure> {
-  return tripSlot.updateTool<P, StagedReadBack | ToolFailure>({
-    description: def.description,
-    inputSchema: def.inputSchema,
-    execute: (args, trip, ctx) => requireDesk(trip, id) ?? def.execute(args, trip, ctx),
-  });
 }
 
 /**
@@ -576,24 +495,26 @@ const gateSpec = {
     /**
      * The caller hung up, or the session timed out under them.
      *
-     * Declared on both live states rather than on a parent, because wrapping
-     * them would rename `browsing` and `awaitingConfirmation` to
-     * `onCall.browsing` and `onCall.awaitingConfirmation` — the two names every
-     * `when` in `tools/` is written against, and the sidebar renders.
-     *
-     * What it does NOT do is settle the staged action: a deadline or a session
-     * event SENDS AN EVENT, it does not run a tool, so `pending` is still
-     * whatever `stageAction` left there. That is fine here and is the reason
-     * this state is `final` — nothing may act on this call again, so nothing
-     * reads `pending` again either. It would NOT be fine as a timeout that
-     * returned to `browsing`, which is the trap recorded in
-     * `aai-runtime`'s `DIALOG-CLAUDE.md`.
+     * What the move does NOT do is settle the staged action: a session event
+     * sends an event, it does not run a tool, so `pending` is still whatever
+     * `stageAction` left there. That is safe only because this state is
+     * `final` — nothing may act on this call again. `onEnter` writes the one
+     * line a desk reading the log afterwards needs: that the caller went, and
+     * what was never applied.
      */
     abandoned: {
       final: true,
       instruction:
         "The caller is gone. Do nothing further — do not confirm the staged change, do not " +
         "book anything, and do not promise a callback.",
+      onEnter: (ctx) =>
+        tripSlot.update(ctx, (trip) => {
+          trip.log.push(
+            trip.pending
+              ? `Caller gone — never applied: ${describeStaged(trip.pending)}`
+              : "Caller gone — nothing was waiting.",
+          );
+        }),
     },
   },
 } as const satisfies DialogSpec;
@@ -665,10 +586,8 @@ export function describeStaged(action: DeepReadonly<PendingAction>): string {
 
 /**
  * What a sensitive tool answers with: the sentence to read aloud, and the fact
- * that nothing has happened yet.
- *
- * Named because {@link deskUpdateTool} pins every writing desk tool to it — see
- * there for why that is the gate rather than a convenience.
+ * that nothing has happened yet. A desk tool that touches the draft may only
+ * STAGE, and this is the only thing one has to answer.
  */
 export type StagedReadBack = {
   awaitingConfirmation: true;
@@ -694,27 +613,19 @@ export type StagedReadBack = {
  * gate. Refusing names the sentence already waiting, which is what lets the
  * model ask about that one first and restage the rest afterwards.
  */
-export function stageAction(
-  ctx: ToolContext,
-  state: TripState,
-  action: PendingAction,
-): StagedReadBack | ToolFailure {
+export function stageAction(state: TripState, action: PendingAction): StagedReadBack | ToolFailure {
   const described = describeAction(action);
   if (typeof described !== "string") return described;
   if (state.pending) {
-    return {
-      error:
-        `Something is already waiting for the caller's yes: ${describeStaged(state.pending)}. ` +
+    return toolFailure(
+      `Something is already waiting for the caller's yes: ${describeStaged(state.pending)}. ` +
         "Settle it with confirm_action or cancel_action, then ask for this one. " +
         "Only one change can be waiting at a time — nothing about this request has been staged.",
-    };
+    );
   }
   state.pending = action;
-  // The flow moves in the SAME synchronous window `pending` is written in, so
-  // the position and the payload cannot be observed disagreeing. `gateFlow` is
-  // a different slot from `tripSlot`, so this is not a nested write to the draft
-  // being held — the open-draft guard is per slot.
-  gateFlow.send(ctx, { type: "STAGED" });
+  // The staging tool's `send: STAGED` moves the gate in the same synchronous
+  // window this writes `pending` in, and not at all on the refusal above.
   state.log.push(`Awaiting confirmation: ${described}`);
   return {
     awaitingConfirmation: true,
@@ -833,7 +744,7 @@ export interface TripView {
  * have to re-switch on, and the stack top is the one field the sidebar is
  * actually built around.
  */
-export function tripView(state: FrozenTripState): TripView {
+export function tripView(state: DeepReadonly<TripState>): TripView {
   const assistant = activeAssistant(state);
   const flight = state.ticket ? FLIGHTS.find((f) => f.id === state.ticket?.flightId) : undefined;
   const described = state.pending ? describeStaged(state.pending) : null;

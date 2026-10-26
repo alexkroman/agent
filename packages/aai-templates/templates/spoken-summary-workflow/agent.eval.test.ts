@@ -48,16 +48,15 @@
 // exercised. `run.slept` below is the other half of that admission written as
 // an assertion. `aai-cli`'s `dev-workflow.scenario.test.ts` is the tier that
 // really suspends and resumes a run.
+import { TRANSCRIBE_DURABLY_STEPS, TRANSCRIBE_POLL_EVERY_MS } from "@alexkroman1/aai/step";
 import {
   describeWorkflowEval,
   installStubSpeech,
-  installStubTranscribe,
   installStubUploads,
-  stubGatewayRoute,
+  installStubWorld,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { assert, expect } from "vitest";
 import agentDef, { spokenSummary } from "./agent.ts";
-import { POLL_INTERVAL_MS } from "./workflows/transcribe.ts";
 
 /** The id every case uploads the recording under. */
 const UPLOAD_ID = "upl_eval";
@@ -114,32 +113,30 @@ function publish(bytes: Uint8Array, name: string, type: string) {
  * Answer every leg of the run in memory: the three transcription calls, and the
  * model.
  *
- * ONE fake, because publishing a `stepFetch` REPLACES — a flow that transcribes
- * AND calls a model cannot install two, which is exactly what `otherwise` is
- * for. BOTH halves are the SDK's own fakes rather than this file's hand-typed
- * wire, and it is the same argument twice: each routes off the SDK's own
- * endpoint constant, so a case cannot pass because the fake and the step agree
- * on a typo. The predicate here used to be `url.includes("llm-gateway")` — a
- * HOST, which the default gateway happens to carry and a `gatewayUrl` pointed
- * anywhere else does not, so the fake would have gone on answering the
- * transcription 404 to a model call it no longer recognised.
+ * ONE published `stepFetch`, because publishing REPLACES — a flow that
+ * transcribes AND calls a model cannot install two. `installStubWorld` composes
+ * the SDK's own two fakes in the order that works (the transcription fake owns
+ * the slot, the gateway answers what it declines), and leaves the eval's
+ * reporter in place. Both halves route off the SDK's own endpoint constants, so
+ * a case cannot pass because a fake and a step agree on a typo.
  *
- * The reader also hands back DECODED calls, which is why the case below asks
- * `model.calls[0].prompt` what the model was SHOWN: off a raw request body that
- * is the whole serialized request, `model` and `reasoning_effort` included.
+ * The world hands back DECODED calls, which is why the case below asks
+ * `model[0].prompt` what the model was SHOWN: off a raw request body that is
+ * the whole serialized request, `model` and `reasoning_effort` included.
  */
 function scriptProvider(options: { text?: string; pendingPolls?: number } = {}) {
-  const model = stubGatewayRoute(JSON.stringify(REPLY));
-  const provider = installStubTranscribe({
-    text: options.text ?? TRANSCRIPT,
-    durationSec: 42,
-    // Passed straight through rather than conditionally spread: the option
-    // already admits `undefined`, and `guard-invariants` rule 2 counts the
-    // spread.
-    pendingPolls: options.pendingPolls,
-    otherwise: (request) => model.route(request),
+  const world = installStubWorld({
+    model: JSON.stringify(REPLY),
+    transcribe: {
+      text: options.text ?? TRANSCRIPT,
+      durationSec: 42,
+      // Passed straight through rather than conditionally spread: the option
+      // already admits `undefined`, and `guard-invariants` rule 2 counts the
+      // spread.
+      pendingPolls: options.pendingPolls,
+    },
   });
-  return { provider, model };
+  return { provider: world.provider, model: world.model };
 }
 
 describeWorkflowEval(
@@ -196,17 +193,17 @@ describeWorkflowEval(
       expect(output.points).toHaveLength(3);
       expect(speech.calls).toHaveLength(1);
 
-      // Four legs, four narrated lines, in order — which is what a page watching
-      // the run renders.
-      expect(run.reported[0]).toMatch(/^Uploading standup\.wav /);
+      // Three narrated lines, in order — which is what a page watching the
+      // run renders.
+      expect(run.reported[0]).toMatch(/^Transcribed standup\.wav: /);
       expect(run.reported).toContain("Summarizing the transcript.");
       expect(run.reported.at(-1)).toMatch(/^Recorded a 2s summary with voice [\w-]+\.$/);
       // The job finished on its first poll, so no durable wait was asked for.
       expect(run.slept).toEqual([]);
       // One upload of the recording, and one submit — the split that exists so a
       // fault in the submit does not re-upload the file.
-      expect(provider.calls.filter((call) => call.leg === "upload")).toHaveLength(1);
-      expect(provider.calls.filter((call) => call.leg === "submit")).toHaveLength(1);
+      expect(provider.filter((call) => call.leg === "upload")).toHaveLength(1);
+      expect(provider.filter((call) => call.leg === "submit")).toHaveLength(1);
     });
 
     test("the voice reads the SCRIPT the model was asked for, not the points", async ({ app }) => {
@@ -232,11 +229,12 @@ describeWorkflowEval(
       expect(run.output?.points).toEqual(REPLY.points);
       expect(run.output?.spoken).toBe(REPLY.spoken);
 
-      // And the model was ASKED for both, over the transcript it was given. A
-      // prompt that stopped asking for a script is how the field goes missing.
-      const asked = model.calls[0];
+      // And the model was ASKED for both, over the transcript it was given: the
+      // schema the SDK appends to the system prompt is where the script is
+      // asked for, and a field dropped from it is how the field goes missing.
+      const asked = model[0];
       assert(asked !== undefined, "the run must have asked the model for a summary");
-      expect(asked.prompt).toContain("READ ALOUD");
+      expect(asked.system).toContain("READ ALOUD");
       expect(asked.prompt).toContain("The launch is on for Tuesday the fourth");
     });
 
@@ -256,7 +254,7 @@ describeWorkflowEval(
       expect(run.output).toBeUndefined();
       // Nothing was summarized and nothing was spoken, which is the half that
       // makes this more than an error-message assertion.
-      expect(model.calls).toEqual([]);
+      expect(model).toEqual([]);
       expect(speech.calls).toEqual([]);
       expect(uploads.writes).toEqual([]);
       expect(run.reported).not.toContain("Summarizing the transcript.");
@@ -281,14 +279,14 @@ describeWorkflowEval(
       // Two waits for three polls: asked for and — this being an eval rather
       // than a deployment — recorded rather than taken.
       expect(run.slept).toEqual([
-        { label: "poll", duration: POLL_INTERVAL_MS },
-        { label: "poll", duration: POLL_INTERVAL_MS },
+        { label: TRANSCRIBE_DURABLY_STEPS.poll, duration: TRANSCRIBE_POLL_EVERY_MS },
+        { label: TRANSCRIBE_DURABLY_STEPS.poll, duration: TRANSCRIBE_POLL_EVERY_MS },
       ]);
-      expect(provider.calls.filter((call) => call.leg === "poll")).toHaveLength(3);
+      expect(provider.filter((call) => call.leg === "poll")).toHaveLength(3);
       // The expensive half happened ONCE, which is the whole reason the upload
       // and the submit are separate steps.
-      expect(provider.calls.filter((call) => call.leg === "upload")).toHaveLength(1);
-      expect(provider.calls.filter((call) => call.leg === "submit")).toHaveLength(1);
+      expect(provider.filter((call) => call.leg === "upload")).toHaveLength(1);
+      expect(provider.filter((call) => call.leg === "submit")).toHaveLength(1);
     });
 
     test(

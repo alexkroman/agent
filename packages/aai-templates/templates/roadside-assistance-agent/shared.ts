@@ -1,4 +1,4 @@
-import type { DeepReadonly, SlotCaps } from "@alexkroman1/aai";
+import type { SlotCaps, SlotValueOf } from "@alexkroman1/aai";
 import { sessionSlot, spokenAlphanumeric } from "@alexkroman1/aai";
 import { formatMoney } from "@alexkroman1/aai/utils";
 
@@ -53,14 +53,7 @@ export const NON_MEMBER = {
   perMile: 7,
 } as const;
 
-/**
- * The rate card in force for a coverage record — or for the absence of one.
- *
- * Takes the FROZEN shape, because everything that calls it reads the slot: the
- * template aliases `DeepReadonly` once ({@link FrozenRoadsideState}) and every
- * pure helper over slot state is typed through it. A mutable `Coverage` still
- * satisfies it, so an `update` draft passes unchanged.
- */
+/** The rate card in force for a coverage record — or for the absence of one. */
 export function rateFor(coverage: FrozenRoadsideState["coverage"]): RateCard {
   if (coverage === null || coverage.status === "lapsed") return NON_MEMBER;
   return PLANS[coverage.plan];
@@ -286,59 +279,36 @@ export interface RoadsideState {
   log: string[];
 }
 
-export function emptyRoadsideState(): RoadsideState {
-  return {
-    vehicle: null,
-    where: null,
-    situation: null,
-    coverage: null,
-    disclosureReadAt: null,
-    disclosureAcceptedAt: null,
-    job: null,
-    log: [],
-  };
-}
+const EMPTY_ROADSIDE_STATE: RoadsideState = {
+  vehicle: null,
+  where: null,
+  situation: null,
+  coverage: null,
+  disclosureReadAt: null,
+  disclosureAcceptedAt: null,
+  job: null,
+  log: [],
+};
 
 /**
- * How much of the call the log keeps, as the slot's own bound.
- *
- * Named and typed rather than written inline for the two reasons a `MAX_*`
- * constant survives at all: a spec reads it (`agent.test.ts` proves the oldest
- * lines really are evicted rather than trusting the declaration), and
- * {@link SlotCaps} is what says WHICH keys may carry a bound — it maps only the
- * array-valued fields of {@link RoadsideState}, so a cap on `coverage` or a
- * typo like `logs` is a compile error here rather than a number the slot
- * silently ignores.
- *
- * Twenty-four lines is enough to read a whole call back: a located caller, a
- * coverage line, a disclosure, a dispatch, and room for whatever went wrong.
+ * How much of the call the log keeps. Twenty-four lines is enough to read a
+ * whole call back: a located caller, a coverage line, a disclosure, a dispatch,
+ * and room for whatever went wrong. `SlotCaps` admits only the array-valued
+ * fields, so a cap on `coverage` is a compile error rather than a number the
+ * slot silently ignores.
  */
 export const LOG_CAP: SlotCaps<RoadsideState> = { log: 24 };
 
 /**
- * Everything this call has established, as one typed slot.
- *
- * **No `after` hook, and that is a claim rather than an omission.** Nothing
- * stored here is derived from anything else stored here: the money is
- * {@link quoteFee} of the coverage and the distance, computed where it is
- * quoted, and the log is bounded by `caps` — twenty-four lines is enough to
- * read back a whole call. The moment a field IS derived — a running total, a
- * flag some tool reads — it belongs in an `after` hook rather than in whichever
- * tool happened to write last; see `emergency-dispatch-agent` for the worked version of
- * that.
+ * Everything this call has established, as one typed slot. No `after` hook,
+ * and that is a claim rather than an omission: nothing stored here is derived
+ * from anything else stored here — the money is {@link quoteFee} of the
+ * coverage and the distance, computed where it is quoted.
  */
-export const roadsideSlot = sessionSlot("roadside", emptyRoadsideState, { caps: LOG_CAP });
+export const roadsideSlot = sessionSlot("roadside", EMPTY_ROADSIDE_STATE, { caps: LOG_CAP });
 
-/**
- * The slot as a READ hands it out: deep-frozen, and typed to say so.
- *
- * Every template that reads its slot from a pure helper aliases this once —
- * `slot.get` and a gated read both answer {@link DeepReadonly}, and TypeScript
- * does not ignore `readonly` on arrays, so `readonly string[]` stops satisfying
- * `string[]`. A mutable value still satisfies the alias, so an `update` draft
- * passes unchanged while a helper that WOULD have mutated stops compiling.
- */
-export type FrozenRoadsideState = DeepReadonly<RoadsideState>;
+/** The slot as a read hands it out — what the pure helpers here take. */
+export type FrozenRoadsideState = SlotValueOf<typeof roadsideSlot>;
 
 /** The vehicle as a driver would be told to look for it. */
 export function describeVehicle(vehicle: Vehicle): string {

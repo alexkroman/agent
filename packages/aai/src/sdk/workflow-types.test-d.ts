@@ -250,3 +250,67 @@ test("the readings match run's shape, not the WorkflowDef declaration", () => {
   expectTypeOf<WorkflowInputOf<typeof annotatedDef>>().toEqualTypeOf<{ q: string; n: number }>();
   expectTypeOf<WorkflowOutputOf<typeof annotatedDef>>().toEqualTypeOf<{ hits: number }>();
 });
+
+/**
+ * The two spellings that stay out of the `TS7022` cycle: a body annotated from
+ * the SCHEMA, and the two-phase declaration whose `typeof def` is fixed before
+ * the body exists. The second declaration below IS the assertion — a body in
+ * the same file, annotated from the def it is attached to.
+ */
+const twoPhaseInput = z.object({ topic: z.string(), limit: z.number().default(5) });
+const twoPhaseOutput = z.object({ headline: z.string() });
+
+const twoPhase = workflow({ input: twoPhaseInput, output: twoPhaseOutput }).body(twoPhaseFlow);
+
+async function twoPhaseFlow(
+  input: WorkflowInputOf<typeof twoPhase>,
+  _ctx: WorkflowContext,
+): Promise<WorkflowOutputOf<typeof twoPhase>> {
+  return { headline: `${input.topic} (${input.limit})` };
+}
+
+test("WorkflowInputOf reads a Standard Schema as its output type", () => {
+  expectTypeOf<WorkflowInputOf<typeof twoPhaseInput>>().toEqualTypeOf<{
+    topic: string;
+    limit: number;
+  }>();
+});
+
+test("the two-phase def types its input and output from the declaration alone", () => {
+  expectTypeOf<WorkflowInputOf<typeof twoPhase>>().toEqualTypeOf<{
+    topic: string;
+    limit: number;
+  }>();
+  expectTypeOf<WorkflowOutputOf<typeof twoPhase>>().toEqualTypeOf<{ headline: string }>();
+  expectTypeOf(twoPhase).toExtend<WorkflowDef>();
+});
+
+test("a declaration before `.body` reads as what its body will accept", () => {
+  const declared = workflow({ input: twoPhaseInput });
+  expectTypeOf<WorkflowInputOf<typeof declared>>().toEqualTypeOf<{
+    topic: string;
+    limit: number;
+  }>();
+  // With no `output`, the result is `unknown` — stated on `WorkflowDeclaration`.
+  expectTypeOf<WorkflowOutputOf<ReturnType<(typeof declared)["body"]>>>().toEqualTypeOf<unknown>();
+});
+
+test("a signal wait is typed exactly as a plain wait", async () => {
+  expectTypeOf(await ctx.waitForSignal("approval", { schema: Approval })).toEqualTypeOf<{
+    approved: boolean;
+  }>();
+  expectTypeOf(
+    await ctx.waitForSignal("approval", { schema: Approval, timeoutMs: 1 }),
+  ).toEqualTypeOf<{ approved: boolean } | undefined>();
+  expectTypeOf(await ctx.waitForSignal<{ ok: boolean }>("approval")).toEqualTypeOf<{
+    ok: boolean;
+  }>();
+  expectTypeOf(ctx.signalToken("approval")).toEqualTypeOf<string>();
+  expectTypeOf(ctx.key).toEqualTypeOf<string | undefined>();
+});
+
+test("a run snapshot carries its timing as optional instants", () => {
+  type Run = WorkflowRunOf<typeof digest>;
+  expectTypeOf<Run["startedAt"]>().toEqualTypeOf<number | undefined>();
+  expectTypeOf<Run["settledAt"]>().toEqualTypeOf<number | undefined>();
+});

@@ -19,10 +19,11 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { createGenerateFn, GenerateSchemaMismatchError, type HostGenerateFn } from "../generate.ts";
 import type { EvalMode } from "./_announce.ts";
+import { refuseStepsBeside, withCaseSteps } from "./_case-steps.ts";
 import { hasWorkflows } from "./_declared-tools.ts";
 import { type SuiteNetwork, stepFetchOver } from "./_network-install.ts";
 import { noteTranscript } from "./_spread.ts";
-import { stubbedEnv } from "./_stubbed-env.ts";
+import { stubbedEnv, stubProcessEnv } from "./_stubbed-env.ts";
 import type { DescribeEvalOptions, EvalCaseOptions, EvalTestContext } from "./describe.ts";
 import { openEvalSessionWithSeams } from "./session.ts";
 import { installStubLlm } from "./stub-llm.ts";
@@ -59,9 +60,16 @@ export type CaseRun = {
  */
 export async function runCase(run: CaseRun): Promise<void> {
   const { agent, mode, options, caseOptions, body } = run;
-  // First, so a conflicting option throws before anything is installed, and
-  // per case AND per repeat, so no repeat reads another's requests.
+  // The option conflicts FIRST, so either throws before anything is installed:
+  // everything below this line is a process-global registration or a live
+  // runtime that only the `finally` gives back, and a throw ahead of it leaks
+  // them into the next case. The network is also per case AND per repeat, so
+  // no repeat reads another's requests.
+  assertStepsAlone(run);
   const net = caseNetwork(run);
+  // A declared credential nobody has, as a placeholder in the PROCESS env: what
+  // a tool calling a step helper outside a run reads. See `stubProcessEnv`.
+  stubProcessEnv(agent, mode);
   const stub =
     mode === "stub" ? installStubLlm(caseOptions?.stubReply ?? DEFAULT_STUB_REPLY) : undefined;
   // Its own kind, so its own cursor: see `EvalCaseOptions.stubGenerate`.
@@ -99,21 +107,50 @@ export async function runCase(run: CaseRun): Promise<void> {
       ? {}
       : { llm: stub.llm, providerEnv: { ...options?.providerEnv, ...stub.env } }),
   });
-  try {
-    await body({ session, mode, workflows, workflowClient, network: net?.network });
-  } catch (err) {
-    // Taken NOW, before the close below adds its own events: this is the try
-    // the `AAI_EVAL_REPEAT` summary prints under an UNSTABLE case.
-    noteTranscript(err, transcriptOf(session, net?.network));
-    throw err;
-  } finally {
-    await session.close();
-    await workflows?.close();
-    stub?.release();
-    generateStub?.release();
-    // Last: a hook the close set off may still be reaching for the network,
-    // and is refused into this case's log rather than let out.
-    if (net !== undefined) run.net.end();
+  // The steps are installed AFTER the engine (which publishes a step fetch
+  // only when handed one) and the session, and before the body: the first
+  // tool call may start a run whose steps dial. The drain runs FIRST at the
+  // end, while the routes are still published, and the closes run whether or
+  // not it did — see `withCaseSteps`.
+  await withCaseSteps(
+    run.options?.steps,
+    workflows,
+    async (steps) => {
+      try {
+        await body({ session, mode, workflows, workflowClient, network: net?.network, steps });
+      } catch (err) {
+        // Taken NOW, before the close below adds its own events: this is the
+        // try the `AAI_EVAL_REPEAT` summary prints under an UNSTABLE case.
+        noteTranscript(err, transcriptOf(session, net?.network));
+        throw err;
+      }
+    },
+    async () => {
+      await session.close();
+      await workflows?.close();
+      stub?.release();
+      generateStub?.release();
+      // Last: a hook the close set off may still be reaching for the network,
+      // and is refused into this case's log rather than let out.
+      if (net !== undefined) run.net.end();
+    },
+  );
+}
+
+/**
+ * @throws When `steps` was passed beside a `network` or a
+ *   `workflowOptions.stepFetch`: each would answer a step's requests, and
+ *   which one won would be an accident of install order. Checked at the top
+ *   of `runCase`, before any install, for the reason given there.
+ */
+function assertStepsAlone(run: CaseRun): void {
+  if (run.options?.steps === undefined) return;
+  if (
+    run.options.network !== undefined ||
+    run.caseOptions?.network !== undefined ||
+    run.options.workflowOptions?.stepFetch !== undefined
+  ) {
+    refuseStepsBeside("describeEval", ["`network`", "`workflowOptions.stepFetch`"]);
   }
 }
 

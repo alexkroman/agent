@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, test } from "vitest";
+import type { AgentSystemPrompt } from "./agent-instructions.ts";
 import type { AgentSessionContext } from "./agent-session-context.ts";
 import { agent } from "./define.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "./system-prompt.ts";
@@ -16,10 +17,26 @@ import { withSystemPrompt } from "./system-prompt-file.ts";
 
 const FILE = "You are terse.\n\n- One sentence.\n";
 
+/** A def a HOST built: the lowered def with a prompt of its own — `agent()` refuses the key. */
+const hosted = (systemPrompt: AgentSystemPrompt) => ({ ...agent({ name: "T" }), systemPrompt });
+
 describe("withSystemPrompt", () => {
-  test("the file becomes the prompt when the agent declared none", () => {
+  test("the file becomes the prompt of every def agent() returns", () => {
     const def = withSystemPrompt(agent({ name: "T" }), FILE);
     expect(def.systemPrompt).toBe(FILE);
+  });
+
+  test("a promptContext does not trip the comparison, and rides through for the builder", () => {
+    // Static or a resolver, the context is not the prompt: the file still
+    // becomes the prompt (outcome 1) and the context stays its own field, so
+    // the file is not declared twice and `buildSystemPrompt` appends it.
+    const withText = withSystemPrompt(agent({ name: "T", promptContext: "Specials: soup." }), FILE);
+    expect(withText.systemPrompt).toBe(FILE);
+    expect(withText.promptContext).toBe("Specials: soup.");
+    const resolver = (_ctx: AgentSessionContext) => "live";
+    const withFn = withSystemPrompt(agent({ name: "T", promptContext: resolver }), FILE);
+    expect(withFn.systemPrompt).toBe(FILE);
+    expect(withFn.promptContext).toBe(resolver);
   });
 
   test("a NEW def, so the shared module export is not rewritten under a spec", () => {
@@ -31,59 +48,55 @@ describe("withSystemPrompt", () => {
     expect(authored.systemPrompt).toBe(DEFAULT_SYSTEM_PROMPT);
   });
 
-  test("an explicit prompt equal to the file is left alone", () => {
-    const authored = agent({ name: "T", systemPrompt: FILE });
-    expect(withSystemPrompt(authored, FILE)).toBe(authored);
+  test("a def the file was already applied to is left alone — the lowering is idempotent", () => {
+    const once = withSystemPrompt(agent({ name: "T" }), FILE);
+    expect(withSystemPrompt(once, FILE)).toBe(once);
   });
 
-  test("a COMPOSED prompt containing the file is left exactly as built", () => {
-    // `pizza-ordering-agent`'s shape: the file plus a computed menu. The value
-    // comparison is what makes this need no special case — and what makes the
-    // "is the file referenced?" question answerable at all, since the entry is
-    // generated before the build and has no module graph to ask.
-    const composed = `${FILE}\nTODAY: fish`;
-    const authored = agent({ name: "T", systemPrompt: composed });
-    expect(withSystemPrompt(authored, FILE).systemPrompt).toBe(composed);
+  test("a host prompt CONTAINING the file is left exactly as built", () => {
+    // The value comparison is what makes this need no special case — and what
+    // makes the "is the file applied?" question answerable at all, since the
+    // entry is generated before the build and has no module graph to ask.
+    const composed = hosted(`${FILE}\nTODAY: fish`);
+    expect(withSystemPrompt(composed, FILE).systemPrompt).toBe(composed.systemPrompt);
   });
 
-  test("a RESOLVER is left exactly as the author built it", () => {
-    // The case that shipped broken: `systemPrompt` was widened to accept a
-    // per-request resolver and this function threw on every one of them, so the
-    // capability was unreachable from the 20 of 29 templates that keep a
-    // `system-prompt.md`. There is nothing to search a function for — its text
-    // does not exist until a session asks for it — so the check outcome 4 makes
-    // is undecidable here, and refusing bought nothing.
+  test("a RESOLVER is left exactly as the host built it", () => {
+    // There is nothing to search a function for — its text does not exist
+    // until a session asks for it — so the check outcome 4 makes is
+    // undecidable here, and a host that composes the whole prompt per session
+    // owns it.
     const resolve = (ctx: AgentSessionContext) => `${FILE}\n\nSession ${ctx.sessionId}.`;
-    const authored = agent({ name: "T", systemPrompt: resolve });
-    const lowered = withSystemPrompt(authored, FILE);
-    expect(lowered).toBe(authored);
+    const built = hosted(resolve);
+    const lowered = withSystemPrompt(built, FILE);
+    expect(lowered).toBe(built);
     expect(lowered.systemPrompt).toBe(resolve);
-  });
-
-  test("a resolver that never reads the file is left alone too", () => {
-    // Deliberate, and the price of the arm above: an author who declared a
-    // function owns composing the prompt, and whether the closure reached for
-    // `system-prompt.md?raw` is not something a value comparison can see.
-    const authored = agent({ name: "T", systemPrompt: () => "Computed, and not the file." });
-    expect(() => withSystemPrompt(authored, FILE)).not.toThrow();
+    expect(() =>
+      withSystemPrompt(
+        hosted(() => "Computed, and not the file."),
+        FILE,
+      ),
+    ).not.toThrow();
   });
 
   test("an empty file still throws for a resolver — the file itself is the fault", () => {
     // The empty-file arm runs BEFORE the resolver arm, and should: a file with
-    // nothing in it is a mistake whatever `agent.ts` declares.
-    expect(() => withSystemPrompt(agent({ name: "T", systemPrompt: () => "x" }), " \n")).toThrow(
-      /is empty/,
-    );
+    // nothing in it is a mistake whatever the def carries.
+    expect(() =>
+      withSystemPrompt(
+        hosted(() => "x"),
+        " \n",
+      ),
+    ).toThrow(/is empty/);
   });
 
   test("a file nothing reads throws, naming what to do about it", () => {
-    const authored = agent({ name: "T", systemPrompt: "Inline, and not the file." });
-    expect(() => withSystemPrompt(authored, FILE)).toThrow(/nothing reads it/);
-    // And it names STRING, because that is the only arm left that can throw
-    // this — the message used to offer "import the file and compose it" as the
-    // remedy for a resolver, which produced another function and threw again.
-    expect(() => withSystemPrompt(authored, FILE)).toThrow(/`systemPrompt` string/);
-    expect(() => withSystemPrompt(authored, FILE)).toThrow(/systemPrompt: \(ctx\) =>/);
+    // Only a raw `export default {...}` or a host can put a different STRING
+    // there; the sentence says so and names `promptContext` for computed text.
+    const raw = hosted("Inline, and not the file.");
+    expect(() => withSystemPrompt(raw, FILE)).toThrow(/nothing reads it/);
+    expect(() => withSystemPrompt(raw, FILE)).toThrow(/The file IS the prompt/);
+    expect(() => withSystemPrompt(raw, FILE)).toThrow(/promptContext/);
   });
 
   test("an empty or whitespace-only file throws rather than falling through", () => {

@@ -26,3 +26,6 @@ export {
   expectPromptBuiltinsDeclared,
   type ProjectFiles,
 } from "../../sdk/testing-barrel.ts";
+// `describeAgent(agentDef, (run) => …)`: a `describe` whose first case is
+// `expectDeployable`, with the typed runner bound.
+export { describeAgent } from "../../sdk/testing-vitest-barrel.ts";

@@ -47,6 +47,7 @@ import {
 import { SessionEventSchema } from "@alexkroman1/aai/protocol";
 import {
   type ClientTranscript,
+  type ClientTranscriptMessage,
   type ClientTranscriptSession,
   mapConcurrent,
   type StepClientTranscriptOptions,
@@ -55,7 +56,12 @@ import { errorMessage } from "@alexkroman1/aai/utils";
 import type { Logger } from "../logger.ts";
 import type { ClientSessionRecord } from "../session-state/clients.ts";
 import type { SessionStateBackend } from "../session-state/store.ts";
-import { historyMessageOf, seededToolResult } from "./event-history.ts";
+import {
+  historyMessageOf,
+  seededToolResult,
+  transcriptLineOf,
+  transcriptLinesOf,
+} from "./event-history.ts";
 import { SESSION_EVENT_READ_LIMIT, type SessionEventLog } from "./event-stream.ts";
 
 /** The default size of a client's prior history in a new session, in (estimated) tokens. */
@@ -221,7 +227,32 @@ export async function loadClientHistory(
   return chunks.flat();
 }
 
-/** One session's transcript, from its indexed events. */
+/**
+ * The committed lines of `events`, oldest first — `transcriptLineOf`'s rule,
+ * so a recovery phrase and a `record: false` line are absent here exactly as
+ * they are from the model's own history.
+ */
+function linesOf(events: readonly IndexedEvent[]): ClientTranscriptMessage[] {
+  return transcriptLinesOf(events.map((indexed) => indexed.event));
+}
+
+/**
+ * What ONE session has said: its committed lines, oldest first, flushed
+ * first so a live session is read whole. `SessionEndContext.transcript` and
+ * `RouteContext.sessionTranscript` are both this — a session that named no
+ * client (a phone call) has a log all the same, which is why it is keyed by
+ * session rather than going through `readClientTranscript`.
+ *
+ * @internal
+ */
+export async function readSessionTranscript(
+  deps: ClientHistoryDeps,
+  sessionId: string,
+): Promise<ClientTranscriptMessage[]> {
+  return linesOf(await readIndexed(deps, sessionId));
+}
+
+/** One session's transcript, from its indexed events — lines and settled tool calls in ONE pass. */
 function transcriptOf(
   record: ClientSessionRecord,
   events: readonly IndexedEvent[],
@@ -235,9 +266,9 @@ function transcriptOf(
   };
   const calls = new Map<string, { name: string; args: Record<string, unknown> }>();
   for (const { event } of events) {
-    const message = historyMessageOf(event);
-    if (message && message.role !== "tool") {
-      session.messages.push({ role: message.role, text: message.content, at: event.meta.at });
+    const line = transcriptLineOf(event);
+    if (line !== undefined) {
+      session.messages.push(line);
     } else if (event.type === "tool.called") {
       calls.set(event.toolCallId, { name: event.toolName, args: event.args });
     } else if (event.type === "tool.completed") {

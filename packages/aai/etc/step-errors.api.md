@@ -8,6 +8,9 @@
 export const DEFAULT_RETRY_DELAY_MS: number;
 
 // @public
+export type ErrorClass = abstract new (...args: never[]) => Error;
+
+// @public
 export class FatalError extends Error {
     constructor(message: string, options?: {
         cause?: unknown;
@@ -17,16 +20,28 @@ export class FatalError extends Error {
 }
 
 // @public
+export function fatalOn<T>(isMatch: (err: unknown) => boolean, fn: () => T): T;
+
+// @public
 export function orFail<A extends readonly unknown[], R>(call: (...args: A) => Promise<R>): (...args: A) => Promise<R>;
 
 // @public
 export function orFail<T>(value: T | ToolFailure): T;
 
 // @public
+export function orFatal<T>(fn: () => T, options: OrFatalOptions): T;
+
+// @public @input
+export type OrFatalOptions = {
+    when: ErrorClass;
+};
+
+// @public
 export class RetryableError extends Error {
     constructor(message: string, options?: RetryableErrorOptions);
     static is(value: unknown): value is RetryableError;
     readonly retryAfter: Date;
+    readonly retryAfterNamed?: boolean;
 }
 
 // @public @input

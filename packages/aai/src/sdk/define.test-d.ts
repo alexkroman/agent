@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { AgentAccepts } from "./_test-utils.ts";
 // `InlineToolsMisuse` is off the public barrel (it is the implementation of a
 // compile error, not authoring API), so this spec names it at its own module.
-import type { InlineToolsMisuse } from "./agent-params.ts";
+import type { FrameworkOwnedField, InlineToolsMisuse } from "./agent-params.ts";
 import type { TurnDetectionMode } from "./agent-tuning.ts";
 import { type AgentParams, agent, type SharedAgentParams, tool } from "./define.ts";
 import type { AssemblyAIGatewayModel } from "./providers/llm/llm.ts";
@@ -16,14 +16,23 @@ import { type SpeakerDef, speaker } from "./speaker.ts";
 import type { StandardSchemaV1 } from "./standard-schema.ts";
 import type { TELEPHONY_CARRIERS, TelephonyCarrier } from "./telephony-config.ts";
 import { withTools } from "./tool-registry.ts";
-import type { AgentDef, InferToolInput, InferToolOutput, ToolContext, ToolDef } from "./types.ts";
+import type {
+  AgentDef,
+  InferToolInput,
+  InferToolOutput,
+  ToolContext,
+  ToolDef,
+  ToolUi,
+} from "./types.ts";
 import type { VoicePresetName } from "./voice-presets.ts";
 
 /** Every key ANY member of a union has — `keyof` of a union is only the shared ones. */
 type KeysOf<T> = T extends unknown ? keyof T : never;
 
 /**
- * Every `AgentDef` field must be declarable through `agent()` — on SOME member.
+ * Every `AgentDef` field must be declarable through `agent()` — on SOME member
+ * — except the two the FRAMEWORK writes (`FrameworkOwnedField`): the prompt is
+ * `system-prompt.md`, and `syncState` is collected from `sync: true` slots.
  *
  * Each member of `AgentParams` is *cut* from `AgentDef` (Omit + Pick), so this
  * holds by construction — the test stays as a regression lock against anyone
@@ -38,11 +47,11 @@ type KeysOf<T> = T extends unknown ? keyof T : never;
  * property. The test below pins that it really is the message.
  *
  * The resolved toolsets are not on the public `AgentDef` at all (`ResolvedAgentDef`,
- * `/manifest`), so every field it does carry is a parameter.
+ * `/manifest`), so every other field it does carry is a parameter.
  */
-test("agent() accepts every AgentDef field", () => {
+test("agent() accepts every AgentDef field the framework does not own", () => {
   type MissingFromParam = Exclude<keyof AgentDef, KeysOf<AgentParams>>;
-  expectTypeOf<MissingFromParam>().toEqualTypeOf<never>();
+  expectTypeOf<MissingFromParam>().toEqualTypeOf<FrameworkOwnedField>();
 });
 
 test("agent() takes no state factory, and AgentDef holds none", () => {
@@ -99,6 +108,23 @@ test("a tool reaches session state through a slot, with no annotation", () => {
   // type with an optional OBJECT-typed property" in `.agents/testing.md`.
   expectTypeOf(add).toExtend<ToolDef<z.ZodObject<{ item: z.ZodString }>, number>>();
   expectTypeOf<InferToolOutput<typeof add>>().toEqualTypeOf<number>();
+});
+
+/**
+ * `tool({ ui })` is the author's display hint, optional in both fields and
+ * taking an explicit `undefined` (an options-bag spread), and it changes
+ * neither inference helper.
+ */
+test("tool() takes a ui hint without touching its input or output types", () => {
+  const hinted = tool({
+    description: "add",
+    inputSchema: z.object({ item: z.string() }),
+    ui: { icon: "🍕", label: undefined },
+    execute: ({ item }) => item.length,
+  });
+  expectTypeOf<InferToolInput<typeof hinted>>().toEqualTypeOf<{ item: string }>();
+  expectTypeOf<InferToolOutput<typeof hinted>>().toEqualTypeOf<number>();
+  expectTypeOf(hinted.ui).toEqualTypeOf<ToolUi | undefined>();
 });
 
 /**
@@ -172,11 +198,12 @@ test("a discovered registry composes onto a slot-backed agent", () => {
   expectTypeOf(def.tools.ping).toExtend<ToolDef | undefined>();
 });
 
-test("syncState resolves to a record of slot projections keyed by slot name", () => {
+test("syncState is the record of slot projections agent() COLLECTS, keyed by slot name", () => {
   const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }), {
     view: (cart) => ({ count: cart.items.length }),
+    sync: true,
   });
-  const def = agent({ name: "t", syncState: cartSlot.projected });
+  const def = agent({ name: "t" });
   expectTypeOf(def.syncState).toEqualTypeOf<
     Readonly<Record<string, StateProjection>> | undefined
   >();
@@ -185,24 +212,25 @@ test("syncState resolves to a record of slot projections keyed by slot name", ()
   expectTypeOf(cartSlot.projected()).toEqualTypeOf<{ count: number }>();
 });
 
-test("syncState takes a projection or a list, never a record", () => {
+test("syncState is not a parameter of agent(), in any spelling or mode", () => {
   const a = sessionSlot("a", () => ({ x: 1 }));
   const b = sessionSlot("b", () => ({ y: 2 }));
+  // Absent from every member (`FrameworkOwnedField`): `sync: true` on the
+  // slot is the whole wiring, so a projection, a list and the record the def
+  // carries are all excess properties.
   expectTypeOf<
     AgentAccepts<{ name: string; syncState: typeof a.projected }>
-  >().toEqualTypeOf<true>();
+  >().toEqualTypeOf<false>();
   expectTypeOf<
     AgentAccepts<{ name: string; syncState: readonly StateProjection[] }>
-  >().toEqualTypeOf<true>();
-  // The record `agent()` RETURNS is not a spelling it takes: its key repeated
-  // each projection's own slot name.
+  >().toEqualTypeOf<false>();
   expectTypeOf<
     AgentAccepts<{ name: string; syncState: { a: typeof a.projected; b: typeof b.projected } }>
   >().toEqualTypeOf<false>();
-  // Not a projection at all.
   expectTypeOf<
-    AgentAccepts<{ name: string; syncState: readonly string[] }>
+    AgentAccepts<{ name: string; mode: "text"; syncState: typeof a.projected }>
   >().toEqualTypeOf<false>();
+  expectTypeOf<"syncState" extends keyof SharedAgentParams ? true : false>().toEqualTypeOf<false>();
 });
 
 test("`tools` on the authoring params is the message, not a map", () => {
@@ -217,14 +245,14 @@ test("agent() accepts stt/llm/tts optional fields", () => {
   const stt = {} as SttProvider;
   const llm = {} as LlmProvider;
   const tts = {} as TtsProvider;
-  const def = agent({ name: "t", systemPrompt: "p", stt, llm, tts });
+  const def = agent({ name: "t", stt, llm, tts });
   expectTypeOf(def.stt).toEqualTypeOf<SttProvider | undefined>();
   expectTypeOf(def.llm).toEqualTypeOf<LlmProvider | undefined>();
   expectTypeOf(def.tts).toEqualTypeOf<TtsProvider | undefined>();
 });
 
 test("agent() without stt/llm/tts is still legal (s2s mode)", () => {
-  const def = agent({ name: "t", systemPrompt: "p" });
+  const def = agent({ name: "t" });
   expectTypeOf(def.stt).toEqualTypeOf<SttProvider | undefined>();
   expectTypeOf(def.llm).toEqualTypeOf<LlmProvider | undefined>();
   expectTypeOf(def.tts).toEqualTypeOf<TtsProvider | undefined>();
@@ -422,7 +450,7 @@ test("ToolContext.signal and a schema generate's object are non-optional", () =>
 test("text mode accepts only the fields a text agent has", () => {
   expectTypeOf<AgentAccepts<{ name: string; mode: "text" }>>().toEqualTypeOf<true>();
   expectTypeOf<
-    AgentAccepts<{ name: string; mode: "text"; systemPrompt: string }>
+    AgentAccepts<{ name: string; mode: "text"; promptContext: string }>
   >().toEqualTypeOf<true>();
   // The one provider stage it has, in both spellings.
   expectTypeOf<

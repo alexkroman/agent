@@ -18,9 +18,10 @@
  *
  * - `_testing-context.ts` — `createToolContext`, whose `ctx.speech` records into
  *   `ctx.said` (`_testing-session-speech.ts`).
- * - `testing-tools.ts` — `toolOf` / `runTool` / `toolRunner`, the tool under the
- *   name the model calls it by, the last of those being `runTool` with the agent
- *   bound; `testing-discovery.ts` — `deployedAgent`, which lowers a project's
+ * - `testing-tools.ts` — `runTool` / `toolRunner`, a tool run by its DEF (the
+ *   file's default export, or a speaker's `tools` entry), the second of those
+ *   with the agent bound and its gates applied; `toolOf`, the lookup by the
+ *   name the model calls; `testing-discovery.ts` — `deployedAgent`, which lowers a project's
  *   own FILES (`tools/`, `system-prompt.md`) onto its `agent.ts` default export
  *   the way the build does — the one function a spec needs.
  * - `_testing-tool-results.ts` — `expectToolOk` / `expectDialogOk`, unwrapping what a gated
@@ -55,6 +56,12 @@ export {
   type TestToolContext,
   type ToolContextOverrides,
 } from "./_testing-context.ts";
+// The `RouteContext` a spec hands an `agent({ routes })` handler, every field
+// supplied — the route-side twin of `createToolContext`.
+export {
+  createRouteContext,
+  type RouteContextOverrides,
+} from "./_testing-route-context.ts";
 export {
   parseSchemaInput,
   parseToolInput,
@@ -68,6 +75,9 @@ export {
   type StubStepRequest,
   stubStepFetch,
 } from "./_testing-step-fetch.ts";
+// The name a deployed agent registered a def under, by identity — what lets a
+// reader take the def (typed) where it used to take the string.
+export { toolNameOf } from "./_testing-tool-names.ts";
 export {
   dialogResultSchema,
   expectDialogOk,
@@ -127,6 +137,8 @@ export {
   type FetchRouteRequest,
   type FetchRoutesOptions,
   type FetchRouteTable,
+  routeHandlerOf,
+  routeOf,
   type StubFetchRoutes,
   stubFetchRoutes,
 } from "./testing-fetch-routes.ts";
@@ -159,10 +171,22 @@ export { expectPromptBuiltinsDeclared } from "./testing-prompt-builtins.ts";
 // A `ctx.workflows` that records starts and runs nothing — an eval's client.
 export {
   createRecordingWorkflows,
+  type RecordedSignal,
   type RecordedStart,
   type RecordingWorkflows,
   type RecordingWorkflowsOptions,
 } from "./testing-recording-workflows.ts";
+// One session event, envelope stamped, and an agent's `events` handlers driven
+// with it — the two halves of a hook's unit spec.
+export {
+  type FiredEvent,
+  fireEvent,
+  type SessionEventFields,
+  type SessionEventRest,
+  sessionEvent,
+} from "./testing-session-events.ts";
+// The three invariants of a slot's DECLARATION, asserted in one call.
+export { expectSlotContract, type SlotContractOptions } from "./testing-slot-contract.ts";
 export {
   STUB_SPEECH_PCM_BYTES,
   type StubSpeech,

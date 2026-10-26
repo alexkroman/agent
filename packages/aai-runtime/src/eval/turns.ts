@@ -33,8 +33,11 @@
  * @module
  */
 
+import type { ToolDef } from "@alexkroman1/aai";
+import { toolNameOf } from "@alexkroman1/aai/testing";
+import { type AnyWorkflowDef, workflowNameOf } from "@alexkroman1/aai/workflow-api";
 import { describeToolCalls, type EvalToolCall } from "./events.ts";
-import type { EvalTurn } from "./session.ts";
+import type { EvalTurn, EvalWorkflowStart } from "./session.ts";
 
 /**
  * How much of a reply a failure message carries.
@@ -165,8 +168,14 @@ export function expectToolBeforeSpeech(turn: EvalTurn): void {
 }
 
 /**
- * Every name in `names` was called in this turn, and a throw naming what the
- * agent did INSTEAD when one was not.
+ * Every tool in `tools` was called in this turn, and a throw naming what the
+ * agent did INSTEAD when one was not. Takes the DEF, as every reader next door
+ * does (`toolResultIn(calls, def)`, {@link turnCalling}): the tool file's
+ * default export, a speaker's `tools` entry, `toolOf(agentDef, name)` for a
+ * minted tool or `builtinTool(name)` for a builtin, matched against the wire by
+ * the name the agent registered it under (`toolNameOf`). A name string does
+ * not compile, and a renamed file fails at the lookup naming the def rather
+ * than as a claim that quietly matched nothing.
  *
  * ## The finding this exists to name
  *
@@ -190,15 +199,39 @@ export function expectToolBeforeSpeech(turn: EvalTurn): void {
  * What a reader needs is the tools that WERE called and the sentence the agent
  * said in place of the one it skipped — which is what makes "it promised and
  * stopped" distinguishable from "it reached for the wrong tool" without opening
- * the transcript.
+ * the transcript. The message names each tool by its wire name, the one the
+ * transcript shows.
  *
  * ```ts
+ * // file: tools/open_email.ts
+ * import { tool } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
+ * export default tool({
+ *   description: "Open an email",
+ *   inputSchema: z.object({ id: z.string() }),
+ *   execute: ({ id }) => ({ id, body: "…" }),
+ * });
+ *
+ * // file: tools/draft_reply.ts
+ * import { tool } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
+ * export default tool({
+ *   description: "Stage a reply",
+ *   inputSchema: z.object({ id: z.string(), text: z.string() }),
+ *   execute: () => ({ state: "staged" }),
+ * });
+ *
+ * // file: agent.eval.test.ts
  * import { expectCalled, type EvalTurn } from "@alexkroman1/aai-runtime/eval";
+ * import draftReply from "./tools/draft_reply.ts";
+ * import openEmail from "./tools/open_email.ts";
  *
  * export function stagedTheDraft(turn: EvalTurn): void {
  *   // Throws: `never called draft_reply — called open_email, and said "I'll
  *   // draft a yes."` rather than `expected [ 'open_email' ] to include …`.
- *   expectCalled(turn, "open_email", "draft_reply");
+ *   expectCalled(turn, openEmail, draftReply);
  * }
  * ```
  *
@@ -211,8 +244,11 @@ export function expectToolBeforeSpeech(turn: EvalTurn): void {
  */
 export function expectCalled(
   scope: EvalTurn | readonly EvalTurn[],
-  ...names: readonly string[]
+  ...tools: readonly ToolDef[]
 ): void {
+  // The defs are resolved to wire names up front, so a def no agent lowered
+  // fails with `toolNameOf`'s sentence before any claim about the turn is made.
+  const names = tools.map((tool) => toolNameOf(tool));
   // A LIST as readily as a turn, because most claims worth making are about the
   // SESSION rather than one reply: a live model calls a median of one tool per
   // reply, so demanding two in one turn is demanding it chain. `sayAll`'s result
@@ -236,8 +272,12 @@ export function expectCalled(
 }
 
 /**
- * The turn `name` was called in — the FIRST one, and a throw naming what
- * happened instead when there is none.
+ * The turn `tool` was called in — the FIRST one, and a throw naming what
+ * happened instead when there is none. Takes the DEF, as every reader next door
+ * does (`toolResultIn(calls, def)`): the tool file's default export, a
+ * speaker's `tools` entry, `toolOf(agentDef, name)` for a minted tool or
+ * `builtinTool(name)` for a builtin, matched against the wire by the name the
+ * agent registered it under (`toolNameOf`). A name string does not compile.
  *
  * The claim a multi-turn case actually wants to make, and the whole reason
  * {@link EvalSession.sayAll} exists: "the desk staged the change on the turn it
@@ -270,23 +310,34 @@ export function expectCalled(
  * of them is about the agent ignoring the tool.
  *
  * ```ts
- * import { type EvalSession, toolResultIn, turnCalling } from "@alexkroman1/aai-runtime/eval";
+ * // file: tools/cancel_pending_order.ts
+ * import { tool } from "@alexkroman1/aai";
  * import { z } from "zod";
+ *
+ * export default tool({
+ *   description: "Stage a cancellation",
+ *   inputSchema: z.object({ orderId: z.string() }),
+ *   execute: () => ({ state: "pending" }),
+ * });
+ *
+ * // file: agent.eval.test.ts
+ * import { type EvalSession, toolResultIn, turnCalling } from "@alexkroman1/aai-runtime/eval";
+ * import cancelPendingOrder from "./tools/cancel_pending_order.ts";
  *
  * export async function stagesBeforeCommitting(session: EvalSession): Promise<string> {
  *   const turns = await session.sayAll(["I want to cancel W1234", "Go ahead."]);
  *   // The turn it staged in, whichever that turned out to be.
- *   const staging = turnCalling(turns, "cancel_pending_order");
- *   return toolResultIn(staging.toolCalls, "cancel_pending_order", z.object({ state: z.string() }))
- *     .state;
+ *   const staging = turnCalling(turns, cancelPendingOrder);
+ *   return toolResultIn(staging.toolCalls, cancelPendingOrder).state;
  * }
  * ```
  */
 export function turnCalling(
   turns: readonly EvalTurn[],
-  name: string,
+  tool: ToolDef,
   where?: (call: EvalToolCall) => boolean,
 ): EvalTurn {
+  const name = toolNameOf(tool);
   const found = turns.find((turn) =>
     turn.toolCalls.some((call) => call.name === name && (where === undefined || where(call))),
   );
@@ -301,4 +352,71 @@ export function turnCalling(
       ? "no turns were driven"
       : turns.map((turn, at) => `turn ${at + 1} ${describeToolCalls(turn.toolCalls)}`).join("; ");
   throw new Error(`${missed}: ${shape}`);
+}
+
+/**
+ * The id of the ONE run of `workflow` a tool started during `turn` — read off
+ * the session's recorded `ctx.workflows.start`, not off the tool's answer.
+ *
+ * Every hand-off eval needed the run id to read the run back
+ * (`workflows.settle(runId, def)`), and each parsed it out of the tool's
+ * serialized result with a schema of its own: `toolResultsIn(calls,
+ * "request_recap", RecapStart)[0].runId`, behind a helper explaining why the
+ * singular reader would refuse a second call. That reads the id through the
+ * MODEL's copy of what the tool said, which is one translation away from the
+ * fact: the session handed the tool a client, and the client knows what was
+ * started. {@link EvalTurn.workflowStarts} is that record; this is its reader.
+ *
+ * By DEF or by the declared name, either way matched against what the agent
+ * declares — so a tool that started by name and a case that asks by def agree.
+ * EXACTLY one, like `toolResultIn`: zero is a tool that answered without
+ * starting anything, two is the finding a dedupe check exists to prevent, and
+ * both throw naming what the turn did start.
+ *
+ * ```ts
+ * import type { AnyWorkflowDef } from "@alexkroman1/aai/workflow-api";
+ * import { type EvalSession, type EvalWorkflows, evalRunOf } from "@alexkroman1/aai-runtime/eval";
+ *
+ * declare const recap: AnyWorkflowDef<{ headline: string }>; // the def `agent.ts` declares
+ * declare const workflows: EvalWorkflows; // `openEvalWorkflows(…)`
+ * declare const session: EvalSession; // `openEvalSession({ agent: agentDef, workflows })`
+ *
+ * const started = await session.say("Can you write up that recording for me?");
+ * const runId = evalRunOf(started, recap);
+ * const run = await workflows.settle(runId, recap);
+ * ```
+ */
+export function evalRunOf(turn: EvalTurn, workflow: string | AnyWorkflowDef): string {
+  const starts = turn.workflowStarts;
+  if (starts === undefined) {
+    throw new Error(
+      "evalRunOf: this turn carries no record of workflow starts — only a turn `openEvalSession`'s " +
+        "`say()` built records them, and a turn built by a `SimulationTarget` of your own does not.",
+    );
+  }
+  const matching = starts.filter((start) =>
+    typeof workflow === "string" ? start.workflow === workflow : start.def === workflow,
+  );
+  // A def is named by the key it was declared under when the agent recorded
+  // one (`workflowNameOf`), and by its description otherwise.
+  const asked =
+    typeof workflow === "string"
+      ? JSON.stringify(workflow)
+      : (workflowNameOf(workflow) ??
+        `the def described as ${JSON.stringify(workflow.description ?? "")}`);
+  if (matching.length === 0) {
+    const did =
+      starts.length === 0
+        ? "started no runs"
+        : `started ${starts.map((start) => `${start.workflow} (${start.runId})`).join(", ")}`;
+    throw new Error(`evalRunOf: no run of ${asked} was started in this turn; it ${did}`);
+  }
+  if (matching.length > 1) {
+    throw new Error(
+      `evalRunOf: ${matching.length} runs of ${asked} were started in this turn ` +
+        `(${matching.map((start) => start.runId).join(", ")}) — read them off turn.workflowStarts yourself`,
+    );
+  }
+  const [only] = matching as [EvalWorkflowStart];
+  return only.runId;
 }

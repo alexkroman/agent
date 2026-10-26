@@ -50,7 +50,7 @@ import { withResumes } from "./_upload-resume.ts";
 import { readApiJson } from "./_workflow-api-envelope.ts";
 import { invariant } from "./invariant.ts";
 import { omitUndefined } from "./omit-undefined.ts";
-import type { UploadInfo } from "./step-uploads.ts";
+import type { UploadRecord } from "./step-uploads.ts";
 import { UPLOAD_TOKEN_RE } from "./upload-constants.ts";
 import {
   partsPlan,
@@ -485,11 +485,11 @@ export async function readUploadInfo(
   fail: (res: Response) => Promise<Error>,
   id: string,
   signal?: AbortSignal,
-): Promise<UploadInfo> {
+): Promise<UploadRecord> {
   const res = await fetch(`${base}/uploads/${encodeURIComponent(id)}/info`, {
     headers,
     ...omitUndefined({ signal }),
   });
   if (!res.ok) throw await fail(res);
-  return await readApiJson<UploadInfo>(res);
+  return await readApiJson<UploadRecord>(res);
 }

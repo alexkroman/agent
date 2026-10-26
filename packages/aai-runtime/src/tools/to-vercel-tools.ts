@@ -145,7 +145,12 @@ export function toVercelTools(
         // the hint is the tail past `shaped` and goes after the tool's own
         // string just the same.
         const hint = forModel.slice(shaped.length);
-        if (hint !== "" && shaped !== result) hinted.keep(options.toolCallId, forModel);
+        // Kept whenever `toModelOutput` could not rebuild it from the tool's
+        // own string: rows under a hint, or an instruction (which `result`
+        // no longer carries at all).
+        if ((hint !== "" && shaped !== result) || settled.instruction !== undefined) {
+          hinted.keep(options.toolCallId, forModel);
+        }
         return result + hint;
       },
     });

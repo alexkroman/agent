@@ -31,6 +31,7 @@ describe("createToolContext", () => {
       "messages",
       // …and its `ctx.generate` twin.
       "model",
+      "now",
       "random",
       // Every `ctx.speech.say`, the recorder behind the default `speech`.
       "said",
@@ -40,8 +41,19 @@ describe("createToolContext", () => {
       "signal",
       "slots",
       "speech",
+      "turn",
       "workflows",
     ]);
+  });
+
+  test("ctx.turn is 0 and ctx.now() is the wall clock unless a spec pins them", () => {
+    const ctx = createToolContext();
+    expect(ctx.turn).toBe(0);
+    const before = Date.now();
+    expect(ctx.now()).toBeGreaterThanOrEqual(before);
+    const pinned = createToolContext({ turn: 3, now: () => 1_700_000_000_000 });
+    expect(pinned.turn).toBe(3);
+    expect(pinned.now()).toBe(1_700_000_000_000);
   });
 
   test("ctx.speech records every say into ctx.said, and every played line settles PLAYED", async () => {

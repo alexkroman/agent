@@ -19,9 +19,15 @@
  * holding it, which is the "two physically distinct copies of React" bug wearing
  * a different hat.
  *
- * The glob is EAGER and covers every template at once, because
- * `import.meta.glob` needs a literal pattern — it is expanded at transform time,
- * so it cannot take a template name as a variable.
+ * The glob covers every template at once, because `import.meta.glob` needs a
+ * literal pattern — it is expanded at transform time, so it cannot take a
+ * template name as a variable — but it is LAZY, and `withTemplateTools` loads
+ * only the named template's modules, after its `agent.ts`. That is the order
+ * the generated entry evaluates in (`agent.ts` first, `tools/*.ts` after), and
+ * a slot declared `sync: true` depends on it: its projection is claimed by the
+ * first `agent()` to collect it (`sdk/_sync-registry.ts`), so an eager glob
+ * that evaluated every template's `shared.ts` before any `agent.ts` handed the
+ * first agent loaded every other template's slots.
  *
  * The prose half is the same idea: `system-prompt.md` BECOMES the agent's system
  * prompt, discovered rather than imported, so a spec validating the config a
@@ -34,8 +40,8 @@
 import type { AgentDef } from "@alexkroman1/aai";
 import { toolRegistry, withSystemPrompt, withTools } from "@alexkroman1/aai/manifest";
 
-/** Every template's tool modules, eagerly, keyed `../templates/<name>/tools/<tool>.ts`. */
-const toolModules = import.meta.glob("../templates/*/tools/*.ts", { eager: true });
+/** Every template's tool module LOADERS, keyed `../templates/<name>/tools/<tool>.ts`. */
+const toolModules = import.meta.glob("../templates/*/tools/*.ts");
 
 /**
  * Every template's `system-prompt.md`, as TEXT.
@@ -57,10 +63,14 @@ const promptFiles = import.meta.glob("../templates/*/system-prompt.md", {
  * Pass the template's directory name. A template with no `tools/` directory
  * resolves to the def unchanged, which is the workflow-app case.
  */
-export function withTemplateTools(name: string, def: AgentDef): AgentDef {
+export async function withTemplateTools(name: string, def: AgentDef): Promise<AgentDef> {
   const prefix = `../templates/${name}/tools/`;
   const own = Object.fromEntries(
-    Object.entries(toolModules).filter(([path]) => path.startsWith(prefix)),
+    await Promise.all(
+      Object.entries(toolModules)
+        .filter(([path]) => path.startsWith(prefix))
+        .map(async ([path, load]) => [path, await load()] as const),
+    ),
   );
   return withTools(def, toolRegistry(own));
 }
@@ -71,10 +81,9 @@ export function withTemplateTools(name: string, def: AgentDef): AgentDef {
  *
  * A template with no `system-prompt.md` resolves unchanged and runs on
  * `DEFAULT_SYSTEM_PROMPT`, which nine deliberately do. A template WITH one gets
- * `withSystemPrompt`'s four outcomes — so an empty file, or a file the agent
- * ignores while declaring its own prompt STRING, fails here for every template
- * at once. A template whose prompt is a RESOLVER is left alone: it composes the
- * file through its own `?raw` import, which no value comparison can see.
+ * `withSystemPrompt`'s four outcomes — so an empty file fails here for every
+ * template at once (a different prompt string on the def cannot happen: no
+ * template imports the file, and `agent()` refuses `systemPrompt`).
  */
 export function withTemplatePrompt(name: string, def: AgentDef): AgentDef {
   const prompt = promptFiles[`../templates/${name}/system-prompt.md`];

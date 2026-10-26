@@ -1,4 +1,4 @@
-import { errorMessage, type ToolFailure, toolFailure } from "@alexkroman1/aai";
+import { errorMessage, type ToolFailure, toolFailure, withInstruction } from "@alexkroman1/aai";
 import { executeStep, replanNode } from "../procedure.ts";
 import { type PastStep, planFlow, planSlot } from "../shared.ts";
 
@@ -42,17 +42,18 @@ type Claim =
  * naming the state and quoting its instruction, so this body only ever runs when
  * there is a plan in progress.
  *
- * **`ANSWERED` is sent only when the replanner produced a RESPONSE.** A plan
- * that merely ran out of steps stays in `working`: nothing was concluded, and
- * the caller can still revise or add to it. Conflating the two would announce an
- * answer that does not exist.
  */
 export default planFlow.tool({
   description:
     "Do the next step of the plan and report what it found. Call this once per " +
     "step — never in a loop. Say a short 'let me look into that' first, since " +
     "the step may take a few seconds.",
+  ui: { icon: "\u{1F50E}", label: "Working a step" },
   when: "working",
+  // The event rides on the result as `next`: `ANSWERED` only when the
+  // replanner produced a RESPONSE. A plan that merely ran out of steps stays
+  // in `working` — nothing was concluded, and the caller can still revise it.
+  sendFrom: "next",
   async execute(_args, ctx) {
     // The whole read-and-claim, in one window nothing can interleave with.
     const claimed = planSlot.update(ctx, (plan): Claim => {
@@ -74,14 +75,13 @@ export default planFlow.tool({
     });
     if (claimed.kind === "failed") return claimed.failure;
     if (claimed.kind === "dry") {
-      // `response: undefined` is spelled out rather than omitted: `sendFrom`
-      // below reads that field to decide whether to send ANSWERED, and a key
-      // missing from one arm of a union is not readable on the union at all.
-      return {
-        finished: true,
-        response: undefined,
-        message: "No steps are left. Ask the caller what they want next.",
-      };
+      // `next: undefined` is "stay in `working`" — `withInstruction` wraps each
+      // arm on its own, so the field is spelled on every arm rather than
+      // filled in by the union.
+      return withInstruction(
+        { finished: true, next: undefined },
+        "No steps are left. Ask the caller what they want next.",
+      );
     }
     const { step, objective, pastSteps } = claimed;
 
@@ -125,27 +125,21 @@ export default planFlow.tool({
     try {
       act = await replanNode(ctx.generate, planSlot.get(ctx));
     } catch {
-      return {
-        finished: false,
-        ...found,
-        response: undefined,
-        remaining: planSlot.get(ctx).plan,
-        message:
-          "Report what this step found — say so plainly if it is not settled. The plan " +
+      return withInstruction(
+        { finished: false, ...found, remaining: planSlot.get(ctx).plan, next: undefined },
+        "Report what this step found — say so plainly if it is not settled. The plan " +
           "could not be updated from it, so ask whether to carry on with the next step as planned.",
-      };
+      );
     }
     return planSlot.update(ctx, (plan) => {
       if (act.kind === "respond") {
         plan.response = act.response;
         plan.plan = [];
         plan.revisions.push(`Finished after ${plan.pastSteps.length} step(s)`);
-        return {
-          finished: true,
-          ...found,
-          response: act.response,
-          message: "The plan is done — give the caller the answer.",
-        };
+        return withInstruction(
+          { finished: true, ...found, response: act.response, next: "ANSWERED" as const },
+          "The plan is done — give the caller the answer.",
+        );
       }
 
       // A completed step is never redone, whatever the replanner lists. It is
@@ -156,22 +150,11 @@ export default planFlow.tool({
       const changed = steps.join("|") !== plan.plan.join("|");
       plan.plan = steps;
       if (changed) plan.revisions.push(`Replanned to ${steps.length} step(s) after: ${step}`);
-      return {
-        finished: false,
-        ...found,
-        response: undefined,
-        remaining: steps,
-        message:
-          "Report what this step found — say so plainly if it is not settled — " +
+      return withInstruction(
+        { finished: false, ...found, remaining: steps, next: undefined },
+        "Report what this step found — say so plainly if it is not settled — " +
           "then ask whether to carry on.",
-      };
+      );
     });
   },
-  // Written BELOW `execute` deliberately. `sendFrom`'s parameter is
-  // `Exclude<NoInfer<R>, ToolFailure>`, and `NoInfer` keeps it from bidding on
-  // `R` — but this body's own return type is itself an inference
-  // (`planSlot.update`'s), so with `sendFrom` first there is no candidate to
-  // contextually type it against and the parameter lands as `unknown`.
-  sendFrom: (outcome) =>
-    outcome.response === undefined ? undefined : ({ type: "ANSWERED" } as const),
 });

@@ -2,23 +2,25 @@
 /**
  * Reaching a tool off an agent, for a spec that drives one.
  *
- * A tool's own module exports it, so a spec CAN import it directly — but the
- * thing worth testing is usually the tool as the agent declares it: under the
- * name the model calls, present in `agentDef.tools` at all. That lookup is
- * `agentDef.tools[name]`, which is `ToolDef | undefined` under
- * `noUncheckedIndexedAccess`, so every spec that did it wrote the same four
- * lines to turn the `undefined` into a sentence. Four templates had them
- * byte-identical.
+ * A tool's own module exports it, so a spec imports it directly — and that
+ * import is how a spec names a tool: the def a tool file default-exports is the
+ * very object the deployed agent registered, so handing it to a runner finds
+ * the tool in the agent's table by IDENTITY and runs it exactly as the model's
+ * call would, gate included. A roster tool is reached the same way, through
+ * the speaker's `tools` map entry. Nothing here takes the tool's NAME string:
+ * a name is a string, nothing can type what it looks up, and every spec that
+ * reached a tool by name then cast the result it got back.
  *
- * The sentence is the reason this is worth sharing rather than copying: a
- * lookup that misses is nearly always a RENAME, and the useful error names the
- * tools that do exist. None of the four hand-rolled versions did.
+ * {@link toolOf} is the one lookup that still takes a name, because its job is
+ * the agent's TABLE — what the agent declares under the name the model calls,
+ * for a spec asserting on a description or a minted tool the agent has no file
+ * for. Its throw names the tools that do exist, because a lookup that misses is
+ * nearly always a RENAME.
  */
 
 import { createToolContext } from "./_testing-context.ts";
 import type { AnyDialog } from "./dialog-handle.ts";
 import { isRecord } from "./is-record.ts";
-import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import { agentToolsets, composeToolsets, type ToolBearingDef } from "./toolset.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 
@@ -34,17 +36,18 @@ import type { ToolContext, ToolDef } from "./types.ts";
  * @public
  */
 export type ToolBearingAgent = {
-  readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+  readonly tools: Readonly<Record<string, ToolDef>>;
   readonly dialogs?: readonly AnyDialog[] | undefined;
 };
 
 /**
  * The tool `name` is declared under, or a throw naming the ones that are.
  *
- * Three names for three jobs: `toolOf` hands back the DEF, to assert on what
- * the agent declares (its description, its schema); {@link runTool} CALLS a
- * tool, gated as the runtime gates it; {@link toolRunner} is `runTool` with the
- * agent bound, the `run(name, …)` a spec calls throughout.
+ * The LOOKUP, for a spec asserting on what the agent declares — a description,
+ * a schema, a tool the roster minted and no file exports (`HANDOFF_TOOL_NAME`).
+ * To RUN a tool, hand its def to {@link runTool} or to the runner
+ * {@link toolRunner} binds; the def a `tools/` file default-exports is the
+ * object the deployed agent registered, so no name is needed to find it.
  *
  * A tool is a FILE, so `agent.ts`'s default export declares no tools at all —
  * import the agent as DEPLOYED, exactly as this example does and as every
@@ -64,19 +67,33 @@ export type ToolBearingAgent = {
  *
  * @public
  */
-export function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema> {
-  return resolveTool(agent, name).def;
+export function toolOf(agent: ToolBearingAgent, name: string): ToolDef {
+  return resolveEntry(agent, name).def;
 }
 
+/** A def as the lookups below match it: anything carrying an `execute`. */
+type ExecuteBearing = { readonly execute: (...args: never[]) => unknown };
+
 /**
- * The tool `name` resolves to across the agent's toolsets, and how a CALL runs
- * it: its toolset's gate first (a roster entry not on the line, a dialog out of
- * state — the refusal comes back as the result), then the toolset's execute.
+ * The tool `nameOrDef` resolves to across the agent's toolsets — by NAME
+ * ({@link toolOf}'s lookup) or by IDENTITY (the def a spec imported) — and how
+ * a CALL runs it: its toolset's gate first (a roster entry not on the line, a
+ * dialog out of state — the refusal comes back as the result), then the
+ * toolset's execute.
+ *
+ * Identity rather than a structural match for the def form, because the
+ * registry's entry IS the file's default export (`toolRegistry` stores the
+ * exported object, never a copy): the def a spec imported from
+ * `tools/add_item.ts` is the very object the deployed agent runs under
+ * `add_item`. A def that is not in the table is therefore one the agent does
+ * not declare — a tool built inline in the spec, or a file the agent was not
+ * imported as DEPLOYED with — and the throw names the tools that are.
  */
-function resolveTool(
+function resolveEntry(
   agent: ToolBearingAgent,
-  name: string,
-): { def: ToolDef<ToolInputSchema>; call: ToolDef["execute"] } {
+  nameOrDef: string | ExecuteBearing,
+): { name: string; def: ToolDef; call: ToolDef["execute"] } {
+  const lookup = typeof nameOrDef === "string" ? `"${nameOrDef}"` : "def";
   // Before the lookup, because the value in this position is routinely not an
   // agent at all: a tool def (the thing under test), or the `undefined` a
   // mistyped import answers with. Both used to die on `agent.tools[name]` with
@@ -89,62 +106,119 @@ function resolveTool(
     const looksLikeTool = isRecord(given) && typeof given.execute === "function";
     throw new Error(
       looksLikeTool
-        ? `toolOf(def, "${name}") takes the AGENT, not one tool — this is a tool def, which has no name until a file gives it one. Import the agent from \`virtual:aai/agent\` and name the tool there, or call the def's own \`execute\` directly.`
-        : `toolOf(agent, "${name}") was handed ${describe(given)} rather than an agent definition. Import the agent as DEPLOYED: \`import agentDef from "virtual:aai/agent"\` under vitest, or \`deployedAgent\` from @alexkroman1/aai/testing under any other runner.`,
+        ? `toolOf(def, ${lookup}) takes the AGENT, not one tool — this is a tool def, which has no name until a file gives it one. Import the agent from \`virtual:aai/agent\` and name the tool there, or call the def's own \`execute\` directly.`
+        : `toolOf(agent, ${lookup}) was handed ${describeHanded(given, "tools")} rather than an agent definition. Import the agent as DEPLOYED: \`import agentDef from "virtual:aai/agent"\` under vitest, or \`deployedAgent\` from @alexkroman1/aai/testing under any other runner.`,
     );
   }
   const table = composeToolsets(agentToolsets(agent as ToolBearingDef));
-  const found = table.resolve(name);
-  if (!found) {
-    const declared = table.tools.map((one) => one.name);
-    throw new Error(
-      declared.length > 0
-        ? `The agent declares no tool named ${name}. It declares: ${declared.join(", ")}.`
-        : `The agent declares no tool named ${name}. It declares: (none). ${AUTHORED_DEF_HINT}`,
+  const found =
+    typeof nameOrDef === "string"
+      ? table.resolve(nameOrDef)
+      : table.tools.find((one) => one.entry.def === nameOrDef);
+  if (!found)
+    throw notDeclared(
+      table.tools.map((one) => one.name),
+      nameOrDef,
     );
-  }
-  const { toolset } = found;
+  const { name, toolset } = found;
   return {
+    name,
     def: found.entry.def,
     call: (args, ctx) => toolset.gate(name, ctx) ?? toolset.execute(name, args, ctx),
   };
+}
+
+/** The miss: what was looked up, what the agent declares, and the hint for an empty table. */
+function notDeclared(declared: readonly string[], nameOrDef: string | ExecuteBearing): Error {
+  const declares = declared.length > 0 ? declared.join(", ") : "(none)";
+  const hint = declared.length > 0 ? "" : ` ${AUTHORED_DEF_HINT}`;
+  if (typeof nameOrDef === "string") {
+    return new Error(
+      `The agent declares no tool named ${nameOrDef}. It declares: ${declares}.${hint}`,
+    );
+  }
+  const def: unknown = nameOrDef;
+  const described =
+    isRecord(def) && typeof def.description === "string"
+      ? ` (described as ${JSON.stringify(def.description.slice(0, 60))})`
+      : "";
+  return new Error(
+    `The agent declares no tool that IS this def${described}. It declares: ${declares}. ` +
+      "A tool is matched by IDENTITY — import the tool FILE's default export, or a " +
+      "speaker's `tools` entry, which is the object the deployed agent registered; a def " +
+      `built inline in a spec is not in the table, so call its \`execute\` directly.${hint}`,
+  );
 }
 
 /**
  * Why an agent declares NO tools, and what to import instead.
  *
  * Shared rather than copied because {@link toolRunner} says it at BIND, where
- * this function says it at the first miss: one sentence for one mistake, and the
- * two cannot drift into describing different remedies.
+ * {@link resolveEntry} says it at the first miss: one sentence for one mistake,
+ * and the two cannot drift into describing different remedies.
  */
 const AUTHORED_DEF_HINT =
   "A tool is a FILE, so an agent.ts default export carries none of them — " +
   'import the agent as DEPLOYED instead: `import agentDef from "virtual:aai/agent"` ' +
   "under vitest, or `deployedAgent` from @alexkroman1/aai/testing under any other runner.";
 
-/** What was passed, for a message that can say so without printing it. */
-function describe(value: unknown): string {
+/**
+ * What was passed, for a message that can say so without printing it: a
+ * value that is not the agent, tool or def a position takes, named by the
+ * member it lacks.
+ */
+function describeHanded(value: unknown, lacks: "tools" | "execute"): string {
   if (value === undefined) return "undefined";
   if (value === null) return "null";
-  return `a ${typeof value} with no \`tools\``;
+  return `a ${typeof value} with no \`${lacks}\``;
+}
+
+/** Is this something with an `execute` — a tool def, by the lookups' own test? */
+function isExecuteBearing(value: unknown): value is ExecuteBearing {
+  return isRecord(value) && typeof value.execute === "function";
 }
 
 /**
- * Run a tool — the tool DEF itself, or by the name the model calls it by.
+ * Run a tool — the tool DEF itself, the way the runtime calls it.
  *
- * **Handed the tool, it is TYPED end to end**: the arguments are checked
- * against what `execute` takes and the result is what it returns, so
- * `await runTool(addItem, { item: "apple" }, ctx)` needs no cast. The name
- * form below answers `unknown`, because a name is a string and nothing can
- * type what it looks up; a spec reading fields off that result used to cast it
- * (`(await run("add_item", ctx)) as { added: string }`), which is an unchecked
- * claim that stops meaning anything the day the tool's return changes. A tool
- * FILE's default export is the very object a deployed agent registers under its
- * name, so importing it runs the same code the name would reach.
+ * **TYPED end to end**: the arguments are checked against what `execute` takes
+ * and the result is what it returns, so
+ * `await runTool(addItem, { item: "apple" }, ctx)` needs no cast. A tool FILE's
+ * default export is the very object a deployed agent registers under its name,
+ * so importing it runs the same code the model's call reaches. Matched on
+ * `execute` alone rather than on `ToolDef`, so any tool shape — `tool()`,
+ * `slot.tool()`, `dialog.tool()` — is accepted and keeps its own result type.
  *
- * Matched on `execute` alone rather than on `ToolDef`, so any tool shape —
- * `tool()`, `slot.tool()`, `dialog.tool()` — is accepted and keeps its own
- * result type.
+ * UNGATED: this calls the def's own `execute`, as a unit test of the tool body
+ * wants. The run a spec cares about is usually the GATED one — a dialog out of
+ * state refuses it, a roster entry not on the line refuses it — which is what
+ * {@link toolRunner} binds to the agent, and what `describeAgent` hands a suite.
+ *
+ * `args` is unvalidated on purpose: the runtime parses a model's arguments
+ * against `inputSchema` BEFORE `execute` sees them, so a spec that
+ * pre-validated would be testing a path the tool never runs on. Pass the
+ * arguments the tool body expects to receive. (To test the SCHEMA itself,
+ * which is a different question, use `parseToolInput` / `toolInputIssues`.)
+ *
+ * **A tool that takes no arguments may say so by leaving them out**, passing the
+ * context in their place: `runTool(viewOrder, ctx)`. A no-argument tool is
+ * common — one shipped template has thirteen — and the `{}` those calls were
+ * obliged to pass appeared 66 times across seven template specs, always
+ * between the two values a reader actually cares about. The two are told apart
+ * by SHAPE, and the probe is narrow enough to be safe: a `ToolContext` is a
+ * record carrying a string `sessionId`, a `slots` store and a `send` function,
+ * and tool arguments arrive as JSON from a model, which cannot contain a
+ * function. A context is never a plausible argument object.
+ *
+ * @param tool - The tool def: a `tools/` file's default export, a speaker's
+ *   `tools` entry, or a def built in the spec.
+ * @param argsOrCtx - The tool's arguments, or the {@link ToolContext} when it
+ *   takes none. Defaults to `{}`.
+ * @param ctx - The context. Defaults to a fresh {@link createToolContext} — so
+ *   an omitted context is a DISTINCT SESSION with empty slots, which is what a
+ *   stateless tool wants and never what two calls sharing state want. Pass one
+ *   explicitly wherever the second call is supposed to see the first call's
+ *   work.
  *
  * @example
  * ```ts
@@ -160,91 +234,23 @@ function describe(value: unknown): string {
  * });
  * const { added } = await runTool(addItem, { item: "apple" }, createToolContext());
  * console.log(added.toUpperCase()); // typed: `added` is a string
+ *
+ * // No arguments, one session shared across the two calls.
+ * const viewOrder = tool({ description: "View the order", execute: () => ({ items: [] }) });
+ * const ctx = createToolContext();
+ * await runTool(addItem, { item: "apple" }, ctx);
+ * const { items } = await runTool(viewOrder, ctx);
+ * console.log(items.length);
  * ```
  *
  * @public
  */
-export function runTool<T extends { readonly execute: (...args: never[]) => unknown }>(
+export async function runTool<T extends { readonly execute: (...args: never[]) => unknown }>(
   tool: T,
   argsOrCtx?: Parameters<T["execute"]>[0] | ToolContext,
   ctx?: ToolContext,
-): Promise<Awaited<ReturnType<T["execute"]>>>;
-/**
- * Run a tool by the name the model calls it by.
- *
- * `args` is unvalidated on purpose: the runtime parses a model's arguments
- * against `inputSchema` BEFORE `execute` sees them, so a spec that pre-validated
- * would be testing a path the tool never runs on. Pass the arguments the tool
- * body expects to receive. (To test the SCHEMA itself, which is a different
- * question, use `parseToolInput` / `toolInputIssues`.)
- *
- * The def to pass is the one a DEPLOYED agent runs — `virtual:aai/agent` under
- * vitest, or `deployedAgent` under any other runner, since a tool is a file and
- * `agent.ts`'s default export carries none. See {@link toolOf}, which this is
- * built on.
- *
- * **A tool that takes no arguments may say so by leaving them out**, passing the
- * context in their place: `runTool(agentDef, "view_order", ctx)`. A no-argument
- * tool is common — one shipped template has thirteen — and the `{}` those calls
- * were obliged to pass appeared 66 times across seven template specs, always
- * between the two values a reader actually cares about. Both spellings are one
- * signature rather than an overload pair, so a bound runner forwards either
- * shape without restating the union — which is what {@link toolRunner} is, and
- * how every template reaches this.
- *
- * The two are told apart by SHAPE, and the probe is narrow enough to be safe:
- * a `ToolContext` is a record carrying a string `sessionId`, a `slots` store and
- * a `send` function, and tool arguments arrive as JSON from a model, which
- * cannot contain a function. A context is never a plausible argument object.
- *
- * @param args - The tool's arguments, or the {@link ToolContext} when it takes
- *   none. Defaults to `{}`.
- * @param ctx - The context. Defaults to a fresh {@link createToolContext} — so
- *   an omitted context is a DISTINCT SESSION with empty slots, which is what a
- *   stateless tool wants and never what two calls sharing state want. Pass one
- *   explicitly wherever the second call is supposed to see the first call's
- *   work.
- *
- * @example
- * ```ts
- * import agentDef from "virtual:aai/agent";
- * import { createToolContext, runTool } from "@alexkroman1/aai/testing";
- * import { expect } from "vitest";
- *
- * expect(await runTool(agentDef, "add_item", { item: "apple" }, createToolContext())).toEqual({
- *   added: "apple",
- * });
- *
- * // No arguments, one session shared across the two calls.
- * const ctx = createToolContext();
- * await runTool(agentDef, "add_item", { item: "apple" }, ctx);
- * expect(await runTool(agentDef, "view_order", ctx)).toEqual({ items: ["apple"] });
- * ```
- *
- * @public
- */
-export function runTool(
-  agent: ToolBearingAgent,
-  name: string,
-  argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext,
-  ctx?: ToolContext,
-): Promise<unknown>;
-export async function runTool(
-  target: unknown,
-  nameOrArgs?: unknown,
-  argsOrCtx?: unknown,
-  ctx?: ToolContext,
-): Promise<unknown> {
-  // A NAME in the second position is the agent form — and `toolOf` already has
-  // a sentence for every way the first argument can fail to be an agent,
-  // including a tool def handed where the agent belongs.
-  if (typeof nameOrArgs === "string") {
-    const agent: unknown = target;
-    // The CALL, not the bare def: gated by its toolset exactly as the runtime gates it.
-    const { call } = resolveTool(agent as ToolBearingAgent, nameOrArgs);
-    return await execute({ execute: call }, argsOrCtx, ctx);
-  }
-  return await execute(target, nameOrArgs, argsOrCtx);
+): Promise<Awaited<ReturnType<T["execute"]>>> {
+  return (await execute(tool, argsOrCtx, ctx)) as Awaited<ReturnType<T["execute"]>>;
 }
 
 /**
@@ -252,9 +258,9 @@ export async function runTool(
  * shape {@link runTool} documents told apart by SHAPE.
  */
 async function execute(tool: unknown, argsOrCtx: unknown, ctx: unknown): Promise<unknown> {
-  if (!(isRecord(tool) && typeof tool.execute === "function")) {
+  if (!isExecuteBearing(tool)) {
     throw new Error(
-      `runTool(tool, …) was handed ${tool === undefined ? "undefined" : `a ${typeof tool} with no \`execute\``} rather than a tool. Pass a tool def (a tool file's default export), or the agent and the tool's NAME: runTool(agentDef, "name", …).`,
+      `runTool(tool, …) was handed ${describeHanded(tool, "execute")} rather than a tool. Pass the tool def: a tool file's default export, or a speaker's \`tools\` entry.`,
     );
   }
   const passedContext = ctx ?? (isToolContext(argsOrCtx) ? argsOrCtx : undefined);
@@ -281,50 +287,46 @@ function isToolContext(value: unknown): value is ToolContext {
 }
 
 /**
- * What {@link toolRunner} hands back: {@link runTool} with the agent already
- * supplied.
+ * What {@link toolRunner} hands back: a GATED {@link runTool} with the agent
+ * already supplied.
+ *
+ * `run(addItem, { item: "apple" })` checks the arguments against what `execute`
+ * takes and answers what it returns, so a spec reads fields off the result with
+ * no cast. The def is resolved in the agent's table by IDENTITY (a
+ * `tools/<name>.ts` default export IS the registered object, and so is a
+ * speaker's `tools` entry), and the call goes through the toolset's GATE — a
+ * dialog out of state refuses it, a roster entry not on the line refuses it —
+ * exactly as the model's own call would. A def the agent does not declare
+ * throws naming the tools it does.
+ *
+ * Takes the arguments-or-context union {@link runTool} documents: a tool that
+ * takes none may be handed the context in their place.
  *
  * Named so a caller can annotate a helper that takes one, and so the union in
  * the second position is written down once here rather than at every call site
  * that binds it.
  *
+ * @sealed
  * @public
  */
-export type ToolRunner = (
-  name: string,
-  argsOrCtx?: InferSchemaOutput<ToolInputSchema> | ToolContext,
+export type ToolRunner = <T extends { readonly execute: (...args: never[]) => unknown }>(
+  tool: T,
+  argsOrCtx?: Parameters<T["execute"]>[0] | ToolContext,
   ctx?: ToolContext,
-) => Promise<unknown>;
+) => Promise<Awaited<ReturnType<T["execute"]>>>;
 
 /**
- * {@link runTool} bound to one agent — the `run(...)` a spec actually calls.
+ * {@link runTool} bound to one agent and GATED by it — the `run(...)` a spec
+ * actually calls, and what `describeAgent` hands its body.
  *
- * A spec drives one agent, so `agentDef` is the same in every call and the name
- * is the thing that varies. Every shipped template therefore opened with the
- * same wrapper:
- *
- * ```ts
- * import agentDef from "virtual:aai/agent";
- * import type { ToolContext } from "@alexkroman1/aai";
- * import { runTool } from "@alexkroman1/aai/testing";
- *
- * const run = (name: string, argsOrCtx?: Record<string, unknown> | ToolContext, ctx?: ToolContext) =>
- *   runTool(agentDef, name, argsOrCtx, ctx);
- * ```
- *
- * Ten of them, and {@link runTool}'s own documentation named that wrapper as how
- * every template reaches it — which is the point at which the wrapper is part of
- * the API and belongs in it. `const run = toolRunner(agentDef);` is the same
- * thing in one line.
- *
- * **The union is what is worth removing, not the line.** A spec that writes the
- * signature out has to restate `Record<string, unknown> | ToolContext` to
- * forward both of `runTool`'s shapes — arguments, or the context in their place
- * for a tool that takes none — and a spec that narrows it to
- * `(name: string, args: Record<string, unknown>)` has quietly given up the
- * second shape. Four templates had; three of those then passed `{}` by hand
- * where the whole point of the shorter form is not having to. Binding the agent
- * keeps the union in one place, where it stays right.
+ * A spec drives one agent, so `agentDef` is the same in every call and the
+ * tool is the thing that varies. Binding the agent is what lets the run go
+ * through the agent's own gates: the def is found in the table by identity,
+ * its toolset's gate is asked first, and a refusal comes back as the result —
+ * a dialog out of state, a roster entry whose speaker is not on the line. The
+ * bare {@link runTool} calls the def's `execute` directly, gate and all
+ * skipped, which is the unit test of a tool body and not the test of the
+ * agent.
  *
  * The runner is stateless and holds only the agent, so one per spec file at the
  * top level is the shape: each call still defaults to a FRESH context, i.e. a
@@ -333,18 +335,40 @@ export type ToolRunner = (
  *
  * @example
  * ```ts
+ * // file: tools/add_item.ts
+ * import { tool } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
+ * export default tool({
+ *   description: "Add an item to the order",
+ *   inputSchema: z.object({ item: z.string() }),
+ *   execute: ({ item }) => ({ added: item }),
+ * });
+ *
+ * // file: tools/view_order.ts
+ * import { tool } from "@alexkroman1/aai";
+ *
+ * export default tool({
+ *   description: "View the order",
+ *   execute: () => ({ items: ["apple"] }),
+ * });
+ *
+ * // file: agent.test.ts
  * import agentDef from "virtual:aai/agent";
  * import { createToolContext, toolRunner } from "@alexkroman1/aai/testing";
  * import { expect } from "vitest";
+ * import addItem from "./tools/add_item.ts";
+ * import viewOrder from "./tools/view_order.ts";
  *
  * const run = toolRunner(agentDef);
  *
- * expect(await run("add_item", { item: "apple" })).toEqual({ added: "apple" });
+ * const { added } = await run(addItem, { item: "apple" }); // typed: `added` is a string
+ * expect(added).toBe("apple");
  *
  * // No arguments, one session shared across the two calls.
  * const ctx = createToolContext();
- * await run("add_item", { item: "apple" }, ctx);
- * expect(await run("view_order", ctx)).toEqual({ items: ["apple"] });
+ * await run(addItem, { item: "apple" }, ctx);
+ * expect(await run(viewOrder, ctx)).toEqual({ items: ["apple"] });
  * ```
  *
  * **A runner over an agent with NO tools is refused HERE**, rather than at the
@@ -352,16 +376,16 @@ export type ToolRunner = (
  * empty table and every call through such a runner fails identically — the
  * mistake is the argument on this line, and reporting it at a call site several
  * dozen lines away names the symptom instead. It is the one shape that cannot be
- * a legitimate runner: a runner exists to reach tools by name, and there are no
- * names to reach. Reach for {@link toolOf} or {@link runTool} directly if a spec
- * really means to assert on an empty table.
+ * a legitimate runner: a runner exists to reach the agent's tools, and there
+ * are none to reach. Reach for {@link toolOf} or {@link runTool} directly if a
+ * spec really means to assert on an empty table.
  *
  * @public
  */
 export function toolRunner(agent: ToolBearingAgent): ToolRunner {
   const given: unknown = agent;
   // Not an agent at ALL is left to the first call: `toolOf` already has a
-  // sentence for each way that happens, and both need the tool NAME to say it.
+  // sentence for each way that happens, and both need the tool to say it.
   if (
     isRecord(given) &&
     isRecord(given.tools) &&
@@ -372,5 +396,16 @@ export function toolRunner(agent: ToolBearingAgent): ToolRunner {
         `would fail the same way. ${AUTHORED_DEF_HINT}`,
     );
   }
-  return async (name, argsOrCtx, ctx) => await runTool(agent, name, argsOrCtx, ctx);
+  const run = async (target: unknown, argsOrCtx?: unknown, ctx?: ToolContext): Promise<unknown> => {
+    if (!isExecuteBearing(target)) {
+      throw new Error(
+        `run(…) was handed ${describeHanded(target, "execute")} rather than a tool def. ` +
+          "Pass the tool FILE's default export, or a speaker's `tools` entry — the object " +
+          "the deployed agent registered.",
+      );
+    }
+    const { call } = resolveEntry(agent, target);
+    return await execute({ execute: call }, argsOrCtx, ctx);
+  };
+  return run as ToolRunner;
 }

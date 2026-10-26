@@ -18,6 +18,7 @@ export default deskFlow.tool({
     "Record the caller's answer on each extra, after you have offered them. Every extra takes an " +
     "explicit true or false - all four false is a real answer. The stay's total is computed here.",
   when: AFTER_ROOM,
+  sendFrom: "next",
   inputSchema: z.object({
     breakfast: z.boolean(),
     valet: z.boolean(),
@@ -47,5 +48,4 @@ export default deskFlow.tool({
         next: nextStep(d),
       };
     }),
-  sendFrom: (result) => ({ type: result.next }),
 });

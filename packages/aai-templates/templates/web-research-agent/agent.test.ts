@@ -1,10 +1,10 @@
 /** The def a DEPLOYED agent runs: authored, plus what `system-prompt.md` says. */
 import agentDef from "virtual:aai/agent";
-import { MCP_TOOL_PREFIX, mcpToolName } from "@alexkroman1/aai";
+import { DEFAULT_SYSTEM_PROMPT, MCP_TOOL_PREFIX, mcpToolName } from "@alexkroman1/aai";
 import { expectDeployable, expectPromptBuiltinsDeclared } from "@alexkroman1/aai-runtime/testing";
+import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ARCHIVE_KEY, ARCHIVE_TOKEN_ENV, ARCHIVE_URL_ENV } from "./agent.ts";
-import promptFile from "./system-prompt.md?raw";
 
 /**
  * What a starter's spec may assert.
@@ -14,7 +14,10 @@ import promptFile from "./system-prompt.md?raw";
  * model — turns a user's first customization into a build failure in a file
  * they never wrote. Every test here therefore asserts a property that survives
  * those edits, on the RESOLVED config rather than on the def's empty fields; the
- * three every starter owes are `expectDeployable`'s.
+ * three every starter owes are `describeAgent`'s built-in deployable case —
+ * asserted per MODE, so a provider swap survives it. This template declares no
+ * provider at all: the whole voice pipeline is the injected all-AssemblyAI
+ * default, which is what lets the starter run the moment it is deployed.
  *
  * What is left to `agent.eval.test.ts` is everything that needs a model: that
  * Scout SEARCHES before answering a fact it is sure of, that the outlet it
@@ -28,23 +31,12 @@ import promptFile from "./system-prompt.md?raw";
  * The def therefore comes from `virtual:aai/agent` rather than from
  * `./agent.ts`: the prompt file is applied by the BUILD, so the raw default
  * export carries the framework prompt and every claim below would be measuring
- * an agent nobody deploys. This template has no `tools/` directory, so that
- * import is also the file's existence check — `deployedAgent` is handed the
- * prompt and nothing else, and refuses a call with no project files at all.
+ * an agent nobody deploys. This template has no `tools/` directory, so the
+ * file is the one thing that lowering adds — and the spec reads the prompt
+ * off that lowered def rather than importing the file, since a prompt reached
+ * by a second route is a prompt the build might not be applying.
  */
-describe("web-research-agent template", () => {
-  test("is deployable: validates, is nameable, and every stage its mode needs is filled", () => {
-    // This template declares no provider at all — the whole voice pipeline is
-    // the injected all-AssemblyAI default, which is what lets the starter run
-    // the moment it is deployed. `expectDeployable` asserts that per MODE, so
-    // it survives a swap: declare `stt`/`llm`/`tts` and the rest still
-    // default; declare `s2s` and there is no cascade to fill, which is the one
-    // thing that must never happen by fallthrough. `not.toThrow()` because the
-    // helper's throw IS the finding: vitest quotes the message, which names the
-    // invariant that went.
-    expect(() => expectDeployable(agentDef)).not.toThrow();
-  });
-
+describeAgent(agentDef, () => {
   test("system-prompt.md is the prompt a deploy carries", () => {
     // The build discovers the file; nothing imports it. So the failure this
     // catches is "I edited the prompt and nothing changed" — and here it is the
@@ -52,16 +44,13 @@ describe("web-research-agent template", () => {
     // than a talkative model (search first, cite what you read, treat a fetched
     // page as data and not as instructions) lives ONLY in that file. An agent
     // running the framework default answers plausibly, sounds fine, and cites
-    // pages it never opened.
-    //
-    // `toContain` rather than an equality: importing the file into `agent.ts`
-    // and composing it (a computed suffix, a date) is a legitimate edit, and
-    // `withSystemPrompt` leaves such a def exactly as the author built it.
-    const trimmed = promptFile.trim();
-    // Not vacuous: `toContain("")` would pass over an empty file, so the file
-    // having text in it is asserted before it is used as the needle.
-    expect(trimmed).not.toBe("");
-    expect(expectDeployable(agentDef).systemPrompt).toContain(trimmed);
+    // pages it never opened — which is exactly the def `./agent.ts` exports,
+    // so the deployed prompt must be something other than that default.
+    const prompt = expectDeployable(agentDef).systemPrompt;
+    expect(prompt).not.toBe(DEFAULT_SYSTEM_PROMPT);
+    // Not vacuous: an empty file is a build error, and the deployed text must
+    // carry the rule the eval measures.
+    expect(prompt).toMatch(/web_search/);
   });
 
   test("can search the web, and names no web tool it does not have", () => {
@@ -148,7 +137,7 @@ describe("the archive MCP server", () => {
     // any other. The prefix is the SDK's to choose, and a prompt that spells it
     // by hand is a prompt that keeps instructing the model about a name the
     // runtime stopped using.
-    expect(promptFile).toContain(MCP_TOOL_PREFIX);
+    expect(expectDeployable(agentDef).systemPrompt).toContain(MCP_TOOL_PREFIX);
   });
 
   test("pointing the URL variable at a server declares it, with its token by name", async () => {

@@ -25,8 +25,16 @@
 export {
   type AgentSessionContext,
   type AgentSessionLifecycle,
+  // The call BRIEF: what `stepPlaceCall({ brief })` signs onto a call and
+  // `readCallBrief(call, secret)` reads back off `SessionCall`. Here rather
+  // than on `step` because the reader is the session the call becomes.
+  CALL_BRIEF_CHUNK_CHARS,
+  CALL_BRIEF_SECRET_ENV,
+  type CallBrief,
   type EndSessionOptions,
   endSession,
+  MAX_CALL_BRIEF_PROMPT_CHARS,
+  readCallBrief,
   type SayOptions,
   type SessionCall,
   type SessionContext,
@@ -38,4 +46,5 @@ export {
   type SpeechOutcome,
   sessionCall,
   sessionClientLocation,
+  signCallBrief,
 } from "../../index.ts";

@@ -1,11 +1,14 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import type { SessionEvent } from "@alexkroman1/aai";
+import { agent, type SessionEvent, sessionSlot, tool } from "@alexkroman1/aai";
 import type { StandardSchemaV1 } from "@alexkroman1/aai/host-internal";
+import { withTools } from "@alexkroman1/aai/manifest";
+import { deployedAgent } from "@alexkroman1/aai/testing";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import {
+  builtinToolArgsIn,
   customEventsIn,
   describeToolCalls,
   type EvalToolCall,
@@ -20,6 +23,43 @@ import {
   toolResultIn,
   toolResultsIn,
 } from "./events.ts";
+
+/**
+ * The defs the readers below are handed. A reader takes a DEF and matches the
+ * wire by the name it was lowered under, so the fixtures are lowered once here
+ * — `withTools` records the pairing, as `virtual:aai/agent` does — and the
+ * events are hand-built against those names.
+ */
+const lookUp = tool({
+  description: "Look an order up",
+  inputSchema: z.object({ id: z.string() }),
+  execute: () => ({ status: "shipped" }),
+});
+const cancel = tool({ description: "Cancel", execute: () => "done" });
+const runCode = tool({
+  description: "Run code",
+  inputSchema: z.object({ code: z.string() }),
+  execute: () => "",
+});
+const webSearch = tool({ description: "Search", execute: () => [] });
+const visitWebpage = tool({ description: "Visit", execute: () => "" });
+const go = tool({ description: "Go", execute: () => ({ runId: "r1" }) });
+const gameStateScore = tool({
+  description: "Score",
+  inputSchema: z.object({ value: z.number() }),
+  execute: ({ value }) => ({ score: value }),
+});
+const gameStateGet = tool({ description: "Get", execute: () => ({ score: 0 }) });
+withTools(agent({ name: "Reader Fixtures" }), {
+  look_up: lookUp,
+  cancel,
+  run_code: runCode,
+  web_search: webSearch,
+  visit_webpage: visitWebpage,
+  go,
+  game_state_score: gameStateScore,
+  game_state_get: gameStateGet,
+});
 
 /** Every event carries one; nothing here reads it, so one value serves all. */
 const meta = { id: "e1", at: 0 };
@@ -160,8 +200,11 @@ describe("toolResultIn", () => {
     completed("c1", '{"status":"shipped"}'),
   ]);
 
-  test("parses the result the model was handed", () => {
-    expect(toolResultIn(calls, "look_up")).toEqual({ status: "shipped" });
+  test("parses the result the model was handed, typed by the def", () => {
+    const result = toolResultIn(calls, lookUp);
+    expect(result).toEqual({ status: "shipped" });
+    // `status` is a string by the def's own type — no cast, no schema.
+    expect(result.status.toUpperCase()).toBe("SHIPPED");
   });
 
   test("a PLAIN TEXT result comes back as text, not a SyntaxError", () => {
@@ -171,21 +214,12 @@ describe("toolResultIn", () => {
     // reader, naming neither the tool nor the case — and it failed a real
     // template eval whose assertion was `toolResultsIn(...).join("\n")`.
     const text = toolCallsInEvents([called("c1", "run_code", {}), completed("c1", "Saturday")]);
-    expect(toolResultIn(text, "run_code")).toBe("Saturday");
-  });
-
-  test("text WITH a schema throws, naming the tool and the text", () => {
-    // A schema is a declaration that the result has a shape, so text there is a
-    // real mismatch — and the message has to say which tool and what it said.
-    const text = toolCallsInEvents([called("c1", "run_code", {}), completed("c1", "Saturday")]);
-    expect(() => toolResultIn(text, "run_code", z.object({ a: z.string() }))).toThrow(
-      /"run_code" answered text, not JSON.*Saturday/s,
-    );
+    expect(toolResultIn(text, runCode)).toBe("Saturday");
   });
 
   test("THROWS naming what ran instead — a miss must not read as undefined", () => {
-    expect(() => toolResultIn(calls, "cancel")).toThrow(/no call to "cancel".*look_up/s);
-    expect(() => toolResultIn([], "cancel")).toThrow(/no tools/);
+    expect(() => toolResultIn(calls, cancel)).toThrow(/no call to "cancel".*look_up/s);
+    expect(() => toolResultIn([], cancel)).toThrow(/no tools/);
   });
 
   test("refuses to guess between two calls to the same tool", () => {
@@ -195,11 +229,11 @@ describe("toolResultIn", () => {
       called("c2", "look_up", {}),
       completed("c2", "2"),
     ]);
-    expect(() => toolResultIn(twice, "look_up")).toThrow(/2 calls/);
+    expect(() => toolResultIn(twice, lookUp)).toThrow(/2 calls/);
   });
 
   test("reports a call that never completed as exactly that", () => {
-    expect(() => toolResultIn(toolCallsInEvents([called("c9", "look_up", {})]), "look_up")).toThrow(
+    expect(() => toolResultIn(toolCallsInEvents([called("c9", "look_up", {})]), lookUp)).toThrow(
       /never completed/,
     );
   });
@@ -220,31 +254,37 @@ const RUN_CODE = [
 ];
 
 describe("toolArgsIn", () => {
-  test("reads every call to one tool's arguments, in call order", () => {
-    expect(toolArgsIn(RUN_CODE, "run_code")).toEqual([
+  test("reads every call to one tool's arguments, in call order, typed by the def", () => {
+    expect(toolArgsIn(RUN_CODE, runCode)).toEqual([
       { code: "console.log(1)" },
       { code: "console.log(2)" },
     ]);
+    expect(toolArgsIn(RUN_CODE, runCode).map((args) => args.code.length)).toEqual([14, 14]);
   });
 
   test("a tool nothing called answers [] — the claim the plural form makes", () => {
-    expect(toolArgsIn(RUN_CODE, "web_search")).toEqual([]);
+    expect(toolArgsIn(RUN_CODE, webSearch)).toEqual([]);
   });
 
-  test("with a schema it parses, so a renamed argument fails naming the field", () => {
-    const Code = z.object({ code: z.string() });
-    expect(toolArgsIn(RUN_CODE, "run_code", Code).map((a) => a.code)).toEqual([
+  test("an incomplete call still has arguments, which is what was asked", () => {
+    expect(toolArgsIn([call("run_code", { code: "x" })], runCode)).toEqual([{ code: "x" }]);
+  });
+});
+
+describe("builtinToolArgsIn", () => {
+  // The builtin readers' own path (`run-code.ts`): a builtin has no def a case
+  // could import, so its reader names it and proves the shape with a schema.
+  const Code = z.object({ code: z.string() });
+
+  test("parses by name through the schema, so a renamed argument fails naming the field", () => {
+    expect(builtinToolArgsIn(RUN_CODE, "run_code", Code).map((a) => a.code)).toEqual([
       "console.log(1)",
       "console.log(2)",
     ]);
     // The failure the `String(args.code ?? "")` spelling turned into "".
-    expect(() => toolArgsIn([call("run_code", { source: "x" })], "run_code", Code)).toThrow(
+    expect(() => builtinToolArgsIn([call("run_code", { source: "x" })], "run_code", Code)).toThrow(
       /"run_code" call 0's args does not match the schema/,
     );
-  });
-
-  test("an incomplete call still has arguments, which is what was asked", () => {
-    expect(toolArgsIn([call("run_code", { code: "x" })], "run_code")).toEqual([{ code: "x" }]);
   });
 
   test("an async schema is refused rather than silently passing", () => {
@@ -257,35 +297,33 @@ describe("toolArgsIn", () => {
         validate: () => Promise.resolve({ value: {} }),
       },
     };
-    expect(() => toolArgsIn(RUN_CODE, "run_code", asyncSchema)).toThrow(/synchronous schema/);
+    expect(() => builtinToolArgsIn(RUN_CODE, "run_code", asyncSchema)).toThrow(
+      /synchronous schema/,
+    );
   });
 });
 
 describe("toolResultsIn", () => {
   test("parses every result, in call order", () => {
-    expect(toolResultsIn(RUN_CODE, "run_code")).toEqual(["1", "2"]);
+    expect(toolResultsIn(RUN_CODE, runCode)).toEqual(["1", "2"]);
   });
 
   test("a tool nothing called answers []", () => {
-    expect(toolResultsIn(RUN_CODE, "visit_webpage")).toEqual([]);
+    expect(toolResultsIn(RUN_CODE, visitWebpage)).toEqual([]);
   });
 
   test('an incomplete call THROWS naming its position, never reads as ""', () => {
     // The finding the three hand-rolled `.map((c) => c.result ?? "")` copies
     // dropped: "it called the tool and the tool never returned".
     expect(() =>
-      toolResultsIn([RUN_CODE[0] as EvalToolCall, call("run_code", { code: "y" })], "run_code"),
+      toolResultsIn([RUN_CODE[0] as EvalToolCall, call("run_code", { code: "y" })], runCode),
     ).toThrow(/the 2nd call to "run_code" never completed/);
   });
 
-  test("with a schema, a result that stopped matching fails naming the field", () => {
-    const Started = z.object({ runId: z.string() });
-    expect(toolResultsIn([call("go", {}, '{"runId":"r1"}')], "go", Started)).toEqual([
-      { runId: "r1" },
+  test("is typed by the def, so a field is read with no cast", () => {
+    expect(toolResultsIn([call("go", {}, '{"runId":"r1"}')], go).map((one) => one.runId)).toEqual([
+      "r1",
     ]);
-    expect(() => toolResultsIn([call("go", {}, '{"id":"r1"}')], "go", Started)).toThrow(
-      /"go" result 0 does not match the schema/,
-    );
   });
 });
 
@@ -354,8 +392,8 @@ describe("lastToolResultIn", () => {
   test("answers the LAST call where toolResultIn refuses the scope outright", () => {
     // Across turns a repeated call is ordinary, and the settled answer is the
     // one the caller was told.
-    expect(lastToolResultIn(twice, "game_state_score")).toEqual({ score: 30 });
-    expect(() => toolResultIn(twice, "game_state_score")).toThrow(/2 calls to/);
+    expect(lastToolResultIn(twice, gameStateScore)).toEqual({ score: 30 });
+    expect(() => toolResultIn(twice, gameStateScore)).toThrow(/2 calls to/);
   });
 
   test("a single call reads identically to toolResultIn", () => {
@@ -363,19 +401,93 @@ describe("lastToolResultIn", () => {
       called("c1", "look_up", { id: "W1" }),
       completed("c1", '{"status":"shipped"}'),
     ]);
-    expect(lastToolResultIn(once, "look_up")).toEqual(toolResultIn(once, "look_up"));
+    expect(lastToolResultIn(once, lookUp)).toEqual(toolResultIn(once, lookUp));
   });
 
-  test("validates against a schema like its sibling", () => {
-    expect(lastToolResultIn(twice, "game_state_score", z.object({ score: z.number() }))).toEqual({
-      score: 30,
-    });
+  test("is typed by the def like its sibling", () => {
+    expect(lastToolResultIn(twice, gameStateScore).score + 1).toBe(31);
   });
 
   test("a miss names what WAS called, so an empty scope reads as one", () => {
-    expect(() => lastToolResultIn(twice, "game_state_get")).toThrow(
+    expect(() => lastToolResultIn(twice, gameStateGet)).toThrow(
       /no call to "game_state_get"; this scope called: game_state_score, game_state_score/,
     );
-    expect(() => lastToolResultIn([], "game_state_get")).toThrow(/this scope called: no tools/);
+    expect(() => lastToolResultIn([], gameStateGet)).toThrow(/this scope called: no tools/);
+  });
+});
+
+describe("the readers handed a tool DEF", () => {
+  const placeOrder = tool({
+    description: "Place the order",
+    inputSchema: z.object({ item: z.string() }),
+    execute: ({ item }) => ({ id: "o1", item }),
+  });
+  // Lowering is what pairs the def with its name, as `virtual:aai/agent` does.
+  deployedAgent(agent({ name: "Shop" }), {
+    tools: { "./tools/place_order.ts": { default: placeOrder } },
+  });
+  const calls = toolCallsInEvents([
+    called("c1", "place_order", { item: "pizza" }),
+    completed("c1", '{"id":"o1","item":"pizza"}'),
+    called("c2", "place_order", { item: "salad" }),
+    completed("c2", '{"id":"o2","item":"salad"}'),
+  ]);
+
+  test("resolve the wire name off the def and answer the result typed", () => {
+    const last = lastToolResultIn(calls, placeOrder);
+    // `item` is a string by the def's own type — no cast, no schema.
+    expect(last.item.toUpperCase()).toBe("SALAD");
+    expect(toolResultsIn(calls, placeOrder).map((one) => one.id)).toEqual(["o1", "o2"]);
+    expect(toolArgsIn(calls, placeOrder).map((args) => args.item)).toEqual(["pizza", "salad"]);
+    expect(toolResultIn(calls.slice(0, 1), placeOrder)).toEqual({ id: "o1", item: "pizza" });
+  });
+
+  test("keep the singular's refusals: two calls for the singular, none for a miss", () => {
+    expect(() => toolResultIn(calls, placeOrder)).toThrow('2 calls to "place_order"');
+    expect(() => lastToolResultIn([], placeOrder)).toThrow('no call to "place_order"');
+  });
+
+  test("a def no deployed agent registered throws naming the remedy", () => {
+    const inline = tool({ description: "Inline", execute: () => "x" });
+    expect(() => toolResultIn(calls, inline)).toThrow(/import it as `virtual:aai\/agent`/);
+  });
+});
+
+describe("the state readers handed a PROJECTION", () => {
+  const cart = sessionSlot("cart", () => ({ items: [] as string[], total: 0 }), {
+    view: (value) => ({ count: value.items.length }),
+  });
+  const count = sessionSlot("count", () => 0, { view: (n) => n });
+  const frame = (state: Record<string, unknown>): SessionEvent => ({
+    type: "state.updated",
+    meta,
+    state,
+  });
+
+  test("read the slot's own key and answer the page's view, typed", () => {
+    const events = [frame({ cart: { count: 1 } }), frame({ cart: { count: 2 } })];
+    const last = lastStateIn(events, cart.projected);
+    expect(last?.count).toBe(2);
+    expect(statesIn(events, cart.projected).map((one) => one.count)).toEqual([1, 2]);
+    expect(lastStateIn([], cart.projected)).toBeUndefined();
+  });
+
+  test("a frame whose keys drifted from the view fails BY FIELD NAME", () => {
+    expect(() => lastStateIn([frame({ cart: { count: 1, extra: true } })], cart.projected)).toThrow(
+      'the last state frame\'s "cart" does not match the projection: unexpected extra',
+    );
+    expect(() => statesIn([frame({ cart: { items: [] } })], cart.projected)).toThrow(
+      'state frame 0\'s "cart" does not match the projection: missing count; unexpected items',
+    );
+  });
+
+  test("a projection to a primitive is checked by type", () => {
+    expect(lastStateIn([frame({ count: 3 })], count.projected)).toBe(3);
+    expect(() => lastStateIn([frame({ count: "3" })], count.projected)).toThrow(
+      "is a string, and the projection renders a number",
+    );
+    expect(() => lastStateIn([frame({ cart: "nope" })], cart.projected)).toThrow(
+      "is a string, and the projection renders an object with keys count",
+    );
   });
 });

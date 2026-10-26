@@ -11,6 +11,8 @@ type AnyWorkflowDef<R = unknown> = {
     uploads?: readonly string[];
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
+    describeRun?(run: never): string;
+    cancelNote?: string | undefined;
 };
 
 // @public
@@ -20,13 +22,19 @@ type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-202
 export function blockAlign(format: Pick<WavFormat, "channels" | "bitsPerSample">): number;
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | "workflow_status" | "workflow_progress" | "workflow_cancel" | (string & {});
 
 // @public
 export function bytesPerSecond(format: Pick<WavFormat, "channels" | "bitsPerSample" | "sampleRate">): number;
 
 // @public
 export const CALL_OVER_STATUSES: ReadonlySet<PlacedCallStatus>;
+
+// @public @sealed
+type CallBrief = {
+    id: string;
+    prompt: string;
+};
 
 // @public @input
 export type CallStatusOptions = {
@@ -128,6 +136,11 @@ interface DelegateToolCall {
     name: string;
 }
 
+// @public @sealed
+export type DurableTranscript = Transcript & {
+    source: string;
+};
+
 // @public
 export function encodeWav(samples: Uint8Array | readonly Uint8Array[], format: PcmFormat): Uint8Array<ArrayBuffer>;
 
@@ -184,7 +197,7 @@ type GenerateResult = {
 type GuardrailVerdict = true | string;
 
 // @public
-type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S extends undefined ? Record<string, never> : never;
 
 // @public @input
 interface InterruptionTuning {
@@ -324,6 +337,8 @@ export type PlaceCallOptions = {
     from: string;
     agentUrl?: string;
     parameters?: Readonly<Record<string, string>>;
+    brief?: CallBrief;
+    briefSecretEnv?: string;
     timeLimitS?: number;
     ringTimeoutS?: number;
     credentials?: PlaceCallCredentials;
@@ -339,11 +354,22 @@ export type PlacedCall = {
 export type PlacedCallStatus = "queued" | "ringing" | "in-progress" | "completed" | "busy" | "no-answer" | "failed" | "canceled" | (string & {});
 
 // @public @input
+type PollFirstWait = {
+    waitFor: string | undefined;
+    timeoutMs: number;
+    schema?: StandardSchemaV1 | undefined;
+};
+
+// @public @input
 type PollOptions<T> = {
     everyMs: number;
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
+    first?: PollFirstWait | undefined;
+    slowAfterMs?: number | undefined;
+    onSlow?: string | undefined;
 };
 
 // @public @sealed
@@ -351,6 +377,7 @@ export type PollResult<T> = {
     value: T;
     done: boolean;
     checks: number;
+    woken?: boolean;
 };
 
 // @public
@@ -378,6 +405,7 @@ class RetryableError extends Error {
     constructor(message: string, options?: RetryableErrorOptions);
     static is(value: unknown): value is RetryableError;
     readonly retryAfter: Date;
+    readonly retryAfterNamed?: boolean;
 }
 
 // @public @input
@@ -442,6 +470,11 @@ export type Settled<T, R> = {
     readonly item: T;
     readonly ok: false;
     readonly error: string;
+};
+
+// @public @input
+type SignalOptions = {
+    holdMs?: number;
 };
 
 // @public @input
@@ -662,6 +695,7 @@ export type StepNotifyClientOptions = {
 // @public @input
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
+    maxWaits?: number;
     schema?: S | undefined;
 };
 
@@ -747,6 +781,8 @@ export function stepTranscribeSync(bytes: Uint8Array | readonly Uint8Array[], op
 // @public
 export function stepTranscribeUpload(uploadId: string, options?: TranscribeRequestOptions): Promise<{
     audioUrl: string;
+    source: string;
+    size: number;
 }>;
 
 // @public
@@ -762,6 +798,16 @@ export function stepUploadInfo(id: string): Promise<UploadInfo>;
 
 // @public
 export function stepWebhookUrl(token: string): string;
+
+// @public
+export function stepWebhookUrl(token: string, options: {
+    optional: true;
+}): string | undefined;
+
+// @public
+export function stepWebhookUrl(token: string, options?: {
+    optional?: boolean | undefined;
+}): string | undefined;
 
 // @public
 export function stepWriteUpload(bytes: Uint8Array | readonly Uint8Array[] | AsyncIterable<Uint8Array>, options?: WriteUploadOptions): Promise<UploadInfo>;
@@ -805,15 +851,18 @@ type ToolContext = {
     deadlineAt: number;
     workflows: WorkflowClient;
     random: RandomSource;
+    turn: number;
+    now(): number;
 };
 
 // @public @input
-type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined, R = unknown> = {
     description: string;
-    inputSchema?: P;
+    inputSchema?: P | undefined;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
+    ui?: ToolUi;
 };
 
 // @public @input
@@ -859,14 +908,50 @@ type ToolStartMessage = {
     blocking?: boolean | undefined;
 };
 
+// @public @input
+type ToolUi = {
+    icon?: string | undefined;
+    label?: string | undefined;
+};
+
 // @public
 export const TRANSCRIBE_API: string;
+
+// @public
+export const TRANSCRIBE_DURABLY_STEPS: {
+    readonly upload: "transcribeUpload";
+    readonly submit: "transcribeSubmit";
+    readonly poll: "transcribePoll";
+};
 
 // @public
 export const TRANSCRIBE_MODELS: readonly string[];
 
 // @public
+export const TRANSCRIBE_POLL_EVERY_MS: number;
+
+// @public
+export const TRANSCRIBE_POLL_MAX_MS: number;
+
+// @public
 export const TRANSCRIBE_SYNC_MODEL: string;
+
+// @public @input
+export type TranscribeDurablyHost = {
+    step<T>(name: string, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    poll<T>(name: string, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+};
+
+// @public @input
+export type TranscribeDurablyOptions = {
+    everyMs?: number | undefined;
+    maxMs?: number | undefined;
+    params?: Record<string, unknown> | undefined;
+    models?: readonly string[] | undefined;
+    apiKeyEnv?: string | undefined;
+    maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
+};
 
 // @public
 export class TranscribeError extends Error {
@@ -910,6 +995,9 @@ export type TranscribeSyncOptions = TranscribeRequestOptions & {
     type?: string | undefined;
     label?: string | undefined;
 };
+
+// @public
+export function transcribeUploadDurably(ctx: TranscribeDurablyHost, uploadId: string, options?: TranscribeDurablyOptions): Promise<DurableTranscript>;
 
 // @public @sealed
 export type Transcript = {
@@ -961,19 +1049,24 @@ export class UploadIncompleteError extends Error {
 }
 
 // @public @sealed
-export type UploadInfo = {
-    id: string;
-    name: string;
-    type: string;
-    size: number;
-    complete: boolean;
-    ranges?: readonly UploadRange[];
+export type UploadInfo = UploadRecord & {
+    label: string;
 };
 
 // @public @sealed
 export type UploadRange = {
     start: number;
     end: number;
+};
+
+// @public @sealed
+export type UploadRecord = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+    complete: boolean;
+    ranges?: readonly UploadRange[];
 };
 
 // @public @sealed
@@ -1033,6 +1126,10 @@ type WorkflowClient = {
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    latest<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key?: string): Promise<WorkflowRunSnapshot<R> | undefined>;
+    latest(workflow: string, key?: string): Promise<WorkflowRunSnapshot | undefined>;
+    live<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key?: string): Promise<WorkflowRunSnapshot<R> | undefined>;
+    live(workflow: string, key?: string): Promise<WorkflowRunSnapshot | undefined>;
     findByKey(key: string, options?: FindByKeyOptions): Promise<WorkflowRunSnapshot[]>;
     cancelAll<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string): Promise<number>;
     cancelAll(workflow: string, key: string): Promise<number>;
@@ -1040,7 +1137,9 @@ type WorkflowClient = {
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
-    signal(token: string, payload?: unknown): Promise<boolean>;
+    signal(token: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
+    signalRun<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, label: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
+    signalRun(workflow: string, key: string, label: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
@@ -1052,6 +1151,7 @@ type WorkflowClient = {
 type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
+    readonly key: string | undefined;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     now(): Promise<number>;
@@ -1064,6 +1164,12 @@ type WorkflowContext = {
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
+    report<const Name extends string>(name: Name & Literal<Name>, line: string): Promise<void>;
+    signalToken(label: string): string;
+    waitForSignal<S extends StandardSchemaV1>(label: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
+    waitForSignal<S extends StandardSchemaV1>(label: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    waitForSignal<T = unknown>(label: string): Promise<T>;
+    waitForSignal<T = unknown>(label: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
 // @public @input
@@ -1074,6 +1180,8 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
     onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
+    describeRun?(run: WorkflowRunSnapshot<R>): string;
+    cancelNote?: string | undefined;
 };
 
 // @public @sealed
@@ -1099,6 +1207,8 @@ type WorkflowRunBase = {
     createdAt: number;
     key?: string;
     label?: string;
+    startedAt?: number;
+    settledAt?: number;
 };
 
 // @public

@@ -1,4 +1,9 @@
-import { errorMessage, ProcedureNotFinishedError, tool, toolFailure } from "@alexkroman1/aai";
+import {
+  errorMessage,
+  ProcedureNotFinishedError,
+  toolFailure,
+  withInstruction,
+} from "@alexkroman1/aai";
 import { z } from "zod";
 import { runCorrectiveRag } from "../procedure.ts";
 import { supportSlot } from "../shared.ts";
@@ -22,53 +27,47 @@ const WRAP_UP_MS = 2000;
  * grounded-but-not-useful answer is still worth speaking, and the caller is the
  * one who should hear that it may not be the whole story.
  *
- * **The loop is given a BUDGET, because the runtime already has one and it is
- * not this tool's.** The corrective path is up to eleven sequential model calls
- * — two attempts of grade/generate/ground/use, plus a regeneration — and the
- * tool executor abandons any tool at `TOOL_EXECUTION_TIMEOUT_MS` (30s), which
- * an author cannot raise. Measured against a live gateway, the two-attempt path
- * really does exceed it: the model was handed
- * `{"error":"Tool \"answer_question\" timed out after 30000ms"}`, which tells
- * it nothing it can act on and reads to a caller as the line going dead.
- * Budgeting under `ctx.deadlineAt` lands the overrun on the graph's OWN exit
- * instead — the
- * same "offer to look again, or log a ticket" the design already has for an
- * interrupted run — so the slow path degrades into a sentence rather than into
- * an internal error. It does not make the loop faster; it makes running out
- * something the caller hears about.
+ * `prepare` is the graph (an await); `execute` is the synchronous window that
+ * records its trace. **The loop is given a BUDGET, because the runtime already
+ * has one and it is not this tool's.** The corrective path is up to eleven
+ * sequential model calls, and the tool executor abandons any tool at
+ * `TOOL_EXECUTION_TIMEOUT_MS` (30s), which an author cannot raise. Measured
+ * against a live gateway, the two-attempt path really did exceed it once: the
+ * model was handed `{"error":"Tool \"answer_question\" timed out after 30000ms"}`,
+ * which tells it nothing it can act on and reads to a caller as the line going
+ * dead. Budgeting under `ctx.deadlineAt` lands the overrun on the graph's OWN
+ * exit instead — the same "offer to look again, or log a ticket" the design
+ * already has for an interrupted run — so the slow path degrades into a
+ * sentence rather than into an internal error.
  *
  * **Re-measured, and the loop is nowhere near the budget today.** Driven
  * directly against the live gateway on the default model: the single-attempt
  * path is 2.0-3.1s over four or five model calls, and the two-attempt
- * CORRECTIVE path — nine calls, one query rewrite — is 2.8s, with each call
- * 0.3-1.3s. A schema-constrained call is not the expensive kind either (572ms
- * against 553ms for the same prompt without one), which is the guess anyone
- * looking at this would make first. So the budget is a GUARD against a slow
- * gateway rather than a bound the healthy path pushes against, and a question
- * that trips a rewrite fits with room to spare. Keep it: the measurement above
- * happened, and what changed is the service's latency, not the number of round
- * trips. Do not go cutting round trips out of the graph on the strength of the
- * old paragraph — measure first, the same way.
+ * CORRECTIVE path — nine calls, one query rewrite — is 2.8s. So the budget is a
+ * GUARD against a slow gateway rather than a bound the healthy path pushes
+ * against. Keep it: what changed is the service's latency, not the number of
+ * round trips. Do not go cutting round trips out of the graph on the strength
+ * of the old paragraph — measure first, the same way.
  */
-export default tool({
+export default supportSlot.updateTool({
   description:
     "Answer a caller's question from the support knowledge base. This is the " +
     "only way to answer anything about the product — never answer from your " +
     "own knowledge. Pass the caller's question as they asked it.",
+  ui: { icon: "\u{1F50D}", label: "Checking the knowledge base" },
   inputSchema: z.object({
     question: z.string().max(500).describe("The caller's question, in their own words"),
   }),
-  async execute(args, ctx) {
-    let trace: Awaited<ReturnType<typeof runCorrectiveRag>>;
+  async prepare(args, _state, ctx) {
     try {
       // `ctx.signal` is what stops the graph on a barge-in: this loop is five
       // to nine model calls, and a caller who interrupts on the second should
       // not be charged for the rest. The budget rides alongside it and comes
       // from `ctx.deadlineAt` — THIS call's deadline, so a host that gave this
       // tool a different `timeoutMs` is followed rather than second-guessed —
-      // and `AbortSignal.any` combines the two with no unlink bookkeeping.
-      const budgetMs = Math.max(0, ctx.deadlineAt - Date.now() - WRAP_UP_MS);
-      trace = await runCorrectiveRag(
+      // read against `ctx.now()`, the clock a spec can pin.
+      const budgetMs = Math.max(0, ctx.deadlineAt - ctx.now() - WRAP_UP_MS);
+      return await runCorrectiveRag(
         ctx.generate,
         args.question,
         AbortSignal.any([ctx.signal, AbortSignal.timeout(budgetMs)]),
@@ -94,41 +93,32 @@ export default tool({
       // caller the lookup failed, which is a better turn than silence.
       return toolFailure(`The knowledge base lookup failed: ${errorMessage(err)}`);
     }
-
-    // No `await`: `slot.update` is SYNCHRONOUS, and that is the invariant
-    // rather than an implementation detail — the model call above is awaited in
-    // FRONT of the mutation for exactly that reason. Awaiting it would read as
-    // though the window could span a turn.
-    supportSlot.update(ctx, (state) => {
-      state.trace = trace;
-      state.asked.push(args.question);
-    });
-
-    const sources = trace.docs.filter((doc) => doc.relevant).map((doc) => doc.title);
+  },
+  execute(args, state, trace) {
+    state.trace = trace;
+    state.asked.push(args.question);
 
     if (!trace.answer) {
-      return {
-        answer: null,
-        rewrites: trace.rewrites,
-        guidance:
-          "Nothing in the knowledge base covers this. Say so plainly — do not " +
+      return withInstruction(
+        { answer: null, rewrites: trace.rewrites },
+        "Nothing in the knowledge base covers this. Say so plainly — do not " +
           "guess — and offer to log a ticket with log_ticket.",
-      };
+      );
     }
 
-    return {
+    const answered = {
       answer: trace.answer,
-      sources,
+      sources: trace.docs.filter((doc) => doc.relevant).map((doc) => doc.title),
       grounded: trace.grounded,
       answersTheQuestion: trace.useful,
       rewrites: trace.rewrites,
-      ...(trace.exhausted
-        ? {
-            guidance:
-              "This is grounded in the documents but may not be the whole " +
-              "answer. Give it, then offer to log a ticket with log_ticket.",
-          }
-        : {}),
     };
+    return trace.exhausted
+      ? withInstruction(
+          answered,
+          "This is grounded in the documents but may not be the whole answer. " +
+            "Give it, then offer to log a ticket with log_ticket.",
+        )
+      : answered;
   },
 });

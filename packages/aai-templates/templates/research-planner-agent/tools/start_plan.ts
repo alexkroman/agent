@@ -1,4 +1,4 @@
-import { errorMessage, tool, toolFailure } from "@alexkroman1/aai";
+import { errorMessage, toolFailure, withInstruction } from "@alexkroman1/aai";
 import { z } from "zod";
 import { planNode } from "../procedure.ts";
 import { planFlow, planSlot } from "../shared.ts";
@@ -6,57 +6,43 @@ import { planFlow, planSlot } from "../shared.ts";
 /**
  * Their `plan_step`, as the call's opening move.
  *
- * **The await comes FIRST, then the mutation.** `slot.update` is synchronous —
- * its window cannot span an await, which is what makes a read-modify-write
- * atomic without a lock — so a body that has to call a model does that outside
- * it and mutates once the answer is in hand. The hazard the old serialized
- * version guarded against is unchanged (the LLM loop runs a step's tool calls
- * concurrently, so two plans started at once must not interleave); what changed
- * is that the window is now too short to interleave IN.
- *
- * **This one is an ordinary `tool()` and NOT a `planFlow.tool`, deliberately.**
- * `PLANNED` is accepted in all three states — re-planning from scratch is always
- * legal — so a `when` listing every state would be a gate that gates nothing,
- * paying the wrapper for it. It sends the event itself instead, which is what
- * `dialog.send` is public for.
+ * `prepare` is the model call and `execute` the synchronous window it feeds —
+ * two plans started at once cannot interleave inside it. The dialog's `send`
+ * then moves the flow: `work_next_step` gates on `working`, and a plan written
+ * to the slot while the flow still said `idle` would be refused by its own next
+ * tool call. No `when`, because `PLANNED` is accepted in all three states —
+ * re-planning from scratch is always legal.
  */
-export default tool({
+export default planSlot.updateTool({
   description:
     "Draft a plan for what the caller wants to get done. Use this once you " +
     "understand the objective. Read the steps back to them afterwards.",
+  ui: { icon: "\u{1F5C2}", label: "Drafting the plan" },
   inputSchema: z.object({
     objective: z
       .string()
       .max(400)
       .describe("What the caller wants, stated as one goal in their own terms"),
   }),
-  async execute(args, ctx) {
-    let steps: string[];
+  dialog: planFlow,
+  send: { type: "PLANNED" },
+  async prepare({ objective }, _plan, ctx) {
     try {
-      steps = await planNode(ctx.generate, args.objective);
+      return await planNode(ctx.generate, objective);
     } catch (err: unknown) {
       return toolFailure(`The planner failed: ${errorMessage(err)}`);
     }
-
-    // The flow moves first: `work_next_step` gates on `working`, and a plan
-    // written to the slot while the flow still said `idle` would be refused by
-    // its own next tool call.
-    planFlow.send(ctx, { type: "PLANNED" });
-
-    return planSlot.update(ctx, (plan) => {
-      plan.objective = args.objective;
-      plan.plan = steps;
-      plan.pastSteps = [];
-      plan.response = null;
-      plan.revisions.push(`Planned ${steps.length} step(s) for: ${args.objective}`);
-
-      return {
-        objective: args.objective,
-        steps,
-        message:
-          "Read the plan back in one breath, then ask if they want you to start. " +
-          "Work it one step at a time with work_next_step.",
-      };
-    });
+  },
+  execute({ objective }, plan, steps) {
+    plan.objective = objective;
+    plan.plan = steps;
+    plan.pastSteps = [];
+    plan.response = null;
+    plan.revisions.push(`Planned ${steps.length} step(s) for: ${objective}`);
+    return withInstruction(
+      { objective, steps },
+      "Read the plan back in one breath, then ask if they want you to start. " +
+        "Work it one step at a time with work_next_step.",
+    );
   },
 });

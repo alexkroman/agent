@@ -35,7 +35,8 @@ export default tool({
     const clientId = requireSessionClient(ctx, "This device can't receive reminders.");
     if (isToolFailure(clientId)) return clientId;
     const zone = homeTimeZone(ctx.env);
-    const now = new Date();
+    // `ctx.now()` rather than `Date.now()`: the clock a spec can set.
+    const now = new Date(ctx.now());
     const dueAt = reminderDueAt(now, { inSeconds: in_seconds, at }, zone);
     if (dueAt === undefined) return { error: "Say when: a time of day or how long from now." };
     if (dueAt - now.getTime() > MAX_REMINDER_MS) {

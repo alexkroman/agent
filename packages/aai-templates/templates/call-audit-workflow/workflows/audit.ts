@@ -45,23 +45,20 @@
  * ingest result, once as the plan) and buy nothing.
  */
 
-// ERASED at build time, so the body can name the schema's own output type without
-// a runtime cycle back through `agent.ts` — the same mechanism `client.tsx` uses
-// for `WorkflowOutputOf`.
 import type { WorkflowContext, WorkflowInputOf } from "@alexkroman1/aai";
 import {
   encodeWav,
   mapConcurrent,
   type ReadUploadOptions,
-  type StepInfo,
-  stepInfo,
   stepReadUpload,
   stepReport,
   type UploadSlice,
 } from "@alexkroman1/aai/step";
 import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
 import { countWords, formatDuration } from "@alexkroman1/aai/utils";
-import type { audit } from "../agent.ts";
+// ERASED at build time: the body names the schema's own output type without a
+// runtime cycle back through `agent.ts`.
+import type { auditInput } from "../agent.ts";
 import { ingestRecording } from "./ingest.ts";
 import {
   ANALYSIS_FORMAT,
@@ -121,7 +118,7 @@ export type CallAudit = {
   /** How long the RUN took, wall clock. */
   elapsedMs: number;
   /**
-   * How much of that was ffmpeg — the two levelling passes plus the mastering one.
+   * How much of that was the two levelling passes.
    *
    * Rendered beside `elapsedMs` rather than folded into it, because the two
    * answer different questions: the run is mostly the fan-out waiting on a
@@ -173,26 +170,21 @@ export type CallAudit = {
  * it is validated against before a run exists.
  */
 export async function auditFlow(
-  input: WorkflowInputOf<typeof audit>,
+  input: WorkflowInputOf<typeof auditInput>,
   ctx: WorkflowContext,
 ): Promise<CallAudit> {
   // Both at once: neither needs the other, and issued together they are one round
   // trip instead of two before any audio moves. The ORDER is still a pure function
   // of this expression — the two calls go out synchronously, left to right — which
-  // is what a replay reproduces.
+  // is what a replay reproduces. `ctx.now()` is journaled under its own key, so
+  // it is the moment the run really reached this line however many times the
+  // line is walked.
   //
-  // `ctx.now()` rather than a step of its own: the engine journals the read under
-  // its own key, so it is the moment the run really reached this line however
-  // many times the line is walked. This was a `ctx.step("clockStart", now)` over
-  // an exported one-line clock read, which is what everybody writes until the
-  // affordance exists.
-  // `maxAttempts: 6` was `ingestRecording.maxRetries = 5` — five retries AFTER
-  // the first, so six in all. More than the default 3, and not because a
-  // conversion is flaky: a corrupt file fails identically forever, and
-  // `throwFfmpegStepError` is what stops the engine retrying that. It is the two
-  // I/O halves that are worth another attempt — the step reads a whole recording
-  // out of the store and writes a whole one back, and either can lose a
-  // connection on a file this size.
+  // `maxAttempts: 6` on the ingest, and not because a conversion is flaky: a
+  // corrupt file fails identically forever, and `throwFfmpegStepError` is what
+  // stops the engine retrying that. It is the two I/O halves that are worth
+  // another attempt — the step reads a whole recording out of the store and
+  // writes a whole one back, and either can lose a connection on a file this size.
   const [startedAt, ingested] = await Promise.all([
     ctx.now(),
     ctx.step("ingestRecording", () => ingestRecording(input.recording), { maxAttempts: 6 }),
@@ -210,13 +202,13 @@ export async function auditFlow(
   // a recording with a silent hole in it and report success.
   // `mapConcurrent` hands out items from a monotonic cursor, so the Nth call
   // ISSUED is segment N whatever order they settle in — which is what makes
-  // `transcribeSegment#N` stable across a replay. `maxAttempts: 6` was
-  // `transcribeSegment.maxRetries = 5` — more than the default 3 because a rate
-  // limit is the expected failure here, and a segment that 429s is not a segment
-  // that is wrong.
+  // `transcribeSegment#N` stable across a replay. `maxWaits`, because a rate
+  // limit is the expected failure here: a segment that 429s is not a segment
+  // that is wrong, so a `Retry-After` is waited out rather than charged as an
+  // attempt.
   const parts = await mapConcurrent(segments, SEGMENT_CONCURRENCY, (segment) =>
     ctx.step("transcribeSegment", () => transcribeSegment(ingested.audio, segment), {
-      maxAttempts: 6,
+      maxWaits: 3,
     }),
   );
 
@@ -236,9 +228,8 @@ export async function auditFlow(
     codec: ingested.codec,
     durationMs: ingested.durationMs,
     elapsedMs: finishedAt - startedAt,
-    // Both directions, summed in the body from two journaled step results — so a
-    // replay reports the time the passes really took rather than re-measuring
-    // work it did not redo.
+    // Every ffmpeg invocation the run paid for: the ingest's probe and two
+    // passes, and the mastering pass under the spoken audit.
     ffmpegMs: ingested.ffmpegMs + spoken.ffmpegMs,
     segments: segments.length,
     blindCuts: segments.filter((segment) => segment.cutInSpeech).length,
@@ -280,13 +271,11 @@ export async function transcribeSegment(audioId: string, segment: Segment): Prom
   //
   // ORDER is not guaranteed here and does not need to be — the calls go out
   // together, so their lines interleave by completion, and `segment.index` is what
-  // puts the TRANSCRIPT back in order.
-  //
-  // `stepInfo()` is read ONCE, at the top, which is what that function asks of a
-  // caller: its answer is a snapshot of the attempt in flight, so reading it again
-  // after an `await` asks a question whose answer cannot have changed.
+  // puts the TRANSCRIPT back in order. A retry's line carries "(attempt N)" from
+  // the progress stream itself, so a fan-out riding out a 429 does not read as
+  // one that has stalled.
   const span = `${formatDuration(segment.startMs)}–${formatDuration(segment.endMs)}`;
-  await stepReport(`Transcribing ${span}.${attemptSuffix(stepInfo())}`);
+  await stepReport(`Transcribing ${span}.`);
 
   const audio = await stepReadUpload(audioId, segmentWindow(segment));
 
@@ -336,23 +325,6 @@ export function segmentWindow(segment: Segment): ReadUploadOptions {
  */
 export function segmentShortfall(segment: Segment, slice: Pick<UploadSlice, "bytes">): number {
   return Math.max(0, segment.endByte - segment.startByte - slice.bytes.byteLength);
-}
-
-/**
- * ` (attempt 2 of 6)`, or nothing at all on a first attempt.
- *
- * The progress log is this desk's whole UI while a run is going, and a
- * thirty-segment fan-out that meets a rate limit re-reports each retried segment
- * under the line it already printed — so without this a run that is patiently
- * riding out a 429 looks exactly like a run that has stalled.
- *
- * `undefined` is ORDINARY rather than an error and reads as "not retrying":
- * {@link stepInfo} answers it outside a step, which is what a spec driving this
- * function directly has and what the first attempt would have said anyway.
- */
-export function attemptSuffix(info: StepInfo | undefined): string {
-  if (info === undefined || info.attempt <= 1) return "";
-  return ` (attempt ${info.attempt} of ${info.maxAttempts})`;
 }
 
 /**

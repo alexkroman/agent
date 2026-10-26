@@ -76,6 +76,13 @@ export const BOUNDARY_KEYS = {
     stepError: "@alexkroman1/aai.stepError",
     /** `stubSpeech`'s mark on a synthesizer that needs no key: `true`. */
     keylessSynthesizer: "@alexkroman1/aai.speechSynthesizer.keyless",
+    /**
+     * `workflow()`'s mark on the def it answers (and on what `.body()`
+     * answers): `true`. What `workflowRegistry` reads to tell a def from a
+     * `{ description, run }` helper default-exported beside it — a def is made
+     * by the bundle's SDK copy and read by the host's.
+     */
+    workflowDef: "@alexkroman1/aai.workflowDef",
   },
   /** Values a host publishes on `globalThis` for the bundle's copy to read. */
   slots: {

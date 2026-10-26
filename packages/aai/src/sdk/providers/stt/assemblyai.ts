@@ -214,7 +214,6 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
  *
  * export default agent({
  *   name: "Support",
- *   systemPrompt: "You are a support agent. Be brief.",
  *   stt: assemblyAIStt({ languages: ["en"] }),
  * });
  * ```

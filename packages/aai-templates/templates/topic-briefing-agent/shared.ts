@@ -47,6 +47,7 @@ import {
   type Roster,
   resolveOne,
   roster,
+  type SlotValueOf,
   sessionSlot,
   speaker,
   type ToolFailure,
@@ -336,21 +337,15 @@ export interface BriefingState {
   findings: Finding[];
 }
 
-export function emptyBriefing(): BriefingState {
-  return { topic: null, findings: [] };
-}
-
-export const briefingSlot = sessionSlot("briefing", emptyBriefing, {
-  // Held by the slot rather than by a `recordFinding` wrapper, so a tool that
-  // pushes to the board directly is bounded too.
-  caps: { findings: MAX_FINDINGS },
-});
-
-/**
- * The board as a READ hands it out — deep-frozen, and typed to say so, which is
- * what a slot's read returns.
- */
-export type FrozenBriefing = DeepReadonly<BriefingState>;
+export const briefingSlot = sessionSlot(
+  "briefing",
+  { topic: null, findings: [] } as BriefingState,
+  {
+    // Held by the slot rather than by a `recordFinding` wrapper, so a tool that
+    // pushes to the board directly is bounded too.
+    caps: { findings: MAX_FINDINGS },
+  },
+);
 
 /**
  * A finding named by what the caller would say: its angle, loosely matched.
@@ -373,7 +368,7 @@ export type FrozenBriefing = DeepReadonly<BriefingState>;
  * booleaned: a longer shared prefix of words wins, and a tie FAILS.
  */
 export function findByAngle(
-  state: FrozenBriefing,
+  state: SlotValueOf<typeof briefingSlot>,
   angle: string,
 ): DeepReadonly<Finding> | ToolFailure {
   const wanted = angle.trim().toLowerCase();

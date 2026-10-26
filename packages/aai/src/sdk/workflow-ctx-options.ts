@@ -67,6 +67,28 @@ export type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
    */
   maxAttempts?: number;
   /**
+   * How many times this step may WAIT OUT a far side's own `Retry-After`
+   * without spending an attempt.
+   *
+   * Unset, every retryable failure consumes an attempt — today's behaviour, and
+   * the default is deliberately not flipped. Set, a `RetryableError` whose
+   * `retryAfter` is still in the FUTURE when it is caught (what `orFail(step*)`
+   * raises on a 429 or a 503 carrying the header, and what `stepGenerate`
+   * carries off a rate-limited gateway) is a WAIT rather than a try: the step
+   * backs off as before, and the attempt budget is untouched. A retryable
+   * failure whose delay has already passed, and an unclassified throw, still
+   * spend an attempt — those are the step failing, not the far side asking it
+   * to come back later.
+   *
+   * The distinction is the one a fan-out hits: N segments meet one rate limit
+   * together, and a budget of three attempts is spent on three `Retry-After`s
+   * before the step has failed once on its own account. This bounds the waits
+   * SEPARATELY, so `maxAttempts` stays what its name says. Once the waits are
+   * spent, the next such failure spends an attempt as before, so a far side
+   * that never stops asking cannot hold a step forever.
+   */
+  maxWaits?: number;
+  /**
    * The shape this step's output must have — any
    * [Standard Schema](https://standardschema.dev), zod being the documented
    * default. Its OUTPUT type is what the step resolves to.
@@ -226,10 +248,17 @@ export type SleepOptions = {
   /**
    * A name for this wait, so it can be ended early by name.
    *
-   * Not required, and the default is deliberately the broad one: a `wake` naming
-   * no ids ends every outstanding wait on the run. An id is what lets a run with
-   * two concurrent waits — a review window and a retry backoff — have one of them
-   * cut short without the other.
+   * Defaults to the sleep's `label`, so `ctx.workflows.wakeUp(runId, {
+   * correlationIds: ["review-window"] })` ends the wait a body wrote as
+   * `ctx.sleep("review-window", …)` with nothing further declared — the label
+   * is already the wait's name to a reader, and a wake addressed by it is the
+   * ordinary case. A bare `wakeUp` naming no ids still ends every outstanding
+   * sleep on the run.
+   *
+   * Pass one explicitly to make two differently-labelled waits share an id —
+   * a review window and a retry backoff a single "do it now" should both end —
+   * or to give a loop's iterations, which share a label already, a different
+   * grouping than the label gives them.
    */
   correlationId?: string;
 };
@@ -288,6 +317,65 @@ export type PollOptions<T> = {
   done: (value: T) => boolean;
   /** Each check's `StepOptions.maxAttempts`. */
   maxAttempts?: number | undefined;
+  /**
+   * Each check's `StepOptions.maxWaits` — a far side's dated `Retry-After` on
+   * a check is waited out of this budget rather than spending an attempt.
+   */
+  maxWaits?: number | undefined;
+  /**
+   * Park on a callback ONCE before the first check — `ctx.waitFor(waitFor, {
+   * timeoutMs, schema })` ahead of the loop, journaled exactly as that call is.
+   *
+   * The shape a "submit, then poll" body takes: the far side promises a
+   * webhook and usually keeps it, so the body parks on the token until the
+   * callback lands or the window closes, and only then starts checking. Without
+   * this the body branched on the journaled submit result to decide whether to
+   * wait, and the branch was the thing that diverged between walks. Whether the
+   * callback arrived is reported on {@link PollResult.woken}, so the body reads
+   * the poll's own answer instead.
+   */
+  first?: PollFirstWait | undefined;
+  /**
+   * After this much polling, say so ONCE: `onSlow` is written as a progress
+   * line (`stepReport`) in its own journaled step named `<name>:slow`, so a
+   * replay does not repeat it.
+   *
+   * Measured as a COUNT, like the budget: the line is written once the sleeps
+   * taken reach `ceil(slowAfterMs / everyMs)`, which is the same instant on
+   * every walk however long each check took. Nothing is written when the poll
+   * is done before then.
+   */
+  slowAfterMs?: number | undefined;
+  /**
+   * The line {@link PollOptions.slowAfterMs} writes. Defaults to a sentence
+   * naming the poll: `"Still waiting on <name>."`.
+   */
+  onSlow?: string | undefined;
+};
+
+/**
+ * {@link PollOptions.first} — the one callback a poll parks on before it begins.
+ *
+ * @input
+ * @public
+ */
+export type PollFirstWait = {
+  /**
+   * The hook token, as `ctx.waitFor` takes it — derived, so a tool can signal
+   * it. `undefined` means NO callback was issued — what
+   * `stepWebhookUrl(token, { optional: true })` answers on a deployment with
+   * no public URL — and the poll then checks immediately rather than parking
+   * for `timeoutMs` on a callback nothing can deliver (`woken: false`).
+   */
+  waitFor: string | undefined;
+  /** How long to wait for the callback before polling anyway. */
+  timeoutMs: number;
+  /**
+   * What the callback must look like — `WaitForOptions.schema`. The payload is
+   * checked and then DISCARDED: a poll's answer is the check's value, and a
+   * callback that carries the answer is a `ctx.waitFor` without a poll.
+   */
+  schema?: StandardSchemaV1 | undefined;
 };
 
 /**
@@ -303,4 +391,10 @@ export type PollResult<T> = {
   done: boolean;
   /** How many checks ran. */
   checks: number;
+  /**
+   * Whether {@link PollOptions.first}'s callback arrived before its window
+   * closed: `true` when the poll was woken by it, `false` when it timed out and
+   * the checks began anyway. Absent when the poll declared no `first`.
+   */
+  woken?: boolean;
 };

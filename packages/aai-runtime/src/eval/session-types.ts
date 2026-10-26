@@ -13,6 +13,7 @@
 
 import type { SessionCall, SessionEvent } from "@alexkroman1/aai";
 import type { LlmProvider } from "@alexkroman1/aai/llm";
+import type { AnyWorkflowDef } from "@alexkroman1/aai/workflow-api";
 import type { HostGenerateFn } from "../generate.ts";
 import type { HostAgentOptions } from "../host-agent-options.ts";
 import type { EvalToolCall } from "./events.ts";
@@ -79,6 +80,31 @@ export type EvalTurn = {
    * `say()` always sets it.
    */
   readonly dtmf?: readonly string[];
+  /**
+   * The workflow runs a tool STARTED during this turn, in order — one entry
+   * per `ctx.workflows.start`, as the session's client recorded it.
+   *
+   * Read off the client the session was handed, not off a tool's result, so
+   * it holds whatever the tool answered the model and names the run by the
+   * key `agent({ workflows })` declares it under. `evalRunOf(turn, def)` is
+   * the reader. Optional for the reason {@link endedSession} is;
+   * {@link openEvalSession}'s `say()` always sets it.
+   */
+  readonly workflowStarts?: readonly EvalWorkflowStart[];
+};
+
+/**
+ * One `ctx.workflows.start` a turn made.
+ *
+ * @sealed
+ */
+export type EvalWorkflowStart = {
+  /** The key the workflow is declared under in `agent({ workflows })`. */
+  readonly workflow: string;
+  /** The declared def, when the agent declares one under that key. */
+  readonly def: AnyWorkflowDef | undefined;
+  /** The run id `start` resolved with. */
+  readonly runId: string;
 };
 
 /**

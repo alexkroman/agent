@@ -1,4 +1,4 @@
-import { tool, toolFailure } from "@alexkroman1/aai";
+import { tool, toolFailure, withInstruction } from "@alexkroman1/aai";
 import { z } from "zod";
 import { excerptAround, fetchFdaLabel, type LabelLookup, toDrugInfo } from "../fda.ts";
 
@@ -54,15 +54,18 @@ export function checkDrugInteraction(lookup: LabelLookup = fetchFdaLabel) {
         }
       }
 
-      return {
-        drugs: names,
-        interactions_found: interactions.length,
-        interactions: interactions.slice(0, 5),
-        note:
-          interactions.length === 0
-            ? "No cross-mentions found in the FDA label Drug Interactions sections. This does not guarantee the combination is safe — confirm with a pharmacist or doctor."
-            : "Based on FDA label Drug Interactions sections. Confirm with a pharmacist or doctor.",
-      };
+      // The caveat is for the MODEL, per outcome: "no cross-mention" is not
+      // "safe", and this tool must never be read as saying it was.
+      return withInstruction(
+        {
+          drugs: names,
+          interactions_found: interactions.length,
+          interactions: interactions.slice(0, 5),
+        },
+        interactions.length === 0
+          ? "No cross-mentions found in the FDA label Drug Interactions sections. This does not guarantee the combination is safe — confirm with a pharmacist or doctor."
+          : "Based on FDA label Drug Interactions sections. Confirm with a pharmacist or doctor.",
+      );
     },
   });
 }

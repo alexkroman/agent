@@ -18,12 +18,10 @@
  * ## The form is DECLARED, not written
  *
  * There is no field markup here at all. `<WorkflowFields>` renders a control per
- * SCALAR property of the workflow's own input schema, which it reads from
+ * property of the workflow's own input schema, which it reads from
  * `GET /workflows` — so the file picker exists because `agent.ts` declares
- * `recording`, `.describe()` is what labels it, and adding a second scalar there
- * adds a second control here with no edit. (A language picker used to sit beside
- * it, and went with the schema field: the model detects the language, so the
- * control asked a person to answer a question the service answers better.)
+ * `recording` in `uploads`, `.describe()` is what labels it, and adding a second
+ * property there adds a second control here with no edit.
  *
  * The FILE half is the same mechanism one step further: `recording` is a string
  * in the schema (it carries an upload id) and appears in the workflow's
@@ -33,9 +31,9 @@
  * never travel in one; this page contains no upload code because the SDK owns
  * that.
  *
- * ## Two modes, and the toggle is the template's subject
+ * ## Three modes, and the toggle is the template's subject
  *
- * The desk offers both flows the agent declares, and the page is where the
+ * The desk offers all three flows the agent declares, and the page is where the
  * difference is legible: pick "while it uploads" and there is a run to watch
  * before any bytes are in, pick "after it uploads" and there is not. They share
  * everything else — one `<Form>`, one picker, one progress log, one transcript —
@@ -44,158 +42,64 @@
  *
  * `useWorkflowStream` is the streaming half: it mints the upload id, starts the run
  * on it, sends the file, and wakes the run when the bytes land. `useWorkflowSubmit`
- * is the classic half and is unchanged.
- *
- * Streaming is the DEFAULT because it is faster on any real recording. The classic
- * path stays selectable because it is the shape to read first.
+ * is the classic half, and the batch flow is the same hook against a different
+ * workflow. Streaming is the DEFAULT because it is faster on any real recording;
+ * the classic path stays selectable because it is the shape to read first.
  *
  * ## The third control is about the UPLOAD, not the flow
  *
  * "Split the file across connections" (`parallel`) is orthogonal to the three modes
  * and applies to all of them, which is why it is a checkbox beside the radios
- * rather than a fourth option. A single request moves a file at one connection's
- * throughput, which over any distance is a fraction of the link — so the SDK cuts
- * the file into megabyte-aligned parts and sends four at once. Nothing about the
- * workflow changes: the agent reassembles them, `stepReadUpload` reads the same
- * windows, and the streaming flow still watches the file grow (what it polls is the
- * CONTIGUOUS prefix, which is honest whether one connection or four are filling
- * it).
- *
- * The SDK does this by DEFAULT, so the checkbox is an opt-OUT rather than an
- * opt-in — and it is here for the reason the mode radios are: this is the template
- * where a reader runs both over the same recording and sees what each costs. It
- * also degrades on its own — a small file, or an agent deployed before the
- * `/parts` routes existed, sends the single request instead — so leaving it on is
- * safe, and turning it off costs retries as well as speed (a single request is the
- * one upload path that cannot be re-sent).
+ * rather than a fourth option. The SDK cuts the file into megabyte-aligned parts
+ * and sends four at once by DEFAULT, so the checkbox is an opt-OUT — and it is
+ * here because this is the template where a reader runs both over the same
+ * recording and sees what each costs. Turning it off costs retries as well as
+ * speed: a single request is the one upload path that cannot be re-sent.
  *
  * ## The transcript ARRIVES, rather than appearing at the end
  *
  * A run's `output` exists only when its last segment does, so a page with only
- * that shows a status line for the whole fan-out and then everything at once — on
- * a 97-minute recording, minutes of it. Each segment is emitted the moment it
- * lands (`emit(TRANSCRIPT_STREAM, …)` in `workflows/transcribe.ts`) and
- * `useWorkflowProgress` reads that stream, so the panel renders the transcript
- * growing.
+ * that shows a status line for the whole fan-out and then everything at once.
+ * Each segment is emitted the moment it lands (`emit(TRANSCRIPT_STREAM, …)` in
+ * `workflows/transcribe.ts`) and `<LiveTranscript>` in `run-panel.tsx` reads that
+ * stream and stitches it with the RUN's own function, so the live text and the
+ * stored one cannot drift into two different transcripts of one recording.
  *
- * Three things make it honest rather than decorative:
- *
- * - **The page stitches with the RUN's own function.** `stitchChunks` is
- *   `workflows/stitch.ts`, imported by both, so the live text and the stored one
- *   cannot drift into two different transcripts of one recording.
- * - **It is a SEPARATE stream from the progress log.** `stepReport()`'s lines go to
- *   the default one, which `<WorkflowProgress>` renders verbatim; objects in
- *   there would come out as `[object Object]` between the sentences.
- * - **The finished run wins.** Once `output` exists the panel renders that
- *   instead — it is the authoritative text, counted and measured, and a live
- *   transcript that stayed on screen beside it would be a second answer with no
- *   way to tell which was current.
- *
- * ## Two waits, two bars
+ * ## Two waits, two bars, ONE number
  *
  * A recording is the one input big enough that STORING it is itself a wait, and
- * it is a wait nothing else on this page can describe: the run does not EXIST
- * until the bytes are in, so there is no run id, no status and nothing for
- * `<WorkflowProgress>` to read. `<UploadProgressBar>` covers exactly that
- * stretch — `useWorkflowSubmit` reports the bytes as they go and drops the
- * report the moment the last one lands — and `<WorkflowProgress>` takes over
- * from there with what the run itself says. A page with only the second showed a
- * disabled button and nothing else for the length of the upload.
+ * the run does not EXIST until the bytes are in — so `<UploadProgressBar>` covers
+ * that stretch and `<WorkflowProgress>` takes over with what the run itself
+ * says. The bar also takes the hook's `pauseUpload`/`resumeUpload`: pausing is
+ * an abort plus an id, so resuming sends only the windows that did not land —
+ * the same mechanism that carries an upload across the agent restarting.
  *
- * That works because this workflow's input is scalars all the way down. A page
- * whose schema has an object or array property writes those fields itself, in
- * the same `<Form>` — every field in `@alexkroman1/aai-ui` is a plain named
- * control, so declared and hand-written ones mix freely.
- *
- * ## A long upload can be PAUSED, and survives the agent restarting
- *
- * The same wait is the one thing on this page a person may want to interrupt: a
- * 600 MB recording is minutes of a laptop's uplink, and needing it back for a
- * call should not cost the upload. So `<UploadProgressBar>` takes the hook's
- * `pauseUpload`/`resumeUpload` and draws a button — every mode, because every
- * mode is sending a file.
- *
- * **Nothing in this template implements it**, which is the part worth reading.
- * Pausing is an abort plus an id: the windows already sent are stored under an
- * upload id the hook minted, so resuming reads back which ranges landed and sends
- * only the rest. That is the same mechanism the SDK uses on its own when a round
- * fails for a reason that looks like an outage — a redeploy, a sandbox reclaimed
- * on idle, `aai dev` restarting on a save — so an agent that goes away mid-upload
- * is a pause nobody asked for, and the upload picks up where it stopped.
- *
- * The two flows differ in what a pause costs, and only in that:
- *
- * - **"After it uploads"** and **"the async API"** have no run yet, so a pause
- *   costs nothing at all. The form simply has not been submitted.
- * - **"While it uploads"** has a run watching the id already, and to a run a
- *   paused upload is one whose `size` stopped growing — which is exactly what a
- *   slow uplink looks like. `workflows/stream.ts` gives that five minutes
- *   (`MAX_IDLE_POLLS`) before it calls the uploader gone and fails the run, so a
- *   pause longer than a coffee ends the run rather than the upload.
- *
- * That difference reaches the reader rather than only this comment: the note
- * under the form takes the hook's `UploadStatus`, so a paused upload gets its
- * own sentence and the streaming one says the run is on a clock. Without it the
- * desk answered a pause with "reloading is safe" — true about the reload, and
- * beside the point.
- *
- * ## Two waits, ONE number
- *
- * The two bars describe the two stretches separately, and neither answers the
- * question a reader comparing the three modes is actually asking: how long from
- * pressing Transcribe to having a transcript. Nothing on the server can answer it
- * either — `output.elapsedMs` is the RUN's own wall clock, so it starts after the
- * bytes are stored in two of the three modes and misses the whole upload, which is
- * most of the wait on a long file over a slow link. Only the browser holds both
- * ends, so `total-latency.tsx` is a stopwatch: `useTotalLatency` is started by
- * the submit, ticks across the upload and the run alike, and freezes the moment
- * the run settles.
- *
- * `<TotalLatency>` also prints the SPLIT once the run reports its own elapsed —
- * before the run and inside it — because the two numbers on screen otherwise
- * disagree with no way to see why, and their difference is exactly what picking a
- * mode or unchecking `parallel` moves.
+ * Neither bar answers the question a reader comparing the three modes is
+ * asking: how long from pressing Transcribe to having a transcript. Nothing on
+ * the server can — `output.elapsedMs` is the RUN's own clock and starts after
+ * the bytes are stored in two of the three modes. Only the browser holds both
+ * ends, which is what `submission.timing` is: a mark at the press and a mark
+ * when the run settled. `<TotalLatency>` prints it beside the run's own number.
  *
  * ## A reload keeps two of the three runs, and the third CANNOT be kept
  *
- * The run id lives in React state, so a refresh loses it while the fan-out
- * carries on. A correlation KEY is the handle that survives that, and
- * `useWorkflowSubmit` keeps one and asks for its newest run on mount — which
- * here lands differently PER MODE:
- *
- * - **"After it uploads"** and **"Let the provider do it"** recover. Their input
- *   names a recording that is already stored, so a later load adopting the run
- *   is adopting something complete: the transcript arrives, the progress log
- *   replays, and nobody is asked to send a 600 MB file a second time.
- * - **"While it uploads" does not, and the hook REFUSES the option rather than
- *   ignoring it** — `useWorkflowStream` omits `recover` from its options type
- *   and mints no key. That run's input names an upload id this page load minted and
- *   is still filling, so a later load could only adopt a run waiting for bytes
- *   nobody is sending — and it is worse than useless: `workflows/stream.ts`
- *   fails a run whose upload stops growing (`MAX_IDLE_POLLS`), so the reload
- *   that "recovered" it would be watching it die. Streaming runs are still in
- *   Previous runs below, which is where a run this page cannot hold belongs.
+ * `useWorkflowSubmit` keeps a correlation KEY and asks for its newest run on
+ * mount, so "after it uploads" and "let the provider do it" come back after a
+ * reload with their transcript and log. "While it uploads" does not, and the
+ * hook REFUSES the option rather than ignoring it: that run reads an upload this
+ * page load is still sending, and `workflows/stream.ts` fails a run whose upload
+ * stops growing — so a reload would be watching it die. `<WorkflowPendingNote>`
+ * reads each submission's `scope` and says the right sentence for each,
+ * including the paused upload.
  *
  * The MODE is remembered too, and that is not decoration: without it a reload
  * opens on the default flow while the recovered run sits behind a radio nobody
- * pressed, so the reader sees an empty form and starts a second run — the exact
- * thing the key exists to prevent. The KEY is the hook's own — `use-run-key.ts`
- * owns the minting, the storage and the argument for it being opaque rather
- * than a `?key=` parameter, and the two submit hooks here share one because the
- * slot is keyed by the PAGE; `recover.ts` owns the mode, which is this page's
- * own concept, and the validation on the way back out of storage that turning a
- * stored string into a workflow name obliges.
- *
- * Two smaller consequences worth knowing. Both recovering hooks look up on
- * mount, so a load costs two `find` requests on a page that was already reading
- * a run listing — cheap, and the alternative (arming the lookup when a mode is
- * picked) would re-adopt a run the reader had just cleared, because the lookup
- * is deliberately a mount-time act. And `<TotalLatency>` shows nothing for a
- * recovered run: the stopwatch is a browser clock and the browser it was
- * running on is gone, which is more honest than a total measured from the reload.
+ * pressed. `recover.ts` owns the mode, which is this page's own concept, and
+ * the validation on the way back out of storage.
  */
 
 import "@alexkroman1/aai-ui/styles.css";
+import type { WorkflowNameOf } from "@alexkroman1/aai/workflow-api";
 import {
   CheckboxField,
   Form,
@@ -207,32 +111,25 @@ import {
   useWorkflowStream,
   useWorkflowSubmit,
   WorkflowFields,
+  WorkflowPendingNote,
 } from "@alexkroman1/aai-ui";
 import { useEffect, useState } from "react";
-import type { transcribe } from "./agent.ts";
-import { pendingNote, recalledMode, rememberMode } from "./recover.ts";
-// The readouts — one run in flight, and every one before it. Their own module
-// because they are the same whichever of the three hooks produced the run; this
-// file owns the page's shape.
-import { HISTORY_LIMIT, History, RunPanel, type Transcript } from "./run-panel.tsx";
-// The stopwatch and the section that prints it. See its module doc for why the
-// one number a reader wants can only be measured here.
-import { TotalLatency, useTotalLatency } from "./total-latency.tsx";
+// ERASED at build time: the agent's own type, so every workflow NAME this page
+// passes is checked against the `workflows` map `agent.ts` declares.
+import type agentDef from "./agent.ts";
+import { recalledMode, rememberMode } from "./recover.ts";
+// The readouts — one run in flight, every one before it, and the clock. Their
+// own module because they are the same whichever of the three hooks produced
+// the run; this file owns the page's shape.
+import { HISTORY_LIMIT, History, RunPanel, TotalLatency } from "./run-panel.tsx";
 
 /**
- * The three workflows this page drives, keyed by the mode that picks one.
- *
- * The STRINGS matter: a page starts a run by name, so a rename in `agent.ts` is a
- * runtime 400 rather than a compile error. `agent.test.ts` pins all three.
+ * Which flow the form submits through: the three workflows `agent.ts`
+ * declares, by name. `WorkflowNameOf` is the literal union of its `workflows`
+ * keys, so a mode the agent does not declare is a compile error here rather
+ * than a runtime 400.
  */
-const WORKFLOWS = {
-  streaming: "transcribeStream",
-  classic: "transcribe",
-  batch: "transcribeBatch",
-} as const;
-
-/** Which flow the form submits through. */
-type Mode = keyof typeof WORKFLOWS;
+type Mode = WorkflowNameOf<typeof agentDef>;
 
 /**
  * What each mode is called, and what picking it changes.
@@ -243,74 +140,59 @@ type Mode = keyof typeof WORKFLOWS;
  */
 const MODES: readonly { mode: Mode; label: string; note: string }[] = [
   {
-    mode: "streaming",
+    mode: "transcribeStream",
     label: "While it uploads",
     note: "Sync API. The run starts first and transcribes each segment as its bytes land, so progress is visible while the file is still moving — but the run is reading the file from this page, so it cannot survive a reload.",
   },
   {
-    mode: "classic",
+    mode: "transcribe",
     label: "After it uploads",
     note: "Sync API. Store the whole recording, then fan out over it. The simplest shape, and the quickest on a fast link.",
   },
   {
-    mode: "batch",
+    mode: "transcribeBatch",
     label: "Let the provider do it",
     note: "Async API. One job, no cutting, no seams — and it accepts MP3 and M4A, which the two above refuse.",
   },
 ];
 
-/**
- * Just the mode names, for the recall to check a stored value against.
- *
- * Derived from `MODES` rather than written out again: a fourth flow then joins
- * the recall by joining that list, and the two cannot disagree about what a
- * mode is.
- */
+/** Just the mode names, for the recall to check a stored value against. */
 const MODE_NAMES: readonly Mode[] = MODES.map((option) => option.mode);
 
 function TranscriptionDesk() {
   // The mode the last submission used, so a recovered run is in front of the
   // reader rather than behind a radio nobody pressed. Lazy, and validated on the
   // way out of storage — see `recalledMode`.
-  const [mode, setMode] = useState<Mode>(() => recalledMode(MODE_NAMES, "streaming"));
+  const [mode, setMode] = useState<Mode>(() => recalledMode(MODE_NAMES, "transcribeStream"));
   // Whether the browser cuts the recording up and sends the pieces at once. One
   // piece of state for all three hooks, because it describes the UPLOAD and every
   // mode has one — see the module doc.
   const [parallel, setParallel] = useState(true);
   // ALL THREE hooks are called every render, because a hook may not be conditional —
-  // and that costs nothing here: none of them does anything until its `submit` is
-  // called, and `useWorkflowRun` underneath them holds no id until then either.
-  //
-  // The two submit hooks recover unconditionally rather than on `mode === …`:
-  // the lookup is a MOUNT-time act, so arming it when a mode is picked would
-  // re-adopt a run the reader had just cleared. They share ONE key without
-  // saying so — the hook's slot is keyed by the page — and `find` is scoped by
-  // workflow as well as by key, so the two modes recover separate runs. The
-  // streaming hook has neither half: it refuses `recover` by type, and mints no
-  // key it would never read back.
-  const streamed = useWorkflowStream<typeof transcribe>(WORKFLOWS.streaming, { parallel });
-  const stored = useWorkflowSubmit<typeof transcribe>(WORKFLOWS.classic, { parallel });
-  const batched = useWorkflowSubmit<typeof transcribe>(WORKFLOWS.batch, { parallel });
-  // The batch flow uploads the same way the classic one does — the id comes from the
-  // store — so it is the SAME hook against a different workflow. Only the streaming
-  // mode needs the other one, because only it needs the id before the bytes.
-  const active = mode === "streaming" ? streamed : mode === "batch" ? batched : stored;
-  // `startedHere` comes off the ACTIVE hook rather than being one flag for the
-  // page, and that is a fix rather than a tidy-up: a single piece of page state
-  // survived a mode switch, so pressing Transcribe in one mode and then
-  // switching made the other mode's panel claim the reader had started its run.
-  // Per-hook, switching modes shows the truth about the run being shown.
-  const { submitForm, run, upload, pending, error, reset, pauseUpload, resumeUpload, startedHere } =
-    active;
+  // and that costs nothing: none of them does anything until its `submit` is called.
+  // The two submit hooks recover unconditionally rather than on `mode === …`: the
+  // lookup is a MOUNT-time act, and `find` is scoped by workflow as well as by key,
+  // so the two modes recover separate runs. The streaming hook refuses `recover` by
+  // type, and mints no key it would never read back.
+  const streamed = useWorkflowStream<typeof agentDef, "transcribeStream">("transcribeStream", {
+    parallel,
+  });
+  const stored = useWorkflowSubmit<typeof agentDef, "transcribe">("transcribe", { parallel });
+  const batched = useWorkflowSubmit<typeof agentDef, "transcribeBatch">("transcribeBatch", {
+    parallel,
+  });
+  // Everything below reads the ACTIVE hook — `startedHere`, `scope` and `timing`
+  // included — so switching modes shows the truth about the run being shown
+  // rather than one page-wide flag that survived the switch.
+  const active =
+    mode === "transcribeStream" ? streamed : mode === "transcribeBatch" ? batched : stored;
+  const { submitForm, run, upload, pending, error, reset, pauseUpload, resumeUpload } = active;
   // History is per WORKFLOW, so the list follows the mode: two flows that produce
-  // the same output are still two different things to have run, and merging them
-  // would put a run under a heading that cannot explain it.
-  const history = useWorkflowRuns<Transcript>(WORKFLOWS[mode], { limit: HISTORY_LIMIT });
+  // the same output are still two different things to have run.
+  const history = useWorkflowRuns<typeof agentDef>(mode, { limit: HISTORY_LIMIT });
   // Which past run the reader is looking at, if any. Its own state rather than
   // a route, because a workflow app is one page and a run id is not a place.
   const [openId, setOpenId] = useState<string | undefined>(undefined);
-  // Click to transcript, measured here because only the browser sees both ends.
-  const total = useTotalLatency(pending);
 
   // The list is read once and re-read on demand (see `useWorkflowRuns`), and
   // this is the "on demand": the moment the run this page started settles, the
@@ -328,36 +210,21 @@ function TranscriptionDesk() {
       <header className="flex flex-col gap-1">
         <h1 className="text-2xl font-medium">Transcription Desk</h1>
         <p className="text-sm opacity-70">
-          Upload a WAV recording. It is split into chunks, transcribed chunk by chunk, and stitched
-          back together by a durable workflow — which outlives this page, and which two of the three
+          Upload a recording. It is split into chunks, transcribed chunk by chunk, and stitched back
+          together by a durable workflow — which outlives this page, and which two of the three
           flows below can pick up again after a reload.
         </p>
       </header>
 
-      {/* The clock goes with the mode: switching swaps `active` for another hook's
-          run, and a total measured over a different submission would be a number
-          for something the panel below is no longer showing. */}
-      <ModePicker
-        mode={mode}
-        onPick={(next) => {
-          setMode(next);
-          total.clear();
-        }}
-        disabled={pending}
-      />
+      <ModePicker mode={mode} onPick={setMode} disabled={pending} />
 
       <UploadPicker parallel={parallel} onPick={setParallel} disabled={pending} />
 
       {/* No mapping: the collected values already match the input schema. All three
           workflows declare `recording` as an upload, so the same picker serves every
           mode — how the bytes travel is not a question to ask a person. */}
-      {/* The clock starts HERE, which is as close to the press as a page can get:
-          `<Form>` calls this once the browser's own validation has passed and it has
-          read the controls, and an upload field contributes its `File` unread — so
-          what separates this line from the click is a microtask, not the file. */}
       <Form
         onSubmit={(values) => {
-          total.start();
           // Written at SUBMIT rather than on the radio, so the remembered mode
           // is always the mode a run exists under — which is the only thing the
           // next load can use it for.
@@ -367,38 +234,22 @@ function TranscriptionDesk() {
         error={error}
       >
         {/* The NAME, so the schema is fetched here rather than by this page. */}
-        <WorkflowFields workflow={WORKFLOWS[mode]} />
+        <WorkflowFields<typeof agentDef> workflow={mode} />
         {/* Unguarded on purpose: it renders nothing until there are bytes in
-            flight, and nothing again once they have landed. The handlers are what
-            turn the bar into a control — see "A long upload can be PAUSED" above;
-            all three hooks expose the same pair, so `active` needs no branch. */}
+            flight, and nothing again once they have landed. */}
         <UploadProgressBar upload={upload} onPause={pauseUpload} onResume={resumeUpload} />
         <SubmitButton pending={pending}>Transcribe</SubmitButton>
       </Form>
 
       <TotalLatency
-        startedAt={total.startedAt}
-        frozenMs={total.frozenMs}
+        timing={active.timing}
         runMs={run?.status === "completed" ? run.output.elapsedMs : undefined}
       />
 
-      {/* One sentence about the wait, and the only place the three modes differ
-          in what a reader may DO: `pending` is also true on a reload while the
-          run is being looked up by key, which is the stretch where an empty form
-          would invite a second upload of the same recording. */}
-      {pending && (
-        <p className="text-sm opacity-70">
-          {pendingNote({
-            recoverable: mode !== "streaming",
-            startedHere,
-            found: run !== undefined,
-            // The hook's own `UploadStatus`, so a PAUSED upload gets a sentence
-            // rather than the recovery copy — which in streaming mode is a
-            // promise the run cannot keep. See `recover.ts`.
-            upload,
-          })}
-        </p>
-      )}
+      {/* One sentence about the wait, from the ACTIVE submission's own `scope`
+          and `upload`: "keep this tab open" for a streaming run, the paused
+          upload's own line, and the reload copy for the two modes that recover. */}
+      <WorkflowPendingNote submission={active} subject="transcript" />
 
       {run && (
         <RunPanel
@@ -406,10 +257,8 @@ function TranscriptionDesk() {
           onClear={() => {
             // A recovered run is dismissed as deliberately as one this load
             // started: the lookup is a mount-time act, so `reset()` is not
-            // undone by a second one and Clear really does clear. `reset()`
-            // also clears `startedHere`, which this page used to mirror here.
+            // undone by a second one and Clear really does clear.
             reset();
-            total.clear();
           }}
         />
       )}
@@ -427,11 +276,9 @@ function TranscriptionDesk() {
  * Which flow submits, as three radios.
  *
  * Radios rather than a toggle or a select, because the choice has a REASON per
- * option and a radio group is the one control with room to show it — the note
- * under each label is what makes this a decision rather than a switch somebody
- * flips to see what happens.
+ * option and a radio group is the one control with room to show it.
  *
- * Disabled while a submission is in flight: the two hooks hold separate run state,
+ * Disabled while a submission is in flight: the hooks hold separate run state,
  * so switching mid-run would swap the panel for the other hook's (empty) one and
  * read as the run having vanished.
  */
@@ -472,11 +319,8 @@ function ModePicker({
  *
  * Beside the mode radios rather than among them because it answers a different
  * question — those pick the WORKFLOW, this picks how its input gets there — and
- * every mode is uploading a file either way.
- *
- * Disabled mid-submission for the same reason the radios are: the bytes are
- * already moving, and a control that looks live while changing nothing is worse
- * than one that is plainly unavailable.
+ * every mode is uploading a file either way. Disabled mid-submission for the
+ * same reason the radios are: the bytes are already moving.
  */
 function UploadPicker({
   parallel,
@@ -491,12 +335,10 @@ function UploadPicker({
     <fieldset className="flex flex-col gap-3" disabled={disabled}>
       <legend className="text-sm font-medium uppercase tracking-[1.2px]">Upload</legend>
       {/* `<CheckboxField>` is what `<WorkflowFields>` renders for a declared
-          boolean, so the one control this page writes itself now matches the
-          ones its schema declares — the hand-written box, label and hint here
-          had drifted on all three (size, colour, and no theme at all). It sits
-          OUTSIDE `<Form>` deliberately: `parallel` describes how the recording
-          travels rather than what the workflow is asked for, so it is page state
-          and the `name` is for the DOM, not for `FormValues`. */}
+          boolean, so the one control this page writes itself matches the ones
+          its schema declares. It sits OUTSIDE `<Form>` deliberately: `parallel`
+          describes how the recording travels rather than what the workflow is
+          asked for, so it is page state and the `name` is for the DOM. */}
       <CheckboxField
         name="parallel"
         label="Split the file across connections"

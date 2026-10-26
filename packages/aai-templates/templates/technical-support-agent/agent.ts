@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import { PRODUCT, supportSlot } from "./shared.ts";
+import { PRODUCT } from "./shared.ts";
 
 /**
  * A support line that grades its own retrieval before it speaks — the
@@ -18,15 +18,9 @@ import { PRODUCT, supportSlot } from "./shared.ts";
  */
 export default agent({
   name: `${PRODUCT} Support`,
-  // For a reader of a LIST of agents, not for the model. It says what the line
-  // does with a question it cannot answer, because that is the half a caller
-  // reading a directory wants to know.
-  description: `Answers ${PRODUCT} support questions from a graded knowledge base, and logs a ticket when it cannot`,
-  // The trace exists before the first tool call, so a resumed connection has
-  // something to project.
-  // The projection is also the privacy boundary: a logged ticket carries the
-  // caller's callback number, and only its reference crosses to the browser.
-  syncState: supportSlot.projected,
+  // It says what the line does with a question it cannot answer, because that
+  // is the half a caller reading a directory wants to know.
+  listing: `Answers ${PRODUCT} support questions from a graded knowledge base, and logs a ticket when it cannot`,
   greeting: `${PRODUCT} support, you're through to the automated line. What's happened?`,
   // A support line is a PHONE line, so this one declares the carrier its number
   // is with. Nothing serves `WS /phone` without this — the route is an

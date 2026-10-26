@@ -191,6 +191,51 @@ shorter than the request's.
 
 `AsyncGenerator`\<[`EventStreamFrame`](#eventstreamframe)\>
 
+***
+
+### workflowNameOf()
+
+```ts
+function workflowNameOf(def: AnyWorkflowDef): string | undefined;
+```
+
+The name `def` was declared under — the key of `agent({ workflows })`, or
+the `workflows/<name>.ts` file it was discovered from — or `undefined` for a
+def no lowering has registered (one built inline in a spec and never handed
+to an agent).
+
+Recorded when the agent is lowered: import it as `virtual:aai/agent` under
+vitest, build it with `aai build`/`aai dev`, or pass the map through
+`withWorkflows` or `workflowRegistry` (`@alexkroman1/aai/manifest`).
+
+#### Parameters
+
+##### def
+
+[`AnyWorkflowDef`](#anyworkflowdef)
+
+#### Returns
+
+`string` \| `undefined`
+
+#### Example
+
+```ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { workflowNameOf } from "@alexkroman1/aai/workflow-api";
+import { z } from "zod";
+
+const digest = workflow({
+  description: "Summarise a page",
+  input: z.object({ url: z.string() }),
+  run: async (input) => ({ url: input.url }),
+});
+// Lowering the map is what records the names; a build or
+// `virtual:aai/agent` does the same for a discovered `workflows/digest.ts`.
+agent({ name: "Digest", workflows: { digest } });
+workflowNameOf(digest); // "digest"
+```
+
 ## Interfaces
 
 ### ClientConfigResponse
@@ -242,6 +287,14 @@ optional sessionUrl?: string;
 ```
 
 Absolute WebSocket URL of the live session endpoint, when the server brokers one.
+
+##### tools?
+
+```ts
+optional tools?: Record<string, ToolUi>;
+```
+
+Each tool's declared icon and label, by name — see `ToolDef.ui`.
 
 ## Type Aliases
 
@@ -306,11 +359,13 @@ this call works with no `token`, and a workflow API closed by
 
 ```ts
 type AnyWorkflowDef<R = unknown> = {
+  cancelNote?: string;
   description?: string;
   input?: ToolInputSchema;
   output?: StandardSchemaV1<unknown, R>;
   run: WorkflowBody<never, R>;
   uploads?: readonly string[];
+  describeRun?: string;
 };
 ```
 
@@ -332,7 +387,31 @@ parameter type — which is exactly right for a position that only ever reads
 
 `R` = `unknown`
 
+#### Methods
+
+##### describeRun()?
+
+```ts
+optional describeRun(run: never): string;
+```
+
+###### Parameters
+
+###### run
+
+`never`
+
+###### Returns
+
+`string`
+
 #### Properties
+
+##### cancelNote?
+
+```ts
+optional cancelNote?: string;
+```
 
 ##### description?
 
@@ -490,6 +569,45 @@ Most runs to return, newest first. Defaults to
 
 ***
 
+### SignalOptions
+
+```ts
+type SignalOptions = {
+  holdMs?: number;
+};
+```
+
+**`Input`**
+
+Options for `WorkflowClient.signal` and `WorkflowClient.signalRun`.
+
+#### Properties
+
+##### holdMs?
+
+```ts
+optional holdMs?: number;
+```
+
+How long to HOLD the payload for a wait the run has not reached yet, in
+milliseconds.
+
+`signal` answers `false` when nothing holds the token, which is the right
+answer for a run that has moved past its wait — and the wrong one for a run
+that has not got there: a tool that starts a run and signals it in the same
+turn usually lands before the body reaches `ctx.waitFor`, and its answer
+was lost. With a hold, the payload is kept in this process and delivered
+the moment the run claims a wait on the token, and the call answers `true`
+for having been taken. A hold that expires unclaimed is dropped. `signalRun`
+holds for `DEFAULT_SIGNAL_HOLD_MS` unless told otherwise; `signal` holds
+only when asked.
+
+Held in PROCESS MEMORY, not the journal: a hold is a courtesy for the
+seconds between a start and the body's first wait, and a restart in that
+window loses it exactly as it would have been lost before.
+
+***
+
 ### StartOptions
 
 ```ts
@@ -555,6 +673,17 @@ it brought.
 
 Not unique: starting twice with one key is legal and `find` returns the
 newest first. To make a second start a no-op, pass [StartOptions.dedupeKey](#dedupekey).
+
+**Defaults to `"session"`, which means the SESSION ID** wherever the client
+is session-scoped — a tool's `ctx.workflows`, a session event hook — so a
+tool that passes nothing gets the key it was always told to pass. The same
+literal is accepted by every keyed read (`find`, `latest`, `live`,
+`cancelAll`, `signalRun`), so a `*_status` tool reads back what a start
+tool started with no key spelled on either side. A client with no session
+— a workflow body's, a route's, a script's — has no id to resolve it to,
+so there the default means NO key: a body or a route that wants a run
+findable passes one explicitly, and `"session"` passed there is likewise
+dropped rather than recorded as the five-letter string.
 
 ##### label?
 
@@ -1031,7 +1160,7 @@ type WorkflowApi = {
   startAndWait: Promise<WorkflowRunSnapshot>;
   streamOutput: Promise<Response>;
   upload: Promise<UploadRef>;
-  uploadInfo: Promise<UploadInfo>;
+  uploadInfo: Promise<UploadRecord>;
   uploadStream: Promise<UploadRef>;
   wake: Promise<number>;
   watch: Promise<Response>;
@@ -1430,7 +1559,7 @@ recording over a long link wants — see [UploadOptions.parallel](#parallel).
 ##### uploadInfo()
 
 ```ts
-uploadInfo(id: string, options?: WorkflowApiCallOptions): Promise<UploadInfo>;
+uploadInfo(id: string, options?: WorkflowApiCallOptions): Promise<UploadRecord>;
 ```
 
 Read an upload's record: its name, how much has ARRIVED, and `complete`.
@@ -1451,7 +1580,7 @@ which a slow link and a dead client both produce.
 
 ###### Returns
 
-`Promise`\<[`UploadInfo`](step.md#uploadinfo)\>
+`Promise`\<[`UploadRecord`](step.md#uploadrecord)\>
 
 ##### uploadStream()
 
@@ -1657,6 +1786,31 @@ reader reach for a `!` or a conditional spread.
 
 ***
 
+### WorkflowAppLike
+
+```ts
+type WorkflowAppLike = {
+  workflows?: Readonly<Record<string, AnyWorkflowDef>>;
+};
+```
+
+**`Input`**
+
+An agent with a `workflows` map — what `agent({ workflows })` and
+`workflowApp()` return, and what the agent form of the workflow hooks and of
+`runWorkflow` is parameterized by (`useWorkflowSubmit<typeof
+agentDef>("digest")`, `runWorkflow(agentDef, "digest", input)`).
+
+#### Properties
+
+##### workflows?
+
+```ts
+readonly optional workflows?: Readonly<Record<string, AnyWorkflowDef>>;
+```
+
+***
+
 ### WorkflowBody
 
 ```ts
@@ -1704,6 +1858,33 @@ What the body returns.
 #### Returns
 
 `Promise`\<`R`\> \| `R`
+
+***
+
+### WorkflowDefOf
+
+```ts
+type WorkflowDefOf<App, Name extends string> = WorkflowsOf<App>[Name & keyof WorkflowsOf<App>];
+```
+
+The def `App` declares under `Name` — what the agent form of a hook derives
+its input and output from: `WorkflowOutputOf<WorkflowDefOf<App, Name>>`.
+
+With `Name` the whole [WorkflowNameOf](#workflownameof) union it is the union of the
+agent's defs, so an app with ONE workflow — most of them — gets exactly that
+workflow's types from `<typeof agentDef>` alone, and an app with several
+names the one it means as a second type argument:
+`useWorkflowSubmit<typeof agentDef, "digest">("digest")`.
+
+#### Type Parameters
+
+##### App
+
+`App`
+
+##### Name
+
+`Name` *extends* `string`
 
 ***
 
@@ -1772,6 +1953,28 @@ optional wait?: number;
 
 ***
 
+### WorkflowNameOf
+
+```ts
+type WorkflowNameOf<App> = [WorkflowsOf<App>] extends [never] ? never : keyof WorkflowsOf<App> & string;
+```
+
+The names `App` declares under `workflows` — the literal union a page passes
+to `useWorkflowSubmit<typeof agentDef>(…)`, `useWorkflowStream`,
+`useWorkflowRuns` and `<WorkflowFields>`, and a spec to `runWorkflow`.
+
+`never` for a type with no `workflows` map (a def, an unrelated object), so
+the agent form of each overloaded hook declines it and the def form is tried.
+The `[T] extends [never]` guard is load-bearing: `keyof never` is every key.
+
+#### Type Parameters
+
+##### App
+
+`App`
+
+***
+
 ### WorkflowRunBase
 
 ```ts
@@ -1780,6 +1983,8 @@ type WorkflowRunBase = {
   key?: string;
   label?: string;
   runId: string;
+  settledAt?: number;
+  startedAt?: number;
   workflow: string;
 };
 ```
@@ -1827,6 +2032,30 @@ What the run is, as [WorkflowClient.start](index.md#start-2) was told in
 ```ts
 runId: string;
 ```
+
+##### settledAt?
+
+```ts
+optional settledAt?: number;
+```
+
+When the run reached its terminal status, as epoch ms — `completed`,
+`failed` or `cancelled`. Absent on a live run, and absent on the journals
+[WorkflowRunBase.startedAt](#startedat) names.
+
+##### startedAt?
+
+```ts
+optional startedAt?: number;
+```
+
+When the run's FIRST delivery began walking the body, as epoch ms.
+
+`createdAt` is when `start` wrote the record; the gap between the two is
+queue latency, which is a different question from how long the run took.
+Absent while the run is still `pending`, and on a journal that does not
+record it — the self-hosted Postgres journal and the platform's carry no
+column for it yet, so a page reads it as a courtesy rather than a promise.
 
 ##### workflow
 
@@ -1919,6 +2148,27 @@ Lifecycle of one workflow run.
 - `pending` — created, not yet picked up by the queue.
 - `running` — executing, or suspended at a `sleep`/hook waiting to resume.
 - `completed` / `failed` / `cancelled` — terminal.
+
+***
+
+### WorkflowsOf
+
+```ts
+type WorkflowsOf<App> = App extends {
+  workflows?: infer W;
+} ? Extract<W, Record<string, unknown>> : never;
+```
+
+The `workflows` map of an app def, or `never` when it declares none — the
+reading [WorkflowNameOf](#workflownameof) and [WorkflowDefOf](#workflowdefof) are spelled in.
+`Extract` rather than `NonNullable`: an absent key infers `unknown`, which
+`NonNullable` would keep.
+
+#### Type Parameters
+
+##### App
+
+`App`
 
 ***
 
@@ -2122,6 +2372,24 @@ from an older server still parses.
 
 ## References
 
+### DEFAULT\_SIGNAL\_HOLD\_MS
+
+Re-exports [DEFAULT_SIGNAL_HOLD_MS](index.md#default_signal_hold_ms)
+
+***
+
+### describeRun
+
+Re-exports [describeRun](index.md#describerun-2)
+
+***
+
+### PollFirstWait
+
+Re-exports [PollFirstWait](index.md#pollfirstwait)
+
+***
+
 ### PollOptions
 
 Re-exports [PollOptions](index.md#polloptions)
@@ -2164,6 +2432,12 @@ Re-exports [UploadRange](step.md#uploadrange)
 
 ***
 
+### UploadRecord
+
+Re-exports [UploadRecord](step.md#uploadrecord)
+
+***
+
 ### WaitForOptions
 
 Re-exports [WaitForOptions](index.md#waitforoptions)
@@ -2185,6 +2459,12 @@ Re-exports [WorkflowClient](index.md#workflowclient)
 ### WorkflowContext
 
 Re-exports [WorkflowContext](index.md#workflowcontext)
+
+***
+
+### WorkflowDeclaration
+
+Re-exports [WorkflowDeclaration](index.md#workflowdeclaration)
 
 ***
 

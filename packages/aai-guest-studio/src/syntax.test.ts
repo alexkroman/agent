@@ -19,7 +19,7 @@ describe("syntaxError", () => {
   test("catches the over-escaped string that caused the death spiral", async () => {
     // The exact shape observed: \" where " belonged, written as 4863 valid-
     // looking bytes and only noticed by a full build several steps later.
-    const bad = 'export default agent({\n  systemPrompt: \\"You are a bot.\\",\n});\n';
+    const bad = 'export default agent({\n  greeting: \\"Hello.\\",\n});\n';
     const problem = await syntaxError(DIR, "agent.ts", bad);
     expect(problem).toBeDefined();
     expect(problem).toMatch(/agent\.ts:2/);

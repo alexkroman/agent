@@ -10,7 +10,8 @@
     "packages/aai/etc/manifest.api.md": 1,
     "packages/aai/etc/step.api.md": 1,
     "packages/aai/etc/testing-vitest.api.md": 1,
-    "packages/aai/etc/testing.api.md": 1,
+    "packages/aai/etc/testing.api.md": 5,
+    "packages/aai/etc/tools.api.md": 1,
     "packages/aai/etc/workflow-api.api.md": 1
   }
 }

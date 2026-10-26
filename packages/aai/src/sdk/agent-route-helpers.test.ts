@@ -1,17 +1,17 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod";
-import { RouteError, readRouteError, route, routeError } from "./agent-route-helpers.ts";
-import { type RouteContext, type RouteRequest, readRouteResponse } from "./agent-routes.ts";
-import { createStubWorkflows } from "./testing-workflows.ts";
+import { createRouteContext } from "./_testing-route-context.ts";
+import {
+  apiKeyRoute,
+  RouteError,
+  readRouteError,
+  route,
+  routeError,
+} from "./agent-route-helpers.ts";
+import { type RouteRequest, readRouteResponse } from "./agent-routes.ts";
 
-const ctx: RouteContext = {
-  env: {},
-  workflows: createStubWorkflows(),
-  clientTranscript: async () => ({ sessions: [] }),
-  speech: () => undefined,
-  signal: new AbortController().signal,
-};
+const ctx = createRouteContext();
 
 function req(over: Partial<RouteRequest> = {}): RouteRequest {
   return {
@@ -122,5 +122,50 @@ describe("route", () => {
       },
     });
     expect(await handler(req({ body: [1, 2] }), ctx)).toEqual([1, 2]);
+  });
+});
+
+describe("apiKeyRoute", () => {
+  const inner = vi.fn(() => ({ ok: true }));
+  const guarded = apiKeyRoute({ env: "CALLS_API_KEY" }, inner);
+  const withKey = { ...ctx, env: { CALLS_API_KEY: "k-9f2c" } };
+
+  test("an unset variable is a 503 naming it, and the handler never runs", async () => {
+    inner.mockClear();
+    const reply = readRouteResponse(
+      await guarded(req({ headers: { authorization: "k-9f2c" } }), ctx),
+    );
+    expect(reply).toEqual({ status: 503, body: { error: "CALLS_API_KEY is not set" } });
+    expect(inner).not.toHaveBeenCalled();
+  });
+
+  test("a missing or wrong key is a 401, and the handler never runs", async () => {
+    inner.mockClear();
+    for (const headers of [{}, { authorization: "k-9f2d" }, { authorization: "Bearer " }]) {
+      const reply = readRouteResponse(await guarded(req({ headers }), withKey));
+      expect.soft(reply?.status, JSON.stringify(headers)).toBe(401);
+    }
+    expect(inner).not.toHaveBeenCalled();
+  });
+
+  test("the key is accepted bare or with a Bearer prefix, and the handler answers", async () => {
+    expect(await guarded(req({ headers: { authorization: "k-9f2c" } }), withKey)).toEqual({
+      ok: true,
+    });
+    expect(await guarded(req({ headers: { authorization: "Bearer k-9f2c" } }), withKey)).toEqual({
+      ok: true,
+    });
+    expect(await guarded(req({ headers: { authorization: "bearer  k-9f2c " } }), withKey)).toEqual({
+      ok: true,
+    });
+  });
+
+  test("a custom header is compared as sent, with no scheme stripped", async () => {
+    const xKey = apiKeyRoute({ env: "CALLS_API_KEY", header: "X-Api-Key" }, inner);
+    expect(await xKey(req({ headers: { "x-api-key": "k-9f2c" } }), withKey)).toEqual({ ok: true });
+    expect(
+      readRouteResponse(await xKey(req({ headers: { "x-api-key": "Bearer k-9f2c" } }), withKey))
+        ?.status,
+    ).toBe(401);
   });
 });

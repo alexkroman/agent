@@ -118,9 +118,38 @@ export async function importWorkerModule(code: string): Promise<Record<string, u
     await writeFile(file, code, "utf-8");
     // Import errors propagate as-is: they carry the agent code's own failure
     // (syntax error, throwing top-level code), which is the useful message.
-    return await import(pathToFileURL(file).href);
+    return await withDedupedWarnings(() => import(pathToFileURL(file).href));
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+}
+
+/** Every `console.warn` line a worker import has printed in this process. */
+const warnedOnImport = new Set<string>();
+
+/**
+ * Run `fn` with a `console.warn` that prints each distinct line ONCE per
+ * process. A command evaluates a worker more than once — `buildTrimmedWorker`
+ * imports the runtime-less pre-build for its vendor list, then the build
+ * imports the full worker — and each import evaluates the bundle's own SDK
+ * copy afresh, so a warning the SDK prints at module evaluation (`withWorkflows`'
+ * name clash) came out twice. The SDK cannot dedupe across copies (a warn-once
+ * set there is copy-local by the boundary rules); the one process that sees
+ * every copy can. Only an exact repeat is dropped, and the original is called
+ * for everything else, so nothing printed by a concurrent build is lost.
+ */
+async function withDedupedWarnings<T>(fn: () => Promise<T>): Promise<T> {
+  const original = console.warn;
+  console.warn = (...args: unknown[]): void => {
+    const line = args.map(String).join(" ");
+    if (warnedOnImport.has(line)) return;
+    warnedOnImport.add(line);
+    original.apply(console, args);
+  };
+  try {
+    return await fn();
+  } finally {
+    console.warn = original;
   }
 }
 

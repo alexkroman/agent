@@ -21,22 +21,38 @@ restores (the `install*` fakes) and the eval suites.
 
 ## Your first test
 
-`toolRunner` reaches a tool by the name the model calls it by:
+`toolRunner` runs a tool by its def — the tool file's default export — gated
+exactly as the agent gates the model's own call, and typed by what the tool's
+`execute` returns:
 
 ```ts
+// file: tools/get_weather.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "The weather in a city",
+  inputSchema: z.object({ city: z.string() }),
+  execute: ({ city }) => ({ city, tempF: 61, conditions: "clear" }),
+});
+
+// file: agent.test.ts
 import agentDef from "virtual:aai/agent";
 import { toolRunner } from "@alexkroman1/aai-runtime/testing";
 import { expect, test } from "vitest";
+import getWeather from "./tools/get_weather.ts";
 
 const run = toolRunner(agentDef);
 
 test("get_weather answers for the city it was given", async () => {
-  const out = await run("get_weather", { city: "Denver" });
-  expect(out).toMatchObject({ city: "Denver" });
+  const out = await run(getWeather, { city: "Denver" });
+  expect(out.city).toBe("Denver");
 });
 ```
 
-That is a complete spec. Put it in `agent.test.ts` and run `aai test`.
+That is a complete spec. Put it in `agent.test.ts` and run `aai test`. A tool is
+always reached by its def, never by its name string: a name is a string, and
+nothing can type what it looks up.
 
 **Assert on what the tool returns, not on what the API it called returned.** The
 scaffold's `get_weather` narrows wttr.in's response to
@@ -79,9 +95,30 @@ Each call above got a fresh `ctx` of its own. Pass one explicitly when a tool
 needs something from it, or when two calls are supposed to share a session:
 
 ```ts
+// file: tools/add_to_cart.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Add an item to the cart",
+  inputSchema: z.object({ sku: z.string(), qty: z.number() }),
+  execute: ({ sku, qty }) => ({ sku, qty }),
+});
+
+// file: tools/list_cart.ts
+import { tool } from "@alexkroman1/aai";
+
+export default tool({
+  description: "List the cart",
+  execute: () => [] as { sku: string; qty: number }[],
+});
+
+// file: agent.test.ts
 import agentDef from "virtual:aai/agent";
 import { createToolContext, toolRunner } from "@alexkroman1/aai-runtime/testing";
 import { expect, test } from "vitest";
+import addToCart from "./tools/add_to_cart.ts";
+import listCart from "./tools/list_cart.ts";
 
 const run = toolRunner(agentDef);
 
@@ -89,8 +126,8 @@ test("the cart belongs to one caller", async () => {
   const alice = createToolContext();
   const bob = createToolContext();
 
-  await run("add_to_cart", { sku: "A1", qty: 1 }, alice);
-  expect(await run("list_cart", bob)).toEqual([]);
+  await run(addToCart, { sku: "A1", qty: 1 }, alice);
+  expect(await run(listCart, bob)).toEqual([]);
 });
 ```
 

@@ -2,7 +2,10 @@
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod";
 import { agentToolsToSchemas } from "./_internal-types.ts";
+import { omitUndefined } from "./omit-undefined.ts";
+import type { ToolInputSchema } from "./schema.ts";
 import { sessionSlot } from "./session-slot.ts";
+import type { SlotUpdateToolDef } from "./session-slot-types.ts";
 import { createToolContext } from "./testing.ts";
 import { toolset } from "./toolset.ts";
 
@@ -246,7 +249,9 @@ describe("sessionSlot", () => {
         });
       }).toThrow(/async-update.update must be synchronous/);
       expect(slot.get(ctx)).toBe(before);
-      expect(after).not.toHaveBeenCalled();
+      // Once, for the default the first `get` installed — not for the refused
+      // mutation, which ran no hook and stored nothing.
+      expect(after).toHaveBeenCalledOnce();
       resumed.resolve();
       await vi.waitFor(() => expect(continued).toHaveBeenCalledOnce());
       expect(slot.get(ctx).n).toBe(0);
@@ -254,7 +259,7 @@ describe("sessionSlot", () => {
         draft.n = 3;
       });
       expect(slot.get(ctx).n).toBe(3);
-      expect(after).toHaveBeenCalledOnce();
+      expect(after).toHaveBeenCalledTimes(2);
     });
 
     test("refuses a synchronous mutation returning a thenable without installing a default", () => {
@@ -595,19 +600,22 @@ describe("sessionSlot", () => {
       // but at DECLARATION rather than on the first call, which is a caller on
       // the line. The module holding this is loaded by `aai dev`, by the build,
       // and by the agent's own spec.
-      expect(() =>
-        // @ts-expect-error - `RejectThenable` refuses this at COMPILE time now,
-        // which is the point; the runtime guard stays because a generic wrapper
-        // (retail-orders-agent's `retailTool`) and any JS caller still reach this path, and
-        // this test is what keeps that guard covered.
-        cartSlot.updateTool({
-          description: "Awaits",
-          execute: async (_args, cart) => {
-            await Promise.resolve();
-            cart.items.push("x");
-          },
-        }),
-      ).toThrow(/must be synchronous, and this one is `async`/);
+      // `RejectThenable` refuses this at COMPILE time now, which is the point;
+      // the runtime guard stays because a generic wrapper (retail-orders-agent's
+      // `retailTool`) and any JS caller still reach this path, and this test is
+      // what keeps that guard covered. The assertion is how such a wrapper's
+      // def reaches the call: typed as a sync body answering `unknown`, which
+      // admits a promise.
+      const awaits: SlotUpdateToolDef<ToolInputSchema, Cart, unknown> = {
+        description: "Awaits",
+        execute: async (_args, cart) => {
+          await Promise.resolve();
+          cart.items.push("x");
+        },
+      };
+      expect(() => cartSlot.updateTool(awaits)).toThrow(
+        /must be synchronous, and this one is `async`/,
+      );
     });
 
     test("refuses a sync body that RETURNS a promise, on the call", () => {
@@ -700,5 +708,198 @@ describe("one key, one slot", () => {
     const b = sessionSlot("same-name", () => ({ s: "" }));
     expect(a.get(createToolContext())).toEqual({ n: 0 });
     expect(b.get(createToolContext())).toEqual({ s: "" });
+  });
+});
+
+describe("the declaration on the handle", () => {
+  test("caps and empty are read back as declared, and absent when not", () => {
+    const empty = () => ({ lines: [] as string[] });
+    const declared = sessionSlot("declared-log", () => ({ lines: ["seed"] }), {
+      caps: { lines: 3 },
+      empty,
+    });
+    expect(declared.caps).toEqual({ lines: 3 });
+    expect(declared.empty).toBe(empty);
+    const bare = sessionSlot("bare-log", () => ({ lines: [] as string[] }));
+    expect("caps" in bare).toBe(false);
+    expect("empty" in bare).toBe(false);
+  });
+});
+
+describe("the after hook runs on EVERY store", () => {
+  /** A slot whose hook derives a field the default cannot carry on its own. */
+  const counted = sessionSlot(
+    "counted-log",
+    (): { lines: string[]; n: number } => ({ lines: [], n: -1 }),
+    {
+      after: (log) => {
+        log.n = log.lines.length;
+      },
+    },
+  );
+
+  test("on the default the first get installs, so it cannot disagree with the first update", () => {
+    const ctx = createToolContext();
+    expect(counted.get(ctx).n).toBe(0);
+    counted.update(ctx, (log) => log.lines.push("a"));
+    expect(counted.get(ctx).n).toBe(1);
+  });
+
+  test("on set, over the copy", () => {
+    const ctx = createToolContext();
+    const loaded = { lines: ["a", "b"], n: -1 };
+    expect(counted.set(ctx, loaded).n).toBe(2);
+    expect(loaded.n).toBe(-1);
+  });
+
+  test("on reset", () => {
+    const ctx = createToolContext();
+    counted.update(ctx, (log) => log.lines.push("a"));
+    expect(counted.reset(ctx).n).toBe(0);
+  });
+
+  test("inside update's window, so a write from the hook is refused like any other", () => {
+    const nested = sessionSlot("nested-hook", (): { n: number } => ({ n: 0 }), {
+      after: (value) => {
+        if (value.n === 1) nested.set(ctx, { n: 9 });
+      },
+    });
+    const ctx = createToolContext();
+    expect(() =>
+      nested.update(ctx, (v) => {
+        v.n = 1;
+      }),
+    ).toThrow(/cannot run inside/);
+    // A throwing hook stores nothing, like a throwing mutator.
+    expect(nested.get(ctx)).toEqual({ n: 0 });
+  });
+
+  test("caps still apply after it, on the default and on set", () => {
+    const capped = sessionSlot(
+      "capped-log",
+      (): { lines: string[]; n: number } => ({ lines: ["a", "b", "c"], n: 0 }),
+      {
+        caps: { lines: 2 },
+        after: (log) => {
+          log.n = log.lines.length;
+        },
+      },
+    );
+    const ctx = createToolContext();
+    // The hook saw three; the cap kept two — the documented price, on every path.
+    expect(capped.get(ctx)).toEqual({ lines: ["b", "c"], n: 3 });
+    expect(capped.set(ctx, { lines: ["x", "y", "z"], n: 0 })).toEqual({ lines: ["y", "z"], n: 3 });
+  });
+});
+
+describe("a plain value as the default", () => {
+  const DEFAULT: Cart = { items: [], nextId: 1 };
+  const plain = sessionSlot("plain-cart", DEFAULT);
+
+  test("is cloned per install, so two sessions never share it and the module's copy is untouched", () => {
+    const a = createToolContext();
+    const b = createToolContext();
+    plain.update(a, (cart) => cart.items.push("apple"));
+    expect(plain.get(b).items).toEqual([]);
+    expect(DEFAULT.items).toEqual([]);
+    expect(Object.isFrozen(DEFAULT)).toBe(false);
+  });
+
+  test("`create` on the handle is the cloning factory", () => {
+    expect(plain.create()).toEqual(DEFAULT);
+    expect(plain.create()).not.toBe(DEFAULT);
+    expect(plain.create()).not.toBe(plain.create());
+  });
+
+  test("the factory form is read as a factory, as before", () => {
+    const factory = vi.fn(emptyCart);
+    const made = sessionSlot("made-cart", factory);
+    expect(made.get(createToolContext())).toEqual({ items: [], nextId: 1 });
+    expect(factory).toHaveBeenCalledOnce();
+  });
+
+  test("one the store would refuse is refused at DECLARATION, naming the slot and the field", () => {
+    // What the first `get` would throw, said where the value is in hand — and
+    // before `projected()` has rendered a frame the first tool call disagrees
+    // with. Each of these used to get past the declaration: `structuredClone`
+    // drops a class instance's prototype silently, renders a `Date` and a
+    // `Map`, and throws a bare `DataCloneError` on a function.
+    class Counter {
+      n = 0;
+      bump() {
+        this.n += 1;
+      }
+    }
+    expect(() => sessionSlot("counter", new Counter())).toThrow(
+      /The default of the "counter" slot cannot be stored: counter is a Counter instance, which does not survive being stored/,
+    );
+    expect(() => sessionSlot("dated", { when: new Date(0), m: new Map() })).toThrow(
+      /"dated" slot cannot be stored: dated\.when is a Date/,
+    );
+    expect(() => sessionSlot("formatted", { n: 0, fmt: (x: number) => `${x}` })).toThrow(
+      /"formatted" slot cannot be stored: formatted\.fmt is a function, which cannot be stored/,
+    );
+    // The same walk the store runs, with its cause kept.
+    let caught: unknown;
+    try {
+      sessionSlot("dated-again", { when: new Date(0) });
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as Error).cause).toMatchObject({ name: "SlotValueError" });
+    // A virtual slot is unchecked, as its stores are; a factory is not in hand.
+    expect(() => sessionSlot("virtual", { when: new Date(0) }, { durable: false })).not.toThrow();
+    expect(() => sessionSlot("lazy", () => ({ when: new Date(0) }))).not.toThrow();
+  });
+
+  test("a plain default is not frozen by the check", () => {
+    const DEFAULT = { items: [] as string[] };
+    sessionSlot("unfrozen", DEFAULT);
+    expect(Object.isFrozen(DEFAULT)).toBe(false);
+    expect(Object.isFrozen(DEFAULT.items)).toBe(false);
+  });
+});
+
+describe("an `after` hook that throws on a value the slot itself produced", () => {
+  const ranked = (name: string, empty?: () => { items: string[]; top?: string }) =>
+    sessionSlot(name, (): { items: string[]; top?: string } => ({ items: [] }), {
+      after: (v) => {
+        if (v.items.length === 0) throw new Error("cannot rank an empty list");
+        v.top = v.items.join(",");
+      },
+      ...omitUndefined({ empty }),
+    });
+
+  test("is framed with the slot and the phase on the default, with the cause kept", () => {
+    const slot = ranked("ranked");
+    const ctx = createToolContext();
+    let caught: unknown;
+    try {
+      slot.get(ctx);
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as Error).message).toBe(
+      'The after hook of the "ranked" slot failed on the default: cannot rank an empty list',
+    );
+    expect((caught as Error).cause).toMatchObject({ message: "cannot rank an empty list" });
+    expect(() => slot.reset(ctx)).toThrow(/failed on the default/);
+    expect(() => slot.projected()).toThrow(/"ranked" slot failed on the default/);
+  });
+
+  test("…and on the empty frame", () => {
+    const slot = ranked("ranked-empty", () => ({ items: [] }));
+    expect(() => slot.projected()).toThrow(
+      'The after hook of the "ranked-empty" slot failed on the empty frame: cannot rank an empty list',
+    );
+  });
+
+  test("a caller's own value is the caller's failure: bare, as before", () => {
+    const slot = ranked("ranked-set");
+    const ctx = createToolContext();
+    expect(() => slot.set(ctx, { items: [] })).toThrow("cannot rank an empty list");
+    expect(() => slot.set(ctx, { items: [] })).not.toThrow(/failed on/);
+    expect(() => slot.update(ctx, (v) => v.items.push("a"))).not.toThrow();
+    expect(slot.get(ctx).top).toBe("a");
   });
 });

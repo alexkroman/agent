@@ -1,6 +1,6 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { retentionToken } from "../workflows/tokens.ts";
+import recap from "../workflows/recap.ts";
 
 export default tool({
   description:
@@ -9,18 +9,15 @@ export default tool({
     keep: z.boolean().describe("True to keep the transcript on file, false to delete it"),
   }),
   execute: async ({ keep }, ctx) => {
-    // The SIGNAL, and the whole reason this template exists in the shape it
-    // does. The run is parked on a hook whose token both sides derive from
-    // the session — see `workflows/tokens.ts` — so the tool needs no runId
-    // and no bookkeeping of its own.
-    const delivered = await ctx.workflows.signal(retentionToken(ctx.sessionId), { keep });
-    // `false` is the ORDINARY answer, not a failure: the window closed, or
-    // the caller answered a question nobody asked. Say which.
+    // The SIGNAL — the caller is the approver and the phone is the signal
+    // channel. The run is parked on `ctx.waitForSignal("retention")`, keyed by
+    // the session it was started from, so `signalRun` addresses it by the def,
+    // the session's key and the label: no runId, no token, no bookkeeping.
+    const delivered = await ctx.workflows.signalRun(recap, "session", "retention", { keep });
+    // `false` is the ORDINARY answer, not a failure: the window closed, or the
+    // caller answered a question nobody asked.
     if (!delivered) {
-      return {
-        answered: false,
-        note: "Nothing is waiting on that — it has already been settled.",
-      };
+      return { answered: false, note: "Nothing is waiting on that — it has already been settled." };
     }
     return {
       answered: true,

@@ -14,9 +14,9 @@
  * ## What it needs
  *
  * - **`ASSEMBLYAI_API_KEY` in the agent env** — `.env` under `aai dev`,
- *   `aai secret put ASSEMBLYAI_API_KEY` once deployed. `requiredEnv` below is
- *   what makes a deploy check for it rather than letting the first run find out.
- *   A step reads it with `requireStepEnv`; see `@alexkroman1/aai/step`.
+ *   `aai secret put ASSEMBLYAI_API_KEY` once deployed. It is `workflowApp()`'s
+ *   default `requiredEnv`, so a deploy checks for it rather than letting the
+ *   first run find out.
  * - **No database.** This used to ask for a `DATABASE_URL` and no longer does:
  *   an upload's record is a platform row and its bytes are platform storage, so
  *   the form below and every step that reads back what it stored work on a
@@ -164,8 +164,8 @@ export const transcribeStream = workflow({
  * everything the other two spend code on, plus formats they refuse: the async API
  * takes compressed audio, so an m4a off a phone works where a WAV-only cut does not.
  *
- * `workflows/batch.ts` carries the rest, including why the wait is what makes this a
- * workflow rather than a request.
+ * `workflows/batch.ts` carries the rest: it is `transcribeUploadDurably`
+ * (`@alexkroman1/aai/step`) and a clock read at each end.
  */
 export const transcribeBatch = workflow({
   description: "Transcribe a recording through the async API, polling until it is done",
@@ -180,9 +180,6 @@ export default workflowApp({
   name: "Transcription Desk",
   // The listing line. It names all THREE routes because choosing between them
   // is the product.
-  description: "Transcribes a recording three ways: chunked, streaming while it uploads, or batch",
+  listing: "Transcribes a recording three ways: chunked, streaming while it uploads, or batch",
   workflows: { transcribe, transcribeStream, transcribeBatch },
-  // Checked at deploy time, so a missing key is a warning naming it rather than
-  // a run that fails on its second step.
-  requiredEnv: ["ASSEMBLYAI_API_KEY"],
 });

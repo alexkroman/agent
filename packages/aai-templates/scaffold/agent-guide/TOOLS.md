@@ -14,8 +14,11 @@ import { z } from "zod";
 
 const myTool = tool({
   description: string;           // shown to LLM — decides when to call
-  inputSchema?: z.ZodObject;     // Zod schema (omit for no-arg tools)
+  inputSchema?: z.ZodObject;     // Zod schema (omit it for a no-argument tool)
   execute(args, ctx): unknown;   // sync or async
+  ui?: { icon?, label? };        // how a page shows this tool's calls — served to the
+                                 // client with the declaration, so no page-side map
+  messages?: ToolMessagesInput;  // what to SAY while it runs (PIPELINE-TUNING.md)
 });
 ```
 
@@ -35,6 +38,12 @@ ctx.slots: SlotStore                           // where sessionSlot() keeps this
                                                // reach for the slot, never this (see "Session state")
 ctx.messages: readonly Message[]               // conversation history [{role, content}]
 ctx.sessionId: string                          // unique session ID
+ctx.turn: number                               // user turns committed so far (1 during the first
+                                               // reply) — "ask once, on turn three" is a compare,
+                                               // not a counter kept in a slot
+ctx.now(): number                              // epoch ms; ctx.random: a RandomSource. Both are
+                                               // what Date.now()/Math.random() would answer, and
+                                               // a spec pins them: createToolContext({ now, random })
 ctx.send(event, data): void                    // push custom event to browser client (dropped over 64 KB JSON);
                                                // typed per event by ClientEventMap (below), else `unknown`
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
@@ -101,7 +110,9 @@ the next push just reports the next line.
 ### Session state
 
 **A `sessionSlot` is the only way to keep state across a session's tool calls**,
-and it is one declaration in a shared module:
+and it is one declaration in a shared module. The default is a plain value
+(cloned per session) or a factory; `sync: true` shows the slot's `view` to the
+client with nothing declared on `agent()`:
 
 ```ts
 // shared.ts — the one place the shape is written down.
@@ -109,7 +120,18 @@ import { sessionSlot } from "@alexkroman1/aai";
 
 export type Incident = { id: string; status: "open" | "closed" };
 
-export const incidentSlot = sessionSlot("incidents", () => ({ items: [] as Incident[] }));
+export const incidentSlot = sessionSlot(
+  "incidents",
+  { items: [] as Incident[], open: 0 },
+  {
+    // Runs on EVERY store, the default included, so a derived field is never stale.
+    after: (s) => {
+      s.open = s.items.filter((i) => i.status === "open").length;
+    },
+    view: (s) => ({ open: s.open }),
+    sync: true,
+  },
+);
 ```
 
 ```ts no-check
@@ -138,37 +160,94 @@ export default incidentSlot.updateTool({
 });
 ```
 
-Four rules, and each is an error rather than advice if you get it wrong:
+Five rules, and each is an error rather than advice if you get it wrong:
 
 - **`tool` reads, `updateTool` writes.** What a read is handed is FROZEN, so
   mutating it throws instead of quietly going nowhere.
 - **A write is SYNCHRONOUS.** The value you mutate is stored the moment your
-  body returns, so an `updateTool` body may not `await`. When you need a model
-  call or a fetch first, do it in an ordinary `tool()` and then mutate:
+  body returns, so an `updateTool` body may not `await`. The await goes in
+  `prepare`, which runs on the frozen value first and hands what it produced to
+  `execute` as the THIRD argument, ahead of `ctx`; `require` is the precondition
+  (`ToolFailure | undefined` off the frozen value), checked before `prepare` and
+  again right before the window; `report` completes the result from what was
+  actually STORED, after `after` and `caps`:
 
-  ```ts no-check
-  execute: async (args, ctx) => {
-    const priced = await ctx.generate({ prompt: `price ${args.sku}` });
-    return cartSlot.update(ctx, (cart) => {
-      cart.total = Number(priced.text);
+  ```ts
+  import { sessionSlot, toolFailure } from "@alexkroman1/aai";
+  import { z } from "zod";
+
+  const cartSlot = sessionSlot("cart", { items: [] as string[], total: 0 });
+
+  export default cartSlot.updateTool({
+    description: "Price the cart",
+    inputSchema: z.object({ sku: z.string() }),
+    require: (cart) => (cart.items.length === 0 ? toolFailure("The cart is empty.") : undefined),
+    prepare: async ({ sku }, _cart, ctx) =>
+      Number((await ctx.generate({ prompt: `price ${sku}` })).text),
+    execute: (_args, cart, price) => {
+      cart.total = price;
       return { total: cart.total };
-    });
-  }
+    },
+    report: (stored, partial) => ({ ...partial, items: stored.items.length }),
+  });
   ```
 
+  A `ToolFailure` from `require` or `prepare` is the tool's whole result and
+  opens no window; one RETURNED from `execute`, `report` or `commit` stores
+  nothing, like a throw — a body that mutated the draft and then declined has
+  declined. From inside a plain `tool()` the same shape is
+  `slot.transact(ctx, { require?, prepare, commit })`.
+
+- **Report from the stored value, never the draft.** A count read off the draft
+  is the count before a cap trimmed it, and a field `after` computes is not on
+  the draft when the body returns — `report` is the one reading that cannot
+  disagree with the next `get`.
 - **Hold plain data.** Objects, arrays, strings, numbers, booleans and null. A
-  `Map`, a `Set`, a `Date` or a class instance is refused with the field named,
-  because none of them survives being stored.
+  `Map`, a `Set`, a `Date`, a function or a class instance is refused with the
+  slot and the field named — at declaration for a plain default, on the store
+  otherwise — because none of them survives being stored.
 - **State is STORED on the platform**, so a crash or a redeploy no longer loses
   it — the platform keeps a session's slots on its own database and there is
   nothing to enable. Under `aai dev` it lives in memory for the life of the
   process unless you set a `DATABASE_URL` in `.env`. You write the same code
   either way; that is the reason for the rules above.
 
-There is nothing to declare on `agent()` — the slot owns its own default. Use
-`syncState: slot.projected` (or a list of them) to show state to a custom
-client. `slot.snapshot(ctx)` returns a mutable deep copy of the value — what a
-spec hands `slot.set`, instead of `structuredClone(slot.get(ctx))` and a cast.
+There is nothing to declare on `agent()` — the slot owns its default, and
+`sync: true` registers its projection (the slot must be declared in a module
+`agent.ts` imports, such as `shared.ts`); `agent({ syncState })` is not a field.
+**A SEEDED slot declares `empty`** —
+`sessionSlot("catalog", loadSeed, { view, empty: () => ({ items: [] }) })` — so
+the frame a page renders before its first push is the empty shape rather than
+the seed shipped to the browser. `SlotValueOf<typeof slot>` and
+`SlotDraftOf<typeof slot>` type a helper's parameter as the frozen value or the
+draft without restating the shape. `slot.snapshot(ctx)` returns a mutable deep
+copy of the value — what a spec hands `slot.set`, instead of
+`structuredClone(slot.get(ctx))` and a cast.
+
+### A sentence the model should follow THIS time — `withInstruction`
+
+A tool often knows, once it has the answer, how the model should treat it: "read
+the plan back in one breath", "ask which of these two before going on".
+`withInstruction(value, "…")` rides that sentence on the result under a reserved
+key; the model reads it beside the result, and the page, the history and a later
+tool read the value alone. It works on a `toolFailure(...)` too. **Per OUTCOME,
+not per tool**: a sentence that is the same on every call belongs in
+`description`.
+
+```ts
+import { tool, withInstruction } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Draft the day's plan",
+  inputSchema: z.object({ goals: z.array(z.string()) }),
+  execute: ({ goals }) =>
+    withInstruction(
+      { steps: goals.map((goal, i) => `${i + 1}. ${goal}`) },
+      "Read the plan back in one breath, then ask whether to start.",
+    ),
+});
+```
 
 **`verbatimModuleSyntax` applies to every type you import** — `ToolContext`,
 `ToolDef`, `Message`, provider types. A plain `import { ToolContext }` fails;
@@ -219,12 +298,61 @@ export const checkout = dialog("checkout", {
 });
 ```
 
-A tool declared with `checkout.tool({...})` is REFUSED unless the dialog is in a
-state that allows it, and the refusal reaches the model as a `ToolFailure` it
-can recover from — the gate is enforced at EXECUTION rather than hoped for in a
-prompt. The states and events are inferred from the spec, so a misspelled `send`
-is a compile error. `emergency-dispatch-agent` and `tabletop-rpg-agent` are the
-worked examples.
+A tool declared with `checkout.tool({ when: "paying", send: … })` is REFUSED
+outside the states `when` names, and the refusal reaches the model as a
+`ToolFailure` it can recover from — the gate is enforced at EXECUTION rather
+than hoped for in a prompt. The states and events are inferred from the spec, so
+a misspelled `send` is a compile error. **A slot tool takes the same gate**:
+`orderSlot.updateTool({ dialog: checkout, when, send, … })` runs the refusal,
+then `require`/`prepare`, the window, `report`, and the transition — nothing is
+sent on a `ToolFailure`.
+
+```ts
+import { dialog, sessionSlot } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const scratch = sessionSlot("scratch", { notes: [] as string[] });
+const orderSlot = sessionSlot("order", { items: [] as string[], paid: false });
+
+const checkout = dialog("checkout", {
+  initial: "collecting",
+  states: {
+    collecting: { instruction: "Take the order.", on: { CONFIRMED: "paying" } },
+    paying: {
+      instruction: "Take payment with pay. Do not add items now.",
+      // Runs inside the move, when the dialog ENTERS the state: may write other
+      // slots, never this dialog. Not on a resume, a fresh session or a reset.
+      onEnter: (ctx) => scratch.reset(ctx),
+      on: { PAID: "done", DECLINED: "collecting" },
+    },
+    done: { instruction: "Read back the order number and say goodbye." },
+  },
+});
+
+export default orderSlot.updateTool({
+  description: "Take payment",
+  dialog: checkout,
+  when: "paying",
+  inputSchema: z.object({ approved: z.boolean() }),
+  execute: ({ approved }, order) => {
+    order.paid = approved;
+    return { paid: approved, next: approved ? ("PAID" as const) : ("DECLINED" as const) };
+  },
+  // A field holding the event type (or undefined to stay put). The function
+  // form `sendFrom: (result) => …` and the second argument
+  // `checkout.tool(def, { sendFrom })` are the same transition; write any of
+  // them in any order.
+  sendFrom: "next",
+});
+```
+
+**`when` is optional**: omitted, the tool is legal in every state, never
+refuses, and still answers the `{ ...position, result }` envelope and honours
+`send`/`sendFrom` — the shape of a tool that reports where the conversation is,
+or restarts it (`reset: true` restarts the dialog once `require`/`prepare` have
+passed, right before the body; its `send` goes to the restarted dialog). An
+event the current state does not declare is a no-op, not an error.
+`emergency-dispatch-agent` and `tabletop-rpg-agent` are the worked examples.
 
 **`procedure()` runs a flow YOU drive, with no model in the loop.** Where a
 dialog constrains a conversation, a procedure is an algorithm with branches,
@@ -380,9 +508,9 @@ inputSchema: z.void(),                     // ✗
 inputSchema: z.object({ q: z.string() }).optional(),  // ✗ ZodOptional
 ```
 
-For a tool with no arguments write `tool({ description, execute })`, or
-`inputSchema: z.object({})` if you prefer it explicit. To make an individual
-argument optional, put `.optional()` on the FIELD, never on the object:
+For a tool with no arguments write `tool({ description, execute })` — omit the
+field; `args` is then `Record<string, never>`. To make an individual argument
+optional, put `.optional()` on the FIELD, never on the object:
 `z.object({ notes: z.string().optional() })`.
 
 **Do not annotate `execute`'s return type.** Nothing needs it — the result is
@@ -457,6 +585,23 @@ Why discovery rather than a map: the map was 62 lines across the shipped
 templates whose entire content was `snake_case_name: camelCaseImport`, and
 forgetting one line was **silent** — the file compiled, every check passed, and
 the tool simply never reached the model.
+
+### Starting a run from a tool
+
+`ctx.workflows.start(def, input)` starts a durable run and resolves its id as
+soon as the run EXISTS; the turn answers while it works (`WORKFLOWS.md` has the
+body side). Its `key` defaults to `"session"` — the session id — so a later
+turn, or a later CALL from the same session, reads it back with
+`ctx.workflows.latest(def)` (the newest run) or `live(def)` (the newest one
+still in flight) with no key spelled on either side. **Declare the status tools
+rather than writing them**:
+`builtinTools: ["think", "workflow_status", "workflow_progress", "workflow_cancel"]`
+gives the model those three over every declared workflow, keyed the same way;
+`describeRun(run)` and `cancelNote` on the workflow def supply the sentences
+they speak. A run parked on `ctx.waitForSignal("approval")` is answered from a
+tool with `ctx.workflows.signalRun(def, "session", "approval", payload)` — the
+token is derived on both sides, and a signal that lands before the body reaches
+its wait is held for it.
 
 ## Built-in tools
 
@@ -621,7 +766,8 @@ before it calls rather than as a refusal after. `isIsoDate` refuses
 `2026-02-30`; `addDays`/`daysBetween` compute in UTC — never turn a `YYYY-MM-DD`
 into a `Date` in local time.
 
-**Never call `Math.random()` in a tool** — use `ctx.random`, which a test can
-substitute, so a dice roll or a minted code is something a spec can assert.
-`randomInt`, `pickOne` and `shuffled` take it last. A WORKFLOW body wants its
-own journaled `ctx.random()` instead.
+**Never call `Math.random()` or `Date.now()` in a tool** — use `ctx.random` and
+`ctx.now()`, which a test can pin, so a dice roll, a minted code or an
+opening-hours check is something a spec can assert. `randomInt`, `pickOne` and
+`shuffled` take the source last. A WORKFLOW body wants its own journaled
+`ctx.random()` / `ctx.now()` instead.

@@ -44,6 +44,7 @@
  */
 
 import type { AgentSystemPrompt } from "./agent-instructions.ts";
+import { withWorkflows, workflowRegistry } from "./manifest-workflows.ts";
 import { withSystemPrompt } from "./system-prompt-file.ts";
 import type { ToolBearingAgent } from "./testing-tools.ts";
 import { type ToolModules, toolRegistry, withTools } from "./tool-registry.ts";
@@ -69,6 +70,11 @@ import { type ToolModules, toolRegistry, withTools } from "./tool-registry.ts";
  * Structural rather than `AgentDef`, the same as {@link toolOf} and
  * {@link runTool} next door, and it hands back the def it was given — so the
  * caller keeps the type it passed in.
+ *
+ * `withTools` is also what RECORDS each def's name (`_testing-tool-names.ts`),
+ * pairing a file's default export with the name the model calls, so a reader
+ * handed the def later (`toolNameOf`, the eval's `toolResultIn(calls, def)`)
+ * can learn it.
  *
  * @internal
  */
@@ -100,13 +106,20 @@ export type ProjectFiles = {
    */
   readonly tools?: Readonly<Record<string, unknown>>;
   /**
+   * `import.meta.glob("./workflows/*.ts", { eager: true })`, written at the
+   * call site like `tools`. A module default-exporting a `workflow()` def is
+   * registered under its file name, an explicit `agent({ workflows })` entry
+   * winning a clash; the rest of the directory (a body's helpers) is skipped,
+   * so unlike `tools` an empty or helper-only result is not an error.
+   */
+  readonly workflows?: Readonly<Record<string, unknown>>;
+  /**
    * `import prompt from "./system-prompt.md?raw"`.
    *
-   * Omit it for a project with no `system-prompt.md`. Pass it even when
-   * `agent.ts` imports the file itself — whether it composes a string out of it
-   * or closes over it in a `systemPrompt` resolver, the def is left exactly as
-   * the author built it, so a spec never has to know which of the three shapes
-   * its own project uses.
+   * Omit it for a project with no `system-prompt.md`. Passing it to a def the
+   * file was already applied to leaves that def exactly as it is, so a spec
+   * never has to know whether its def is the raw `agent.ts` export or a
+   * lowered one.
    */
   readonly systemPrompt?: string;
 };
@@ -168,8 +181,9 @@ export type ProjectFiles = {
  * Every rule the build applies applies here too, and each is an error naming
  * the file: the tool-name grammar, the default-export requirement, no nested
  * files, a name declared twice, an empty prompt file, and a
- * `system-prompt.md` that exists while `agent.ts` declares a different prompt
- * STRING — the "I edited the prompt and nothing changed" failure.
+ * `system-prompt.md` that exists while the def carries a different prompt
+ * STRING (a raw config's, or a host's — `agent()` refuses the key) — the "I
+ * edited the prompt and nothing changed" failure.
  *
  * **Bounded by the two fields it lowers ONTO, not by `AgentDef`.** An `agent()`
  * def satisfies it and comes back as its own type, so a template keeps its
@@ -181,8 +195,8 @@ export type ProjectFiles = {
 export function deployedAgent<
   D extends ToolBearingAgent & { readonly systemPrompt: AgentSystemPrompt },
 >(authored: D, project: ProjectFiles): D {
-  const { tools, systemPrompt } = project;
-  if (tools === undefined && systemPrompt === undefined) {
+  const { tools, workflows, systemPrompt } = project;
+  if (tools === undefined && systemPrompt === undefined && workflows === undefined) {
     throw new Error(
       'deployedAgent was given no project files. Pass `tools: import.meta.glob("./tools/*.ts", { eager: true })` for a project whose tools are files, `systemPrompt` for one with a system-prompt.md, or both — an empty second argument lowers nothing and leaves the eval measuring the framework defaults.',
     );
@@ -192,6 +206,8 @@ export function deployedAgent<
       'deployedAgent was given an EMPTY tools glob, which lowers nothing. Check the pattern (it must be a literal, expanded against THIS file — `import.meta.glob("./tools/*.ts", { eager: true })`), or omit `tools` if this project really has no tools/ directory.',
     );
   }
-  const lowered = tools === undefined ? authored : withDiscoveredTools(authored, tools);
+  const withTools = tools === undefined ? authored : withDiscoveredTools(authored, tools);
+  const lowered =
+    workflows === undefined ? withTools : withWorkflows(withTools, workflowRegistry(workflows));
   return systemPrompt === undefined ? lowered : withSystemPrompt(lowered, systemPrompt);
 }

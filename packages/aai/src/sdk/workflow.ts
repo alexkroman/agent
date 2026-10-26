@@ -72,6 +72,7 @@
  * plus an occurrence count — and that nothing checks the replay rule for you.
  */
 
+import { setBrand } from "./_boundary.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 // The zod-free half of schema acceptance, and the only half this module may
 // name: `sdk/schema.ts` imports zod for JSON Schema conversion, and everything
@@ -86,6 +87,9 @@ import type { StandardSchemaV1 } from "./standard-schema.ts";
 // already import from.
 import type { WorkflowContext } from "./workflow-ctx.ts";
 import type { WorkflowFailureHandler } from "./workflow-failure.ts";
+// Type-only: `WorkflowDef.describeRun` is handed a snapshot, and `describeRun`
+// below reads its status. `workflow-run.ts` names nothing here at run time.
+import type { WorkflowRunSnapshot } from "./workflow-run.ts";
 
 /**
  * `ctx.workflows` — the type of the handle, re-exported because `ToolContext`
@@ -101,6 +105,7 @@ import type { WorkflowFailureHandler } from "./workflow-failure.ts";
 export type { WorkflowClient } from "./workflow-client.ts";
 export {
   DEFAULT_STEP_MAX_ATTEMPTS,
+  type PollFirstWait,
   type PollOptions,
   type PollResult,
   type SleepOptions,
@@ -260,6 +265,28 @@ export type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown
    * ```
    */
   onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
+  /**
+   * One spoken line about a run of this workflow — what the `workflow_status`
+   * builtin says for each run it lists, and what a route handler answers
+   * through {@link describeRun}.
+   *
+   * The AUTHOR's sentence rather than the framework's, because a status line
+   * is product copy: "your transcript is ready" reads where "run wrun_… is
+   * completed" does not. Handed the typed snapshot, so a `completed` run's
+   * `output` is readable in it. Absent, {@link describeRun} answers a plain
+   * sentence per status.
+   */
+  // Method syntax, deliberately: a function-typed PROPERTY is checked
+  // contravariantly in its parameter, which made `R` invariant and a
+  // `WorkflowDef<P, R>` no longer assignable to the `WorkflowDef` that
+  // `agent({ workflows })` holds. A method's parameter is bivariant, which is
+  // the right reading here — the def is only ever asked about its own runs.
+  describeRun?(run: WorkflowRunSnapshot<R>): string;
+  /**
+   * What the `workflow_cancel` builtin says once it has stopped a run of this
+   * workflow — `"Okay, I've stopped the digest."` Absent, it names the workflow.
+   */
+  cancelNote?: string | undefined;
 };
 
 /**
@@ -284,6 +311,115 @@ export type AnyWorkflowDef<R = unknown> = {
   // the same thing about `R` through either member.
   output?: StandardSchemaV1<unknown, R>;
   run: WorkflowBody<never, R>;
+  // `never` for the reason `run` takes it: a reader of this type never CALLS
+  // the describer with a snapshot of its own making — `describeRun` below
+  // hands it the run the def was looked up for.
+  describeRun?(run: never): string;
+  cancelNote?: string | undefined;
+};
+
+/**
+ * One spoken line about `run`: the workflow's own `describeRun` when it
+ * declared one, and a plain sentence per status otherwise.
+ *
+ * The one place the fallback is spelled, so the `workflow_status` builtin and a
+ * route handler answering "how is it going" say the same thing for the same
+ * run. `def` is optional because the run may belong to a workflow this agent
+ * no longer declares, and a run that outlived its declaration still has a
+ * status to report.
+ *
+ * ```ts
+ * import { describeRun, workflow, type WorkflowRunOf } from "@alexkroman1/aai";
+ *
+ * // In an agent this is `import { digest } from "../agent.ts"`.
+ * const digest = workflow({ run: async () => ({ headline: "…" }) });
+ *
+ * declare const run: WorkflowRunOf<typeof digest>;
+ * const line = describeRun(digest, run);
+ * ```
+ *
+ * @public
+ */
+export function describeRun(def: AnyWorkflowDef | undefined, run: WorkflowRunSnapshot): string {
+  // `never`-typed parameter, so the cast is the one `AnyWorkflowDef` documents:
+  // the def was resolved FOR this run, and its describer takes this run's shape.
+  const own = def?.describeRun?.(run as never);
+  if (own !== undefined) return own;
+  const what = run.label ?? `the ${run.workflow} run`;
+  // A table rather than a `switch`, so the status union stays exhaustive at
+  // the type level with no default arm inventing a sentence for a status that
+  // does not exist.
+  const sentence: Record<WorkflowRunSnapshot["status"], string> = {
+    pending: `${what} is queued and has not started yet.`,
+    running: `${what} is still in progress.`,
+    completed: `${what} has finished.`,
+    failed: `${what} failed: ${run.status === "failed" ? run.error : ""}`,
+    cancelled: `${what} was cancelled.`,
+  };
+  return sentence[run.status];
+}
+
+/**
+ * A workflow declared WITHOUT its body yet — what `workflow({ input, output })`
+ * answers, and whose `body` hands back the finished {@link WorkflowDef}.
+ *
+ * ## The two-phase form exists for one error, `TS7022`
+ *
+ * A body in `workflows/digest.ts` annotates its parameter
+ * `WorkflowInputOf<typeof digest>`, and `digest` in `agent.ts` is
+ * `workflow({ input, run: digestFlow })` — so `typeof digest` is inferred from
+ * `digestFlow`, whose parameter names `typeof digest`. The compiler reports the
+ * cycle against the def. Here `typeof digest` is fixed by the DECLARATION
+ * alone: `body` is not generic, so its return type is `WorkflowDef<P, R>` with
+ * both already decided, and checking the body against it needs nothing from
+ * the body's own signature to name the def.
+ *
+ * The cost is stated rather than hidden: with no `output` schema, `R` is
+ * `unknown` — the one thing the single-phase form could still infer from the
+ * body. Declare `output` to type a completed run's result, which is the
+ * documented way to type it in either form.
+ *
+ * ```ts
+ * // file: agent.ts
+ * import { agent, workflow } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ * import { digestFlow } from "./workflows/digest.ts";
+ *
+ * export const digest = workflow({
+ *   description: "Research a topic overnight",
+ *   input: z.object({ topic: z.string() }),
+ *   output: z.object({ headline: z.string() }),
+ * }).body(digestFlow);
+ *
+ * export default agent({ name: "Researcher", workflows: { digest } });
+ *
+ * // file: workflows/digest.ts
+ * import type { WorkflowContext, WorkflowInputOf } from "@alexkroman1/aai";
+ * import { stepGenerate } from "@alexkroman1/aai/step";
+ * import type { digest } from "../agent.ts";
+ *
+ * export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
+ *   return { headline: await ctx.step("research", () => stepGenerate(`Headline: ${input.topic}`)) };
+ * }
+ * ```
+ *
+ * @sealed
+ * @public
+ */
+export type WorkflowDeclaration<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+  // Spelled out rather than `Omit<WorkflowDef<P, R>, "run">`: a mapped type
+  // turns the `describeRun` METHOD into a function-typed property, and the
+  // contravariance that reintroduces is exactly what the method syntax on
+  // `WorkflowDef` exists to avoid. Each field means what it means there.
+  description?: string;
+  input?: P;
+  uploads?: readonly string[];
+  output?: StandardSchemaV1<unknown, R>;
+  onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
+  describeRun?(run: WorkflowRunSnapshot<R>): string;
+  cancelNote?: string | undefined;
+  /** Attach the body, answering the finished definition. */
+  body(run: WorkflowBody<InferSchemaOutput<P>, R>): WorkflowDef<P, R>;
 };
 
 /**
@@ -419,6 +555,37 @@ export function workflow<
 export function workflow<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
   def: WorkflowDef<P, R>,
 ): WorkflowDef<P, R>;
-export function workflow(def: WorkflowDef): WorkflowDef {
+/**
+ * The two-phase form: declare everything but the body, and attach it with
+ * `.body(fn)`. See {@link WorkflowDeclaration} for the cycle this avoids and
+ * what it costs. Listed AFTER the single-phase overloads, so a declaration
+ * carrying `run` is still the plain form.
+ */
+export function workflow<
+  P extends ToolInputSchema = ToolInputSchema,
+  O extends StandardSchemaV1 = StandardSchemaV1,
+>(
+  def: Omit<WorkflowDef<P, InferSchemaOutput<O>>, "output" | "run"> & { output: O },
+): WorkflowDeclaration<P, InferSchemaOutput<O>>;
+export function workflow<P extends ToolInputSchema = ToolInputSchema>(
+  def: Omit<WorkflowDef<P, unknown>, "run">,
+): WorkflowDeclaration<P, unknown>;
+export function workflow(def: Partial<WorkflowDef>): WorkflowDef | WorkflowDeclaration {
+  // `Partial` is the one shape every overload's parameter is assignable to;
+  // which overload applied was decided by the presence of `run`.
+  if (def.run !== undefined) return brandWorkflowDef(def as WorkflowDef);
+  const declared = def as Omit<WorkflowDef, "run">;
+  return { ...declared, body: (run) => brandWorkflowDef({ ...declared, run }) };
+}
+
+/**
+ * Mark `def` as one this factory made. The object is still the author's (an
+ * identity function, as documented), and the mark is non-enumerable so a
+ * spread, a snapshot or `toEqual` never sees it; `isWorkflowDef` in
+ * `_module-registry.ts` reads it across the bundle/runtime boundary, which is
+ * why it is a registered brand and not a `WeakSet` (see `_boundary.ts`).
+ */
+function brandWorkflowDef<D extends WorkflowDef>(def: D): D {
+  setBrand(def, "workflowDef", true);
   return def;
 }

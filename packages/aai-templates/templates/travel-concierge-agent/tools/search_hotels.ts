@@ -1,14 +1,15 @@
 import { formatMoney } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { deskTool, HOTELS } from "../shared.ts";
+import { deskGate, HOTELS, tripSlot } from "../shared.ts";
 
 /** Their `search_hotels`, with `price_tier` collapsed to a nightly ceiling —
  *  a caller says "under two hundred", not "midscale". */
-export default deskTool("hotel", {
+export default tripSlot.tool({
   description:
     "The HOTEL DESK's search: hotels by city, and optionally by the most they want to pay " +
     "per night. Only usable while the call is at that desk — from anywhere else it refuses, " +
     "so call to_hotel_assistant first.",
+  require: deskGate("hotel"),
   inputSchema: z.object({
     city: z.string().max(80).describe("City to search, e.g. 'Boston'"),
     maxPerNight: z.number().positive().describe("Nightly ceiling in dollars").optional(),

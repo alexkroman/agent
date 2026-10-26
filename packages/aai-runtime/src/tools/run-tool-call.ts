@@ -27,7 +27,9 @@
  *    gates and the deadline.
  * 5. **Record** the tool's own result in the conversation (`recordToolResult`)
  *    in completion order, and hand back the MODEL's copy beside it — record
- *    collections as rows (`../_compact-records.ts`).
+ *    collections as rows (`../_compact-records.ts`), and a `withInstruction`
+ *    instruction taken OUT of the tool's own string and appended to the
+ *    model's (`result-instruction.ts`).
  *
  * ## A rejection is returned to the CALLER's policy, never decided here
  *
@@ -41,9 +43,11 @@
 
 import type { Message } from "@alexkroman1/aai";
 import type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-internal";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { JSONSchema7 } from "json-schema";
 import { compactRecordsForModel } from "../_compact-records.ts";
 import { coerceToolArgs } from "./arg-coercion.ts";
+import { splitInstruction, withInstructionForModel } from "./result-instruction.ts";
 import { toolResultMessage } from "./result-message.ts";
 
 /** One call, as the transport reported it. */
@@ -80,8 +84,17 @@ export type SettledToolCall = {
   input: Readonly<Record<string, unknown>>;
   /** The tool's own string: what the client's `tool.completed` and the history carry. */
   result: string;
-  /** What the MODEL is sent: `result` with record collections rendered as rows. */
+  /**
+   * What the MODEL is sent: `result` with record collections rendered as rows,
+   * and the instruction it carried, if any, appended under its label.
+   */
   forModel: string;
+  /**
+   * The `withInstruction` instruction the result carried — already in
+   * `forModel`, named so a caller can tell a model copy that cannot be
+   * recomputed from `result` (rows can; this cannot) from one that can.
+   */
+  instruction?: string | undefined;
 };
 
 /** The hook between coercion and execution — see the module doc, step 3. */
@@ -122,12 +135,20 @@ export async function runToolCall(
   const options: ExecuteToolOptions = {};
   if (call.signal !== undefined) options.signal = call.signal;
   if (call.toolCallId !== undefined) options.toolCallId = call.toolCallId;
-  const result = await ctx.executeTool(call.name, input, ctx.sessionId, history, options);
+  const raw = await ctx.executeTool(call.name, input, ctx.sessionId, history, options);
+  // The instruction comes OUT here, before anything that is not the model
+  // sees the string — see `result-instruction.ts`.
+  const { result, instruction } = splitInstruction(raw);
   // AFTER the call, so a tool never reads its own result back, and in
   // COMPLETION order — the only order that is true when sibling calls run
   // concurrently.
   ctx.recordToolResult?.(
     toolResultMessage({ result, toolName: call.name, toolCallId: call.toolCallId }),
   );
-  return { input, result, forModel: compactRecordsForModel(result) };
+  return {
+    input,
+    result,
+    forModel: withInstructionForModel(compactRecordsForModel(result), instruction),
+    ...omitUndefined({ instruction }),
+  };
 }

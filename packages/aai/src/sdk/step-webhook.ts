@@ -53,6 +53,12 @@
  * read `undefined` would submit the job with no callback, park on
  * `ctx.waitFor`, and wait forever with nobody having said so. So the failure is
  * at the mint, with a message naming the configuration.
+ *
+ * `{ optional: true }` is the one way to ask for `undefined` instead, and it is
+ * an opt-in at the call site for exactly that reason: the caller is saying it
+ * HAS a path without a callback — a submit that polls when no hook can arrive —
+ * and the `string | undefined` it gets back has to be branched on before it
+ * reaches a request body, which is what keeps the silent shape unwritable.
  */
 
 import { globalSlot } from "./_boundary.ts";
@@ -167,17 +173,67 @@ export function publishStepWebhookUrl(mint: StepWebhookMinter | undefined): void
  *
  * @param token - The waitpoint's token, exactly as the body passes it to
  *   `ctx.waitFor`. Derived from the run's input, never random.
+ * @param options - `{ optional: true }` answers `undefined` instead of throwing
+ *   when no public URL is configured: for a step with a path that needs no
+ *   callback — a submit whose body polls the provider when no hook can arrive,
+ *   which is every run under `aai dev`. The default throws, for the reason
+ *   the module doc gives: a step that reads `undefined` without having asked
+ *   for it is one that parks on a hook nobody was told about.
  * @returns The absolute URL, encoded for the route's single token segment.
  * @throws {Error} when this process cannot mint one — the message names the
  *   configuration and says what `aai dev` can and cannot do.
  * @throws {Error} when `token` is empty: that composes to the route's own
  *   prefix, which the parser refuses, so the failure would otherwise arrive at
- *   the far end as a 404 on a URL nobody can re-issue.
+ *   the far end as a 404 on a URL nobody can re-issue. Refused under
+ *   `optional` too — a missing URL is a deployment's state, an empty token is a
+ *   bug.
  * @public
  */
-export function stepWebhookUrl(token: string): string {
-  const mint = STEP_WEBHOOK_SLOT.get();
-  if (!mint) throw new Error(STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE);
+export function stepWebhookUrl(token: string): string;
+/**
+ * The URL, or `undefined` when this process cannot mint one — for a step that
+ * has a callback-free path and wants to take it rather than fail.
+ *
+ * @example
+ * ```ts
+ * import { stepFetch, stepWebhookUrl } from "@alexkroman1/aai/step";
+ *
+ * export async function submitRender(id: string): Promise<void> {
+ *   // Under `aai dev` there is no public URL; the body polls instead, so the
+ *   // submit goes out without a callback rather than not at all.
+ *   const callbackUrl = stepWebhookUrl(`render:${id}`, { optional: true });
+ *   await stepFetch("https://renders.example.com/jobs", {
+ *     method: "POST",
+ *     headers: { "content-type": "application/json" },
+ *     body: JSON.stringify({ id, ...(callbackUrl === undefined ? {} : { callbackUrl }) }),
+ *   });
+ * }
+ * ```
+ *
+ * @public
+ */
+export function stepWebhookUrl(token: string, options: { optional: true }): string | undefined;
+/**
+ * {@link stepWebhookUrl} with the options bag assembled elsewhere.
+ *
+ * @public
+ */
+export function stepWebhookUrl(
+  token: string,
+  options?: { optional?: boolean | undefined },
+): string | undefined;
+export function stepWebhookUrl(
+  token: string,
+  options?: { optional?: boolean | undefined },
+): string | undefined {
+  // The token FIRST: an empty one is a bug in the caller whatever the deployment
+  // is, so it is refused before the configuration is consulted — including
+  // under `optional`, which excuses only the missing URL.
   if (token === "") throw new Error("A webhook token cannot be empty.");
+  const mint = STEP_WEBHOOK_SLOT.get();
+  if (!mint) {
+    if (options?.optional === true) return undefined;
+    throw new Error(STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE);
+  }
   return mint(token);
 }

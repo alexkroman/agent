@@ -16,9 +16,16 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import agentDef from "virtual:aai/agent";
-import { expectDeployable, toolRunner } from "@alexkroman1/aai-runtime/testing";
-import { afterAll, beforeEach, describe, expect, test, vi } from "vitest";
+import { expectDeployable } from "@alexkroman1/aai-runtime/testing";
+import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
+import { afterAll, beforeEach, expect, test, vi } from "vitest";
 import { WORKSPACE_DIR } from "./shared.ts";
+// The tool FILES: each default export is the registry entry `agentDef` holds
+// under the file's name, and handing it to `run` types the call.
+import editFile from "./tools/edit_file.ts";
+import listFiles from "./tools/list_files.ts";
+import readFile from "./tools/read_file.ts";
+import writeFile from "./tools/write_file.ts";
 
 const workspace = vi.hoisted(() => {
   // Hoisted above the imports, so it cannot use `node:os` — the temp root is
@@ -34,15 +41,13 @@ afterAll(() => {
   rmSync(workspace, { recursive: true, force: true });
 });
 
-const run = toolRunner(agentDef);
-
 beforeEach(() => {
   mkdirSync(workspace, { recursive: true });
   writeFileSync(path.join(workspace, "cart.ts"), "export const total = 1;\n", "utf-8");
 });
 
-describe("coding-agent template", () => {
-  test("is deployable, and is a TEXT agent — no audio stage anywhere", () => {
+describeAgent(agentDef, (run) => {
+  test("is a TEXT agent — no audio stage anywhere", () => {
     const config = expectDeployable(agentDef);
     // The mode is the template's point: `createRuntime` refuses a text agent by
     // name, so this is what says it runs on `createTextAgent` instead. A
@@ -67,14 +72,14 @@ describe("coding-agent template", () => {
 
   test("the tools work in WORKSPACE_DIR, which is the one thing to configure", async () => {
     expect(WORKSPACE_DIR).toBe(workspace);
-    expect(String(await run("list_files", {}))).toContain("cart.ts");
-    expect(String(await run("read_file", { path: "cart.ts" }))).toContain("export const total");
+    expect(String(await run(listFiles, {}))).toContain("cart.ts");
+    expect(String(await run(readFile, { path: "cart.ts" }))).toContain("export const total");
   });
 
   test("nothing outside the workspace is reachable, by any of the path tools", async () => {
     // A traversal reads as a file that is not there — the same answer a typo
     // gets, which is the recovery the model already knows.
-    expect(String(await run("read_file", { path: "../../etc/passwd" }))).toContain(
+    expect(String(await run(readFile, { path: "../../etc/passwd" }))).toContain(
       "Error: no such file",
     );
     // A WRITE that escapes THROWS rather than answering, which is deliberate:
@@ -82,14 +87,14 @@ describe("coding-agent template", () => {
     // result, so the model sees a refusal it cannot mistake for a file it has
     // yet to create. Here there is no executor, so the throw is what a spec
     // sees.
-    await expect(run("write_file", { path: "../escaped.ts", content: "x" })).rejects.toThrow(
+    await expect(run(writeFile, { path: "../escaped.ts", content: "x" })).rejects.toThrow(
       /escapes the workspace/,
     );
   });
 
   test("an edit is applied to disk and reported as a diff", async () => {
     const out = String(
-      await run("edit_file", {
+      await run(editFile, {
         path: "cart.ts",
         oldText: "const total = 1;",
         newText: "const total = 2;",
@@ -103,7 +108,7 @@ describe("coding-agent template", () => {
 
   test("a failed match is advice, not an exception — the agent can recover", async () => {
     expect(
-      String(await run("edit_file", { path: "cart.ts", oldText: "nope", newText: "x" })),
+      String(await run(editFile, { path: "cart.ts", oldText: "nope", newText: "x" })),
     ).toContain("Could not find that text");
   });
 });

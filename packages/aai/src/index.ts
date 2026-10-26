@@ -18,15 +18,13 @@
  * ```ts
  * import { agent, sessionSlot } from "@alexkroman1/aai";
  *
+ * // `sync: true` is what the browser sees; the prompt is system-prompt.md.
  * export const cart = sessionSlot("cart", () => ({ items: [] as string[] }), {
  *   view: (c) => ({ count: c.items.length }),
+ *   sync: true,
  * });
  *
- * export default agent({
- *   name: "Storefront",
- *   systemPrompt: "You help callers order from the catalog.",
- *   syncState: cart.projected,
- * });
+ * export default agent({ name: "Storefront" });
  * ```
  *
  * With no provider fields that runs the all-AssemblyAI STT → LLM → TTS
@@ -98,6 +96,8 @@ export * from "./sdk/calendar.ts";
 export type { AgentClientInbox, ClientInboxOptions } from "./sdk/agent-client-inbox.ts";
 /** `route()`'s door checks and a thrown `routeError(400, "…")`: `sdk/agent-route-helpers.ts`. */
 export {
+  type ApiKeyRouteOptions,
+  apiKeyRoute,
   type RouteDef,
   RouteError,
   route,
@@ -129,6 +129,19 @@ export type {
   SessionContextArgs,
   SessionEndContext,
 } from "./sdk/agent-session-lifecycle.ts";
+/**
+ * The signed BRIEF a placed call carries to the session that answers it — what
+ * `stepPlaceCall({ brief })` puts on the call and `readCallBrief(call, secret)` reads
+ * back; `readCallBrief`/`signCallBrief` are the same two halves unbound.
+ */
+export {
+  CALL_BRIEF_CHUNK_CHARS,
+  CALL_BRIEF_SECRET_ENV,
+  type CallBrief,
+  MAX_CALL_BRIEF_PROMPT_CHARS,
+  readCallBrief,
+  signCallBrief,
+} from "./sdk/call-brief.ts";
 export * from "./sdk/client-runs-routes.ts";
 // A tool the connected browser page answers — `useClientTool` in `aai-ui`.
 export { type ClientToolDef, clientTool } from "./sdk/client-tool.ts";
@@ -423,6 +436,8 @@ export {
   createKeyedLock,
   errorDetail,
   errorMessage,
+  INSTRUCTION_KEY,
+  instructionOf,
   isRecord,
   isToolFailure,
   type KeyedLock,
@@ -432,18 +447,26 @@ export {
   pushCapped,
   responseErrorMessage,
   safeJsonParse,
+  stripInstruction,
   type ToolFailure,
   type ToolRefusal,
   type ToolRefusalReason,
   toolFailure,
   toolRefusal,
+  type WithInstruction,
+  withInstruction,
   withLock,
 } from "./sdk/utils.ts";
 export {
   DEFAULT_STEP_MAX_ATTEMPTS,
   // Deliberately no `isWorkflowSuspend`: a wait hands back a promise that never
   // settles, so a suspension cannot reach a `catch` (`workflow-replay-suspend.ts`).
+  // `describeRun(def, run)`: the one spoken line about a run, which a route
+  // handler answers beside the `workflow_status` builtin — written in `agent.ts`'s
+  // own vocabulary (`WorkflowDef.describeRun`).
+  describeRun,
   // `ctx.poll`'s option bag and what it resolves with: named in `WorkflowContext`.
+  type PollFirstWait,
   type PollOptions,
   type PollResult,
   // `ctx.sayOnClient`'s notice, likewise named in `WorkflowContext`.
@@ -460,6 +483,9 @@ export {
   // What a workflow BODY is handed. An author annotates a body's second
   // parameter with it, which is the membership test this barrel applies.
   type WorkflowContext,
+  // What `workflow({ input, output })` answers before `.body(fn)` — the two-phase
+  // declaration an `agent.ts` writes to keep `typeof def` out of the body's cycle.
+  type WorkflowDeclaration,
   type WorkflowDef,
   // `workflow({ onFailure })` — written in the same literal as `run`.
   type WorkflowFailureContext,
@@ -472,3 +498,8 @@ export {
   type WorkflowRunOf,
   workflow,
 } from "./sdk/workflow.ts";
+// How long `signalRun` holds a payload for a wait the run has not reached: an
+// `agent.ts` names it when its `onSessionEnd` signals the run it started
+// (`{ holdMs: DEFAULT_SIGNAL_HOLD_MS * 2 }`), which is the root's test. Also on
+// `/workflow-api`, where a caller outside the agent sizes its own hold.
+export { DEFAULT_SIGNAL_HOLD_MS } from "./sdk/workflow-options.ts";

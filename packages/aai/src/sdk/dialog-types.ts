@@ -22,6 +22,7 @@
 import type { PipelineTuning } from "./agent-tuning.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { SessionEventType } from "./session-event-map.ts";
+import type { SlotHolder } from "./session-state.ts";
 import type { ToolChoice } from "./tool-def.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 import type { ToolFailure } from "./utils.ts";
@@ -69,12 +70,186 @@ export interface DialogToolResult<R> extends DialogPosition {
 }
 
 /**
+ * The keys of a success result `S` whose value names an event of `E` — the
+ * STRING form of {@link DialogGate.sendFrom}.
+ *
+ * A key qualifies when its value is assignable to `E["type"] | undefined`:
+ * `{ next?: "QUOTED" | "DECLINED" }` offers `"next"`, and a field typed plain
+ * `string` offers nothing, because a string the machine does not know is an
+ * event XState would silently ignore. Declare the field's type (an `as const`
+ * on the literal, or an annotated return) and the key appears.
+ *
+ * @typeParam S - The tool's SUCCESS result (the failure arm already removed).
+ * @typeParam E - The machine's event union.
+ *
+ * @public
+ */
+export type DialogSendFromKey<S, E> = keyof {
+  // `keyof` over a key-REMAPPED mapped type rather than an indexed access over
+  // a plain one, deliberately: with `E` only in a conditional's `extends`
+  // clause and the keys read back through `[keyof S]`, the compiler measured
+  // `E` INVARIANT, which made `Dialog<{ type: "X" }>` unassignable to
+  // `AnyDialog` (`Dialog<unknown>`) — `agent({ dialogs })` rejected every
+  // dialog. This spelling it compares structurally, where a wider `E` only
+  // ever admits more keys.
+  [K in keyof S as S[K] extends EventNameOf<E> | undefined ? K : never]: never;
+} &
+  string;
+
+/**
+ * The `type` names of a dialog's event union — what a `sendFrom: "field"` key's
+ * value must be; `string` for an erased `E` (`AnyDialog`'s `unknown`), so every
+ * string-valued field qualifies there. Exported because
+ * {@link DialogSendFromKey} is spelled in it.
+ *
+ * @public
+ */
+export type EventNameOf<E> = (E & { type: string })["type"];
+
+/**
+ * What {@link DialogGate.sendFrom} accepts: a function of the success result
+ * answering the event (or `undefined` to stay put), or the NAME of a result
+ * field holding that event's `type` — see {@link DialogSendFromKey}.
+ *
+ * `NoInfer` on `R` in the function arm is what makes the parameter mean
+ * anything; the argument is on {@link DialogGate.sendFrom}. The failure arm is
+ * subtracted because the gate returns a {@link ToolFailure} before either form
+ * is reached — and subtracted OUTSIDE the `NoInfer`, deliberately:
+ * `Exclude<NoInfer<R>, …>` never distributes once `R` is a union of object
+ * types (a `NoInfer` over one stays a substitution type, which a conditional
+ * does not split), so a slot tool whose body answered `X | ToolFailure` handed
+ * its `sendFrom` the whole union.
+ *
+ * **The string arm is a bare `K`, and the key is CHECKED ON THE RESULT**
+ * ({@link DialogSendFromChecked}) rather than spelled as
+ * {@link DialogSendFromKey} here. It used to be, and that spelling reads `R`
+ * at the one moment `R` is not known: an `execute` with an unannotated
+ * parameter (`(args, ctx) => …`, the ordinary voice tool) is context-sensitive,
+ * so its return is inferred in a second pass — and a key type written over `R`
+ * widened the literal `"next"` to `string` in the first, which failed every
+ * such tool whether the key sat above `execute`, below it or in the second
+ * argument. A naked `K` infers from the literal alone, and the check runs once
+ * `R` is settled.
+ *
+ * @typeParam R - What the tool's `execute` returns, failure arm included.
+ * @typeParam E - The machine's event union.
+ * @typeParam K - The literal the field-name form was written as; `string`
+ *   when the function form (or nothing) was.
+ *
+ * @public
+ */
+export type DialogSendFrom<R, E, K extends string = string> =
+  | ((result: NoInfer<Exclude<R, ToolFailure>>) => E | undefined)
+  | K;
+
+/**
+ * The compile error a `sendFrom: "field"` gets when `field` holds no event
+ * name of the dialog — a message TYPE, on the pattern of `SyncMutationMisuse`:
+ * what `tsc` prints names the rule and the fields that would have worked.
+ *
+ * @sealed
+ * @public
+ */
+export type DialogSendFromMisuse<K extends string, Keys extends string> = {
+  readonly "sendFrom names a result field that holds no event name of this dialog": K;
+  readonly "the fields that do": Keys;
+};
+
+/**
+ * `T` — the tool a gated call answers — unless the field-name `sendFrom`
+ * written as `K` names no field of the success result (`R` minus its failure
+ * arm) holding an event of `E`, in which case {@link DialogSendFromMisuse}. `string` (no literal
+ * was written) is the function form, or none, and passes through.
+ *
+ * In RETURN position for the reason {@link DialogSendFrom} gives: a check
+ * intersected into the parameter type is a conditional over `R`, which is
+ * resolved for the contextual type before a context-sensitive `execute` has
+ * settled `R`. {@link DialogSendFromGuard} is the parameter-position half
+ * that gets around it, and is what makes the misuse fail at the CALL; this
+ * stays as the type the failed call still reads as.
+ *
+ * @public
+ */
+export type DialogSendFromChecked<K extends string, R, E, T> = string extends K
+  ? T
+  : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>]
+    ? T
+    : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+
+/**
+ * The call-site half of {@link DialogSendFromChecked}: `unknown` (no
+ * constraint) unless the field-name `sendFrom` written as `K` names no field
+ * of the success result holding an event of `E`, in which case
+ * `{ sendFrom: DialogSendFromMisuse }` — which the literal `"count"` cannot
+ * satisfy, so the CALL fails on the `sendFrom` line.
+ *
+ * Intersected into the def (and the second argument) of every gated tool
+ * factory, always under `NoInfer`. The return-position check alone only bit
+ * once the misuse type was assigned somewhere that wanted a `ToolDef`, and a
+ * `tools/<name>.ts` default export never is: `aai typecheck` is plain `tsc`
+ * over an untyped `AgentDef`, so `sendFrom: "count"` compiled and threw on
+ * the first call.
+ *
+ * Two arms keep it inert while `R` is still being inferred, which is what
+ * {@link DialogSendFromChecked}'s doc meant by a parameter-position check
+ * stopping inference. The contextual type of the `sendFrom` property is
+ * computed BEFORE a context-sensitive `execute` (unannotated parameters) has
+ * settled `R`, with `R` read as `unknown`; a conditional that resolved to the
+ * misuse arm then would intersect `never` into that contextual type and widen
+ * the literal `"next"` to `string`, failing every field-name `sendFrom` on
+ * such a body. `unknown extends R` answers `unknown` for that pass, and the
+ * applicability check that follows inference sees the settled `R`. The
+ * `NoInfer` is the other half: a string literal inferred against the `keyof`
+ * inside {@link DialogSendFromKey} is an inference site for `R` (TypeScript's
+ * `LiteralKeyof` priority), and without it `R` collected an empty-object
+ * candidate from the misuse arm.
+ *
+ * @typeParam K - The literal the field-name form was written as; `string`
+ *   when the function form (or nothing) was.
+ * @typeParam R - What the tool's `execute` returns, failure arm included.
+ * @typeParam E - The machine's event union.
+ *
+ * @public
+ */
+export type DialogSendFromGuard<K extends string, R, E> = string extends K
+  ? unknown
+  : unknown extends R
+    ? unknown
+    : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>]
+      ? unknown
+      : { sendFrom: DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>> };
+
+/**
+ * The second argument of {@link Dialog.tool} (and of a gated slot tool): the
+ * transition, declared AFTER the def rather than inside it.
+ *
+ * It exists for one reason — an inline-arrow `execute` is contextually typed
+ * only once the whole object literal is, so a `sendFrom` written ABOVE it in
+ * the same literal sees `result` as `unknown` (`TS18046`), and the fix was an
+ * ordering rule nobody can see from the declaration. A second argument is
+ * checked after the first has settled `R`, so the order inside the def no
+ * longer matters. Declaring `send`/`sendFrom` in both places is refused at
+ * declaration.
+ *
+ * @typeParam R - What the tool's `execute` returns.
+ * @typeParam E - The machine's event union.
+ *
+ * @input
+ * @public
+ */
+export interface DialogSendOptions<R, E, K extends string = string> {
+  /** The transition the result decides — see {@link DialogGate.sendFrom}. */
+  sendFrom: DialogSendFrom<R, E, K>;
+}
+
+/**
  * What makes a tool part of a dialog: where it may run, and what it advances.
  *
  * The half of {@link DialogToolDef} that is the dialog's own — the rest is
- * {@link ToolDef}'s, unchanged. Declared on its own so the gate's three fields
- * have one home and `DialogToolDef` is BUILT from the two halves rather than
- * restating either.
+ * {@link ToolDef}'s, unchanged. Declared on its own so the gate's fields have
+ * one home and `DialogToolDef` is BUILT from the two halves rather than
+ * restating either; a slot-backed tool carries the same gate beside its
+ * `dialog` (see `SlotDialogGate`).
  *
  * @typeParam R - What the tool's `execute` returns, as `sendFrom` reads it.
  * @typeParam E - The machine's event union.
@@ -82,10 +257,15 @@ export interface DialogToolResult<R> extends DialogPosition {
  * @input
  * @public
  */
-export interface DialogGate<R, E> {
+export interface DialogGate<R, E, K extends string = string> {
   /**
    * The state(s) this tool may run in, as {@link DialogPosition.state} spells
    * them. Anywhere else the body does not run and the call is refused.
+   *
+   * **Omitted, the tool is legal in EVERY state and never refuses** — a tool
+   * that reads or resets the dialog, or one whose only job is the envelope and
+   * the `send`. It still answers the `{ ...position, result }` envelope and
+   * still honours `send`/`sendFrom`.
    *
    * Every name is checked against the machine's own states when the tool is
    * DECLARED, so a typo is a throw at startup rather than a tool that is
@@ -99,7 +279,21 @@ export interface DialogGate<R, E> {
    * Otherwise the event would fire whatever transition the new state declares
    * for it, moving the dialog out of a state this tool was never allowed in.
    */
-  when: string | readonly string[];
+  when?: string | readonly string[];
+  /**
+   * Start the dialog over BEFORE the body runs — for a setup tool (`start_order`,
+   * `new_claim`) that begins a fresh pass through the conversation.
+   *
+   * `when`, if declared, is checked against the position before the reset.
+   * The reset itself is applied once every setup stage has passed — after a
+   * slot tool's `require` and `prepare`, right before the body — so a tool
+   * refused by its own precondition leaves the conversation where it was.
+   * The post-body `send`/`sendFrom` is sent to the RESET dialog and is not
+   * re-checked against `when` (it was declared for the dialog this tool just
+   * started over, which `when` says nothing about). The initial state's
+   * `onEnter` does not fire on a reset, the same as on a fresh session.
+   */
+  reset?: true;
   /**
    * The event to send once `execute` has succeeded — how the conversation moves
    * on. Omit both this and `sendFrom` for a tool that reads without advancing.
@@ -108,6 +302,11 @@ export interface DialogGate<R, E> {
    * that failed did not do the thing, so a dialog that advanced anyway would
    * leave the conversation a step ahead of reality — the single most expensive
    * bug this primitive can have, since every later gate is then wrong too.
+   *
+   * An event the CURRENT state does not declare (none of its own `on` keys,
+   * nor an ancestor's) is a no-op, as it is for `Dialog.send`: XState drops an
+   * unhandled event, the position is answered unchanged, and nothing is
+   * logged — the same for `sendFrom`.
    */
   send?: E;
   /**
@@ -136,8 +335,16 @@ export interface DialogGate<R, E> {
    * failure is never handed to it. Saying so in the type is what lets a body
    * declared `Order | ToolFailure` be narrowed here without the author
    * re-checking a case that cannot arrive.
+   *
+   * **The string form reads the event off the result** — `sendFrom: "next"`
+   * sends `{ type: result.next }`, or stays put when the field is `undefined`.
+   * Typed as a key whose value is `E["type"] | undefined`
+   * ({@link DialogSendFromKey}), it needs no callback and so no ordering: an
+   * inline `(result) => …` written ABOVE an inline-arrow `execute` still sees
+   * `unknown` (`TS18046`), and the field name does not. The other way around
+   * that rule is the second argument, {@link DialogSendOptions}.
    */
-  sendFrom?: (result: Exclude<NoInfer<R>, ToolFailure>) => E | undefined;
+  sendFrom?: DialogSendFrom<R, E, K>;
 }
 
 /**
@@ -175,9 +382,13 @@ export interface DialogGate<R, E> {
  * @input
  * @public
  */
-export interface DialogToolDef<P extends ToolInputSchema, R, E>
-  extends Omit<ToolDef<P, R>, "execute">,
-    DialogGate<R, E> {
+export interface DialogToolDef<
+  P extends ToolInputSchema | undefined,
+  R,
+  E,
+  K extends string = string,
+> extends Omit<ToolDef<P, R>, "execute">,
+    DialogGate<R, E, K> {
   /**
    * The tool body. Runs only in one of `when`'s states.
    *
@@ -375,6 +586,28 @@ export interface DialogStateSpec {
    * Checked against the roster by `agent()`.
    */
   persona?: string;
+  /**
+   * Run when the dialog ENTERS this state — by {@link Dialog.send} or
+   * {@link Dialog.receive}, synchronously, inside the same mutation window the
+   * position moves in, after the new position has been written to the draft.
+   *
+   * For the side effect a phase change owns: clearing a scratch slot on
+   * `checkout`, stamping a timestamp on `escalated`. It is handed the
+   * {@link SlotHolder} the move came through, so it can write OTHER slots; a
+   * `send`/`reset` of this dialog from inside it throws (the window is open),
+   * and a throw discards the move — nothing is stored, the caller sees the
+   * error.
+   *
+   * **Synchronous, like every slot mutation**: a thenable return is not
+   * awaited. **XState's entry semantics**: a nested state fires its parent's
+   * hook and then its own; a self-transition does not re-enter. **A restored
+   * snapshot does not re-fire it**, nor does a fresh session installing the
+   * initial state, nor {@link Dialog.reset} — only a move does.
+   *
+   * A function, so it is the one field of a state that does not ride in the
+   * machine's `meta`; the spec form only (a machine passes XState's own `entry`).
+   */
+  onEnter?: (ctx: SlotHolder) => void;
   /** Whether reaching this state ENDS the dialog — XState's `type: "final"`. */
   final?: true;
   /** For a state with `states`: which child it starts in. */

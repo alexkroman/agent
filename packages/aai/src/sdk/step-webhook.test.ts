@@ -64,6 +64,33 @@ describe("stepWebhookUrl", () => {
     expect(() => stepWebhookUrl("")).toThrow(/token cannot be empty/);
   });
 
+  describe("{ optional: true }", () => {
+    test("answers `undefined` when nothing has published, for a step with a callback-free path", () => {
+      // The opt-in: the caller has said it polls when no hook can arrive, and the
+      // `string | undefined` it gets back has to be branched on before it reaches
+      // a request body — which is what keeps the silent shape unwritable.
+      expect(stepWebhookUrl("t", { optional: true })).toBeUndefined();
+    });
+
+    test("still mints when a minter is published", () => {
+      publishStepWebhookUrl((token) => `https://x/${token}`);
+      expect(stepWebhookUrl("t", { optional: true })).toBe("https://x/t");
+    });
+
+    test("still refuses an empty token — a missing URL is the deployment's state, an empty token a bug", () => {
+      expect(() => stepWebhookUrl("", { optional: true })).toThrow(/token cannot be empty/);
+      publishStepWebhookUrl((token) => `https://x/${token}`);
+      expect(() => stepWebhookUrl("", { optional: true })).toThrow(/token cannot be empty/);
+    });
+
+    test("`optional: false` is the default, spelled out", () => {
+      expect(() => stepWebhookUrl("t", { optional: false })).toThrow(
+        STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE,
+      );
+      expect(() => stepWebhookUrl("t", {})).toThrow(STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE);
+    });
+  });
+
   test("the minter's own failure is not swallowed", () => {
     // A host that published a minter over an unusable base still owes the step
     // an error rather than a URL: `stepReport`'s swallow-everything rule is for

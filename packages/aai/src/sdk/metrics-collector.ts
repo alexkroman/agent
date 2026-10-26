@@ -15,7 +15,6 @@
  *
  * export default agent({
  *   name: "Concierge",
- *   systemPrompt: "…",
  *   events: {
  *     "metrics.collected": (e) => {
  *       metrics.collect(e);

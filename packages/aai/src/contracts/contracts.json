@@ -1,8 +1,10 @@
 {
   "agent": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "agent() no longer takes systemPrompt (the prompt is system-prompt.md, set on the lowered def by withSystemPrompt), syncState (collected from sessionSlot(..., { sync: true })) or the description alias of listing; SyncStateDeclaration is gone. An agent.ts writing any of the three no longer compiles and is refused at run time."
+    }
   },
   "agent-mcp": {
     "current": 1,
@@ -150,9 +152,11 @@
     "dropped": {}
   },
   "testing": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "Every testing helper reaches a tool by its DEF, never a name string. runTool(agent, name, ...) and ToolRunner's (name, ...) call shape are gone (runTool(def, ...) is the ungated unit run; toolRunner(agent)(def) resolves by identity and runs through the gate); the claimed expectToolOk<T>(unknown) / expectDialogOk<T>(unknown) overloads are gone; and parseToolInput(agent, name, value) / toolInputIssues(agent, name, value) are now parseToolInput(def, value) / toolInputIssues(def, value) — the schema is on the def, the parsed value is InferToolInput<typeof def>, and no agent is taken since the gate runs only on a call. A spec passes the tool file's default export, a speaker's tools entry or toolOf(agentDef, name) for a minted tool; a string in the tool position no longer compiles."
+    }
   },
   "testing-client": {
     "current": 1,
@@ -160,6 +164,11 @@
     "dropped": {}
   },
   "testing-deploy": {
+    "current": 1,
+    "supported": [1],
+    "dropped": {}
+  },
+  "testing-events": {
     "current": 1,
     "supported": [1],
     "dropped": {}
@@ -180,8 +189,8 @@
     "dropped": {}
   },
   "tool": {
-    "current": 1,
-    "supported": [1],
+    "current": 2,
+    "supported": [1, 2],
     "dropped": {}
   },
   "transcribe": {
@@ -215,6 +224,11 @@
     "dropped": {}
   },
   "workflow-api": {
+    "current": 2,
+    "supported": [1, 2],
+    "dropped": {}
+  },
+  "workflow-readings": {
     "current": 1,
     "supported": [1],
     "dropped": {}

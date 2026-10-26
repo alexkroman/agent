@@ -28,6 +28,7 @@ export default deskFlow.tool({
     'its view and rate - reference material for OFFERING the choice and answering "how much?". ' +
     "Never pick a type yourself. Pass the FULL stay even when only one field changes.",
   when: IN_BOOKING,
+  sendFrom: "next",
   inputSchema: z.object({
     checkIn: isoDate("the check-in date"),
     checkOut: isoDate("the check-out date"),
@@ -94,5 +95,4 @@ export default deskFlow.tool({
         next: offer ? ("OFFER" as const) : nextStep(d),
       };
     }),
-  sendFrom: (result) => ({ type: result.next }),
 });

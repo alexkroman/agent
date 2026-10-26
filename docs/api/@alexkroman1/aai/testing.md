@@ -53,7 +53,68 @@ console.log((await workflows.find("remind", "kitchen")).length); // 2
 
 ***
 
+### createRouteContext()
+
+```ts
+function createRouteContext(overrides?: RouteContextOverrides): RouteContext;
+```
+
+Build a [RouteContext](index.md#routecontext) for calling a route handler in isolation.
+
+Defaults are inert: an empty `env`, a `workflows` client whose every method
+rejects naming itself (`createStubWorkflows`), a `clientTranscript` that
+answers no sessions, a `sessionTranscript` that answers no lines, a `speech`
+that finds no live session, and a `signal` that never aborts. Override any of
+them — most specs pass `env` and a `workflows` fake of their own.
+
+A hand-built literal has to restate every field, and it is the field the
+runtime gained LAST that it leaves out: five shipped specs each carried one,
+and `sessionTranscript` was missing from all five.
+
+#### Parameters
+
+##### overrides?
+
+[`RouteContextOverrides`](#routecontextoverrides)
+
+#### Returns
+
+[`RouteContext`](index.md#routecontext)
+
+#### Example
+
+```ts
+import { type RouteHandler, type RouteRequest, routeError } from "@alexkroman1/aai";
+import { createRouteContext, createStubWorkflows } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+
+const getCall: RouteHandler = async (req, ctx) => {
+  const [run] = await ctx.workflows.find("call", req.params.id ?? "", { limit: 1 });
+  if (run === undefined) throw routeError(404, `No call ${req.params.id}.`);
+  return run;
+};
+
+const request: RouteRequest = {
+  method: "GET",
+  path: "/calls/c_1",
+  params: { id: "c_1" },
+  query: {},
+  headers: {},
+  body: undefined,
+};
+
+test("GET /calls/:id is a 404 for a call nobody placed", async () => {
+  const workflows = createStubWorkflows({ find: () => Promise.resolve([]) });
+  const ctx = createRouteContext({ env: { CALLS_API_KEY: "k" }, workflows });
+  await expect(getCall(request, ctx)).rejects.toMatchObject({ status: 404 });
+});
+```
+
+***
+
 ### createRunSnapshot()
+
+#### Call Signature
 
 ```ts
 function createRunSnapshot<R = unknown>(overrides?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
@@ -65,23 +126,23 @@ cast.
 Defaults to a `running` run, which is the state a tool that has just started
 one reads back.
 
-#### Type Parameters
+##### Type Parameters
 
-##### R
+###### R
 
 `R` = `unknown`
 
-#### Parameters
+##### Parameters
 
-##### overrides?
+###### overrides?
 
 [`RunSnapshotOverrides`](#runsnapshotoverrides)\<`R`\>
 
-#### Returns
+##### Returns
 
 [`WorkflowRunSnapshot`](workflow-api.md#workflowrunsnapshot)\<`R`\>
 
-#### Example
+##### Example
 
 ```ts
 import { createRunSnapshot, createStubWorkflows } from "@alexkroman1/aai/testing";
@@ -89,6 +150,70 @@ import { createRunSnapshot, createStubWorkflows } from "@alexkroman1/aai/testing
 const workflows = createStubWorkflows({
   find: () => Promise.resolve([createRunSnapshot({ status: "failed", error: "gateway down" })]),
 });
+```
+
+#### Call Signature
+
+```ts
+function createRunSnapshot<R>(workflow: AnyWorkflowDef<R>, overrides?: RunSnapshotOverrides<R>): WorkflowRunSnapshot<R>;
+```
+
+Build a [WorkflowRunSnapshot](workflow-api.md#workflowrunsnapshot) of a run of `workflow`, with `output`
+TYPED by the def.
+
+The def carries `R` — what its body returns, or what its `output` schema
+declares — so `createRunSnapshot(recap, { status: "completed", output })`
+checks `output` against it, where the bare form takes whatever `R` the
+caller names. A fixture whose output stopped matching the body is then a
+compile error in the spec rather than a page that renders `undefined`.
+
+The def names the run too, when it can: `workflow` is the key the def was
+declared under (`workflowNameOf`, recorded when the agent is lowered — a
+`virtual:aai/agent` import, `withWorkflows`, `workflowRegistry`), the
+overrides' `workflow` winning, and `"workflow"` for a def no agent declares.
+
+##### Type Parameters
+
+###### R
+
+`R`
+
+##### Parameters
+
+###### workflow
+
+[`AnyWorkflowDef`](workflow-api.md#anyworkflowdef)\<`R`\>
+
+###### overrides?
+
+[`RunSnapshotOverrides`](#runsnapshotoverrides)\<`R`\>
+
+##### Returns
+
+[`WorkflowRunSnapshot`](workflow-api.md#workflowrunsnapshot)\<`R`\>
+
+##### Example
+
+```ts
+// file: shared.ts
+import { workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const recap = workflow({
+  description: "Write up a recording",
+  input: z.object({ recording: z.string() }),
+  output: z.object({ headline: z.string(), points: z.array(z.string()) }),
+  run: async () => ({ headline: "…", points: [] }),
+});
+
+// file: recap.test.ts
+import { createRunSnapshot } from "@alexkroman1/aai/testing";
+import { recap } from "./shared.ts";
+
+const done = createRunSnapshot(recap, {
+  status: "completed",
+  output: { headline: "…", points: [] }, // typed by `recap`
+}); // `workflow` is "recap" once the agent declaring it has been imported
 ```
 
 ***
@@ -393,8 +518,9 @@ const agentDef = deployedAgent(authored, {
 Every rule the build applies applies here too, and each is an error naming
 the file: the tool-name grammar, the default-export requirement, no nested
 files, a name declared twice, an empty prompt file, and a
-`system-prompt.md` that exists while `agent.ts` declares a different prompt
-STRING — the "I edited the prompt and nothing changed" failure.
+`system-prompt.md` that exists while the def carries a different prompt
+STRING (a raw config's, or a host's — `agent()` refuses the key) — the "I
+edited the prompt and nothing changed" failure.
 
 **Bounded by the two fields it lowers ONTO, not by `AgentDef`.** An `agent()`
 def satisfies it and comes back as its own type, so a template keeps its
@@ -486,13 +612,14 @@ function dialogResultSchema<T extends ZodType<unknown, unknown, $ZodTypeInternal
 
 The envelope a gated tool answers with, as a schema around the tool's own.
 
-[expectDialogOk](#expectdialogok) unwraps a value a spec HOLDS. An eval holds the
-serialized copy the model was handed and reads it back through a schema —
-`toolResultIn(turn.toolCalls, "set_stay", schema)` — so it needs the same
-envelope as a schema rather than as a function, and three shipped evals had
-each written it out: `z.object({ result, state: z.string(), done:
-z.boolean() })`, under a comment saying the shape was the SDK's. It is, and
-this is where it lives: `result` is whatever the author's `execute` returned,
+[expectDialogOk](#expectdialogok) unwraps a value a spec HOLDS. A harness that holds the
+SERIALIZED copy the model was handed — a transcript, a recording — reads it
+back through a schema, so it needs the same envelope as a schema rather than
+as a function, and three shipped evals had each written it out:
+`z.object({ result, state: z.string(), done: z.boolean() })`, under a comment
+saying the shape was the SDK's. It is, and this is where it lives (an eval
+reading a live turn takes the DEF instead: `toolResultIn(turn.toolCalls,
+setStay)` is typed by it). `result` is whatever the author's `execute` returned,
 `state` is where the call landed, `done` whether that state is final, and
 `instruction` is the state's own brief when it declares one — the fields of
 [DialogToolResult](index.md#dialogtoolresult), which a `dialog.tool` writes and no tool file does.
@@ -532,8 +659,7 @@ What the tool's `execute` answers with.
 import { dialogResultSchema } from "@alexkroman1/aai/testing";
 import { z } from "zod";
 
-// In an eval: `toolResultIn(turn.toolCalls, "set_stay", Stay)`. Holding the
-// serialized result yourself, it is the same parse:
+// Holding the serialized result yourself, it is one parse:
 const Stay = dialogResultSchema(z.object({ options: z.string() }));
 const stay = Stay.parse(
   JSON.parse('{"result":{"options":"garden view"},"state":"booking.room","done":false}'),
@@ -732,7 +858,7 @@ Naming the invariant that failed, and — for the validation one — the
 ### expectDialogOk()
 
 ```ts
-function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
+function expectDialogOk<R>(result: R): [Exclude<R, ToolFailure>] extends [DialogToolResult<V>] ? DialogToolResult<V> : DialogToolResult<unknown>;
 ```
 
 The dialog envelope a gated tool answered, keeping WHERE the dialog landed.
@@ -744,23 +870,28 @@ than about the tool's own value — that a call advanced the machine into
 on anything that is not a dialog envelope: keeping a position claims there is
 one.
 
+**Typed by INFERENCE**, as [expectToolOk](#expecttoolok) is: handed the envelope a
+run answered (`runTool(theTool, …)`, a runner's `run(theTool, …)`,
+`theTool.execute(…)`) it keeps the type under `result`. There is no claimed
+form.
+
 #### Type Parameters
 
-##### T
+##### R
 
-`T`
+`R`
 
-What the tool's `execute` returns, under `result`.
+What was handed in, inferred — never written.
 
 #### Parameters
 
 ##### result
 
-`unknown`
+`R`
 
 #### Returns
 
-[`DialogToolResult`](index.md#dialogtoolresult)\<`T`\>
+\[`Exclude`\<`R`, [`ToolFailure`](index.md#toolfailure)\>\] *extends* \[[`DialogToolResult`](index.md#dialogtoolresult)\<`V`\>\] ? [`DialogToolResult`](index.md#dialogtoolresult)\<`V`\> : [`DialogToolResult`](index.md#dialogtoolresult)\<`unknown`\>
 
 #### Throws
 
@@ -774,15 +905,26 @@ When the value is not a dialog envelope — a plain `tool()` has no
 #### Example
 
 ```ts
+// file: tools/quote.ts
+import { tool } from "@alexkroman1/aai";
+
+// In a project this is a `dialog.tool(...)`, whose envelope the dialog writes.
+export default tool({
+  description: "Quote the job",
+  execute: () => ({ result: { quoted: 42 }, state: "quote.pending", done: false }),
+});
+
+// file: agent.test.ts
 import agentDef from "virtual:aai/agent";
-import { createToolContext, expectDialogOk, runTool } from "@alexkroman1/aai/testing";
+import { createToolContext, expectDialogOk, toolRunner } from "@alexkroman1/aai/testing";
 import { expect, test } from "vitest";
+import quote from "./tools/quote.ts";
+
+const run = toolRunner(agentDef);
 
 test("quote moves the dialog on", async () => {
   const ctx = createToolContext();
-  const answered = expectDialogOk<{ quoted: number }>(
-    await runTool(agentDef, "quote", {}, ctx),
-  );
+  const answered = expectDialogOk(await run(quote, ctx));
   expect(answered.state).toBe("quote.pending");
   expect(answered.result.quoted).toBe(42);
 });
@@ -913,13 +1055,12 @@ takes, or assert on `builtinTools` directly.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { expectPromptBuiltinsDeclared } from "@alexkroman1/aai/testing";
+import { deployedAgent, expectPromptBuiltinsDeclared } from "@alexkroman1/aai/testing";
 
+// Under vitest, `import agentDef from "virtual:aai/agent"` is this lowering made for you.
 const commanded = expectPromptBuiltinsDeclared(
-  agent({
-    name: "Coda",
+  deployedAgent(agent({ name: "Coda", builtinTools: ["run_code"] }), {
     systemPrompt: "Answer every sum by calling run_code.",
-    builtinTools: ["run_code"],
   }),
 );
 console.log(commanded); // ["run_code"]
@@ -958,9 +1099,68 @@ lacks, or when a `systemPrompt` resolver cannot answer from a bare context.
 
 ***
 
-### expectToolOk()
+### expectSlotContract()
 
-#### Call Signature
+```ts
+function expectSlotContract<K extends string, T, V>(slot: SessionSlot<K, T, V>, options?: SlotContractOptions<T>): void;
+```
+
+Assert the three invariants of `slot`'s declaration — see the module doc.
+
+#### Type Parameters
+
+##### K
+
+`K` *extends* `string`
+
+##### T
+
+`T`
+
+##### V
+
+`V`
+
+#### Parameters
+
+##### slot
+
+[`SessionSlot`](index.md#sessionslot)\<`K`, `T`, `V`\>
+
+##### options?
+
+[`SlotContractOptions`](#slotcontractoptions)\<`T`\>
+
+#### Returns
+
+`void`
+
+#### Throws
+
+Naming the invariant that failed, and for a cap the key.
+
+#### Example
+
+```ts
+import { sessionSlot } from "@alexkroman1/aai";
+import { expectSlotContract } from "@alexkroman1/aai/testing";
+
+const log = sessionSlot("log", () => ({ lines: [] as string[], total: 0 }), {
+  caps: { lines: 50 },
+  view: (value) => ({ count: value.lines.length }),
+});
+
+expectSlotContract(log, {
+  write: (draft) => {
+    draft.lines.push("hello");
+  },
+  caps: { lines: 50 },
+});
+```
+
+***
+
+### expectToolOk()
 
 ```ts
 function expectToolOk<R>(result: R): R extends DialogToolResult<V> ? V : Exclude<R, ToolFailure>;
@@ -973,45 +1173,43 @@ is unwrapped to the author's own value under `result`; a plain `tool()`'s
 value comes back as it is. Either way a `ToolFailure` throws HERE, naming it,
 rather than as an `undefined` read off the failure several assertions later.
 
-**Typed by INFERENCE**: handed a typed result — `runTool(theTool, …)`, or
-`theTool.execute(…)` directly — it answers that type minus `ToolFailure`
-(for a dialog tool, the type under `result`), so no type argument is needed.
-The name form (`runTool(agent, "name", …)`, a `toolRunner`) answers
-`unknown`, because a name is a string; there, say the type you expect —
-`expectToolOk<Order>(…)` — which is unchecked at runtime, like any claim about
-a value crossing an `unknown` boundary.
+**Typed by INFERENCE**: handed a result — `runTool(theTool, …)`, a runner's
+`run(theTool, …)`, or `theTool.execute(…)` directly — it answers that type
+minus `ToolFailure` (for a dialog tool, the type under `result`), so no type
+argument is written. There is no claimed form: a result is typed by the def
+that produced it, and `expectToolOk<Order>(x)` compiles only when `x` already
+IS an `Order`.
 
 Use [expectDialogOk](#expectdialogok) to keep WHERE a dialog landed, and
 [expectDialogRefused](#expectdialogrefused) when the refusal is the subject.
 
-##### Type Parameters
+#### Type Parameters
 
-###### R
+##### R
 
 `R`
 
-What was handed in, inferred — never written. The CLAIMED form
-  below takes the type a spec asserts instead.
+What was handed in, inferred — never written.
 
-##### Parameters
+#### Parameters
 
-###### result
+##### result
 
 `R`
 
 What a tool's `execute`, `runTool` or a `toolRunner` answered.
 
-##### Returns
+#### Returns
 
 `R` *extends* [`DialogToolResult`](index.md#dialogtoolresult)\<`V`\> ? `V` : `Exclude`\<`R`, [`ToolFailure`](index.md#toolfailure)\>
 
-##### Throws
+#### Throws
 
 When the tool refused (`ToolFailure`), quoting the refusal —
   which for a `dialog()` tool is the sentence naming the state the
   conversation is actually in and what has to happen first.
 
-##### Example
+#### Example
 
 ```ts
 import { tool } from "@alexkroman1/aai";
@@ -1029,50 +1227,103 @@ const order = expectToolOk(await runTool(placeOrder, { item: "pizza" }));
 console.log(order.id); // typed: the failure arm is subtracted
 ```
 
-#### Call Signature
+***
+
+### fireEvent()
 
 ```ts
-function expectToolOk<T>(result: unknown): T;
+function fireEvent(
+   agent: {
+  dialogs?: readonly AnyDialog[];
+  events?: SessionEventHandlers;
+  name?: string;
+}, 
+   event: SessionEvent, 
+   ctx?: SessionEventContext
+): Promise<FiredEvent>;
 ```
 
-What a tool answered, minus the refusal — the CLAIMED form, for a result
-typed `unknown` (`runTool(agent, "name", …)`, a `toolRunner`).
+Drive the agent's dialogs and `events` handlers with one event, the way the
+session dispatches it: every declared dialog is offered the event FIRST
+(`dialog.receive`, so a `"@session.timedOut"` transition fires), then the
+handler declared for `event.type`, then `"*"`, each handed the same context.
+Dialogs first because a dialog is part of the session's state and moves
+before any observer sees the effect — the order `aai-runtime`'s session
+keeps (`session-controls.ts`).
 
-`T` is what the spec says the tool answers, unchecked at runtime. Behaves as
-the inferred form does: a dialog envelope is unwrapped, a plain value passes
-through, a `ToolFailure` throws quoting the refusal.
+Two deliberate differences from the runtime's dispatch, both because a SPEC
+is reading the outcome rather than a live call surviving it:
 
-##### Type Parameters
+- **A throw PROPAGATES.** The session catches a handler's throw per handler
+  and logs it, so a broken audit hook does not end a phone call; a spec
+  wants the throw, because a handler that threw is the finding.
+- **A promise is AWAITED.** The session does not wait on an async handler
+  (the caller is mid-turn); a spec asserting on what the handler wrote has to.
 
-###### T
+`ctx` is a [SessionEventContext](index.md#sessioneventcontext) — the four fields a handler reads
+(`sessionId`, `env`, `slots`, `speech`) — and a `createToolContext()`
+satisfies it, which is the point: a slot the handler wrote is read back with
+`slot.get(ctx)` through the same context, and what it said is on
+`ctx.said`. Defaults to a fresh one, i.e. a DISTINCT session; pass one
+explicitly wherever a second event is meant to see the first's writes.
 
-`T`
+#### Parameters
 
-The type the spec claims for the tool's own value.
+##### agent
 
-##### Parameters
+###### dialogs?
 
-###### result
+readonly [`AnyDialog`](index.md#anydialog)[]
 
-`unknown`
+###### events?
 
-##### Returns
+[`SessionEventHandlers`](index.md#sessioneventhandlers)
 
-`T`
+###### name?
 
-##### Example
+`string`
+
+##### event
+
+[`SessionEvent`](index.md#sessionevent)
+
+##### ctx?
+
+[`SessionEventContext`](index.md#sessioneventcontext)
+
+#### Returns
+
+`Promise`\<[`FiredEvent`](#firedevent)\>
+
+#### Throws
+
+When the agent declares no `events` handler and no `dialogs` — an
+  absent `events` or an empty `{}` alike — since there is nothing to drive,
+  and a spec that fired into nothing would pass against nothing. A
+  `TypeError` when `event` is not a session event (built by
+  [sessionEvent](#sessionevent)).
+
+#### Example
 
 ```ts
-import agentDef from "virtual:aai/agent";
-import { expectToolOk, toolRunner } from "@alexkroman1/aai/testing";
-import { expect, test } from "vitest";
+import { agent, sessionSlot } from "@alexkroman1/aai";
+import { createToolContext, fireEvent, sessionEvent } from "@alexkroman1/aai/testing";
 
-const run = toolRunner(agentDef);
-
-test("place_order answers an id", async () => {
-  const order = expectToolOk<{ id: string }>(await run("place_order", { item: "pizza" }));
-  expect(order.id).toMatch(/^ord_/);
+const heard = sessionSlot("heard", () => ({ lines: [] as string[] }));
+const def = agent({
+  name: "Listener",
+  events: {
+    "userTranscript.committed": (event, ctx) => {
+      heard.update(ctx, (draft) => {
+        draft.lines.push(event.text);
+      });
+    },
+  },
 });
+
+const ctx = createToolContext();
+await fireEvent(def, sessionEvent("userTranscript.committed", { text: "hello" }), ctx);
+heard.get(ctx).lines; // ["hello"]
 ```
 
 ***
@@ -1210,36 +1461,35 @@ test("the voice survives parsing", async () => {
 ### parseToolInput()
 
 ```ts
-function parseToolInput<T = Record<string, unknown>>(
-   agent: ToolBearingAgent, 
-   name: string, 
-   value: unknown
-): Promise<T>;
+function parseToolInput<D extends ToolDef<ToolInputSchema>>(tool: D, value: unknown): Promise<InferToolInput<D>>;
 ```
 
-Validate `value` against the input schema of the tool `name`.
+Validate `value` against `tool`'s input schema, typed by the def.
 
-[parseSchemaInput](#parseschemainput) with the lookup done — including `toolOf`'s "no such
-tool" sentence, which names the tools that DO exist, since a lookup that
-misses is nearly always a rename.
+[parseSchemaInput](#parseschemainput) with the schema read off the def — the same def
+`runTool` takes and the eval readers match by: the tool file's default
+export, a speaker's `tools` entry, `toolOf(agentDef, name)` for a minted tool.
+The parsed value is `InferToolInput<typeof tool>`, what `execute` receives,
+so a schema that stopped defaulting a field fails at compile time in the spec
+that reads it, and a name string in the tool position does not compile. No
+agent is needed: validation is the schema's alone, and the toolset's gate
+(a roster not on the line, a dialog out of state) runs only on a CALL.
+
+A failure names the tool by the name its agent registered it under when one
+did (`Tool add_pizza refused that input: …`), else by its description — a def
+built inline in a spec is as valid a subject here as a lowered one.
 
 #### Type Parameters
 
-##### T
+##### D
 
-`T` = `Record`\<`string`, `unknown`\>
-
-What the schema produces.
+`D` *extends* [`ToolDef`](index.md#tooldef)\<[`ToolInputSchema`](index.md#toolinputschema)\>
 
 #### Parameters
 
-##### agent
+##### tool
 
-[`ToolBearingAgent`](#toolbearingagent)
-
-##### name
-
-`string`
+`D`
 
 ##### value
 
@@ -1247,28 +1497,93 @@ What the schema produces.
 
 #### Returns
 
-`Promise`\<`T`\>
+`Promise`\<[`InferToolInput`](index.md#infertoolinput)\<`D`\>\>
 
 #### Throws
 
-When the agent declares no tool called `name` (see `toolOf`), when
-  that tool declares no `inputSchema`, or when the schema refuses `value`.
+When the tool declares no `inputSchema`, or when the schema refuses
+  `value`.
 
 #### Example
 
 ```ts
-import agentDef from "virtual:aai/agent";
-import { parseToolInput } from "@alexkroman1/aai/testing";
-import { expect } from "vitest";
+// file: tools/add_pizza.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
 
-const parsed = await parseToolInput<{ quantity: number }>(agentDef, "add_pizza", {
-  size: "small",
-  crust: "thin",
-  toppings: [],
+export default tool({
+  description: "Add a pizza to the order",
+  inputSchema: z.object({ size: z.enum(["small", "large"]), quantity: z.number().default(1) }),
+  execute: ({ size, quantity }) => ({ size, quantity }),
 });
-// The schema's own default, which is the thing worth asserting here.
-expect(parsed.quantity).toBe(1);
+
+// file: agent.test.ts
+import { parseToolInput } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+import addPizza from "./tools/add_pizza.ts";
+
+test("add_pizza defaults the quantity", async () => {
+  const parsed = await parseToolInput(addPizza, { size: "small" });
+  // The schema's own default, which is the thing worth asserting here — and
+  // `parsed` is typed by the def, so a dropped field is a compile error.
+  expect(parsed.quantity).toBe(1);
+});
 ```
+
+***
+
+### routeHandlerOf()
+
+```ts
+function routeHandlerOf(value: 
+  | FetchRouteHandler
+  | StubStepAnswer): FetchRouteHandler;
+```
+
+A table's value as a handler: a handler is itself; a fixed answer is given
+to every request it is asked, a `Response` CLONED per request — a body is
+read once, and the second request would otherwise find it consumed.
+
+#### Parameters
+
+##### value
+
+  \| [`FetchRouteHandler`](#fetchroutehandler)
+  \| [`StubStepAnswer`](#stubstepanswer)
+
+#### Returns
+
+[`FetchRouteHandler`](#fetchroutehandler)
+
+***
+
+### routeOf()
+
+```ts
+function routeOf(routes: 
+  | Readonly<Record<string, 
+  | FetchRouteHandler
+  | StubStepAnswer>>
+  | readonly FetchRouteHandler[]): FetchRouteHandler;
+```
+
+`routes` as ONE handler — a table matched by specificity, a list tried in
+order — that DECLINES (`undefined`) a request no route answers, so it can be
+one leg of a list or the `otherwise` of another fake. The same matching
+[stubFetchRoutes](#stubfetchroutes-1) does, without installing anything.
+
+#### Parameters
+
+##### routes
+
+  \| `Readonly`\<`Record`\<`string`, 
+  \| [`FetchRouteHandler`](#fetchroutehandler)
+  \| [`StubStepAnswer`](#stubstepanswer)\>\>
+  \| readonly [`FetchRouteHandler`](#fetchroutehandler)[]
+
+#### Returns
+
+[`FetchRouteHandler`](#fetchroutehandler)
 
 ***
 
@@ -1335,8 +1650,6 @@ runGuardrail(checker, "It seems prices fell."); // "Open with a verdict word."
 
 ### runTool()
 
-#### Call Signature
-
 ```ts
 function runTool<T extends {
   execute: (...args: never[]) => unknown;
@@ -1349,50 +1662,77 @@ function runTool<T extends {
 ): Promise<Awaited<ReturnType<T["execute"]>>>;
 ```
 
-Run a tool — the tool DEF itself, or by the name the model calls it by.
+Run a tool — the tool DEF itself, the way the runtime calls it.
 
-**Handed the tool, it is TYPED end to end**: the arguments are checked
-against what `execute` takes and the result is what it returns, so
-`await runTool(addItem, { item: "apple" }, ctx)` needs no cast. The name
-form below answers `unknown`, because a name is a string and nothing can
-type what it looks up; a spec reading fields off that result used to cast it
-(`(await run("add_item", ctx)) as { added: string }`), which is an unchecked
-claim that stops meaning anything the day the tool's return changes. A tool
-FILE's default export is the very object a deployed agent registers under its
-name, so importing it runs the same code the name would reach.
+**TYPED end to end**: the arguments are checked against what `execute` takes
+and the result is what it returns, so
+`await runTool(addItem, { item: "apple" }, ctx)` needs no cast. A tool FILE's
+default export is the very object a deployed agent registers under its name,
+so importing it runs the same code the model's call reaches. Matched on
+`execute` alone rather than on `ToolDef`, so any tool shape — `tool()`,
+`slot.tool()`, `dialog.tool()` — is accepted and keeps its own result type.
 
-Matched on `execute` alone rather than on `ToolDef`, so any tool shape —
-`tool()`, `slot.tool()`, `dialog.tool()` — is accepted and keeps its own
-result type.
+UNGATED: this calls the def's own `execute`, as a unit test of the tool body
+wants. The run a spec cares about is usually the GATED one — a dialog out of
+state refuses it, a roster entry not on the line refuses it — which is what
+[toolRunner](#toolrunner-1) binds to the agent, and what `describeAgent` hands a suite.
 
-##### Type Parameters
+`args` is unvalidated on purpose: the runtime parses a model's arguments
+against `inputSchema` BEFORE `execute` sees them, so a spec that
+pre-validated would be testing a path the tool never runs on. Pass the
+arguments the tool body expects to receive. (To test the SCHEMA itself,
+which is a different question, use `parseToolInput` / `toolInputIssues`.)
 
-###### T
+**A tool that takes no arguments may say so by leaving them out**, passing the
+context in their place: `runTool(viewOrder, ctx)`. A no-argument tool is
+common — one shipped template has thirteen — and the `{}` those calls were
+obliged to pass appeared 66 times across seven template specs, always
+between the two values a reader actually cares about. The two are told apart
+by SHAPE, and the probe is narrow enough to be safe: a `ToolContext` is a
+record carrying a string `sessionId`, a `slots` store and a `send` function,
+and tool arguments arrive as JSON from a model, which cannot contain a
+function. A context is never a plausible argument object.
+
+#### Type Parameters
+
+##### T
 
 `T` *extends* \{
   `execute`: (...`args`: `never`[]) => `unknown`;
 \}
 
-##### Parameters
+#### Parameters
 
-###### tool
+##### tool
 
 `T`
 
-###### argsOrCtx?
+The tool def: a `tools/` file's default export, a speaker's
+  `tools` entry, or a def built in the spec.
+
+##### argsOrCtx?
 
   \| [`ToolContext`](index.md#toolcontext)
   \| `Parameters`\<`T`\[`"execute"`\]\>\[`0`\]
 
-###### ctx?
+The tool's arguments, or the [ToolContext](index.md#toolcontext) when it
+  takes none. Defaults to `{}`.
+
+##### ctx?
 
 [`ToolContext`](index.md#toolcontext)
 
-##### Returns
+The context. Defaults to a fresh [createToolContext](#createtoolcontext) — so
+  an omitted context is a DISTINCT SESSION with empty slots, which is what a
+  stateless tool wants and never what two calls sharing state want. Pass one
+  explicitly wherever the second call is supposed to see the first call's
+  work.
+
+#### Returns
 
 `Promise`\<`Awaited`\<`ReturnType`\<`T`\[`"execute"`\]\>\>\>
 
-##### Example
+#### Example
 
 ```ts
 import { tool } from "@alexkroman1/aai";
@@ -1407,89 +1747,13 @@ const addItem = tool({
 });
 const { added } = await runTool(addItem, { item: "apple" }, createToolContext());
 console.log(added.toUpperCase()); // typed: `added` is a string
-```
-
-#### Call Signature
-
-```ts
-function runTool(
-   agent: ToolBearingAgent, 
-   name: string, 
-   argsOrCtx?: Record<string, unknown> | ToolContext, 
-   ctx?: ToolContext
-): Promise<unknown>;
-```
-
-Run a tool by the name the model calls it by.
-
-`args` is unvalidated on purpose: the runtime parses a model's arguments
-against `inputSchema` BEFORE `execute` sees them, so a spec that pre-validated
-would be testing a path the tool never runs on. Pass the arguments the tool
-body expects to receive. (To test the SCHEMA itself, which is a different
-question, use `parseToolInput` / `toolInputIssues`.)
-
-The def to pass is the one a DEPLOYED agent runs — `virtual:aai/agent` under
-vitest, or `deployedAgent` under any other runner, since a tool is a file and
-`agent.ts`'s default export carries none. See [toolOf](#toolof), which this is
-built on.
-
-**A tool that takes no arguments may say so by leaving them out**, passing the
-context in their place: `runTool(agentDef, "view_order", ctx)`. A no-argument
-tool is common — one shipped template has thirteen — and the `{}` those calls
-were obliged to pass appeared 66 times across seven template specs, always
-between the two values a reader actually cares about. Both spellings are one
-signature rather than an overload pair, so a bound runner forwards either
-shape without restating the union — which is what [toolRunner](#toolrunner-1) is, and
-how every template reaches this.
-
-The two are told apart by SHAPE, and the probe is narrow enough to be safe:
-a `ToolContext` is a record carrying a string `sessionId`, a `slots` store and
-a `send` function, and tool arguments arrive as JSON from a model, which
-cannot contain a function. A context is never a plausible argument object.
-
-##### Parameters
-
-###### agent
-
-[`ToolBearingAgent`](#toolbearingagent)
-
-###### name
-
-`string`
-
-###### argsOrCtx?
-
-`Record`\<`string`, `unknown`\> \| [`ToolContext`](index.md#toolcontext)
-
-###### ctx?
-
-[`ToolContext`](index.md#toolcontext)
-
-The context. Defaults to a fresh [createToolContext](#createtoolcontext) — so
-  an omitted context is a DISTINCT SESSION with empty slots, which is what a
-  stateless tool wants and never what two calls sharing state want. Pass one
-  explicitly wherever the second call is supposed to see the first call's
-  work.
-
-##### Returns
-
-`Promise`\<`unknown`\>
-
-##### Example
-
-```ts
-import agentDef from "virtual:aai/agent";
-import { createToolContext, runTool } from "@alexkroman1/aai/testing";
-import { expect } from "vitest";
-
-expect(await runTool(agentDef, "add_item", { item: "apple" }, createToolContext())).toEqual({
-  added: "apple",
-});
 
 // No arguments, one session shared across the two calls.
+const viewOrder = tool({ description: "View the order", execute: () => ({ items: [] }) });
 const ctx = createToolContext();
-await runTool(agentDef, "add_item", { item: "apple" }, ctx);
-expect(await runTool(agentDef, "view_order", ctx)).toEqual({ items: ["apple"] });
+await runTool(addItem, { item: "apple" }, ctx);
+const { items } = await runTool(viewOrder, ctx);
+console.log(items.length);
 ```
 
 ***
@@ -1559,6 +1823,58 @@ const myWorkflow = workflow({
 test("an unknown voice is refused", async () => {
   expect(await schemaInputIssues(myWorkflow.input, { voice: "not-a-voice" })).toBeDefined();
 });
+```
+
+***
+
+### sessionEvent()
+
+```ts
+function sessionEvent<K extends SessionEventType>(type: K, ...rest: SessionEventRest<K>): SessionEvent<K>;
+```
+
+Build a well-formed session event of `type`, envelope included.
+
+`meta.id` is minted as `evt_test_<n>` (the `evt_` prefix is what the wire
+schema requires; the counter is per process and only has to be distinct) and
+`meta.at` is a FIXED instant, for the reason `createRunSnapshot` fixes its
+`createdAt`: a fixture that read the clock would not replay. Pass `meta` to
+pin either.
+
+The fields are TYPED by the name: `sessionEvent("tool.called", { … })` needs
+`toolName`, `toolCallId` and `args`, and a misspelled field is a compile
+error here rather than a handler reading `undefined`. An event that is only
+its envelope takes no fields.
+
+#### Type Parameters
+
+##### K
+
+`K` *extends* [`SessionEventType`](index.md#sessioneventtype)
+
+#### Parameters
+
+##### type
+
+`K`
+
+##### rest
+
+...[`SessionEventRest`](#sessioneventrest)\<`K`\>
+
+#### Returns
+
+[`SessionEvent`](index.md#sessionevent)\<`K`\>
+
+#### Example
+
+```ts
+import { sessionEvent } from "@alexkroman1/aai/testing";
+
+const committed = sessionEvent("userTranscript.committed", { text: "two pizzas" });
+committed.type; // "userTranscript.committed"
+committed.meta.id.startsWith("evt_"); // true
+// `sessionEvent("reply.completed").text` is a compile error: the event has no `text`.
 ```
 
 ***
@@ -2333,30 +2649,23 @@ test("the step files its summary", async () => {
 ### toolInputIssues()
 
 ```ts
-function toolInputIssues(
-   agent: ToolBearingAgent, 
-   name: string, 
-   value: unknown
-): Promise<
+function toolInputIssues(tool: ToolDef<ToolInputSchema>, value: unknown): Promise<
   | readonly StandardSchemaIssue[]
 | undefined>;
 ```
 
-The issues the tool `name`'s input schema found in `value`, or `undefined`.
+The issues `tool`'s input schema found in `value`, or `undefined`.
 
 The negative half of [parseToolInput](#parsetoolinput) — the assertion behind "a mood
 outside the enum is refused by the schema", which is the one thing standing
-between an LLM's untyped tool call and the tool body.
+between an LLM's untyped tool call and the tool body. Takes the def, as
+[parseToolInput](#parsetoolinput) does.
 
 #### Parameters
 
-##### agent
+##### tool
 
-[`ToolBearingAgent`](#toolbearingagent)
-
-##### name
-
-`string`
+[`ToolDef`](index.md#tooldef)\<[`ToolInputSchema`](index.md#toolinputschema)\>
 
 ##### value
 
@@ -2370,19 +2679,94 @@ between an LLM's untyped tool call and the tool body.
 
 #### Throws
 
-When the agent declares no such tool, or when it declares no
-  `inputSchema`. A tool that takes no arguments accepts anything, and saying
-  so out loud beats answering `undefined` — which reads as "accepted".
+When the tool declares no `inputSchema`. A tool that takes no
+  arguments accepts anything, and saying so out loud beats answering
+  `undefined` — which reads as "accepted".
 
 #### Example
 
 ```ts
-import agentDef from "virtual:aai/agent";
+// file: tools/recommend.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Recommend something for tonight",
+  inputSchema: z.object({ mood: z.enum(["cozy", "tense", "silly"]) }),
+  execute: ({ mood }) => ({ picks: [mood] }),
+});
+
+// file: agent.test.ts
 import { toolInputIssues } from "@alexkroman1/aai/testing";
 import { expect, test } from "vitest";
+import recommend from "./tools/recommend.ts";
 
 test("recommend refuses a mood off its list", async () => {
-  expect(await toolInputIssues(agentDef, "recommend", { mood: "melancholy" })).toBeDefined();
+  expect(await toolInputIssues(recommend, { mood: "melancholy" })).toBeDefined();
+});
+```
+
+***
+
+### toolNameOf()
+
+```ts
+function toolNameOf(def: ToolDef<ToolInputSchema>): string;
+```
+
+The name the model calls `def` by — the `tools/<name>.ts` file it was
+discovered from, or the key it sits under on a speaker's `tools` map.
+
+Only a def an agent LOWERED has one. A file tool is named when the agent is
+imported as DEPLOYED (`virtual:aai/agent` under vitest, `deployedAgent` under
+any other runner); a roster tool is named when `agent({ roster })` runs,
+i.e. when `agent.ts` is imported at all. A def built inline in a spec has
+never been lowered, so it has no name, and the throw says so.
+
+#### Parameters
+
+##### def
+
+[`ToolDef`](index.md#tooldef)\<[`ToolInputSchema`](index.md#toolinputschema)\>
+
+#### Returns
+
+`string`
+
+#### Throws
+
+When `def` was never lowered onto an agent.
+
+#### Example
+
+```ts
+// file: agent.ts
+import { agent } from "@alexkroman1/aai";
+
+export default agent({ name: "Orders" });
+
+// file: tools/place_order.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Place the order",
+  inputSchema: z.object({ item: z.string() }),
+  execute: ({ item }) => ({ placed: item }),
+});
+
+// file: agent.test.ts
+import { deployedAgent, toolNameOf } from "@alexkroman1/aai/testing";
+import { expect, test } from "vitest";
+import authored from "./agent.ts";
+import placeOrder from "./tools/place_order.ts";
+
+// Lowering the agent is what records the names; under vitest, importing it
+// as `virtual:aai/agent` does the same.
+deployedAgent(authored, { tools: import.meta.glob("./tools/*.ts", { eager: true }) });
+
+test("the model calls the tool by its file name", () => {
+  expect(toolNameOf(placeOrder)).toBe("place_order");
 });
 ```
 
@@ -2391,15 +2775,16 @@ test("recommend refuses a mood off its list", async () => {
 ### toolOf()
 
 ```ts
-function toolOf(agent: ToolBearingAgent, name: string): ToolDef<ToolInputSchema>;
+function toolOf(agent: ToolBearingAgent, name: string): ToolDef;
 ```
 
 The tool `name` is declared under, or a throw naming the ones that are.
 
-Three names for three jobs: `toolOf` hands back the DEF, to assert on what
-the agent declares (its description, its schema); [runTool](#runtool) CALLS a
-tool, gated as the runtime gates it; [toolRunner](#toolrunner-1) is `runTool` with the
-agent bound, the `run(name, …)` a spec calls throughout.
+The LOOKUP, for a spec asserting on what the agent declares — a description,
+a schema, a tool the roster minted and no file exports (`HANDOFF_TOOL_NAME`).
+To RUN a tool, hand its def to [runTool](#runtool) or to the runner
+[toolRunner](#toolrunner-1) binds; the def a `tools/` file default-exports is the
+object the deployed agent registered, so no name is needed to find it.
 
 A tool is a FILE, so `agent.ts`'s default export declares no tools at all —
 import the agent as DEPLOYED, exactly as this example does and as every
@@ -2420,7 +2805,7 @@ this the authored def directly is the common mistake, and it fails with
 
 #### Returns
 
-[`ToolDef`](index.md#tooldef)\<[`ToolInputSchema`](index.md#toolinputschema)\>
+[`ToolDef`](index.md#tooldef)
 
 #### Example
 
@@ -2440,34 +2825,17 @@ expect(toolOf(agentDef, "add_item").description).toContain("cart");
 function toolRunner(agent: ToolBearingAgent): ToolRunner;
 ```
 
-[runTool](#runtool) bound to one agent — the `run(...)` a spec actually calls.
+[runTool](#runtool) bound to one agent and GATED by it — the `run(...)` a spec
+actually calls, and what `describeAgent` hands its body.
 
-A spec drives one agent, so `agentDef` is the same in every call and the name
-is the thing that varies. Every shipped template therefore opened with the
-same wrapper:
-
-```ts
-import agentDef from "virtual:aai/agent";
-import type { ToolContext } from "@alexkroman1/aai";
-import { runTool } from "@alexkroman1/aai/testing";
-
-const run = (name: string, argsOrCtx?: Record<string, unknown> | ToolContext, ctx?: ToolContext) =>
-  runTool(agentDef, name, argsOrCtx, ctx);
-```
-
-Ten of them, and [runTool](#runtool)'s own documentation named that wrapper as how
-every template reaches it — which is the point at which the wrapper is part of
-the API and belongs in it. `const run = toolRunner(agentDef);` is the same
-thing in one line.
-
-**The union is what is worth removing, not the line.** A spec that writes the
-signature out has to restate `Record<string, unknown> | ToolContext` to
-forward both of `runTool`'s shapes — arguments, or the context in their place
-for a tool that takes none — and a spec that narrows it to
-`(name: string, args: Record<string, unknown>)` has quietly given up the
-second shape. Four templates had; three of those then passed `{}` by hand
-where the whole point of the shorter form is not having to. Binding the agent
-keeps the union in one place, where it stays right.
+A spec drives one agent, so `agentDef` is the same in every call and the
+tool is the thing that varies. Binding the agent is what lets the run go
+through the agent's own gates: the def is found in the table by identity,
+its toolset's gate is asked first, and a refusal comes back as the result —
+a dialog out of state, a roster entry whose speaker is not on the line. The
+bare [runTool](#runtool) calls the def's `execute` directly, gate and all
+skipped, which is the unit test of a tool body and not the test of the
+agent.
 
 The runner is stateless and holds only the agent, so one per spec file at the
 top level is the shape: each call still defaults to a FRESH context, i.e. a
@@ -2487,18 +2855,40 @@ second call is meant to see the first call's work — see [runTool](#runtool).
 #### Example
 
 ```ts
+// file: tools/add_item.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Add an item to the order",
+  inputSchema: z.object({ item: z.string() }),
+  execute: ({ item }) => ({ added: item }),
+});
+
+// file: tools/view_order.ts
+import { tool } from "@alexkroman1/aai";
+
+export default tool({
+  description: "View the order",
+  execute: () => ({ items: ["apple"] }),
+});
+
+// file: agent.test.ts
 import agentDef from "virtual:aai/agent";
 import { createToolContext, toolRunner } from "@alexkroman1/aai/testing";
 import { expect } from "vitest";
+import addItem from "./tools/add_item.ts";
+import viewOrder from "./tools/view_order.ts";
 
 const run = toolRunner(agentDef);
 
-expect(await run("add_item", { item: "apple" })).toEqual({ added: "apple" });
+const { added } = await run(addItem, { item: "apple" }); // typed: `added` is a string
+expect(added).toBe("apple");
 
 // No arguments, one session shared across the two calls.
 const ctx = createToolContext();
-await run("add_item", { item: "apple" }, ctx);
-expect(await run("view_order", ctx)).toEqual({ items: ["apple"] });
+await run(addItem, { item: "apple" }, ctx);
+expect(await run(viewOrder, ctx)).toEqual({ items: ["apple"] });
 ```
 
 **A runner over an agent with NO tools is refused HERE**, rather than at the
@@ -2506,9 +2896,9 @@ first `run(...)`. A tool is a file, so `agent.ts`'s default export declares an
 empty table and every call through such a runner fails identically — the
 mistake is the argument on this line, and reporting it at a call site several
 dozen lines away names the symptom instead. It is the one shape that cannot be
-a legitimate runner: a runner exists to reach tools by name, and there are no
-names to reach. Reach for [toolOf](#toolof) or [runTool](#runtool) directly if a spec
-really means to assert on an empty table.
+a legitimate runner: a runner exists to reach the agent's tools, and there
+are none to reach. Reach for [toolOf](#toolof) or [runTool](#runtool) directly if a
+spec really means to assert on an empty table.
 
 ## Interfaces
 
@@ -3296,12 +3686,58 @@ matches.
 
 ***
 
+### FiredEvent
+
+```ts
+type FiredEvent = {
+  dialogs: readonly string[];
+  typed: boolean;
+  wildcard: boolean;
+};
+```
+
+**`Sealed`**
+
+What [fireEvent](#fireevent) reports: how many handlers the event reached.
+
+#### Properties
+
+##### dialogs
+
+```ts
+readonly dialogs: readonly string[];
+```
+
+The keys of the declared dialogs the event MOVED — one whose `on` map
+names it (`"@session.timedOut": "abandoned"`) and whose active state
+handles it. Every declared dialog is offered the event, before the
+handlers, as the session offers it.
+
+##### typed
+
+```ts
+readonly typed: boolean;
+```
+
+The per-type handler ran.
+
+##### wildcard
+
+```ts
+readonly wildcard: boolean;
+```
+
+The `"*"` handler ran, after the typed one.
+
+***
+
 ### ProjectFiles
 
 ```ts
 type ProjectFiles = {
   systemPrompt?: string;
   tools?: Readonly<Record<string, unknown>>;
+  workflows?: Readonly<Record<string, unknown>>;
 };
 ```
 
@@ -3324,11 +3760,10 @@ readonly optional systemPrompt?: string;
 
 `import prompt from "./system-prompt.md?raw"`.
 
-Omit it for a project with no `system-prompt.md`. Pass it even when
-`agent.ts` imports the file itself — whether it composes a string out of it
-or closes over it in a `systemPrompt` resolver, the def is left exactly as
-the author built it, so a spec never has to know which of the three shapes
-its own project uses.
+Omit it for a project with no `system-prompt.md`. Passing it to a def the
+file was already applied to leaves that def exactly as it is, so a spec
+never has to know whether its def is the raw `agent.ts` export or a
+lowered one.
 
 ##### tools?
 
@@ -3346,6 +3781,70 @@ Spelled out rather than named as `ToolModules` (the same type, on
 `/manifest`): the value is a glob result, not something a spec names, so
 `/testing` exports no alias for it and a named one would be a declaration no
 capability owns.
+
+##### workflows?
+
+```ts
+readonly optional workflows?: Readonly<Record<string, unknown>>;
+```
+
+`import.meta.glob("./workflows/*.ts", { eager: true })`, written at the
+call site like `tools`. A module default-exporting a `workflow()` def is
+registered under its file name, an explicit `agent({ workflows })` entry
+winning a clash; the rest of the directory (a body's helpers) is skipped,
+so unlike `tools` an empty or helper-only result is not an error.
+
+***
+
+### RecordedSignal
+
+```ts
+type RecordedSignal = {
+  key: string;
+  label: string;
+  options: SignalOptions | undefined;
+  payload: unknown;
+  workflow: string;
+};
+```
+
+**`Sealed`**
+
+One `signalRun` as a tool made it.
+
+#### Properties
+
+##### key
+
+```ts
+key: string;
+```
+
+##### label
+
+```ts
+label: string;
+```
+
+##### options
+
+```ts
+options: SignalOptions | undefined;
+```
+
+##### payload
+
+```ts
+payload: unknown;
+```
+
+##### workflow
+
+```ts
+workflow: string;
+```
+
+The workflow's declared name.
 
 ***
 
@@ -3456,6 +3955,7 @@ The declared name — the key in `agent({ workflows })` — or the string passed
 ```ts
 type RecordedStep = {
   maxAttempts?: number;
+  maxWaits?: number;
   name: string;
 };
 ```
@@ -3474,6 +3974,14 @@ optional maxAttempts?: number;
 
 What the body asked for, or `undefined` when it passed no options.
 
+##### maxWaits?
+
+```ts
+optional maxWaits?: number;
+```
+
+The step's wait budget (`StepOptions.maxWaits`), or `undefined` when none was asked for.
+
 ##### name
 
 ```ts
@@ -3487,6 +3995,7 @@ name: string;
 ```ts
 type RecordingWorkflows = WorkflowClient & {
   cancelled: string[];
+  signals: RecordedSignal[];
   starts: RecordedStart[];
   seed: void;
   started: RecordedStart[];
@@ -3515,6 +4024,14 @@ readonly cancelled: string[];
 ```
 
 Every run id `cancel` was called with, in order, whatever it resolved.
+
+##### signals
+
+```ts
+readonly signals: RecordedSignal[];
+```
+
+Every `signalRun`, in order — delivered (`true`) without a run to deliver to.
 
 ##### starts
 
@@ -3609,6 +4126,19 @@ def is recorded under its `description` and matched by identity.
 
 ***
 
+### RouteContextOverrides
+
+```ts
+type RouteContextOverrides = { [K in keyof RouteContext]?: RouteContext[K] };
+```
+
+**`Input`**
+
+What [createRouteContext](#createroutecontext) accepts: a field per [RouteContext](index.md#routecontext)
+field, each also taking `undefined` for one the caller does not have.
+
+***
+
 ### RunSnapshotOverrides
 
 ```ts
@@ -3634,6 +4164,101 @@ grows is one this accepts without a second edit.
 `R` = `unknown`
 
 The workflow's return type, when the caller names it.
+
+***
+
+### SessionEventFields
+
+```ts
+type SessionEventFields<K extends SessionEventType> = { [T in K]: Omit<SessionEventMap[T], "type" | "meta"> }[K];
+```
+
+The fields of one event beyond its envelope — what [sessionEvent](#sessionevent) takes
+after the type: the member of `SessionEventMap` minus `type` and `meta`.
+Distributes over `K`, so each member keeps its own fields.
+
+#### Type Parameters
+
+##### K
+
+`K` *extends* [`SessionEventType`](index.md#sessioneventtype)
+
+***
+
+### SessionEventRest
+
+```ts
+type SessionEventRest<K extends SessionEventType> = keyof SessionEventFields<K> extends never ? [SessionEventFields<K>, Partial<SessionEventMeta>] : [SessionEventFields<K>, Partial<SessionEventMeta>];
+```
+
+The trailing parameters of [sessionEvent](#sessionevent): `[meta?]` for an envelope-only
+event, `[fields, meta?]` for one with a payload. An event that is only its
+envelope (`reply.completed`) takes no fields argument at all, so
+`sessionEvent("reply.completed")` is the whole call rather than
+`sessionEvent("reply.completed", {})`.
+
+#### Type Parameters
+
+##### K
+
+`K` *extends* [`SessionEventType`](index.md#sessioneventtype)
+
+***
+
+### SlotContractOptions
+
+```ts
+type SlotContractOptions<T> = {
+  caps?: Readonly<Record<string, number>>;
+  write?: (draft: T) => void;
+};
+```
+
+**`Input`**
+
+What [expectSlotContract](#expectslotcontract) may be told.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Properties
+
+##### caps?
+
+```ts
+readonly optional caps?: Readonly<Record<string, number>>;
+```
+
+The caps to check — each top-level array key and the most entries it
+keeps. Defaults to what the slot DECLARED (`slot.caps`); given, each is
+driven past its bound and the surviving entries must be the NEWEST ones,
+and a bound that differs from the declared one fails naming both.
+
+##### write?
+
+```ts
+readonly optional write?: (draft: T) => void;
+```
+
+A mutation that CHANGES the value — what the isolation check writes
+through one session to prove the other does not see it. Optional: without
+it the check is that two sessions hold distinct values of the default,
+which catches a shared default object and nothing subtler. A `write` that
+leaves the value equal to the default is refused, because it proves
+nothing.
+
+###### Parameters
+
+###### draft
+
+`T`
+
+###### Returns
+
+`void`
 
 ***
 
@@ -5384,7 +6009,7 @@ is not here, for the same reason it is not in the browser.
 ```ts
 type ToolBearingAgent = {
   dialogs?: readonly AnyDialog[];
-  tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+  tools: Readonly<Record<string, ToolDef>>;
 };
 ```
 
@@ -5408,7 +6033,7 @@ readonly optional dialogs?: readonly AnyDialog[];
 ##### tools
 
 ```ts
-readonly tools: Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+readonly tools: Readonly<Record<string, ToolDef>>;
 ```
 
 ***
@@ -5430,12 +6055,14 @@ type ToolContextOverrides = {
      | StubGenerateScript;
   messages?: ToolContext["messages"];
   model?: StubGenerate;
+  now?: ToolContext["now"];
   random?: ToolContext["random"];
   send?: ToolContext["send"];
   sessionId?: ToolContext["sessionId"];
   signal?: ToolContext["signal"];
   slots?: ToolContext["slots"];
   speech?: ToolContext["speech"];
+  turn?: ToolContext["turn"];
   workflows?: ToolContext["workflows"];
 };
 ```
@@ -5555,7 +6182,7 @@ The `stubDelegate` twin of `ToolContextOverrides.model`.
 optional env?: ToolContext["env"];
 ```
 
-See [ToolContext.env](index.md#env-6). Defaults to `{}`.
+See [ToolContext.env](index.md#env-7). Defaults to `{}`.
 
 ##### generate?
 
@@ -5583,7 +6210,7 @@ be.
 optional messages?: ToolContext["messages"];
 ```
 
-See [ToolContext.messages](index.md#messages-2). Defaults to `[]`.
+See [ToolContext.messages](index.md#messages-4). Defaults to `[]`.
 
 ##### model?
 
@@ -5597,6 +6224,14 @@ A fake this spec built itself, to be exposed as `TestToolContext.model`
 The escape hatch under the script sugar: a caller holding a `stubGenerate`
 it wants to share across two contexts names it here rather than leaving
 `ctx.model` pointing at a fake nothing reaches.
+
+##### now?
+
+```ts
+optional now?: ToolContext["now"];
+```
+
+See [ToolContext.now](index.md#now). Defaults to `Date.now`.
 
 ##### random?
 
@@ -5612,7 +6247,7 @@ See [ToolContext.random](index.md#random-1). Defaults to a SEEDED source.
 optional send?: ToolContext["send"];
 ```
 
-See [ToolContext.send](index.md#send-4). Defaults to the recorder behind `TestToolContext.sent`.
+See [ToolContext.send](index.md#send-5). Defaults to the recorder behind `TestToolContext.sent`.
 
 ##### sessionId?
 
@@ -5636,7 +6271,7 @@ See [ToolContext.signal](index.md#signal-5). Defaults to a signal that never abo
 optional slots?: ToolContext["slots"];
 ```
 
-See [ToolContext.slots](index.md#slots-3). Defaults to a fresh, empty, REAL slot store.
+See [ToolContext.slots](index.md#slots-4). Defaults to a fresh, empty, REAL slot store.
 
 ##### speech?
 
@@ -5645,6 +6280,14 @@ optional speech?: ToolContext["speech"];
 ```
 
 See [ToolContext.speech](index.md#speech-2). Defaults to the recorder behind `TestToolContext.said`.
+
+##### turn?
+
+```ts
+optional turn?: ToolContext["turn"];
+```
+
+See [ToolContext.turn](index.md#turn-1). Defaults to `0` — a context that belongs to no turn.
 
 ##### workflows?
 
@@ -5659,27 +6302,49 @@ See [ToolContext.workflows](index.md#workflows-4). Defaults to a client whose ev
 ### ToolRunner
 
 ```ts
-type ToolRunner = (name: string, argsOrCtx?: 
-  | InferSchemaOutput<ToolInputSchema>
-| ToolContext, ctx?: ToolContext) => Promise<unknown>;
+type ToolRunner = <T>(tool: T, argsOrCtx?: 
+  | Parameters<T["execute"]>[0]
+| ToolContext, ctx?: ToolContext) => Promise<Awaited<ReturnType<T["execute"]>>>;
 ```
 
-What [toolRunner](#toolrunner-1) hands back: [runTool](#runtool) with the agent already
-supplied.
+**`Sealed`**
+
+What [toolRunner](#toolrunner-1) hands back: a GATED [runTool](#runtool) with the agent
+already supplied.
+
+`run(addItem, { item: "apple" })` checks the arguments against what `execute`
+takes and answers what it returns, so a spec reads fields off the result with
+no cast. The def is resolved in the agent's table by IDENTITY (a
+`tools/<name>.ts` default export IS the registered object, and so is a
+speaker's `tools` entry), and the call goes through the toolset's GATE — a
+dialog out of state refuses it, a roster entry not on the line refuses it —
+exactly as the model's own call would. A def the agent does not declare
+throws naming the tools it does.
+
+Takes the arguments-or-context union [runTool](#runtool) documents: a tool that
+takes none may be handed the context in their place.
 
 Named so a caller can annotate a helper that takes one, and so the union in
 the second position is written down once here rather than at every call site
 that binds it.
 
+#### Type Parameters
+
+##### T
+
+`T` *extends* \{
+  `execute`: (...`args`: `never`[]) => `unknown`;
+\}
+
 #### Parameters
 
-##### name
+##### tool
 
-`string`
+`T`
 
 ##### argsOrCtx?
 
-  \| [`InferSchemaOutput`](index.md#inferschemaoutput)\<[`ToolInputSchema`](index.md#toolinputschema)\>
+  \| `Parameters`\<`T`\[`"execute"`\]\>\[`0`\]
   \| [`ToolContext`](index.md#toolcontext)
 
 ##### ctx?
@@ -5688,7 +6353,7 @@ that binds it.
 
 #### Returns
 
-`Promise`\<`unknown`\>
+`Promise`\<`Awaited`\<`ReturnType`\<`T`\[`"execute"`\]\>\>\>
 
 ***
 
@@ -5697,6 +6362,7 @@ that binds it.
 ```ts
 type WorkflowContextOptions = {
   hooks?: Record<string, unknown>;
+  key?: string;
   now?: number | (() => number);
   random?: number | (() => number);
   results?: Record<string, unknown>;
@@ -5723,6 +6389,16 @@ Payloads for `ctx.waitFor`, by token.
 
 A token that is absent THROWS rather than hanging, because a spec that hangs
 reports a timeout naming the runner instead of the missing payload.
+
+##### key?
+
+```ts
+optional key?: string;
+```
+
+The run's `StartOptions.key` — what `ctx.key` answers and what
+`ctx.signalToken`/`ctx.waitForSignal` derive from. Defaults to none, so a
+body that signals is driven with the key it would be started with.
 
 ##### now?
 

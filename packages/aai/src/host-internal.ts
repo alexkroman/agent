@@ -17,6 +17,12 @@
  * epoch, and no TypeDoc page.
  */
 
+// The one object `runFfmpeg`, `probeMedia` and `transcodeUpload` spawn through,
+// so a spec can hand them a fake child instead of a binary. `installStubFfmpeg`
+// on `@alexkroman1/aai-runtime/testing/vitest` is that swap; it is declared on
+// the runtime because the SDK's own `/testing/vitest` is `sdk/`, which may not
+// reach `host/` (`sdk-host-boundary`).
+export { type FfmpegChild, ffmpegProcess } from "./host/_ffmpeg-spawn.ts";
 export { asDispatcher, type PinnedRequestInit, pinnedFetch } from "./host/_undici.ts";
 // Two host-side helpers the guest harness needs BEFORE (or without) a runtime:
 // the harness holds no copy of `aai-runtime` — it drives the agent through the
@@ -76,6 +82,9 @@ export { getSessionLocation } from "./host/session-location.ts";
 export { CONTAINED_ENV, type DnsLookup, safeFetch, ssrfSafeFetch } from "./host/ssrf.ts";
 export { EMPTY_PARAMS } from "./sdk/_internal-types.ts";
 export { mapStream } from "./sdk/_map-stream.ts";
+// Closest-name suggestions for a refusal naming an unknown workflow, tool or
+// field — the one edit-distance ranking every "did you mean" here uses.
+export { type NearestNamesOptions, nearestNames } from "./sdk/_nearest-names.ts";
 // The route-key matcher `stubFetchRoutes` is built on, shared with the eval
 // harness's `evalNetwork` so both fake networks read one key vocabulary (host,
 // `*.suffix`, URL prefix, optional METHOD) with one specificity order.
@@ -96,6 +105,8 @@ export {
 // in one call where the session id is decided. The four `setSession*` below are
 // its one-field wrappers.
 export {
+  // The read side of the same maps: an entry that has not outlived its TTL.
+  liveSessionEntry,
   recordSessionIdentity,
   type SessionIdentity,
   // The write side of every bounded insertion-order map keyed by session id.
@@ -120,7 +131,12 @@ export { runAgentGuardrails } from "./sdk/agent-guardrails.ts";
  * string before it can do anything with either, and getting that wrong puts a
  * function's source text into the model's instructions.
  */
-export { staticSystemPrompt, systemPromptResolver } from "./sdk/agent-instructions.ts";
+export {
+  appendPromptContext,
+  staticPromptContext,
+  staticSystemPrompt,
+  systemPromptResolver,
+} from "./sdk/agent-instructions.ts";
 // …and of `routeError`: a thrown refusal, read by the same kind of brand.
 export { readRouteError } from "./sdk/agent-route-helpers.ts";
 // The runtime's half of `routeResponse`: a route's answer crosses from the agent
@@ -385,11 +401,13 @@ export {
 export { publishSpeechSynthesizer, type SpeechSynthesizer } from "./sdk/step-speak.ts";
 export {
   assertUploadToken,
+  labelUpload,
   type OpenUpload,
   publishUploadReader,
   UPLOADS_UNAVAILABLE_MESSAGE,
   type UploadAccess,
   type UploadReader,
+  type UploadRecord,
   type UploadWriteMeta,
   type UploadWriter,
 } from "./sdk/step-uploads.ts";
@@ -404,7 +422,14 @@ export {
   STEP_WEBHOOK_URL_UNAVAILABLE_MESSAGE,
   type StepWebhookMinter,
 } from "./sdk/step-webhook.ts";
-export { agentInstructionsSection, buildSystemPrompt } from "./sdk/system-prompt.ts";
+// `resolveAgentInstructions` is the whole author section per request — the
+// runtime's per-session resolver and the text agent call it once each.
+export {
+  agentInstructionsSection,
+  authorInstructions,
+  buildSystemPrompt,
+  resolveAgentInstructions,
+} from "./sdk/system-prompt.ts";
 // The tool-message DECLARATION is authoring API (`ToolDef.messages`, on the
 // root); choosing which line a given call gets is the runtime's, so the two
 // budgets and the three selectors come out here. The runner that speaks them
@@ -440,9 +465,26 @@ export {
   type ResolvedFailureHandler,
   resolveFailureHandler,
 } from "./sdk/workflow-failure.ts";
+// The declared-name record behind `workflowNameOf`: the lowering funnels write
+// it, and the runtime's client and the eval's recorder read a def against the
+// agent's own map through `declaredWorkflowName`.
+export { declaredWorkflowName, recordWorkflowNames } from "./sdk/workflow-names.ts";
+// The `StartOptions.key` literal a session-scoped client resolves to its id.
+export { SESSION_KEY } from "./sdk/workflow-options.ts";
 // The one implementation of `ctx.poll`, which every `WorkflowContext` a host
 // builds (the replay engine's, an eval's) delegates to.
 export { type PollHost, pollWorkflow } from "./sdk/workflow-poll.ts";
+// `ctx.report`'s one implementation, delegated to the same way.
+export { type ReportHost, reportWorkflow } from "./sdk/workflow-report.ts";
 // `ctx.sayOnClient`'s one implementation, delegated to the same way.
 export { type SayOnClientHost, sayOnClientWorkflow } from "./sdk/workflow-say-on-client.ts";
+// `ctx.signalToken`/`ctx.waitForSignal` and the token grammar `signalRun`
+// shares with them, so every host mints one token for one label.
+export {
+  type SignalHost,
+  type SignalWaitHost,
+  signalTokenFor,
+  waitForSignalWorkflow,
+  workflowSignalToken,
+} from "./sdk/workflow-signals.ts";
 export { PUBLIC_URL_UNCONFIGURED_MESSAGE } from "./sdk/workflow-unavailable.ts";

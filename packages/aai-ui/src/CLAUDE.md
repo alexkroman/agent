@@ -47,8 +47,8 @@ gate, recall and report coalescing).
   read by the session AND by the inbox, the mounts and the hooks;
   `_session-core-test-utils.ts` is the socket double the inbox and mount specs
   dial through too. The workflow hooks (`use-workflow-*.ts`, `_workflow-*.ts`,
-  `_run-controls.ts`, `_submission-state.ts`) stay at `src/` because the
-  `use-*.ts` konsistent conventions key on that path.
+  `_run-controls.ts`, `_submission*.ts`) stay at `src/` because the `use-*.ts`
+  konsistent conventions key on that path.
 
 ## Client config lookup (`client-config.ts`)
 
@@ -63,9 +63,10 @@ gate, recall and report coalescing).
   browsers do not follow.
 - **The session lookup re-brokers per ATTEMPT** so a reconnect reaches a
   replacement sandbox — never memoize it across the render-time lookup.
-  `mountClient()`'s render lookup is skipped when `mountClient({ name })` is set
-  (on the platform it is the broker and can boot a sandbox); a custom
-  `component` ignores it.
+  `mountClient()`'s render lookup is issued ONCE: at mount for the default shell
+  (its start card shows the agent's own `name`; there is no `name` option), and
+  under a custom `component` only once the session has STARTED (on the platform
+  it is the broker and can boot a sandbox).
 - **`apiUrl` (shown by `ApiUrlChip`) is the long-lived platform endpoint**
   (`wss://host/:slug/websocket`), never the sandbox tunnel URL, which rots.
 - **A session ticket is asked for per ATTEMPT** (`session/ticket.ts`):
@@ -112,10 +113,13 @@ gate, recall and report coalescing).
   the slot and import it in both `agent.ts` and `client.tsx`.
   `useAgentState("slot", fallback)` is only for a slot whose `create()` is
   expensive to ship to the browser; `useAgentState()` is the whole frame.
-  `hooks.test-d.ts` pins all four signatures. **Per-slot re-renders hold because
-  of two things together**: `selectAgentState(slot)` is ONE stable selector per
-  name, and the session core keeps an unchanged slot's value object across
-  pushes (`shareUnchangedSlots`, `session/messages.ts`).
+  `hooks.test-d.ts` pins all four signatures. A seeded slot declares
+  `sessionSlot(…, { empty })` on the SDK side instead, so `projected()` renders
+  the empty shape and the fallback overload is only for a slot whose module the
+  page cannot import at all. **Per-slot re-renders hold because of two things
+  together**: `selectAgentState(slot)` is ONE stable selector per name, and the
+  session core keeps an unchanged slot's value object across pushes
+  (`shareUnchangedSlots`, `session/messages.ts`).
 - **State or moment:** if re-rendering after a reload would be RIGHT, it is
   state → a `sessionSlot` read by `useAgentState`. If it would be a lie or a
   nuisance, it is a moment → `useEvent` / `useToolCallStart` (which never
@@ -129,11 +133,21 @@ gate, recall and report coalescing).
   `styles.css`'s `@theme`). Additive: `useTheme()` stays. The page background is
   still painted imperatively on `html` AND `body`; the `styles.css` fallbacks
   must equal `DEFAULT_THEME` (a test compares them); variables are RESTORED on
-  unmount, not removed. `theme-css-vars.test.tsx` holds these.
+  unmount, not removed. `theme-css-vars.test.tsx` holds these. **The short form
+  `{ primary, mode }` is resolved to the five tokens BEFORE `ThemeProvider`**
+  (`resolveClientTheme`, `_theme.ts`), so nothing below the mount knows two
+  shapes exist; the two forms are EXCLUSIVE at the type level (`?: undefined`
+  guards on `ClientTheme`, pinned in `_theme.test-d.ts`), and a token given as
+  `""` is dropped with a `console.warn` rather than written as an empty custom
+  property. `mountClient({ css })` injects a page sheet into `<head>` for the
+  mount's lifetime, after the tokens are on `:root`.
 - **`ClientConfig` display fields** (`icon`, `subtitle`, `buttonText`,
   `sidebarPosition`) must be honoured by BOTH `rootFor` branches; `icon` reaches
   the start card and the header. The forwarding bag is a MAPPED type over `Pick`
-  because of `exactOptionalPropertyTypes`.
+  because of `exactOptionalPropertyTypes`. **A tool's icon and label come from
+  client-config's `tools`** (`tool({ ui })` on the SDK side), installed into
+  `ToolConfigContext` as served; `ClientConfig` has no `tools` map and no `name`
+  — both are the agent's own declaration, never restated by a page.
 - **Session resume is on by default in `sessionStorage`**
   (`session/resume-store.ts`). Do not wire `onSessionId`/`resumeSessionId` by
   hand, and never into `localStorage` (a stale id suppresses the greeting and
@@ -162,11 +176,15 @@ gate, recall and report coalescing).
   sliding (a very long call) reads as a new `run`.
 - **`routeFetch`** resolves `api/…` against the page's DIRECTORY (an agent at
   `/:slug/` reaches `/:slug/api`); `useRoute`'s default `?client=` is the
-  session identity's, read per request, and none under `mountPage()`.
-  `useRouteMutation` is the write half with the same default: `run` never
-  rejects, the error shown is the highest-numbered SETTLED write's, and nothing
-  runs after unmount. `useClientRuns` is those two over a `clientRunsRoutes()`
-  pair — its row type is the SDK's, re-exported, never restated.
+  session identity's, read per request, and none under `mountPage()`. Both take
+  `headers` (an `authorization` for an `apiKeyRoute`); `useRoute`'s poll
+  (`pollMs`) is `repeatUntil`'s loop, re-armed from the settled read and stopped
+  by `until(value)`, with `headers`/`until` read per request so an inline
+  literal re-arms nothing. `useRouteMutation` is the write half with the same
+  default: `run` never rejects, the error shown is the highest-numbered SETTLED
+  write's, and nothing runs after unmount. `useClientRuns` is those two over a
+  `clientRunsRoutes()` pair — its row type is the SDK's, re-exported, never
+  restated.
 
 ## Client identity and the inbox
 
@@ -337,7 +355,21 @@ Reports what the run WROTE (`useWorkflowRun` reports its state).
   previous run id BEFORE the next request. Returns `wake()`/`cancel()` bound to
   its run (`_run-controls.ts`, shared because `WorkflowStreamSubmission` aliases
   `WorkflowSubmission`); both answer (`0`/`false`) when there is no run.
-  `reset()` puts the FORM back and leaves the run running.
+  `reset()` puts the FORM back and leaves the run running. The submission's
+  types live in `workflow-submission.ts`; `timing` (press-to-settle
+  `performance.now` marks, `_submission-timing.ts`) and `scope` (who finds the
+  run again, from `key`/`recover`; `"none"` for the stream hook) are what
+  `<WorkflowPendingNote>` reads. Both hooks, `useWorkflowRuns` and
+  `<WorkflowFields>` are overloaded on the AGENT type too
+  (`useWorkflowSubmit<typeof agentDef>("digest")`, `workflow-def-types.ts`): the
+  name is then a checked literal. ONE mechanism tells the pair apart: the agent
+  overload declares `App = never`, so an un-parameterized call has no names to
+  match and lands on the def/output overload, which refuses an app by its
+  constraint (`D extends AnyWorkflowDef`) or, over an open output type
+  (`useWorkflowRuns<R>`), by `WorkflowNameOf<R>` being `never`.
+  `<WorkflowFields>` is one signature with no def form, so its default is the
+  constraint (`WorkflowNameOf<WorkflowAppLike>` is `string`). `hooks.test-d.ts`
+  pins that each form lands on its own overload.
 - **The state between submit and run is a statechart**
   (`_workflow-form-state.ts`:
   `idle | recovering | submitting{active,paused} | following | failed`), bridged
@@ -346,6 +378,12 @@ Reports what the run WROTE (`useWorkflowRun` reports its state).
   no tokens, no `current ?? found`. A body reports through `progress`/`started`,
   refused once its signal aborts; leaving `submitting` (unmount included)
   cancels its gate. Never add a flag beside it.
+- **Each hook owns only its BODY** (`begin`: the gate and the work for one
+  press); the watch, the controls, `pending`, the stopwatch, `reset` and the
+  returned `WorkflowSubmission` are `useSubmission` (`_submission.ts`), once for
+  both. A field added to the submission is added THERE, so the two cannot
+  disagree. `useWorkflowApiRef` stays in each hook file
+  (`ui-workflow-hook-api-ref` keys on it) and the getter is passed in.
 - **Files**: every `File` in the values is stored via `api.uploadStream()` under
   an id the hook MINTS (so an interrupted upload can resume), then the id is
   substituted and the run started. `WorkflowSubmission.upload` reports bytes and
@@ -378,8 +416,10 @@ Reports what the run WROTE (`useWorkflowRun` reports its state).
   NOT recall (it would start a second run on the first run's upload).
 - **Run recovery**: `useWorkflowSubmit` mints a per-page key in `sessionStorage`
   (`use-run-key.ts`) and calls `find(workflow, key)` once on mount. `key`
-  overrides (e.g. an account id); `useRunKey({ storage: "local" })` outlives the
-  tab; `recover: false` skips the lookup. `useWorkflowStream` has neither.
+  overrides (e.g. an account id) — an empty or whitespace key THROWS at the hook
+  and is a 400 at the route, since `""` would be one key shared by every visitor
+  whose key computed to it; `useRunKey({ storage: "local" })` outlives the tab;
+  `recover: false` skips the lookup. `useWorkflowStream` has neither.
 - **`useWorkflowRuns(workflow, { limit, key })`** reads history once and returns
   `refresh` (no polling). Each READ bumps a `createEpoch()` generation, not only
   unmount, so a slow earlier read cannot overwrite a newer one.

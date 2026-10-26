@@ -11,6 +11,7 @@ import {
   runInit,
 } from "./_init.ts";
 import { type CommandResult, ok } from "./_output.ts";
+import { projectNameFromDir } from "./_studio.ts";
 import { listTemplates } from "./_templates.ts";
 import { defaultUi, type Ui, unwrapCancel } from "./_ui.ts";
 import { AGENT_ENTRY, errorMessage, fileExists, readJson, resolveCwd } from "./_utils.ts";
@@ -404,6 +405,15 @@ export async function executeInit(
   if (!opts.force && (await fileExists(path.join(cwd, AGENT_ENTRY)))) {
     throw new Error(
       `${AGENT_ENTRY} already exists in this directory. Use ${styleText("cyanBright", "--force")} to overwrite.`,
+    );
+  }
+  // The same refusal `aai push`/`aai publish` make of the directory name
+  // (`projectNameFromDir`), made HERE: a `*-preview` project would be reaped by
+  // the studio's orphan-preview sweep, and the author who learns that at
+  // publish time learns it days after naming the directory.
+  if (projectNameFromDir(cwd) === null) {
+    throw new Error(
+      `Can't derive a project name from ${path.basename(cwd)}, so aai publish would refuse it (a name ending in "-preview" belongs to the studio's preview agents, which are swept hourly). Pick another directory name.`,
     );
   }
 

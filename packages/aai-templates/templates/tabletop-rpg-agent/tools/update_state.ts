@@ -19,17 +19,15 @@ import {
 } from "../shared.ts";
 
 /**
- * Gated on `playing`: there is nothing to sync before a character exists (that
- * is `setup_character`'s whole job, and the prompt says not to call this after
- * it), and nothing to sync after the story has ended.
- *
- * It sends `SETTLED`, because moving the scene on is what SPENDS a standing
- * roll: once the narrator has changed the location or logged the scene, the
- * player's window to burn momentum on the last roll has closed.
+ * Gated on `playing`: there is nothing to sync before a character exists, and
+ * nothing after the story has ended. It sends `SETTLED`, because moving the
+ * scene on is what SPENDS a standing roll: once the narrator has changed the
+ * location or logged the scene, the window to burn momentum has closed.
  */
-export default storyFlow.tool({
+export default gameSlot.updateTool({
   description:
     "Lightweight state sync for during gameplay. Handles location changes, NPC additions, clock additions, time changes, and session log entries. Resource changes (health/spirit/supply/momentum) are auto-applied by action_roll — only use those fields here for manual adjustments like resting or trading. Pass only what changed.",
+  dialog: storyFlow,
   when: "playing",
   inputSchema: z.object({
     location: z.string().max(200).describe("New location name").optional(),
@@ -71,124 +69,116 @@ export default storyFlow.tool({
     storyComplete: z.boolean().describe("Mark story as complete").optional(),
     logEntry: z.string().max(500).describe("Short log entry for this scene").optional(),
   }),
-  execute: (args, ctx) =>
-    gameSlot.update(ctx, (state) => {
-      const warnings: string[] = [];
-      const clockEvents: { clock: string; trigger: string }[] = [];
+  execute(args, state) {
+    const warnings: string[] = [];
+    const clockEvents: { clock: string; trigger: string }[] = [];
 
-      // Resources
-      if (args.health !== undefined)
-        state.health = Math.max(0, Math.min(MAX_RESOURCE, args.health));
-      if (args.spirit !== undefined)
-        state.spirit = Math.max(0, Math.min(MAX_RESOURCE, args.spirit));
-      if (args.supply !== undefined)
-        state.supply = Math.max(0, Math.min(MAX_RESOURCE, args.supply));
-      if (args.momentum !== undefined)
-        state.momentum = Math.max(MIN_MOMENTUM, Math.min(state.maxMomentum, args.momentum));
+    // Resources
+    if (args.health !== undefined) state.health = Math.max(0, Math.min(MAX_RESOURCE, args.health));
+    if (args.spirit !== undefined) state.spirit = Math.max(0, Math.min(MAX_RESOURCE, args.spirit));
+    if (args.supply !== undefined) state.supply = Math.max(0, Math.min(MAX_RESOURCE, args.supply));
+    if (args.momentum !== undefined)
+      state.momentum = Math.max(MIN_MOMENTUM, Math.min(state.maxMomentum, args.momentum));
 
-      // Location
-      if (args.location !== undefined) state.currentLocation = args.location;
-      if (args.locationDesc !== undefined) state.currentSceneContext = args.locationDesc;
-      if (args.timeOfDay !== undefined) state.timeOfDay = args.timeOfDay;
+    // Location
+    if (args.location !== undefined) state.currentLocation = args.location;
+    if (args.locationDesc !== undefined) state.currentSceneContext = args.locationDesc;
+    if (args.timeOfDay !== undefined) state.timeOfDay = args.timeOfDay;
 
-      // Add NPC
-      if (args.addNpcName) {
-        if (state.npcs.length >= MAX_NPCS) {
-          warnings.push(
-            `NPC limit of ${MAX_NPCS} reached — mark an existing NPC deceased or background instead.`,
-          );
-        } else {
-          state.npcs.push(
-            makeNpc({
-              id: nextSeqId(state.npcs, "npc"),
-              name: args.addNpcName,
-              description: args.addNpcDesc,
-              disposition: args.addNpcDisposition,
-              agenda: args.addNpcAgenda,
-            }),
-          );
-        }
-      }
-
-      // Update NPC
-      if (args.updateNpcId) {
-        const npc = state.npcs.find((n) => n.id === args.updateNpcId);
-        if (npc) {
-          if (args.updateNpcDisposition !== undefined) npc.disposition = args.updateNpcDisposition;
-          if (args.updateNpcBond !== undefined) npc.bond = args.updateNpcBond;
-          if (args.updateNpcStatus !== undefined) npc.status = args.updateNpcStatus;
-        } else {
-          warnings.push(`No NPC with id ${args.updateNpcId}.`);
-        }
-      }
-
-      // Add clock
-      if (args.addClockName) {
-        if (state.clocks.length >= MAX_CLOCKS) {
-          warnings.push(`Clock limit of ${MAX_CLOCKS} reached — remove a finished clock first.`);
-        } else {
-          state.clocks.push({
-            id: nextSeqId(state.clocks, "clock"),
-            name: args.addClockName,
-            clockType: args.addClockType ?? "threat",
-            segments: args.addClockSegments ?? DEFAULT_CLOCK_SEGMENTS,
-            filled: 0,
-            triggerDescription: args.addClockTrigger ?? "",
-          });
-        }
-      }
-
-      // Advance clock. `findClock` accepts the ORDINAL the player can see in
-      // the sidebar as well as the name, which is what a spoken reference to a
-      // clock called "The Syndicate Closes In" usually is.
-      if (args.advanceClockName) {
-        const clock = findClock(state.clocks, args.advanceClockName);
-        if (!clock) {
-          warnings.push(`No clock matching "${args.advanceClockName}".`);
-        } else if (clock.filled < clock.segments) {
-          clock.filled = Math.min(clock.segments, clock.filled + 1);
-          if (clock.filled >= clock.segments) {
-            clockEvents.push({ clock: clock.name, trigger: clock.triggerDescription });
-          }
-        }
-      }
-
-      // Remove clock. Resolved to ONE clock and dropped by id: filtering on the
-      // spoken string would delete every clock sharing a name, and would delete
-      // nothing at all when the player used an ordinal.
-      if (args.removeClockName) {
-        const clock = findClock(state.clocks, args.removeClockName);
-        if (clock) state.clocks = state.clocks.filter((c) => c.id !== clock.id);
-        else warnings.push(`No clock matching "${args.removeClockName}".`);
-      }
-
-      // Story arc
-      if (args.advanceAct && state.storyBlueprint) {
-        state.storyBlueprint.currentAct = Math.min(
-          state.storyBlueprint.acts.length,
-          state.storyBlueprint.currentAct + 1,
+    // Add NPC
+    if (args.addNpcName) {
+      if (state.npcs.length >= MAX_NPCS) {
+        warnings.push(
+          `NPC limit of ${MAX_NPCS} reached — mark an existing NPC deceased or background instead.`,
+        );
+      } else {
+        state.npcs.push(
+          makeNpc({
+            id: nextSeqId(state.npcs, "npc"),
+            name: args.addNpcName,
+            description: args.addNpcDesc,
+            disposition: args.addNpcDisposition,
+            agenda: args.addNpcAgenda,
+          }),
         );
       }
-      if (args.storyComplete && state.storyBlueprint) {
-        state.storyBlueprint.storyComplete = true;
-      }
+    }
 
-      // Session log
-      if (args.logEntry) {
-        state.sessionLog.push({
-          scene: state.sceneCount,
-          summary: args.logEntry,
-          location: state.currentLocation,
+    // Update NPC
+    if (args.updateNpcId) {
+      const npc = state.npcs.find((n) => n.id === args.updateNpcId);
+      if (npc) {
+        if (args.updateNpcDisposition !== undefined) npc.disposition = args.updateNpcDisposition;
+        if (args.updateNpcBond !== undefined) npc.bond = args.updateNpcBond;
+        if (args.updateNpcStatus !== undefined) npc.status = args.updateNpcStatus;
+      } else {
+        warnings.push(`No NPC with id ${args.updateNpcId}.`);
+      }
+    }
+
+    // Add clock
+    if (args.addClockName) {
+      if (state.clocks.length >= MAX_CLOCKS) {
+        warnings.push(`Clock limit of ${MAX_CLOCKS} reached — remove a finished clock first.`);
+      } else {
+        state.clocks.push({
+          id: nextSeqId(state.clocks, "clock"),
+          name: args.addClockName,
+          clockType: args.addClockType ?? "threat",
+          segments: args.addClockSegments ?? DEFAULT_CLOCK_SEGMENTS,
+          filled: 0,
+          triggerDescription: args.addClockTrigger ?? "",
         });
       }
+    }
 
-      return {
-        success: true,
-        ...(warnings.length > 0 ? { warnings } : {}),
-        clockEvents,
-        ...stateSummary(state),
-      };
-    }),
+    // Advance clock. `findClock` accepts the ORDINAL the player can see in
+    // the sidebar as well as the name, which is what a spoken reference to a
+    // clock called "The Syndicate Closes In" usually is.
+    if (args.advanceClockName) {
+      const clock = findClock(state.clocks, args.advanceClockName);
+      if (!clock) {
+        warnings.push(`No clock matching "${args.advanceClockName}".`);
+      } else if (clock.filled < clock.segments) {
+        clock.filled = Math.min(clock.segments, clock.filled + 1);
+        if (clock.filled >= clock.segments) {
+          clockEvents.push({ clock: clock.name, trigger: clock.triggerDescription });
+        }
+      }
+    }
+
+    // Remove clock. Resolved to ONE clock and dropped by id: filtering on the
+    // spoken string would delete every clock sharing a name, and would delete
+    // nothing at all when the player used an ordinal.
+    if (args.removeClockName) {
+      const clock = findClock(state.clocks, args.removeClockName);
+      if (clock) state.clocks = state.clocks.filter((c) => c.id !== clock.id);
+      else warnings.push(`No clock matching "${args.removeClockName}".`);
+    }
+
+    // Story arc
+    if (args.advanceAct && state.storyBlueprint) {
+      state.storyBlueprint.currentAct = Math.min(
+        state.storyBlueprint.acts.length,
+        state.storyBlueprint.currentAct + 1,
+      );
+    }
+    if (args.storyComplete && state.storyBlueprint) {
+      state.storyBlueprint.storyComplete = true;
+    }
+
+    // Session log
+    if (args.logEntry) {
+      state.sessionLog.push({
+        scene: state.sceneCount,
+        summary: args.logEntry,
+        location: state.currentLocation,
+      });
+    }
+
+    return { success: true, ...(warnings.length > 0 ? { warnings } : {}), clockEvents };
+  },
+  report: (stored, partial) => ({ ...partial, ...stateSummary(stored) }),
   sendFrom: (result) =>
     result.gameOver ? { type: "DOWNED" as const } : { type: "SETTLED" as const },
 });

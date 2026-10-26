@@ -123,6 +123,8 @@ export const SCENARIO_NAMES = Object.keys(scenarios) as [ScenarioName, ...Scenar
  *  drill may be started at any point in a shift. */
 export default dispatchSlot.updateTool({
   description: "Run a training scenario that creates simulated incidents for dispatch practice.",
+  dialog: callFlow,
+  send: { type: "LOGGED" },
   inputSchema: z.object({
     scenario: z.enum(SCENARIO_NAMES).describe("Scenario type to simulate"),
   }),
@@ -131,13 +133,17 @@ export default dispatchSlot.updateTool({
 
     const created: string[] = [];
     for (const scenarioInc of s.incidents) {
-      const fullInc = createIncident(state, {
-        ...scenarioInc,
-        callerName: "Scenario",
-        callerPhone: "N/A",
-        triageScore: calculateTriageScore(scenarioInc.severity, scenarioInc.type, 0, 0),
-        timeline: [{ time: Date.now(), event: `SCENARIO: ${scenarioInc.description}` }],
-      });
+      const fullInc = createIncident(
+        state,
+        {
+          ...scenarioInc,
+          callerName: "Scenario",
+          callerPhone: "N/A",
+          triageScore: calculateTriageScore(scenarioInc.severity, scenarioInc.type, 0, 0),
+          timeline: [{ time: ctx.now(), event: `SCENARIO: ${scenarioInc.description}` }],
+        },
+        ctx.now(),
+      );
       created.push(fullInc.id);
     }
 
@@ -145,9 +151,6 @@ export default dispatchSlot.updateTool({
       scenario: args.scenario,
       narrative: s.narrative,
       incidentsCreated: created,
-      // As `incident_create`: the position spread verbatim, so an ungated tool
-      // reports it under the same keys a gated one does.
-      ...callFlow.send(ctx, { type: "LOGGED" }),
       message: `SCENARIO ACTIVE: ${s.narrative}. ${created.length} incidents created. Awaiting dispatch orders.`,
     };
   },

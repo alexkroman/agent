@@ -1,6 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import { menuText, orderSlot } from "./shared.ts";
-import systemPrompt from "./system-prompt.md?raw";
+import { menuText } from "./shared.ts";
 
 // The in-progress order lives in one `sessionSlot` (see shared.ts) —
 // per-session by construction, so concurrent customers each get their own cart.
@@ -9,16 +8,10 @@ import systemPrompt from "./system-prompt.md?raw";
 
 export default agent({
   name: "Pizza Palace",
-  // What the shop DOES, for a reader of a list of agents — not for the model,
-  // which gets `system-prompt.md` and the generated menu below.
-  description: "Takes pizza orders over the phone, from first topping to checkout",
-  // The cart, pushed to the client after every tool call. Replaces a
-  // `ctx.send("order", ...)` in each of the five order tools, and the
-  // event-diffing the client had to do to rebuild the cart from them.
-  syncState: orderSlot.projected,
-  // The menu section is generated from MENU so the prompt can never quote a
-  // price the pricing code doesn't charge.
-  systemPrompt: `${systemPrompt}\n${menuText()}`,
+  listing: "Takes pizza orders over the phone, from first topping to checkout",
+  // Appended under `system-prompt.md`, and generated from MENU so the prompt
+  // can never quote a price the pricing code doesn't charge.
+  promptContext: menuText(),
   greeting:
     "Welcome to Pizza Palace. I can help you build your perfect pizza. What would you like to order?",
 });

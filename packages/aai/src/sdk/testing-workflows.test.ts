@@ -2,6 +2,7 @@
 
 import { describe, expect, test } from "vitest";
 import { createRunSnapshot } from "./testing-workflows.ts";
+import { workflow } from "./workflow.ts";
 import { isTerminal } from "./workflow-run.ts";
 
 describe("createRunSnapshot", () => {
@@ -18,6 +19,14 @@ describe("createRunSnapshot", () => {
       createdAt: Date.UTC(2026, 0, 1),
       status: "running",
     });
+  });
+
+  test("carries every base field the overrides name — a label, the run's timing", () => {
+    expect(
+      createRunSnapshot({ key: "sess-1", label: "Otters", startedAt: 10, settledAt: 20 }),
+    ).toMatchObject({ key: "sess-1", label: "Otters", startedAt: 10, settledAt: 20 });
+    // And none of them when unnamed: an absent field stays absent, not `undefined`.
+    expect(Object.keys(createRunSnapshot())).not.toContain("label");
   });
 
   test("a completed run narrows to its output without a cast", () => {
@@ -56,5 +65,31 @@ describe("createRunSnapshot", () => {
 
   test("an explicitly pending run stays pending", () => {
     expect(createRunSnapshot({ status: "pending" }).status).toBe("pending");
+  });
+});
+
+describe("createRunSnapshot handed the workflow DEF", () => {
+  const recap = workflow({
+    description: "Write the recap",
+    run: async () => ({ headline: "Wildfire smoke reaches the coast", points: ["one"] }),
+  });
+
+  test("builds the same snapshot the bare form does, output typed by the def", () => {
+    const done = createRunSnapshot(recap, {
+      workflow: "recap",
+      status: "completed",
+      output: { headline: "H", points: [] },
+    });
+    expect(done).toEqual({
+      runId: "wrun_1",
+      workflow: "recap",
+      createdAt: Date.UTC(2026, 0, 1),
+      status: "completed",
+      output: { headline: "H", points: [] },
+    });
+  });
+
+  test("the def alone is a running run, like the bare call", () => {
+    expect(createRunSnapshot(recap)).toEqual(createRunSnapshot());
   });
 });

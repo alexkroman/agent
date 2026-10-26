@@ -71,6 +71,85 @@ describe("stepPlaceCall", () => {
     );
   });
 
+  test("a brief rides on the call as signed parameters the answering session reads back", async () => {
+    const { readCallBrief } = await import("./call-brief.ts");
+    const { callParametersFromQuery } = await import("./phone-webhook.ts");
+    publishStepEnv({ CALLS_API_KEY: "brief-secret" });
+    const twilio = installStubStepFetch(() => ({ status: 201, body: { sid: "CA7" } }));
+    await stepPlaceCall({
+      ...dial,
+      parameters: { for: "Sam" },
+      brief: { id: "call_7", prompt: "Book a table for two." },
+    });
+    const url = new URL(new URLSearchParams(String(twilio.calls[0]?.body)).get("Url") ?? "");
+    const parameters = callParametersFromQuery(url.searchParams);
+    expect(parameters.for).toBe("Sam");
+    expect(parameters.call).toBe("call_7");
+    expect(await readCallBrief({ parameters }, "brief-secret")).toEqual({
+      id: "call_7",
+      prompt: "Book a table for two.",
+    });
+    expect(await readCallBrief({ parameters }, "other")).toBeUndefined();
+  });
+
+  test("a brief with no secret in the env, or over a reserved parameter, is refused before dialling", async () => {
+    const twilio = installStubStepFetch(() => ({ status: 201, body: { sid: "CA7" } }));
+    publishStepEnv({});
+    const unset = await stepPlaceCall({ ...dial, brief: { id: "c", prompt: "p" } }).catch(
+      (e: unknown) => e,
+    );
+    expect(unset).toMatchObject({ retryable: false });
+    expect(String(unset)).toMatch(/CALLS_API_KEY is not set/);
+    publishStepEnv({ CALL_SECRET: "s" });
+    const named = await stepPlaceCall({
+      ...dial,
+      brief: { id: "c", prompt: "p" },
+      briefSecretEnv: "CALL_SECRET",
+      parameters: { sig: "forged" },
+    }).catch((e: unknown) => e);
+    expect(String(named)).toMatch(/parameters\.sig collides/);
+    expect(twilio.calls).toHaveLength(0);
+  });
+
+  test("an empty briefSecretEnv means the default, never an empty name", async () => {
+    installStubStepFetch(() => ({ status: 201, body: { sid: "CA7" } }));
+    publishStepEnv({});
+    const err = await stepPlaceCall({
+      ...dial,
+      brief: { id: "c", prompt: "p" },
+      briefSecretEnv: "",
+    }).catch((e: unknown) => e);
+    expect(String(err)).toMatch(/CALLS_API_KEY is not set/);
+  });
+
+  test("the brief is checked before the credentials, so an oversized prompt is named as such", async () => {
+    installStubStepFetch(() => ({ status: 201, body: { sid: "CA7" } }));
+    publishStepEnv({});
+    const { credentials: _, ...noCredentials } = dial;
+    const err = await stepPlaceCall({
+      ...noCredentials,
+      brief: { id: "c", prompt: "x".repeat(5000) },
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PlaceCallError);
+    expect(String(err)).toMatch(/prompt is at most 4000/);
+    expect(String(err)).not.toMatch(/Twilio is not set up/);
+  });
+
+  test("a brief that overflows the parameter budget is refused in terms of the brief", async () => {
+    const twilio = installStubStepFetch(() => ({ status: 201, body: { sid: "CA7" } }));
+    publishStepEnv({ CALLS_API_KEY: "s" });
+    const own = Object.fromEntries(Array.from({ length: 22 }, (_, i) => [`k${i}`, "v"]));
+    const err = await stepPlaceCall({
+      ...dial,
+      parameters: own,
+      brief: { id: "c", prompt: "x".repeat(4000) },
+    }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ retryable: false });
+    expect(String(err)).toMatch(/33 parameters/);
+    expect(String(err)).toMatch(/the brief takes up to 11/);
+    expect(twilio.calls).toHaveLength(0);
+  });
+
   test("defaults agentUrl to the published public URL, and refuses with none", async () => {
     const twilio = installStubStepFetch(() => ({ status: 201, body: { sid: "CA1" } }));
     const { agentUrl: _, ...noUrl } = dial;

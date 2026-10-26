@@ -47,7 +47,7 @@
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { invariant } from "@alexkroman1/aai/internal";
+import { invariant, isRegistryModuleFile } from "@alexkroman1/aai/internal";
 import { build, mergeConfig, type PluginOption, type Rollup } from "vite";
 import { devSourceViteConfig } from "./_dev-source.ts";
 import { errorCode } from "./_utils.ts";
@@ -96,53 +96,71 @@ export type BuildWorkerOptions = {
  */
 const WRAPPER_ENTRY_REL = path.join(".aai", "worker-entry.ts");
 
-/** Extensions a tool module may be authored in (mirrors the SDK's registry). */
-const TOOL_MODULE_EXT_RE = /\.(?:m?ts|tsx)$/;
-
-/** A co-located spec is not a tool. */
-const TOOL_SPEC_RE = /\.(?:test|spec)\.[^.]+$/;
-
 /**
- * The project's `tools/` directory, as file names relative to it.
+ * A project directory beside `agent.ts` whose files BE the thing — `tools/`
+ * or `workflows/` — as file names relative to it.
  *
  * **This is the whole of "discovery", and it happens HERE because the guest has
  * no filesystem.** A sandbox is handed one ESM string, so the only place a
  * directory can be turned into modules is where the bundle is assembled — the
  * same lowering eve does (`readdir` → static import list, which the bundler then
- * follows). The names are validated by `toolRegistry` at bundle-evaluation time
- * rather than here, so one implementation owns the rules.
+ * follows). The names are validated by the registry (`toolRegistry`,
+ * `workflowRegistry` in `@alexkroman1/aai/manifest`) at bundle-evaluation
+ * time rather than here, so one implementation owns the rules — and what
+ * counts as a module FILE is the SDK's `isRegistryModuleFile`, the rule
+ * `virtual:aai/agent` applies too, so a spec sees exactly the set a build
+ * ships (a `tools/echo.mts` once shipped here and was invisible there).
+ *
+ * Both directories are read RECURSIVELY, so a nested file is DISCOVERED and
+ * then judged by the registry naming it. A one-level read silently skipped a
+ * subdirectory, which made "`tools/` is flat" a documented rule that nothing
+ * enforced — `tools/billing/refund.ts` produced an agent with no tools and no
+ * error anywhere, the exact silent absence discovery exists to kill; and a
+ * `workflows/sub/x.ts` default-exporting a def was skipped the same way while
+ * the registry's "nested" refusal never ran. A nested helper module
+ * (`workflows/lib/x.ts`) is common and nobody's workflow: it is imported, is
+ * no def, and the registry skips it as it skips a flat helper.
  *
  * Sorted, so the emitted entry is byte-stable for a given directory: an entry
  * that reordered per readdir would change the bundle hash for no reason.
+ *
+ * @internal — exported for its reader-level spec; `buildWorker` is the caller.
  */
-async function discoverToolFiles(cwd: string): Promise<string[]> {
-  const root = path.join(cwd, "tools");
+export async function discoverModuleFiles(
+  cwd: string,
+  dir: "tools" | "workflows",
+): Promise<string[]> {
+  const root = path.join(cwd, dir);
   // `Dirent[]` explicitly: inferring from `fs.readdir` picks its Buffer
   // overload, which the declaration emit rejects even though `tsc --noEmit`
   // on the looser config does not.
   let entries: Dirent[];
   try {
-    // RECURSIVE, so a nested file is DISCOVERED and then rejected by
-    // `toolRegistry` naming it. A one-level read silently skipped a
-    // subdirectory, which made "`tools/` is flat" a documented rule that
-    // nothing enforced: `tools/billing/refund.ts` produced an agent with no
-    // tools and no error anywhere — the exact silent absence discovery exists
-    // to kill, and verified to happen before this line said `recursive`.
-    // Discovering it here rather than throwing here keeps ONE implementation of
-    // the rule, in the registry, where the other three already live.
     entries = await fs.readdir(root, { withFileTypes: true, recursive: true });
   } catch (err) {
-    // No tools/ directory is normal — a workflow app has none, and a voice
-    // agent may declare everything inline. Anything else is worth surfacing.
+    // A missing directory is normal — a workflow app has no `tools/`, a voice
+    // agent no `workflows/`. A FILE of that name is an author's mistake worth a
+    // sentence (the raw ENOTDIR named a scandir). Anything else is worth
+    // surfacing as it is.
     if (errorCode(err) === "ENOENT") return [];
+    if (errorCode(err) === "ENOTDIR") {
+      throw new Error(
+        `${root} is a file, but \`${dir}/\` must be a DIRECTORY: one file per ${dir === "tools" ? "tool" : "workflow"}, named for it (${dir}/<name>.ts). Move the file into it, or rename it.`,
+        { cause: err },
+      );
+    }
     throw err;
   }
   return (
     entries
-      .filter((e) => e.isFile() && TOOL_MODULE_EXT_RE.test(e.name) && !TOOL_SPEC_RE.test(e.name))
       // POSIX separators: these become import specifiers and a registry key, and
       // a backslash on Windows would be neither.
-      .map((e) => path.relative(root, path.join(e.parentPath, e.name)).split(path.sep).join("/"))
+      .map((e) => ({
+        file: path.relative(root, path.join(e.parentPath, e.name)).split(path.sep).join("/"),
+        isFile: e.isFile(),
+      }))
+      .filter((e) => e.isFile && isRegistryModuleFile(e.file))
+      .map((e) => e.file)
       .sort()
   );
 }
@@ -154,11 +172,11 @@ const SYSTEM_PROMPT_FILE = "system-prompt.md";
  * Whether the project keeps its system prompt in a file.
  *
  * The other half of "a file beside `agent.ts` can BE the thing", and it happens
- * here for the same reason `discoverToolFiles` does — the guest has no
+ * here for the same reason `discoverModuleFiles` does — the guest has no
  * filesystem, so the read belongs where the bundle is assembled. What the file
- * MEANS is `withSystemPrompt`'s to decide (the author may have imported and
- * composed it, in which case discovery must not apply it twice); this only
- * answers whether there is one.
+ * MEANS is `withSystemPrompt`'s to decide (a raw config may carry a prompt
+ * string of its own, which the file must not silently lose); this only answers
+ * whether there is one.
  */
 async function hasSystemPromptFile(cwd: string): Promise<boolean> {
   // A `system-prompt/` DIRECTORY is rejected rather than ignored. eve supports
@@ -172,7 +190,7 @@ async function hasSystemPromptFile(cwd: string): Promise<boolean> {
   const nestedStat = await fs.stat(nested).catch(() => undefined);
   if (nestedStat?.isDirectory() === true) {
     throw new Error(
-      `${nested} is a directory. A system prompt is ONE file — rename it to ${SYSTEM_PROMPT_FILE}, or import the pieces yourself and compose them into \`systemPrompt\`. There is deliberately no concatenation order for a directory.`,
+      `${nested} is a directory. A system prompt is ONE file — rename it to ${SYSTEM_PROMPT_FILE}, and put text computed beside it in \`promptContext\`. There is deliberately no concatenation order for a directory.`,
     );
   }
   try {
@@ -186,6 +204,7 @@ async function hasSystemPromptFile(cwd: string): Promise<boolean> {
 function wrapperEntrySource(
   runtime: boolean,
   toolFiles: readonly string[],
+  workflowFiles: readonly string[],
   systemPromptFile: boolean,
 ): string {
   // `import * as` rather than a default import per file: the namespace is what
@@ -197,9 +216,17 @@ function wrapperEntrySource(
   const toolEntries = toolFiles
     .map((file, i) => `  ${JSON.stringify(`tools/${file}`)}: __aaiTool${i},`)
     .join("\n");
+  // The same shape for `workflows/`; `workflowRegistry` keeps the files that
+  // default-export a def and skips a body's helpers.
+  const workflowImports = workflowFiles
+    .map((file, i) => `import * as __aaiWorkflow${i} from "../workflows/${file}";`)
+    .join("\n");
+  const workflowEntries = workflowFiles
+    .map((file, i) => `  ${JSON.stringify(`workflows/${file}`)}: __aaiWorkflow${i},`)
+    .join("\n");
 
   return `import def from "../agent.ts";
-import { agentToolsets, agentToolsToSchemas, toAgentConfig, toolRegistry, withSystemPrompt, withTools } from "@alexkroman1/aai/manifest";
+import { agentToolsets, agentToolsToSchemas, toAgentConfig, toolRegistry, withSystemPrompt, withTools, withWorkflows, workflowRegistry } from "@alexkroman1/aai/manifest";
 ${
   runtime
     ? `import { createRuntime } from "@alexkroman1/aai-runtime";
@@ -208,18 +235,26 @@ import { GUEST_HOST } from "@alexkroman1/aai-runtime/internal";`
 }
 ${systemPromptFile ? `import __aaiSystemPrompt from "../${SYSTEM_PROMPT_FILE}?raw";` : ""}
 ${toolImports}
+${workflowImports}
 // A tool's name is its file name. The map is built here rather than written in
 // agent.ts, so a file that exists is a tool the model can call — there is no
-// registration step to forget.
+// registration step to forget. A \`workflows/<name>.ts\` default-exporting a
+// \`workflow()\` def is registered as \`<name>\` the same way, an explicit
+// \`agent({ workflows })\` entry winning a clash.
 //
 // \`system-prompt.md\` arrives the same way, and the \`?raw\` lives HERE rather
 // than in the author's own \`agent.ts\`: it is a Vite convention, and the whole
 // point of generating this entry is that a bundler feature never has to appear
 // in user-authored space.
-const __aaiAgent = ${systemPromptFile ? "withSystemPrompt(" : ""}withTools(
-  def,
-  toolRegistry({
+const __aaiAgent = ${systemPromptFile ? "withSystemPrompt(" : ""}withWorkflows(
+  withTools(
+    def,
+    toolRegistry({
 ${toolEntries}
+    }),
+  ),
+  workflowRegistry({
+${workflowEntries}
   }),
 )${systemPromptFile ? ", __aaiSystemPrompt)" : ""};
 export default __aaiAgent;
@@ -255,14 +290,15 @@ export async function buildWorker(cwd: string, options: BuildWorkerOptions = {})
   // The two probes are independent reads of the project directory, and this
   // function runs after every settled write burst in the studio — so they
   // overlap with each other and with creating the scratch dir.
-  const [, toolFiles, systemPromptFile] = await Promise.all([
+  const [, toolFiles, workflowFiles, systemPromptFile] = await Promise.all([
     fs.mkdir(path.dirname(wrapperPath), { recursive: true }),
-    discoverToolFiles(cwd),
+    discoverModuleFiles(cwd, "tools"),
+    discoverModuleFiles(cwd, "workflows"),
     hasSystemPromptFile(cwd),
   ]);
   await fs.writeFile(
     wrapperPath,
-    wrapperEntrySource(options.runtime !== false, toolFiles, systemPromptFile),
+    wrapperEntrySource(options.runtime !== false, toolFiles, workflowFiles, systemPromptFile),
     "utf-8",
   );
 

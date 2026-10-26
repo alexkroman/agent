@@ -30,6 +30,7 @@ const PAIRS: readonly (readonly [string, string, string])[] = [
   ["stepTranscribeUpload", "step-transcribe.ts", "orFail(stepTranscribeUpload)"],
   ["stepTranscribePoll", "step-transcribe.ts", "orFail(stepTranscribePoll)"],
   ["stepTranscribeSubmit", "step-transcribe.ts", "orFail(stepTranscribeSubmit)"],
+  ["stepRequireCompleteUpload", "step-uploads-complete.ts", "orFail(stepRequireCompleteUpload)"],
   ["sendToChannel", "channels/shared/send.ts", "orFail(sendToChannel)"],
 ];
 

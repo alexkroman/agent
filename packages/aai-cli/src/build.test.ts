@@ -4,6 +4,7 @@
 import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { describe, expect } from "vitest";
 import { linkSdkNodeModules, test } from "./_test-utils.ts";
 // `missingDeployEnv` imports this lazily (it pulls the SDK runtime barrel).
@@ -14,6 +15,7 @@ import {
   executeBuild,
   missingDeployEnv,
   missingEnvWarnings,
+  systemPromptSource,
   WORKER_ARTIFACT_REL,
 } from "./build.ts";
 
@@ -60,6 +62,26 @@ describe("executeBuild", () => {
   });
 });
 
+describe("systemPromptSource", () => {
+  test("a workflow app has no prompt to source, and the report says so", async ({
+    tmpDir: dir,
+  }) => {
+    // The failure this pins: `aai build` on a workflow app reported "the
+    // framework default (DEFAULT_SYSTEM_PROMPT)" — a prompt no model ever
+    // receives, read as one that shipped.
+    expect(await systemPromptSource(dir, DEFAULT_SYSTEM_PROMPT, "workflow-app")).toBe(
+      "none (workflow app)",
+    );
+    // Every session mode still reports the default as the default.
+    expect(await systemPromptSource(dir, DEFAULT_SYSTEM_PROMPT, "pipeline")).toContain(
+      "framework default",
+    );
+    expect(await systemPromptSource(dir, DEFAULT_SYSTEM_PROMPT, "text")).toContain(
+      "framework default",
+    );
+  });
+});
+
 describe("executeBuild reports WHICH prompt shipped", () => {
   // Deleting `system-prompt.md` swaps in DEFAULT_SYSTEM_PROMPT — a total
   // personality change — with exit 0 and, before this, nothing in the result
@@ -85,13 +107,15 @@ describe("executeBuild reports WHICH prompt shipped", () => {
     expect(without.ok && without.data.systemPrompt).toContain("framework default");
   });
 
-  test("names agent.ts when the prompt is declared there", { timeout: 120_000 }, async ({
+  test("names agent.ts when a raw config declares the prompt there", { timeout: 120_000 }, async ({
     tmpDir: dir,
   }) => {
     await linkSdkNodeModules(dir);
+    // Only a raw `export default {...}` can still carry one: `agent()` refuses
+    // the key, and the prompt a project runs is its `system-prompt.md`.
     await writeFile(
       path.join(dir, "agent.ts"),
-      `import { agent } from "@alexkroman1/aai";\nexport default agent({ name: "inline", systemPrompt: "Be brief." });`,
+      `export default { name: "inline", systemPrompt: "Be brief." };`,
     );
     const result = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
     expect(result.ok && result.data.systemPrompt).toBe("agent.ts");

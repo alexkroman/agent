@@ -133,22 +133,4 @@ function ScreeningTicker() {
   );
 }
 
-mountClient({
-  name: "Hiring Desk",
-  sidebar: HiringSidebar,
-  theme: {
-    bg: "#0f1412",
-    primary: "#5ec48f",
-    text: "#eef3ef",
-    surface: "#1a221e",
-    border: "#27332d",
-  },
-  tools: {
-    screen_candidates: { icon: "\u{1F4CB}", label: "Scoring the applicants" },
-    rescore_with_feedback: { icon: "\u{1F501}", label: "Scoring again with feedback" },
-    proceed_to_emails: { icon: "\u{2709}", label: "Writing the emails" },
-    candidate_details: { icon: "\u{1F464}", label: "Looking up an applicant" },
-    read_email: { icon: "\u{1F4E8}", label: "Reading a draft" },
-    screening_status: { icon: "\u{2139}", label: "Checking where things stand" },
-  },
-});
+mountClient({ sidebar: HiringSidebar, theme: { primary: "#5ec48f", mode: "dark" } });

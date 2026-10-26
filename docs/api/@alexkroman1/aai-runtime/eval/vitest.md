@@ -17,16 +17,27 @@ from another — and an eval needs no other import from either package for its
 harness:
 
 ```ts
-import type { AgentDef } from "@alexkroman1/aai";
-import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/testing/vitest";
+// file: tools/look_up.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
 
-declare const agentDef: AgentDef;
+export default tool({
+  description: "Look an order up",
+  inputSchema: z.object({ orderId: z.string() }),
+  execute: ({ orderId }) => ({ orderId, status: "shipped" }),
+});
+
+// file: agent.eval.test.ts
+import agentDef from "virtual:aai/agent";
+import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/testing/vitest";
+import lookUp from "./tools/look_up.ts";
 
 describeEval(agentDef, (test) => {
   test(
     "looks the order up before answering",
     async ({ session }) => {
-      expectCalled(await session.say("where is order W1234?"), "look_up");
+      // The claim takes the tool's DEF, matched by the name the agent registered.
+      expectCalled(await session.say("where is order W1234?"), lookUp);
     },
     { stubReply: "Order W1234 shipped yesterday." },
   );
@@ -216,7 +227,9 @@ describeTextEval(agentDef, (test) => {
 function describeWorkflowEval(
    agent: AgentDef, 
    define: (test: EvalWorkflowTest) => void, 
-   options?: Omit<EvalWorkflowsOptions, "agent">
+   options?: Omit<EvalWorkflowsOptions, "agent"> & {
+  steps?: EvalStepsOptions;
+}
 ): void;
 ```
 
@@ -240,7 +253,9 @@ callback as jest's `done`). Do not tidy either.
 
 ##### options?
 
-`Omit`\<[`EvalWorkflowsOptions`](../eval.md#evalworkflowsoptions), `"agent"`\>
+`Omit`\<[`EvalWorkflowsOptions`](../eval.md#evalworkflowsoptions), `"agent"`\> & \{
+  `steps?`: [`EvalStepsOptions`](#evalstepsoptions);
+\}
 
 #### Returns
 
@@ -309,13 +324,14 @@ function dialogResultSchema<T extends ZodType<unknown, unknown, $ZodTypeInternal
 
 The envelope a gated tool answers with, as a schema around the tool's own.
 
-[expectDialogOk](../testing.md#expectdialogok) unwraps a value a spec HOLDS. An eval holds the
-serialized copy the model was handed and reads it back through a schema —
-`toolResultIn(turn.toolCalls, "set_stay", schema)` — so it needs the same
-envelope as a schema rather than as a function, and three shipped evals had
-each written it out: `z.object({ result, state: z.string(), done:
-z.boolean() })`, under a comment saying the shape was the SDK's. It is, and
-this is where it lives: `result` is whatever the author's `execute` returned,
+[expectDialogOk](../testing.md#expectdialogok) unwraps a value a spec HOLDS. A harness that holds the
+SERIALIZED copy the model was handed — a transcript, a recording — reads it
+back through a schema, so it needs the same envelope as a schema rather than
+as a function, and three shipped evals had each written it out:
+`z.object({ result, state: z.string(), done: z.boolean() })`, under a comment
+saying the shape was the SDK's. It is, and this is where it lives (an eval
+reading a live turn takes the DEF instead: `toolResultIn(turn.toolCalls,
+setStay)` is typed by it). `result` is whatever the author's `execute` returned,
 `state` is where the call landed, `done` whether that state is final, and
 `instruction` is the state's own brief when it declares one — the fields of
 [DialogToolResult](../../aai/index.md#dialogtoolresult), which a `dialog.tool` writes and no tool file does.
@@ -355,8 +371,7 @@ What the tool's `execute` answers with.
 import { dialogResultSchema } from "@alexkroman1/aai/testing";
 import { z } from "zod";
 
-// In an eval: `toolResultIn(turn.toolCalls, "set_stay", Stay)`. Holding the
-// serialized result yourself, it is the same parse:
+// Holding the serialized result yourself, it is one parse:
 const Stay = dialogResultSchema(z.object({ options: z.string() }));
 const stay = Stay.parse(
   JSON.parse('{"result":{"options":"garden view"},"state":"booking.room","done":false}'),
@@ -894,6 +909,7 @@ Every call, in order — the same log [stubDelegate](../testing.md#stubdelegate-
 type DescribeEvalOptions = Omit<EvalSessionOptions, "agent"> & {
   network?:   | EvalNetwork
      | (() => EvalNetwork);
+  steps?: EvalStepsOptions;
   workflowOptions?: Omit<EvalWorkflowsOptions, "agent">;
 };
 ```
@@ -943,6 +959,21 @@ rebuilt per case and per repeat, and the case reads it, typed, as
 use a factory for that — and state carried from one repeat into the next
 makes the second repeat measure the first. Mutually exclusive with
 `fetch`, which it replaces.
+
+##### steps?
+
+```ts
+readonly optional steps?: EvalStepsOptions;
+```
+
+The STEP fetch every case's workflow steps dial, scripted — routes, an
+optional hold on the first answer, and a drain at case end: the harness
+releases the hold and `settleAll()`s the case's workflow app before the
+routes are unpublished, so no run outlives its fakes. See
+[EvalStepsOptions](#evalstepsoptions). Installed afresh per case and per repeat; the
+session's own model traffic stays on the global `fetch`, so a live case
+still measures the agent. Mutually exclusive with `network` and
+`workflowOptions.stepFetch`, which answer the same requests.
 
 ##### workflowOptions?
 
@@ -1117,6 +1148,128 @@ How the suite is running, and why.
 
 ***
 
+### EvalSteps
+
+```ts
+type EvalSteps = {
+  held: boolean;
+  hits: readonly FetchRouteHit[];
+  requests: readonly FetchRouteRequest[];
+  release: void;
+};
+```
+
+**`Sealed`**
+
+What a case is handed as `ctx.steps`.
+
+#### Methods
+
+##### release()
+
+```ts
+release(): void;
+```
+
+Let the held request answer. Idempotent; the harness calls it at case end.
+
+###### Returns
+
+`void`
+
+#### Properties
+
+##### held
+
+```ts
+readonly held: boolean;
+```
+
+Whether a request is parked on the gate right now.
+
+##### hits
+
+```ts
+readonly hits: readonly FetchRouteHit[];
+```
+
+Every step request as it was ANSWERED, with its outcome and status —
+`stubFetchRoutes`' own log, which records a request once it has resolved,
+so a held one is not here until released.
+
+##### requests
+
+```ts
+readonly requests: readonly FetchRouteRequest[];
+```
+
+Every step request as it ARRIVED, in order — a held one included, which is
+what makes "the run is waiting on the provider" a claim about this list.
+
+***
+
+### EvalStepsOptions
+
+```ts
+type EvalStepsOptions = {
+  drain?: boolean;
+  hold?:   | "first"
+     | "none"
+     | ((request: FetchRouteRequest) => boolean);
+  routes:   | FetchRouteTable
+     | readonly FetchRouteHandler[];
+};
+```
+
+**`Input`**
+
+The `steps` option: the routes a case's step HTTP is answered from, and
+whether the first answer is HELD.
+
+#### Properties
+
+##### drain?
+
+```ts
+readonly optional drain?: boolean;
+```
+
+Release the gate and `settleAll()` the case's workflow app when the case
+ends, so no run outlives its routes. Defaults to `true`; `false` for a
+case that drains by hand or means to leave a run abandoned (the app's
+`close()` still warns).
+
+##### hold?
+
+```ts
+readonly optional hold?: 
+  | "first"
+  | "none"
+  | ((request: FetchRouteRequest) => boolean);
+```
+
+Park the FIRST answered request until the case calls `steps.release()`
+(or ends), so a run is observably still in flight: a durable `sleep` is
+skipped in an eval, and an unheld run burns its whole poll loop in
+milliseconds. `"first"` holds the first request any route answered; a
+predicate holds the first request it matches (the first `GET`, say).
+Defaults to `"none"`.
+
+##### routes
+
+```ts
+readonly routes: 
+  | FetchRouteTable
+  | readonly FetchRouteHandler[];
+```
+
+What a step's `stepFetch` is answered from — a `stubFetchRoutes` table,
+or an ordered handler list (how `stubGatewayRoute`'s `route` composes).
+The STEP fetch only: a live case's own model traffic stays on the global.
+A request no route answers is a finding and rejects naming it.
+
+***
+
 ### EvalTest
 
 ```ts
@@ -1187,6 +1340,7 @@ type EvalTestContext = {
   mode: EvalMode;
   network: EvalNetwork | undefined;
   session: EvalSession;
+  steps: EvalSteps | undefined;
   workflowClient: WorkflowClient | undefined;
   workflows: EvalWorkflows | undefined;
 };
@@ -1275,6 +1429,17 @@ readonly session: EvalSession;
 ```
 
 Open for this case, closed after it.
+
+##### steps
+
+```ts
+readonly steps: EvalSteps | undefined;
+```
+
+The case's scripted step HTTP, when the suite passed `steps`: its request
+log, whether a request is held, and `release()` — which the harness calls
+at case end anyway, before draining the workflow app. `undefined` in a
+suite given none.
 
 ##### workflowClient
 
@@ -1441,6 +1606,7 @@ Declare one workflow eval case. The app is opened for it and closed after it.
 type EvalWorkflowTestContext = {
   app: EvalWorkflows;
   mode: EvalMode;
+  steps: EvalSteps | undefined;
 };
 ```
 
@@ -1470,6 +1636,15 @@ Unlike a voice case, a workflow case is EXPECTED to branch on it: it is what
 decides whether to install a fake for a provider a step would otherwise
 really dial.
 
+##### steps
+
+```ts
+readonly steps: EvalSteps | undefined;
+```
+
+The case's scripted step HTTP, when the suite passed `steps` — see
+`DescribeEvalOptions.steps`; `undefined` in a suite given none.
+
 ***
 
 ### RecordingWorkflows
@@ -1477,6 +1652,7 @@ really dial.
 ```ts
 type RecordingWorkflows = WorkflowClient & {
   cancelled: string[];
+  signals: RecordedSignal[];
   starts: RecordedStart[];
   seed: void;
   started: RecordedStart[];
@@ -1505,6 +1681,14 @@ readonly cancelled: string[];
 ```
 
 Every run id `cancel` was called with, in order, whatever it resolved.
+
+##### signals
+
+```ts
+readonly signals: RecordedSignal[];
+```
+
+Every `signalRun`, in order — delivered (`true`) without a run to deliver to.
 
 ##### starts
 
@@ -2167,6 +2351,12 @@ Re-exports [EvalRoute](../eval.md#evalroute)
 
 ***
 
+### evalRunOf
+
+Re-exports [evalRunOf](../eval.md#evalrunof)
+
+***
+
 ### EvalRunOptions
 
 Re-exports [EvalRunOptions](../eval.md#evalrunoptions)
@@ -2233,6 +2423,12 @@ Re-exports [EvalToolCall](../eval.md#evaltoolcall)
 
 ***
 
+### EvalToolOutput
+
+Re-exports [EvalToolOutput](../eval.md#evaltooloutput)
+
+***
+
 ### EvalTurn
 
 Re-exports [EvalTurn](../eval.md#evalturn)
@@ -2260,6 +2456,12 @@ Re-exports [EvalWorkflows](../eval.md#evalworkflows)
 ### EvalWorkflowsOptions
 
 Re-exports [EvalWorkflowsOptions](../eval.md#evalworkflowsoptions)
+
+***
+
+### EvalWorkflowStart
+
+Re-exports [EvalWorkflowStart](../eval.md#evalworkflowstart)
 
 ***
 

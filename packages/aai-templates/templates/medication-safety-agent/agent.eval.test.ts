@@ -36,6 +36,7 @@
  * tool-choice claim below then passes or fails for the wrong reason.
  */
 import agentDef from "virtual:aai/agent";
+import { isToolFailure } from "@alexkroman1/aai";
 import {
   describeEval,
   describeTurn,
@@ -44,38 +45,19 @@ import {
   toolResultIn,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
+import checkDrugInteraction from "./tools/check_drug_interaction.ts";
 
 /**
  * Every drug this scope's interaction checks were actually asked about,
- * lowercased.
- *
- * Read through `toolArgsIn` WITH a schema, which is what that reader takes one
- * for: `args` is `Record<string, unknown>` on the wire — the model wrote it and
- * nothing validated it — so the `args.drugs as string[] ?? []` this replaced
- * turned a `drugs` the desk renamed, or never sent, into an empty list, and the
- * two claims below would have been claims about nothing. A `drugs` that stops
- * arriving FAILS here, naming the field.
- *
- * ZERO checks answers `[]` rather than throwing, which is what keeps the
- * dangerous case assertable: a desk that answered an interaction question
- * without asking a single label reaches the assertions with nothing in hand.
+ * lowercased — typed by the tool's own schema, so a `drugs` that stops
+ * arriving fails here naming the field. ZERO checks answers `[]` rather than
+ * throwing, which is what keeps the dangerous case assertable: a desk that
+ * asked no label reaches the assertions with nothing in hand.
  */
-const InteractionArgs = z.object({ drugs: z.array(z.string()) });
 const drugsAsked = (calls: readonly EvalToolCall[]): string[] =>
-  toolArgsIn(calls, "check_drug_interaction", InteractionArgs).flatMap((args) =>
+  toolArgsIn(calls, checkDrugInteraction).flatMap((args) =>
     args.drugs.map((drug) => drug.trim().toLowerCase()),
   );
-
-/**
- * A refusal from `check_drug_interaction`, as the model saw it.
- *
- * A schema rather than a cast, which is what `toolResultIn` takes one for: a
- * result that stopped carrying `error` fails HERE naming the field, where the
- * cast this replaced read `undefined` off it and the assertion below then said
- * "expected undefined to match /sparkleforin/" without saying why.
- */
-const Refusal = z.object({ error: z.string() });
 
 describeEval(agentDef, (test) => {
   test(
@@ -165,11 +147,9 @@ describeEval(agentDef, (test) => {
       // interactions — the rule that stops an unresolvable drug being silently
       // dropped from the comparison.
       for (const call of turn.toolCalls.filter((c) => c.name === "check_drug_interaction")) {
-        // `toolResultIn` over a ONE-CALL list: the name is this call's own, so
-        // the reader's "no such call" and "two calls" throws are unreachable,
-        // and what is left is the parse, the schema, and the "never completed"
-        // failure the local helper used to hand-roll.
-        expect(toolResultIn([call], call.name, Refusal).error).toMatch(/sparkleforin/i);
+        const answer = toolResultIn([call], checkDrugInteraction);
+        if (!isToolFailure(answer)) throw new Error("an unresolvable drug was not refused");
+        expect(answer.error).toMatch(/sparkleforin/i);
       }
     },
     {

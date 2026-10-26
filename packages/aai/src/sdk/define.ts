@@ -6,16 +6,19 @@ import { declaredPersonas } from "./_dialog-meta.ts";
 import { assertNoStrayFields } from "./_stray-fields.ts";
 import { KNOWN_AGENT_FIELDS } from "./agent-config.ts";
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
+import type { AgentMode } from "./agent-mode.ts";
 import type {
   AgentParams,
   DefaultedAgentField,
+  FrameworkOwnedField,
+  InlineToolsField,
   ModeAgentDef,
   PipelineAgentParams,
   S2sAgentParams,
   TextAgentParams,
   WorkflowAppAgentParams,
 } from "./agent-params.ts";
-import { DEFAULT_MAX_STEPS } from "./constants.ts";
+import { ASSEMBLYAI_API_KEY_ENV, DEFAULT_MAX_STEPS } from "./constants.ts";
 import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { bindRosterDialogs, type Roster } from "./roster.ts";
@@ -23,6 +26,8 @@ import { rosterToolset } from "./roster-tools.ts";
 import type { ToolInputSchema } from "./schema.ts";
 import type { ResolvedAgentDef } from "./toolset.ts";
 import { type AgentDef, DEFAULT_SYSTEM_PROMPT, type ToolContext, type ToolDef } from "./types.ts";
+import type { AnyWorkflowDef } from "./workflow.ts";
+import { recordWorkflowNames } from "./workflow-names.ts";
 
 /**
  * Define a tool with a typed input schema and execute function.
@@ -70,7 +75,7 @@ import { type AgentDef, DEFAULT_SYSTEM_PROMPT, type ToolContext, type ToolDef } 
  *
  * @public
  */
-export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
+export function tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(
   def: ToolDef<P, R>,
 ): ToolDef<P, R> {
   return def;
@@ -89,6 +94,14 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
  * agent is a pipeline agent. {@link AgentDeclaration} documents what every
  * field means; the returned {@link AgentDef} is the resolved shape.
  *
+ * **The `workflows` map is kept as DECLARED on the result** (its literal keys
+ * and each def's own type — {@link AgentDefWith}), so a page can name a
+ * workflow through the agent: `useWorkflowSubmit<typeof agentDef>("digest")`
+ * types the name as the keys the agent declares and the output as that body's.
+ * A def without `workflows` declares NO names: the typed form refuses every
+ * name on it, and a `workflows/<name>.ts` the build discovers is reached by
+ * the untyped string form (the def's type cannot see the directory).
+ *
  * **Tools are not declared here** — a tool is a FILE. `tools/echo.ts` that
  * default-exports `tool({ … })` is the tool `echo`, registered by existing, and
  * `agent({ tools })` is a compile error naming the file to create
@@ -105,8 +118,14 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
  * ```
  *
  * **Session state is not declared here either** — a {@link sessionSlot} owns its
- * own default and its own storage, so there is no `state` factory to remember.
- * `syncState` takes that slot's projection, or a list of them.
+ * own default and its own storage, so there is no `state` factory to remember,
+ * and a slot declared `sessionSlot(key, create, { sync: true })` is what the
+ * browser sees: `agent()` collects those projections into
+ * {@link AgentDef.syncState}, which is not a parameter.
+ *
+ * **Nor is the system prompt** — it is the `system-prompt.md` beside
+ * `agent.ts`, discovered by the build; text computed beside it is
+ * {@link AgentDeclaration.promptContext}.
  *
  * @example Default pipeline with another voice and a different LLM
  * ```ts
@@ -122,7 +141,9 @@ export function tool<P extends ToolInputSchema = ToolInputSchema, R = unknown>(
  *
  * @public
  */
-export function agent(def: PipelineAgentParams): ModeAgentDef<"pipeline">;
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(
+  def: PipelineAgentParams & { workflows?: W },
+): AgentDefWith<"pipeline", W>;
 /**
  * Define a speech-to-speech agent: `mode: "s2s"` and its `s2s` descriptor. See
  * {@link S2sAgentParams}.
@@ -136,7 +157,9 @@ export function agent(def: PipelineAgentParams): ModeAgentDef<"pipeline">;
  *
  * @public
  */
-export function agent(def: S2sAgentParams): ModeAgentDef<"s2s">;
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(
+  def: S2sAgentParams & { workflows?: W },
+): AgentDefWith<"s2s", W>;
 /**
  * Define a text agent: `mode: "text"`, driven over a message list by
  * `createTextAgent` rather than by a session socket. See {@link TextAgentParams}.
@@ -148,20 +171,24 @@ export function agent(def: S2sAgentParams): ModeAgentDef<"s2s">;
  * export default agent({
  *   name: "Docs Assistant",
  *   mode: "text",
- *   systemPrompt: "Answer questions about the docs.",
+ *   promptContext: "The docs cover the v2 API only.",
  * });
  * ```
  *
  * @public
  */
-export function agent(def: TextAgentParams): ModeAgentDef<"text">;
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(
+  def: TextAgentParams & { workflows?: W },
+): AgentDefWith<"text", W>;
 /**
  * Define a workflow app: `mode: "workflow-app"`. {@link workflowApp} is the
  * same member with the mode already set. See {@link WorkflowAppAgentParams}.
  *
  * @public
  */
-export function agent(def: WorkflowAppAgentParams): ModeAgentDef<"workflow-app">;
+export function agent<W extends WorkflowsMap = EmptyWorkflows>(
+  def: Omit<WorkflowAppAgentParams, "workflows"> & { workflows?: W },
+): AgentDefWith<"workflow-app", W>;
 /**
  * Any member of {@link AgentParams} — the signature a value typed as the whole
  * union resolves against (an options bag assembled elsewhere, a wrapper that
@@ -175,10 +202,57 @@ export function agent(def: AgentParams): AgentDef {
 }
 
 /**
+ * The workflows an agent may declare — `AgentDef["workflows"]` without the
+ * `undefined`. The constraint every `W` is inferred under.
+ *
+ * @public
+ */
+export type WorkflowsMap = NonNullable<AgentDef["workflows"]>;
+
+/**
+ * What `W` is when a declaration names no `workflows`: the map with NO keys,
+ * not the open one. Under the open map `WorkflowNameOf<typeof agentDef>` was
+ * `string`, so `useWorkflowSubmit<typeof agentDef>("typo")` compiled against
+ * a def that declared nothing and typed the run's output `unknown`.
+ *
+ * @public
+ */
+export type EmptyWorkflows = Record<never, never>;
+
+/**
+ * What `agent()` and `workflowApp()` return for a declaration in mode `M`
+ * whose `workflows` map is `W`: {@link ModeAgentDef}, carrying `W` as declared
+ * — its literal keys and each def's own type — when one was declared; the
+ * optional EMPTY map when none was ({@link EmptyWorkflows}, which is what the
+ * runtime value is: absent); and the open map only when `W` was inferred as
+ * the open map itself (an options bag typed `Record<string, WorkflowDef>`).
+ *
+ * The one place the declared map survives the lowering: `AgentDef` types
+ * `workflows` as the open `Record<string, WorkflowDef>`, which is right for
+ * every reader of a definition and wrong for a page naming one of its
+ * workflows by key — `useWorkflowSubmit<typeof agentDef>("digets")` typed the
+ * name `string` and the output `unknown`, so the app-typed hooks were
+ * unreachable from a template.
+ *
+ * @sealed
+ * @public
+ */
+export type AgentDefWith<M extends AgentMode, W extends WorkflowsMap> = string extends keyof W
+  ? ModeAgentDef<M>
+  : // `Omit` first: intersecting `W` onto the open map would leave `keyof`
+    // reading `string | keyof W`, which is `string` — the widening this exists
+    // to undo.
+    Omit<ModeAgentDef<M>, "workflows"> &
+      // No `| undefined` on the optional member: `AgentDef.workflows` has none
+      // either, and under `exactOptionalPropertyTypes` adding it would make
+      // the result unassignable to the open definition.
+      ([keyof W] extends [never] ? { readonly workflows?: W } : { readonly workflows: W });
+
+/**
  * The shared body of {@link agent} and {@link workflowApp}.
  */
 function buildAgent(def: object): AgentDef {
-  assertNoInlineTools(def);
+  assertNoFrameworkOwnedFields(def);
   // Mode, field legality, the mode mirrors and the conveniences — in that
   // order; see `_author-conveniences.ts`.
   const normalized = normalizeAgentParams(def) as Record<string, unknown>;
@@ -187,6 +261,11 @@ function buildAgent(def: object): AgentDef {
   // rather than at `aai build` — and a raw `export default {...}` that skips
   // this function still meets the check at the config boundary.
   assertNoStrayFields(normalized, KNOWN_AGENT_FIELDS);
+  // A def declared only through `agent({ workflows })` is named here, so
+  // `workflowNameOf(def)` answers for it as it does for a discovered one.
+  if (isRecord(normalized.workflows)) {
+    recordWorkflowNames(normalized.workflows as Readonly<Record<string, AnyWorkflowDef>>);
+  }
   /**
    * `omitUndefined` because a spread lets an own key whose value is
    * `undefined` WIN over the default beneath it — `agent({ name, ...opts })`
@@ -248,27 +327,56 @@ function checkPins(roster: Roster | undefined, dialogs: AgentDef["dialogs"]): vo
 }
 
 /**
- * Refuse a `tools` key at RUN TIME as well as in the type.
+ * The three {@link AgentDef} fields the FRAMEWORK fills and `agent()` refuses,
+ * each with the sentence naming where the value is declared instead. Total
+ * over {@link InlineToolsField} and {@link FrameworkOwnedField} by
+ * `satisfies`, so a field added to either list is refused here or fails to
+ * compile.
+ */
+const FRAMEWORK_OWNED = {
+  tools:
+    "agent({ tools }) is not how a tool is declared: a tool IS a file. Move each entry to " +
+    "tools/<the name the model calls>.ts as `export default tool({ … })` — the build enumerates " +
+    "that directory, so nothing lists them anywhere. In a spec, reach the same set with " +
+    '`import agentDef from "virtual:aai/agent"` under vitest, or `deployedAgent` from ' +
+    "@alexkroman1/aai/testing under any other runner.",
+  systemPrompt:
+    "agent({ systemPrompt }) is not how the prompt is declared: the prompt IS a file. Write it in " +
+    "system-prompt.md beside agent.ts — the build discovers it — and put text computed beside it " +
+    "(a menu, a line over session state) in `promptContext`, which takes a string or a " +
+    "per-request resolver. A host setting a lowered definition's prompt uses `withSystemPrompt` " +
+    "from @alexkroman1/aai/manifest.",
+  syncState:
+    "agent({ syncState }) is not how a slot reaches the browser: declare the slot " +
+    "`sessionSlot(key, create, { view, sync: true })` in a module agent.ts imports, and agent() " +
+    "collects its projection; the page reads it with `useAgentState(slot.projected)`.",
+} as const satisfies Record<InlineToolsField | FrameworkOwnedField, string>;
+
+/**
+ * Refuse the framework-owned keys at RUN TIME as well as in the type.
  *
- * {@link InlineToolsMisuse} is the compile error, and on its own it leaves the
+ * {@link InlineToolsMisuse} and the absence of `systemPrompt` and `syncState`
+ * from every member are the compile errors, and on their own they leave the
  * rule conventional: neither bundler type-checks user code, so a `tools` map
- * that reached here would work — and "a tool is only ever a file" would be true
- * of the templates and of nothing else. It is also exactly the shape an options
- * bag reaches `agent()` in, where the excess-property check does not fire.
+ * or a `systemPrompt` string that reached here would work — and "a tool is
+ * only ever a file" would be true of the templates and of nothing else. It is
+ * also exactly the shape an options bag reaches `agent()` in, where the
+ * excess-property check does not fire.
  *
  * Thrown rather than dropped, on the rule this whole mechanism exists for: the
  * failure being replaced was a tool that silently never reached the model, and
- * silently ignoring a declared one is that failure with a new cause.
+ * silently ignoring a declared one is that failure with a new cause. Only
+ * `agent()` refuses them: `toAgentConfig` sees the LOWERED def, on which all
+ * three are legitimately set.
  */
-function assertNoInlineTools(def: unknown): void {
-  if (!(isRecord(def) && "tools" in def)) return;
-  throw new Error(
-    "agent({ tools }) is not how a tool is declared: a tool IS a file. Move each entry to " +
-      "tools/<the name the model calls>.ts as `export default tool({ … })` — the build enumerates " +
-      "that directory, so nothing lists them anywhere. In a spec, reach the same set with " +
-      '`import agentDef from "virtual:aai/agent"` under vitest, or `deployedAgent` from ' +
-      "@alexkroman1/aai/testing under any other runner.",
-  );
+function assertNoFrameworkOwnedFields(def: unknown): void {
+  if (!isRecord(def)) return;
+  for (const [field, sentence] of Object.entries(FRAMEWORK_OWNED)) {
+    // Present-and-undefined is absent, the rule `omitUndefined` applies to the
+    // defaults below: an options bag typed `{ systemPrompt?: string }` spreads
+    // the key in with no value.
+    if (def[field] !== undefined) throw new Error(sentence);
+  }
 }
 
 /**
@@ -284,6 +392,14 @@ function assertNoInlineTools(def: unknown): void {
  * It mirrors the split `@alexkroman1/aai-ui` already makes in the browser:
  * `mountPage()` mounts a workflow app's UI and `mountClient()` mounts a voice
  * one.
+ *
+ * `requiredEnv` defaults to {@link WORKFLOW_APP_REQUIRED_ENV} — the AssemblyAI
+ * key every shipped workflow app reads; `requiredEnv: []` opts out. The
+ * `workflows` map comes back AS DECLARED ({@link AgentDefWith}), which is what
+ * lets a page write `useWorkflowSubmit<typeof app>("digest")`. It is optional:
+ * an app whose workflows are all `workflows/<name>.ts` default exports
+ * declares none here (the build discovers them), and its page reaches them by
+ * the untyped string form.
  *
  * @example
  * ```ts
@@ -304,9 +420,36 @@ function assertNoInlineTools(def: unknown): void {
  *
  * @public
  */
-export function workflowApp(def: Omit<WorkflowAppAgentParams, "mode">): AgentDef {
-  return buildAgent({ ...def, mode: "workflow-app" });
+export function workflowApp<W extends WorkflowsMap = EmptyWorkflows>(
+  def: Omit<WorkflowAppAgentParams, "mode" | "workflows"> & { workflows?: W },
+): AgentDefWith<"workflow-app", W> {
+  // A destructuring default rather than a spread beneath `def`, so an explicit
+  // `requiredEnv: undefined` takes the default too — the same rule `buildAgent`
+  // applies to the other defaulted fields through `omitUndefined`.
+  const { requiredEnv = WORKFLOW_APP_REQUIRED_ENV, ...rest } = def;
+  // `buildAgent` answers the open `AgentDef`; the map it was handed is `W`.
+  return buildAgent({ ...rest, requiredEnv, mode: "workflow-app" }) as AgentDefWith<
+    "workflow-app",
+    W
+  >;
 }
+
+/**
+ * What {@link workflowApp} declares as `requiredEnv` when the app names none:
+ * the AssemblyAI key, `["ASSEMBLYAI_API_KEY"]`.
+ *
+ * A workflow app declares no providers, so nothing else in its config names a
+ * credential — and every shipped workflow app transcribes, generates or speaks
+ * through that one key (`stepTranscribe*`, `stepGenerate`, `stepSpeak` all read
+ * it by default). A voice `agent()` keeps no such default: its providers already
+ * declare theirs, and `requiredEnv` there is for what the TOOLS need. An app
+ * that genuinely needs no key — one whose steps only fetch — opts out with
+ * `requiredEnv: []`, and one that names its own list replaces this rather than
+ * extending it.
+ *
+ * @public
+ */
+export const WORKFLOW_APP_REQUIRED_ENV: readonly string[] = [ASSEMBLYAI_API_KEY_ENV];
 
 /**
  * `AgentParams` with the author-only conveniences normalized away — what

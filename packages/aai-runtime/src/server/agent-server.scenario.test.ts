@@ -40,7 +40,7 @@ import { AGENT_SERVER_ENV, withServer } from "./_agent-server-test-utils.ts";
 
 describe("createAgentServer over a live session", () => {
   test("a session websocket is accepted (the runtime is real, not a facade)", async () => {
-    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+    const myAgent = agent({ name: "Support" });
 
     await withServer({ agent: myAgent }, async (baseUrl) => {
       const ws = new WebSocket(`${baseUrl.replace("http", "ws")}/websocket`);
@@ -74,7 +74,6 @@ describe("createAgentServer over a live session", () => {
     // negative case costs no provider connect and stays a unit test.
     const myAgent = agent({
       name: "Support",
-      systemPrompt: "You are helpful.",
       telephony: ["twilio"],
     });
 

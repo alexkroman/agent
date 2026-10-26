@@ -45,6 +45,8 @@ export {
   SessionErrorBanner,
   type SessionErrorBannerProps,
   SessionStateDot,
+  type SessionStateDotColors,
+  type SessionStateDotGroup,
   type SessionStateDotProps,
   SidebarLayout,
   StartScreen,

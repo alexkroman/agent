@@ -91,6 +91,8 @@ function parkedToolRuntime(agentOverrides: Partial<AgentDef>, logger: Logger = c
     sessions: {
       emitter: (id) => emitters.get(id),
       meter: () => undefined,
+      turn: () => 0,
+      workflows: () => undefined,
       speech: { of: () => makeSpeech() },
     },
     clientTools: createClientToolBroker(),
@@ -351,6 +353,8 @@ describe("self-hosted tool surface: a tool's model call finds its session's mete
       sessions: {
         emitter: () => undefined,
         meter: (id) => meters.get(id),
+        turn: () => 0,
+        workflows: () => undefined,
         speech: { of: () => makeSpeech() },
       },
       clientTools: createClientToolBroker(),
@@ -389,6 +393,8 @@ describe("self-hosted tool surface: a clientTool waits for the page", () => {
       sessions: {
         emitter: () => undefined,
         meter: () => undefined,
+        turn: () => 0,
+        workflows: () => undefined,
         speech: { of: () => makeSpeech() },
       },
       clientTools,

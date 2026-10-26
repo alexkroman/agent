@@ -21,14 +21,10 @@
  *
  * ## What it needs
  *
- * - **`ASSEMBLYAI_API_KEY` in the agent env** — `.env` under `aai dev`,
- *   `aai secret put ASSEMBLYAI_API_KEY` once deployed. A step is handed no
- *   `ToolContext`, so it reads that key with `requireStepEnv` (inside
- *   `stepGenerate`); `requiredEnv` below is what makes a deploy check for it
- *   rather than letting the first run find out.
- * - **Nothing for durability.** A deployed app's runs live on the platform. A
- *   `DATABASE_URL` (yours, if you set one) only moves the correlation-key index
- *   out of memory.
+ * `ASSEMBLYAI_API_KEY` in the agent env — `.env` under `aai dev`, `aai secret
+ * put ASSEMBLYAI_API_KEY` once deployed — which `workflowApp()` declares as
+ * `requiredEnv` for you, so a deploy checks for it. Nothing for durability: a
+ * deployed app's runs live on the platform.
  */
 
 import { workflow, workflowApp } from "@alexkroman1/aai";
@@ -40,24 +36,23 @@ import { MAX_DRAFT_CHARS, MIN_DRAFT_CHARS, redlineFlow } from "./workflows/redli
 export const MAX_ROUNDS = 3;
 
 /**
- * The input schema, named rather than inline so a spec can convert it.
+ * The input schema, named so the body can take `WorkflowInputOf<typeof
+ * redlineInput>` and a spec can convert it.
  *
  * It is doing three jobs at once here, which is the thing to notice. It
  * validates at `start()`, so a `rounds: 40` is a 400 at the call site rather
  * than forty model calls discovered on the bill; it is served on
  * `GET /workflows` as JSON Schema, which is what lets `<WorkflowFields>` render
- * most of this form without the page naming a field; and it is the type the
- * body reads.
+ * the whole form without the page naming a field; and it is the type the body
+ * reads.
  *
- * **Two of its four properties are deliberately not scalars, and that is what
- * makes this the MIXED form.** `<WorkflowFields>` renders one control per SCALAR
- * property and nothing at all for the rest, so `mustCover` (an array — no honest
- * generic control) and `source` (an object) are the two the page writes by hand
- * and maps on submit. `agent.test.ts` pins that split through `fieldKindFor`,
- * the same function `<WorkflowFields>` decides with, because the failure is
- * silent in both directions: a property that starts rendering a control gets one
- * beside the hand-written field, and one that stops rendering simply vanishes.
- * `transcription-workflow` is the all-declared form.
+ * **Two of its properties are deliberately not scalars, and `<WorkflowFields>`
+ * still renders both.** `mustCover` is an array of strings, which renders as a
+ * textarea taking one entry per line; `source` is an object of exactly
+ * `{ name, text }`, which renders as a file picker that reads the chosen file
+ * in the browser and contributes its name beside its text. Those are the two
+ * non-scalar shapes with an honest generic control; anything else the page
+ * would have to write by hand inside the same `<Form>`.
  */
 export const redlineInput = z.object({
   // Short on purpose: it renders as a one-line control, and a brief that
@@ -79,12 +74,11 @@ export const redlineInput = z.object({
     .array(z.string().max(200))
     .max(6)
     .default([])
-    .describe("Points the piece must cover"),
-  // An OBJECT, and that shape is load-bearing twice over. It keeps the file's
-  // name beside its text, so the run can narrate what it is marking up; and it
-  // is what stops `<WorkflowFields>` rendering a text box over the page's own
-  // `<FileField>` — a `draft: z.string()` here would produce two controls for
-  // one property, the second silently overwriting the first on submit.
+    .describe("Points the piece must cover, one per line"),
+  // An OBJECT, so the file's name travels beside its text and the run can
+  // narrate what it is marking up. A draft is a few kilobytes of prose and
+  // belongs in the run's INPUT, journaled with everything else — not an
+  // upload, which is the other case and `transcription-workflow`'s.
   source: z
     .object({
       name: z.string().min(1).max(200),
@@ -94,7 +88,7 @@ export const redlineInput = z.object({
     .describe("A draft to redline, instead of writing one from the brief"),
 });
 
-/** The declaration: schema, description, and the directive body. */
+/** The declaration: schema, description, and the body. */
 export const redline = workflow({
   description: "Write a piece from a brief, then critique and revise it until it is worth shipping",
   input: redlineInput,
@@ -103,10 +97,6 @@ export const redline = workflow({
 
 export default workflowApp({
   name: "Redline",
-  description:
-    "Takes a brief or a draft and returns a piece that has been through rounds of critique",
+  listing: "Takes a brief or a draft and returns a piece that has been through rounds of critique",
   workflows: { redline },
-  // Checked at deploy time, so a missing key is a warning naming it rather than
-  // a run that fails on its first step.
-  requiredEnv: ["ASSEMBLYAI_API_KEY"],
 });

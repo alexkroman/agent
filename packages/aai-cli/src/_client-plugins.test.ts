@@ -8,6 +8,7 @@
 import path from "node:path";
 import { describe, expect } from "vitest";
 import {
+  CLIENT_ONLY_DEPENDENCIES,
   CLIENT_PLUGIN_PACKAGES,
   defaultClientPlugins,
   hasViteConfig,
@@ -72,6 +73,30 @@ describe("defaultClientPlugins", () => {
       message: expect.stringContaining("@tailwindcss/vite"),
       hint: expect.stringContaining("npm i -D @tailwindcss/vite"),
     });
+  });
+
+  test("the hint names everything `aai init` removed from a headless project, by field", async ({
+    tmpDir: dir,
+  }) => {
+    // The failure this pins: the hint named the two plugins, and a project
+    // that installed exactly those then failed on `@alexkroman1/aai-ui/styles.css`.
+    await writeFiles(dir, PROJECT);
+    const failure = await defaultClientPlugins(dir).catch((err: unknown) => err);
+    const hint = (failure as { hint: string }).hint;
+    expect(hint).toContain(`npm i ${CLIENT_ONLY_DEPENDENCIES.dependencies.join(" ")}`);
+    expect(hint).toContain(`npm i -D ${CLIENT_ONLY_DEPENDENCIES.devDependencies.join(" ")}`);
+    for (const name of [
+      "@alexkroman1/aai-ui",
+      "react",
+      "react-dom",
+      "tailwindcss",
+      "@tailwindcss/vite",
+      "@types/react",
+      "@types/react-dom",
+      "@vitejs/plugin-react",
+    ]) {
+      expect(hint).toContain(name);
+    }
   });
 });
 

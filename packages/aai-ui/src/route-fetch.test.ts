@@ -52,6 +52,26 @@ describe("routeFetch", () => {
     await expect(routeFetch("GET", "/tasks")).rejects.toThrow("GET /tasks: 502");
   });
 
+  test("sends the caller's headers, and a content-type there beats the JSON one", async () => {
+    await routeFetch("GET", "/calls", undefined, { headers: { authorization: "Bearer k" } });
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual({
+      method: "GET",
+      headers: { authorization: "Bearer k" },
+    });
+    await routeFetch("POST", "/calls", { a: 1 }, { headers: { "content-type": "text/plain" } });
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      headers: { "content-type": "text/plain" },
+      body: '{"a":1}',
+    });
+  });
+
+  test("a `Content-Type` spelled any way replaces the JSON one rather than joining it", async () => {
+    await routeFetch("POST", "/calls", { a: 1 }, { headers: { "Content-Type": "text/plain" } });
+    expect(fetchMock.mock.calls.at(-1)?.[1]?.headers).toEqual({ "content-type": "text/plain" });
+    await routeFetch("GET", "/calls", undefined, { headers: { Authorization: "Bearer k" } });
+    expect(fetchMock.mock.calls.at(-1)?.[1]?.headers).toEqual({ authorization: "Bearer k" });
+  });
+
   test("a 2xx with no JSON body resolves {}", async () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
     await expect(routeFetch("POST", "/ping")).resolves.toEqual({});

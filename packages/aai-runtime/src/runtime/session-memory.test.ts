@@ -6,7 +6,7 @@ import {
   setSessionClient,
   setSessionLocation,
 } from "@alexkroman1/aai/host-internal";
-import { createStubWorkflows } from "@alexkroman1/aai/testing";
+import { createSlotStore, createStubWorkflows } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "../_logger-test-utils.ts";
 import { bindClientSession, createSessionEventStream } from "../session/index.ts";
@@ -30,6 +30,7 @@ function wire(agent: Parameters<typeof openSessionMemory>[0]["agent"] = {}) {
     workflows: undefined,
     history,
     prompt,
+    slots: createSlotStore(),
     sessionId,
     logger,
   });
@@ -93,7 +94,7 @@ describe("openSessionMemory", () => {
     const { memory, sessionId } = wire({ onSessionEnd });
     setSessionClient(sessionId, "porch");
 
-    memory.ended(7);
+    await memory.ended(7, []);
 
     const ctx = onSessionEnd.mock.calls[0]?.[0];
     expect(ctx).toMatchObject({
@@ -101,12 +102,42 @@ describe("openSessionMemory", () => {
       clientId: "porch",
       lastEventIndex: 7,
       env: { MEMORY_URL: "http://memory" },
+      transcript: [],
     });
     // No workflows declared: the same rejecting client a tool would get.
     await expect(ctx?.workflows.start("memorize", {})).rejects.toThrow();
   });
 
-  test("onSessionEnd gets the runtime's workflow client when there is one", () => {
+  test("onSessionEnd is handed the transcript the stream retained — the log is not re-read", async () => {
+    const onSessionEnd = vi.fn<(ctx: SessionEndContext) => unknown>();
+    const { memory, sessionId, stream, backend } = wire({ onSessionEnd });
+    // No client named: a phone call's log is read by SESSION, which is the point.
+    stream.append(sessionId, { type: "userTranscript.committed", text: "table for two" });
+    stream.append(sessionId, {
+      type: "agentTranscript.committed",
+      text: "Sorry, something went wrong.",
+      recovery: "turn-failed",
+    });
+    stream.append(sessionId, { type: "agentTranscript.committed", text: "Booked for seven." });
+    // A backend that cannot be read does not matter: the lines are in memory.
+    backend.readEvents = () => Promise.reject(new Error("store down"));
+
+    await memory.ended(2, stream.transcript(sessionId));
+
+    expect(onSessionEnd.mock.calls[0]?.[0].transcript).toEqual([
+      { role: "user", text: "table for two", at: expect.any(Number) },
+      { role: "assistant", text: "Booked for seven.", at: expect.any(Number) },
+    ]);
+  });
+
+  test("onSessionEnd reads the session's slots — the view its tools and hooks wrote through", async () => {
+    const onSessionEnd = vi.fn<(ctx: SessionEndContext) => unknown>();
+    const { memory } = wire({ onSessionEnd });
+    await memory.ended(0, []);
+    expect(onSessionEnd.mock.calls[0]?.[0]?.slots).toBeDefined();
+  });
+
+  test("onSessionEnd gets the runtime's workflow client when there is one", async () => {
     const onSessionEnd = vi.fn<(ctx: SessionEndContext) => unknown>();
     const workflows = createStubWorkflows();
     const backend = createMemoryStateBackend();
@@ -117,10 +148,11 @@ describe("openSessionMemory", () => {
       workflows,
       history: { backend, stream: createSessionEventStream({ backend }) },
       prompt: { setContext: () => undefined },
+      slots: createSlotStore(),
       sessionId: nextSid(),
       logger,
     });
-    memory.ended(-1);
+    await memory.ended(-1, []);
     expect(onSessionEnd.mock.calls[0]?.[0].workflows).toBe(workflows);
   });
 
@@ -130,14 +162,14 @@ describe("openSessionMemory", () => {
         throw new Error("boom");
       },
     });
-    expect(() => thrower.memory.ended(0)).not.toThrow();
+    await expect(thrower.memory.ended(0, [])).resolves.toBeUndefined();
     expect(thrower.logger.warn).toHaveBeenCalledWith(
       "onSessionEnd failed",
       expect.objectContaining({ error: "boom" }),
     );
 
     const rejecter = wire({ onSessionEnd: () => Promise.reject(new Error("later")) });
-    rejecter.memory.ended(0);
+    await rejecter.memory.ended(0, []);
     await vi.waitFor(() =>
       expect(rejecter.logger.warn).toHaveBeenCalledWith(
         "onSessionEnd failed",
@@ -158,7 +190,7 @@ describe("openSessionMemory", () => {
     expect(await memory.open()).toEqual([]);
     expect(memory.refused).toBe("stranger");
     expect(prompt.setContext).not.toHaveBeenCalled();
-    memory.ended(3);
+    await memory.ended(3, []);
     expect(onSessionEnd).not.toHaveBeenCalled();
   });
 
@@ -170,7 +202,7 @@ describe("openSessionMemory", () => {
     setSessionCall(sessionId, call);
 
     await memory.open();
-    memory.ended(0);
+    await memory.ended(0, []);
     expect(sessionContext).toHaveBeenCalledWith(expect.objectContaining({ call }));
     expect(ended[0]?.call).toEqual(call);
     expect(memory.refused).toBeUndefined();

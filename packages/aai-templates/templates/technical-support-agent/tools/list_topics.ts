@@ -13,6 +13,7 @@ export default tool({
   description:
     "List what the knowledge base covers. Use this when the caller does not " +
     "know what to ask, or to say what you can help with after a failed lookup.",
+  ui: { icon: "\u{1F4DA}", label: "Listing topics" },
   execute() {
     return {
       product: PRODUCT,

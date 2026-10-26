@@ -1,10 +1,28 @@
-import { toolFailure } from "@alexkroman1/aai";
+import { withInstruction } from "@alexkroman1/aai";
 import { plural } from "@alexkroman1/aai/utils";
 import { z } from "zod";
-import { endsRound, gameFlow } from "../game.ts";
+import { gameFlow, type RoundEnd } from "../game.ts";
 import { isCorrectGuess } from "../guess.ts";
-import { askPlayer } from "../player.ts";
-import { advanceWord, currentWord, gameSlot, isFoul, score, secondsLeft } from "../shared.ts";
+import { askPlayer, type PlayerGuess } from "../player.ts";
+import {
+  advanceWord,
+  currentWord,
+  gameSlot,
+  isFoul,
+  requireWord,
+  score,
+  secondsLeft,
+} from "../shared.ts";
+
+/**
+ * What `prepare` decided about the description, for the window to apply:
+ * the clock had run out, the describer gave the word away, or the player
+ * guessed. Only the last costs a model call.
+ */
+type Ruling =
+  | { kind: "time_up" }
+  | { kind: "foul"; word: string }
+  | { kind: "guess"; word: string; heard: string[]; guess: PlayerGuess };
 
 /**
  * Hand the describer's words to the player and referee the guess — their whole
@@ -29,19 +47,21 @@ import { advanceWord, currentWord, gameSlot, isFoul, score, secondsLeft } from "
  * but a deadline does not survive a process restart, so a description arriving
  * after two minutes on the slot's own clock ends the round anyway.
  *
- * `sendFrom` rather than `send`: almost every call moves nothing (the position
- * stays `playing`, which is what keeps the clock honest), and the two that do —
- * the last word solved, the clock found expired — pick their own event. It is
- * `endsRound`, shared with `skip_word`, so "a `next` field, or stay put" is one
- * rule typed once against the dialog's own `GameEvent`.
+ * `prepare` rules (and asks the player); `execute` is the synchronous window
+ * that scores. `sendFrom: "next"` rather than `send`: almost every call moves
+ * nothing (the position stays `playing`, which is what keeps the clock honest),
+ * and the two that do — the last word solved, the clock found expired — carry
+ * their own event.
  */
-export default gameFlow.tool({
+export default gameSlot.updateTool({
   description:
     "Relay what the describer just said about their word to the A.I. player and get its guess " +
     "back, refereed. Call it on EVERY turn the describer describes, with their words as close to " +
     "verbatim as possible. The result says whether the guess was right, the score, and the next " +
     "word when there is one.",
+  dialog: gameFlow,
   when: "playing",
+  sendFrom: "next",
   inputSchema: z.object({
     description: z
       .string()
@@ -49,13 +69,10 @@ export default gameFlow.tool({
       .max(600)
       .describe("What the describer said, verbatim where possible"),
   }),
-  execute: async ({ description }, ctx) => {
-    const before = gameSlot.get(ctx);
-    const word = currentWord(before);
-    if (word === null) return toolFailure("No word is in play - start_game starts a round.");
-    if ((secondsLeft(before) ?? 0) <= 0) {
-      return { verdict: "time_up" as const, score: score(before), next: "TIME_UP" as const };
-    }
+  require: requireWord,
+  prepare: async ({ description }, before, ctx): Promise<Ruling> => {
+    const word = currentWord(before) ?? "";
+    if ((secondsLeft(before, ctx.now()) ?? 0) <= 0) return { kind: "time_up" };
 
     // Everything the describer is on record as having said since this word came
     // up — every committed transcript (`GAME_EVENTS` writes them) and the turn
@@ -66,23 +83,7 @@ export default gameFlow.tool({
       ...before.spoken,
       ctx.messages.findLast((m) => m.role === "user")?.content ?? "",
     ];
-    if (said.some((text) => isFoul(text, word))) {
-      return gameSlot.update(ctx, (game) => {
-        game.lastRemark = null;
-        advanceWord(game, "fouled");
-        const nextWord = currentWord(game);
-        return {
-          verdict: "foul" as const,
-          word,
-          score: score(game),
-          nextWord,
-          next: nextWord === null ? ("WORDS_DONE" as const) : undefined,
-          say:
-            `The describer said the word - "${word}" is forfeited, no point. ` +
-            (nextWord === null ? "That was the last word." : `The next word is ${nextWord}.`),
-        };
-      });
-    }
+    if (said.some((text) => isFoul(text, word))) return { kind: "foul", word };
 
     // The player hears this word's descriptions and nothing else.
     const heard = [...before.descriptions, description];
@@ -90,48 +91,71 @@ export default gameFlow.tool({
       descriptions: heard,
       wrongGuesses: before.wrongGuesses,
     });
+    return { kind: "guess", word, heard, guess };
+  },
+  execute: (_args, game, ruling, ctx) => {
+    if (ruling.kind === "time_up") {
+      const next: RoundEnd = "TIME_UP";
+      return { verdict: "time_up" as const, score: score(game), next };
+    }
+    const { word } = ruling;
+    if (ruling.kind === "foul") {
+      game.lastRemark = null;
+      advanceWord(game, "fouled");
+      const nextWord = currentWord(game);
+      const next: RoundEnd = nextWord === null ? "WORDS_DONE" : undefined;
+      return withInstruction(
+        { verdict: "foul" as const, word, score: score(game), nextWord, next },
+        `The describer said the word - "${word}" is forfeited, no point. ` +
+          (nextWord === null ? "That was the last word." : `The next word is ${nextWord}.`),
+      );
+    }
 
-    return gameSlot.update(ctx, (game) => {
-      // The word may have moved while the player thought (a skip landing in the
-      // same step); score against the word the description was FOR.
-      if (currentWord(game) !== word) {
-        return {
-          verdict: "stale" as const,
-          score: score(game),
-          say: "That word has already moved on.",
-        };
-      }
-      game.descriptions = heard;
-      game.lastRemark = guess.remark;
-      if (isCorrectGuess(guess.guess, word)) {
-        // The point IS the settled round, so `advanceWord` is what scores it.
-        advanceWord(game, "solved");
-        const points = score(game);
-        const nextWord = currentWord(game);
-        return {
+    const { heard, guess } = ruling;
+    // The word may have moved while the player thought (a skip landing in the
+    // same step); score against the word the description was FOR.
+    if (currentWord(game) !== word) {
+      // `next: undefined` stays put: `withInstruction` wraps each arm on its
+      // own, so the field the gate reads is spelled on every arm.
+      return withInstruction(
+        { verdict: "stale" as const, score: score(game), next: undefined },
+        "That word has already moved on.",
+      );
+    }
+    game.descriptions = heard;
+    game.lastRemark = guess.remark;
+    if (isCorrectGuess(guess.guess, word)) {
+      // The point IS the settled round, so `advanceWord` is what scores it.
+      advanceWord(game, "solved");
+      const points = score(game);
+      const nextWord = currentWord(game);
+      const next: RoundEnd = nextWord === null ? "WORDS_DONE" : undefined;
+      return withInstruction(
+        {
           verdict: "correct" as const,
           playerSaid: guess.remark,
           guess: guess.guess,
           word,
           score: points,
           nextWord,
-          secondsLeft: secondsLeft(game),
-          next: nextWord === null ? ("WORDS_DONE" as const) : undefined,
-          say:
-            `Correct! That's ${points} ${plural(points, "point")}. ` +
-            (nextWord === null ? "That was the last word!" : `Your next word is ${nextWord}.`),
-        };
-      }
-      game.wrongGuesses.push(guess.guess);
-      return {
+          secondsLeft: secondsLeft(game, ctx.now()),
+          next,
+        },
+        `Correct! That's ${points} ${plural(points, "point")}. ` +
+          (nextWord === null ? "That was the last word!" : `Your next word is ${nextWord}.`),
+      );
+    }
+    game.wrongGuesses.push(guess.guess);
+    return withInstruction(
+      {
         verdict: "wrong" as const,
         playerSaid: guess.remark,
         guess: guess.guess,
         score: score(game),
-        secondsLeft: secondsLeft(game),
-        say: `Relay the player's remark ("${guess.remark}") and let the describer keep going.`,
-      };
-    });
+        secondsLeft: secondsLeft(game, ctx.now()),
+        next: undefined,
+      },
+      `Relay the player's remark ("${guess.remark}") and let the describer keep going.`,
+    );
   },
-  sendFrom: (result) => endsRound(result),
 });

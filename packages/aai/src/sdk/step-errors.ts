@@ -15,7 +15,8 @@
  * | {@link throwStepError} | you have caught something and want it classified |
  * | {@link toStepError} | same, as a value rather than a throw |
  * | {@link throwFatalStepError} | this one will never succeed — stop retrying |
- * | {@link orFail} | a `/step` call whose failure should end or retry the step — `orFail(stepFetch)` |
+ * | {@link orFail} | a `/step` call whose failure should end or retry the step — `orFail(stepFetch)`, `orFail(stepRequireCompleteUpload)` |
+ * | {@link orFatal} / {@link fatalOn} | a PURE call whose one known failure is terminal — `orFatal(() => parseWav(bytes), { when: UnsupportedRecordingError })` |
  * | `FatalError` / `RetryableError` | constructing the verdict yourself |
  *
  * ```ts
@@ -33,7 +34,12 @@
  * ```
  *
  * {@link orFail} handed a function is that function plus {@link throwStepError}
- * (and, for a call that resolves to a `Response`, the non-2xx branch). It is
+ * (and, for a call that resolves to a `Response`, the non-2xx branch). That
+ * covers every `/step` call that CARRIES a verdict, and one that is easy to
+ * miss: `orFail(stepRequireCompleteUpload)` turns an upload that is still
+ * arriving (`UploadIncompleteError`, `retryable: false`) into a `FatalError`,
+ * where the raw call's refusal would be retried against a file no attempt can
+ * finish. It is
  * the one spelling for what eight `*OrFail` twins on this subpath used to
  * spell one name each (`stepFetchOrFail`, `stepGenerateOrFail`, …), which are
  * gone: `orFail(stepFetch)`, `orFail(stepGenerate)` and so on are the same
@@ -109,6 +115,7 @@
  * @module step-errors
  */
 
+import { classifiedCall } from "./_step-or-fail.ts";
 import { throwFatalStepError, throwStepError } from "./_step-verdict.ts";
 import { isRecord } from "./is-record.ts";
 
@@ -134,6 +141,111 @@ export {
 // Declared once, in `tool-failure-flow.ts`, so this subpath and the root
 // publish one `orFail` rather than two; `_step-or-fail.ts` is its function arm.
 export { orFail } from "./tool-failure-flow.ts";
+
+/**
+ * An error CLASS, as {@link orFatal} takes one: anything `new`-able that makes
+ * an `Error`, abstract or not.
+ *
+ * @public
+ */
+// `never[]` rather than `unknown[]`: a constructor taking a required `string`
+// is assignable to the former (its parameter is checked AGAINST `never`) and
+// not to the latter, so this admits every error class without an `any`.
+export type ErrorClass = abstract new (...args: never[]) => Error;
+
+/**
+ * Run `fn`, and make the failure `isMatch` recognises FATAL.
+ *
+ * For the call that throws its own class with no verdict on it — a parser
+ * refusing a file (`parseWav`'s `UnsupportedRecordingError`), a plan that
+ * found a recording too short to cut — where {@link toStepError} rightly
+ * declines to guess and so the engine retries a decision that is a pure
+ * function of the input. Three more attempts over the same bytes reach the
+ * same throw; this says so at the call rather than in a `catch` block the
+ * author has to shape by hand (see {@link throwFatalStepError} for why that
+ * block is awkward to write).
+ *
+ * **Only the matching failure is converted. Everything else passes through
+ * UNCHANGED**, which is the half that keeps this narrow: a `TypeError` from a
+ * bug stays plainly retryable, and a failure that already carries a verdict
+ * (a `TranscribeError`) keeps it. That is the opposite default from
+ * {@link throwFfmpegStepError}, which stops on everything it does not
+ * recognise — ffmpeg having READ the file is the evidence there; here the only
+ * evidence is the class the caller named.
+ *
+ * Answers in kind: a sync `fn` stays sync, an async one is awaited and its
+ * rejection classified the same way. {@link orFatal} is the same call with the
+ * match spelled as a class.
+ *
+ * @param isMatch - Whether a thrown value is the terminal failure. Called with
+ *   whatever was thrown, so it may read a `name` or a `code` as well as test a
+ *   class.
+ * @param fn - The call. Pure in the sense that matters: the same input reaches
+ *   the same verdict, so no attempt changes it.
+ *
+ * @example
+ * ```ts
+ * import { parseWav, type WavFormat } from "@alexkroman1/aai/step";
+ * import { fatalOn } from "@alexkroman1/aai/step-errors";
+ *
+ * export function header(bytes: Uint8Array): WavFormat {
+ *   return fatalOn((err) => err instanceof Error && err.name === "UnsupportedRecordingError", () =>
+ *     parseWav(bytes, bytes.byteLength),
+ *   );
+ * }
+ * ```
+ *
+ * @public
+ */
+export function fatalOn<T>(isMatch: (err: unknown) => boolean, fn: () => T): T {
+  const settle = (err: unknown): never => (isMatch(err) ? throwFatalStepError(err) : rethrow(err));
+  return classifiedCall(fn, settle)();
+}
+
+/**
+ * Options for {@link orFatal}.
+ *
+ * @input
+ */
+export type OrFatalOptions = {
+  /** The error class whose instances are terminal. Anything else is rethrown unchanged. */
+  when: ErrorClass;
+};
+
+/**
+ * {@link fatalOn} with the match spelled as a CLASS: run `fn`, and make an
+ * `instanceof when` failure fatal.
+ *
+ * The common spelling, because the terminal failure is almost always a class
+ * the called module exports. One thing to know about `instanceof` here: a
+ * guest bundle can hold two copies of a module (`step-error-classes.ts` says
+ * why its own membership test is a brand instead), so a class the STEP threw
+ * through a different copy than the one `when` names would not match and would
+ * stay retryable. The classes this is written for — a parser's refusal thrown
+ * and caught in the same bundle — are not that case; one that might be takes
+ * {@link fatalOn} with a `name` check.
+ *
+ * @example
+ * ```ts
+ * import { parseWav, UnsupportedRecordingError, type WavFormat } from "@alexkroman1/aai/step";
+ * import { orFatal } from "@alexkroman1/aai/step-errors";
+ *
+ * export function header(bytes: Uint8Array): WavFormat {
+ *   // A WAV the cutter cannot read is a WAV it cannot read on the next attempt.
+ *   return orFatal(() => parseWav(bytes, bytes.byteLength), { when: UnsupportedRecordingError });
+ * }
+ * ```
+ *
+ * @public
+ */
+export function orFatal<T>(fn: () => T, options: OrFatalOptions): T {
+  return fatalOn((err) => err instanceof options.when, fn);
+}
+
+/** `throw`, as an expression — so a conditional can name both arms. */
+function rethrow(err: unknown): never {
+  throw err;
+}
 
 /**
  * The verdict a failed ffmpeg run deserves: retry a `timeout` or an `aborted`,

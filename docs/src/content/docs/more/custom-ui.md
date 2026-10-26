@@ -37,8 +37,8 @@ mountClient({ sidebar: CartPanel });
 `aai dev` builds it and `aai publish` ships it, with no extra step.
 
 A **slot** is a named piece of session state. `useAgentState` reads whatever the
-agent projects from one with `syncState`, so declare a slot first or there is
-nothing to receive — see [Remembering things](/agent/build/state/).
+agent projects from one declared `sync: true`, so declare a slot first or there
+is nothing to receive — see [Remembering things](/agent/build/state/).
 
 :::note[No slot to hand?] A page that cannot import the slot — a client kept
 apart from the agent — names it instead, with a fallback:
@@ -49,13 +49,13 @@ empty frame to write and no type to restate. :::
 
 ## The hooks
 
-| Hook                            | What it gives you                                                                         |
-| ------------------------------- | ----------------------------------------------------------------------------------------- |
-| `useAgentState(slot.projected)` | That slot's entry in the agent's `syncState` — typed and defaulted by the same projection |
-| `useSession()`                  | Connection state and the transcript                                                       |
-| `useUserTranscript()`           | "Speech detected" separately from "first word back"                                       |
-| `useToolResult(name, cb)`       | A card per tool call                                                                      |
-| `useEvent(name, cb)`            | Whatever a tool pushed with `ctx.send`                                                    |
+| Hook                            | What it gives you                                                                                                     |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `useAgentState(slot.projected)` | That slot's entry in the agent's projected frame (declared `sync: true`) — typed and defaulted by the same projection |
+| `useSession()`                  | Connection state and the transcript                                                                                   |
+| `useUserTranscript()`           | "Speech detected" separately from "first word back"                                                                   |
+| `useToolResult(name, cb)`       | A card per tool call                                                                                                  |
+| `useEvent(name, cb)`            | Whatever a tool pushed with `ctx.send`                                                                                |
 
 `mountClient` takes more than a `sidebar`: `component` replaces the whole page,
 and `name`, `subtitle`, `icon`, `theme`, `buttonText` and `sidebarPosition`

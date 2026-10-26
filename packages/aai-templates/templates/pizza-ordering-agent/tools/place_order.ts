@@ -5,10 +5,12 @@ import { cartSummary, orderSlot, resetOrder } from "../shared.ts";
 export default orderSlot.updateTool({
   description:
     "Place the final order. Use when the customer confirms they are done and ready to order.",
+  ui: { icon: "\u{2705}", label: "Placing order" },
+  // The precondition, checked before the body — and before a draft is opened.
+  require: (order) =>
+    order.pizzas.length === 0 ? toolFailure("Cannot place an empty order.") : undefined,
   execute(_args, order, ctx) {
     const pizzas = order.pizzas;
-    if (pizzas.length === 0) return toolFailure("Cannot place an empty order.");
-
     const customerName = order.customerName ?? "Guest";
     const { orderTotal: total } = cartSummary(pizzas);
     // Four digits, over `ctx.random` rather than the global — so a spec can

@@ -4,9 +4,9 @@ import {
   requireEnv,
   type ToolErrorHandler,
   toolFailure,
+  withInstruction,
 } from "@alexkroman1/aai";
 import { ChannelDeliveryError, sendToChannel } from "@alexkroman1/aai/channels";
-import { z } from "zod";
 import { briefingSlot } from "../shared.ts";
 import { briefingChannel, briefingMessage, DESTINATION_ENV } from "../slack.ts";
 
@@ -67,14 +67,14 @@ export default briefingSlot.tool({
     "Send the briefing so far to the team's Slack channel. Use it when the caller " +
     "asks for it in writing, or to have it passed on to someone who was not on the " +
     "call. Tell them you are sending it before you call this.",
-  inputSchema: z.object({}),
+  // The precondition, before the body — and before the credential is read.
+  require: (board) =>
+    board.findings.length === 0
+      ? toolFailure(
+          "There is nothing to send yet — research something first, then offer to send it.",
+        )
+      : undefined,
   async execute(_args, board, ctx) {
-    if (board.findings.length === 0) {
-      return toolFailure(
-        "There is nothing to send yet — research something first, then offer to send it.",
-      );
-    }
-
     const destination = briefingChannel(requireEnv(ctx, DESTINATION_ENV));
     if (isToolFailure(destination)) return destination;
 
@@ -99,13 +99,11 @@ export default briefingSlot.tool({
       return toolFailure(`The briefing did not send: ${errorMessage(err)}`);
     }
 
-    return {
-      topic: board.topic,
-      sent: board.findings.length,
-      message:
-        "Say it has gone to the channel and how many angles went with it. Do not read " +
+    return withInstruction(
+      { topic: board.topic, sent: board.findings.length },
+      "Say it has gone to the channel and how many angles went with it. Do not read " +
         "the briefing back out — they have it in writing now.",
-    };
+    );
   },
   // See the note above: the only throw this body has is `requireEnv`'s, and a
   // missing webhook is unfixable from inside the call. Re-throwing keeps the

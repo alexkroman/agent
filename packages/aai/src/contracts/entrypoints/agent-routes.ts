@@ -23,6 +23,9 @@
 
 export {
   type AgentRoutes,
+  // `apiKeyRoute({ env }, handler)`: the bearer-key sibling of `webhookRoute`.
+  type ApiKeyRouteOptions,
+  apiKeyRoute,
   type ClientRun,
   type ClientRunStatus,
   type ClientRunsResponse,

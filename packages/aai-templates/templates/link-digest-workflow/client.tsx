@@ -91,11 +91,11 @@ import {
   WorkflowRunError,
 } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
-// ERASED at build time, so naming the agent's own type costs the browser bundle
-// nothing — and it is what stops this file restating a shape `workflows/
-// digest.ts` already declares.
 import { useState } from "react";
-import type { digest } from "./agent.ts";
+// ERASED at build time, so naming the agent's own type costs the browser bundle
+// nothing — and it is what lets the hook check the NAME below against the
+// `workflows` map `agent.ts` declares, and type the run's output off it.
+import type agentDef from "./agent.ts";
 
 /** The digest as one pasteable block — a headline and its bullets. */
 function asText(headline: string, points: readonly string[]): string {
@@ -121,7 +121,7 @@ export function App() {
   // No `key` and no `recover`: this tab's handle on its own runs is minted and
   // remembered by the hook, and read back as it mounts. See the module doc for
   // what a page says when it wants a different one.
-  const submission = useWorkflowSubmit<typeof digest>("digest");
+  const submission = useWorkflowSubmit<typeof agentDef>("digest");
   const { submit, run, pending, error, wake } = submission;
 
   // `submit()` resolves as soon as the run exists — deliberately not when it

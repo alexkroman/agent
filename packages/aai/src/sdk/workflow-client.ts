@@ -19,6 +19,7 @@ import type { AnyWorkflowDef, WorkflowDef, WorkflowSummary } from "./workflow.ts
 import type {
   FindByKeyOptions,
   FindOptions,
+  SignalOptions,
   StartOptions,
   StreamOptions,
   WakeUpOptions,
@@ -86,6 +87,34 @@ export type WorkflowClient = {
     options?: FindOptions,
   ): Promise<WorkflowRunSnapshot<R>[]>;
   find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+  /**
+   * The NEWEST run of `workflow` started with `key`, or `undefined` when there
+   * is none — `find` with a limit of one, unwrapped.
+   *
+   * What a `*_status` tool holds: "how is that going" is a question about the
+   * latest run, and every such tool wrote `(await find(def, key, { limit: 1 }))[0]`.
+   * `key` defaults to `"session"` — the session id on a session-scoped client
+   * (see {@link StartOptions.key}).
+   */
+  latest<P extends ToolInputSchema, R>(
+    workflow: WorkflowDef<P, R>,
+    key?: string,
+  ): Promise<WorkflowRunSnapshot<R> | undefined>;
+  latest(workflow: string, key?: string): Promise<WorkflowRunSnapshot | undefined>;
+  /**
+   * The newest run of `workflow` started with `key` that has NOT finished —
+   * `pending` or `running` — or `undefined` when none is in flight.
+   *
+   * The read a "stop that" or "is it still going" tool wants, and the one a
+   * `latest` cannot answer alone: the newest run may have finished while an
+   * older one is still parked on a wait. Reads at most `MAX_WORKFLOW_FIND_LIMIT`
+   * runs. `key` defaults to `"session"`, as {@link latest}'s does.
+   */
+  live<P extends ToolInputSchema, R>(
+    workflow: WorkflowDef<P, R>,
+    key?: string,
+  ): Promise<WorkflowRunSnapshot<R> | undefined>;
+  live(workflow: string, key?: string): Promise<WorkflowRunSnapshot | undefined>;
   /**
    * Runs started with this correlation key across EVERY workflow this agent
    * declares, newest first — `find` for each, merged.
@@ -185,8 +214,52 @@ export type WorkflowClient = {
    * {@link cancel} resolving false and {@link wakeUp} resolving `0`, and a voice
    * tool should say so out loud ("that one had already gone ahead") rather than
    * treat it as an error.
+   *
+   * **Unless the run has not got there YET**, which `options.holdMs` is for: a
+   * tool that starts a run and answers its first wait in the same turn lands
+   * before the body reaches `ctx.waitFor`, and a `false` there is an answer
+   * lost rather than a run that moved on. With a hold the payload is kept for
+   * that long and delivered when the wait is claimed, and the call resolves
+   * `true` for having been taken. See {@link SignalOptions.holdMs}.
    */
-  signal(token: string, payload?: unknown): Promise<boolean>;
+  signal(token: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
+  /**
+   * {@link signal} for a wait the body wrote as `ctx.waitForSignal(label)`:
+   * the token is derived here from the workflow's declared name, `key` and
+   * `label`, exactly as the body derived it, so neither side spells it.
+   *
+   * `key` is the run's `StartOptions.key`, and `"session"` means the session
+   * id on a session-scoped client as it does everywhere else. Holds the payload
+   * for `DEFAULT_SIGNAL_HOLD_MS` by default — the tool that signals a run it
+   * just started is the ordinary caller — and `options.holdMs` overrides it
+   * (`0` to hold nothing).
+   *
+   * **A hold stands only for a run of `workflow` under `key` that is still
+   * going** (`pending` or `running`). The token carries no run id, so a hold
+   * for a run that finished, timed out or was cancelled would be taken by the
+   * NEXT run under the key as its own answer; with no live run nothing is held
+   * and the call answers `false`, as {@link signal} does for a token nobody
+   * waits on.
+   *
+   * The same token is what makes ONE live run per `(workflow, key)` the rule
+   * for a body that waits on a signal: a second concurrent run under the same
+   * key fails at its first `ctx.waitForSignal` (the refusal names the label
+   * and key). Start it under a distinct key.
+   */
+  signalRun<P extends ToolInputSchema, R>(
+    workflow: WorkflowDef<P, R>,
+    key: string,
+    label: string,
+    payload?: unknown,
+    options?: SignalOptions,
+  ): Promise<boolean>;
+  signalRun(
+    workflow: string,
+    key: string,
+    label: string,
+    payload?: unknown,
+    options?: SignalOptions,
+  ): Promise<boolean>;
   /**
    * Read what a run has WRITTEN while running, as a stream.
    *

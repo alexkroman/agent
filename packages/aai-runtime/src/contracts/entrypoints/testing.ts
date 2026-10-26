@@ -33,13 +33,19 @@
  * want classifying. It is the honest coupling: a change to what a text agent
  * accepts really is a change to what this harness accepts. Restating the fields by hand would hide it and re-open the omission.
  *
- * ONE subpath, and deliberately not a `/testing/vitest` sibling: nothing here
- * installs a process-global or owns a lifetime a runner has to unwind, which is
- * this repo's rule for what may stay off a runner-flavoured subpath. The
- * workflow driver injects its own dispatcher, so no timer is ever armed, and the
- * text harness builds one agent per call and hands it to nobody.
+ * The drivers are on ONE subpath, and deliberately not a `/testing/vitest`
+ * sibling: none of them installs a process-global or owns a lifetime a runner
+ * has to unwind, which is this repo's rule for what may stay off a
+ * runner-flavoured subpath. The workflow driver injects its own dispatcher, so
+ * no timer is ever armed, and the text harness builds one agent per call and
+ * hands it to nobody. The one name here that DOES install — `installStubFfmpeg`,
+ * a scripted child in place of the ffmpeg binary — is on `/testing/vitest` for
+ * exactly that reason, and belongs to this capability rather than `eval`'s
+ * because what it serves is a step spec: the promise is "a step that spawns
+ * ffmpeg runs end to end in the unit tier", which moves with the drivers.
  *
- * Re-exported from `@alexkroman1/aai-runtime/testing`. This file is not shipped
+ * Re-exported from `@alexkroman1/aai-runtime/testing` (the drivers) and
+ * `@alexkroman1/aai-runtime/testing/vitest` (the installer). This file is not shipped
  * and nothing imports it — it exists so `pnpm check:api-contracts` can extract a
  * report for this capability alone, hash it, and hold it to a committed epoch.
  * See `scripts/api-contracts.mjs`.
@@ -65,6 +71,14 @@ export {
   type WorkflowTestHandle,
   type WorkflowTestRead,
   type WorkflowTestRun,
+  type WorkflowTestSignalOptions,
   type WorkflowTestStep,
   type WorkflowTestWait,
 } from "../../testing-barrel.ts";
+export {
+  installStubFfmpeg,
+  type StubFfmpeg,
+  type StubFfmpegCall,
+  type StubFfmpegReply,
+  type StubFfmpegScript,
+} from "../../testing-vitest-barrel.ts";

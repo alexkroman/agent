@@ -42,8 +42,14 @@ a new field cannot skip it.
   reaches both.
 - **A guardrail is pipeline-only**; `assertGuardrailScope` refuses s2s (already
   spoke) and text mode (hands its caller the stream) by name.
-- **`systemPrompt` takes a RESOLVER** `(ctx: AgentSessionContext) => string`,
-  called per model request — `agent-instructions.ts` owns it.
+- **`systemPrompt` and `syncState` are FRAMEWORK-OWNED** (`FrameworkOwnedField`,
+  `agent-params.ts`): absent from every `agent()` member and refused at run time
+  by `define.ts`'s `FRAMEWORK_OWNED` table. The prompt is `system-prompt.md`,
+  set on the lowered def by `withSystemPrompt` (`@alexkroman1/aai/manifest`) —
+  the ONE door a host uses too (the studio's coding agent, a runtime spec); a
+  spec that needs a RESOLVER `(ctx: AgentSessionContext) => string` on the def
+  spreads it over `agent()`'s result. An author's computed text is
+  `promptContext` — `agent-instructions.ts` owns both.
 
 ## `agent()`'s legality is a discriminated union, not message types
 
@@ -126,8 +132,8 @@ detail; the rules:
   `write(key, value, { durable })` defaults to durable.
 - **`aai:testing` is a FAMILY** — `testing` (context, tool runs, model fakes),
   `testing-steps`, `testing-network`, `testing-workflow`, `testing-client`,
-  `testing-deploy` — split for the 40-name budget; all on the same two subpaths,
-  and `aai-runtime`'s doors mirror the whole family.
+  `testing-deploy`, `testing-events` — split for the 40-name budget; all on the
+  same two subpaths, and `aai-runtime`'s doors mirror the whole family.
 - **A script NAMES its shape — `{ reply }` or `{ routes }`** — everywhere one is
   taken; a computed route is `{ reply: (call) => … }`; a bare shape reaching the
   runtime untyped throws at bind.
@@ -135,24 +141,38 @@ detail; the rules:
   `import.meta.glob("./tools/*.ts", { eager: true })`'s RESULT; a `readdir` +
   `import()` is refused (it loads a second copy of the SDK). Bounded to
   `ToolBearingAgent & { systemPrompt }` so `AgentDef` stays off this contract;
-  `expectDeployable` returns the narrow `DeployedConfig`.
-- **`runTool(tool, args?, ctx?)`** is typed end to end; the name form answers
-  `unknown` (import the tool file instead of casting) and runs through the
-  toolset's GATE. Args and ctx are told apart by SHAPE; an omitted context is a
-  distinct session.
+  `expectDeployable` returns the narrow `DeployedConfig`. A spec that asserts on
+  the prompt reads it off the lowered def (`virtual:aai/agent`), never off a
+  `?raw` import of the file — a prompt reached by a second route is one the
+  build might not be applying.
+- **A tool is run by its DEF, never by its name.** `runTool(tool, args?, ctx?)`
+  is typed end to end and UNGATED (the tool body alone); `toolRunner(agent)` —
+  what `describeAgent` hands a suite — resolves the def in the agent's table by
+  IDENTITY and runs it through the toolset's GATE. The def is the tool file's
+  default export, or a speaker's `tools` entry for a roster tool: `withTools`
+  and `rosterToolset` record each def's name (`_testing-tool-names.ts`), so the
+  eval's `toolResultIn(calls, def)` family reads both the same way. A string in
+  the tool position is a compile error (`testing.test-d.ts`);
+  `toolOf(agent, name)` stays as the LOOKUP for a description or a minted tool.
+  Args and ctx are told apart by SHAPE; an omitted context is a distinct
+  session.
 - **`expectToolOk`** takes ANY tool's result — a dialog envelope unwrapped, a
-  plain value passed through — and INFERS: a typed result loses its failure arm,
-  `expectToolOk<T>(unknown)` is the claimed form for the name lookup. Never copy
-  an `ok<T>()` helper into a spec.
+  plain value passed through — and INFERS: a typed result loses its failure arm.
+  There is no claimed `expectToolOk<T>(unknown)` form. Never copy an `ok<T>()`
+  helper into a spec.
 - **`stubGateway`** (global `fetch`, you install) / **`installStubGateway`**
   (global `fetch`, installed) / **`stubGatewayRoute`** (a `stepFetch` route to
   compose); never import the second under the first's name.
 - **`expectToolOk`/`expectDialogOk`** fail AT the call quoting the refusal;
   `expectDialogRefused`/`dialogRefusalPattern` mirror them (`_dialog-refusal.ts`
   owns the sentence); `dialogResultSchema` is the envelope as zod.
-- **`parseToolInput`/`toolInputIssues`** (and `parseSchemaInput`/
-  `schemaInputIssues`) — never reach through `["~standard"].validate`, which may
-  be async.
+- **`parseToolInput(def, value)`/`toolInputIssues(def, value)`** (and
+  `parseSchemaInput`/`schemaInputIssues` for a bare schema) — take the DEF, no
+  agent: the schema is on it and the gate runs only on a call. The parsed value
+  is `InferToolInput<typeof def>`; a failure names the tool by its registered
+  name (`describeToolForMessage`, `_testing-tool-names.ts`) or, for a def never
+  lowered, by its description. Never reach through `["~standard"].validate`,
+  which may be async.
 - **`stubTranscribe`** stages a refusal as an HTTP STATUS so the SDK's own
   classifier runs. `stubUploads` answers `{ restore, writes, read }`.
 - **`stubSpeech` needs no credential** — it marks its synthesizer
@@ -299,17 +319,40 @@ member it governs**:
 - **A durable value is checked STRUCTURALLY in every backend** (`Map` → `{}`,
   `Date` → string, `NaN` → null don't throw). Running it in memory too is what
   makes memory a valid double.
-- **`syncState` takes `slot.projected`, or a list of them** — callable and
-  carrying key and default, so a session that ran no tool still renders.
-  `normalizeSyncState` (`_author-conveniences.ts`) resolves it to the record
-  keyed by SLOT NAME that `AgentDef.syncState` holds, so the frame is
+- **`AgentDef.syncState` is COLLECTED, never authored**: `agent()` refuses the
+  key, and `resolveSyncState` (`_author-conveniences.ts`) fills the record keyed
+  by SLOT NAME from the `sync: true` registry, so the frame is
   `{ [slot]: view }` and the browser selects by the same name; one slot twice is
-  refused. A slot has ONE view, declared with
-  `sessionSlot(key, create, { view })`; there is no per-call
+  refused. At the config boundary a record is validated and kept (one built by
+  another SDK copy included) and the authored forms are refused. A slot has ONE
+  view, declared with `sessionSlot(key, create, { view })`; there is no per-call
   `slot.projection(view)`.
 - **`caps` bounds a TOP-LEVEL array on every store, AFTER `after`**;
   `SlotCaps<T>` admits only array keys, bad caps refused at declaration
-  (`_session-slot-caps.ts`). The hook sees the untrimmed draft.
+  (`_session-slot-caps.ts`). The hook sees the untrimmed draft. **`after` runs
+  on EVERY store** — the default the first `get` installs, `set`, `reset`, the
+  empty frame of `projected()` — so a derived field cannot differ between the
+  default and the first update.
+- **`create` may be a plain value** (cloned per install) or a factory; `empty`
+  is what `projected()` renders for a seeded slot; `sync: true` registers
+  `projected` (`_sync-registry.ts`) for `agent()` to collect — the only way a
+  slot reaches the page; one bundle, one registry, so the slot must be in a
+  module `agent.ts` imports. `SlotValueOf`/`SlotDraftOf` read a handle's two
+  value types.
+- **Slot tools are one pipeline** (`_slot-tools.ts`): dialog refusal → `require`
+  (frozen value) → `prepare` (async, then `require` again) → the dialog's
+  `reset` → the window (`execute(args, draft, [prepared,] ctx)`, `after`,
+  `caps`, then `report` on the value about to be stored and the gate's `decide`)
+  → `send`/`sendFrom` + envelope. **A `ToolFailure` RETURNED from `execute`,
+  `report` or `transact`'s `commit` stores nothing**, carried out of the window
+  as a private throw (`ReturnedFailure`); a `sendFrom` field holding no event
+  name is refused inside the window too. `updateTool`'s overloads select stages;
+  `slot.transact(ctx, { require?, prepare, commit })` is the non-tool form. A
+  tool declaring `prepare` or `dialog` is async.
+- **A plain-value default is checked at DECLARATION** with the store's own walk
+  (`assertStorable`, no freeze), naming the slot and the field; an `after` throw
+  on the default or the `empty` frame is framed with the slot and the phase,
+  `cause` kept.
 
 **The backend is a property of the DEPLOYMENT**, never a slot: Postgres with
 `DATABASE_URL`, memory otherwise, the platform backend on the platform —
@@ -344,8 +387,32 @@ module doc owns it, `packages/aai-runtime/DIALOG-CLAUDE.md` owns the knobs.
   still assignable to the registry.
 - **`sendFrom` takes `Exclude<NoInfer<R>, ToolFailure>`**; `NoInfer` stops a
   `sendFrom` above `execute` inferring `unknown`. An inline-arrow `execute`
-  still needs `sendFrom` declared BELOW it (else `TS18046`) — see "A `sendFrom`
-  goes BELOW `execute`" in `packages/aai-templates/CLAUDE.md`.
+  still needs a CALLBACK `sendFrom` declared BELOW it (else `TS18046`) — see "A
+  `sendFrom` goes BELOW `execute`" in `packages/aai-templates/CLAUDE.md`. The
+  two forms with no ordering rule: `sendFrom: "field"` (a key of the success
+  result holding `E["type"] | undefined`, `DialogSendFromKey`) and the second
+  argument `dialog.tool(def, { sendFrom })` (`DialogSendOptions`).
+- **`when` is optional** (legal in every state, envelope and `send` still
+  apply); `reset: true` starts the dialog over after `require`/`prepare`, right
+  before the body (`CompiledGate.enter`), and its `send` skips the sibling
+  re-check against `when`. An event the state does not declare is a no-op.
+  `DialogStateSpec.onEnter(ctx)` runs INSIDE `send`/`receive`'s window after the
+  move, with XState's entry semantics (parent then child, no re-fire on a
+  self-transition, nothing on a restored snapshot or `reset`): a marker `entry`
+  action read off the inspection stream, never in `meta` (`ENTER_ACTION`).
+- **The gate halves are `_dialog-gate.ts`**, shared by `dialog.tool` and a slot
+  tool declaring `dialog` (`SlotDialogGate`). `AnyDialog` assignability depends
+  on `DialogSendFromKey`'s `keyof`-over-remapped-keys spelling (comment there).
+  Slot-side type traps (`session-slot-gate.test-d.ts`):
+  `SlotDialogGate.sendFrom` spells its return
+  `NoInfer<E> & { type: EventNameOf<NoInfer<E>> }` so a plain literal narrows;
+  the gated overload stays FIRST (a zero-parameter arrow's return type is cached
+  by the first overload that checks it); `UngatedDef` is the message a refused
+  gated def is reported with — `@sealed`, as every message type is
+  (`DialogSendFromMisuse`, `SyncMutationMisuse`): the SDK composes it and an
+  author only reads it, and `check:api-shape` reaches it both ways through
+  `expectSlotContract(slot)`; `DialogSendFromGuard` fails `sendFrom: "count"` at
+  the CALL (its doc says why `NoInfer` and the `unknown extends R` arm).
 - Types sit beside factories: `dialog-types.ts`/`dialog-handle.ts`,
   `session-slot-types.ts`, re-exported from the factories.
 
@@ -510,75 +577,12 @@ database) — a known gap.
 ## Workflow apps and the workflow HTTP API
 
 `mode: "workflow-app"` is a page over the workflow API, declared with
-`workflowApp()` (`define.ts`), whose member has none of the fields it cannot
-use; `GET /client-config` reports it as `page: "static"`. Author-facing half:
-"Workflow apps" in `packages/aai-ui/src/CLAUDE.md`.
-
-- **Read a run's newest line with `ctx.workflows.lastLine(runId)`, never
-  `streamTail` + `stream` by hand** — a progress channel is never closed, so
-  `stream` on an empty run waits forever. A spec stubs `lastLine` directly.
-- **A body takes `WorkflowInputOf<typeof def>`; a `*_status` tool holds
-  `WorkflowRunOf<typeof def>`.** A body declaring a wider input compiles
-  silently (contravariance). The obvious spelling hits `TS7022`; name the schema
-  const and ANNOTATE the def (`packages/aai-templates/FFMPEG-CLAUDE.md`). A
-  declared `output` schema is what `WorkflowOutputOf` reads (`workflow.ts`).
-
-### A callback URL comes from `publicWebhookUrl`
-
-`ctx.workflows.publicWebhookUrl(token)` is what a tool hands an external
-service; the token is the one the body passed `ctx.waitFor`. A body or step uses
-`stepWebhookUrl(token)` (`step-webhook.ts`, `/step`) — a `Symbol.for` slot a
-host fills. One claim per run; properties in
-`packages/aai-runtime/src/workflow/CLAUDE.md`.
-
-`start(def, input, { key, notify })` makes the starting session take an
-unprompted, interruptible turn when the run lands (`Transport.injectTurn`,
-pipeline only).
-
-### Run lifecycle helpers: each is COMPOSED, and each has one owner
-
-- **`StartOptions.dedupeKey` DERIVES the run id** (`aai-runtime`'s
-  `workflow/dedupe-run-id.ts`): every journal already refuses a second
-  `createRun` for one id, so two racing starts meet at one insert and no store
-  grew a table. Dedupes against a run in ANY status until it expires.
-- **`findByKey`/`cancelAll` are `find`/`cancel` composed**
-  (`workflow/client-keyed.ts`) — the key index is `(workflow, key)` in all three
-  backends, the platform's table included, so a cross-workflow read is N lookups
-  merged once, not a new query.
-- **`ctx.poll` is `ctx.step` + `ctx.sleep` under one name**
-  (`workflow-poll.ts`), so it journals exactly the hand-written loop's keys; its
-  budget is a COUNT (`floor(maxMs / everyMs)` sleeps), replay-safe without a
-  `ctx.now` per round. Every `WorkflowContext` (engine, `/testing` recorder,
-  eval) delegates to it. `stepPollUntil` is the in-step, wall-clock, non-durable
-  sibling.
-- **`workflow({ onFailure })` runs in the ENGINE, not a body `catch`**
-  (`workflow-failure.ts`, runtime `replay/failure-hook.ts`): only for a throw
-  classified as the run failing (never a suspend, cancel, journal failure or
-  divergence refusal), as the journaled step `onFailure`, before the failure is
-  recorded. Not run for an `output`-schema failure (decided after the walk).
-- **`stepSayOnClient`** = `stepSpeak` + `stepNotifyClient` with `data.said`; the
-  default rate is `agent({ clientInbox: { sampleRate } })`, published beside the
-  step env by `createAgentServer` and `aai dev` (`publishClientInboxDefaults`).
-  Audio for an undelivered utterance is held across the step's retries.
-  **`stepEnvContext()`** is the whole step env plus the step's signal
-  (`StepInfo.signal`) as an `EnvContext`, which a `ToolContext` also satisfies.
-- **`ctx.sayOnClient(name, clientId, notice)` is ONE `ctx.step` around
-  `stepSayOnClient`** (`workflow-say-on-client.ts`), `id` defaulting to the run
-  id and `maxAttempts` to `DEFAULT_CLIENT_DELIVERY_ATTEMPTS`; like `ctx.poll`,
-  every `WorkflowContext` delegates to `sayOnClientWorkflow` (`/host-internal`).
-  Its failure half is **`sayFailureOnClient({ clientId, event, text })`**
-  (`say-failure-on-client.ts`, `/step`), a `workflow({ onFailure })` handler
-  (`${runId}:failed`, `data.failed: true`, `spokenErrorReason` handed to
-  `text`); `deepResearchWorkflow` takes the same `{ run, maxAttempts }` object
-  and hands it to the engine, where a FUNCTION `onFailure` still runs in its
-  body `catch`.
-- **`stepTextOwner(text, { phone?, links? })`** (`step-text-owner.ts`, `/step`)
-  is `text_me`'s rule from a step: `allowedSmsRecipient` over the step env, a
-  non-retryable refusal as `{ sent: false, why }`, a transient one thrown
-  through `throwStepError`, a missing key FATAL. The env names are
-  `_owner-text-env.ts`, which `host/text-me.ts` imports too.
-- **`isCallOver(status)`/`CALL_OVER_STATUSES`** (`step-place-call.ts`) are the
-  five terminal `PlacedCallStatus`es a dial-and-follow loop stops on.
+`workflowApp()` (`define.ts`). **The authoring rules — `lastLine`, the
+`*Of<typeof def>` readings and the two `TS7022` escapes, `publicWebhookUrl`, and
+every composed run-lifecycle helper (`ctx.poll`, `ctx.report`, signals,
+`onFailure`, `sayOnClient`, `transcribeUploadDurably`, the `workflow_*`
+builtins) — are in [`WORKFLOWS-CLAUDE.md`](../../WORKFLOWS-CLAUDE.md).** The
+author-facing half is "Workflow apps" in `packages/aai-ui/src/CLAUDE.md`.
 
 ## Uploads (the client half)
 

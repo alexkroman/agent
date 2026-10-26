@@ -11,7 +11,7 @@
  * @module step-uploads-write
  */
 
-import { requireUploadAccess, type UploadInfo } from "./step-uploads.ts";
+import { labelUpload, requireUploadAccess, type UploadInfo } from "./step-uploads.ts";
 
 /**
  * Options for {@link stepWriteUpload}.
@@ -86,7 +86,9 @@ export async function stepWriteUpload(
 ): Promise<UploadInfo> {
   const { create } = requireUploadAccess();
   if (!create) throw new Error(UPLOAD_WRITES_UNAVAILABLE_MESSAGE);
-  return await create({ name: options.name, type: options.type }, toChunks(bytes));
+  // Labelled here, as every reader labels what it hands out, so the record a
+  // step stores and the one it reads back are the same shape.
+  return labelUpload(await create({ name: options.name, type: options.type }, toChunks(bytes)));
 }
 
 /**

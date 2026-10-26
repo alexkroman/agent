@@ -23,6 +23,10 @@ export {
   type FetchRouteRequest,
   type FetchRoutesOptions,
   type FetchRouteTable,
+  // `routeOf(table)` and `routeHandlerOf(answer)`: one handler out of a route
+  // table or a canned answer, for a spec that drives the handler directly.
+  routeHandlerOf,
+  routeOf,
   type StubFetchRoutes,
   type StubGateway,
   type StubGatewayCall,
@@ -36,4 +40,8 @@ export {
   stubGatewayRoute,
   stubStepFetch,
 } from "../../sdk/testing-barrel.ts";
-export { installStubGateway, installStubStepFetch } from "../../sdk/testing-vitest-barrel.ts";
+export {
+  type InstallStubGatewayOptions,
+  installStubGateway,
+  installStubStepFetch,
+} from "../../sdk/testing-vitest-barrel.ts";

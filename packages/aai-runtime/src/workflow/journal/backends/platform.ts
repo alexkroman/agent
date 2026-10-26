@@ -86,6 +86,7 @@ import type {
   JournalStore,
   RunRecord,
   RunStatus,
+  RunStatusPatch,
   SleepEntry,
   SleepRecord,
   StepEntry,
@@ -338,7 +339,7 @@ export function createPlatformJournal(options: PlatformEndpoint): JournalStore {
     async setStatus(
       runId: string,
       next: RunStatus,
-      patch?: { output?: unknown; error?: { message: string } },
+      patch?: RunStatusPatch,
       expect?: readonly RunStatus[],
     ): Promise<boolean> {
       return (

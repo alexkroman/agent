@@ -18,15 +18,22 @@
  * hour, journaling nothing, and starting over from the upload after a crash.
  *
  * The durable shape is a body that calls a step per phase and `ctx.sleep`s
- * between polls, and **the SDK cannot own that body**: durability comes from the
+ * between polls, and **the SDK cannot own a STEP**: durability comes from the
  * `ctx.step` a body wraps a call in, and this package is handed no `ctx`. A
  * function exported from here is an ordinary async call — no journal, no retry —
  * until a body puts it inside a step, and nothing says so at the call site.
- * Every step in this repository is a user's.
  *
- * So the division is: **the caller owns the four steps and the loop, this owns
- * everything inside them.** That is the same division `stepGenerate` and
- * `stepFetch` already keep.
+ * What the SDK CAN own is the composition over a `ctx` the body hands it — the
+ * way `ctx.poll` and `ctx.sayOnClient` are `ctx.step` and `ctx.sleep` under one
+ * name. {@link transcribeUploadDurably} (`step-transcribe-durably.ts`) is that
+ * for this flow: the three steps below and the poll, journaled under fixed
+ * names, called from a body as `transcribeUploadDurably(ctx, uploadId)`. The
+ * three calls stay exported for a body that needs a different shape — a
+ * callback instead of a poll, a submit it reuses across runs.
+ *
+ * So the division is: **the caller owns the steps and the loop, or hands its
+ * `ctx` to the composition that does; this owns everything inside them.** That
+ * is the same division `stepGenerate` and `stepFetch` already keep.
  *
  * ```ts
  * import type { WorkflowContext } from "@alexkroman1/aai/workflow-api";
@@ -206,6 +213,12 @@ export type TranscribeSubmitOptions = TranscribeRequestOptions & {
  *
  * @param uploadId - An upload in the agent's own store, as `stepWriteUpload` or a
  *   page's `api.upload(file)` produced. Must be complete.
+ * @returns The provider's URL, plus the upload's `label` as `source` and its
+ *   `size`. Both ride the JOURNALED result on purpose: a body that reports
+ *   "Transcribing `call.m4a` (12 MB)" after this step, or names the recording
+ *   in its output, reads them off the value it already has rather than paying a
+ *   second `stepUploadInfo` round trip — which on a deployed guest is a platform
+ *   call, and inside a step is one more thing to classify.
  *
  * @throws {UploadIncompleteError} when the upload is still arriving.
  * @throws {TranscribeError} on a refusal, carrying the verdict `toStepError`
@@ -222,7 +235,7 @@ export type TranscribeSubmitOptions = TranscribeRequestOptions & {
 export async function stepTranscribeUpload(
   uploadId: string,
   options: TranscribeRequestOptions = {},
-): Promise<{ audioUrl: string }> {
+): Promise<{ audioUrl: string; source: string; size: number }> {
   // Not `stepUploadInfo`: `size` is the readable PREFIX, and a run started while the
   // recording was still arriving would upload the prefix and transcribe it.
   const stored = await stepRequireCompleteUpload(uploadId);
@@ -246,7 +259,7 @@ export async function stepTranscribeUpload(
   if (!audioUrl) {
     throw transcribeRefusal("The async API accepted the upload but named no URL.");
   }
-  return { audioUrl };
+  return { audioUrl, source: stored.label, size: stored.size };
 }
 
 /**

@@ -1,8 +1,14 @@
-/** The def a DEPLOYED agent runs: authored, plus what `tools/` declares. */
 import agentDef from "virtual:aai/agent";
-import { createToolContext, expectDeployable, toolRunner } from "@alexkroman1/aai-runtime/testing";
-import { describe, expect, test } from "vitest";
+import {
+  createToolContext,
+  expectDeployable,
+  expectSlotContract,
+} from "@alexkroman1/aai-runtime/testing";
+import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
+import { expect, test } from "vitest";
 import { MAX_NOTES, notebookSlot } from "./shared.ts";
+import listNotes from "./tools/list_notes.ts";
+import saveNote from "./tools/save_note.ts";
 
 /**
  * What this starter's spec may assert: properties that survive the edits the
@@ -14,13 +20,7 @@ import { MAX_NOTES, notebookSlot } from "./shared.ts";
  * page whose button sends commands the agent ignores, while the transcriber
  * answers every pause — which looks like a working agent in a quiet room.
  */
-const run = toolRunner(agentDef);
-
-describe("push-to-talk-agent template", () => {
-  test("is deployable: validates, is nameable, and every stage its mode needs is filled", () => {
-    expect(() => expectDeployable(agentDef)).not.toThrow();
-  });
-
+describeAgent(agentDef, (run) => {
   test("the caller ends each turn, not the transcriber", () => {
     expect(expectDeployable(agentDef).turnTaking?.detection).toBe("manual");
   });
@@ -36,27 +36,34 @@ describe("push-to-talk-agent template", () => {
   test("save_note appends in order, and list_notes reads the same notebook back", async () => {
     // One context is one session: the two calls share a notebook.
     const ctx = createToolContext();
-    await run("save_note", { text: "Unit four: window seal cracked." }, ctx);
-    await run("save_note", { text: "  Boiler pressure reads one point two.  " }, ctx);
-    const listed = await run("list_notes", {}, ctx);
-    expect(listed).toEqual({
-      notes: [
-        { id: 1, text: "Unit four: window seal cracked." },
-        // Trimmed — a note is the caller's words, not the transcriber's padding.
-        { id: 2, text: "Boiler pressure reads one point two." },
-      ],
-    });
+    await run(saveNote, { text: "Unit four: window seal cracked." }, ctx);
+    await run(saveNote, { text: "  Boiler pressure reads one point two.  " }, ctx);
+    const { notes } = await run(listNotes, ctx);
+    expect(notes).toEqual([
+      { id: 1, text: "Unit four: window seal cracked." },
+      // Trimmed — a note is the caller's words, not the transcriber's padding.
+      { id: 2, text: "Boiler pressure reads one point two." },
+    ]);
     // The page reads the same notebook, newest first.
     expect(notebookSlot.projected(notebookSlot.get(ctx)).notes.map((note) => note.id)).toEqual([
       2, 1,
     ]);
   });
 
-  test("a full notebook keeps the newest notes and never reuses an id", async () => {
+  test("the notebook is per session, and a full one keeps the newest notes", () => {
+    expectSlotContract(notebookSlot, {
+      write: (notebook) => {
+        notebook.notes.push({ id: 1, text: "x" });
+      },
+    });
+  });
+
+  test("a full notebook never reuses an id", async () => {
+    // `nextId` rather than `notes.length + 1`: once the cap trims the front, a
+    // length-derived id would hand out a number a surviving note already has.
     const ctx = createToolContext();
-    for (let i = 1; i <= MAX_NOTES + 3; i++) await run("save_note", { text: `note ${i}` }, ctx);
+    for (let i = 1; i <= MAX_NOTES + 3; i++) await run(saveNote, { text: `note ${i}` }, ctx);
     const { notes } = notebookSlot.get(ctx);
-    expect(notes).toHaveLength(MAX_NOTES);
     expect(notes[0]?.id).toBe(4);
     expect(notes.at(-1)?.id).toBe(MAX_NOTES + 3);
   });

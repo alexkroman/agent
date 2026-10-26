@@ -24,17 +24,26 @@
  */
 
 export {
+  // `transcribeUploadDurably`: the three-step durable form, its options, its
+  // result and the poll budget it defaults to.
+  type DurableTranscript,
   stepTranscribePoll,
   stepTranscribeSubmit,
   stepTranscribeSync,
   stepTranscribeUpload,
   TRANSCRIBE_API,
+  TRANSCRIBE_DURABLY_STEPS,
   TRANSCRIBE_MODELS,
+  TRANSCRIBE_POLL_EVERY_MS,
+  TRANSCRIBE_POLL_MAX_MS,
   TRANSCRIBE_SYNC_MODEL,
+  type TranscribeDurablyHost,
+  type TranscribeDurablyOptions,
   TranscribeError,
   type TranscribeProgress,
   type TranscribeRequestOptions,
   type TranscribeSubmitOptions,
   type TranscribeSyncOptions,
   type Transcript,
+  transcribeUploadDurably,
 } from "../../sdk/step-barrel.ts";

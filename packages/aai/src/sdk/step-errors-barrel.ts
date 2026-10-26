@@ -18,8 +18,12 @@
 
 export {
   DEFAULT_RETRY_DELAY_MS,
+  type ErrorClass,
   FatalError,
+  fatalOn,
+  type OrFatalOptions,
   orFail,
+  orFatal,
   RetryableError,
   type RetryableErrorOptions,
   throwFatalStepError,

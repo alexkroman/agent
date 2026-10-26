@@ -9,18 +9,51 @@
  * and a message is exactly the thing a live eval never checks.
  */
 
-import type { SessionEvent } from "@alexkroman1/aai";
+import { agent, type SessionEvent, tool } from "@alexkroman1/aai";
+import { withTools } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import type { EvalToolCall } from "./events.ts";
 import type { EvalTurn } from "./session.ts";
 import {
   describeTurn,
+  evalRunOf,
   expectCalled,
   expectToolBeforeSpeech,
   toolCallsInTurns,
   turnCalling,
 } from "./turns.ts";
+
+/**
+ * The defs `turnCalling` is handed. It takes a DEF and matches the wire by the
+ * name it was lowered under, so the fixtures are lowered once here — `withTools`
+ * records the pairing, as `virtual:aai/agent` does — and the turns are
+ * hand-built against those names.
+ */
+const bare = (description: string) => tool({ description, execute: () => ({}) });
+const findUserIdByEmail = bare("Find a user by email");
+const getOrderDetails = bare("Get an order");
+const cancelPendingOrder = bare("Stage a cancellation");
+const transferToHumanAgents = bare("Transfer");
+const anything = bare("Anything at all");
+// `expectCalled`'s defs: it takes the def too, and names the tool on the wire.
+const openEmail = bare("Open an email");
+const draftReply = bare("Stage a reply");
+const accept = bare("Accept a draft");
+const researchTopic = bare("Research a topic");
+const startGame = bare("Start a game");
+withTools(agent({ name: "Turn Fixtures" }), {
+  find_user_id_by_email: findUserIdByEmail,
+  get_order_details: getOrderDetails,
+  cancel_pending_order: cancelPendingOrder,
+  transfer_to_human_agents: transferToHumanAgents,
+  anything,
+  open_email: openEmail,
+  draft_reply: draftReply,
+  accept,
+  research_topic: researchTopic,
+  start_game: startGame,
+});
 
 const call = (name: string, result?: string): EvalToolCall => ({
   toolCallId: `c-${name}`,
@@ -121,40 +154,40 @@ describe("toolCallsInTurns", () => {
 describe("turnCalling", () => {
   test("answers the FIRST turn the tool was called in, whatever its index", () => {
     // The whole point: the claim is "the turn it staged in", never "turn two".
-    expect(turnCalling(CALL, "cancel_pending_order")).toBe(CALL[1]);
-    expect(turnCalling(CALL, "find_user_id_by_email")).toBe(CALL[0]);
+    expect(turnCalling(CALL, cancelPendingOrder)).toBe(CALL[1]);
+    expect(turnCalling(CALL, findUserIdByEmail)).toBe(CALL[0]);
   });
 
   test("THROWS naming every turn's tools, rather than answering undefined", () => {
     // The failure the templates' `expect(x, "<hand-built message>").toBeDefined()`
     // pattern existed to produce, and the reason the return type is `EvalTurn`.
-    expect(() => turnCalling(CALL, "transfer_to_human_agents")).toThrow(
+    expect(() => turnCalling(CALL, transferToHumanAgents)).toThrow(
       /no turn called "transfer_to_human_agents"/,
     );
-    expect(() => turnCalling(CALL, "transfer_to_human_agents")).toThrow(
+    expect(() => turnCalling(CALL, transferToHumanAgents)).toThrow(
       /turn 1 called find_user_id_by_email; turn 2 called get_order_details, cancel_pending_order/,
     );
   });
 
   test("no turns at all says so rather than printing an empty shape", () => {
-    expect(() => turnCalling([], "anything")).toThrow(/no turns were driven/);
+    expect(() => turnCalling([], anything)).toThrow(/no turns were driven/);
   });
 
   test("`where` selects the call that did the thing, not merely the name", () => {
     // `travel-concierge-agent`'s `stagingTurn`: the interesting turn is the one whose
     // call STAGED something rather than being refused by the gate.
-    const staged = turnCalling(CALL, "cancel_pending_order", (c) =>
+    const staged = turnCalling(CALL, cancelPendingOrder, (c) =>
       /awaitingConfirmation/.test(c.result ?? ""),
     );
     expect(staged).toBe(CALL[1]);
-    expect(
-      turnCalling(CALL, "cancel_pending_order", (c) => /"cancelled"/.test(c.result ?? "")),
-    ).toBe(CALL[2]);
+    expect(turnCalling(CALL, cancelPendingOrder, (c) => /"cancelled"/.test(c.result ?? ""))).toBe(
+      CALL[2],
+    );
   });
 
   test("called but unmatched is a DIFFERENT finding from never called", () => {
     // Only one of the two is about the agent ignoring the tool.
-    expect(() => turnCalling(CALL, "cancel_pending_order", () => false)).toThrow(
+    expect(() => turnCalling(CALL, cancelPendingOrder, () => false)).toThrow(
       /2 call\(s\) to "cancel_pending_order" and none matched the predicate/,
     );
   });
@@ -212,7 +245,7 @@ describe("expectToolBeforeSpeech", () => {
 describe("expectCalled", () => {
   test("passes when every named tool was called, in any order", () => {
     const ok = turn("Here's the draft.", [call("open_email"), call("draft_reply")], true, []);
-    expect(() => expectCalled(ok, "draft_reply", "open_email")).not.toThrow();
+    expect(() => expectCalled(ok, draftReply, openEmail)).not.toThrow();
   });
 
   test("the ANNOUNCING case says so, and quotes the sentence", () => {
@@ -220,27 +253,27 @@ describe("expectCalled", () => {
     // its turn. `expected [] to deeply equal [ 'recommend' ]` is what this
     // replaces.
     const promised = turn("I'll look into home battery prices for you.", [], true, []);
-    expect(() => expectCalled(promised, "research_topic")).toThrow(
+    expect(() => expectCalled(promised, researchTopic)).toThrow(
       /never called research_topic — called no tools and only spoke — "I'll look into home battery/,
     );
   });
 
   test("a turn that called something ELSE is a different sentence", () => {
     const wrong = turn("Eight came in.", [call("triage_inbox")], true, []);
-    expect(() => expectCalled(wrong, "open_email")).toThrow(
+    expect(() => expectCalled(wrong, openEmail)).toThrow(
       /never called open_email — called triage_inbox, and said "Eight came in\."/,
     );
   });
 
   test("names every missing tool, not just the first", () => {
     const only = turn("Opened it.", [call("open_email")], true, []);
-    expect(() => expectCalled(only, "open_email", "draft_reply", "accept")).toThrow(
+    expect(() => expectCalled(only, openEmail, draftReply, accept)).toThrow(
       /never called draft_reply, accept/,
     );
   });
 
   test("silence with no tools is its own wording", () => {
-    expect(() => expectCalled(turn("", [], true, []), "start_game")).toThrow(
+    expect(() => expectCalled(turn("", [], true, []), startGame)).toThrow(
       /called no tools and said nothing/,
     );
   });
@@ -254,7 +287,7 @@ describe("expectCalled over a turn LIST", () => {
       turn("Dana is asking about the VPC.", [call("open_email")], true, []),
       turn("Here's the draft.", [call("draft_reply")], true, []),
     ];
-    expect(() => expectCalled(turns, "open_email", "draft_reply")).not.toThrow();
+    expect(() => expectCalled(turns, openEmail, draftReply)).not.toThrow();
   });
 
   test("a miss across the list names every call and every sentence", () => {
@@ -262,12 +295,64 @@ describe("expectCalled over a turn LIST", () => {
       turn("Dana is asking about the VPC.", [call("open_email")], true, []),
       turn("I'll write that up.", [], true, []),
     ];
-    expect(() => expectCalled(turns, "draft_reply")).toThrow(
+    expect(() => expectCalled(turns, draftReply)).toThrow(
       /never called draft_reply — called open_email, and said "Dana is asking about the VPC\. I'll write that up\."/,
     );
   });
 
   test("an empty list is a scope that called nothing", () => {
-    expect(() => expectCalled([], "open_email")).toThrow(/called no tools and said nothing/);
+    expect(() => expectCalled([], openEmail)).toThrow(/called no tools and said nothing/);
+  });
+
+  test("a def no agent lowered is refused by `toolNameOf`, before any claim about the turn", () => {
+    const inline = bare("Never lowered");
+    expect(() => expectCalled([], inline)).toThrow(/handed a tool no agent registered/);
+  });
+});
+
+describe("evalRunOf", () => {
+  const recap = { run: async () => ({}) };
+  const digest = { description: "Digest a link", run: async () => ({}) };
+  const started = (
+    ...starts: { workflow: string; def?: typeof recap; runId: string }[]
+  ): EvalTurn => ({
+    text: "Started.",
+    events: [],
+    toolCalls: [],
+    completed: true,
+    errors: [],
+    workflowStarts: starts.map((start) => ({ ...start, def: start.def })),
+  });
+
+  test("the one run of the workflow this turn started, by name or by def", () => {
+    const turn = started({ workflow: "recap", def: recap, runId: "wrun_1" });
+    expect(evalRunOf(turn, "recap")).toBe("wrun_1");
+    expect(evalRunOf(turn, recap)).toBe("wrun_1");
+  });
+
+  test("none throws naming what the turn did start", () => {
+    expect(() => evalRunOf(started(), recap)).toThrow(
+      'no run of the def described as "" was started in this turn; it started no runs',
+    );
+    expect(() =>
+      evalRunOf(started({ workflow: "recap", def: recap, runId: "wrun_1" }), digest),
+    ).toThrow(
+      'no run of the def described as "Digest a link" was started in this turn; it started recap (wrun_1)',
+    );
+  });
+
+  test("two is the finding a dedupe check exists to prevent, and throws", () => {
+    const turn = started(
+      { workflow: "recap", runId: "wrun_1" },
+      { workflow: "recap", runId: "wrun_2" },
+    );
+    expect(() => evalRunOf(turn, "recap")).toThrow(
+      '2 runs of "recap" were started in this turn (wrun_1, wrun_2)',
+    );
+  });
+
+  test("a turn with no record at all says who records one", () => {
+    const bare: EvalTurn = { text: "", events: [], toolCalls: [], completed: true, errors: [] };
+    expect(() => evalRunOf(bare, "recap")).toThrow("carries no record of workflow starts");
   });
 });

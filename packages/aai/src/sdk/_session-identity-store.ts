@@ -230,7 +230,9 @@ export function recordSessionIdentity(sessionId: string, identity: SessionIdenti
   }
   if (call !== undefined) {
     // Frozen, parameters too, so the object `sessionContext`, `onSessionEnd` and
-    // every tool see is one value no reader can change under another.
+    // every tool see is one value no reader can change under another. Plain
+    // data: it is logged and compared as such, and the brief it may carry is
+    // read off it by `readCallBrief`.
     const frozen: SessionCall = Object.freeze({
       ...call,
       parameters: Object.freeze({ ...call.parameters }),

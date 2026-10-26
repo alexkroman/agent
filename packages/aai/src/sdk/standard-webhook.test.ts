@@ -1,10 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { createHmac } from "node:crypto";
 import { describe, expect, test } from "vitest";
-import type { RouteContext, RouteRequest } from "./agent-routes.ts";
+import { createRouteContext } from "./_testing-route-context.ts";
+import type { RouteRequest } from "./agent-routes.ts";
 import { readRouteResponse } from "./agent-routes.ts";
 import { verifyStandardWebhook, webhookRoute } from "./standard-webhook.ts";
-import { createStubWorkflows } from "./testing-workflows.ts";
 
 const NOW = 1_790_000_000;
 const RAW = '{"type":"composio.trigger.message","data":{"n":1}}';
@@ -97,13 +97,7 @@ describe("verifyStandardWebhook", () => {
 });
 
 describe("webhookRoute", () => {
-  const ctx = (env: Record<string, string>): RouteContext => ({
-    env,
-    workflows: createStubWorkflows(),
-    clientTranscript: async () => ({ sessions: [] }),
-    speech: () => undefined,
-    signal: new AbortController().signal,
-  });
+  const ctx = (env: Record<string, string>) => createRouteContext({ env });
 
   test("runs the handler only for a verified delivery", async () => {
     const now = Math.floor(Date.now() / 1000);

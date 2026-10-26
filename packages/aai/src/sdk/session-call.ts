@@ -41,6 +41,12 @@ import type { ToolContext } from "./tool-context.ts";
 /**
  * A phone session's call identity, as the carrier's `start` frame reported it.
  *
+ * Plain data, and the same shape on both sides of the wire: what the runtime's
+ * phone bridge, an eval and `createToolContext({ call })` hand in is what
+ * `sessionContext`, `onSessionEnd` and `sessionCall(ctx)` read back, frozen.
+ * The brief `stepPlaceCall({ brief })` signed onto the parameters is read
+ * with `readCallBrief(call, secret)`, the one reader.
+ *
  * @sealed
  * @public
  */

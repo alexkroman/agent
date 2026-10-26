@@ -14,6 +14,7 @@ import { notebookSlot } from "../shared.ts";
 export default notebookSlot.updateTool({
   description:
     "Save a note the caller dictated. Call it once per note, with the note as they said it, tidied only for punctuation.",
+  ui: { icon: "\u{1F4DD}", label: "Saving the note" },
   inputSchema: z.object({
     text: z.string().min(1).describe("The note, in the caller's own words."),
   }),

@@ -44,6 +44,8 @@ export function assertNoStrayFields(
   const named = stray.map((key) => {
     const renamed = RENAMED_FIELDS[key];
     if (renamed !== undefined) return `\`${key}\` (renamed to \`${renamed}\`)`;
+    const replaced = REPLACED_FIELDS[key];
+    if (replaced !== undefined) return `\`${key}\` (replaced by ${replaced})`;
     // Distance 3, one name: a field is longer than a voice id, and a refusal
     // offers one correction. Uncapped, the nearest name to an invented field is
     // whichever short field is least unlike it — a confident wrong answer.
@@ -90,8 +92,9 @@ const movedUnrenamed: Readonly<Record<string, string>> = Object.fromEntries(
  * the first time somebody upgrades.
  */
 const RENAMED_FIELDS: Readonly<Record<string, string>> = {
-  system: "systemPrompt",
-  instructions: "systemPrompt",
+  // The one-line text for a LIST, which read like model-facing prose under
+  // its old name (`agent-listing.ts`).
+  description: "listing",
   // The mode flags `mode` replaced.
   text: 'mode: "text"',
   page: 'mode: "workflow-app"',
@@ -107,4 +110,15 @@ const RENAMED_FIELDS: Readonly<Record<string, string>> = {
   interruptionBackoffMs: inGroup("interruption", "backoffMs"),
   silenceTimeoutMs: inGroup("silence", "nudge.afterMs"),
   silencePrompt: inGroup("silence", "nudge.prompt"),
+};
+
+/**
+ * Fields a FILE or a slot option replaced, so the remedy is not a field name:
+ * the system prompt is `system-prompt.md` beside `agent.ts` (and a raw
+ * `export default {...}` that skipped `agent()` still reaches here with its
+ * old spellings of it).
+ */
+const REPLACED_FIELDS: Readonly<Record<string, string>> = {
+  system: "the `system-prompt.md` file beside agent.ts",
+  instructions: "the `system-prompt.md` file beside agent.ts",
 };

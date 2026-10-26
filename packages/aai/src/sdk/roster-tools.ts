@@ -24,9 +24,17 @@
  * because an enum alone gives the model names and no way to tell them apart.
  * Neither recurses: a delegated run's own tools cannot delegate
  * (`NESTED_DELEGATE_MESSAGE` in `aai-runtime`).
+ *
+ * The lowering also RECORDS each tool's name against its def
+ * (`_testing-tool-names.ts`), as `withTools` does for a `tools/` file: a
+ * speaker's `tools` entry is the very object minted here, so a spec reaches a
+ * roster tool through that entry — `run(billing.tools.lookup_invoice)`,
+ * `toolResultIn(calls, billing.tools.lookup_invoice)` — exactly as it reaches a
+ * file tool through the file's default export.
  */
 
 import { z } from "zod";
+import { recordToolNames } from "./_testing-tool-names.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import { DELEGATE_TOOL_NAME, HANDOFF_TOOL_NAME, type Roster } from "./roster.ts";
 import type { SpeakerDef } from "./speaker.ts";
@@ -50,6 +58,7 @@ export function rosterToolset(handle: Roster): Toolset {
   }
   if (handle.speaking.length > 0) tools[HANDOFF_TOOL_NAME] = handoffTool(handle);
   if (handle.delegates.length > 0) tools[DELEGATE_TOOL_NAME] = delegateTool(handle.delegates);
+  recordToolNames(tools);
   return toolset("roster", tools, (name, _def, ctx) => {
     const owner = owners.get(name);
     if (owner === undefined) return;

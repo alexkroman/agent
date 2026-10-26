@@ -56,11 +56,13 @@ exported — typedoc drops an inferred one. Two TypeDoc traps no gate checks:
   frame. Use `ConsoleShell` when the conversation is yours and the frame is not;
   `ChatView` when both are ours. No template adopts `ConsoleShell` (it is a
   whole centred frame) — an open question for the coverage gate.
-- **`<SessionStateDot colors>`**: the palette is an optional PARTIAL prop; a
-  state it does not name (including one a later release adds — `AgentState` is
-  open) takes `stateColor()`'s theme colour, `ConsoleShell`'s, and a label
-  neither `labels` nor `AGENT_STATE_LABELS` has is the raw state. The component
-  owns those fallbacks and the pulse.
+- **`<SessionStateDot colors>`**: the palette is an optional PARTIAL prop, keyed
+  by exact state or by group (`idle` / `live` / `busy`, an exact state winning
+  over its group); a state it does not name (including one a later release adds
+  — `AgentState` is open) takes `stateColor()`'s theme colour, `ConsoleShell`'s,
+  and a label neither `labels` nor `AGENT_STATE_LABELS` has is the raw state.
+  With no `colors` the dot follows the mounted theme, so a chrome needs no
+  `STATE_COLORS` table. The component owns those fallbacks and the pulse.
 - **`<SessionControls>`** decides which buttons exist and what each presses (New
   Conversation is `end(); start()`, not `reset()`); `renderButton` decides the
   look. `useSessionControls()` underneath is for chromes too unusual for the
@@ -111,11 +113,25 @@ theme rules are in `../CLAUDE.md`.
   humanized label; upload properties (`workflow({ uploads })`) get
   `<FileField upload>`. Pass a name (it fetches the listing) or a
   `WorkflowSummary` (it fetches nothing — `useWorkflows({ skip: true })`).
-- **It is all-or-nothing and SKIPS objects and arrays.** No `exclude`/`only`;
-  `SchemaField` reads only `type`, `enum`, `description`, `default` (no
-  `min`/`max`, no `rows`). A conditionally-shown field must be hand-written and
-  must be one `<WorkflowFields>` skips, or it renders twice
-  (`document-redline-workflow` is the mixed-form example).
+- **It is all-or-nothing and SKIPS objects and arrays, bar two shapes.** An
+  array of strings renders `<TextAreaField split="lines">` (a `string[]`, one
+  per line) and an object of exactly `{ name: string, text: string }` renders
+  `<FileField read="text" as="namedText">` (a `NamedTextValue`);
+  `render={{ prop: "lines" | "namedText" }}` asks for either by name, never over
+  an upload (`fieldKindFor`). `document-redline-workflow` is the end-to-end
+  example: its `mustCover` (`z.array(z.string())`) and `source`
+  (`z.object({ name, text })`) render from the schema alone, so its form is one
+  `<WorkflowFields workflow="redline" />` and no hand-written field. No
+  `exclude`/`only`; `SchemaField` reads only `type`, `enum`, `const`,
+  `anyOf`/`oneOf` (a nullable union reads as its non-null member, a union of
+  `const`s as a select — `nonNullSchemaOf`/`schemaChoicesOf`), `items`,
+  `properties`, `required`, `description`, `default` (no `min`/`max`). A numeric
+  choice set marks its `<select data-aai-value="number">` so `collectValues`
+  submits numbers; a non-object property schema is skipped. A name the listing
+  lacks `console.warn`s once (the string form is the one the compiler cannot
+  check). A hand-written control (a conditionally-shown field, a shape outside
+  the two) sits beside `<WorkflowFields>` in the same `<Form>` and must be for a
+  property it SKIPS, or the property renders twice.
 - `useFlash`, `useCopy` and `fieldKindFor` exist for the studio's tooling; their
   unexercised names are in `template-api-allowlist.json` on purpose.
 

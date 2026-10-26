@@ -31,9 +31,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
-import { describe, expect } from "vitest";
+import { describe, expect, vi } from "vitest";
 import { linkSdkNodeModules, test } from "./_test-utils.ts";
-import { buildWorker } from "./worker-bundler.ts";
+import { buildWorker, discoverModuleFiles } from "./worker-bundler.ts";
 
 /**
  * Per-case budget for a real bundler pass. The integration tier's number, because
@@ -50,15 +50,66 @@ const toolSource = (description: string) =>
 /** Build `dir` and evaluate the worker, returning its default export. */
 async function loadWorker(
   dir: string,
-): Promise<{ tools: Record<string, unknown>; systemPrompt: string }> {
+): Promise<{ tools: Record<string, unknown>; systemPrompt: string; promptContext?: string }> {
   const code = await buildWorker(dir, { runtime: false });
   const out = path.join(dir, "worker.mjs");
   await fs.writeFile(out, code, "utf-8");
   const mod = (await import(pathToFileURL(out).href)) as {
-    default: { tools: Record<string, unknown>; systemPrompt: string };
+    default: { tools: Record<string, unknown>; systemPrompt: string; promptContext?: string };
   };
   return mod.default;
 }
+
+describe("discoverModuleFiles (the directory read, before any build)", () => {
+  test("both directories are read recursively, by the SDK's one file rule, sorted", async ({
+    tmpDir: dir,
+  }) => {
+    // The failure this pins: `workflows/` was read FLAT, so a nested
+    // `workflows/sub/x.ts` default-exporting a def was never handed to the
+    // registry, whose "nested" refusal was dead code; and the extension rule
+    // was this file's own, so it disagreed with `virtual:aai/agent`.
+    for (const file of [
+      "tools/echo.ts",
+      "tools/page.tsx",
+      "tools/alt.mts",
+      "tools/sub/nested.ts",
+      "tools/echo.test.ts",
+      "tools/README.md",
+      "workflows/digest.ts",
+      "workflows/sub/x.ts",
+      "workflows/lib/helper.mjs",
+      "workflows/digest.test-d.ts",
+      "workflows/notes.txt",
+    ]) {
+      await fs.mkdir(path.dirname(path.join(dir, file)), { recursive: true });
+      await fs.writeFile(path.join(dir, file), "export const x = 1;\n", "utf-8");
+    }
+    expect(await discoverModuleFiles(dir, "tools")).toEqual([
+      "alt.mts",
+      "echo.ts",
+      "page.tsx",
+      "sub/nested.ts",
+    ]);
+    expect(await discoverModuleFiles(dir, "workflows")).toEqual([
+      "digest.ts",
+      "lib/helper.mjs",
+      "sub/x.ts",
+    ]);
+  });
+
+  test("a missing directory is nothing to discover", async ({ tmpDir: dir }) => {
+    expect(await discoverModuleFiles(dir, "workflows")).toEqual([]);
+  });
+
+  test("a FILE where the directory should be is refused naming it, not a raw ENOTDIR", async ({
+    tmpDir: dir,
+  }) => {
+    await fs.writeFile(path.join(dir, "workflows"), "export default 1;\n", "utf-8");
+    await expect(discoverModuleFiles(dir, "workflows")).rejects.toThrow(
+      /workflows is a file, but `workflows\/` must be a DIRECTORY: one file per workflow/,
+    );
+  });
+});
 
 describe("tool discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
   test("a file in tools/ becomes a tool named for the file", async ({ tmpDir: dir }) => {
@@ -137,6 +188,67 @@ describe("tool discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
   });
 });
 
+describe("workflow discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
+  const workflowSource = (description: string) =>
+    `import { workflow } from "@alexkroman1/aai";\n` +
+    `export default workflow({ description: ${JSON.stringify(description)}, run: async () => 1 });\n`;
+
+  /** The built worker's workflow names and descriptions. */
+  async function loadWorkflows(dir: string): Promise<Record<string, string | undefined>> {
+    const code = await buildWorker(dir, { runtime: false });
+    const out = path.join(dir, "worker.mjs");
+    await fs.writeFile(out, code, "utf-8");
+    const mod = (await import(pathToFileURL(out).href)) as {
+      default: { workflows?: Record<string, { description?: string }> };
+    };
+    return Object.fromEntries(
+      Object.entries(mod.default.workflows ?? {}).map(([name, def]) => [name, def.description]),
+    );
+  }
+
+  test("a workflows/ file default-exporting a def is registered under the file name", async ({
+    tmpDir: dir,
+  }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(path.join(dir, "agent.ts"), AGENT, "utf-8");
+    await fs.mkdir(path.join(dir, "workflows"));
+    await fs.writeFile(path.join(dir, "workflows", "digest.ts"), workflowSource("Digest"), "utf-8");
+    // A body's helper, and a spec: imported (the helper) or skipped (the spec),
+    // registered neither way.
+    await fs.writeFile(path.join(dir, "workflows", "prompts.ts"), "export const P = 1;\n", "utf-8");
+    await fs.writeFile(
+      path.join(dir, "workflows", "digest.test.ts"),
+      "export default { nope: true };\n",
+      "utf-8",
+    );
+
+    expect(await loadWorkflows(dir)).toEqual({ digest: "Digest" });
+  });
+
+  test("an explicit agent({ workflows }) entry wins a clash and the rest merge", async ({
+    tmpDir: dir,
+  }) => {
+    await linkSdkNodeModules(dir);
+    await fs.writeFile(
+      path.join(dir, "agent.ts"),
+      `import { agent, workflow } from "@alexkroman1/aai";\n` +
+        `export default agent({ name: "T", workflows: { digest: workflow({ description: "Declared", run: async () => 1 }) } });\n`,
+      "utf-8",
+    );
+    await fs.mkdir(path.join(dir, "workflows"));
+    await fs.writeFile(path.join(dir, "workflows", "digest.ts"), workflowSource("File"), "utf-8");
+    await fs.writeFile(path.join(dir, "workflows", "recap.ts"), workflowSource("Recap"), "utf-8");
+
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      expect(await loadWorkflows(dir)).toEqual({ digest: "Declared", recap: "Recap" });
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/workflows\/digest\.ts/));
+    } finally {
+      warn.mockRestore();
+    }
+  });
+});
+
 describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
   const PROMPT = "You are a terse assistant.\n\n- One sentence.\n";
 
@@ -161,38 +273,43 @@ describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
     expect(agentDef.systemPrompt).toContain("voice agent");
   });
 
-  test("a COMPOSED prompt keeps what the author built", async ({ tmpDir: dir }) => {
+  test("computed text beside the file rides as promptContext, the file untouched", async ({
+    tmpDir: dir,
+  }) => {
     await linkSdkNodeModules(dir);
     await fs.writeFile(
       path.join(dir, "agent.ts"),
       `import { agent } from "@alexkroman1/aai";\n` +
-        `import prompt from "./system-prompt.md?raw";\n` +
-        `export default agent({ name: "T", systemPrompt: \`\${prompt}\\nTODAY: fish\` });\n`,
+        `export default agent({ name: "T", promptContext: "TODAY: fish" });\n`,
       "utf-8",
     );
     await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
 
-    // `pizza-ordering-agent`'s shape — the file plus a computed suffix. Discovery
-    // must not apply the file a second time, and must not call this a mistake.
+    // `pizza-ordering-agent`'s shape — the file plus a computed suffix, which is
+    // `promptContext` now that `agent()` takes no prompt: the file is still
+    // applied, and the context stays its own field for the builder to append.
     const agentDef = await loadWorker(dir);
-    expect(agentDef.systemPrompt).toBe(`${PROMPT}\nTODAY: fish`);
+    expect(agentDef.systemPrompt).toBe(PROMPT);
+    expect(agentDef.promptContext).toBe("TODAY: fish");
   });
 
-  test("a RESOLVER survives the build, and puts nothing on the wire", async ({ tmpDir: dir }) => {
+  test("a raw config's RESOLVER survives the build, and puts nothing on the wire", async ({
+    tmpDir: dir,
+  }) => {
     await linkSdkNodeModules(dir);
+    // A raw `export default {...}` is the one author-side place a prompt
+    // resolver can still be written (`agent()` refuses the key); the host's
+    // `withSystemPrompt` is the other.
     await fs.writeFile(
       path.join(dir, "agent.ts"),
-      `import { agent } from "@alexkroman1/aai";\n` +
-        `import prompt from "./system-prompt.md?raw";\n` +
-        'export default agent({ name: "T", systemPrompt: (ctx) => `${prompt}\\nSession ${ctx.sessionId}.` });\n',
+      `import prompt from "./system-prompt.md?raw";\n` +
+        'export default { name: "T", systemPrompt: (ctx) => `${prompt}\\nSession ${ctx.sessionId}.` };\n',
       "utf-8",
     );
     await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
 
-    // `text-adventure-agent`'s shape: the file, plus something only a live
-    // session knows. Discovery must not apply the file a second time and must
-    // not call the function a mistake — it used to THROW here, which made
-    // dynamic instructions unreachable from any project with a prompt file.
+    // Discovery must not apply the file a second time and must not call the
+    // function a mistake — it used to THROW here.
     const code = await buildWorker(dir, { runtime: false });
     const out = path.join(dir, "worker-resolver.mjs");
     await fs.writeFile(out, code, "utf-8");
@@ -215,10 +332,11 @@ describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
     tmpDir: dir,
   }) => {
     await linkSdkNodeModules(dir);
+    // A raw config, since `agent({ systemPrompt })` is refused before the
+    // file is ever compared.
     await fs.writeFile(
       path.join(dir, "agent.ts"),
-      `import { agent } from "@alexkroman1/aai";\n` +
-        `export default agent({ name: "T", systemPrompt: "Inline, and not the file." });\n`,
+      `export default { name: "T", systemPrompt: "Inline, and not the file." };\n`,
       "utf-8",
     );
     await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");

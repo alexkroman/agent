@@ -2,6 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { makeConfig } from "../host/_test-utils.ts";
+import { createSlotStore } from "./_testing-context.ts";
 import {
   buildSystemPrompt,
   DEFAULT_SYSTEM_PROMPT,
@@ -10,6 +11,7 @@ import {
   PROMPT_ROLE,
   PROMPT_SPEAKING,
   PROMPT_TOOLS,
+  resolveAgentInstructions,
 } from "./system-prompt.ts";
 import { VOICE_PRESETS } from "./voice-presets.ts";
 
@@ -60,6 +62,60 @@ describe("buildSystemPrompt", () => {
     const result = buildSystemPrompt(makeConfig({ systemPrompt: custom }), { hasTools: false });
     expect(result).toContain(AGENT_HEADER);
     expect(result).toContain(custom);
+  });
+
+  test("a static promptContext lands under the author's instructions, blank-line separated", () => {
+    const withBoth = buildSystemPrompt(
+      makeConfig({ systemPrompt: "Custom rules.", promptContext: "Today's special is soup." }),
+      { hasTools: false },
+    );
+    expect(withBoth).toContain(`${AGENT_HEADER}\nCustom rules.\n\nToday's special is soup.`);
+    // With no instructions of its own the context IS the agent-specific
+    // section — the file-less case, where it is the author's only line.
+    const alone = buildSystemPrompt(makeConfig({ promptContext: "Today's special is soup." }), {
+      hasTools: false,
+    });
+    expect(alone).toContain(`${AGENT_HEADER}\nToday's special is soup.`);
+    // A blank context changes the prompt by not one byte.
+    expect(buildSystemPrompt(makeConfig({ promptContext: "  " }), { hasTools: false })).toBe(
+      buildSystemPrompt(makeConfig(), { hasTools: false }),
+    );
+  });
+
+  test("resolveAgentInstructions composes the same section from either half, static or resolved", () => {
+    const ctx = { sessionId: "s", env: {}, slots: createSlotStore(), turn: 0 };
+    const static_ = resolveAgentInstructions(
+      { systemPrompt: "Custom rules.", promptContext: "Today's special is soup." },
+      ctx,
+    );
+    expect(static_).toBe("Custom rules.\n\nToday's special is soup.");
+    expect(
+      resolveAgentInstructions(
+        {
+          systemPrompt: () => "Custom rules.",
+          promptContext: ({ sessionId }) => `Session ${sessionId}.`,
+        },
+        ctx,
+      ),
+    ).toBe("Custom rules.\n\nSession s.");
+    // The same prefix stripping a static prompt gets, on a resolved one.
+    expect(
+      resolveAgentInstructions(
+        { systemPrompt: () => `${DEFAULT_SYSTEM_PROMPT}\n\nOnly pizza.` },
+        ctx,
+      ),
+    ).toBe("Only pizza.");
+    // Both halves blank is nothing — not a header, not a separator.
+    expect(
+      resolveAgentInstructions({ systemPrompt: "", promptContext: "  " }, ctx),
+    ).toBeUndefined();
+    expect(resolveAgentInstructions({}, ctx)).toBeUndefined();
+    // And it is what buildSystemPrompt appends under the header, byte for byte.
+    const built = buildSystemPrompt(
+      makeConfig({ systemPrompt: "Custom rules.", promptContext: "Today's special is soup." }),
+      { hasTools: false },
+    );
+    expect(built.endsWith(`${AGENT_HEADER}\n${static_}`)).toBe(true);
   });
 
   // Position has to agree with the precedence PROMPT_ROLE states. When the

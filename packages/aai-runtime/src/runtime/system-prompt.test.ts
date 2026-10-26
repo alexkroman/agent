@@ -124,7 +124,7 @@ describe("a systemPrompt RESOLVER", () => {
       agentConfig: toAgentConfig({ name: "Desk", greeting: "" }),
       hasTools: false,
       toolGuidance: undefined,
-      instructions,
+      agent: { systemPrompt: instructions },
     });
   }
 
@@ -185,6 +185,92 @@ describe("a systemPrompt RESOLVER", () => {
   });
 });
 
+describe("an agent's promptContext", () => {
+  // The whole header, not its first words: `PROMPT_ROLE`'s own prose says
+  // "Agent-specific instructions may follow", so a count on the short form
+  // reads two where there is one section.
+  const HEADER =
+    "Agent-specific instructions (these override the defaults above where they conflict):";
+
+  test("a static context beside a static prompt is baked into the base, under the prompt", () => {
+    const prompts = createSystemPromptResolver({
+      agentConfig: toAgentConfig({
+        name: "Desk",
+        greeting: "",
+        systemPrompt: "Be brief.",
+        promptContext: "Specials: soup.",
+      }),
+      hasTools: false,
+      toolGuidance: undefined,
+      agent: { systemPrompt: "Be brief.", promptContext: "Specials: soup." },
+    });
+    const session = prompts.forSession(TEST_SESSION_CONTEXT);
+    expect(prompts.base()).toContain(`${HEADER}\nBe brief.\n\nSpecials: soup.`);
+    expect(session.resolve()).toBe(prompts.base());
+  });
+
+  test("a static context beside a systemPrompt RESOLVER lands under the resolver's answer", () => {
+    // `toAgentConfig` dropped the resolver and kept the context, so the wire
+    // config carries the context alone — and baking it into the base would put
+    // it ABOVE the override, under a header of its own.
+    const agentConfig = toAgentConfig({
+      name: "Desk",
+      greeting: "",
+      systemPrompt: () => "ignored here",
+      promptContext: "Specials: soup.",
+    });
+    expect(agentConfig.promptContext).toBe("Specials: soup.");
+    const prompts = createSystemPromptResolver({
+      agentConfig,
+      hasTools: false,
+      toolGuidance: undefined,
+      agent: { systemPrompt: () => "The caller is verified.", promptContext: "Specials: soup." },
+    });
+    expect(prompts.base()).not.toContain("Specials: soup.");
+    const resolved = prompts.forSession(TEST_SESSION_CONTEXT).resolve();
+    expect(resolved).toContain(`${HEADER}\nThe caller is verified.\n\nSpecials: soup.`);
+    expect(resolved.split(HEADER)).toHaveLength(2);
+  });
+
+  test("a context RESOLVER is asked per resolve with the session, and appended under the prompt", () => {
+    let tier = "standard";
+    const prompts = createSystemPromptResolver({
+      agentConfig: toAgentConfig({ name: "Desk", greeting: "", systemPrompt: "Be brief." }),
+      hasTools: false,
+      toolGuidance: undefined,
+      agent: {
+        systemPrompt: "Be brief.",
+        promptContext: (ctx) => `Session ${ctx.sessionId} is on the ${tier} tier.`,
+      },
+    });
+    const session = prompts.forSession(TEST_SESSION_CONTEXT);
+    expect(session.resolve()).toContain(
+      `Be brief.\n\nSession ${TEST_SESSION_CONTEXT.sessionId} is on the standard tier.`,
+    );
+    tier = "gold";
+    expect(session.resolve()).toContain("on the gold tier.");
+    // Both halves of the agent section are under ONE header, after the base.
+    expect(session.resolve().split(HEADER)).toHaveLength(2);
+  });
+
+  test("an empty context changes the prompt by not one byte", () => {
+    const plain = createSystemPromptResolver({
+      agentConfig: toAgentConfig({ name: "Desk", greeting: "", systemPrompt: "Be brief." }),
+      hasTools: false,
+      toolGuidance: undefined,
+    });
+    const blank = createSystemPromptResolver({
+      agentConfig: toAgentConfig({ name: "Desk", greeting: "", systemPrompt: "Be brief." }),
+      hasTools: false,
+      toolGuidance: undefined,
+      agent: { systemPrompt: "Be brief.", promptContext: () => "" },
+    });
+    expect(blank.forSession(TEST_SESSION_CONTEXT).resolve()).toBe(
+      plain.forSession(TEST_SESSION_CONTEXT).resolve(),
+    );
+  });
+});
+
 describe("a session's CONTEXT block (`sessionContext`'s instructions)", () => {
   test("lands after the agent's own prompt and before the per-turn suffix", () => {
     // Stable parts first: a provider's prompt cache matches a prefix, so the
@@ -193,7 +279,7 @@ describe("a session's CONTEXT block (`sessionContext`'s instructions)", () => {
       agentConfig: toAgentConfig({ name: "Desk", greeting: "" }),
       hasTools: false,
       toolGuidance: undefined,
-      instructions: () => "Agent resolver text.",
+      agent: { systemPrompt: () => "Agent resolver text." },
     }).forSession(TEST_SESSION_CONTEXT);
     session.setContext("They like jazz.");
     session.setSuffix("dialogs", () => "Current phase: checkout.");

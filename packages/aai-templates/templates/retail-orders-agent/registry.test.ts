@@ -1,12 +1,16 @@
-import { isToolFailure, type SessionEventContext } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai";
 import {
   createToolContext,
   deployedAgent,
+  dialogRefusalPattern,
   expectDialogRefused,
-  runTool,
+  expectSlotContract,
+  fireEvent,
+  sessionEvent,
   type TestToolContext,
   toolInputIssues,
   toolOf,
+  toolRunner,
 } from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 /**
@@ -17,43 +21,29 @@ import { describe, expect, test } from "vitest";
  * reach for. This file is the exception on purpose: its whole subject is the
  * tool REGISTRY, so doing the discovery explicitly is the thing under test
  * rather than setup around it. It is also the worked example for a project
- * whose runner is not vitest, and so cannot register the plugin.
+ * whose runner is not vitest, and so cannot register the plugin. The prompt
+ * half (`system-prompt.md`) is deliberately not lowered here — nothing below
+ * reads it, and a spec that asserts on the prompt imports `virtual:aai/agent`
+ * (`agent.test.ts`) rather than the file.
  */
 import authoredAgent from "./agent.ts";
-import { callFlow, gateFor, retailSlot } from "./store.ts";
-import systemPrompt from "./system-prompt.md?raw";
+import { callFlow, retailSlot } from "./store.ts";
+import getUserDetails from "./tools/get_user_details.ts";
 
 const retailAgent = deployedAgent(authoredAgent, {
   tools: import.meta.glob("./tools/*.ts", { eager: true }),
-  systemPrompt,
 });
 
 const registry = Object.entries(retailAgent.tools);
 
-/**
- * Whether `name`'s gate admits the pre-identification state — i.e. whether it
- * is one of the tools that legitimately runs before the caller is identified.
- *
- * ASKED OF THE REGISTRY, not read off a list here. This used to be a hardcoded
- * six-name set, which meant a tool you add is classified by a file you did not
- * write: declare `when: BEFORE_TRANSFER` on a new catalogue read and the
- * sweeps below would have demanded it refuse. `retailTool` records every gate
- * in `TOOL_GATES`, so the honest question is what the tool itself declared.
- *
- * `undefined` — a tool built with plain `tool()` rather than `retailTool` — is
- * neither: it has no gate at all, and the sweeps skip it. That is the same
- * answer `gateFor` gives the `tool.called` hook, and "a tool this template did
- * not declare is ignored" below is the assertion for it.
- */
-const isPublic = (name: string) => gateFor(name)?.includes("identifying") ?? false;
+/** The CALL, gated by the toolset exactly as the runtime gates it, reached by the def. */
+const run = toolRunner(retailAgent);
 
-/** Registry entries that went through `retailTool`, so the gate has an opinion. */
-const gatedTools = registry.filter(([name]) => gateFor(name) !== undefined);
-
-/** The tools this template SHIPS that run before identification. A pin on the
- *  shipped set — one of these quietly losing `BEFORE_TRANSFER` is a policy
- *  break — and nothing else reads it, so adding a public tool of your own costs
- *  no edit here. */
+/** The tools this template SHIPS that run before identification — the ones
+ *  declaring `when: BEFORE_TRANSFER`. A pin on the shipped set: one of these
+ *  quietly losing it would make the desk unreachable before a caller is
+ *  identified, and nothing else would say so. A public tool of your own joins
+ *  this list, or the sweeps below expect it to refuse. */
 const SHIPPED_PUBLIC_TOOLS = [
   "find_user_id_by_email",
   "find_user_id_by_name_zip",
@@ -62,6 +52,8 @@ const SHIPPED_PUBLIC_TOOLS = [
   "list_all_product_types",
   "transfer_to_human_agents",
 ];
+
+const isPublic = (name: string) => SHIPPED_PUBLIC_TOOLS.includes(name);
 
 /**
  * A context whose call flow is in `serving.helping`, so a `when: "serving"`
@@ -80,46 +72,9 @@ function servingCtx(): TestToolContext {
   return ctx;
 }
 
-/** The two tools legal only while a change waits on the caller's yes. */
-const SETTLING_TOOLS = new Set(["cancel_change", "confirm_change"]);
-
-/**
- * A context in whatever state `name` needs to reach its BODY.
- *
- * The two settling tools are reached by really identifying a caller and really
- * staging a change, rather than by sending `STAGED` at the machine: they read
- * `state.pending`, and a position with nothing staged behind it is a state this
- * template cannot actually be in. Everything else only needs `serving`.
- *
- * `runTool` (`@alexkroman1/aai-runtime/testing`) does the lookup-then-execute this file
- * had written as a `toolNamed` helper — `agent.tools[name]`, a throw naming the
- * miss, then `.execute` — which is `toolOf` plus one call, and is what the SDK
- * publishes those two for. The throw is better than the one here was: it lists
- * the tools that ARE declared, and it recognises the mistake of handing it the
- * authored def (which carries none) rather than the deployed one.
- */
-async function bodyReachableCtx(name: string): Promise<TestToolContext> {
-  if (!SETTLING_TOOLS.has(name)) return servingCtx();
-  const ctx = createToolContext();
-  await runTool(
-    retailAgent,
-    "find_user_id_by_email",
-    { email: "aarav.anderson9752@example.com" },
-    ctx,
-  );
-  await runTool(
-    retailAgent,
-    "cancel_pending_order",
-    { order_id: "#W9300146", reason: "no longer needed" },
-    ctx,
-  );
-  return ctx;
-}
-
 /**
  * Minimal args satisfying each tool's schema. Deliberately plausible-shaped but
- * wrong — these calls are expected to fail; what is asserted is that they still
- * moved the UI.
+ * wrong — these calls are expected to fail.
  *
  * **It is also the list of tools this file sweeps, and the list of tools this
  * template ships.** It used to be a second copy of a seventeen-name array
@@ -235,144 +190,82 @@ describe("tool registry", () => {
    *
    * `toolInputIssues` asks the tool's OWN schema and answers a list rather than
    * throwing, which is what lets this be soft: a rename should name every entry
-   * it invalidated, not just the first.
+   * it invalidated, not just the first. The table is keyed by NAME, so the def
+   * is looked up — `toolOf` is the lookup — rather than imported.
    */
   test("every SAMPLE_ARGS entry satisfies its tool's own input schema", async () => {
     for (const [name, args] of Object.entries(SAMPLE_ARGS)) {
-      expect
-        .soft(await toolInputIssues(retailAgent, name, args), `SAMPLE_ARGS["${name}"]`)
-        .toBeUndefined();
+      const def = toolOf(retailAgent, name);
+      // A no-argument tool declares no schema, and there is nothing to check.
+      if (def.inputSchema === undefined) continue;
+      expect.soft(await toolInputIssues(def, args), `SAMPLE_ARGS["${name}"]`).toBeUndefined();
     }
   });
 });
 
-describe("the UI-update invariant", () => {
-  // Over `sweepable` rather than the whole registry: these two REACH a tool's
-  // body, so they need arguments its schema accepts, and calling a tool of
-  // yours with `{}` would report a crash inside it as a UI regression. Give it
-  // a `SAMPLE_ARGS` entry and it is swept like the rest.
-  //
-  // This is the pair that fails if a future tool is built with tool() instead of
-  // retailTool(): it would work, and the sidebar would sit still through it.
-  test.each(sweepable)("%s increments callSeq and logs activity", async (name) => {
-    // In whichever state lets the body run, so the flow gate is not what these
-    // calls are testing: the point is that a tool which reaches its BODY moves
-    // the sidebar. A refused call never reaches one — the hook below is what
-    // moves the sidebar for those.
-    const ctx = await bodyReachableCtx(name);
-    const before = retailSlot.get(ctx).callSeq;
-    await runTool(retailAgent, name, SAMPLE_ARGS[name] ?? {}, ctx);
-    const state = retailSlot.get(ctx);
-    expect(state.callSeq, `${name} did not bump callSeq`).toBe(before + 1);
-    expect(state.activity.at(-1)?.tool, `${name} logged the wrong tool name`).toBe(name);
-    expect(state.activity.at(-1)?.summary).toBeTruthy();
-  });
-
-  test.each(sweepable)("%s logs its own registry key as its name", async (name) => {
-    // Catches a copy-paste where the retailTool `name` and the registry key
-    // disagree — the activity feed would then attribute calls to the wrong tool.
-    // Driven through `runTool`, so the tool really is looked up BY the registry
-    // key the assertion is about.
-    const ctx = await bodyReachableCtx(name);
-    await runTool(retailAgent, name, SAMPLE_ARGS[name] ?? {}, ctx);
-    expect(retailSlot.get(ctx).activity.at(-1)?.tool).toBe(name);
-  });
-});
-
-describe("the blocked-call hook", () => {
-  /**
-   * A `tool.called`, delivered the way the RUNTIME delivers it.
-   *
-   * The hook is a plain function on the def, so this needs no harness — and
-   * asserting on it here is the only way the blocked lines are covered at all:
-   * they are written by something no tool call executes.
-   *
-   * The context is typed {@link SessionEventContext}, which is what a session
-   * event handler is really handed — a session id, the env and the slot store,
-   * and none of the tool-call machinery a `ToolContext` also carries. It said
-   * `ToolContext` because that is what the callers below happen to have; a
-   * `TestToolContext` still satisfies this, and typing it this way is what says
-   * the hook needs nothing a tool call brings with it.
-   */
-  const called = (name: string, ctx: SessionEventContext) =>
-    retailAgent.events?.["tool.called"]?.(
-      {
-        type: "tool.called",
-        toolCallId: "call_1",
-        toolName: name,
-        args: {},
-        meta: { id: "evt_1", at: 0 },
-      },
+describe("the activity feed", () => {
+  /** A call, delivered the way the RUNTIME delivers it: `tool.called` as the
+   *  model issues it, `tool.completed` with what it was handed back. */
+  const called = (name: string, ctx: TestToolContext, callId = "call_1") =>
+    fireEvent(
+      retailAgent,
+      sessionEvent("tool.called", { toolName: name, toolCallId: callId, args: {} }),
+      ctx,
+    );
+  const completed = (result: unknown, ctx: TestToolContext, callId = "call_1") =>
+    fireEvent(
+      retailAgent,
+      sessionEvent("tool.completed", { toolCallId: callId, result: JSON.stringify(result) }),
       ctx,
     );
 
-  test.each(gatedTools.filter(([name]) => !isPublic(name)))(
-    "%s records a blocked line when the model tries it too early",
-    (name) => {
-      const ctx = createToolContext();
-      called(name, ctx);
-
-      // The regression this closes: the gate moved out of `retailTool` and the
-      // sidebar stopped showing the most interesting calls the model makes.
-      const state = retailSlot.get(ctx);
-      expect(state.callSeq, `${name} recorded no blocked line`).toBe(1);
-      expect(state.activity.at(-1)?.tool).toBe(name);
-      expect(state.activity.at(-1)?.summary).toContain("blocked");
-      expect(state.activity.at(-1)?.summary).toContain("identifying");
-    },
-  );
-
-  test.each(gatedTools.filter(([name]) => isPublic(name)))(
-    "%s is left to the wrapper, because it is going to run",
-    (name) => {
-      const ctx = createToolContext();
-      called(name, ctx);
-      // The double-count this avoids: a tool that reaches its body records its
-      // own line from inside it, with a real summary.
-      expect(retailSlot.get(ctx).activity, `${name} was double-recorded`).toEqual([]);
-    },
-  );
-
-  test("a tool this template did not declare is ignored", () => {
+  test("every call the model makes moves the sidebar, refused or not", async () => {
+    // The sidebar moves on `callSeq`, and a refused call never reaches a body —
+    // so the line is the hook's, and it is written before the gate decides.
     const ctx = createToolContext();
-    called("web_search", ctx);
-    // `gateFor` answers `undefined` for anything not built through `retailTool`
-    // — a builtin, or a tool a future author adds outside the wrapper. Recording
-    // those would put lines in the feed for calls this gate has no opinion on.
-    expect(retailSlot.get(ctx).activity).toEqual([]);
+    await called("get_user_details", ctx);
+    const state = retailSlot.get(ctx);
+    expect(state.callSeq).toBe(1);
+    expect(state.activity.at(-1)).toMatchObject({ tool: "get_user_details", summary: "running" });
   });
 
-  test("the same tool stops being blocked once the caller is identified", async () => {
+  test("the completed hook fills the line with what the call answered", async () => {
     const ctx = createToolContext();
-    called("get_user_details", ctx);
-    expect(retailSlot.get(ctx).activity).toHaveLength(1);
+    await called("cancel_pending_order", ctx);
+    await completed(
+      { state: "serving.awaitingConfirmation", done: false, result: { read_back: "cancel #W1" } },
+      ctx,
+    );
+    expect(retailSlot.get(ctx).activity.at(-1)?.summary).toBe("staged: cancel #W1");
+  });
 
-    // The hook asks the flow, so it follows the flow: same tool, same session,
-    // no line once the position allows it.
-    const authed = await bodyReachableCtx("get_user_details");
-    const before = retailSlot.get(authed).activity.length;
-    called("get_user_details", authed);
-    expect(retailSlot.get(authed).activity).toHaveLength(before);
+  test("a call the gate refused shows where the call was", async () => {
+    const ctx = createToolContext();
+    await called("get_user_details", ctx);
+    await completed(await run(getUserDetails, { user_id: "x" }, ctx), ctx);
+    const line = retailSlot.get(ctx).activity.at(-1);
+    expect(line?.summary).toMatch(/^error: /);
+    expect(line?.summary).toMatch(dialogRefusalPattern("identifying"));
+  });
+
+  test("two calls in one step keep their own lines", async () => {
+    const ctx = createToolContext();
+    await called("get_item_details", ctx, "call_a");
+    await called("get_product_details", ctx, "call_b");
+    await completed({ error: "no such product" }, ctx, "call_b");
+    await completed({ result: { item_id: "1" } }, ctx, "call_a");
+    expect(retailSlot.get(ctx).activity.map((line) => [line.tool, line.summary])).toEqual([
+      ["get_item_details", "done"],
+      ["get_product_details", "error: no such product"],
+    ]);
   });
 });
 
 describe("the authentication gate", () => {
-  test("the tools that run before identification are still the shipped six", () => {
-    // The one place `SHIPPED_PUBLIC_TOOLS` is read, and the only assertion in
-    // this file about WHICH tools are public. The sweeps below classify by
-    // `isPublic`, i.e. by what each tool declared, so a public tool of your own
-    // needs no edit here — but one of these six quietly losing
-    // `when: BEFORE_TRANSFER` would silently make the desk unreachable before a
-    // caller is identified, and nothing else would say so.
-    expect(registry.map(([name]) => name).filter(isPublic)).toEqual(
-      expect.arrayContaining(SHIPPED_PUBLIC_TOOLS),
-    );
-  });
-
-  test.each(gatedTools.filter(([name]) => !isPublic(name)))(
+  test.each(registry.filter(([name]) => !isPublic(name)))(
     "%s refuses before the caller is identified",
-    async (name) => {
-      const result = await runTool(retailAgent, name, SAMPLE_ARGS[name] ?? {}, createToolContext());
+    async (name, tool) => {
+      const result = await run(tool, SAMPLE_ARGS[name] ?? {}, createToolContext());
       // `expectDialogRefused` rather than `isToolFailure(result)` + `toBe(true)`
       // + `if (!isToolFailure(result)) return;`. That shape is the one this
       // guide warns about: a tool that ANSWERED failed the first assertion and
@@ -392,8 +285,8 @@ describe("the authentication gate", () => {
 
   test.each(sweepable.filter(([name]) => isPublic(name)))(
     "%s does not require authentication",
-    async (name) => {
-      const result = await runTool(retailAgent, name, SAMPLE_ARGS[name] ?? {}, createToolContext());
+    async (name, tool) => {
+      const result = await run(tool, SAMPLE_ARGS[name] ?? {}, createToolContext());
       // A public tool may still fail on its own (deliberately bogus) arguments;
       // it must not fail on the GATE. Written as one unconditional assertion —
       // an `if (isToolFailure(result))` wrapper would pass vacuously for the tools
@@ -406,26 +299,37 @@ describe("the authentication gate", () => {
 
 describe("agent config", () => {
   test("projects its slot under the slot name — without it the UI never updates", () => {
+    // `sync: true` on the slot, collected by `agent()`: no `syncState` to forget.
     expect(Object.keys(retailAgent.syncState ?? {})).toEqual(["retail"]);
     expect(typeof retailAgent.syncState?.retail).toBe("function");
+  });
+
+  test("the empty frame is the shape with nothing in it, never the seed", () => {
+    expect(retailSlot.projected()).toMatchObject({ customer: null, orders: [], productCount: 0 });
   });
 
   // The slot owns the default now — there is no `state` factory on the agent to
   // forget to declare, which is what four of five slot-backed templates used to.
   // What still has to hold is that the factory really is called per session: the
   // 107 KB seed is one module-level object, so a shared clone would let one
-  // caller's cancellation show up in another's.
+  // caller's cancellation show up in another's. `expectSlotContract` is that
+  // claim plus the other two — `projected()` is the view of the EMPTY frame
+  // (the slot declares `empty`), and the activity cap keeps the newest.
   test("the slot's factory clones the seed, so sessions do not share a store", () => {
+    expectSlotContract(retailSlot, {
+      write: (draft) => {
+        draft.callSeq += 1;
+      },
+    });
     const a = retailSlot.create();
     const b = retailSlot.create();
-    expect(a).not.toBe(b);
     expect(a.store.orders).not.toBe(b.store.orders);
     expect(a.store).toEqual(b.store);
   });
 });
 
 describe("the transfer is terminal", () => {
-  test.each(gatedTools)("%s refuses once the call is with a human", async (name) => {
+  test.each(sweepable)("%s refuses once the call is with a human", async (name, tool) => {
     const ctx = servingCtx();
     callFlow.send(ctx, { type: "TRANSFERRED" });
 
@@ -435,10 +339,7 @@ describe("the transfer is terminal", () => {
     // One call rather than the two assertions this was: a tool that still RAN
     // fails here saying what it answered and where the flow was, which is the
     // report `expected false to be true` was not.
-    expectDialogRefused(
-      await runTool(retailAgent, name, SAMPLE_ARGS[name] ?? {}, ctx),
-      "transferred",
-    );
+    expectDialogRefused(await run(tool, SAMPLE_ARGS[name] ?? {}, ctx), "transferred");
     // The state is TERMINAL, so the refusal must also have left it there — a
     // tool that refused and then advanced the call would pass the line above.
     expect(callFlow.position(ctx).state).toBe("transferred");

@@ -108,6 +108,82 @@ when no `size` was given and the upload is
 
 ***
 
+### stepSpeakToUpload()
+
+```ts
+function stepSpeakToUpload(text: string, options: SpeakToUploadOptions): Promise<SpokenUpload>;
+```
+
+Speak `text`, master it, and store it — answering with the record and the
+duration.
+
+#### Parameters
+
+##### text
+
+`string`
+
+What to say. Refused when blank, as `stepSpeak` refuses it.
+
+##### options
+
+[`SpeakToUploadOptions`](#speaktouploadoptions)
+
+See [SpeakToUploadOptions](#speaktouploadoptions).
+
+#### Returns
+
+`Promise`\<[`SpokenUpload`](#spokenupload)\>
+
+#### Throws
+
+whatever `stepSpeak` throws (no synthesizer published, no
+  credential), and for `master: "mp3"` the verdict `throwFfmpegStepError`
+  reaches on a failed encode — fatal on an exit or a missing binary.
+
+***
+
+### transcodeUpload()
+
+```ts
+function transcodeUpload(uploadId: string, options: TranscodeUploadOptions): Promise<TranscodedUpload>;
+```
+
+Read an upload to a temp file, run ffmpeg over it, and store what it wrote.
+
+#### Parameters
+
+##### uploadId
+
+`string`
+
+An upload in the agent's own store. Must be complete — one
+  still arriving is refused before anything is read, as `readUploadToFile`
+  refuses it.
+
+##### options
+
+[`TranscodeUploadOptions`](#transcodeuploadoptions)
+
+See [TranscodeUploadOptions](#transcodeuploadoptions).
+
+#### Returns
+
+`Promise`\<[`TranscodedUpload`](#transcodedupload)\>
+
+#### Throws
+
+on an ffmpeg exit, a missing binary, an output past the
+  cap, or an output ffmpeg wrote nothing to; `RetryableError`-shaped
+  (the `FfmpegError` unchanged) on a timeout or an abort — `throwFfmpegStepError`'s
+  verdict, which its doc argues.
+
+#### Throws
+
+when the upload is still arriving.
+
+***
+
 ### withTempDir()
 
 ```ts
@@ -256,6 +332,348 @@ optional windowBytes?: number;
 ```
 
 Bytes per read. Defaults to [STEP\_FILE\_WINDOW\_BYTES](#step_file_window_bytes).
+
+***
+
+### SpeakMaster
+
+```ts
+type SpeakMaster = 
+  | SpeakMasterFormat
+  | {
+  args?: readonly string[];
+  format: SpeakMasterFormat;
+};
+```
+
+**`Input`**
+
+What [stepSpeakToUpload](#stepspeaktoupload) masters to: the format alone, or the format
+with the ffmpeg flags to apply on the way — a `loudnorm` pass, a sample
+rate, a bitrate — inserted between `-i <source>` and the encoder's own.
+
+`format: "wav"` with `args` still runs ffmpeg (the WAV is re-encoded with the
+flags applied); without `args` it stores `stepSpeak`'s WAV as it is.
+
+#### Union Members
+
+[`SpeakMasterFormat`](#speakmasterformat)
+
+***
+
+##### Type Literal
+
+```ts
+{
+  args?: readonly string[];
+  format: SpeakMasterFormat;
+}
+```
+
+###### args?
+
+```ts
+optional args?: readonly string[];
+```
+
+Filter and encoder flags, e.g. `["-af", "loudnorm=I=-16:TP=-1.5:LRA=11"]`.
+
+###### format
+
+```ts
+format: SpeakMasterFormat;
+```
+
+***
+
+### SpeakMasterFormat
+
+```ts
+type SpeakMasterFormat = "mp3" | "wav";
+```
+
+The container [stepSpeakToUpload](#stepspeaktoupload) stores.
+
+***
+
+### SpeakToUploadOptions
+
+```ts
+type SpeakToUploadOptions = SpeakOptions & {
+  master?: SpeakMaster;
+  name: string;
+  timeoutMs?: number;
+};
+```
+
+**`Input`**
+
+What [stepSpeakToUpload](#stepspeaktoupload) accepts: `stepSpeak`'s options, plus the
+container and the name to store under.
+
+#### Type Declaration
+
+##### master?
+
+```ts
+optional master?: SpeakMaster;
+```
+
+`"wav"` stores the synthesized WAV as it is; `"mp3"` masters it with ffmpeg
+first; the object form adds ffmpeg flags to either. Defaults to `"wav"`.
+
+##### name
+
+```ts
+name: string;
+```
+
+Filename to store, e.g. `"digest.mp3"` — what a page puts on the download
+link. Required, because the right name depends on `master` and a default
+that disagreed with it (`summary.wav` holding MPEG frames) is a file a
+browser will not play.
+
+##### timeoutMs?
+
+```ts
+optional timeoutMs?: number;
+```
+
+Wall-clock budget for the mastering run. Defaults to `DEFAULT_FFMPEG_TIMEOUT_MS`.
+
+***
+
+### SpokenUpload
+
+```ts
+type SpokenUpload = UploadInfo & {
+  durationMs: number;
+  ffmpegMs: number;
+  voice: string;
+};
+```
+
+**`Sealed`**
+
+What [stepSpeakToUpload](#stepspeaktoupload) resolves with: the stored record, plus what
+was spoken.
+
+#### Type Declaration
+
+##### durationMs
+
+```ts
+durationMs: number;
+```
+
+How long the audio lasts — `stepSpeak`'s own measurement, from the byte count.
+
+##### ffmpegMs
+
+```ts
+ffmpegMs: number;
+```
+
+Wall-clock milliseconds the mastering run took — `0` when no ffmpeg ran.
+
+##### voice
+
+```ts
+voice: string;
+```
+
+The voice that actually spoke, with the default filled in.
+
+***
+
+### TranscodedUpload
+
+```ts
+type TranscodedUpload = {
+  bytes: number;
+  ffmpegMs: number;
+  id: string;
+  info?: MediaInfo;
+  size: number;
+  stderr: string;
+};
+```
+
+**`Sealed`**
+
+What [transcodeUpload](#transcodeupload) resolves with — a step's whole return value, so
+everything here survives the journal.
+
+#### Properties
+
+##### bytes
+
+```ts
+bytes: number;
+```
+
+How many bytes of the SOURCE were materialized — the recording's size.
+
+##### ffmpegMs
+
+```ts
+ffmpegMs: number;
+```
+
+Wall-clock milliseconds the ffmpeg run took.
+
+##### id
+
+```ts
+id: string;
+```
+
+The stored output's id, as `writeUploadFromFile` minted it.
+
+##### info?
+
+```ts
+optional info?: MediaInfo;
+```
+
+What ffprobe made of the source, when `probe` was asked for.
+
+##### size
+
+```ts
+size: number;
+```
+
+The stored output's size in bytes.
+
+##### stderr
+
+```ts
+stderr: string;
+```
+
+The tail of ffmpeg's log, on success too: it carries the encode summary.
+
+***
+
+### TranscodeUploadOptions
+
+```ts
+type TranscodeUploadOptions = {
+  args: (source: string, out: string, info: MediaInfo | undefined) => readonly string[];
+  loglevel?: string;
+  output: {
+     name: string;
+     type: string;
+  };
+  probe?: boolean;
+  signal?: AbortSignal;
+  timeoutMs?: number;
+};
+```
+
+**`Input`**
+
+What [transcodeUpload](#transcodeupload) accepts.
+
+#### Properties
+
+##### args
+
+```ts
+args: (source: string, out: string, info: MediaInfo | undefined) => readonly string[];
+```
+
+The argv AFTER the standing flags — `-i <source>`, the filter and encoder
+flags, and `<out>` last — given the two paths this call chose and, when
+`probe` was asked for, what ffprobe made of the source: an argv that
+depends on the probed rate or channel count reads `info` rather than
+probing again in a step of its own.
+
+`ffmpegBaseArgs()` (`-hide_banner -loglevel error -nostats -nostdin -y`)
+is prepended by this call and is not the caller's to spell: `-nostdin` is
+the flag whose absence is a hung process in a guest, and it was the one
+most often left out. A filter that reports through the LOG needs
+`loglevel: "info"` instead.
+
+###### Parameters
+
+###### source
+
+`string`
+
+###### out
+
+`string`
+
+###### info
+
+[`MediaInfo`](ffmpeg.md#mediainfo) \| `undefined`
+
+###### Returns
+
+readonly `string`[]
+
+##### loglevel?
+
+```ts
+optional loglevel?: string;
+```
+
+`ffmpegBaseArgs`'s `loglevel`. Defaults to `"error"`.
+
+##### output
+
+```ts
+output: {
+  name: string;
+  type: string;
+};
+```
+
+What to store the result as. Both fields are stored verbatim and neither is
+inferred (`writeUploadFromFile` says why `type` matters); the name's
+EXTENSION also names the output file ffmpeg writes, which is how ffmpeg
+picks a container when the argv names no `-f`.
+
+###### name
+
+```ts
+name: string;
+```
+
+###### type
+
+```ts
+type: string;
+```
+
+##### probe?
+
+```ts
+optional probe?: boolean;
+```
+
+Also run `ffprobe` over the materialized source FIRST, hand its
+[MediaInfo](ffmpeg.md#mediainfo) to `args`, and answer it as `info`. Off by default — a
+probe is a second subprocess, and most transcodes do not need to know what
+they were handed.
+
+##### signal?
+
+```ts
+optional signal?: AbortSignal;
+```
+
+Kill the run when this aborts. Combined with `timeoutMs`, not replaced by it.
+
+##### timeoutMs?
+
+```ts
+optional timeoutMs?: number;
+```
+
+Wall-clock budget for the ffmpeg run. Defaults to `DEFAULT_FFMPEG_TIMEOUT_MS`.
 
 ***
 

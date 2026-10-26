@@ -38,8 +38,10 @@
  * the agent could not do the thing with no error anywhere.
  */
 
+import { withCollectedSyncState } from "./_author-conveniences.ts";
+import { moduleNameOf, SPEC_RE } from "./_module-registry.ts";
+import { recordToolNames } from "./_testing-tool-names.ts";
 import { isRecord } from "./is-record.ts";
-import type { ToolInputSchema } from "./schema.ts";
 import type { Toolset } from "./toolset.ts";
 import type { ToolDef } from "./types.ts";
 
@@ -72,12 +74,6 @@ const TOOL_NAME_MAX = 64;
  */
 const NON_TOOL_NAMES = new Set(["index"]);
 
-/** Extensions a tool module may be authored in. */
-const MODULE_EXT_RE = /\.(?:m?[jt]s|tsx)$/;
-
-/** A co-located spec is not a tool; `foo.test.ts` would register as `foo.test`. */
-const SPEC_RE = /\.(?:test|spec)$/;
-
 /**
  * `path → module namespace`, which is what both sources produce: Vite's
  * `import.meta.glob` (eager) and the static import list the CLI generates.
@@ -85,7 +81,7 @@ const SPEC_RE = /\.(?:test|spec)$/;
 export type ToolModules = Readonly<Record<string, unknown>>;
 
 /** A checked set of tools, keyed by the name the model calls. */
-export type ToolRegistry = Readonly<Record<string, ToolDef<ToolInputSchema>>>;
+export type ToolRegistry = Readonly<Record<string, ToolDef>>;
 
 /**
  * A tool as recognized at RUNTIME, which has to be structural: `tool()` is
@@ -93,7 +89,7 @@ export type ToolRegistry = Readonly<Record<string, ToolDef<ToolInputSchema>>>;
  * is the mistake worth naming — under discovery it would otherwise register an
  * object the executor calls `execute` on and fail per turn instead of at build.
  */
-function isToolDef(value: unknown): value is ToolDef<ToolInputSchema> {
+function isToolDef(value: unknown): value is ToolDef {
   return (
     isRecord(value) && typeof value.description === "string" && typeof value.execute === "function"
   );
@@ -103,19 +99,16 @@ function isToolDef(value: unknown): value is ToolDef<ToolInputSchema> {
  * The name a path declares, with its extension dropped — NOT yet checked
  * against the grammar, because a co-located spec has to be skipped before its
  * name is judged. `echo.test.ts` is not a badly-named tool; it is not a tool.
- *
- * Paths arrive with whatever prefix their source used — `./tools/x.ts` from a
- * glob, `tools/x.ts` from the generated entry, an absolute path from a scan —
- * so only the part after the last `tools/` segment is read.
+ * The split and the extension set are `_module-registry.ts`'s.
  */
 function toolNameOf(path: string): string {
-  const afterDir = path.split(/(?:^|\/)tools\//).pop() ?? path;
-  if (afterDir.includes("/")) {
+  const { name, nested } = moduleNameOf(path, "tools");
+  if (nested) {
     throw new Error(
-      `${path} is nested inside tools/. A tool's name is its file name, and a nested file has no name a provider would accept — move it to tools/${afterDir.split("/").pop()} or keep it out of tools/.`,
+      `${path} is nested inside tools/. A tool's name is its file name, and a nested file has no name a provider would accept — move it to tools/${name.split("/").pop()}.ts or keep it out of tools/.`,
     );
   }
-  return afterDir.replace(MODULE_EXT_RE, "");
+  return name;
 }
 
 /**
@@ -128,7 +121,7 @@ function toolNameOf(path: string): string {
  * @public
  */
 export function toolRegistry(modules: ToolModules): ToolRegistry {
-  const registry: Record<string, ToolDef<ToolInputSchema>> = {};
+  const registry: Record<string, ToolDef> = {};
   const sources: Record<string, string> = {};
 
   for (const [path, module] of Object.entries(modules)) {
@@ -221,6 +214,12 @@ export function toolRegistry(modules: ToolModules): ToolRegistry {
  * constraint as optional and widened to `readonly string[]`, so a def that
  * carries none still passes and this module still names no builtin catalog.
  *
+ * **It also RECORDS each def's name** (`_testing-tool-names.ts`). This is the
+ * one step every lowering goes through that pairs a def with the name the
+ * model calls, and a spec handed the def later — `toolResultIn(calls, def)`,
+ * `toolNameOf(def)` — has nowhere else to learn it. A `WeakMap` write per
+ * tool, so a lowering that nobody tests costs nothing.
+ *
  * @public
  */
 export function withTools<
@@ -252,5 +251,9 @@ export function withTools<
       );
     }
   }
-  return { ...def, tools: { ...def.tools, ...registry } };
+  recordToolNames(registry);
+  // The lowering is also where every module has evaluated, so a slot synced
+  // in a `tools/*.ts` file — registered after `agent()` ran — joins the
+  // agent's default `syncState` here. See `withCollectedSyncState`.
+  return withCollectedSyncState({ ...def, tools: { ...def.tools, ...registry } });
 }

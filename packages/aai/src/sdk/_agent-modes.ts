@@ -31,7 +31,7 @@ import type {
   WorkflowAppOnlyField,
 } from "./agent-params.ts";
 
-function isAgentMode(value: unknown): value is AgentMode {
+export function isAgentMode(value: unknown): value is AgentMode {
   return (AGENT_MODES as readonly unknown[]).includes(value);
 }
 
@@ -76,16 +76,18 @@ const GUARDRAIL_CHECKS = {
 
 /**
  * What only a workflow app refuses: {@link WorkflowAppOnlyField} minus the
- * fields `agent()` DEFAULTS on every definition (`systemPrompt`, `maxSteps`),
- * which the config boundary always sees set and so stay type-level refusals.
- * The rest of the member's subtraction is the tables above.
+ * field `agent()` DEFAULTS on every definition (`maxSteps`), which the config
+ * boundary always sees set and so stays a type-level refusal. The rest of the
+ * member's subtraction is the tables above. (`systemPrompt` and `syncState`
+ * are absent from EVERY member — `FrameworkOwnedField` — and `define.ts`
+ * refuses them for every mode.)
  */
 const WORKFLOW_APP_EXCLUDED = {
+  promptContext: "prompt text appended under the system prompt",
   voicePresets: "prompt text",
   toolChoice: "the model's tool-choice policy",
   builtinTools: "tools the model chooses between",
   roster: "the speakers the model delegates to or hands the call to",
-  syncState: "a projection pushed over the session socket",
   events: "the session's event stream",
   sessionContext: "a hook that runs when a session opens",
   onSessionEnd: "a hook that runs when a session closes",

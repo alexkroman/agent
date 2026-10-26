@@ -54,4 +54,8 @@ export {
   installStubStepDelegate,
   installStubTranscribe,
   installStubUploads,
+  // `installStubWorld`: every step-facing fake above installed at once.
+  installStubWorld,
+  type StubWorld,
+  type StubWorldOptions,
 } from "../../sdk/testing-vitest-barrel.ts";

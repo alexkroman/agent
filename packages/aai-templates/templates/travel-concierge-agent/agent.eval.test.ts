@@ -43,23 +43,8 @@ import {
   turnCalling,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
-
-/**
- * What the BROWSER is sent, as this eval reads it.
- *
- * Parsed rather than cast: `state.updated` carries `unknown`, so a projection
- * that stopped matching FAILS naming the field, where the cast this replaced
- * handed the assertions `undefined` and failed a line later on something else.
- * It names only the fields asserted below, so `tripView` may grow without
- * touching this.
- */
-const ProjectedTrip = z.object({
-  assistant: z.string(),
-  ticket: z.object({ flightId: z.string() }).nullable(),
-  bookings: z.array(z.unknown()),
-  pending: z.string().nullable(),
-});
+import { tripSlot } from "./shared.ts";
+import updateTicket from "./tools/update_ticket.ts";
 
 /**
  * The `syncState` frames, in stream order, UP TO the first `confirm_action`.
@@ -71,7 +56,7 @@ const ProjectedTrip = z.object({
  * booking untouched — and `tripSlot.projected` rides out on `state.updated` after
  * every tool call, so the stream carries one per step.
  */
-function framesBeforeConfirm(session: EvalSession): readonly z.infer<typeof ProjectedTrip>[] {
+function framesBeforeConfirm(session: EvalSession) {
   const events = [...session.events()];
   // `isEvent` picks members BY NAME, so this does not restate the event union —
   // a misspelled name is a compile error; `statesIn` reads the `trip` slot.
@@ -79,14 +64,11 @@ function framesBeforeConfirm(session: EvalSession): readonly z.infer<typeof Proj
     (e) => isEvent(e, "tool.called") && e.toolName === "confirm_action",
   );
   const before = confirmAt < 0 ? events : events.slice(0, confirmAt);
-  return statesIn(before, "trip", ProjectedTrip);
+  return statesIn(before, tripSlot.projected);
 }
 
-/**
- * The latest frame — what the browser would be rendering now. `lastStateIn` is
- * the SDK's reader for exactly this; the schema is why it is worth passing one.
- */
-const tripState = (session: EvalSession) => lastStateIn(session.events(), "trip", ProjectedTrip);
+/** The latest frame — what the browser would be rendering now. */
+const tripState = (session: EvalSession) => lastStateIn(session.events(), tripSlot.projected);
 
 /**
  * A call that really STAGED — it answered with the read-back rather than with a
@@ -120,7 +102,7 @@ describeEval(agentDef, (test) => {
       // the read-back before the staging — and `turnCalling`'s throw names
       // every turn's tool list AND tells the two findings apart: no
       // `update_ticket` at all, or calls that were all refused by the desk gate.
-      const staging = turnCalling(turns, "update_ticket", stagedSomething);
+      const staging = turnCalling(turns, updateTicket, stagedSomething);
       const attempts = toolCallsInTurns(turns).filter((call) => call.name === "update_ticket");
       // The staging call itself, by INDEX, because what follows it in the same
       // turn is the subject of the assertion below.

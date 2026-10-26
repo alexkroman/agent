@@ -71,7 +71,6 @@ import { formatDuration } from "@alexkroman1/aai/utils";
 import {
   AudioResult,
   BulletList,
-  createWorkflowApi,
   Facts,
   Form,
   mountPage,
@@ -80,38 +79,27 @@ import {
   type UseDownloadUrlResult,
   useDownloadUrl,
   useWorkflowSubmit,
+  type WorkflowDefOf,
   WorkflowFields,
   type WorkflowOutputOf,
   WorkflowPendingNote,
   WorkflowProgress,
   WorkflowRunError,
 } from "@alexkroman1/aai-ui";
-import type { spokenSummary } from "./agent.ts";
+// ERASED at build time: the agent's own type, so the hook checks the NAME
+// below against the `workflows` map `agent.ts` declares.
+import type agentDef from "./agent.ts";
 
-/**
- * The workflow's name, as a page starts a run by one.
- *
- * A rename in `agent.ts` is a runtime 400 rather than a compile error, which is
- * why `agent.test.ts` pins this string.
- */
-const WORKFLOW = "spokenSummary";
-
-/**
- * Hoisted out of the component deliberately.
- *
- * The hooks hold the client in a ref precisely so a fresh object per render
- * cannot restart their watch, but building one in render is still a new `fetch`
- * closure every time and reads as though it were free.
- */
-const api = createWorkflowApi();
+/** The one workflow this app declares, read off the agent by its name. */
+type SpokenSummary = WorkflowDefOf<typeof agentDef, "spokenSummary">;
 
 /**
  * What a finished run looks like: the words, the player, and the transcript.
  *
  * Its own component, so the two things it is handed have to be NAMED — and
  * both names are the SDK's rather than a restatement of them.
- * `WorkflowOutputOf<typeof spokenSummary>` is the run's declared output read
- * off the def in `agent.ts` (a type-only import, erased at build), which is
+ * `WorkflowOutputOf<SpokenSummary>` is the run's declared output read off the
+ * agent in `agent.ts` (a type-only import, erased at build), which is
  * what stops this file writing out a shape `workflows/summarize.ts` already
  * owns; `UseDownloadUrlResult` is the `{ url, error, pending }` triple the
  * hook answers, and it belongs to the hook rather than to this page — a page
@@ -127,7 +115,7 @@ function Summary({
   output,
   audio,
 }: {
-  output: WorkflowOutputOf<typeof spokenSummary>;
+  output: WorkflowOutputOf<SpokenSummary>;
   audio: UseDownloadUrlResult;
 }) {
   return (
@@ -170,13 +158,13 @@ export function App() {
   // The generic is what makes `run.status === "completed"` narrow to a TYPED
   // `run.output` instead of `unknown`. The reload is the hook's own doing — see
   // the module doc for why the key it mints is the right one for this page.
-  const submission = useWorkflowSubmit<typeof spokenSummary>(WORKFLOW, { api });
+  const submission = useWorkflowSubmit<typeof agentDef>("spokenSummary");
   const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error } = submission;
   const output = run?.status === "completed" ? run.output : undefined;
   // `useDownloadUrl` is the SDK's: the byte route takes the agent's bearer, so the
   // bytes have to be FETCHED and handed to the element as an object URL — and the
   // object URL has to be revoked, which is the half a page written by hand forgets.
-  const audio = useDownloadUrl(output?.audio, { api });
+  const audio = useDownloadUrl(output?.audio);
 
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 p-8">
@@ -189,7 +177,7 @@ export function App() {
 
       <Form onSubmit={(values) => submitForm(values)} error={error} className="flex flex-col gap-4">
         {/* Every control, from the workflow's own input schema. See the module doc. */}
-        <WorkflowFields workflow={WORKFLOW} />
+        <WorkflowFields<typeof agentDef> workflow="spokenSummary" />
         <SubmitButton pending={pending} pendingLabel="Working…">
           Summarize
         </SubmitButton>
@@ -206,7 +194,7 @@ export function App() {
       <UploadProgressBar upload={upload} onPause={pauseUpload} onResume={resumeUpload} />
 
       {/* What the run itself says, from `stepReport()` in the workflow's steps. */}
-      <WorkflowProgress runId={run?.runId} api={api} />
+      <WorkflowProgress runId={run?.runId} />
 
       {/* Announced, the same contract `<Form>` gives the submit error: this is
           the outcome the reader waited minutes for. */}

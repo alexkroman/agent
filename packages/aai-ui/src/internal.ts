@@ -42,11 +42,11 @@
 // distinction is a broker-decision detail, and `buildAgentUrl` is a two-line
 // path join.
 export { buildAgentUrl, loadClientConfig } from "./client-config.ts";
-// Tool display config context — installed by `mountClient()` from
-// `ClientConfig.tools`; not something component-tier users pass themselves.
-// Its VALUE type, `ToolDisplayConfig`, is public and stays on the root: a
-// caller names it to write `ClientConfig.tools`, which is authoring API.
-export { ToolConfigContext } from "./components/tool-config-context.ts";
+// Tool display config context — installed by `mountClient()` from the agent's
+// `client-config` `tools` (each `tool({ ui })`); not something component-tier
+// users pass themselves, and its value type is not on the root: nothing an
+// author writes names it.
+export { ToolConfigContext, type ToolDisplayConfig } from "./components/tool-config-context.ts";
 // The default shell's URL chips. Rendered by `mountClient()` in every session mode;
 // a custom chrome composes its own header rather than borrowing these.
 export { ApiUrlChip, SessionUrlChips, UiUrlChip } from "./components/url-chips.tsx";

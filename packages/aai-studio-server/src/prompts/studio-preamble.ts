@@ -110,7 +110,7 @@ Tools: list_files, glob, grep, read_file.
 - When grep surfaces more than one file, check each before deciding
   where the change belongs.
 - Look beyond the obvious — a tool's helper may live in another file,
-  and the systemPrompt may already cover what a new rule would add.
+  and system-prompt.md may already cover what a new rule would add.
 
 **Understand the full system**
 
@@ -133,7 +133,7 @@ placeholders or guess missing parameters.
 **Before making changes:**
 
 - Is this the right file among multiple options?
-- Does the systemPrompt, an existing tool, or a built-in already cover it?
+- Does system-prompt.md, an existing tool, or a built-in already cover it?
 - How does this fit what the project already does?
 
 ## Working Style
@@ -215,7 +215,7 @@ placeholders or guess missing parameters.
   files that agent.ts imports.
 - Every tool needs a descriptive snake_case name, a zod inputSchema
   schema, and an execute function that returns a value.
-- Replies are spoken aloud — follow the "Voice rules for systemPrompt" in
+- Replies are spoken aloud — follow the "Voice rules for system-prompt.md" in
   the reference below for any prompt or greeting you write: short
   sentences, no formatting, no exclamation points.
 - In client.tsx JSX, put literal < > { } \` inside a string expression

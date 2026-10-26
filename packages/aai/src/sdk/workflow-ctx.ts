@@ -163,6 +163,7 @@ import type { SayOnClientNotice } from "./workflow-say-on-client.ts";
 // file-length decision, not a change to where these names live.
 export {
   DEFAULT_STEP_MAX_ATTEMPTS,
+  type PollFirstWait,
   type PollOptions,
   type PollResult,
   type SleepOptions,
@@ -204,6 +205,17 @@ export type WorkflowContext = {
   readonly runId: string;
   /** Key the workflow is declared under in `agent({ workflows })`. */
   readonly workflow: string;
+  /**
+   * The run's `StartOptions.key`, or `undefined` for a run started with none.
+   *
+   * What {@link WorkflowContext.signalToken} and
+   * {@link WorkflowContext.waitForSignal} derive their token from, and what a
+   * body hands a step that must address THIS run from outside — the key is
+   * what a tool's `ctx.workflows.latest(def)` looks the run up by again. A
+   * tool's start carries the session id by default; a body or a route that
+   * started this run passed one explicitly or there is none.
+   */
+  readonly key: string | undefined;
   /**
    * Run `fn` once and journal what it returns; on every later replay, return
    * the journaled value without running it again.
@@ -385,11 +397,14 @@ export type WorkflowContext = {
    *   not a `waitFor`'s deadline, so cutting a schedule short cannot also close
    *   an approval window.
    *
-   *   Deliberately NOT defaulted from `label`, which is a different question:
-   *   `label` decides which JOURNAL ROW this wait is, and `correlationId`
-   *   decides which waits one `wakeUp` ends. A schedule polled in a loop wants
-   *   one label and one correlation id across every iteration; two independent
-   *   waits want two labels and may well want one shared id.
+   *   DEFAULTS to `label`, so the wait a body wrote as `"review-window"` is the
+   *   one a tool's `wakeUp(runId, { correlationIds: ["review-window"] })` ends
+   *   with nothing further declared. The two are still different questions —
+   *   `label` decides which JOURNAL ROW this wait is, `correlationId` which
+   *   waits one `wakeUp` ends — and an explicit id is how they come apart: a
+   *   schedule polled in a loop already shares one label across its
+   *   iterations, and two independent waits that one "do it now" should both
+   *   end give each its own label and one shared id.
    */
   sleep<const Label extends string>(
     label: Label & Literal<Label>,
@@ -517,4 +532,49 @@ export type WorkflowContext = {
   ): Promise<InferSchemaOutput<S>>;
   waitFor<T = unknown>(token: string): Promise<T>;
   waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
+  /**
+   * Write one progress line from the BODY, as ONE journaled step `name` (a
+   * string LITERAL): `ctx.step(name, () => stepReport(line))` under one name.
+   *
+   * `stepReport` itself belongs inside a step, because the body is replayed and
+   * a line written there is re-emitted on every delivery; this is the step that
+   * every narrating body wrote around it. The line is written on the walk that
+   * first reaches it and answered from the journal on every later one.
+   */
+  report<const Name extends string>(name: Name & Literal<Name>, line: string): Promise<void>;
+  /**
+   * The hook token {@link WorkflowContext.waitForSignal} waits on for `label`
+   * — `<workflow>:<key>:<label>` — for a step to hand to a third party:
+   * `stepWebhookUrl(ctx.signalToken("transcript"))`.
+   *
+   * THROWS when the run has no {@link WorkflowContext.key}: a token derived
+   * from nothing is a wait nobody can answer. Synchronous and pure, so it is
+   * safe outside a step — it reads only what the run already is.
+   */
+  signalToken(label: string): string;
+  /**
+   * {@link WorkflowContext.waitFor} on a token DERIVED from the run's own key
+   * — `ctx.signalToken(label)` — so the tool that answers it writes
+   * `ctx.workflows.signalRun(def, key, label, payload)` and neither side spells
+   * the token. Journaled as `hook!<workflow>:<key>:<label>#<occurrence>`, with
+   * exactly `waitFor`'s options and overloads: a `schema` checks the payload
+   * and decides the type, a `timeoutMs` adds the `undefined` arm.
+   *
+   * THROWS when the run has no key, as {@link WorkflowContext.signalToken} does.
+   *
+   * The token carries no run id, so one live wait holds it at a time: a second
+   * concurrent run of this workflow under the SAME key fails here, with a
+   * refusal naming the label and key — start it under a distinct
+   * `StartOptions.key`.
+   */
+  waitForSignal<S extends StandardSchemaV1>(
+    label: string,
+    options: WaitForOptions<S> & WaitForSchemaOptions<S>,
+  ): Promise<InferSchemaOutput<S> | undefined>;
+  waitForSignal<S extends StandardSchemaV1>(
+    label: string,
+    options: WaitForSchemaOptions<S>,
+  ): Promise<InferSchemaOutput<S>>;
+  waitForSignal<T = unknown>(label: string): Promise<T>;
+  waitForSignal<T = unknown>(label: string, options: WaitForOptions): Promise<T | undefined>;
 };

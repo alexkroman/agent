@@ -52,7 +52,7 @@ import {
   type OpenUpload,
   UPLOAD_PART_BYTES,
 } from "@alexkroman1/aai/host-internal";
-import { mapConcurrent, type UploadInfo } from "@alexkroman1/aai/step";
+import { mapConcurrent, type UploadRecord as StoredUpload } from "@alexkroman1/aai/step";
 import { createKeyedLock, omitUndefined, withLock } from "@alexkroman1/aai/utils";
 import { partKey, partsCovering, rangesOf, type UploadBackend, type UploadPart } from "./blobs.ts";
 import { concat, once, windows } from "./byte-util.ts";
@@ -83,7 +83,7 @@ import {
  */
 type MergedParts = {
   state: { parts: UploadPart[]; size: number; complete: boolean };
-  info: UploadInfo;
+  info: StoredUpload;
 };
 
 /**
@@ -107,7 +107,7 @@ export function createBlobUploadStore(opts: {
   const key = (id: string, at: number): string => partKey(prefix, id, at);
 
   /** What a caller sees, derived from one record. */
-  function info(id: string, held: UploadRecord, size = held.size): UploadInfo {
+  function info(id: string, held: UploadRecord, size = held.size): StoredUpload {
     // Only while there is something to resume: a finished upload is covered end to
     // end, and a reader's answer to an absent list is to assume nothing — see
     // `UploadInfo.ranges`.
@@ -169,7 +169,7 @@ export function createBlobUploadStore(opts: {
    * before the bytes went is stale by exactly the parts that landed while they
    * did.
    */
-  async function addParts(id: string, added: readonly UploadPart[]): Promise<UploadInfo> {
+  async function addParts(id: string, added: readonly UploadPart[]): Promise<StoredUpload> {
     return await withLock(boundaries, id, async () => {
       const held = await records.read(id);
       if (!held) throw new UnknownUploadError(id);
@@ -241,7 +241,7 @@ export function createBlobUploadStore(opts: {
   }
 
   return {
-    async create(meta, body, options): Promise<UploadInfo> {
+    async create(meta, body, options): Promise<StoredUpload> {
       await records.ensure();
       const id = newUploadId();
       const name = meta.name ?? "";
@@ -263,7 +263,7 @@ export function createBlobUploadStore(opts: {
       return { id, name, type, size, complete: true };
     },
 
-    async stream(id, meta, body, options): Promise<UploadInfo> {
+    async stream(id, meta, body, options): Promise<StoredUpload> {
       await records.ensure();
       // Validated here as well as at the route: this id becomes part of an object
       // KEY, so a token that escaped the check would address another prefix.
@@ -279,7 +279,7 @@ export function createBlobUploadStore(opts: {
       return { id, name, type, size, complete: true };
     },
 
-    async beginParts(id, meta, total, options): Promise<UploadInfo> {
+    async beginParts(id, meta, total, options): Promise<StoredUpload> {
       await records.ensure();
       assertUploadToken(id);
       assertPartTotal(total, options?.limit ?? maxBytes);
@@ -298,7 +298,7 @@ export function createBlobUploadStore(opts: {
       return { id, name, type, size: 0, complete: total === 0 };
     },
 
-    async writePart(id, offset, body): Promise<UploadInfo> {
+    async writePart(id, offset, body): Promise<StoredUpload> {
       await records.ensure();
       assertPartOffset(offset);
       const held = await declared(id, offset);
@@ -321,7 +321,7 @@ export function createBlobUploadStore(opts: {
       return await addParts(id, [{ at: offset, bytes }]);
     },
 
-    async recordParts(id, offsets): Promise<UploadInfo> {
+    async recordParts(id, offsets): Promise<StoredUpload> {
       await records.ensure();
       if (offsets.length === 0) {
         throw new UploadPartError(`A claim on upload ${id} named no parts.`);

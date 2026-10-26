@@ -5,7 +5,8 @@
 
 import type { AgentClientInbox } from "./agent-client-inbox.ts";
 import type { AgentGuardrails } from "./agent-guardrails.ts";
-import type { AgentSystemPrompt } from "./agent-instructions.ts";
+import type { AgentInstructions, AgentSystemPrompt } from "./agent-instructions.ts";
+import type { AgentListing } from "./agent-listing.ts";
 import type { AgentMode } from "./agent-mode.ts";
 import type { AgentModelTuning } from "./agent-model-tuning.ts";
 import type { AgentObservation } from "./agent-observation.ts";
@@ -20,7 +21,6 @@ import type { AnyDialog } from "./dialog-handle.ts";
 import type { McpServers } from "./mcp-config.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { Roster } from "./roster.ts";
-import type { StateProjection } from "./session-state.ts";
 import type { TelephonyAccess } from "./telephony-config.ts";
 // Imported as well as re-exported below: a re-export does not bring the name
 // into this module's scope, and `AgentDef.tools` needs `ToolMap`.
@@ -43,7 +43,13 @@ export type { AgentGuardrail, AgentGuardrails, GuardrailVerdict } from "./agent-
  * A system prompt computed per request — see `agent-instructions.ts` for where
  * the resolved text lands and how often it is asked for.
  */
-export type { AgentSystemPrompt } from "./agent-instructions.ts";
+export type {
+  AgentInstructions,
+  AgentPromptContext,
+  AgentSystemPrompt,
+} from "./agent-instructions.ts";
+/** The one-line text for a LIST of agents — see `agent-listing.ts`. */
+export type { AgentListing } from "./agent-listing.ts";
 /** The discriminant `agent()` is overloaded over — see `agent-mode.ts`. */
 export type { AgentMode } from "./agent-mode.ts";
 /**
@@ -57,7 +63,7 @@ export type { AgentModelTuning, ModelTuning, UsageLimits } from "./agent-model-t
  * file at the cap. `agent-observation.ts` argues why they are one group and
  * why the boundary against `agent-guardrails.ts` is worth keeping visible.
  */
-export type { AgentObservation, SyncStateDeclaration } from "./agent-observation.ts";
+export type { AgentObservation } from "./agent-observation.ts";
 /** What a per-session author FUNCTION is handed — see `agent-session-context.ts`. */
 export type { AgentSessionContext } from "./agent-session-context.ts";
 /** The pipeline's turn-taking tuning, as three groups — see `agent-tuning.ts`. */
@@ -83,10 +89,11 @@ export type { BuiltinTool } from "./builtin-tools.ts";
 export type { Message } from "./message.ts";
 /**
  * The one default constant still on the root barrel, and the only one that
- * passes its membership test: `agent({ systemPrompt })` REPLACES the whole
- * default prompt, so naming this is how an author keeps the voice rules and
- * adds their own — the recipe on the constant itself, which
- * `check:doc-examples` compiles. `DEFAULT_GREETING` used to sit beside it and
+ * passes its membership test: it is exported to be READ — printed while a
+ * `system-prompt.md` is tuned, diffed across SDK versions, asserted on in a
+ * spec — never composed into a prompt, since the file is APPENDED under it
+ * (the recipe is on the constant itself, which `check:doc-examples` compiles).
+ * `DEFAULT_GREETING` used to sit beside it and
  * is on `@alexkroman1/aai/internal` now: a greeting is REPLACED, never
  * composed, so no `agent.ts` ever named it. Import it from
  * `./agent-defaults.ts` inside this package.
@@ -129,6 +136,7 @@ export type {
   ToolMessages,
   ToolMessagesInput,
   ToolStartMessage,
+  ToolUi,
 } from "./tool-def.ts";
 /**
  * The opt-in prompt presets and the field that names them — the fifth field
@@ -162,9 +170,10 @@ export {
  * stop a turn), {@link AgentObservation} (the two that deliberately may not),
  * {@link AgentVoicePresets} (paid for on every model request),
  * {@link AgentSessionLifecycle} (once per session), {@link AgentRoutes} and
- * {@link AgentClientInbox} (no session at all). The `agent()` union and the
- * runtime refusal for an untyped caller are both cut from those groups, so no
- * field skips either.
+ * {@link AgentClientInbox} (no session at all), {@link AgentInstructions}
+ * (appended under the prompt) and {@link AgentListing} (read by a list, never
+ * the model). The `agent()` union and the runtime refusal for an untyped
+ * caller are both cut from those groups, so no field skips either.
  *
  * @input
  * @public
@@ -178,7 +187,9 @@ export interface AgentDeclaration
     AgentVoicePresets,
     AgentSessionLifecycle,
     AgentRoutes,
-    AgentClientInbox {
+    AgentClientInbox,
+    AgentInstructions,
+    AgentListing {
   /** Display name shown by the default client UI. */
   name: string;
   /**
@@ -194,47 +205,25 @@ export interface AgentDeclaration
    */
   mode?: AgentMode;
   /**
-   * What this agent IS, in one line, for whoever is reading a LIST of them.
-   *
-   * Its audience is never the model — a registry page, an A2A card, the
-   * studio's agent picker, the CLI's `aai list`. Write it as the job the agent
-   * does ("Books and reschedules dental appointments"), not as instructions;
-   * the instructions are {@link AgentDeclaration.systemPrompt}.
-   *
-   * Serializable, unlike most of what an author declares, and that is the whole
-   * point: `tools`, `events` and `workflows` are host-only because a consumer
-   * of a stored config could not act on a function, but a description is
-   * exactly what such a consumer wants and could not get. Every peer SDK puts
-   * one on the agent (Anthropic's `AgentDefinition.description` is required);
-   * this SDK had one on {@link SpeakerDef}, {@link WorkflowDef} and
-   * {@link ToolDef} and none on the agent itself.
-   */
-  description?: string;
-  /**
    * System prompt driving the LLM — the text, or a function that computes it
    * per request from {@link AgentSessionContext}.
    *
-   * A resolver is how a prompt reads the session's own state: which phase the
-   * dialog is in, whether the caller is authenticated, what is in the cart.
-   * It is called once per model request (so once per STEP of a tool-calling
-   * reply), synchronously, and its answer lands exactly where a string's does —
-   * appended under the agent-specific-instructions header, after the
-   * framework's voice sections. See `agent-instructions.ts`, which owns the
-   * rest, including what an S2S agent gets (per-CONNECTION, not per-turn).
+   * **Not authored.** The prompt is the `system-prompt.md` beside `agent.ts`:
+   * the build discovers the file and `withSystemPrompt`
+   * (`@alexkroman1/aai/manifest`) sets it on the lowered definition, which is
+   * also the door a host uses to set a prompt of its own. `agent()` fills the
+   * framework default and refuses the key as a parameter. Text that has to be
+   * computed — a menu, or a line over the session's own state (which phase the
+   * dialog is in, whether the caller is verified) — is
+   * {@link AgentInstructions.promptContext}, a string or a per-request
+   * resolver appended under the file.
    *
-   * ```ts
-   * import { agent, sessionSlot } from "@alexkroman1/aai";
-   *
-   * const caller = sessionSlot("caller", () => ({ verified: false }));
-   *
-   * export default agent({
-   *   name: "Bank Line",
-   *   systemPrompt: (ctx) =>
-   *     caller.get(ctx).verified
-   *       ? "The caller is verified. You may discuss balances."
-   *       : "The caller is NOT verified. Verify them before discussing anything.",
-   * });
-   * ```
+   * Either half may be a resolver on the lowered def; one is called once per
+   * model request (so once per STEP of a tool-calling reply), synchronously,
+   * and its answer lands exactly where a string's does — appended under the
+   * agent-specific-instructions header, after the framework's voice sections.
+   * See `agent-instructions.ts`, which owns the rest, including what an S2S
+   * agent gets (per-CONNECTION, not per-turn).
    *
    * @defaultValue {@link DEFAULT_SYSTEM_PROMPT} — the framework's own voice-agent
    * prompt. It is assembled from parts, so it is the one default here whose
@@ -427,21 +416,15 @@ export interface AgentDeclaration
  *
  * Every {@link AgentDeclaration} field, with the core ones (`systemPrompt`,
  * `greeting`, `maxSteps`, `mode`) resolved to their final values, the author
- * conveniences (`llm` as a model-id string, the end-of-turn window, `syncState`
- * as a projection or a list) normalized to one canonical spelling, and the two
- * tables nobody authors. Optional fields remain optional — `undefined` means
- * "not configured". Write an {@link AgentParams} member; read this.
+ * conveniences (`llm` as a model-id string, the end-of-turn window)
+ * normalized to one canonical spelling, the collected `syncState`, and the
+ * two tables nobody authors. Optional fields remain optional — `undefined`
+ * means "not configured". Write an {@link AgentParams} member; read this.
  *
  * @sealed
  * @public
  */
-export interface AgentDef extends Omit<AgentDeclaration, "syncState"> {
-  /**
-   * The `syncState` projections, keyed by each one's slot name — the canonical
-   * form `agent()` normalizes a projection or a list into. See
-   * {@link AgentObservation.syncState} for what to write.
-   */
-  syncState?: Readonly<Record<string, StateProjection>>;
+export interface AgentDef extends AgentDeclaration {
   /**
    * The tools the agent may invoke, keyed by the name the model calls.
    *

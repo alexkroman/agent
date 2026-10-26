@@ -110,6 +110,31 @@ describe("SessionStateDot", () => {
     expect(mount("ready", { colors: undefined }).dot).toHaveStyle({ background: hex("#18181B") });
   });
 
+  test("a coarse group paints every state in it, and an exact state wins over its group", () => {
+    const colors = { idle: "#111111", live: "#222222", busy: "#333333", speaking: "#444444" };
+    expect(mount("disconnected", { colors }).dot).toHaveStyle({ background: hex("#111111") });
+    expect(mount("connecting", { colors }).dot).toHaveStyle({ background: hex("#111111") });
+    expect(mount("ready", { colors }).dot).toHaveStyle({ background: hex("#222222") });
+    expect(mount("listening", { colors }).dot).toHaveStyle({ background: hex("#222222") });
+    expect(mount("thinking", { colors }).dot).toHaveStyle({ background: hex("#333333") });
+    expect(mount("speaking", { colors }).dot).toHaveStyle({ background: hex("#444444") });
+    // `error` has no group: its red is semantic and only an exact key replaces it.
+    expect(mount("error", { colors }).dot).toHaveStyle({ background: hex("#B3261E") });
+    expect(mount("error", { colors: { ...colors, error: "#555555" } }).dot).toHaveStyle({
+      background: hex("#555555"),
+    });
+  });
+
+  test("with no palette the idle dot is the theme's text at half strength over its ground", () => {
+    const { dot } = mount("disconnected", { colors: undefined });
+    // jsdom normalises the hex arguments to rgb(); the mix and the share are
+    // what this pins — the default theme's text, half over its ground.
+    // (…and drops a 50% share, the default, from the serialisation.)
+    expect(dot.style.background).toMatch(
+      /^color-mix\(in srgb, rgb\(24, 24, 27\)(?: 50%)?, rgb\(250, 250, 250\)\)$/,
+    );
+  });
+
   test("a state this version does not know gets a colour and its raw value as the label", () => {
     const { dot, label } = mount("transferring", { colors: undefined });
     expect(label.textContent).toBe("transferring");

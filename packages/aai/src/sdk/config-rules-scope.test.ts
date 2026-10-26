@@ -63,17 +63,17 @@ describe("guardrail scope", () => {
   });
 });
 
-describe("description", () => {
+describe("listing", () => {
   test("it crosses the wire, unlike the other things an author declares", () => {
     // The point of the field: a registry, an A2A card and the studio's picker
     // all read a stored config and none of them runs the agent.
-    expect(rawConfig({ name: "Line", description: "Books dental appointments" }).description).toBe(
+    expect(rawConfig({ name: "Line", listing: "Books dental appointments" }).listing).toBe(
       "Books dental appointments",
     );
   });
 
   test("unset stays unset", () => {
-    expect(rawConfig({ name: "Line" }).description).toBeUndefined();
+    expect(rawConfig({ name: "Line" }).listing).toBeUndefined();
   });
 });
 

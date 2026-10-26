@@ -6,10 +6,11 @@
  * poll.
  */
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import { act, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, type Mock, test, vi } from "vitest";
 import { createMockSessionCore, renderHookWithSession } from "./_react-test-utils.ts";
-import { useRoute } from "./use-route.ts";
+import { type UseRouteOptions, useRoute } from "./use-route.ts";
 
 let fetchMock: Mock<(url: URL, init: RequestInit) => Promise<Response>>;
 const json = (body: unknown, status = 200) =>
@@ -28,10 +29,14 @@ beforeEach(() => {
 const lastUrl = () => String(fetchMock.mock.calls.at(-1)?.[0]);
 
 describe("useRoute", () => {
-  function mount(path: string | null, pollMs?: number) {
+  function mount(
+    path: string | null,
+    pollMs?: number,
+    options: UseRouteOptions<{ ok: unknown }> = {},
+  ) {
     const core = createMockSessionCore({}, { clientId: () => "speaker-7" });
     return renderHookWithSession(
-      () => useRoute<{ ok: boolean }>(path, pollMs ? { pollMs } : {}),
+      () => useRoute<{ ok: unknown }>(path, { ...omitUndefined({ pollMs }), ...options }),
       core,
     );
   }
@@ -44,6 +49,38 @@ describe("useRoute", () => {
     act(() => hook.result.current.reload());
     await waitFor(() => expect(hook.result.current.error).toBe("profile store down"));
     expect(hook.result.current.data).toEqual({ ok: true });
+  });
+
+  test("a change of path drops the previous path's data until the new read lands", async () => {
+    fetchMock.mockImplementation(async (url) => json({ ok: String(url).split("/").at(-1) }));
+    const core = createMockSessionCore({}, { clientId: () => undefined });
+    const hook = renderHookWithSession(
+      ({ path }: { path: string }) => useRoute<{ ok: unknown }>(path),
+      core,
+      { initialProps: { path: "/calls/a" } },
+    );
+    await waitFor(() => expect(hook.result.current.data).toEqual({ ok: "a" }));
+    let releaseB: (r: Response) => void = () => undefined;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          releaseB = resolve;
+        }),
+    );
+    hook.rerender({ path: "/calls/b" });
+    expect(hook.result.current.data).toBeUndefined();
+    expect(hook.result.current.error).toBeUndefined();
+    await waitFor(() => expect(hook.result.current.loading).toBe(true));
+    expect(hook.result.current.data).toBeUndefined();
+    await act(async () => {
+      releaseB(json({ ok: "b" }));
+    });
+    expect(hook.result.current.data).toEqual({ ok: "b" });
+    // The same path's data survives a failed reload, as before.
+    fetchMock.mockResolvedValueOnce(json({ error: "down" }, 500));
+    act(() => hook.result.current.reload());
+    await waitFor(() => expect(hook.result.current.error).toBe("down"));
+    expect(hook.result.current.data).toEqual({ ok: "b" });
   });
 
   test("a slow earlier read cannot overwrite a newer one", async () => {
@@ -81,5 +118,118 @@ describe("useRoute", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  test("sends the caller's headers on every read, read per request", async () => {
+    const hook = mount("/calls", undefined, { headers: { authorization: "Bearer k" } });
+    await waitFor(() => expect(hook.result.current.data).toEqual({ ok: true }));
+    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ headers: { authorization: "Bearer k" } });
+  });
+
+  test("`pollMs` polls from the SETTLED read, and `until` stops it without stopping reload()", async () => {
+    vi.useFakeTimers();
+    try {
+      let reads = 0;
+      fetchMock.mockImplementation(async () => json({ ok: ++reads >= 3 ? "done" : "going" }));
+      const hook = mount("/calls/1", undefined, {
+        pollMs: 1000,
+        until: (call) => call.ok === "done",
+      });
+      // The poll's first tick is the mount read: not two reads at mount.
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      // Third read satisfied `until`, and nothing was read after it.
+      expect(fetchMock).toHaveBeenCalledTimes(3);
+      expect(hook.result.current.data).toEqual({ ok: "done" });
+      act(() => hook.result.current.reload());
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      hook.unmount();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a reload() during a poll does not stop the poll", async () => {
+    vi.useFakeTimers();
+    try {
+      // The poll's mount read is SLOW; a reload lands while it is in flight, so
+      // the poll's own read is superseded when it finally settles.
+      let releaseSlow: (r: Response) => void = () => undefined;
+      fetchMock.mockImplementationOnce(
+        () =>
+          new Promise<Response>((resolve) => {
+            releaseSlow = resolve;
+          }),
+      );
+      const hook = mount("/tasks", 1000);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      act(() => hook.result.current.reload());
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        releaseSlow(json({ ok: "stale" }));
+      });
+      // A superseded tick is not a finished poll: the next ticks still come.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2500);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+      expect(hook.result.current.data).toEqual({ ok: true });
+      hook.unmount();
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(fetchMock).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("unmounting aborts the one read of a route that is NOT polled", async () => {
+    let seen: AbortSignal | undefined;
+    fetchMock.mockImplementationOnce(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          seen = init.signal ?? undefined;
+          init.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    );
+    const hook = mount("/slow");
+    expect(seen?.aborted).toBe(false);
+    hook.unmount();
+    expect(seen?.aborted).toBe(true);
+  });
+
+  test("a negative or NaN pollMs is refused, and 0 reads once", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(() => mount("/tasks", -1)).toThrow(/pollMs must be a non-negative number, not -1/);
+    expect(() => mount("/tasks", Number.NaN)).toThrow(/pollMs/);
+    vi.useFakeTimers();
+    try {
+      mount("/tasks", 0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("unmounting aborts the read in flight, and nothing lands afterwards", async () => {
+    let seen: AbortSignal | undefined;
+    fetchMock.mockImplementationOnce(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          seen = init.signal ?? undefined;
+          init.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    );
+    const hook = mount("/slow", 1000);
+    expect(seen?.aborted).toBe(false);
+    hook.unmount();
+    expect(seen?.aborted).toBe(true);
   });
 });

@@ -41,7 +41,7 @@
  * | `guard-invariants-scopes.mjs`       | the eight corpora, and `SCAN_CORPORA`, the floor under each |
  * | `guard-invariants-rules-timing.mjs` | rules 3, 4, 19, 21, 31 — how code waits (NODE rules) |
  * | `guard-invariants-rules-workflow.mjs` | rules 26 and 30, the two over a shipped `workflows/` body |
- * | `guard-invariants-rules-shape.mjs`  | rules 2, 17, 18, 22, 28 — a value's shape, re-derived |
+ * | `guard-invariants-rules-shape.mjs`  | rules 2, 17, 18, 22, 28, 39 — a value's shape, re-derived |
  * | `guard-invariants-rules-state.mjs`  | rules 5, 8, 9, 11, 16, 24, 25, 27, 29, 36 — state someone else owns |
  * | `guard-invariants-rules-testing.mjs` | rules 33, 34 — the repo's own test files (NODE rules) |
  * | `guard-invariants-rules-runtime.mjs` | rule 35 — `aai-runtime`'s `prepareStep` slot (NODE rule) |
@@ -95,6 +95,10 @@ export {
  * @property {string} re      POSIX ERE handed to `git grep -E`.
  * @property {string[]} paths Pathspecs to scan.
  * @property {boolean} skipComments Drop matches on comment-only lines.
+ * @property {string[]} [skipInside] Drop matches inside the body of a property
+ *   of one of these names (`propertyBodyLines` in the scanners module) — for a
+ *   rule over a BODY that cannot tell, from a line, a declaration's own
+ *   host-side function from the body beside it.
  * @property {string} remedy  What to do instead — printed on failure.
  * @property {{ matches: string[], ignores: string[] }} [samples]
  *   A positive and a negative sample, carried BY THE RULE.

@@ -13,7 +13,7 @@ import { describe, expect, test, vi } from "vitest";
 import { makeAgent, makeConfig, makeSpeech } from "../_agent-test-utils.ts";
 import { makeLogger } from "../_logger-test-utils.ts";
 import { makeClientSink } from "../_session-test-utils.ts";
-import { createSessionEventStream } from "../session/index.ts";
+import { createSessionEventStream, createTurnCounter } from "../session/index.ts";
 import { createMemoryStateBackend, createSessionStateStore } from "../session-state/store.ts";
 import { createStateSweeps } from "../session-state/sweeps.ts";
 import { ASSEMBLYAI_S2S_CAPABILITIES } from "../transports/capabilities.ts";
@@ -78,6 +78,7 @@ function wire(
     transport: stubTransport,
     logger: makeLogger(),
     speech: makeSpeech(),
+    turns: createTurnCounter(),
     ...overrides,
     state,
   });
@@ -85,6 +86,28 @@ function wire(
 }
 
 describe("openSessionWiring", () => {
+  test("a systemPrompt resolver reads the session's committed-turn count, LIVE", () => {
+    const turns = createTurnCounter();
+    const agent = makeAgent({
+      systemPrompt: (ctx) => `Turn ${String(ctx.turn)}.`,
+    });
+    const { dialogs } = wire({
+      agent,
+      turns,
+      prompt: createSystemPromptResolver({
+        agentConfig: makeConfig(),
+        hasTools: false,
+        toolGuidance: undefined,
+        agent,
+      }),
+    });
+    expect(dialogs.prompt.resolve()).toContain("Turn 0.");
+    // The counter advances on a committed user turn (`session/core.ts`), and
+    // the resolver — asked per request — reads the new count without a hook.
+    turns.committed();
+    expect(dialogs.prompt.resolve()).toContain("Turn 1.");
+  });
+
   test("answers all four collaborators, built for one session", () => {
     const { dialogs, emitter, usage, guardrails } = wire();
     expect(dialogs).toBeDefined();

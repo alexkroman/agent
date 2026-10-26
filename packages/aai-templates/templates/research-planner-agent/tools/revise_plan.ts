@@ -1,4 +1,4 @@
-import { errorMessage, toolFailure } from "@alexkroman1/aai";
+import { errorMessage, toolFailure, withInstruction } from "@alexkroman1/aai";
 import { z } from "zod";
 import { replanNode } from "../procedure.ts";
 import { REVISE_SYSTEM } from "../prompts.ts";
@@ -13,59 +13,52 @@ import { planFlow, planSlot } from "../shared.ts";
  * change their mind, and the node that already exists to rewrite a plan from
  * new information is the right one to hand that to.
  *
- * The await-then-mutate shape is `start_plan`'s, for the reason it gives — and
- * note the READ before the await is `planSlot.get`, which the replanner only
- * needs to look at.
- *
  * **Legal in `working` AND `answered`, which is the whole point of it.** A
  * finished plan is exactly what a caller most often wants changed, so this is
  * the one tool that reopens one — `REOPENED` takes the flow back to `working`,
  * and the body's clearing of `plan.response` is the same decision at the data
- * level. Its `!objective` guard is gone: `when` is that check now.
+ * level. The event rides on the result as `next`, which `sendFrom` names.
  */
-export default planFlow.tool({
+export default planSlot.updateTool({
   description:
     "Rewrite the remaining plan because the caller changed what they want. " +
     "Pass their instruction as they said it. Completed steps are never redone.",
+  ui: { icon: "\u{270F}", label: "Revising the plan" },
   inputSchema: z.object({
     instruction: z
       .string()
       .max(400)
       .describe("What the caller now wants changed, in their own words"),
   }),
+  dialog: planFlow,
   when: ["working", "answered"],
-  async execute(args, ctx) {
+  sendFrom: "next",
+  async prepare({ instruction }, plan, ctx) {
     try {
-      const act = await replanNode(ctx.generate, planSlot.get(ctx), {
-        system: REVISE_SYSTEM,
-        instruction: args.instruction,
-      });
-      return planSlot.update(ctx, (plan) => {
-        plan.revisions.push(`Caller: ${args.instruction}`);
-
-        if (act.kind === "respond") {
-          plan.plan = [];
-          plan.response = act.response;
-          return { finished: true, response: act.response, message: "Nothing is left to do." };
-        }
-
-        plan.plan = act.steps;
-        // A revision reopens a plan that had already answered: the caller has
-        // moved the goalposts, so the old answer is no longer the answer.
-        plan.response = null;
-        return {
-          finished: false,
-          remaining: act.steps,
-          message: "Read the revised steps back and ask if that is right.",
-        };
-      });
+      return await replanNode(ctx.generate, plan, { system: REVISE_SYSTEM, instruction });
     } catch (err: unknown) {
       return toolFailure(`The plan could not be revised: ${errorMessage(err)}`);
     }
   },
-  // Below `execute` deliberately — see the note on `work_next_step`'s own
-  // `sendFrom`: this body's return type is itself inferred, so a `sendFrom`
-  // written first has nothing to be contextually typed against.
-  sendFrom: (outcome) =>
-    outcome.finished ? ({ type: "ANSWERED" } as const) : ({ type: "REOPENED" } as const),
+  execute({ instruction }, plan, act) {
+    plan.revisions.push(`Caller: ${instruction}`);
+
+    if (act.kind === "respond") {
+      plan.plan = [];
+      plan.response = act.response;
+      return withInstruction(
+        { finished: true, response: act.response, next: "ANSWERED" as const },
+        "Nothing is left to do.",
+      );
+    }
+
+    plan.plan = act.steps;
+    // A revision reopens a plan that had already answered: the caller has
+    // moved the goalposts, so the old answer is no longer the answer.
+    plan.response = null;
+    return withInstruction(
+      { finished: false, remaining: act.steps, next: "REOPENED" as const },
+      "Read the revised steps back and ask if that is right.",
+    );
+  },
 });

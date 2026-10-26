@@ -20,6 +20,7 @@ export {
   loadClientHistory,
   publishClientTranscripts,
   readClientTranscript,
+  readSessionTranscript,
 } from "./client-history.ts";
 export {
   answeredGreeting,
@@ -33,7 +34,7 @@ export type { SessionDirectory, SessionWiring } from "./directory.ts";
 export { createSessionDirectory } from "./directory.ts";
 export type { SessionEmitter, SessionEventHookDeps } from "./emitter.ts";
 export { createSessionEmitter, hookDepsFor } from "./emitter.ts";
-export { historyFromEvents, modelHistoryOf } from "./event-history.ts";
+export { historyFromEvents, modelHistoryOf, transcriptLinesOf } from "./event-history.ts";
 export type {
   SessionEventLog,
   SessionEventPage,
@@ -50,6 +51,7 @@ export type { ResumeFindings } from "./resume-found.ts";
 export { composeSessionGreeting, createResumeFindings } from "./resume-found.ts";
 export { setSessionIdMinter } from "./session-id.ts";
 export type { SpeechDirectory } from "./speech.ts";
+export { createTurnCounter, type TurnCounter, userTurnsIn } from "./turn-counter.ts";
 export type { SessionWebSocket } from "./ws-frames.ts";
 export { asSessionWebSocket, safeSend } from "./ws-frames.ts";
 export { wireSessionSocket } from "./ws-handler.ts";

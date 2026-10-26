@@ -9,7 +9,7 @@
  */
 
 import type http from "node:http";
-import type { AgentDef } from "@alexkroman1/aai";
+import type { AgentDef, ToolUi } from "@alexkroman1/aai";
 import type { Logger } from "../logger.ts";
 import type { AgentRuntime } from "../runtime/index.ts";
 import type { CarrierName } from "../telephony/carriers.ts";
@@ -140,6 +140,13 @@ export type RuntimeServerOptions = {
   /** Agent greeting, included in the `GET /client-config` response. */
   greeting?: string;
   /**
+   * Each tool's declared icon and label (`tool({ ui })`), by name, included in
+   * the `GET /client-config` response so a page renders a call the way the
+   * tool said to. `toolUiMap(agentToolsets(agent))` builds it;
+   * `createAgentServer` passes it for you.
+   */
+  tools?: Record<string, ToolUi> | undefined;
+  /**
    * Base URL of a PLATFORM that serves this agent's upload bytes for it.
    *
    * Its presence puts workflow uploads on the brokered path, where every byte operation
@@ -242,7 +249,7 @@ export type AgentServer = {
    * import { createAgentServer } from "@alexkroman1/aai-runtime";
    *
    * const server = createAgentServer({
-   *   agent: agent({ name: "Support", systemPrompt: "You are helpful." }),
+   *   agent: agent({ name: "Support" }),
    *   env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
    * });
    *

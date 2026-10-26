@@ -16,6 +16,7 @@
 
 import { type WorkflowContext, workflow } from "@alexkroman1/aai";
 import { isRecord } from "@alexkroman1/aai/utils";
+import type { WorkflowAppLike } from "@alexkroman1/aai/workflow-api";
 import { describe, expect, test, vi } from "vitest";
 import { createMemoryJournal } from "../workflow/journal/backends/memory.ts";
 import { workflowJournal } from "../workflow/journal/handle.ts";
@@ -33,7 +34,7 @@ describe("a run that finishes on the first delivery", () => {
       }),
     });
 
-    const run = await runWorkflow(digest, { topic: "otters" }, { name: "digest" });
+    const run = await runWorkflow(digest, { topic: "otters" });
     expect(run.status).toBe("completed");
     expect(run.output).toEqual({ headline: "all about otters" });
     expect(run.deliveries).toBe(1);
@@ -64,6 +65,37 @@ describe("a run that finishes on the first delivery", () => {
   });
 });
 
+describe("the agent form", () => {
+  const digest = workflow({
+    description: "digest",
+    run: async (input: Record<string, unknown>, ctx: WorkflowContext) => ({
+      topic: input.topic,
+      name: ctx.workflow,
+      headline: await ctx.step("summarize", () => "ok"),
+    }),
+  });
+  const agentDef = { name: "App", workflows: { digest } };
+
+  test("resolves the def by name off the agent and runs it UNDER that name", async () => {
+    const run = await runWorkflow(agentDef, "digest", { topic: "otters" });
+    expect(run.status).toBe("completed");
+    expect(run.output).toEqual({ topic: "otters", name: "digest", headline: "ok" });
+    expect(run.steps.map((s) => s.key)).toEqual(["summarize#0"]);
+    await run.close();
+  });
+
+  test("an unknown name throws, listing the agent's workflows", async () => {
+    await expect(
+      // @ts-expect-error — the name is typed by the agent's `workflows` keys.
+      runWorkflow(agentDef, "recap", {}),
+    ).rejects.toThrow(
+      /Workflow "recap" is not declared on this agent. Declared workflows: digest\./,
+    );
+    const voice: WorkflowAppLike = {};
+    await expect(runWorkflow(voice, "digest", {})).rejects.toThrow(/Declared workflows: \(none\)/);
+  });
+});
+
 describe("a run that SLEEPS", () => {
   /** A body that files a report a day after writing it. */
   const review = workflow({
@@ -91,7 +123,8 @@ describe("a run that SLEEPS", () => {
     const run = await runWorkflow(review, {});
 
     expect(run.waits).toEqual([
-      expect.objectContaining({ kind: "sleep", woken: false, correlationId: undefined }),
+      // The label is the wait's correlation id by default (`SleepOptions`).
+      expect.objectContaining({ kind: "sleep", woken: false, correlationId: "settle" }),
     ]);
     expect(run.waits[0]?.wakeAt).toBe(run.wakeAt);
     // Unsettled, so a boot sweep re-arms it; once it settles, nothing is owed.
@@ -157,6 +190,33 @@ describe("a run parked on somebody else's ANSWER", () => {
   });
 });
 
+describe("a run's KEY, and a signal by LABEL", () => {
+  /** A body that derives its wait token from the run's key, as a tool's twin does. */
+  const keyed = workflow({
+    description: "keyed",
+    run: async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
+      const answer = await ctx.waitForSignal<{ approved: boolean }>("approval");
+      return { key: ctx.key, approved: answer?.approved ?? false };
+    },
+  });
+
+  test("a run is keyed `test` by default, so a body deriving a token walks at all", async () => {
+    const run = await runWorkflow(keyed, {});
+    expect(run.key).toBe("test");
+    expect(run.status).toBe("running");
+    // The key's own journal entry is not a step the body named.
+    expect(run.steps).toEqual([]);
+  });
+
+  test("signalRun answers the label the body waits on, under the run's own key", async () => {
+    const run = await runWorkflow(keyed, {}, { key: "sess-9" });
+    await run.signalRun("approval", { approved: true });
+    expect(run.signalled).toBe(true);
+    expect(run.status).toBe("completed");
+    expect(run.output).toEqual({ key: "sess-9", approved: true });
+  });
+});
+
 describe("a wait whose WINDOW closes unanswered", () => {
   /** A gate whose safe default is to refuse — the shape an approval has. */
   const gate = workflow({
@@ -195,6 +255,37 @@ describe("a wait whose WINDOW closes unanswered", () => {
     expect(run.output).toEqual({ approved: true, answered: true });
     await run.expireWaits();
     expect(run.output).toEqual({ approved: true, answered: true });
+  });
+
+  test("expires only the windows open at the call: a SECOND wait the first's close led to still parks", async () => {
+    const twoGates = workflow({
+      description: "two gates",
+      run: async (_input: Record<string, unknown>, ctx: WorkflowContext) => {
+        const first = await ctx.waitFor<{ ok: boolean }>("gate:1", { timeoutMs: 60_000 });
+        const second = await ctx.waitFor<{ ok: boolean }>("gate:2", { timeoutMs: 60_000 });
+        return { first: first !== undefined, second: second !== undefined };
+      },
+    });
+    const run = await runWorkflow(twoGates, {});
+    await run.expireWaits();
+    // The first window closed; the second was opened by that very delivery and
+    // is still open — expiring it too would have skipped a wait the body never
+    // got to park on.
+    expect(run.status).toBe("running");
+    expect(run.waits.map((wait) => [wait.key, wait.woken])).toEqual([
+      ["hookTimeout!gate:1#0", false],
+      ["hookTimeout!gate:2#0", false],
+    ]);
+    await run.signal("gate:2", { ok: true });
+    expect(run.status).toBe("completed");
+    expect(run.output).toEqual({ first: false, second: true });
+    // And expiring again closes the second: the first stays closed on the walk
+    // past it, rather than re-parking the run on a window it already left.
+    const again = await runWorkflow(twoGates, {});
+    await again.expireWaits();
+    await again.expireWaits();
+    expect(again.status).toBe("completed");
+    expect(again.output).toEqual({ first: false, second: false });
   });
 
   test("does not touch an ordinary ctx.sleep", async () => {
@@ -380,10 +471,12 @@ describe("the driver's own limits", () => {
       run: (input: Record<string, unknown>) => input.topic,
     });
 
-    await expect(runWorkflow(typed, {}, { name: "typed" })).rejects.toThrow(
+    // The agent form, so the refusal names the workflow as a deployment would.
+    const app = { name: "App", workflows: { typed } };
+    await expect(runWorkflow(app, "typed", {})).rejects.toThrow(
       /workflow typed refused that input/,
     );
-    const ok = await runWorkflow(typed, { topic: "otters" }, { name: "typed" });
+    const ok = await runWorkflow(app, "typed", { topic: "otters" });
     expect(ok.output).toBe("otters");
   });
 
@@ -406,6 +499,33 @@ describe("the driver's own limits", () => {
     ).rejects.toThrow(/took 3 deliveries without settling/);
   });
 
+  test("REFUSES a second LIVE run of one workflow under one key in a shared world, naming the key", async () => {
+    // Signal tokens are (workflow, key, label): two parked runs under the
+    // default key held the same ones, so the second's body failed at its first
+    // wait and its `signalRun` woke the FIRST run. The driver refuses at the
+    // call that would start the twin.
+    const approve = workflow({
+      description: "approve",
+      run: async (_input: Record<string, unknown>, ctx: WorkflowContext) =>
+        ctx.waitForSignal("first"),
+    });
+    const app = { name: "App", workflows: { approve } };
+    const a = await runWorkflow(app, "approve", {});
+    expect(a.status).not.toBe("completed");
+    await expect(runWorkflow(app, "approve", {}, { journal: a.journal })).rejects.toThrow(
+      /run \S+ of "approve" is still live in this journal under the key "test".*key: "<another>"/,
+    );
+    // Its own key is the fix, and each run's signal then reaches its own body.
+    const b = await runWorkflow(app, "approve", {}, { journal: a.journal, key: "b" });
+    await b.signalRun("first", "for-b");
+    expect(b.status).toBe("completed");
+    expect(a.status).not.toBe("completed");
+    await a.signalRun("first", "for-a");
+    expect(a.output).toBe("for-a");
+    await a.close();
+    await b.close();
+  });
+
   test("shares a journal, so a second run reads the world the first left", async () => {
     const journal = createMemoryJournal();
     const counter = workflow({
@@ -413,16 +533,9 @@ describe("the driver's own limits", () => {
       run: (input: Record<string, unknown>) => input.n,
     });
 
-    const one = await runWorkflow(
-      counter,
-      { n: 1 },
-      { name: "counter", journal: workflowJournal(journal) },
-    );
-    const two = await runWorkflow(
-      counter,
-      { n: 2 },
-      { name: "counter", journal: workflowJournal(journal) },
-    );
+    const app = { name: "App", workflows: { counter } };
+    const one = await runWorkflow(app, "counter", { n: 1 }, { journal: workflowJournal(journal) });
+    const two = await runWorkflow(app, "counter", { n: 2 }, { journal: workflowJournal(journal) });
     expect(one.runId).not.toBe(two.runId);
     // As a SET: `listRuns` orders by `createdAt` with the id breaking a tie, and
     // two runs started in the same millisecond carry ids minted from a uuid.

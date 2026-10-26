@@ -15,7 +15,6 @@
  *
  * export default agent({
  *   name: "Support",
- *   systemPrompt: "You are a support agent. Be brief.",
  *   // `stt` and `llm` keep their AssemblyAI defaults.
  *   tts: cartesiaTts({ voice: CARTESIA_DEFAULT_VOICE, model: "sonic-3" }),
  * });

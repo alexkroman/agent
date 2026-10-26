@@ -24,9 +24,16 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { createEpoch, type Epoch } from "@alexkroman1/aai/internal";
+import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
+import type {
+  WorkflowAppLike,
+  WorkflowDefOf,
+  WorkflowNameOf,
+  WorkflowsOf,
+} from "./workflow-def-types.ts";
 
 /**
  * Options for {@link useWorkflowRuns}.
@@ -71,7 +78,10 @@ export type UseWorkflowRunsResult<R = unknown> = {
  * Read a workflow's recent runs.
  *
  * @typeParam R - The workflow's output type, so a completed run's `output` is
- *   typed rather than `unknown`. Derive it with `WorkflowOutputOf`.
+ *   typed rather than `unknown`. Derive it with `WorkflowOutputOf` — or name
+ *   the AGENT instead, `useWorkflowRuns<typeof agentDef>("transcribe")`, and
+ *   both the name and the output come off its `workflows` map (see
+ *   `WorkflowNameOf`).
  *
  * @example
  * ```tsx
@@ -85,6 +95,32 @@ export type UseWorkflowRunsResult<R = unknown> = {
  *
  * @public
  */
+export function useWorkflowRuns<
+  // `never` by default, as on the two submit hooks: an un-parameterized call
+  // has no names to match here, so it lands on the output form below. (With
+  // the constraint as the default, `WorkflowNameOf<WorkflowAppLike>` is any
+  // string and this overload would take the call — harmless for the output,
+  // which is `unknown` either way, but a second path to the same answer.)
+  App extends WorkflowAppLike = never,
+  Name extends WorkflowNameOf<App> = WorkflowNameOf<App>,
+>(
+  // `undefined` (a page that does not know its workflow yet) is admitted only
+  // once an app is named: `never | undefined` would otherwise take a bare
+  // `useWorkflowRuns(undefined)` here and type its output `never`.
+  workflow: [App] extends [never] ? never : Name | undefined,
+  options?: UseWorkflowRunsOptions,
+): UseWorkflowRunsResult<WorkflowOutputOf<WorkflowDefOf<App, Name>>>;
+export function useWorkflowRuns<R = unknown>(
+  // An AGENT type in this position belongs to the overload above, so a name
+  // it does not declare is refused there rather than accepted here as a
+  // string. The submit hooks get the same refusal from `D extends
+  // AnyWorkflowDef`; `R` is an open output type, so it is read off the type
+  // argument instead: an app has a workflows MAP, an output has none. The
+  // map, not the names: an app declaring no workflows has an empty map and
+  // no names, and must still be refused here rather than typed `string`.
+  workflow: [WorkflowsOf<R>] extends [never] ? string | undefined : never,
+  options?: UseWorkflowRunsOptions,
+): UseWorkflowRunsResult<R>;
 export function useWorkflowRuns<R = unknown>(
   workflow: string | undefined,
   options: UseWorkflowRunsOptions = {},

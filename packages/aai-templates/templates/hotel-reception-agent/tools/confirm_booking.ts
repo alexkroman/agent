@@ -1,11 +1,10 @@
 import { isToolFailure, toolFailure } from "@alexkroman1/aai";
-import { z } from "zod";
 import { bookingStatus, changedFields, nextStep } from "../booking.ts";
 import { deskFlow } from "../desk.ts";
 import { bookRoom, updateBooking } from "../hotel.ts";
 import { speakCode, speakUsd } from "../records.ts";
 import { hotelSlot } from "../session.ts";
-import { bookingByCode, callerTurns, note } from "../shared.ts";
+import { bookingByCode } from "../shared.ts";
 
 /**
  * Finalize the booking — their `confirm_booking` and `confirm_changes`, one
@@ -23,7 +22,7 @@ import { bookingByCode, callerTurns, note } from "../shared.ts";
  * failure.** Their flow cleared the room and returned "pick another room or
  * shift the dates; I've kept everything else". A `ToolFailure` would send no
  * event and leave the position at `agreeing` with no room on the draft, so this
- * answers a success shape with `next: "NEED_ROOM"` and lets `sendFrom` land the
+ * answers a success shape with `next: "NEED_ROOM"` and `sendFrom` lands the
  * flow where the caller has to pick again.
  */
 export default deskFlow.tool({
@@ -32,7 +31,7 @@ export default deskFlow.tool({
     "the caller has agreed to your read-back. Returns the final confirmation - relay the code " +
     "and total and move on; nothing further to confirm or call.",
   when: "booking.agreeing",
-  inputSchema: z.object({}),
+  sendFrom: "next",
   execute: (_args, ctx) =>
     hotelSlot.update(ctx, (hotel) => {
       const d = hotel.draft;
@@ -132,8 +131,8 @@ export default deskFlow.tool({
         };
       }
       hotel.draft = null;
-      hotel.lastBooking = { code: booking.code, callerTurns: callerTurns(ctx.messages) };
-      note(hotel, `Confirmation email would go to ${booking.email} for ${booking.code}`);
+      hotel.lastBooking = { code: booking.code, callerTurns: ctx.turn };
+      hotel.log.push(`Confirmation email would go to ${booking.email} for ${booking.code}`);
       return {
         outcome: "booked" as const,
         code: booking.code,
@@ -150,5 +149,4 @@ export default deskFlow.tool({
         next: "BOOKED" as const,
       };
     }),
-  sendFrom: (result) => ({ type: result.next }),
 });

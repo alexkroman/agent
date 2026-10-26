@@ -45,6 +45,7 @@ import { createIdleWatchdog } from "./idle.ts";
 import { createReplyTracker } from "./reply-tracker.ts";
 import { createReportDispatcher } from "./report.ts";
 import { createSpeechVerbs } from "./speech.ts";
+import { createTurnCounter } from "./turn-counter.ts";
 
 /**
  * Create the server-side session core for one connected client.
@@ -73,6 +74,9 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
   /** For {@link ServerSession.faultCode} — see there for the log it exists to fix. */
   let faultCode: string | undefined;
   const emit = opts.emitter.emit;
+  // Claimed by the factory beside the meter; a core built without one (a spec,
+  // a bare transport test) still counts, into a counter nobody else reads.
+  const turns = opts.turns ?? createTurnCounter();
 
   // The idle deadline and everything it means — see `idle.ts`, which is
   // where the "measure SPEECH, not bytes" argument lives.
@@ -101,7 +105,10 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
    */
   function pushConversation(event: TransportEventBody): void {
     const message = historyMessageOf(event);
-    if (message) pushMessages(message);
+    if (!message) return;
+    pushMessages(message);
+    // A committed user turn is the unit `ctx.turn` counts — see `turn-counter.ts`.
+    if (message.role === "user") turns.committed();
   }
 
   // The client half of the inbound surface — see `commands.ts`, which
@@ -118,6 +125,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     cancelReply: () => replies.cancel(),
     clearHistory: () => {
       history = [];
+      turns.reset();
       conversation++;
       retained.recount();
     },
@@ -242,6 +250,8 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
     },
     restoreHistory(messages, toolCalls = []) {
       pushMessages(...messages);
+      // The one place the window is the whole record — see `turn-counter.ts`.
+      turns.seed(messages);
       // Forward to the transport so pipeline mode's LLM sees the restored
       // context on resume (S2S restores context service-side via resume). The
       // model's view carries each prior tool call as a real call/result pair

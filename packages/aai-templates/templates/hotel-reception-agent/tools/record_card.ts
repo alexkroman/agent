@@ -21,6 +21,7 @@ export default deskFlow.tool({
     "security code and the name on it. Never read the full number or the code back. A rejected " +
     "value names the one field to re-ask.",
   when: AFTER_DETAILS,
+  sendFrom: "next",
   inputSchema: z.object({
     cardNumber: z.string().describe("All the digits, spaces or dashes allowed"),
     expiryMonth: z.number().int().describe("1-12"),
@@ -42,5 +43,4 @@ export default deskFlow.tool({
         next: nextStep(d),
       };
     }),
-  sendFrom: (result) => ({ type: result.next }),
 });

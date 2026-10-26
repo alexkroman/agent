@@ -35,15 +35,15 @@ describe("template discovery", () => {
     expect([...templatePromptFiles].toSorted()).toEqual(onDisk.toSorted());
   });
 
-  test("withTemplateTools attaches exactly the template's own tools/ files", () => {
-    const def = withTemplateTools("coding-agent", agent({ name: "probe" }));
+  test("withTemplateTools attaches exactly the template's own tools/ files", async () => {
+    const def = await withTemplateTools("coding-agent", agent({ name: "probe" }));
     expect(Object.keys(def.tools ?? {})).toEqual(
       expect.arrayContaining(["read_file", "write_file", "bash"]),
     );
   });
 
-  test("a template with no tools/ directory resolves with no tools", () => {
-    const def = withTemplateTools("transcription-workflow", agent({ name: "probe" }));
+  test("a template with no tools/ directory resolves with no tools", async () => {
+    const def = await withTemplateTools("transcription-workflow", agent({ name: "probe" }));
     expect(Object.keys(def.tools ?? {})).toEqual([]);
   });
 

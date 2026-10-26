@@ -42,7 +42,13 @@
 
 export {
   DEFAULT_RETRY_DELAY_MS,
+  // `fatalOn(isMatch, fn)` / `orFatal(fn, { when })`: the classifiers that turn
+  // a matched throw fatal, which is this subpath's whole business.
+  type ErrorClass,
   FatalError,
+  fatalOn,
+  type OrFatalOptions,
+  orFatal,
   RetryableError,
   type RetryableErrorOptions,
   throwFatalStepError,

@@ -1,13 +1,15 @@
 {
   "comment": "check:api-shape's shrink-only baseline (scripts/check-api-shape.mjs). Each list is one finding per line — delete the line when it is fixed; `pnpm api-shape:update` drops fixed entries and lowers numbers but never adds. `exhaustiveByDesign` is a permanent allowlist (entry -> reason) for closed literal sets an author is meant to switch over exhaustively.",
-  "exhaustiveByDesign": {},
+  "exhaustiveByDesign": {
+    "workflow: WorkflowSubmissionScope — closed literal union in output position": "the three places a submission's key can live (this tab, this browser, nowhere), pinned closed by hooks.test-d.ts: <WorkflowPendingNote> says a different sentence for each, and a fourth storage would be a new sentence every page with its own note must write, which is a break whatever this type says"
+  },
   "direction": [],
   "positions": [],
   "derived": [],
   "closedLiterals": [],
   "nonAuthoringImports": [],
   "thirdPartyTypes": [],
-  "orphans": [],
+  "orphans": ["forms: NamedTextValue", "workflow: WorkflowSubmissionOf"],
   "unexportedShared": [],
   "budgets": {},
   "isolatedDeclarations": {}

@@ -63,6 +63,9 @@ describe("stepWriteUpload", () => {
     expect(stored).toEqual({
       id: "upl_written_1",
       name: "summary.wav",
+      // Labelled on the way out, as every reader labels what it hands back, so
+      // the record a step stores and the one it reads back are one shape.
+      label: "summary.wav",
       type: "audio/wav",
       size: 3,
       complete: true,

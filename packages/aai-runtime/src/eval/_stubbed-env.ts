@@ -24,6 +24,9 @@
  */
 
 import type { AgentDef } from "@alexkroman1/aai";
+// This module is reached from the two `describe*Eval` suites only (the
+// `/eval/vitest` door), never from `/eval`'s runner-free barrel.
+import { vi } from "vitest";
 import type { EvalMode } from "./_announce.ts";
 import { evalWorkflowCredentials } from "./workflows.ts";
 
@@ -43,4 +46,27 @@ export function stubbedEnv(agent: AgentDef, mode: EvalMode): Record<string, stri
   const env: Record<string, string> = { ...creds.env };
   if (mode === "stub") for (const name of creds.missing) env[name] = STUB_ENV_VALUE;
   return env;
+}
+
+/**
+ * The same decision for the PROCESS env, for the one case: a tool (not a step
+ * of a run) that calls the gateway from a scripted session.
+ *
+ * `stubbedEnv` is what the eval ENGINE publishes, and a step inside a run reads
+ * it. A tool calling `stepGenerate` from a session with no engine — an agent
+ * that declares no workflows — reads `stepEnv`'s fallback, `process.env`, and
+ * `requireStepEnv` throws by name when the key is not there. So a keyless
+ * scripted run of such an agent failed on the credential rather than on
+ * anything the case wrote, which is the property the stub mode exists to
+ * protect; and every case stubbed `ASSEMBLYAI_API_KEY` by hand to get past it.
+ *
+ * `vi.stubEnv`, undone by `unstubEnvs` before the next test (every config
+ * `defineAgentTestConfig` writes sets it), and a no-op in LIVE mode: the mode
+ * was chosen because nothing was missing, so there is nothing to fill.
+ */
+export function stubProcessEnv(agent: AgentDef, mode: EvalMode): void {
+  if (mode !== "stub") return;
+  for (const name of evalWorkflowCredentials(agent).missing) {
+    vi.stubEnv(name, STUB_ENV_VALUE);
+  }
 }

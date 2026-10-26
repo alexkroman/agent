@@ -12,7 +12,7 @@
 import { type AgentDef, agent, endSession, tool } from "@alexkroman1/aai";
 import { sleep } from "@alexkroman1/aai/internal";
 import { withTools } from "@alexkroman1/aai/manifest";
-import { createStubWorkflows } from "@alexkroman1/aai/testing";
+import { createSlotStore, createStubWorkflows } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { createFakeLanguageModel } from "../_fake-llm.ts";
@@ -186,6 +186,8 @@ const HOOK_ARGS: Parameters<NonNullable<AgentDef["onSessionEnd"]>>[0] = {
   sessionId: "s",
   env: {},
   lastEventIndex: 0,
+  transcript: [],
+  slots: createSlotStore(),
   workflows: createStubWorkflows(),
 };
 

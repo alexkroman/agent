@@ -88,7 +88,8 @@ export type SlotHolder = {
 
 /**
  * One slot's contribution to the `agent_state` frame — what
- * {@link SessionSlot.projected} is, and what `agent({ syncState })` takes.
+ * {@link SessionSlot.projected} is, and what `AgentDef.syncState` holds for a
+ * slot declared `sync: true`.
  *
  * It is a FUNCTION carrying the two facts the runtime needs, rather than a
  * plain record, and the callable half is load-bearing at both ends. The server
@@ -182,8 +183,20 @@ function describe(value: unknown): string {
  * @internal
  */
 export function freezeStorable<T>(value: T, path: string): T {
-  walk(value, path, { ancestors: new Set(), done: new WeakSet() });
+  walk(value, path, { ancestors: new Set(), done: new WeakSet(), finish: Object.freeze });
   return value;
+}
+
+/**
+ * The same check as {@link freezeStorable}, without the freeze — for a value
+ * that is about to be checked for someone ELSE: a slot's plain default, which
+ * is cloned per install and stays the author's own object.
+ *
+ * @throws SlotValueError naming the path, as `freezeStorable` does.
+ * @internal
+ */
+export function assertStorable(value: unknown, path: string): void {
+  walk(value, path, { ancestors: new Set(), done: new WeakSet(), finish: () => undefined });
 }
 
 /**
@@ -201,7 +214,12 @@ export function freezeStorable<T>(value: T, path: string): T {
  * separately, so a hydrated value holds two equal objects where the live one held
  * one. That matters only to code comparing by identity.
  */
-type Walk = { ancestors: Set<object>; done: WeakSet<object> };
+type Walk = {
+  ancestors: Set<object>;
+  done: WeakSet<object>;
+  /** What a validated node meets last: `Object.freeze`, or nothing for a check-only walk. */
+  finish: (object: object) => void;
+};
 
 function walk(value: unknown, path: string, seen: Walk): void {
   if (value === null) return;
@@ -250,7 +268,7 @@ function walk(value: unknown, path: string, seen: Walk): void {
   }
   seen.ancestors.delete(object);
   seen.done.add(object);
-  Object.freeze(object);
+  seen.finish(object);
 }
 
 /**

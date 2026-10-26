@@ -13,19 +13,14 @@ import {
 } from "../shared.ts";
 
 /**
- * **Not a `callFlow.tool`, deliberately.** A new 911 call is legal in every
- * state, so a `when` listing all of them would be a gate that gates nothing —
- * the same call `research-planner-agent`'s `start_plan` makes. It sends `LOGGED`
- * itself, which is what `dialog.send` is public for, and reports the position it
- * landed in so the model reads "confirm the severity and type" as part of this
- * result rather than having to remember it from the prompt.
- *
- * The `send` sits INSIDE the board's mutation window, which is safe because it
- * is a different slot: the re-entrancy guard is per slot, and neither window
- * spans an await, so the whole call commits atomically.
+ * A new 911 call is legal in every state, so no `when`; it still sends
+ * `LOGGED` and answers the position it landed in, so the model reads "confirm
+ * the severity and type" as part of this result.
  */
 export default dispatchSlot.updateTool({
   description: "Create a new incident from an incoming emergency call.",
+  dialog: callFlow,
+  send: { type: "LOGGED" },
   inputSchema: z.object({
     location: z.string().max(300).describe("Address or location description"),
     description: z.string().max(2000).describe("Nature of the emergency as described by caller"),
@@ -53,22 +48,22 @@ export default dispatchSlot.updateTool({
       args.hazards?.length ?? 0,
     );
 
-    const incident = createIncident(state, {
-      type: recType,
-      severity: recSeverity,
-      location: args.location,
-      description: args.description,
-      callerName: args.callerName ?? "Unknown",
-      callerPhone: args.callerPhone ?? "Unknown",
-      triageScore,
-      timeline: [{ time: Date.now(), event: `Incident created: ${args.description}` }],
-      casualties: {
-        confirmed: 0,
-        estimated: args.estimatedCasualties ?? 0,
-        treated: 0,
+    const incident = createIncident(
+      state,
+      {
+        type: recType,
+        severity: recSeverity,
+        location: args.location,
+        description: args.description,
+        callerName: args.callerName ?? "Unknown",
+        callerPhone: args.callerPhone ?? "Unknown",
+        triageScore,
+        timeline: [{ time: ctx.now(), event: `Incident created: ${args.description}` }],
+        casualties: { confirmed: 0, estimated: args.estimatedCasualties ?? 0, treated: 0 },
+        hazards: args.hazards ?? [],
       },
-      hazards: args.hazards ?? [],
-    });
+      ctx.now(),
+    );
     const id = incident.id;
 
     const protocols = getApplicableProtocols(recType, recSeverity);
@@ -76,11 +71,6 @@ export default dispatchSlot.updateTool({
 
     return {
       incidentId: id,
-      // Spread the position rather than renaming its fields: this tool is
-      // ungated, so the `{ state, instruction }` a gated tool's result carries
-      // has to come from here — and under two different key sets the model
-      // reads its own position two different ways within one agent.
-      ...callFlow.send(ctx, { type: "LOGGED" }),
       recommendedSeverity: recSeverity,
       recommendedType: recType,
       triageScore,

@@ -50,9 +50,15 @@
 import type { AgentDef } from "@alexkroman1/aai";
 import { describe, test } from "vitest";
 import { announceEvalMode, closeEvalSuite, type EvalMode } from "./_announce.ts";
+import {
+  type EvalSteps,
+  type EvalStepsOptions,
+  refuseStepsBeside,
+  withCaseSteps,
+} from "./_case-steps.ts";
 import { evalOnlySelects, evalRepeat } from "./_env.ts";
 import { runRepeats, SuiteSpread } from "./_spread.ts";
-import { stubbedEnv } from "./_stubbed-env.ts";
+import { stubbedEnv, stubProcessEnv } from "./_stubbed-env.ts";
 import { resolveWorkflowEvalMode } from "./eval-mode.ts";
 import { type EvalWorkflows, type EvalWorkflowsOptions, openEvalWorkflows } from "./workflows.ts";
 
@@ -90,6 +96,11 @@ export type EvalWorkflowTestContext = {
    * really dial.
    */
   readonly mode: EvalMode;
+  /**
+   * The case's scripted step HTTP, when the suite passed `steps` — see
+   * `DescribeEvalOptions.steps`; `undefined` in a suite given none.
+   */
+  readonly steps: EvalSteps | undefined;
 };
 
 /** Declare one workflow eval case. The app is opened for it and closed after it. */
@@ -111,8 +122,19 @@ export type EvalWorkflowTest = (
 export function describeWorkflowEval(
   agent: AgentDef,
   define: (test: EvalWorkflowTest) => void,
-  options?: Omit<EvalWorkflowsOptions, "agent">,
+  options?: Omit<EvalWorkflowsOptions, "agent"> & {
+    /**
+     * The step fetch every case's steps dial, scripted, held and drained by
+     * the harness — see `DescribeEvalOptions.steps`. Mutually exclusive with
+     * `stepFetch`.
+     */
+    readonly steps?: EvalStepsOptions | undefined;
+  },
 ): void {
+  if (options?.steps !== undefined && options.stepFetch !== undefined) {
+    refuseStepsBeside(describeWorkflowEval.name, ["`stepFetch`"]);
+  }
+  const { steps: stepsOptions, ...appOptions } = options ?? {};
   const { mode, reason } = resolveWorkflowEvalMode(agent);
   // One line, every run, before any case — the same rule `describeEval` follows,
   // through the same stderr write for the same reason (see `announceEvalMode`):
@@ -147,12 +169,16 @@ export function describeWorkflowEval(
       // A fresh app per REPEAT, closed in a `finally`: the engine publishes
       // process-global slots, so two live at once would share them.
       const once = async () => {
-        const app = openEvalWorkflows({ ...options, agent, env });
-        try {
-          await body({ app, mode });
-        } finally {
-          await app.close();
-        }
+        stubProcessEnv(agent, mode);
+        const app = openEvalWorkflows({ ...appOptions, agent, env });
+        // The steps after the app, which publishes a step fetch only when
+        // handed one; drained, then closed, in `withCaseSteps`' one order.
+        await withCaseSteps(
+          stepsOptions,
+          app,
+          (steps) => body({ app, mode, steps }),
+          () => app.close(),
+        );
       };
       run(name, () => runRepeats(once, name, repeat, spread));
     };

@@ -33,65 +33,24 @@ import agentDef from "virtual:aai/agent";
  * eval run against the framework default prompt would measure an agent nobody
  * deployed.
  *
- * It is also a RESOLVER (see `agent.ts`), so a live run is given the rules file
- * plus the campaign sheet as it stands on that turn. Every `check_state` below
- * is asked for by name ("Check the state…") for that reason: the tracks reach
- * the narrator without one now, so a case that relied on a question forcing the
- * call would be measuring the old prompt.
+ * `promptContext` (see `agent.ts`) puts the campaign sheet under it on every
+ * turn, so every `check_state` below is asked for by name ("Check the
+ * state…"): the tracks reach the narrator without one now.
  */
-import type { InferToolInput } from "@alexkroman1/aai";
-import {
-  describeEval,
-  dialogResultSchema,
-  type EvalTurn,
-  toolResultIn,
-  toolResultsIn,
-} from "@alexkroman1/aai-runtime/testing/vitest";
+import { type DialogToolResult, type InferToolInput, isToolFailure } from "@alexkroman1/aai";
+import type { ToolFailure } from "@alexkroman1/aai/utils";
+import { describeEval, toolResultIn, toolResultsIn } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
-import type setupCharacter from "./tools/setup_character.ts";
+import actionRoll from "./tools/action_roll.ts";
+import checkState from "./tools/check_state.ts";
+import setupCharacter from "./tools/setup_character.ts";
+import updateState from "./tools/update_state.ts";
 
-/**
- * What each tool this file drives answers, off the wire.
- *
- * `tool.completed` carries a tool result as a JSON STRING, so a case either
- * casts it or validates it — and a cast is silent exactly when a tool's result
- * changed shape underneath the eval, which is the regression an eval exists to
- * catch. `toolResultIn` takes a schema for that reason, and these name only the
- * fields asserted below: a gated tool's `{ state, done }` position, plus the
- * `result` it nests its own answer under.
- */
-const Setup = z.object({
-  state: z.string(),
-  initialized: z.boolean(),
-  playerName: z.string(),
-});
-const Status = z.object({
-  state: z.string(),
-  done: z.boolean(),
-  gameOver: z.boolean(),
-  playerName: z.string(),
-});
-// Both tools are `storyFlow.tool`s, so the SDK writes the envelope around their
-// own result — `dialogResultSchema` is that envelope, rather than two hand-written
-// copies of it that had already drifted (`Roll` was missing `done`).
-const Roll = dialogResultSchema(
-  z.object({ actionDice: z.array(z.number()), challengeDice: z.array(z.number()) }),
-);
-const Settled = dialogResultSchema(z.object({ gameOver: z.boolean() }));
-const Refusal = z.object({ error: z.string() });
-
-/**
- * What the ONE call to `name` answered on this turn.
- *
- * `toolResultIn` is the SDK's reader: it throws rather than returning
- * undefined, and names what the agent called instead — "it called something
- * else" is the finding, and a case that read `undefined` off a missing call
- * would assert against nothing. A turn that called it TWICE is refused too,
- * rather than silently answered with the first.
- */
-const answerOf = <T>(turn: EvalTurn, name: string, schema: z.ZodType<T>): T =>
-  toolResultIn(turn.toolCalls, name, schema);
+/** A gated tool's envelope, position kept, or a throw quoting the refusal. */
+function landed<R>(answer: DialogToolResult<R> | ToolFailure): DialogToolResult<R> {
+  if (isToolFailure(answer)) throw new Error(`tool refused: ${answer.error}`);
+  return answer;
+}
 
 /**
  * Every field `setup_character` requires, for the SCRIPTED runs.
@@ -134,13 +93,13 @@ describeEval(agentDef, (test) => {
       const opening = await session.say(
         "Dark fantasy, melancholic. My character is Sera, a burned-out lamplighter. Begin.",
       );
-      const setup = answerOf(opening, "setup_character", Setup);
+      const setup = landed(toolResultIn(opening.toolCalls, setupCharacter));
       // `setup_character` drives the flow itself (`reset` then `SETUP`) and
       // reports the position it landed in. `awaitingSetup` here would mean the
       // roll tools are still refusing with a full character sheet in the slot.
       expect(setup.state).toBe("playing.awaitingRoll");
-      expect(setup.initialized).toBe(true);
-      expect(setup.playerName).toMatch(/sera/i);
+      expect(setup.result.initialized).toBe(true);
+      expect(setup.result.playerName).toMatch(/sera/i);
 
       // A SECOND turn, which is the only place either half can be shown to have
       // survived: the campaign lives in a session slot and the position in a
@@ -148,10 +107,10 @@ describeEval(agentDef, (test) => {
       const status = await session.say(
         "Check the state and remind me who I am and where the story is.",
       );
-      const now = answerOf(status, "check_state", Status);
-      expect(now.playerName).toBe(setup.playerName);
+      const now = landed(toolResultIn(status.toolCalls, checkState));
+      expect(now.result.playerName).toBe(setup.result.playerName);
       expect(now.state).toBe("playing.awaitingRoll");
-      expect(now.gameOver).toBe(false);
+      expect(now.result.gameOver).toBe(false);
       expect(status.completed).toBe(true);
     },
     {
@@ -172,7 +131,7 @@ describeEval(agentDef, (test) => {
       );
 
       const climb = await session.say("I climb the storm-lashed tower wall to reach the lamp.");
-      const rolled = answerOf(climb, "action_roll", Roll);
+      const rolled = landed(toolResultIn(climb.toolCalls, actionRoll));
       // The dice come from code, never from the narrator — two action dice and
       // two challenge dice, on every roll.
       expect(rolled.result.actionDice).toHaveLength(2);
@@ -184,7 +143,7 @@ describeEval(agentDef, (test) => {
       const moved = await session.say(
         "Nothing risky now. Just record that I am at the Drowned Steps and log the scene.",
       );
-      const settled = answerOf(moved, "update_state", Settled);
+      const settled = landed(toolResultIn(moved.toolCalls, updateState));
       // `update_state` sends SETTLED: the scene has moved on, so the standing
       // roll is spent and the burn window is shut.
       expect(settled.state).toBe("playing.awaitingRoll");
@@ -225,12 +184,9 @@ describeEval(agentDef, (test) => {
         "## Correction. In that last scene I lost everything: my health is zero and my " +
           "spirit is zero. Sync the state to match.",
       );
-      const downed = answerOf(down, "update_state", Settled);
-      // The flag is DERIVED where it is reported. `gameOver` is written by the
-      // slot's `after` hook, which runs only once this body has returned — so a
-      // tool that copied `state.gameOver` into its own result would report the
-      // value from BEFORE the update that emptied the tracks, and would report
-      // `false` right here.
+      const downed = landed(toolResultIn(down.toolCalls, updateState));
+      // `gameOver` is written by the slot's `after` hook and REPORTED off the
+      // stored value, so the same call that emptied the tracks says so.
       expect(downed.result.gameOver).toBe(true);
       // And the flag is what the transition reads: `sendFrom` turns it into
       // DOWNED, whose target is a `final` state.
@@ -241,10 +197,10 @@ describeEval(agentDef, (test) => {
       // the flow can move it — a later turn still reads a finished story, which
       // is what an `on: { SETUP }` on that state used to make look untrue.
       const asked = await session.say("Check the state. Is the story over?");
-      const ended = answerOf(asked, "check_state", Status);
+      const ended = landed(toolResultIn(asked.toolCalls, checkState));
       expect(ended.state).toBe("gameOver");
       expect(ended.done).toBe(true);
-      expect(ended.gameOver).toBe(true);
+      expect(ended.result.gameOver).toBe(true);
     },
     {
       stubReply: [
@@ -268,10 +224,10 @@ describeEval(agentDef, (test) => {
         "## Correction. In that last scene I lost everything: my health is zero and my " +
           "spirit is zero. Sync the state to match.",
       );
-      expect(answerOf(down, "update_state", Settled).state).toBe("gameOver");
+      expect(landed(toolResultIn(down.toolCalls, updateState)).state).toBe("gameOver");
 
       const after = await session.say("I refuse to die. Roll to fight on.");
-      const attempts = toolResultsIn(after.toolCalls, "action_roll", Refusal);
+      const attempts = toolResultsIn(after.toolCalls, actionRoll);
       // The gate is only OBSERVABLE if something calls the gated tool, and the
       // script is what guarantees that — hence the exact count. `gameOver` was
       // once a flag nothing acted on, so a player with both tracks empty could
@@ -279,6 +235,7 @@ describeEval(agentDef, (test) => {
       // that RESOLVES.
       expect(attempts).toHaveLength(1);
       for (const attempt of attempts) {
+        if (!isToolFailure(attempt)) throw new Error("a roll RESOLVED after the ending");
         expect(attempt.error).toMatch(/not available yet/i);
         expect(attempt.error).toContain("gameOver");
       }

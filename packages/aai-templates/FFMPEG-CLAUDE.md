@@ -51,10 +51,18 @@ Four rules came out of building it, each of which a first draft gets wrong:
   `-loglevel error` the measure pass runs, succeeds, and prints nothing.
 - **Build the argv in a pure module, and it becomes testable.** An ffmpeg step
   is untestable exactly where it spawns, so `workflows/media.ts` holds every
-  argv and both parsers as pure functions and the steps hold only materialize,
-  spawn, store. That is what makes 100% line coverage of the decisions possible
-  in the UNIT tier, with no subprocess: `media.ts` measures 100% statements
-  where `ingest.ts` measures 26%, and the 26% is plumbing.
+  argv and both parsers as pure functions, and the materialize → spawn → store
+  shell is the SDK's `transcodeUpload(uploadId, { args, output, probe })`
+  (`@alexkroman1/aai/step-files`), which also prepends the standing flags
+  (`-nostdin` among them — the one whose absence hangs a guest). That is what
+  makes 100% line coverage of the decisions possible in the UNIT tier, with no
+  subprocess. The spawn itself is reachable from that tier too:
+  `installStubFfmpeg` (`@alexkroman1/aai-runtime/testing/vitest`) swaps the
+  child the SDK's runners spawn for a scripted one, so `ingestRecording` runs
+  end to end in `agent.test.ts` with the probe answering JSON, the measure pass
+  printing the captured `loudnorm` block, and the normalize pass writing the PCM
+  and the silence log itself. A fake script on `AAI_FFMPEG_PATH` is NOT the
+  alternative: that is a subprocess, which puts the spec in the scenario tier.
 - **A temp file may not cross a step boundary**, so the shape of an ffmpeg step
   is decided by materialization cost rather than by retry granularity.
   `ingestRecording` runs `ffprobe` and both `loudnorm` passes in ONE step
@@ -110,35 +118,30 @@ gate short of a real build was green while every deployed run failed. When a
 rule depends on how a project's dependencies were INSTALLED, the in-tree run is
 not evidence.
 
-### A body that names `WorkflowInputOf` obliges the DEF to carry a type
+### A body names `WorkflowInputOf<typeof theInputSchema>`, never the def
 
-A workflow body should take `WorkflowInputOf<typeof theDef>` — `WorkflowBody` is
+A workflow body should take the schema's own output type — `WorkflowBody` is
 contravariant, so a body restating a WIDER shape is assignable and nothing
 warns, which is how `podcast-digest-workflow` came to re-implement six schema
-`.default()`s with `??`. But **the obvious spelling does not compile**:
-`workflow<P, R>()` infers `R` from `run`, so `typeof theDef` needs the body's
-signature and vice versa — `TS7022` against `agent.ts`, plus `TS2456`/`TS2502`
-at the body, and annotating the body's RETURN type does not break it. Two
-template groups hit this independently; the type tests miss it because every def
-there declares `run` as an inline arrow, and `sdk/workflow.ts`'s `@example` is
-`no-check`.
+`.default()`s with `??`. But **`WorkflowInputOf<typeof theDef>` does not
+compile**: `workflow()` infers the output from `run`, so `typeof theDef` needs
+the body's signature and vice versa — `TS7022` against `agent.ts`, plus
+`TS2456`/`TS2502` at the body — and annotating the def (`WorkflowDef<…>`) only
+buys it back by NAMING the output type by hand.
 
-The fix is two edits in `agent.ts`, not one — name the schema const and ANNOTATE
-the declaration:
+`WorkflowInputOf` accepts the schema directly, so name the schema const and
+point the body at THAT:
 
 ```ts
-const auditInput = z.object({ /* … */ });
-export const audit: WorkflowDef<typeof auditInput, CallAudit> =
-  workflow({ input: auditInput, run: auditFlow });
+// agent.ts
+export const auditInput = z.object({ /* … */ });
+export const audit = workflow({ input: auditInput, run: auditFlow });
+
+// workflows/audit.ts
+import type { auditInput } from "../agent.ts"; // erased at build: no runtime cycle
+export async function auditFlow(input: WorkflowInputOf<typeof auditInput>, ctx: WorkflowContext) { … }
 ```
 
-The annotation resolves without the initializer, so
-`WorkflowInputOf<typeof audit>` comes from the schema alone; the body takes it
-through a type-only import of `agent.ts`, erased at build, so there is no
-runtime cycle. The cost is that the output type must be NAMED — the trade to
-weigh per template. `podcast-digest-workflow`, `call-audit-workflow` and
-`spoken-summary-workflow` pay it, having exported that type for
-`WorkflowOutputOf` already, and it deletes five `??` fallbacks that could
-silently disagree with a `.default()`. `document-redline-workflow` does NOT
-convert: its body returns an inferred object literal, so the annotation would
-mean writing that shape out by hand.
+The def stays unannotated, so `WorkflowOutputOf<typeof audit>` is still the
+body's inferred return — nothing is restated on either side. Every workflow-app
+template is in this form.

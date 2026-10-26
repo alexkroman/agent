@@ -49,12 +49,16 @@
  * ## File → file, not bytes → bytes
  *
  * `transcodeToWav(bytes)` is one line and is the wrong call here, and
- * `@alexkroman1/aai/step-files` is the three functions that replace it —
- * `readUploadToFile`, `withTempDir` and `writeUploadFromFile`. Its module doc
- * carries the whole argument (a pipe cannot seek, so an `.m4a` with a trailing
- * `moov` index fails; piped output is capped at 64 MiB, half an hour of this
- * desk's audio) plus the rule that a temp file may not outlive its step. This
- * step is the case those were written for.
+ * `transcodeUpload` on `@alexkroman1/aai/step-files` is what replaces it:
+ * materialize the upload to a temp file, run ffmpeg over it, store what it
+ * wrote, with the verdict (`throwFfmpegStepError`) and the empty-output refusal
+ * already applied. Its module doc carries the whole argument (a pipe cannot
+ * seek, so an `.m4a` with a trailing `moov` index fails; piped output is capped
+ * at 64 MiB, half an hour of this desk's audio) plus the rule that a temp file
+ * may not outlive its step. `probe: true` runs ffprobe over the SAME
+ * materialized file, before the transcode, and hands what it found to `args` —
+ * which is how the encode targets can depend on the source's rate without a
+ * second read of the recording.
  *
  * ## Everything node-shaped is named from inside the step BODY
  *
@@ -74,15 +78,9 @@
  * decisions this step makes about a probed file testable without ffmpeg.
  */
 
-import { basename, extname, join } from "node:path";
+import { basename, extname } from "node:path";
 import type { MediaInfo, MediaStreamInfo, WavEncodeOptions } from "@alexkroman1/aai/ffmpeg";
-import {
-  describeMedia,
-  ffmpegBaseArgs,
-  probeMedia,
-  runFfmpeg,
-  wavEncodeArgs,
-} from "@alexkroman1/aai/ffmpeg";
+import { describeMedia, wavEncodeArgs } from "@alexkroman1/aai/ffmpeg";
 import {
   stepReadUpload,
   stepReport,
@@ -90,8 +88,8 @@ import {
   UploadIncompleteError,
   type UploadInfo,
 } from "@alexkroman1/aai/step";
-import { throwFatalStepError, throwFfmpegStepError } from "@alexkroman1/aai/step-errors";
-import { readUploadToFile, withTempDir, writeUploadFromFile } from "@alexkroman1/aai/step-files";
+import { throwFatalStepError } from "@alexkroman1/aai/step-errors";
+import { transcodeUpload } from "@alexkroman1/aai/step-files";
 import { formatBytes } from "@alexkroman1/aai/utils";
 import {
   heavierThanNormalizedFormat,
@@ -149,7 +147,7 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
   if (cuttable(head.bytes, stored.size) && !heavierThanNormalized(head.bytes, stored.size)) {
     // No subprocess, no copy, no second upload. The overwhelmingly common case
     // for a desk whose form says WAV, and the reason the check is a 64 KB read.
-    await stepReport(`${stored.name || uploadId} is already linear-PCM WAV — cutting it as it is.`);
+    await stepReport(`${stored.label} is already linear-PCM WAV — cutting it as it is.`);
     return { recording: uploadId, converted: false };
   }
 
@@ -163,80 +161,46 @@ export async function normalizeRecording(uploadId: string): Promise<NormalizedRe
   // can cut" for the second one is a line that contradicts the file they
   // uploaded.
   await stepReport(
-    `Converting ${stored.name || uploadId} (${formatBytes(stored.size)}) — ` +
+    `Converting ${stored.label} (${formatBytes(stored.size)}) — ` +
       (cuttable(head.bytes, stored.size)
         ? `heavier per second than ${NORMALIZED_SAMPLE_RATE / 1000} kHz mono.`
         : "not a WAV we can cut."),
   );
 
-  // The temp directory's lifetime is this lexical scope, and the `finally` inside
-  // `withTempDir` is what makes that true on the failure paths too: a guest's disk
-  // is small and a step that leaves a copy of every recording it touched fills it.
-  return await withTempDir(
-    async (dir) => {
-      const source = join(dir, "source");
-      const converted = join(dir, "converted.wav");
-
-      // NO `size`, though `stored.size` is right there — and that is the whole
-      // difference between this copy being one window at a time and being
-      // `STEP_FILE_READ_CONCURRENCY` of them. Passing `size` means "I am judging
-      // completeness myself", which is what a body polling a still-arriving
-      // upload needs and is the opposite of what happened above: this step has
-      // already called `stepRequireCompleteUpload`, so the file IS whole and the
-      // windows may land in any order. Omitting it lets `readUploadToFile`
-      // establish that for itself and fan out. The cost is one metadata round
-      // trip, against the dozens of window reads it overlaps.
-      await readUploadToFile(uploadId, source);
-
-      // What it WAS, for the progress line AND for the targets. Worth one
-      // ffprobe: "converted 41 minutes of aac" is a line that explains the run's
-      // shape, where "converted the recording" leaves a reader wondering what the
-      // desk decided. On a temp file rather than a pipe, so a trailing index is
-      // readable.
-      const info = await probeMedia(source, { timeoutMs: CONVERT_TIMEOUT_MS }).catch(
-        throwFfmpegStepError,
-      );
-      // The `MediaInfo` is read TWICE, and the second read is the newer one:
-      // what to encode to is a function of what came in — see `encodeTargets`.
-      const targets = encodeTargets(audioTrack(info));
-      await stepReport(
-        `It is ${describeMedia(info)} — re-encoding to ` +
-          `${targets.sampleRate / 1000} kHz mono WAV.`,
-      );
-
-      await runFfmpeg(
-        [
-          // The argv is the caller's, verbatim — `runFfmpeg` adds nothing — so
-          // the standing flags are the caller's too. This copy used to omit
-          // `-nostats`, which is the one that keeps ffmpeg's progress spam from
-          // evicting the error out of the captured stderr tail.
-          ...ffmpegBaseArgs(),
-          "-i",
-          source,
-          ...wavEncodeArgs(targets),
-          converted,
-        ],
-        { timeoutMs: CONVERT_TIMEOUT_MS },
-      ).catch(throwFfmpegStepError);
-
-      const written = await writeUploadFromFile(converted, {
-        // Named after the ORIGINAL, so a download reads as the recording it came
-        // from. The extension has to change with the bytes: a file served as
-        // `audio/wav` under a `.m4a` name is one no player will open.
-        name: `${basename(stored.name || uploadId, extname(stored.name || uploadId))}.wav`,
-        type: "audio/wav",
-      });
-
-      await stepReport(
-        `Converted to ${formatBytes(written.size)} of WAV (from ${formatBytes(stored.size)}).`,
-      );
-      return { recording: written.id, converted: true };
+  // One materialization, one probe over it, one ffmpeg run, one store — and a
+  // temp directory whose lifetime is the call, failure paths included: a
+  // guest's disk is small and a step that leaves a copy of every recording it
+  // touched fills it. The standing flags (`-nostdin` among them) are the SDK's.
+  let targets: ReturnType<typeof encodeTargets> | undefined;
+  const written = await transcodeUpload(uploadId, {
+    // What it WAS, for the progress line AND for the targets: the `MediaInfo`
+    // is read twice, and the second read is the newer one — what to encode to
+    // is a function of what came in (`encodeTargets`). Probed on the temp file
+    // rather than a pipe, so a trailing index is readable.
+    probe: true,
+    args: (source, out, info) => {
+      targets = encodeTargets(audioTrack(info));
+      return ["-i", source, ...wavEncodeArgs(targets), out];
     },
-    // Named after the pipeline: the directory is gone by the time anyone looks,
-    // so the prefix's real audience is a person reading `ls /tmp` during a run
-    // that hung, and the spec that asserts nothing was left behind.
-    { prefix: "aai-normalize-" },
+    output: {
+      // Named after the ORIGINAL, so a download reads as the recording it came
+      // from. The extension has to change with the bytes: a file served as
+      // `audio/wav` under a `.m4a` name is one no player will open.
+      name: `${basename(stored.label, extname(stored.label))}.wav`,
+      type: "audio/wav",
+    },
+    timeoutMs: CONVERT_TIMEOUT_MS,
+  });
+
+  // "41 minutes of aac" explains the shape of the run, where "converted the
+  // recording" leaves a reader wondering what the desk decided.
+  await stepReport(
+    `It was ${written.info === undefined ? "a recording" : describeMedia(written.info)} — ` +
+      `re-encoded to ${formatBytes(written.size)} of ` +
+      `${(targets?.sampleRate ?? NORMALIZED_SAMPLE_RATE) / 1000} kHz mono WAV ` +
+      `(from ${formatBytes(stored.size)}).`,
   );
+  return { recording: written.id, converted: true };
 }
 
 /**
@@ -348,9 +312,9 @@ export async function requireWholeRecording(uploadId: string): Promise<UploadInf
  * `Math.min`. Recordings with two audio tracks are rare enough not to pay for
  * an explicit `-map` and the mismatch it would then have to explain.
  */
-export function audioTrack(info: MediaInfo): MediaStreamInfo {
+export function audioTrack(info: MediaInfo | undefined): MediaStreamInfo {
   return (
-    info.audio ??
+    info?.audio ??
     throwFatalStepError(
       new UnsupportedRecordingError(
         "That file has no audio track, so there is nothing in it to transcribe.",

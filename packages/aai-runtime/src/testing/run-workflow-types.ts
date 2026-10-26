@@ -187,6 +187,23 @@ export type WorkflowTestWait = {
 };
 
 /**
+ * What `WorkflowTestHandle.signal` and `WorkflowTestHandle.signalRun` take
+ * beside the payload: `SignalOptions.holdMs`, as `ctx.workflows` takes it.
+ *
+ * @input
+ * @public
+ */
+export type WorkflowTestSignalOptions = {
+  /**
+   * How long to HOLD the payload for a wait the run has not reached yet, in
+   * milliseconds — `SignalOptions.holdMs`. `signal` holds only when asked;
+   * `signalRun` holds for `DEFAULT_SIGNAL_HOLD_MS` unless told otherwise, and
+   * `0` holds nothing.
+   */
+  holdMs?: number | undefined;
+};
+
+/**
  * A started run, plus the four things a spec can do to it.
  *
  * Every method drives the run and resolves the SAME handle, so a spec reads the
@@ -201,7 +218,7 @@ export type WorkflowTestWait = {
  *   run: async (_input, ctx) => await ctx.waitFor<{ approved: boolean }>("approval"),
  * });
  *
- * const run = await runWorkflow(review, {}, { name: "review" });
+ * const run = await runWorkflow(review, {});
  * await run.signal("approval", { approved: true });
  * console.log(run.status, run.output);
  * ```
@@ -210,6 +227,12 @@ export type WorkflowTestWait = {
  * @public
  */
 export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
+  /**
+   * The correlation key the run was started with — {@link RunWorkflowOptions.key},
+   * `"test"` by default — which is what the body reads as `ctx.key` and what
+   * its `ctx.signalToken(label)` derives a token from.
+   */
+  readonly key: string;
   /**
    * Cut short every wait the run is parked on, and deliver.
    *
@@ -231,13 +254,45 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
   /**
    * Answer a `ctx.waitFor` token, and deliver.
    *
+   * Exactly `ctx.workflows.signal`'s call: an absent `payload` is sent as
+   * `{}`, so a body reading a field off the answer — or a `ctx.poll({ first })`
+   * reporting `woken` — sees what a tool's bare signal gives it; and the
+   * payload is held for a wait the run has not reached yet only when
+   * `options.holdMs` asks (`SignalOptions.holdMs`).
+   *
    * Resolves this handle. `signalled` says whether
    * anything was holding the token — `false` for a token nobody waits on, one
    * already answered, or one whose window has closed, which are the same refusal
-   * a deployed `ctx.workflows.signal` gives.
+   * a deployed `ctx.workflows.signal` gives — or `true` for a payload HELD.
    */
-  signal(token: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
-  /** What the last `signal` answered. */
+  signal(
+    token: string,
+    payload?: unknown,
+    options?: WorkflowTestSignalOptions,
+  ): Promise<WorkflowTestHandle<R>>;
+  /**
+   * Answer the body's `ctx.waitForSignal(label)`, and deliver — `signal`
+   * for the token the body DERIVED from the run's name, its `key` and
+   * `label` (`ctx.signalToken`), so a spec names the label it reads in the
+   * body rather than re-spelling the token grammar. `signalled` reads the
+   * same answer.
+   *
+   * Held by default, as `ctx.workflows.signalRun` holds (for
+   * `DEFAULT_SIGNAL_HOLD_MS`): a spec that signals while the body is still
+   * parked on a `ctx.sleep` ahead of the wait, then `advanceSleep`s, reads the
+   * answered branch exactly as the tool it mirrors would. `options.holdMs: 0`
+   * holds nothing.
+   *
+   * A run started by this driver always has a key, so the keyless refusal
+   * `ctx.waitForSignal` documents is not expressible here; the engine harness
+   * reaches it.
+   */
+  signalRun(
+    label: string,
+    payload?: unknown,
+    options?: WorkflowTestSignalOptions,
+  ): Promise<WorkflowTestHandle<R>>;
+  /** What the last `signal` or `signalRun` answered. */
   readonly signalled: boolean;
   /**
    * Close every `ctx.waitFor` WINDOW the run is parked on, and deliver.
@@ -254,9 +309,14 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
    * It does NOT move a clock and does not rewrite the stored record. It answers
    * the deadline READ the way an elapsed one answers it — `woken`, which
    * {@link WorkflowTestWait.woken} defines as "returns immediately" — for the
-   * duration of the delivery it triggers. Everything downstream is the engine's
-   * own: the close is still a compare-and-set on `delivered`, so a payload that
-   * landed first still wins and the body still takes the ANSWERED branch.
+   * windows OUTSTANDING when it is called, from the delivery it triggers on
+   * (a closed window stays closed on every later walk, as an elapsed one
+   * does). A window the body opens during that delivery (a second `waitFor`
+   * the first one's close led to) is not expired with them: it parks, and a
+   * later `expireWaits()` or `signal` ends it. Everything downstream is the
+   * engine's own: the close is still a compare-and-set on `delivered`, so a
+   * payload that landed first still wins and the body still takes the
+   * ANSWERED branch.
    *
    * Resolves this handle. A run parked on a `ctx.sleep` is unaffected;
    * `advanceSleep` is that one.
@@ -297,23 +357,35 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
 /**
  * What {@link runWorkflow} takes.
  *
+ * The run's NAME is not an option: it is the name the def is registered
+ * under — `runWorkflow(agentDef, "digest", input)` names it, and a bare def
+ * runs under the name its agent declared it with (`workflowNameOf`), else
+ * `"workflow"`. A spec that asserts on `ctx.workflow` or on a signal token
+ * uses the agent form.
+ *
  * @input
  * @public
  */
 export type RunWorkflowOptions = {
   /**
-   * The name the workflow is registered under, as `agent({ workflows })` keys
-   * it. Defaults to `"workflow"`.
-   *
-   * It is what the body reads as `ctx.workflow`, and what a run's record
-   * carries — so a spec asserting on either passes the real key.
+   * The correlation key the run is started with — `StartOptions.key`, which
+   * the body reads as `ctx.key` and `ctx.signalToken`/`ctx.waitForSignal`
+   * derive their token from. Defaults to `"test"`, so a keyed body runs out
+   * of the box; a spec asserting on the key passes its own.
    */
-  name?: string;
+  key?: string;
   /**
    * The journal the run lives in. Defaults to a fresh in-memory one.
    *
    * Pass a previous run's `journal` (or a
    * `createMemoryJournal()` of your own) to start two runs in the same world.
+   *
+   * **Two LIVE runs of one workflow in one world need distinct `key`s.** A
+   * signal token is derived from the workflow, the key and the label, so two
+   * parked runs under one key hold the same tokens and a `signalRun()` meant
+   * for one reaches the other. Both default to `"test"`, so the driver REFUSES
+   * a second run under a key that still has a live run of the same workflow in
+   * the journal handed in — pass `key` on the second, or let the first settle.
    */
   journal?: WorkflowJournal;
   /** Where the engine logs. Defaults to silence. */

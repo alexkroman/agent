@@ -3,7 +3,7 @@
  *
  * These four shapes are the customer-support tutorial's control plane, and the
  * DEFINITIONS live together here because they share this module's helpers —
- * `activeAssistant`, `applyPending`, `note`. Each is NAMED by a file under
+ * `activeAssistant`, `applyPending`, `describeStaged`. Each is NAMED by a file under
  * `tools/`, which is what registers it: a tool's name is its file name, so
  * `tools/to_flight_assistant.ts` is one line handing {@link delegationTool} an
  * id, and `tools/confirm_action.ts` one line calling {@link confirmActionTool}.
@@ -21,7 +21,6 @@
  * each of those really is different work.
  */
 
-import type { ToolDef } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
   activeAssistant,
@@ -44,9 +43,6 @@ import {
  * specialist needs what the caller actually asked for, not just that they were
  * transferred.
  */
-// Return type INFERRED rather than annotated `ToolDef`, which erased the
-// result to `unknown` and made a spec reading it cast; narrowing a return type
-// is covariant, so it still registers wherever a `ToolDef` is expected.
 export function delegationTool(id: SpecialistId) {
   const specialist = SPECIALISTS[id];
   return tripSlot.updateTool({
@@ -54,6 +50,7 @@ export function delegationTool(id: SpecialistId) {
       `Hand the call to the ${specialist.title}. Use this as soon as the caller ` +
       "raises something that desk owns — do not answer it yourself. Do not " +
       "mention the transfer; the caller should hear one continuous conversation.",
+    ui: { icon: specialist.icon, label: `To the ${specialist.title}` },
     inputSchema: z.object({
       request: z
         .string()
@@ -82,15 +79,13 @@ export function delegationTool(id: SpecialistId) {
  * a `done` tool will keep trying to answer things the desk has no tools for.
  * The `reason` is what the concierge is handed on the way back up.
  */
-// Return type INFERRED rather than annotated `ToolDef`, which erased the
-// result to `unknown` and made a spec reading it cast; narrowing a return type
-// is covariant, so it still registers wherever a `ToolDef` is expected.
 export function completeOrEscalateTool() {
   return tripSlot.updateTool({
     description:
       "Hand the call back to the main concierge. Use this when the current desk's " +
       "work is finished, when the caller changes the subject to something this " +
       "desk does not handle, or when they change their mind.",
+    ui: { icon: "\u{21A9}", label: "Back to concierge" },
     inputSchema: z.object({
       reason: z
         .string()
@@ -123,22 +118,22 @@ export function completeOrEscalateTool() {
  * every sensitive tool stages instead of acting, so the approval has somewhere
  * to arrive.
  *
- * **`when: "awaitingConfirmation"` is the other side of that halt.** It used to
- * be a null check inside {@link applyPending} — "Nothing is waiting for
- * confirmation. Use the booking tool first." — which is the question "where is
- * this conversation", asked of the payload. The gate asks the machine instead,
- * and its refusal carries the state's own instruction. `SETTLED` fires only when
- * the body did NOT answer with a {@link ToolFailure}, so an application that
- * failed leaves the change staged and the caller still being asked.
+ * **`when: "awaitingConfirmation"` is the other side of that halt** — "where is
+ * this conversation", asked of the machine rather than of the payload, with a
+ * refusal that carries the state's own instruction. `SETTLED` fires only when
+ * the body did NOT answer with a `ToolFailure`, so an application that failed
+ * leaves the change staged and the caller still being asked.
  */
-export function confirmActionTool(): ToolDef {
-  return gateFlow.tool({
+export function confirmActionTool() {
+  return tripSlot.updateTool({
     description:
       "Apply the change the caller has just confirmed out loud. Only call this " +
       "after you have read the change back and heard a clear yes.",
+    ui: { icon: "\u{2705}", label: "Applying change" },
+    dialog: gateFlow,
     when: "awaitingConfirmation",
     send: { type: "SETTLED" },
-    execute: (_args, ctx) => tripSlot.update(ctx, (trip) => applyPending(trip)),
+    execute: (_args, trip) => applyPending(trip),
   });
 }
 
@@ -148,23 +143,24 @@ export function confirmActionTool(): ToolDef {
  * Gated for the same reason as `confirm_action`, and its own "nothing was
  * waiting" arm is gone with the same argument.
  */
-export function cancelActionTool(): ToolDef {
-  return gateFlow.tool({
+export function cancelActionTool() {
+  return tripSlot.updateTool({
     description:
       "Discard the change the caller just declined. Call this when they say no, " +
       "or when they want to change the details before confirming.",
+    ui: { icon: "\u{274C}", label: "Discarding change" },
+    dialog: gateFlow,
     when: "awaitingConfirmation",
     send: { type: "SETTLED" },
-    execute: (_args, ctx) =>
-      tripSlot.update(ctx, (trip) => {
-        const action = trip.pending;
-        // Reachable only if the position and the payload disagree; see
-        // `applyPending`. Reported rather than thrown, mid-call.
-        if (!action) return { discarded: null, message: "Nothing was staged after all." };
-        trip.pending = null;
-        const summary = describeStaged(action);
-        trip.log.push(`Declined: ${summary}`);
-        return { discarded: summary, message: "Nothing was changed." };
-      }),
+    execute(_args, trip) {
+      const action = trip.pending;
+      // Reachable only if the position and the payload disagree; see
+      // `applyPending`. Reported rather than thrown, mid-call.
+      if (!action) return { discarded: null, message: "Nothing was staged after all." };
+      trip.pending = null;
+      const summary = describeStaged(action);
+      trip.log.push(`Declined: ${summary}`);
+      return { discarded: summary, message: "Nothing was changed." };
+    },
   });
 }

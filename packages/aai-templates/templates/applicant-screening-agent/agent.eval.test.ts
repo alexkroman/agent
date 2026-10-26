@@ -23,12 +23,12 @@
 
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` declares, plus its PROMPT. */
 import agentDef from "virtual:aai/agent";
-import { countWords } from "@alexkroman1/aai/utils";
+import { type DialogToolResult, isToolFailure } from "@alexkroman1/aai";
+import { countWords, type ToolFailure } from "@alexkroman1/aai/utils";
 import {
   describeEval,
   describeTurn,
   dialogRefusalPattern,
-  dialogResultSchema,
   type EvalSession,
   expectCalled,
   lastStateIn,
@@ -36,8 +36,16 @@ import {
   toolResultIn,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
-import { LEADS, MAX_FEEDBACK_ROUNDS, SHORTLIST_SIZE } from "./shared.ts";
+import { hiringSlot, LEADS, MAX_FEEDBACK_ROUNDS, SHORTLIST_SIZE } from "./shared.ts";
+import rescoreWithFeedback from "./tools/rescore_with_feedback.ts";
+import screenCandidates from "./tools/screen_candidates.ts";
+import screeningStatus from "./tools/screening_status.ts";
+
+/** A gated tool's envelope, position kept, or a throw quoting the refusal. */
+function landed<R>(answer: DialogToolResult<R> | ToolFailure): DialogToolResult<R> {
+  if (isToolFailure(answer)) throw new Error(`tool refused: ${answer.error}`);
+  return answer;
+}
 
 /**
  * Every tool the desk declares, typed out rather than derived, so the negative
@@ -53,45 +61,7 @@ const DESK_TOOLS: readonly string[] = [
   "screening_status",
 ];
 
-/**
- * What the BROWSER is sent, as this eval reads it — parsed rather than cast, so
- * a projection that stopped matching fails naming the field.
- */
-const ProjectedHiring = z.object({
-  jobTitle: z.string().nullable(),
-  leaderboard: z.array(z.object({ name: z.string(), score: z.number(), rank: z.number() })),
-  rounds: z.number(),
-  feedback: z.array(z.string()),
-  drafts: z.array(z.unknown()),
-});
-
-const hiringState = (session: EvalSession) =>
-  lastStateIn(session.events(), "hiring", ProjectedHiring);
-
-/** What `screen_candidates` answers with. */
-const Screened = z.object({
-  screened: z.number(),
-  top: z.array(
-    z.object({ rank: z.number(), name: z.string(), score: z.number(), reason: z.string() }),
-  ),
-  state: z.string(),
-});
-
-/**
- * What `rescore_with_feedback` answers with, inside the dialog's envelope —
- * asked of the SDK rather than restated, which is the drift the comment used to
- * assert away.
- */
-const Rescored = dialogResultSchema(
-  z.object({
-    round: z.number(),
-    feedbackApplied: z.array(z.string()),
-    top: z.array(z.object({ name: z.string() })),
-  }),
-);
-
-/** What `screening_status` answers with on an untouched desk. */
-const IdleStatus = z.object({ stage: z.string(), state: z.string(), screened: z.number() });
+const hiringState = (session: EvalSession) => lastStateIn(session.events(), hiringSlot.projected);
 
 /** The evaluator's verdict, as the JSON a scripted `ctx.generate` returns. The
  *  script's last line repeats, so every applicant scores the same — enough to
@@ -109,8 +79,9 @@ describeEval(agentDef, (test) => {
       // `stage` comes off `hiringFlow.position`, and `state` is the position
       // itself — deriving either from "is there a job" is the drift the dialog
       // exists to end, and it would show up here.
-      const status = toolResultIn(turn.toolCalls, "screening_status", IdleStatus);
-      expect(status).toMatchObject({ stage: "nothing screened yet", state: "idle", screened: 0 });
+      const status = landed(toolResultIn(turn.toolCalls, screeningStatus));
+      expect(status.state).toBe("idle");
+      expect(status.result).toMatchObject({ stage: "nothing screened yet", screened: 0 });
       expect(hiringState(session)?.leaderboard ?? []).toEqual([]);
     },
     {
@@ -160,10 +131,10 @@ describeEval(agentDef, (test) => {
       // twelve evaluations each time.
       const calls = turn.toolCalls.filter((call) => call.name === "screen_candidates");
       expect(calls, describeTurn(turn)).toHaveLength(1);
-      const screened = toolResultIn(turn.toolCalls, "screen_candidates", Screened);
-      expect(screened.screened).toBe(LEADS.length);
-      expect(screened.top).toHaveLength(SHORTLIST_SIZE);
-      expect(screened.top.map((one) => one.rank)).toEqual([1, 2, 3]);
+      const screened = landed(toolResultIn(turn.toolCalls, screenCandidates));
+      expect(screened.result.screened).toBe(LEADS.length);
+      expect(screened.result.top).toHaveLength(SHORTLIST_SIZE);
+      expect(screened.result.top.map((one) => one.rank)).toEqual([1, 2, 3]);
       expect(screened.state).toBe("reviewing");
       // The browser was sent the whole table, not the three the caller heard.
       const view = hiringState(session);
@@ -196,7 +167,7 @@ describeEval(agentDef, (test) => {
 
       const calls = turn.toolCalls.filter((call) => call.name === "screen_candidates");
       expect(calls, describeTurn(turn)).toHaveLength(1);
-      const screened = toolResultIn(turn.toolCalls, "screen_candidates", Screened);
+      const { result: screened } = landed(toolResultIn(turn.toolCalls, screenCandidates));
       // Their "don't use numbers like 100, 75, or 50" rule, measured — but only
       // as far as the rule can reach. Each candidate is a SEPARATE
       // `ctx.generate` that never sees the others' numbers, so two independent
@@ -237,9 +208,9 @@ describeEval(agentDef, (test) => {
       // it has no scores of its own to re-order by — and it must not screen from
       // scratch, which would throw the ranking the caller just heard away.
       const names = toolNames(turn.toolCalls);
-      expectCalled(turn, "rescore_with_feedback");
+      expectCalled(turn, rescoreWithFeedback);
       expect(names).not.toContain("screen_candidates");
-      const rescored = toolResultIn(turn.toolCalls, "rescore_with_feedback", Rescored);
+      const rescored = landed(toolResultIn(turn.toolCalls, rescoreWithFeedback));
       expect(rescored.state).toBe("reviewing");
       expect(rescored.result.round).toBe(1);
       // The feedback is the caller's, carried whole — not a keyword.

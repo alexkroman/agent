@@ -36,7 +36,14 @@ import type {
 import { useId } from "react";
 import { useTheme } from "../context.ts";
 import { FOCUS_RING, focusRingStyle } from "./_colors.ts";
-import type { FieldShell, FileReadMode, FileValue, FormValues } from "./form-types.ts";
+import type {
+  FieldShell,
+  FileReadMode,
+  FileValue,
+  FileValueShape,
+  FormValues,
+  TextSplitMode,
+} from "./form-types.ts";
 
 /**
  * Label + control + hint, in the layout every field here uses.
@@ -227,7 +234,14 @@ export function NumberField(
  * Accepts every `<textarea>` attribute except `name` and `className`, plus the
  * shared {@link FieldShell} props. `rows` defaults to 4.
  *
- * @param props - {@link FieldShell} props plus `<textarea>` attributes.
+ * **`split="lines"` contributes a `string[]`** — one entry per non-blank line,
+ * trimmed — which is the control for a schema's `z.array(z.string())`: "one
+ * point per line". `document-redline-workflow` reshaped the textarea's string
+ * by hand on submit; the field does it now, so `<WorkflowFields>` can render
+ * it for a `string[]` property and a hand-written one can match. See
+ * {@link TextSplitMode}.
+ *
+ * @param props - {@link FieldShell} props, `split`, and `<textarea>` attributes.
  *
  * @public
  */
@@ -237,14 +251,25 @@ export function TextAreaField({
   hint,
   className,
   rows = 4,
+  split = "none",
   ...rest
-}: FieldShell &
-  Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): JSX.Element {
+}: FieldShell & {
+  /** How the text is contributed — see above. Default `"none"`, the string. */
+  split?: TextSplitMode | undefined;
+} & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "name" | "className">): JSX.Element {
   const id = useId();
   const control = useControlProps();
   return (
     <Field label={label} hint={hint} htmlFor={id} className={className}>
-      <textarea id={id} name={name} rows={rows} {...control} {...rest} />
+      <textarea
+        id={id}
+        name={name}
+        rows={rows}
+        // Read back by `collectValues`, the way `data-aai-read` is.
+        data-aai-split={split}
+        {...control}
+        {...rest}
+      />
     </Field>
   );
 }
@@ -334,6 +359,11 @@ export function CheckboxField({
   );
 }
 
+/** The read a non-upload field makes: `namedText` is a reading of the text, so it asks for it. */
+function readModeFor(read: FileReadMode, as: FileValueShape): FileReadMode {
+  return as === "namedText" && read === "none" ? "text" : read;
+}
+
 /**
  * A file picker. Contributes a {@link FileValue} (or an array, with `multiple`)
  * to {@link FormValues} — or nothing when no file was chosen.
@@ -353,11 +383,18 @@ export function CheckboxField({
  * {@link FileReadMode} for the four values; `upload` is shorthand for
  * `read="upload"`.
  *
+ * **`as="namedText"` contributes `{ name, text }`** ({@link NamedTextValue})
+ * instead of the metadata-bearing {@link FileValue}, and implies
+ * `read="text"`: the shape a schema declares for a draft to redline or a
+ * config to apply, and the one `<WorkflowFields>` renders for an object
+ * property of exactly that shape. `document-redline-workflow` reshaped the
+ * `FileValue` by hand on submit; the field does it now.
+ *
  * Otherwise accepts every `<input>` attribute except `name`, `className` and
  * `type`, plus the shared {@link FieldShell} props — so `accept` and
  * `multiple` are passed straight through.
  *
- * @param props - {@link FieldShell} props, `read`/`upload`, and `<input>`
+ * @param props - {@link FieldShell} props, `read`/`upload`/`as`, and `<input>`
  * attributes.
  *
  * @public
@@ -369,14 +406,20 @@ export function FileField({
   className,
   read = "none",
   upload = false,
+  as = "file",
   ...rest
 }: FieldShell & {
   read?: FileReadMode;
   /** Shorthand for `read="upload"` — see above. */
   upload?: boolean;
+  /** The shape of a READ file's value — see above and {@link FileValueShape}. */
+  as?: FileValueShape | undefined;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "name" | "className" | "type">): JSX.Element {
   const id = useId();
   const control = useFileControlProps();
+  // `namedText` is a reading of the TEXT, so it asks for it; an upload stays an
+  // upload — the bytes are not read in the browser whatever shape was asked.
+  const mode = upload ? "upload" : readModeFor(read, as);
   return (
     <Field label={label} hint={hint} htmlFor={id} className={className}>
       <input
@@ -386,7 +429,8 @@ export function FileField({
         // Read back by `collectValues` — the one channel a plain DOM read has
         // for a per-field option, and why this stays a `data-` attribute rather
         // than component state.
-        data-aai-read={upload ? "upload" : read}
+        data-aai-read={mode}
+        data-aai-as={as}
         {...control}
         {...rest}
       />

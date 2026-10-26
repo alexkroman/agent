@@ -24,6 +24,7 @@ function buildClientConfig(source: {
   page?: "voice" | "static";
   sessionToken?: string;
   sessionUrl?: string;
+  tools?: Record<string, ToolUi>;
 }): ClientConfigResponse;
 ```
 
@@ -56,6 +57,10 @@ surface rule can't drift between them.
 ###### sessionUrl?
 
 `string`
+
+###### tools?
+
+`Record`\<`string`, [`ToolUi`](index.md#toolui)\>
 
 #### Returns
 
@@ -406,6 +411,7 @@ const HostConfigMessageSchema: z.ZodObject<{
         name: z.ZodString;
         parameters: z.ZodRecord<z.ZodString, z.ZodUnknown>;
         type: z.ZodLiteral<"function">;
+        ui: z.ZodOptional<z.ZodType<ToolUi>>;
      }, z.core.$strip>>;
   }, z.core.$strip>;
   sampleRate: z.ZodOptional<z.ZodNumber>;
@@ -445,6 +451,7 @@ const HostConfigSchema: z.ZodObject<{
      name: z.ZodString;
      parameters: z.ZodRecord<z.ZodString, z.ZodUnknown>;
      type: z.ZodLiteral<"function">;
+     ui: z.ZodOptional<z.ZodType<ToolUi>>;
   }, z.core.$strip>>;
 }, z.core.$strip>;
 ```

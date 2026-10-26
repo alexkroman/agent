@@ -71,6 +71,11 @@ export type ToolDef = {
   description: string;
   parameters?: { parse(args: unknown): unknown };
   execute(args: unknown, ctx: ToolContext): Promise<unknown> | unknown;
+  /**
+   * The tool's display hint, a MIRROR of the SDK's `ToolUi` — read by the
+   * harness so `/client-config` can carry it (`toolUiMap`), never acted on.
+   */
+  ui?: { icon?: string | undefined; label?: string | undefined } | undefined;
 };
 
 export type AgentDef = {

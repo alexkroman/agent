@@ -14,8 +14,12 @@
  */
 
 import { type DefaultToolResult, sessionSlot } from "@alexkroman1/aai";
+import type { AnyWorkflowDef, WorkflowSummary } from "@alexkroman1/aai/workflow-api";
 import { expectTypeOf, test } from "vitest";
+import type { TestWorkflow } from "./_workflow-test-defs.ts";
 import type { FormValues } from "./components/form-types.ts";
+import type { WorkflowFieldsProps } from "./components/workflow-fields.tsx";
+import { WorkflowFields } from "./components/workflow-fields.tsx";
 import { useSessionSelector } from "./context.ts";
 import {
   selectAgentState,
@@ -29,6 +33,10 @@ import type { ChatMessage, ToolCallInfo } from "./types.ts";
 import { type ConversationItem, useConversation } from "./use-conversation.ts";
 import { useDownloadUrl } from "./use-download-url.ts";
 import { useWorkflowSubmit } from "./use-workflow-form.ts";
+import { type UseWorkflowRunsResult, useWorkflowRuns } from "./use-workflow-runs.ts";
+import { useWorkflowStream, type WorkflowStreamSubmission } from "./use-workflow-stream.ts";
+import type { WorkflowDefOf, WorkflowNameOf } from "./workflow-def-types.ts";
+import type { WorkflowSubmissionOf } from "./workflow-submission.ts";
 
 type Quote = { symbol: string; price: number };
 
@@ -271,4 +279,144 @@ test("BrowserSession is sealed: every member but the brand is not one", () => {
   // satisfy the type — only `createBrowserSession` mints one.
   expectTypeOf<Omit<BrowserSession, typeof browserSessionBrand>>().not.toExtend<BrowserSession>();
   expectTypeOf<BrowserSession>().toExtend<Omit<BrowserSession, typeof browserSessionBrand>>();
+});
+
+/**
+ * The AGENT form of the workflow hooks: `useWorkflowSubmit<typeof agentDef>(
+ * "digest")` reads the def off the agent's `workflows` map, so the NAME is a
+ * checked literal and the input/output come from the def under it. The def
+ * form is untouched — an explicit def type param still works, and a type with
+ * no `workflows` map is declined by the agent overload rather than matched.
+ */
+type Digest = TestWorkflow<{ url: string }, { title: string }>;
+type Recap = TestWorkflow<{ sessionId: string }, { summary: string }>;
+type OneApp = { name: string; workflows: { digest: Digest } };
+type TwoApp = { name: string; workflows: { digest: Digest; recap: Recap } };
+/** What `agent({ name })` / `workflowApp({ name })` answer: the EMPTY map, optional. */
+type NoneApp = { name: string; workflows?: Record<never, never> };
+
+test("the readings over an agent: its names, and the def under one", () => {
+  expectTypeOf<WorkflowNameOf<TwoApp>>().toEqualTypeOf<"digest" | "recap">();
+  expectTypeOf<WorkflowDefOf<TwoApp, "recap">>().toEqualTypeOf<Recap>();
+  // A def, an unrelated object: no names, so the agent overloads decline them.
+  expectTypeOf<WorkflowNameOf<Digest>>().toEqualTypeOf<never>();
+  expectTypeOf<WorkflowNameOf<Quote>>().toEqualTypeOf<never>();
+});
+
+/** The completed run's `output` — the narrowing a page makes with `run.status === "completed"`. */
+type OutputOf<Run> = Run extends { status: "completed"; output: infer O } ? O : never;
+
+test("the agent form of the submit hook checks the name and types both halves", () => {
+  const one = useWorkflowSubmit<OneApp>("digest");
+  expectTypeOf(one.submit).parameter(0).toEqualTypeOf<{ url: string }>();
+  expectTypeOf<OutputOf<typeof one.run>>().toEqualTypeOf<{ title: string }>();
+  // @ts-expect-error — not a name the agent declares.
+  useWorkflowSubmit<OneApp>("digets");
+  // Several workflows: the second type argument picks one; without it the
+  // halves are the union over all of them.
+  const picked = useWorkflowSubmit<TwoApp, "recap">("recap");
+  expectTypeOf(picked.submit).parameter(0).toEqualTypeOf<{ sessionId: string }>();
+  const either = useWorkflowSubmit<TwoApp>("digest");
+  expectTypeOf(either.submit).parameter(0).toEqualTypeOf<{ url: string } | { sessionId: string }>();
+  // The def form, unchanged.
+  const def = useWorkflowSubmit<Digest>("anything");
+  expectTypeOf(def.submit).parameter(0).toEqualTypeOf<{ url: string }>();
+  expectTypeOf(def).toEqualTypeOf<WorkflowSubmissionOf<Digest>>();
+  expectTypeOf(def.scope).toEqualTypeOf<"tab" | "browser" | "none">();
+  expectTypeOf(def.timing.submittedAt).toEqualTypeOf<number | undefined>();
+});
+
+/**
+ * The ONE mechanism the overload pairs are told apart by, pinned per hook:
+ * the agent overload declares `App = never`, so an un-parameterized call has
+ * no names to match and lands on the def/output overload; that overload
+ * refuses an app by its constraint (`D extends AnyWorkflowDef`) or, where its
+ * type argument is an open output (`useWorkflowRuns<R>`), by `WorkflowNameOf<R>`
+ * being `never`. Each form has to land on ITS overload and no other — an
+ * agent resolving through the def form would type `submit` as `undefined`,
+ * and a def resolving through the agent form would 404 on any name.
+ */
+test("a def and an app each resolve to their own overload, and nothing else", () => {
+  // The submit hook: the same submission from either door.
+  expectTypeOf(useWorkflowSubmit<Digest>("digest")).toEqualTypeOf<WorkflowSubmissionOf<Digest>>();
+  expectTypeOf(useWorkflowSubmit<OneApp>("digest")).toEqualTypeOf<WorkflowSubmissionOf<Digest>>();
+  // Un-parameterized: the def form with its constraint, so `submit` is unusable
+  // on purpose (`SubmitInputOf<AnyWorkflowDef>` is `undefined`) and `submitForm`
+  // is the door — pinned above.
+  expectTypeOf(useWorkflowSubmit("digest").submit).parameter(0).toEqualTypeOf<undefined>();
+
+  // The stream hook.
+  expectTypeOf(useWorkflowStream<Digest>("digest")).toEqualTypeOf<
+    WorkflowStreamSubmission<{ title: string }, { url: string }>
+  >();
+  expectTypeOf(useWorkflowStream<OneApp>("digest")).toEqualTypeOf<
+    WorkflowStreamSubmission<{ title: string }, { url: string }>
+  >();
+
+  // The runs hook is typed by the OUTPUT, not the def, so its open type
+  // argument is what the name guard reads.
+  expectTypeOf(useWorkflowRuns<{ title: string }>("digest")).toEqualTypeOf<
+    UseWorkflowRunsResult<{ title: string }>
+  >();
+  expectTypeOf(useWorkflowRuns<OneApp>("digest")).toEqualTypeOf<
+    UseWorkflowRunsResult<{ title: string }>
+  >();
+  // Un-parameterized: `unknown`, and through the output form — the agent
+  // overload's `never` default is what keeps it from taking the call.
+  expectTypeOf(useWorkflowRuns("digest")).toEqualTypeOf<UseWorkflowRunsResult<unknown>>();
+  expectTypeOf(useWorkflowRuns(undefined)).toEqualTypeOf<UseWorkflowRunsResult<unknown>>();
+
+  // The component: one signature, so the app's names or any string.
+  expectTypeOf<WorkflowFieldsProps<OneApp>["workflow"]>().toEqualTypeOf<
+    WorkflowSummary | "digest" | undefined
+  >();
+  expectTypeOf<WorkflowFieldsProps["workflow"]>().toEqualTypeOf<
+    WorkflowSummary | string | undefined
+  >();
+});
+
+/**
+ * An app that declares NO workflows (its workflows are `workflows/<name>.ts`
+ * files the build discovers, which its type cannot see) declares no NAMES, so
+ * the typed form refuses every name on it — it does not fall through to the
+ * def/output overload and compile against a string. The failure this pins:
+ * `useWorkflowSubmit<typeof agentDef>("typo")` compiled with `run.output`
+ * `unknown`. Discovered workflows are reached by the untyped string form.
+ */
+test("the agent form refuses every name on a def that declares no workflows", () => {
+  expectTypeOf<WorkflowNameOf<NoneApp>>().toEqualTypeOf<never>();
+  // The submit and stream hooks: the def form's constraint refuses an app.
+  expectTypeOf<NoneApp>().not.toExtend<AnyWorkflowDef>();
+  // The runs hook: its output form reads the MAP, so an empty map is refused
+  // where an output type (no map at all) is not. `Parameters` reads the LAST
+  // applicable overload, which for an app is that output form.
+  expectTypeOf<Parameters<typeof useWorkflowRuns<NoneApp>>[0]>().toEqualTypeOf<never>();
+  // (`useWorkflowRuns<Quote>("quotes")`, the output form over a type with no
+  // map, is pinned in the next test.)
+  // The component: one signature, so its `workflow` prop takes no name.
+  expectTypeOf<WorkflowFieldsProps<NoneApp>["workflow"]>().toEqualTypeOf<
+    WorkflowSummary | undefined
+  >();
+  // Untyped, the discovered workflow is reached by its string name.
+  expectTypeOf(useWorkflowSubmit("digest").run).not.toBeNever();
+  expectTypeOf(useWorkflowRuns("digest")).toEqualTypeOf<UseWorkflowRunsResult<unknown>>();
+});
+
+test("useWorkflowStream, useWorkflowRuns and <WorkflowFields> take the agent form too", () => {
+  const stream = useWorkflowStream<OneApp>("digest");
+  expectTypeOf(stream.submit).parameter(0).toEqualTypeOf<{ url: string }>();
+  // @ts-expect-error — not a name the agent declares.
+  useWorkflowStream<OneApp>("recap");
+  const runs = useWorkflowRuns<TwoApp, "digest">("digest");
+  expectTypeOf<OutputOf<(typeof runs.runs)[number]>>().toEqualTypeOf<{ title: string }>();
+  // @ts-expect-error — not a name the agent declares.
+  useWorkflowRuns<OneApp>("recap");
+  // The output-typed form, unchanged.
+  const byOutput = useWorkflowRuns<Quote>("quotes");
+  expectTypeOf<OutputOf<(typeof byOutput.runs)[number]>>().toEqualTypeOf<Quote>();
+  WorkflowFields<OneApp>({ workflow: "digest" });
+  // @ts-expect-error — not a name the agent declares.
+  WorkflowFields<OneApp>({ workflow: "recap" });
+  // Untyped: any string, as before.
+  WorkflowFields({ workflow: "whatever", render: { mustCover: "lines" } });
 });

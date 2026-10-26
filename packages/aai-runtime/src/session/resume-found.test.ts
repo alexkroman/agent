@@ -47,6 +47,7 @@ function streamOf(events: SessionEvent[]): SessionEventLog {
     read: vi.fn(() => Promise.resolve({ events, tail: events.length })),
     flush: vi.fn(() => Promise.resolve()),
     hydrate: vi.fn(() => Promise.resolve()),
+    transcript: vi.fn(() => []),
     discard: vi.fn(),
     clear: vi.fn(),
     durable: false,

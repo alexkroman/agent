@@ -15,9 +15,11 @@
     "dropped": {}
   },
   "eval-assert": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "The eval readers and the turn claims take the tool DEF only: the (calls, name, schema?) forms of toolResultIn, lastToolResultIn, toolResultsIn and toolArgsIn are gone, turnCalling(turns, name, where?) is now turnCalling(turns, def, where?), and expectCalled(scope, ...names) is now expectCalled(scope, ...defs), each resolved through toolNameOf. A case passes the tool file's default export, a speaker's tools entry, toolOf(agentDef, name) for a minted tool, or builtinTool(name) for a builtin; a string in a tool position no longer compiles."
+    }
   },
   "eval-network": {
     "current": 1,
@@ -78,9 +80,11 @@
     "dropped": {}
   },
   "testing": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "RunWorkflowOptions.name is removed: a run is named by the name its def is registered under — runWorkflow(agentDef, name, input) names it, and a bare def runs under the name its agent declared it with (workflowNameOf) or 'workflow'. A spec that passed { name } passes the agent instead, which is the form a deployment runs."
+    }
   },
   "testing-stubs": {
     "mirrors": "aai:testing"

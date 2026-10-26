@@ -146,6 +146,23 @@ export class RetryableError extends Error {
    * moment the caller meant.
    */
   readonly retryAfter: Date;
+  /**
+   * Whether the thrower NAMED the delay, or {@link retryAfter} is the
+   * {@link DEFAULT_RETRY_DELAY_MS} fill.
+   *
+   * The field `StepOptions.maxWaits` reads: only a delay the far side named
+   * (a `Retry-After` on a 429, a rate-limited gateway's own "come back at")
+   * is a WAIT out of that budget. The default is a second ahead of the clock
+   * at construction and so would read as "still in the future" on every
+   * catch, which made every unclassified transient failure a free retry under
+   * `maxWaits`. A clock test cannot tell the two apart; this can.
+   *
+   * Optional in the TYPE, because of the two-copies case the brand exists for
+   * (the module doc): an instance from an older copy of this class carries no
+   * such field, and a reader treats its absence as "not named" — the direction
+   * that spends an attempt. Every instance this constructor makes sets it.
+   */
+  readonly retryAfterNamed?: boolean;
 
   constructor(message: string, options?: RetryableErrorOptions) {
     // `omitUndefined` rather than a hand-rolled presence ternary, which is this
@@ -155,6 +172,7 @@ export class RetryableError extends Error {
     super(message, omitUndefined({ cause: options?.cause }));
     this.name = "RetryableError";
     const at = options?.retryAfter;
+    this.retryAfterNamed = at !== undefined;
     this.retryAfter =
       at instanceof Date ? at : new Date(Date.now() + (at ?? DEFAULT_RETRY_DELAY_MS));
     brand(this, "retryable");

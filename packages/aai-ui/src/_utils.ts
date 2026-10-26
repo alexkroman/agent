@@ -26,11 +26,10 @@ export function pageBaseUrl(): string {
 /**
  * Set the document title, when there is one to set and a document to set it on.
  *
- * Both mounts do this and neither may clobber a title the page's own HTML
- * declared — `mountClient()`'s custom-component tier because there is no shell header
- * to show the name in, `mountPage()` because there is no shell at all. One copy, for
- * the reason `resolveContainer` and `mountRoot` are shared: the rule is the
- * same, so the two mounts must not be able to disagree about it.
+ * `mountPage()` does this for its `name`, and may not clobber a title the
+ * page's own HTML declared — there is no shell to show the name in otherwise.
+ * `mountClient()` sets none: the agent's name reaches its default shell from
+ * the agent's own `client-config`, and a custom component owns the page.
  */
 export function setPageTitle(name: string | undefined): void {
   if (name && typeof document !== "undefined") document.title = name;

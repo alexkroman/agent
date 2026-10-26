@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { createToolContext } from "./_testing-context.ts";
+import { readCallBrief } from "./call-brief.ts";
 import { type SessionCall, sessionCall, setSessionCall } from "./session-call.ts";
 
 afterEach(() => vi.useRealTimers());
@@ -28,6 +29,20 @@ describe("sessionCall", () => {
     expect(call?.parameters).toEqual({ call: "c_1" });
     expect(Object.isFrozen(call)).toBe(true);
     expect(Object.isFrozen(call?.parameters)).toBe(true);
+  });
+
+  test("the recorded call is plain data, and readCallBrief reads the brief it carries", async () => {
+    const { signCallBrief } = await import("./call-brief.ts");
+    const parameters = await signCallBrief({ id: "call_7", prompt: "Say hello." }, "s3cret");
+    setSessionCall("call-d", { carrier: "twilio", parameters: { ...parameters, for: "Sam" } });
+    const call = sessionCall({ sessionId: "call-d" });
+    if (!call) throw new Error("not recorded");
+    expect(await readCallBrief(call, "s3cret")).toEqual({ id: "call_7", prompt: "Say hello." });
+    expect(await readCallBrief(call, "wrong")).toBeUndefined();
+    expect(await readCallBrief(call, undefined)).toBeUndefined();
+    // A log line or a deep equality sees the call as data: no reader rides on it.
+    expect(Object.keys(call)).toEqual(["carrier", "parameters"]);
+    expect(call).toEqual({ carrier: "twilio", parameters: { ...parameters, for: "Sam" } });
   });
 
   test("the store is shared through globalThis, so a second copy of the module reads it", () => {

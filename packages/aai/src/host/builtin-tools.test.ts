@@ -1,9 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createToolContext } from "@alexkroman1/aai/testing";
+import { createToolContext, toolNameOf } from "@alexkroman1/aai/testing";
 import { describe, expect, test, vi } from "vitest";
 import { fakeFetch } from "./_test-utils.ts";
-import { resolveAllBuiltins } from "./builtin-tools.ts";
+import { builtinTool, resolveAllBuiltins } from "./builtin-tools.ts";
 
 /** The signature {@link fakeFetch} narrows to `fetch` — declared on a mock so its calls are typed. */
 type FetchDouble = (url: string, init: RequestInit) => Promise<Response>;
@@ -448,5 +448,38 @@ describe("resolveAllBuiltins defs", () => {
     // …attributed to the URL the model asked for, so the address the bytes
     // actually came from is not surfaced to anything downstream either.
     expect(result.url).toBe(START);
+  });
+});
+
+describe("builtinTool", () => {
+  test("answers the builtin's def, named as the runtime mints it", () => {
+    // A builtin has no `tools/` file, so this is the import that stands in for
+    // one: the def carries the name a deployed agent's call is recorded under,
+    // which is what lets `toolResultIn(calls, builtinTool("think"))` match.
+    const think = builtinTool("think");
+    expect(think.description).not.toBe("");
+    expect(toolNameOf(think)).toBe("think");
+    expect(toolNameOf(builtinTool("workflow_cancel"))).toBe("workflow_cancel");
+  });
+
+  test("a static builtin executes as deployed", async () => {
+    const result = await builtinTool("calculate").execute(
+      { expression: "6 * 7" },
+      createToolContext(),
+    );
+    expect(JSON.stringify(result)).toContain("42");
+  });
+
+  test("every def the runtime resolves is named too, whatever options built it", () => {
+    const { defs } = resolveAllBuiltins(["think", "fetch_json", "workflow_status"], {
+      fetch: fakeFetch(async () => new Response("{}")),
+    });
+    for (const [name, def] of Object.entries(defs)) expect(toolNameOf(def)).toBe(name);
+  });
+
+  test("a name this SDK does not ship throws naming the ones it does", () => {
+    expect(() => builtinTool("not_a_builtin")).toThrow(
+      /builtinTool\("not_a_builtin"\) names no builtin this SDK ships\. The builtins are: .*think/,
+    );
   });
 });

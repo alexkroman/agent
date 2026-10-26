@@ -150,20 +150,9 @@ function RecSidebar() {
 }
 
 mountClient({
-  name: "Night Owl",
   icon: "\u{1F989}",
   subtitle: "A cozy companion for the small hours",
   buttonText: "Settle in",
   sidebar: RecSidebar,
-  theme: {
-    bg: "#0c0e1a",
-    primary: "#a78bfa",
-    text: "#e2e0f0",
-    surface: "#131627",
-    border: "#1e2340",
-  },
-  tools: {
-    recommend: { icon: "\u{1F989}", label: "Recommending" },
-    revisit: { icon: "\u{1F50E}", label: "Looking back" },
-  },
+  theme: { primary: "#a78bfa", mode: "dark" },
 });

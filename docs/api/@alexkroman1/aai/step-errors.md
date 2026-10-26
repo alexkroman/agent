@@ -15,6 +15,129 @@ suppression the escape-hatch ratchet only lets move down.
 
 ## Functions
 
+### fatalOn()
+
+```ts
+function fatalOn<T>(isMatch: (err: unknown) => boolean, fn: () => T): T;
+```
+
+Run `fn`, and make the failure `isMatch` recognises FATAL.
+
+For the call that throws its own class with no verdict on it — a parser
+refusing a file (`parseWav`'s `UnsupportedRecordingError`), a plan that
+found a recording too short to cut — where [toStepError](#tosteperror) rightly
+declines to guess and so the engine retries a decision that is a pure
+function of the input. Three more attempts over the same bytes reach the
+same throw; this says so at the call rather than in a `catch` block the
+author has to shape by hand (see [throwFatalStepError](#throwfatalsteperror) for why that
+block is awkward to write).
+
+**Only the matching failure is converted. Everything else passes through
+UNCHANGED**, which is the half that keeps this narrow: a `TypeError` from a
+bug stays plainly retryable, and a failure that already carries a verdict
+(a `TranscribeError`) keeps it. That is the opposite default from
+[throwFfmpegStepError](#throwffmpegsteperror), which stops on everything it does not
+recognise — ffmpeg having READ the file is the evidence there; here the only
+evidence is the class the caller named.
+
+Answers in kind: a sync `fn` stays sync, an async one is awaited and its
+rejection classified the same way. [orFatal](#orfatal) is the same call with the
+match spelled as a class.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Parameters
+
+##### isMatch
+
+(`err`: `unknown`) => `boolean`
+
+Whether a thrown value is the terminal failure. Called with
+  whatever was thrown, so it may read a `name` or a `code` as well as test a
+  class.
+
+##### fn
+
+() => `T`
+
+The call. Pure in the sense that matters: the same input reaches
+  the same verdict, so no attempt changes it.
+
+#### Returns
+
+`T`
+
+#### Example
+
+```ts
+import { parseWav, type WavFormat } from "@alexkroman1/aai/step";
+import { fatalOn } from "@alexkroman1/aai/step-errors";
+
+export function header(bytes: Uint8Array): WavFormat {
+  return fatalOn((err) => err instanceof Error && err.name === "UnsupportedRecordingError", () =>
+    parseWav(bytes, bytes.byteLength),
+  );
+}
+```
+
+***
+
+### orFatal()
+
+```ts
+function orFatal<T>(fn: () => T, options: OrFatalOptions): T;
+```
+
+[fatalOn](#fatalon) with the match spelled as a CLASS: run `fn`, and make an
+`instanceof when` failure fatal.
+
+The common spelling, because the terminal failure is almost always a class
+the called module exports. One thing to know about `instanceof` here: a
+guest bundle can hold two copies of a module (`step-error-classes.ts` says
+why its own membership test is a brand instead), so a class the STEP threw
+through a different copy than the one `when` names would not match and would
+stay retryable. The classes this is written for — a parser's refusal thrown
+and caught in the same bundle — are not that case; one that might be takes
+[fatalOn](#fatalon) with a `name` check.
+
+#### Type Parameters
+
+##### T
+
+`T`
+
+#### Parameters
+
+##### fn
+
+() => `T`
+
+##### options
+
+[`OrFatalOptions`](#orfataloptions)
+
+#### Returns
+
+`T`
+
+#### Example
+
+```ts
+import { parseWav, UnsupportedRecordingError, type WavFormat } from "@alexkroman1/aai/step";
+import { orFatal } from "@alexkroman1/aai/step-errors";
+
+export function header(bytes: Uint8Array): WavFormat {
+  // A WAV the cutter cannot read is a WAV it cannot read on the next attempt.
+  return orFatal(() => parseWav(bytes, bytes.byteLength), { when: UnsupportedRecordingError });
+}
+```
+
+***
+
 ### throwFatalStepError()
 
 ```ts
@@ -406,7 +529,73 @@ When the next attempt may run. Always a `Date` — a number passed to the
 constructor is resolved against the clock AT CONSTRUCTION, which is the
 moment the caller meant.
 
+##### retryAfterNamed?
+
+```ts
+readonly optional retryAfterNamed?: boolean;
+```
+
+Whether the thrower NAMED the delay, or [retryAfter](step.md#retryafter) is the
+[DEFAULT\_RETRY\_DELAY\_MS](#default_retry_delay_ms) fill.
+
+The field `StepOptions.maxWaits` reads: only a delay the far side named
+(a `Retry-After` on a 429, a rate-limited gateway's own "come back at")
+is a WAIT out of that budget. The default is a second ahead of the clock
+at construction and so would read as "still in the future" on every
+catch, which made every unclassified transient failure a free retry under
+`maxWaits`. A clock test cannot tell the two apart; this can.
+
+Optional in the TYPE, because of the two-copies case the brand exists for
+(the module doc): an instance from an older copy of this class carries no
+such field, and a reader treats its absence as "not named" — the direction
+that spends an attempt. Every instance this constructor makes sets it.
+
 ## Type Aliases
+
+### ErrorClass
+
+```ts
+type ErrorClass = (...args: never[]) => Error;
+```
+
+An error CLASS, as [orFatal](#orfatal) takes one: anything `new`-able that makes
+an `Error`, abstract or not.
+
+#### Parameters
+
+##### args
+
+...`never`[]
+
+#### Returns
+
+`Error`
+
+***
+
+### OrFatalOptions
+
+```ts
+type OrFatalOptions = {
+  when: ErrorClass;
+};
+```
+
+**`Input`**
+
+Options for [orFatal](#orfatal).
+
+#### Properties
+
+##### when
+
+```ts
+when: ErrorClass;
+```
+
+The error class whose instances are terminal. Anything else is rethrown unchanged.
+
+***
 
 ### RetryableErrorOptions
 

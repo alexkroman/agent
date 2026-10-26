@@ -71,14 +71,10 @@
  */
 
 import "@alexkroman1/aai-ui/styles.css";
-// ERASED at build time, so naming the agent's own type costs the browser bundle
-// nothing — and it is what stops this file restating a shape `workflows/audit.ts`
-// already declares.
 import { formatBytes, formatDuration } from "@alexkroman1/aai/utils";
 import {
   AudioResult,
   BulletList,
-  createWorkflowApi,
   Facts,
   Form,
   mountPage,
@@ -91,24 +87,10 @@ import {
   WorkflowProgress,
   WorkflowRunError,
 } from "@alexkroman1/aai-ui";
-import type { audit } from "./agent.ts";
-
-/**
- * The workflow's name, as a page starts a run by one.
- *
- * A rename in `agent.ts` is a runtime 400 rather than a compile error, which is why
- * `agent.test.ts` pins this string.
- */
-const WORKFLOW = "audit";
-
-/**
- * Hoisted out of the component deliberately.
- *
- * The hooks hold the client in a ref precisely so a fresh object per render cannot
- * restart their watch, but building one in render is still a new `fetch` closure
- * every time and reads as though it were free.
- */
-const api = createWorkflowApi();
+// ERASED at build time, so naming the agent's own type costs the browser bundle
+// nothing — and it is what lets the hook check the NAME below against the
+// `workflows` map `agent.ts` declares, and type the run's output off it.
+import type agentDef from "./agent.ts";
 
 /** One labelled number in the pipeline panel. */
 function Stat({ label, value }: { label: string; value: string }) {
@@ -125,13 +107,13 @@ export function App() {
   // `run.output` instead of `unknown`. The reload — both halves of it — is the
   // hook's own doing; see the module doc for why the key it mints is the one
   // this desk wants.
-  const submission = useWorkflowSubmit<typeof audit>(WORKFLOW, { api });
+  const submission = useWorkflowSubmit<typeof agentDef>("audit");
   const { submitForm, run, pending, upload, pauseUpload, resumeUpload, error } = submission;
   const output = run?.status === "completed" ? run.output : undefined;
   // `useDownloadUrl` is the SDK's: the byte route takes the agent's bearer, so the
   // bytes have to be FETCHED and handed to the element as an object URL — and the
   // object URL has to be revoked, which is the half a page written by hand forgets.
-  const audio = useDownloadUrl(output?.audio, { api });
+  const audio = useDownloadUrl(output?.audio);
 
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-6 p-8">
@@ -145,7 +127,7 @@ export function App() {
 
       <Form onSubmit={(values) => submitForm(values)} error={error} className="flex flex-col gap-4">
         {/* Every control, from the workflow's own input schema. See the module doc. */}
-        <WorkflowFields workflow={WORKFLOW} />
+        <WorkflowFields<typeof agentDef> workflow="audit" />
         <SubmitButton pending={pending} pendingLabel="Auditing…">
           Audit the call
         </SubmitButton>
@@ -164,7 +146,7 @@ export function App() {
       {/* What the run itself says, from `stepReport()` in the workflow's steps — which
           for this template is the ffmpeg narration: what the file was, what it
           measured, how many pauses were found. */}
-      <WorkflowProgress runId={run?.runId} api={api} />
+      <WorkflowProgress runId={run?.runId} />
 
       {/* Announced, the same contract `<Form>` gives the submit error: this is
           the outcome the reader waited minutes for. */}
@@ -193,7 +175,7 @@ export function App() {
             />
             <Stat label="Run time" value={formatDuration(output.elapsedMs)} />
             {/* Beside the run time rather than inside it: the run is mostly the
-                fan-out waiting on a provider, and this is what the DECODER cost.
+                fan-out waiting on a provider, and this is what the LEVELLING cost.
                 It is the one number that says whether normalizing first paid for
                 itself, which is this template's whole argument. */}
             <Stat label="ffmpeg time" value={formatDuration(output.ffmpegMs)} />

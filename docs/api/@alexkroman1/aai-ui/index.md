@@ -1117,6 +1117,7 @@ function ColorForm() {
 
 ```ts
 function fieldKindFor(schema: unknown, options?: {
+  render?: WorkflowFieldRender;
   upload?: boolean;
 }): WorkflowFieldKind;
 ```
@@ -1135,7 +1136,12 @@ The property's JSON Schema, as `GET workflows` reports it.
 ##### options?
 
 `upload` says the property is named in the workflow's own
-  `uploads` declaration, which is what step 1 above tests.
+  `uploads` declaration, which is what step 1 above tests; `render` is the
+  page's own choice for the property (`<WorkflowFields render>`).
+
+###### render?
+
+[`WorkflowFieldRender`](#workflowfieldrender)
 
 ###### upload?
 
@@ -1154,10 +1160,18 @@ The ORDER is the contract, and it is the half a reader cannot infer:
    person to type an id no person has. The declaration is the workflow's
    (`workflow({ uploads: [...] })`), not the schema's, precisely because a
    marker inside the schema would only work for the library that carried it.
-2. **Then a non-empty `enum`**, before the type switch: an enum of strings
-   is a `string` too, and a select is the narrower, better control.
+2. **Then a closed set of choices**, before the type switch: a non-empty
+   `enum`, or a union of `const` literals (`schemaChoicesOf`) — an enum
+   of strings is a `string` too, and a select is the narrower, better
+   control. A nullable union (`anyOf: [X, { type: "null" }]`) is read as `X`
+   throughout, as `type: [X, "null"]` already was.
 3. **Then the type** — `boolean`, `number`/`integer`, `string`.
-4. **Anything else is `"none"`** rather than a guess. See
+4. **Then the two non-scalar shapes with a control** — an array of strings
+   is `"lines"`, an object of exactly `{ name: string, text: string }` is
+   `"namedText"`. A page may also name either through `render`, which beats
+   the schema for that property (it is the author saying what the shape
+   means) but never a declared upload.
+5. **Anything else is `"none"`** rather than a guess. See
    [WorkflowFieldKind](#workflowfieldkind).
 
 #### Example
@@ -1184,6 +1198,7 @@ function kindsOf(summary: WorkflowSummary): Record<string, WorkflowFieldKind> {
 
 ```ts
 function FileField(props: FieldShell & {
+  as?: FileValueShape;
   read?: FileReadMode;
   upload?: boolean;
 } & Omit<InputHTMLAttributes<HTMLInputElement>, "className" | "name" | "type">): Element;
@@ -1207,6 +1222,13 @@ input — a CSV of ids, a config — and the size is the author's to check. See
 [FileReadMode](#filereadmode) for the four values; `upload` is shorthand for
 `read="upload"`.
 
+**`as="namedText"` contributes `{ name, text }`** ([NamedTextValue](#namedtextvalue))
+instead of the metadata-bearing [FileValue](#filevalue), and implies
+`read="text"`: the shape a schema declares for a draft to redline or a
+config to apply, and the one `<WorkflowFields>` renders for an object
+property of exactly that shape. `document-redline-workflow` reshaped the
+`FileValue` by hand on submit; the field does it now.
+
 Otherwise accepts every `<input>` attribute except `name`, `className` and
 `type`, plus the shared [FieldShell](#fieldshell) props — so `accept` and
 `multiple` are passed straight through.
@@ -1216,11 +1238,12 @@ Otherwise accepts every `<input>` attribute except `name`, `className` and
 ##### props
 
 [`FieldShell`](#fieldshell) & \{
+  `as?`: [`FileValueShape`](#filevalueshape);
   `read?`: [`FileReadMode`](#filereadmode);
   `upload?`: `boolean`;
 \} & `Omit`\<`InputHTMLAttributes`\<`HTMLInputElement`\>, `"className"` \| `"name"` \| `"type"`\>
 
-[FieldShell](#fieldshell) props, `read`/`upload`, and `<input>`
+[FieldShell](#fieldshell) props, `read`/`upload`/`as`, and `<input>`
 attributes.
 
 #### Returns
@@ -1379,8 +1402,12 @@ Define and mount a client UI for a voice agent.
 
 **A custom component:** pass `component` and it is rendered inside the same
 providers instead of the default shell — beside a `sidebar` if one is given,
-in the same [SidebarLayout](#sidebarlayout). A provided `name` then also sets
-`document.title`, there being no shell header to show it in.
+in the same [SidebarLayout](#sidebarlayout). The page title is the HTML's own; a
+custom component that wants another sets `document.title` itself.
+
+The agent's name on the start card and in the header, and each tool's icon
+and label, are what the agent declared (`agent({ name })`, `tool({ ui })`),
+read from its `GET /client-config` body — not options here.
 
 Mounts into `target` — a CSS selector or DOM element, defaulting to
 `"#app"` — and throws `Element not found: <target>` when the selector
@@ -1410,10 +1437,8 @@ function OrderPanel() {
 }
 
 mountClient({
-  name: "Pizza Ordering",
   theme: { bg: "#1a1a1a", primary: "#e55" },
   sidebar: OrderPanel,
-  tools: { add_pizza: { icon: "🍕", label: "Adding pizza" } },
 });
 ```
 
@@ -1628,7 +1653,7 @@ Sent as JSON when given.
 
 [`RouteFetchOptions`](#routefetchoptions)
 
-`client`, `baseUrl` and `signal`; see [RouteFetchOptions](#routefetchoptions).
+`client`, `baseUrl`, `headers` and `signal`; see [RouteFetchOptions](#routefetchoptions).
 
 #### Returns
 
@@ -1928,32 +1953,24 @@ See [SessionStateDotProps](#sessionstatedotprops).
 
 #### Example
 
-**A dispatch board's readout: its own colours, three of its own words**
+**A dispatch board's readout: coarse colours, three of its own words**
 
 ```tsx
-import type { AgentState } from "@alexkroman1/aai-ui";
 import { SessionStateDot } from "@alexkroman1/aai-ui";
-
-const STATE_COLORS = {
-  disconnected: "#6b7280",
-  connecting: "#6b7280",
-  ready: "#22c55e",
-  listening: "#22c55e",
-  thinking: "#eab308",
-  speaking: "#3b82f6",
-  error: "#6b7280",
-} satisfies Record<AgentState, string>;
 
 function StatusReadout() {
   return (
     <SessionStateDot
-      colors={STATE_COLORS}
+      colors={{ idle: "#6b7280", live: "#22c55e", busy: "#eab308", speaking: "#3b82f6" }}
       labels={{ listening: "LISTENING", thinking: "PROCESSING", speaking: "TRANSMITTING" }}
       labelClassName="text-[11px] uppercase"
     />
   );
 }
 ```
+
+With no `colors` at all the dot follows the mounted theme — a chrome that
+sets `mountClient({ theme })` gets a matching dot for free.
 
 ***
 
@@ -2177,7 +2194,9 @@ function Digest({ pending }: { pending: boolean }) {
 ### TextAreaField()
 
 ```ts
-function TextAreaField(props: FieldShell & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "className" | "name">): Element;
+function TextAreaField(props: FieldShell & {
+  split?: TextSplitMode;
+} & Omit<TextareaHTMLAttributes<HTMLTextAreaElement>, "className" | "name">): Element;
 ```
 
 A multi-line text input.
@@ -2185,13 +2204,22 @@ A multi-line text input.
 Accepts every `<textarea>` attribute except `name` and `className`, plus the
 shared [FieldShell](#fieldshell) props. `rows` defaults to 4.
 
+**`split="lines"` contributes a `string[]`** — one entry per non-blank line,
+trimmed — which is the control for a schema's `z.array(z.string())`: "one
+point per line". `document-redline-workflow` reshaped the textarea's string
+by hand on submit; the field does it now, so `<WorkflowFields>` can render
+it for a `string[]` property and a hand-written one can match. See
+[TextSplitMode](#textsplitmode).
+
 #### Parameters
 
 ##### props
 
-[`FieldShell`](#fieldshell) & `Omit`\<`TextareaHTMLAttributes`\<`HTMLTextAreaElement`\>, `"className"` \| `"name"`\>
+[`FieldShell`](#fieldshell) & \{
+  `split?`: [`TextSplitMode`](#textsplitmode);
+\} & `Omit`\<`TextareaHTMLAttributes`\<`HTMLTextAreaElement`\>, `"className"` \| `"name"`\>
 
-[FieldShell](#fieldshell) props plus `<textarea>` attributes.
+[FieldShell](#fieldshell) props, `split`, and `<textarea>` attributes.
 
 #### Returns
 
@@ -2413,9 +2441,10 @@ import { sessionSlot } from "@alexkroman1/aai";
 import { useAgentState } from "@alexkroman1/aai-ui";
 
 // In a real project the slot is declared beside the agent and imported here;
-// the agent declares `syncState: cartSlot.projected`.
+// `sync: true` is what puts it in the agent's `syncState`.
 const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }), {
   view: (cart) => ({ count: cart.items.length }),
+  sync: true,
 });
 
 function CartBadge() {
@@ -3072,11 +3101,11 @@ function TalkButton() {
 ### useRoute()
 
 ```ts
-function useRoute<T = unknown>(path: string | null, options?: UseRouteOptions): UseRouteResult<T>;
+function useRoute<T = unknown>(path: string | null, options?: UseRouteOptions<T>): UseRouteResult<T>;
 ```
 
 `GET` one of the agent's own routes, on mount, on `reload()` and every
-`pollMs` — see this module's doc.
+`pollMs` until `until` says so — see this module's doc.
 
 #### Type Parameters
 
@@ -3096,9 +3125,9 @@ The route's path as declared, without `/api`. `null` reads nothing.
 
 ##### options?
 
-[`UseRouteOptions`](#userouteoptions)
+[`UseRouteOptions`](#userouteoptions)\<`T`\>
 
-`pollMs` and `client`; see [UseRouteOptions](#userouteoptions).
+`pollMs`, `until`, `client` and `headers`; see [UseRouteOptions](#userouteoptions).
 
 #### Returns
 
@@ -3106,7 +3135,7 @@ The route's path as declared, without `/api`. `null` reads nothing.
 
 The answer, the last error, and `reload`; see [UseRouteResult](#userouteresult).
 
-#### Example
+#### Examples
 
 **A list that re-reads after each delete**
 
@@ -3134,6 +3163,22 @@ function Memories() {
       ))}
     </ul>
   );
+}
+```
+
+**A call followed until it is over**
+
+```tsx
+import { useRoute } from "@alexkroman1/aai-ui";
+
+type Call = { status: string; transcript: { role: string; text: string }[] };
+
+function LiveCall({ id }: { id: string }) {
+  const { data } = useRoute<Call>(`/calls/${id}`, {
+    pollMs: 2000,
+    until: (call) => call.status === "completed",
+  });
+  return <ol>{data?.transcript.map((line, i) => <li key={String(i)}>{line.text}</li>)}</ol>;
 }
 ```
 
@@ -4128,36 +4173,84 @@ function RunPanel({ runId }: { runId: string | undefined }) {
 
 ### useWorkflowRuns()
 
+#### Call Signature
+
 ```ts
-function useWorkflowRuns<R = unknown>(workflow: string | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
+function useWorkflowRuns<App extends WorkflowAppLike = never, Name extends string = WorkflowNameOf<App>>(workflow: [App] extends [never] ? never : Name | undefined, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<WorkflowOutputOf<WorkflowDefOf<App, Name>>>;
 ```
 
 Read a workflow's recent runs.
 
-#### Type Parameters
+##### Type Parameters
 
-##### R
+###### App
+
+`App` *extends* [`WorkflowAppLike`](#workflowapplike) = `never`
+
+###### Name
+
+`Name` *extends* `string` = [`WorkflowNameOf`](#workflownameof)\<`App`\>
+
+##### Parameters
+
+###### workflow
+
+\[`App`\] *extends* \[`never`\] ? `never` : `Name` \| `undefined`
+
+###### options?
+
+[`UseWorkflowRunsOptions`](#useworkflowrunsoptions)
+
+##### Returns
+
+[`UseWorkflowRunsResult`](#useworkflowrunsresult)\<[`WorkflowOutputOf`](#workflowoutputof)\<[`WorkflowDefOf`](#workflowdefof)\<`App`, `Name`\>\>\>
+
+##### Example
+
+```tsx
+import { useWorkflowRuns } from "@alexkroman1/aai-ui";
+
+function History() {
+  const { runs } = useWorkflowRuns("transcribe", { limit: 10 });
+  return <ul>{runs.map((run) => <li key={run.runId}>{run.status}</li>)}</ul>;
+}
+```
+
+#### Call Signature
+
+```ts
+function useWorkflowRuns<R = unknown>(workflow: [WorkflowsOf<R>] extends [never] ? string | undefined : never, options?: UseWorkflowRunsOptions): UseWorkflowRunsResult<R>;
+```
+
+Read a workflow's recent runs.
+
+##### Type Parameters
+
+###### R
 
 `R` = `unknown`
 
 The workflow's output type, so a completed run's `output` is
-  typed rather than `unknown`. Derive it with `WorkflowOutputOf`.
+  typed rather than `unknown`. Derive it with `WorkflowOutputOf` — or name
+  the AGENT instead, `useWorkflowRuns<typeof agentDef>("transcribe")`, and
+  both the name and the output come off its `workflows` map (see
+  `WorkflowNameOf`).
 
-#### Parameters
+##### Parameters
 
-##### workflow
+###### workflow
 
-`string` \| `undefined`
+\[[`WorkflowsOf`](#workflowsof)\<`R`\>\] *extends* \[`never`\] ? `string` \| `undefined` : `never`
 
-##### options?
+###### options?
 
 [`UseWorkflowRunsOptions`](#useworkflowrunsoptions)
 
-#### Returns
+##### Returns
 
 [`UseWorkflowRunsResult`](#useworkflowrunsresult)\<`R`\>
 
-#### Example
+##### Example
 
 ```tsx
 import { useWorkflowRuns } from "@alexkroman1/aai-ui";
@@ -4231,6 +4324,57 @@ function WorkflowPicker({ onPick }: { onPick: (name: string) => void }) {
 
 ### useWorkflowStream()
 
+#### Call Signature
+
+```ts
+function useWorkflowStream<App extends WorkflowAppLike = never, Name extends string = WorkflowNameOf<App>>(workflow: Name, options?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<WorkflowDefOf<App, Name>>, SubmitInputOf<WorkflowDefOf<App, Name>>>;
+```
+
+Start a workflow run and stream a file into it while it works.
+
+The workflow declares which input property carries the upload
+(`workflow({ uploads: ["recording"] })`) — the same declaration
+`useWorkflowSubmit` reads, because what the property carries is an upload id
+either way. What differs is only WHEN the id becomes valid.
+
+##### Type Parameters
+
+###### App
+
+`App` *extends* [`WorkflowAppLike`](#workflowapplike) = `never`
+
+###### Name
+
+`Name` *extends* `string` = [`WorkflowNameOf`](#workflownameof)\<`App`\>
+
+##### Parameters
+
+###### workflow
+
+`Name`
+
+###### options?
+
+[`UseWorkflowStreamOptions`](#useworkflowstreamoptions)
+
+##### Returns
+
+[`WorkflowStreamSubmission`](#workflowstreamsubmission)\<[`WorkflowOutputOf`](#workflowoutputof)\<[`WorkflowDefOf`](#workflowdefof)\<`App`, `Name`\>\>, [`SubmitInputOf`](#submitinputof)\<[`WorkflowDefOf`](#workflowdefof)\<`App`, `Name`\>\>\>
+
+##### Example
+
+```tsx no-check
+const { submit, run, upload, pending, error } = useWorkflowStream("transcribe");
+
+<Form onSubmit={(values) => submit(values)} error={error}>
+  <WorkflowFields workflow="transcribe" />
+  <UploadProgressBar upload={upload} />
+  <SubmitButton pending={pending}>Transcribe</SubmitButton>
+</Form>
+```
+
+#### Call Signature
+
 ```ts
 function useWorkflowStream<D extends AnyWorkflowDef>(workflow: string, options?: UseWorkflowStreamOptions): WorkflowStreamSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 ```
@@ -4242,27 +4386,27 @@ The workflow declares which input property carries the upload
 `useWorkflowSubmit` reads, because what the property carries is an upload id
 either way. What differs is only WHEN the id becomes valid.
 
-#### Type Parameters
+##### Type Parameters
 
-##### D
+###### D
 
 `D` *extends* [`AnyWorkflowDef`](../aai/workflow-api.md#anyworkflowdef)
 
-#### Parameters
+##### Parameters
 
-##### workflow
+###### workflow
 
 `string`
 
-##### options?
+###### options?
 
 [`UseWorkflowStreamOptions`](#useworkflowstreamoptions)
 
-#### Returns
+##### Returns
 
 [`WorkflowStreamSubmission`](#workflowstreamsubmission)\<[`WorkflowOutputOf`](#workflowoutputof)\<`D`\>, [`SubmitInputOf`](#submitinputof)\<`D`\>\>
 
-#### Example
+##### Example
 
 ```tsx no-check
 const { submit, run, upload, pending, error } = useWorkflowStream("transcribe");
@@ -4278,15 +4422,109 @@ const { submit, run, upload, pending, error } = useWorkflowStream("transcribe");
 
 ### useWorkflowSubmit()
 
+#### Call Signature
+
+```ts
+function useWorkflowSubmit<App extends WorkflowAppLike = never, Name extends string = WorkflowNameOf<App>>(workflow: Name, options?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<WorkflowDefOf<App, Name>>, SubmitInputOf<WorkflowDefOf<App, Name>>>;
+```
+
+Start a workflow from a form, and follow the run it creates.
+
+##### Type Parameters
+
+###### App
+
+`App` *extends* [`WorkflowAppLike`](#workflowapplike) = `never`
+
+###### Name
+
+`Name` *extends* `string` = [`WorkflowNameOf`](#workflownameof)\<`App`\>
+
+##### Parameters
+
+###### workflow
+
+`Name`
+
+###### options?
+
+[`UseWorkflowSubmitOptions`](#useworkflowsubmitoptions)
+
+##### Returns
+
+[`WorkflowSubmission`](#workflowsubmission)\<[`WorkflowOutputOf`](#workflowoutputof)\<[`WorkflowDefOf`](#workflowdefof)\<`App`, `Name`\>\>, [`SubmitInputOf`](#submitinputof)\<[`WorkflowDefOf`](#workflowdefof)\<`App`, `Name`\>\>\>
+
+##### Examples
+
+```tsx
+// file: agent.ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const digest = workflow({
+  input: z.object({ url: z.string() }),
+  output: z.object({ title: z.string() }),
+  run: async ({ url }) => ({ title: url }),
+});
+
+export default agent({ name: "Digest", workflows: { digest } });
+
+// file: client.tsx
+import { Form, SubmitButton, TextField, useWorkflowSubmit } from "@alexkroman1/aai-ui";
+import type { digest } from "./agent.ts";
+
+function DigestForm() {
+  const { submitForm, run, pending, error } = useWorkflowSubmit<typeof digest>("digest");
+  return (
+    <Form onSubmit={(values) => submitForm(values)} error={error}>
+      <TextField name="url" label="Link" type="url" required />
+      <SubmitButton pending={pending}>Digest</SubmitButton>
+      {run?.status === "completed" && <p>{run.output.title}</p>}
+    </Form>
+  );
+}
+```
+
+**Named through the agent, so the name is checked**
+
+```tsx
+// file: agent.ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const digest = workflow({
+  input: z.object({ url: z.string() }),
+  output: z.object({ title: z.string() }),
+  run: async ({ url }) => ({ title: url }),
+});
+
+export default agent({ name: "Digest", workflows: { digest } });
+
+// file: client.tsx
+import { useWorkflowSubmit } from "@alexkroman1/aai-ui";
+import type agentDef from "./agent.ts";
+
+export function DigestForm() {
+  const { submit } = useWorkflowSubmit<typeof agentDef>("digest"); // "digset" would not compile
+  return (
+    <button type="button" onClick={() => submit({ url: "https://example.com/a" })}>
+      Digest
+    </button>
+  );
+}
+```
+
+#### Call Signature
+
 ```ts
 function useWorkflowSubmit<D extends AnyWorkflowDef>(workflow: string, options?: UseWorkflowSubmitOptions): WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
 ```
 
 Start a workflow from a form, and follow the run it creates.
 
-#### Type Parameters
+##### Type Parameters
 
-##### D
+###### D
 
 `D` *extends* [`AnyWorkflowDef`](../aai/workflow-api.md#anyworkflowdef)
 
@@ -4302,34 +4540,83 @@ The workflow DEFINITION, which types both halves of the
   Passing an output type where a def belongs is now a compile error rather
   than a silent loss of typing, which is the point.
 
-#### Parameters
+  **Or the AGENT.** `useWorkflowSubmit<typeof agentDef>("digest")` reads the
+  def off the agent's own `workflows` map, and the NAME is then a literal the
+  compiler checks — a typo is an error naming the keys the agent declares,
+  where the def form accepts any string and 404s. See `WorkflowNameOf`; an
+  app with several workflows names the one it means as a second type
+  argument.
 
-##### workflow
+##### Parameters
+
+###### workflow
 
 `string`
 
-##### options?
+###### options?
 
 [`UseWorkflowSubmitOptions`](#useworkflowsubmitoptions)
 
-#### Returns
+##### Returns
 
 [`WorkflowSubmission`](#workflowsubmission)\<[`WorkflowOutputOf`](#workflowoutputof)\<`D`\>, [`SubmitInputOf`](#submitinputof)\<`D`\>\>
 
-#### Example
+##### Examples
 
-```tsx no-check
+```tsx
+// file: agent.ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const digest = workflow({
+  input: z.object({ url: z.string() }),
+  output: z.object({ title: z.string() }),
+  run: async ({ url }) => ({ title: url }),
+});
+
+export default agent({ name: "Digest", workflows: { digest } });
+
+// file: client.tsx
 import { Form, SubmitButton, TextField, useWorkflowSubmit } from "@alexkroman1/aai-ui";
 import type { digest } from "./agent.ts";
 
 function DigestForm() {
-  const { submit, run, pending, error } = useWorkflowSubmit<typeof digest>("digest");
+  const { submitForm, run, pending, error } = useWorkflowSubmit<typeof digest>("digest");
   return (
-    <Form onSubmit={(values) => submit(values)} error={error}>
+    <Form onSubmit={(values) => submitForm(values)} error={error}>
       <TextField name="url" label="Link" type="url" required />
       <SubmitButton pending={pending}>Digest</SubmitButton>
       {run?.status === "completed" && <p>{run.output.title}</p>}
     </Form>
+  );
+}
+```
+
+**Named through the agent, so the name is checked**
+
+```tsx
+// file: agent.ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const digest = workflow({
+  input: z.object({ url: z.string() }),
+  output: z.object({ title: z.string() }),
+  run: async ({ url }) => ({ title: url }),
+});
+
+export default agent({ name: "Digest", workflows: { digest } });
+
+// file: client.tsx
+import { useWorkflowSubmit } from "@alexkroman1/aai-ui";
+import type agentDef from "./agent.ts";
+
+export function DigestForm() {
+  const { submit } = useWorkflowSubmit<typeof agentDef>("digest"); // "digset" would not compile
+  return (
+    <button type="button" onClick={() => submit({ url: "https://example.com/a" })}>
+      Digest
+    </button>
   );
 }
 ```
@@ -4339,12 +4626,11 @@ function DigestForm() {
 ### WorkflowFields()
 
 ```ts
-function WorkflowFields(props: {
-  workflow?: string | WorkflowSummary;
-}): Element | null;
+function WorkflowFields<App extends WorkflowAppLike = WorkflowAppLike>(props: WorkflowFieldsProps<App>): Element | null;
 ```
 
-Render one field per scalar property of a workflow's input schema.
+Render one field per property of a workflow's input schema that has an
+honest control — every scalar, an array of strings, a `{ name, text }` object.
 
 Pass the workflow's NAME and the schema is fetched here; pass a
 [WorkflowSummary](#workflowsummary) you already hold and nothing is fetched. The name form
@@ -4358,20 +4644,19 @@ declared input takes anything, and a form for "anything" is not a form — and
 nothing while a named lookup is still in flight, so the hand-written fields
 beside it are not reordered when the schema lands.
 
+#### Type Parameters
+
+##### App
+
+`App` *extends* [`WorkflowAppLike`](#workflowapplike) = [`WorkflowAppLike`](#workflowapplike)
+
 #### Parameters
 
 ##### props
 
-Field-set props.
+[`WorkflowFieldsProps`](#workflowfieldsprops)\<`App`\>
 
-###### workflow?
-
-`string` \| [`WorkflowSummary`](#workflowsummary)
-
-The workflow whose input schema to render. A NAME is looked up here (one
-`GET workflows`); a [WorkflowSummary](#workflowsummary) the page already holds fetches
-nothing. `undefined` renders nothing, so a page may pass a selection
-straight through before one is made.
+See [WorkflowFieldsProps](#workflowfieldsprops).
 
 #### Returns
 
@@ -4403,7 +4688,7 @@ function StartRun() {
 function WorkflowPendingNote(props: WorkflowPendingNoteProps): ReactNode;
 ```
 
-The one sentence a page says while a run is in flight — three situations,
+The one sentence a page says while a run is in flight — five situations,
 one line each — as a muted line under the form, and nothing otherwise.
 
 Six template pages had each written the function under this, byte-identical
@@ -4426,9 +4711,18 @@ every other muted line on these pages uses.
 
 `startedHere`, `run` and `pending` are what [WorkflowSubmission](#workflowsubmission)
 reports, which is why the prop is the submission itself rather than three
-booleans a page would re-derive. A page with a FOURTH situation — a run that a
-reload does not recover but ENDS, as `transcription-workflow`'s streaming
-flow has — writes its own sentence, and that template is the one doing so.
+booleans a page would re-derive. The two situations past those three read
+two more of its fields, and used to be the one page that wrote its own note:
+
+- **A run nothing will find again** (`scope: "none"` — `useWorkflowStream`,
+  whose run reads the recording as this page sends it and gives up on one
+  that stops arriving, or `recover: false`): "keep this tab open", because
+  a reload does not orphan that run, it ENDS it. A page telling a reader they
+  can close the tab would be wrong in exactly that mode.
+- **A PAUSED upload** is that same fact arriving through a button, which is
+  why it is tested first and why its two sentences differ: with no run yet
+  a pause costs nothing, and in the streaming mode the run is already
+  watching an upload it will give up on.
 
 #### Parameters
 
@@ -4720,6 +5014,14 @@ optional sessionUrl?: string;
 ```
 
 Absolute WebSocket URL of the live session endpoint, when the server brokers one.
+
+##### tools?
+
+```ts
+optional tools?: Record<string, ToolUi>;
+```
+
+Each tool's declared icon and label, by name — see `ToolDef.ui`.
 
 ***
 
@@ -5792,8 +6094,8 @@ type ClientConfig = Pick<VoiceSessionOptions,
   | "WebSocket"> & {
   buttonText?: string;
   component?: ComponentType;
+  css?: string;
   icon?: ReactNode;
-  name?: string;
   platformUrl?: string;
   sidebar?: ComponentType;
   sidebarPosition?: "left" | "right";
@@ -5801,7 +6103,6 @@ type ClientConfig = Pick<VoiceSessionOptions,
   subtitle?: string;
   target?: string | HTMLElement;
   theme?: ClientTheme;
-  tools?: ToolDisplayConfig;
 };
 ```
 
@@ -5836,6 +6137,21 @@ Full custom component to render instead of the default shell.
 It is rendered inside the same providers the default shell gets, so every
 session hook, `useTheme` and the tool display config work in it unchanged.
 
+##### css?
+
+```ts
+optional css?: string;
+```
+
+A stylesheet for the PAGE, injected into `<head>` for the life of the
+mount and removed on dispose.
+
+For the rules a custom chrome has that no component prop reaches — a
+`@keyframes`, a scrollbar palette, a font face — which otherwise meant a
+`<style>` element written into `index.html` beside the mount, in the one
+file the scaffold's CSP is strict about. The five theme tokens are already
+on `:root` as `--aai-*` when these rules run, so a sheet may use them.
+
 ##### icon?
 
 ```ts
@@ -5847,16 +6163,6 @@ shell header once the session begins.
 
 Both, because they are one mark: an agent whose start screen shows a slice
 of pizza and whose header shows our logo reads as two products.
-
-##### name?
-
-```ts
-optional name?: string;
-```
-
-Agent name shown in the header and start screen — and, with a `component`,
-the page title, there being no shell header to put it in. Left out, the
-default shell asks the agent for its own declared name.
 
 ##### platformUrl?
 
@@ -5920,20 +6226,8 @@ CSS selector or DOM element to render into. Defaults to `"#app"`.
 optional theme?: ClientTheme;
 ```
 
-Theme color overrides.
-
-##### tools?
-
-```ts
-optional tools?: ToolDisplayConfig;
-```
-
-Tool display config: icon and label overrides keyed by tool name.
-
-Honoured with a custom `component` too: [mountClient](#mountclient) installs it into
-`ToolConfigContext`, and the consumer is `ToolCallBlock` — which a custom
-component renders as soon as it uses `MessageList` or `ChatView`, the usual
-way to build one.
+Theme colors — the five tokens, or `{ primary, mode: "dark" | "light" }`
+with the rest derived. See [ClientTheme](#clienttheme).
 
 #### Remarks
 
@@ -5942,13 +6236,15 @@ shell renders — absent, the default one (StartScreen + ChatView, optional
 sidebar); present, the caller's own component inside the same providers —
 and that decision is made at runtime, where every field can be honoured. It
 used to be a union whose two arms banned each other's fields with `?: never`,
-and the failure that shape produces is recorded twice in this file's history:
-`mountClient({ name, component })` and `mountClient({ component, tools })` were both
-the natural thing to write, both were refused with *"Type 'string' is not
-assignable to type 'undefined'"*, and both cost a build round each time
-before the ban was lifted. What was left banned was `sidebar` beside a
-`component`, which invited the identical failure for a combination
-[mountClient](#mountclient) can simply render.
+and the failure that shape produces is recorded in this file's history:
+`sidebar` beside a `component` was the natural thing to write, was refused
+with *"Type '…' is not assignable to type 'undefined'"*, and cost a build
+round each time, for a combination [mountClient](#mountclient) can simply render.
+
+The agent's name and each tool's icon and label are not options here: both
+come from the agent's own `GET /client-config` body — `agent({ name })` and
+`tool({ ui })` — which the mount looks up, so a page never restates what the
+agent already declared.
 
 ***
 
@@ -6027,7 +6323,79 @@ A [ClientRun](#clientrun)'s status: a run's own, with `pending` said as
 ### ClientTheme
 
 ```ts
-type ClientTheme = {
+type ClientTheme = 
+  | ClientThemeTokens & {
+  mode?: undefined;
+}
+  | ClientThemePreset & {
+  bg?: undefined;
+  border?: undefined;
+  surface?: undefined;
+  text?: undefined;
+};
+```
+
+**`Input`**
+
+Theme color overrides for the AAI UI components: the five tokens
+([ClientThemeTokens](#clientthemetokens)), or an accent plus a light/dark mode
+([ClientThemePreset](#clientthemepreset)). Either resolves to a [ResolvedClientTheme](#resolvedclienttheme).
+
+The two forms are EXCLUSIVE: a theme naming `mode` may name no token but
+`primary`, and a theme naming a token may not name `mode`. Without the
+guards a mixed `{ primary, mode: "dark", bg }` compiled (an object literal is
+checked against the union as a whole, so a key from either member passed)
+and `bg` was silently dropped — the preset's derived neutrals won. The guard
+is `?: undefined` rather than `?: never` so an options bag that spells a hole
+as `undefined` still fits. `{ primary }` alone is both forms and resolves
+alike.
+
+***
+
+### ClientThemePreset
+
+```ts
+type ClientThemePreset = {
+  mode?: "dark" | "light";
+  primary: string;
+};
+```
+
+**`Input`**
+
+The short form of [ClientTheme](#clienttheme): one accent and a light or dark
+ground, from which `bg`, `surface`, `text` and `border` are DERIVED.
+
+Most pages that themed at all set `primary` and nothing else — and the few
+that wanted a dark page had to look up four neutrals that go together.
+`{ primary: "#e55", mode: "dark" }` is that lookup done once
+(`resolveClientTheme`, `_theme.ts`); `mode` defaults to `"light"`, which is
+the default palette, so `{ primary }` means the same thing in both forms.
+
+#### Properties
+
+##### mode?
+
+```ts
+optional mode?: "dark" | "light";
+```
+
+The ground the neutrals are derived for. Default: `"light"`.
+
+##### primary
+
+```ts
+primary: string;
+```
+
+Primary accent color.
+
+***
+
+### ClientThemeTokens
+
+```ts
+type ClientThemeTokens = {
   bg?: string;
   border?: string;
   primary?: string;
@@ -6038,7 +6406,8 @@ type ClientTheme = {
 
 **`Input`**
 
-Theme color overrides for the AAI UI components.
+The five theme tokens, each optional — the long form of [ClientTheme](#clienttheme),
+for a page that names its own ground and surfaces.
 
 #### Properties
 
@@ -6965,6 +7334,19 @@ MIME type the browser reported, or `""` when it could not tell.
 
 ***
 
+### FileValueShape
+
+```ts
+type FileValueShape = "file" | "namedText";
+```
+
+The SHAPE a [FileField](#filefield) contributes a read file as. `"file"` (the
+default) is a [FileValue](#filevalue); `"namedText"` is a [NamedTextValue](#namedtextvalue),
+which implies `read="text"`. Only `"namedText"` is a reshape today; the
+option exists so a workflow's object property has a declared control.
+
+***
+
 ### FormProps
 
 ```ts
@@ -7454,6 +7836,40 @@ A persisted transcript to show in place of the live session's items —
 
 ***
 
+### NamedTextValue
+
+```ts
+type NamedTextValue = {
+  name: string;
+  text: string;
+};
+```
+
+**`Sealed`**
+
+What a `<FileField read="text" as="namedText">` contributes: the file's name
+and its text, and nothing else — the shape a workflow schema declares as
+`z.object({ name: z.string(), text: z.string() })` for a draft, a config, a
+CSV of ids that belongs in the run's input rather than in an upload. A
+[FileValue](#filevalue) carries the browser's metadata too, which a schema then
+has to strip or refuse; this is the value a schema can take as it is.
+
+#### Properties
+
+##### name
+
+```ts
+name: string;
+```
+
+##### text
+
+```ts
+text: string;
+```
+
+***
+
 ### PageConfig
 
 ```ts
@@ -7658,6 +8074,7 @@ Main text color.
 type RouteFetchOptions = {
   baseUrl?: string;
   client?: string;
+  headers?: Readonly<Record<string, string>>;
   signal?: AbortSignal;
 };
 ```
@@ -7685,6 +8102,16 @@ optional client?: string;
 The client the call is about, sent as `?client=` — the route's
 `req.clientId`. `useClientId()` is the session's; absent or empty sends
 none.
+
+##### headers?
+
+```ts
+optional headers?: Readonly<Record<string, string>>;
+```
+
+Extra request headers — an `authorization` for a route behind
+`apiKeyRoute`, say. Names are case-insensitive, so a `content-type` (or
+`Content-Type`) here beats the JSON one a body would set.
 
 ##### signal?
 
@@ -8576,12 +9003,41 @@ Cleared when the turn is committed to `messages`.
 
 ***
 
+### SessionStateDotColors
+
+```ts
+type SessionStateDotColors = Partial<Readonly<Record<
+  | AgentState
+| SessionStateDotGroup, string>>>;
+```
+
+**`Input`**
+
+What [SessionStateDot](#sessionstatedot) takes as `colors`: a colour per
+[AgentState](#agentstate), per [SessionStateDotGroup](#sessionstatedotgroup), or any mix. An exact
+state wins over its group; a state neither names is painted from the theme.
+
+***
+
+### SessionStateDotGroup
+
+```ts
+type SessionStateDotGroup = "idle" | "live" | "busy";
+```
+
+The coarse colour groups [SessionStateDotColors](#sessionstatedotcolors) accepts beside the
+exact states: `idle` (disconnected, connecting, and any state this version
+does not know), `live` (ready, listening, speaking) and `busy` (thinking).
+`error` has no group: its red is semantic and is only replaced by name.
+
+***
+
 ### SessionStateDotProps
 
 ```ts
 type SessionStateDotProps = {
   className?: string;
-  colors?: Partial<Readonly<Record<AgentState, string>>>;
+  colors?: SessionStateDotColors;
   dotClassName?: string;
   labelClassName?: string;
   labels?: Partial<Readonly<Record<AgentState, string>>>;
@@ -8606,13 +9062,15 @@ Additional CSS class names for the wrapping `<span>`, appended to its own.
 ##### colors?
 
 ```ts
-optional colors?: Partial<Readonly<Record<AgentState, string>>>;
+optional colors?: SessionStateDotColors;
 ```
 
-The dot's colour per [AgentState](#agentstate) — the chrome's own palette. Any
-state not named (including one a later release adds) is painted the way
-`ConsoleShell` paints it, from the theme: the primary colour while live, a
-fixed amber while thinking, red on error, a faint ink otherwise.
+The dot's colour per [AgentState](#agentstate), per coarse group (`idle`, `live`,
+`busy`), or both — the chrome's own palette, see
+[SessionStateDotColors](#sessionstatedotcolors). Any state not named either way (including
+one a later release adds) is painted from the mounted theme: the primary
+colour while live, the text colour at half strength while idle, a fixed
+amber while thinking, red on error.
 
 ##### dotClassName?
 
@@ -8792,6 +9250,18 @@ distributes over a naked type parameter and answers `never` for a union.
 
 ***
 
+### TextSplitMode
+
+```ts
+type TextSplitMode = "none" | "lines";
+```
+
+How a [TextAreaField](#textareafield) contributes its text. `"none"` (the default) is
+the string; `"lines"` is a `string[]` — one entry per non-blank line,
+trimmed — the control for a schema's `z.array(z.string())`.
+
+***
+
 ### ToolCallInfo
 
 ```ts
@@ -8914,19 +9384,6 @@ type ToolCallRowVariant = "default" | "compact";
 
 Size preset for [ToolCallRow](#toolcallrow): `"default"` is the deployed agent
 UI's scale, `"compact"` the studio transcript's denser one.
-
-***
-
-### ToolDisplayConfig
-
-```ts
-type ToolDisplayConfig = Record<string, {
-  icon?: string;
-  label?: string;
-}>;
-```
-
-Display configuration for a tool call in the UI.
 
 ***
 
@@ -9982,15 +10439,23 @@ never rejects.
 ### UseRouteOptions
 
 ```ts
-type UseRouteOptions = {
+type UseRouteOptions<T = unknown> = {
   client?: string;
+  headers?: Readonly<Record<string, string>>;
   pollMs?: number;
+  until?: (value: T) => boolean;
 };
 ```
 
 **`Input`**
 
 Options for [useRoute](#useroute).
+
+#### Type Parameters
+
+##### T
+
+`T` = `unknown`
 
 #### Properties
 
@@ -10004,13 +10469,45 @@ The `?client=` to send. Default: the session's client
 (`session.identity.clientId()`, read per request) inside `mountClient()`,
 none on a page with no session.
 
+##### headers?
+
+```ts
+optional headers?: Readonly<Record<string, string>>;
+```
+
+Extra request headers, as `routeFetch`'s — an `authorization` for a route
+behind `apiKeyRoute`. Read per request, so an inline object does not
+re-trigger the read.
+
 ##### pollMs?
 
 ```ts
 optional pollMs?: number;
 ```
 
-Read again every this many ms, while mounted. Default: never.
+Read again every this many ms, while mounted. `0` or unset: never. A
+negative or `NaN` value throws rather than polling as fast as the route
+answers.
+
+##### until?
+
+```ts
+optional until?: (value: T) => boolean;
+```
+
+Stop polling once an answer satisfies this — a call that is over, a job
+that has settled. Judged on every read, the first included; `reload()`
+still works afterwards. Read per request, so an inline function is fine.
+
+###### Parameters
+
+###### value
+
+`T`
+
+###### Returns
+
+`boolean`
 
 ***
 
@@ -10043,7 +10540,8 @@ What [useRoute](#useroute) returns.
 data: T | undefined;
 ```
 
-The last answer, kept through a failed re-read. `undefined` until the first.
+The last answer for THIS `path`, kept through a failed re-read.
+`undefined` until the first, and again whenever `path` changes.
 
 ##### error
 
@@ -10051,7 +10549,7 @@ The last answer, kept through a failed re-read. `undefined` until the first.
 error: string | undefined;
 ```
 
-Why the LAST read failed — the route's `{ error }` when it said — or `undefined`.
+Why the LAST read of this `path` failed — the route's `{ error }` when it said — or `undefined`.
 
 ##### loading
 
@@ -10838,7 +11336,10 @@ default, `false` opts out, `{ partBytes, concurrency }` tunes it. See
 type UseWorkflowSubmitOptions = {
   api?: WorkflowApi;
   intervalMs?: number;
-  key?: string;
+  key?:   | string
+     | {
+     storage?: "session" | "local";
+   };
   parallel?: UploadParallelOption;
   recover?: boolean;
   wait?: number;
@@ -10870,7 +11371,11 @@ How often the fallback poll re-reads a live run.
 ##### key?
 
 ```ts
-optional key?: string;
+optional key?: 
+  | string
+  | {
+  storage?: "session" | "local";
+};
 ```
 
 Correlation key recorded with the run, for finding it again without the id.
@@ -10879,11 +11384,18 @@ Correlation key recorded with the run, for finding it again without the id.
 load produces again — `useRunKey()`'s, minted by the hook. Pass one to
 scope runs to something the page knows better: an ACCOUNT's own id, which
 is what makes a run follow the person to a new device, or
-`useRunKey({ storage: "local" })` for a run that outlives the tab by
-design. The key is a lookup CAPABILITY (there is no per-user filtering
-behind `find`), it must fit the route's 256-character bound, and anything
-derived from a person's own input both collides and carries what they
-typed — `use-run-key.ts` argues every alternative.
+`{ storage: "local" }` — `useRunKey({ storage: "local" })`'s key, minted
+here — for a run that outlives the tab by design. The key is a lookup
+CAPABILITY (there is no per-user filtering behind `find`), it must fit the
+route's 256-character bound, and anything derived from a person's own
+input both collides and carries what they typed — `use-run-key.ts` argues
+every alternative. What was chosen is reported back as
+`WorkflowSubmission.scope`.
+
+**An empty or whitespace key THROWS** at the hook (and the route answers
+400): `""` is not "no key" but one key shared by every visitor whose key
+computed to it — `user?.id ?? ""` before login. Pass `undefined` until the
+key is known.
 
 ##### parallel?
 
@@ -11227,7 +11739,7 @@ type WorkflowApi = {
   startAndWait: Promise<WorkflowRunSnapshot>;
   streamOutput: Promise<Response>;
   upload: Promise<UploadRef>;
-  uploadInfo: Promise<UploadInfo>;
+  uploadInfo: Promise<UploadRecord>;
   uploadStream: Promise<UploadRef>;
   wake: Promise<number>;
   watch: Promise<Response>;
@@ -11630,7 +12142,7 @@ recording over a long link wants — see [UploadOptions.parallel](../aai/workflo
 ##### uploadInfo()
 
 ```ts
-uploadInfo(id: string, options?: WorkflowApiCallOptions): Promise<UploadInfo>;
+uploadInfo(id: string, options?: WorkflowApiCallOptions): Promise<UploadRecord>;
 ```
 
 Read an upload's record: its name, how much has ARRIVED, and `complete`.
@@ -11651,7 +12163,7 @@ which a slow link and a dead client both produce.
 
 ###### Returns
 
-`Promise`\<[`UploadInfo`](../aai/step.md#uploadinfo)\>
+`Promise`\<[`UploadRecord`](../aai/step.md#uploadrecord)\>
 
 ##### uploadStream()
 
@@ -11803,6 +12315,58 @@ against the same client.
 
 ***
 
+### WorkflowAppLike
+
+```ts
+type WorkflowAppLike = {
+  workflows?: Readonly<Record<string, AnyWorkflowDef>>;
+};
+```
+
+**`Input`**
+
+An agent with a `workflows` map — what `agent({ workflows })` and
+`workflowApp()` return, and what the agent form of the workflow hooks and of
+`runWorkflow` is parameterized by (`useWorkflowSubmit<typeof
+agentDef>("digest")`, `runWorkflow(agentDef, "digest", input)`).
+
+#### Properties
+
+##### workflows?
+
+```ts
+readonly optional workflows?: Readonly<Record<string, AnyWorkflowDef>>;
+```
+
+***
+
+### WorkflowDefOf
+
+```ts
+type WorkflowDefOf<App, Name extends string> = WorkflowsOf<App>[Name & keyof WorkflowsOf<App>];
+```
+
+The def `App` declares under `Name` — what the agent form of a hook derives
+its input and output from: `WorkflowOutputOf<WorkflowDefOf<App, Name>>`.
+
+With `Name` the whole [WorkflowNameOf](#workflownameof) union it is the union of the
+agent's defs, so an app with ONE workflow — most of them — gets exactly that
+workflow's types from `<typeof agentDef>` alone, and an app with several
+names the one it means as a second type argument:
+`useWorkflowSubmit<typeof agentDef, "digest">("digest")`.
+
+#### Type Parameters
+
+##### App
+
+`App`
+
+##### Name
+
+`Name` *extends* `string`
+
+***
+
 ### WorkflowFieldKind
 
 ```ts
@@ -11812,6 +12376,8 @@ type WorkflowFieldKind =
   | "select"
   | "checkbox"
   | "file"
+  | "lines"
+  | "namedText"
   | "none"
   | string & {
 };
@@ -11831,8 +12397,82 @@ There is deliberately no `"textarea"` member. A textarea is a string like a
 text field is — the same value over the wire — so it is a hand-written swap
 rather than a shape the schema can ask for.
 
+Two NON-scalar shapes do have an honest control, and are the two members
+past the scalars: `"lines"` is `<TextAreaField split="lines">` for an array
+of strings (one per line), and `"namedText"` is `<FileField read="text"
+as="namedText">` for an object of exactly `{ name: string, text: string }` —
+a draft, a config, read in the browser and journaled with the input. Both
+were the hand-written half of `document-redline-workflow`'s mixed form; a
+page may also ASK for either by name through `render`.
+
 Open (`| (string & {})`): a control added later is a new value, so read an
 unknown kind as `"none"`.
+
+***
+
+### WorkflowFieldRender
+
+```ts
+type WorkflowFieldRender = "lines" | "namedText";
+```
+
+The kinds a page may ask `<WorkflowFields render>` for by property name —
+the two non-scalar controls, which a schema cannot always say it wants.
+
+***
+
+### WorkflowFieldsProps
+
+```ts
+type WorkflowFieldsProps<App extends WorkflowAppLike = WorkflowAppLike> = {
+  render?: Readonly<Record<string, WorkflowFieldRender>>;
+  workflow?:   | WorkflowSummary
+     | WorkflowNameOf<App>;
+};
+```
+
+**`Input`**
+
+Props for [WorkflowFields](#workflowfields).
+
+#### Type Parameters
+
+##### App
+
+`App` *extends* [`WorkflowAppLike`](#workflowapplike) = [`WorkflowAppLike`](#workflowapplike)
+
+The agent, when the page names it
+  (`<WorkflowFields<typeof agentDef> workflow="digest" />`): `workflow` is
+  then a name the agent declares, checked. Left to its default, any string:
+  `WorkflowNameOf<WorkflowAppLike>` is `string`. The default is the
+  constraint rather than the hooks' `never` because this is ONE signature —
+  a form has no def form to fall to, so there is no second overload for a
+  `never` to hand the call on to.
+
+#### Properties
+
+##### render?
+
+```ts
+optional render?: Readonly<Record<string, WorkflowFieldRender>>;
+```
+
+The control to draw for a property, by name, where the schema alone does
+not say — `{ mustCover: "lines", source: "namedText" }`. Beats the schema
+for that property, never a declared upload. See `WorkflowFieldKind`.
+
+##### workflow?
+
+```ts
+optional workflow?: 
+  | WorkflowSummary
+| WorkflowNameOf<App>;
+```
+
+The workflow whose input schema to render. A NAME is looked up here (one
+`GET workflows`); a [WorkflowSummary](#workflowsummary) the page already holds fetches
+nothing. `undefined` renders nothing, so a page may pass a selection
+straight through before one is made.
 
 ***
 
@@ -11841,6 +12481,8 @@ unknown kind as `"none"`.
 ```ts
 type WorkflowInputOf<D> = D extends {
   run: (input: infer I, ctx: never) => unknown;
+} ? I : D extends StandardSchemaV1<unknown, infer O> ? O : D extends {
+  body: (run: (input: infer I, ctx: unknown) => unknown) => unknown;
 } ? I : never;
 ```
 
@@ -11911,9 +12553,48 @@ export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: Wor
 }
 ```
 
+## It also reads a SCHEMA, and a bodyless declaration, for the cycle's sake
+
+`WorkflowInputOf<typeof def>` inside the body's own module is the obvious
+spelling and it is `TS7022`: `typeof def` needs the body's signature when the
+body is what `workflow({ run })` infers from, and the body's parameter names
+`typeof def`. Two spellings avoid it, and both are read here:
+
+- **The input schema itself** — `WorkflowInputOf<typeof digestInput>` for a
+  named `z.object(…)` const, which is the schema's OUTPUT type exactly as the
+  def reading answers it. The schema is what the def reads anyway, so the
+  body names the same declaration one step earlier.
+- **A two-phase declaration** — `workflow({ input, output }).body(digestFlow)`.
+  `typeof def` there is fixed by the declaration alone (see
+  `WorkflowDeclaration`), so a body annotated `WorkflowInputOf<typeof def>`
+  resolves; and the declaration BEFORE `.body` reads here too, as what its
+  `body` will accept.
+
 Published from `@alexkroman1/aai` as well as `@alexkroman1/aai/workflow-api`.
 The root is the one an author wants: this annotation lives in a
 `workflows/*.ts` body, next to the `workflow()` that declared it.
+
+***
+
+### WorkflowNameOf
+
+```ts
+type WorkflowNameOf<App> = [WorkflowsOf<App>] extends [never] ? never : keyof WorkflowsOf<App> & string;
+```
+
+The names `App` declares under `workflows` — the literal union a page passes
+to `useWorkflowSubmit<typeof agentDef>(…)`, `useWorkflowStream`,
+`useWorkflowRuns` and `<WorkflowFields>`, and a spec to `runWorkflow`.
+
+`never` for a type with no `workflows` map (a def, an unrelated object), so
+the agent form of each overloaded hook declines it and the def form is tried.
+The `[T] extends [never]` guard is load-bearing: `keyof never` is every key.
+
+#### Type Parameters
+
+##### App
+
+`App`
 
 ***
 
@@ -12025,12 +12706,14 @@ composes this in already.
 ```ts
 type WorkflowPendingNoteProps = {
   className?: string;
-  scope?: "tab" | "browser";
+  scope?: WorkflowSubmissionScope;
   subject?: string;
   submission: {
      pending: boolean;
      run: WorkflowRun | undefined;
+     scope?: WorkflowSubmissionScope;
      startedHere: boolean;
+     upload?: UploadStatus;
   };
 };
 ```
@@ -12054,14 +12737,17 @@ a base one is not reliably the winner.
 ##### scope?
 
 ```ts
-optional scope?: "tab" | "browser";
+optional scope?: WorkflowSubmissionScope;
 ```
 
-Where the key that finds the run again lives. `"tab"` (the default) is
-`useWorkflowSubmit`'s own `sessionStorage` key; `"browser"` is a page that
-passed `useRunKey({ storage: "local" })`, whose runs any tab on this browser
-can find — so the sentence says "this browser" and stops promising that
-closing the tab loses anything.
+Where the key that finds the run again lives, overriding what the
+submission reports. `"tab"` is `useWorkflowSubmit`'s own `sessionStorage`
+key; `"browser"` is a page that passed `useRunKey({ storage: "local" })`,
+whose runs any tab on this browser can find — so the sentence says "this
+browser" and stops promising that closing the tab loses anything;
+`"none"` is a run nothing will find again (`recover: false`,
+`useWorkflowStream`), which the sentence has to say instead. Default: the
+submission's own `scope`, else `"tab"`.
 
 ##### subject?
 
@@ -12078,13 +12764,16 @@ What the run produces, as the noun the sentences name: `"draft"`,
 submission: {
   pending: boolean;
   run: WorkflowRun | undefined;
+  scope?: WorkflowSubmissionScope;
   startedHere: boolean;
+  upload?: UploadStatus;
 };
 ```
 
 The submission the page is rendering — `useWorkflowSubmit`'s or
-`useWorkflowStream`'s result, or any object carrying these three fields.
-Nothing renders while `pending` is false.
+`useWorkflowStream`'s result, or any object carrying the three required
+fields. Nothing renders while `pending` is false. `scope` and `upload`,
+when present, choose two more sentences — see below.
 
 ###### pending
 
@@ -12098,11 +12787,27 @@ readonly pending: boolean;
 readonly run: WorkflowRun | undefined;
 ```
 
+###### scope?
+
+```ts
+readonly optional scope?: WorkflowSubmissionScope;
+```
+
+Who finds the run again — `WorkflowSubmission.scope`; the `scope` prop overrides it.
+
 ###### startedHere
 
 ```ts
 readonly startedHere: boolean;
 ```
+
+###### upload?
+
+```ts
+readonly optional upload?: UploadStatus;
+```
+
+The bytes in flight — `WorkflowSubmission.upload`; a PAUSED one gets its own line.
 
 ***
 
@@ -12280,6 +12985,27 @@ Lifecycle of one workflow run.
 
 ***
 
+### WorkflowsOf
+
+```ts
+type WorkflowsOf<App> = App extends {
+  workflows?: infer W;
+} ? Extract<W, Record<string, unknown>> : never;
+```
+
+The `workflows` map of an app def, or `never` when it declares none — the
+reading [WorkflowNameOf](#workflownameof) and [WorkflowDefOf](#workflowdefof) are spelled in.
+`Extract` rather than `NonNullable`: an absent key infers `unknown`, which
+`NonNullable` would keep.
+
+#### Type Parameters
+
+##### App
+
+`App`
+
+***
+
 ### WorkflowStreamSubmission
 
 ```ts
@@ -12288,13 +13014,13 @@ type WorkflowStreamSubmission<R = unknown, I = unknown> = WorkflowSubmission<R, 
 
 What [useWorkflowStream](#useworkflowstream) returns: a [WorkflowSubmission](#workflowsubmission), exactly.
 
-The same eight fields `useWorkflowSubmit` returns, of which this hook is a
+The same fields `useWorkflowSubmit` returns, of which this hook is a
 drop-in sibling — same `<Form>`, same `<UploadProgressBar>`, same
-`<WorkflowProgress>`. An ALIAS rather than a second declaration of the eight:
+`<WorkflowProgress>`. An ALIAS rather than a second declaration of them:
 the two have to agree field for field to be drop-in, and two copies of a type
 that have to agree are two copies that can stop agreeing.
 
-Exactly two of the fields mean something different here, and both differences
+Exactly three of the fields mean something different here, and all three
 follow from WHEN the run is created — it exists before its bytes do:
 
 - `submit()` resolves when the UPLOAD finishes, not when the run is accepted;
@@ -12304,6 +13030,9 @@ follow from WHEN the run is created — it exists before its bytes do:
 - `run` is set from the moment the run EXISTS, which here is before the bytes
   are in. That is what lets a page render `<WorkflowProgress>` beside the
   upload bar rather than after it.
+- `scope` is always `"none"`: the run is reading the bytes THIS page sends,
+  so a reload does not orphan it, it ENDS it — and `<WorkflowPendingNote>`
+  says so instead of promising the run will be found again.
 
 #### Type Parameters
 
@@ -12328,9 +13057,11 @@ type WorkflowSubmission<R = unknown, I = unknown> = {
   reset: () => void;
   resumeUpload: () => void;
   run: WorkflowRun<R> | undefined;
+  scope: WorkflowSubmissionScope;
   startedHere: boolean;
   submit: (input: I) => Promise<void>;
   submitForm: (values: FormValues) => Promise<void>;
+  timing: WorkflowSubmissionTiming;
   upload: UploadStatus | undefined;
   wake: () => Promise<number>;
 };
@@ -12451,6 +13182,16 @@ run: WorkflowRun<R> | undefined;
 
 The run, once started, followed to completion.
 
+##### scope
+
+```ts
+scope: WorkflowSubmissionScope;
+```
+
+Who can find the run again after this page is gone — see
+[WorkflowSubmissionScope](#workflowsubmissionscope). Derived from the hook's options (`key`,
+`recover`), so a page never restates it; `<WorkflowPendingNote>` reads it.
+
 ##### startedHere
 
 ```ts
@@ -12539,6 +13280,17 @@ about the values and not a cast.
 
 `Promise`\<`void`\>
 
+##### timing
+
+```ts
+timing: WorkflowSubmissionTiming;
+```
+
+Press-to-settle marks for the submission THIS mount made — see
+[WorkflowSubmissionTiming](#workflowsubmissiontiming). Both `undefined` before the first
+`submit()` and again after `reset()`; a run adopted by the mount-time
+lookup has no press to time from and sets neither.
+
 ##### upload
 
 ```ts
@@ -12573,6 +13325,123 @@ its wait, or there is no run yet), so nothing here has to be guarded.
 ###### Returns
 
 `Promise`\<`number`\>
+
+***
+
+### WorkflowSubmissionOf
+
+```ts
+type WorkflowSubmissionOf<D> = WorkflowSubmission<WorkflowOutputOf<D>, SubmitInputOf<D>>;
+```
+
+The submission `useWorkflowSubmit<D>` / `useWorkflowStream<D>` hands back for
+the workflow def `D`, named so a component can take one as a prop.
+
+The hook's own return is inferred, so a page that renders everything in one
+function never needs this. A page that splits does, and there was no way to
+write it from the outside without three names — `WorkflowSubmission`,
+`WorkflowOutputOf` and `SubmitInputOf` — composed by hand, which is what a
+`ReturnType<typeof useWorkflowSubmit>` cannot say because the hook is
+generic. `podcast-digest-workflow`'s `client.tsx` composed exactly that.
+
+#### Type Parameters
+
+##### D
+
+`D`
+
+#### Example
+
+```tsx
+// file: agent.ts
+import { agent, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export const dailyDigest = workflow({
+  input: z.object({ hour: z.number() }),
+  output: z.object({ posted: z.string() }),
+  run: async ({ hour }) => ({ posted: `daily at ${hour}:00` }),
+});
+
+export default agent({ name: "Digest", workflows: { dailyDigest } });
+
+// file: client.tsx
+import type { WorkflowSubmissionOf } from "@alexkroman1/aai-ui";
+import type { dailyDigest } from "./agent.ts";
+
+function ScheduleControls({ submission }: { submission: WorkflowSubmissionOf<typeof dailyDigest> }) {
+  return submission.run?.status === "completed" ? <p>{submission.run.output.posted}</p> : null;
+}
+```
+
+***
+
+### WorkflowSubmissionScope
+
+```ts
+type WorkflowSubmissionScope = "tab" | "browser" | "none";
+```
+
+Who can find the run again — the lifetime of the key it was recorded under.
+
+- `"tab"` — `useWorkflowSubmit`'s own `sessionStorage` key: a reload or a
+  same-tab navigation finds the run; a new tab does not.
+- `"browser"` — a `localStorage` key (`key: { storage: "local" }`, or
+  `useRunKey({ storage: "local" })`), or a key the page supplied itself (an
+  account's id): any tab on this browser finds it, so closing the tab loses
+  nothing.
+- `"none"` — nothing will find it: `recover: false`, or `useWorkflowStream`,
+  whose run is reading the bytes THIS page is sending and is ended, not
+  orphaned, by a reload.
+
+`<WorkflowPendingNote>` reads it to say the right sentence; the raw fact is
+published so a page with its own note can too.
+
+***
+
+### WorkflowSubmissionTiming
+
+```ts
+type WorkflowSubmissionTiming = {
+  settledAt?: number;
+  submittedAt?: number;
+};
+```
+
+**`Sealed`**
+
+The two marks a submission's wall clock is read from — press to settle,
+across the upload, the run, and the gap between them, which no server-side
+number can give: `output.elapsedMs` is the RUN's own clock and begins after
+the upload. Only the browser holds both ends.
+
+`performance.now()` marks rather than elapsed durations, and that is the
+load-bearing part: an elapsed number is stale the instant it is computed, so
+a page holding one has to re-render to keep it true. A mark lets the one
+section that prints a running clock re-render on its own interval and read
+`performance.now() - submittedAt` at render. Monotonic, so a clock
+correction cannot make a run look instant, or negative.
+
+#### Properties
+
+##### settledAt?
+
+```ts
+optional settledAt?: number;
+```
+
+When the submission settled — the run reached a terminal status, or the
+submit itself failed — measured at that moment rather than at the next
+render. `undefined` while it is in flight, and for a run this page did
+not start (there was no press to time from).
+
+##### submittedAt?
+
+```ts
+optional submittedAt?: number;
+```
+
+When `submit()` was called on this mount, or `undefined` before the first.
 
 ***
 

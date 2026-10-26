@@ -16,16 +16,27 @@
  *   stubs a case composes with.
  *
  * ```ts
- * import type { AgentDef } from "@alexkroman1/aai";
- * import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/testing/vitest";
+ * // file: tools/look_up.ts
+ * import { tool } from "@alexkroman1/aai";
+ * import { z } from "zod";
  *
- * declare const agentDef: AgentDef;
+ * export default tool({
+ *   description: "Look an order up",
+ *   inputSchema: z.object({ orderId: z.string() }),
+ *   execute: ({ orderId }) => ({ orderId, status: "shipped" }),
+ * });
+ *
+ * // file: agent.eval.test.ts
+ * import agentDef from "virtual:aai/agent";
+ * import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/testing/vitest";
+ * import lookUp from "./tools/look_up.ts";
  *
  * describeEval(agentDef, (test) => {
  *   test(
  *     "looks the order up before answering",
  *     async ({ session }) => {
- *       expectCalled(await session.say("where is order W1234?"), "look_up");
+ *       // The claim takes the tool's DEF, matched by the name the agent registered.
+ *       expectCalled(await session.say("where is order W1234?"), lookUp);
  *     },
  *     { stubReply: "Order W1234 shipped yesterday." },
  *   );
@@ -45,6 +56,8 @@
 // SDK's own runner-flavoured subpath for the same reason this one is
 // (`published-testing-split`).
 export {
+  describeAgent,
+  type InstallStubGatewayOptions,
   installStubClientInbox,
   installStubGateway,
   installStubReporter,
@@ -54,7 +67,10 @@ export {
   installStubTranscribe,
   installStubUploads,
   installStubWorkflows,
+  installStubWorld,
   type StubWorkflowsOptions,
+  type StubWorld,
+  type StubWorldOptions,
 } from "@alexkroman1/aai/testing/vitest";
 // Everything the eval door carries, so an eval file needs no second import.
 // `testing-doors.test.ts` holds this list to `/eval/vitest`'s.
@@ -94,6 +110,8 @@ export {
   type EvalSimulationContext,
   type EvalSimulationOptions,
   type EvalSleep,
+  type EvalSteps,
+  type EvalStepsOptions,
   type EvalTest,
   type EvalTestContext,
   type EvalTextAgent,
@@ -101,9 +119,11 @@ export {
   type EvalTextTest,
   type EvalTextTestContext,
   type EvalToolCall,
+  type EvalToolOutput,
   type EvalTurn,
   type EvalWorkflowCaseOptions,
   type EvalWorkflowRun,
+  type EvalWorkflowStart,
   type EvalWorkflows,
   type EvalWorkflowsOptions,
   type EvalWorkflowTest,
@@ -111,6 +131,7 @@ export {
   errorsIn,
   evalCredentials,
   evalNetwork,
+  evalRunOf,
   evalSimulation,
   evalTextCredentials,
   evalWorkflowCredentials,
@@ -198,3 +219,14 @@ export {
   type WalkPhoneTreeOptions,
   walkPhoneTree,
 } from "./eval-vitest-barrel.ts";
+// The runtime's own installer for the ffmpeg toolchain: a scripted child in
+// place of the binary, through the SDK's `ffmpegProcess` seam. Declared here
+// rather than beside `installStubUploads` because that file is `sdk/`, which
+// may not reach the host-side seam (`sdk-host-boundary`).
+export {
+  installStubFfmpeg,
+  type StubFfmpeg,
+  type StubFfmpegCall,
+  type StubFfmpegReply,
+  type StubFfmpegScript,
+} from "./testing/stub-ffmpeg.ts";

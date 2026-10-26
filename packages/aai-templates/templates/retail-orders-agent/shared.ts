@@ -143,6 +143,8 @@ export interface ActivityEntry {
   tool: string;
   summary: string;
   at: number;
+  /** The runtime's id for the call, so its `tool.completed` can find this line. */
+  callId: string;
 }
 
 /** Capped in state, not just in the projection — an uncapped list would grow
@@ -154,7 +156,7 @@ export interface RetailState {
   /** Set by the two finder tools. Null until the caller is identified. */
   authenticatedUserId: string | null;
   /** Monotonic. Every tool call increments it, which is what guarantees the
-   *  projection differs and therefore gets pushed — `syncState` sends only
+   *  projection differs and therefore gets pushed — a synced slot sends only
    *  when the projected result changed. */
   callSeq: number;
   activity: ActivityEntry[];
@@ -170,26 +172,14 @@ export interface RetailState {
   pending: PendingAction | null;
 }
 
-/**
- * The store as a READ hands it out: deep-frozen, and typed to say so.
- *
- * The projection and its helpers take this rather than {@link RetailState},
- * which is the widening a deep-readonly slot forces and the reason it is worth
- * doing: a mutable state still satisfies it, so `client.tsx` still projects
- * `emptyRetailState()` and every `retailTool` body still passes its draft,
- * while a projection helper that WOULD have mutated stops compiling instead of
- * throwing at its first call.
- */
+/** The store as a read hands it out — what the projection and its helpers take. */
 export type FrozenRetailState = DeepReadonly<RetailState>;
 
 /**
- * A pristine, EMPTY store — no seed data.
- *
- * `store.ts`'s `createDefaultState` builds the real seeded state on top of
- * this, so the shape is declared once. It lives here, apart from that, because
- * `client.tsx` needs a `RetailState` for its pre-first-call fallback and must
- * not import `store.ts`: that module pulls the 107 KB `seed.json`, which would
- * then land in the browser bundle.
+ * A pristine, EMPTY store — no seed data: the slot's `empty` frame, and what
+ * `client.tsx` projects for itself before the first push. It lives here rather
+ * than in `store.ts` because that module pulls the 107 KB `seed.json`, which
+ * must not land in the browser bundle.
  */
 export function emptyRetailState(): RetailState {
   return {
@@ -418,11 +408,11 @@ function swapOptionsFor(
   });
 }
 
-/** The `syncState` projection — the entire contract with `client.tsx`.
+/** The slot's synced projection — the entire contract with `client.tsx`.
  *
  *  Only the authenticated customer is projected. The other five seeded
  *  customers' emails, addresses, and payment methods never leave the server,
- *  which is why `syncState` takes a projection rather than a boolean.
+ *  which is why the slot declares a `view` rather than syncing the whole store.
  *
  *  Takes the state itself, not the slot: `retailSlot.projection` supplies a
  *  real one even before the first tool call, so the optional chaining this

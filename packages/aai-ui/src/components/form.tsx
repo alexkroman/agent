@@ -56,7 +56,15 @@ export {
 } from "./form-fields.tsx";
 // Re-exported so `form.tsx` stays the one import path for everything a form
 // needs, definitions and components alike.
-export type { FieldShell, FileReadMode, FileValue, FormValues } from "./form-types.ts";
+export type {
+  FieldShell,
+  FileReadMode,
+  FileValue,
+  FileValueShape,
+  FormValues,
+  NamedTextValue,
+  TextSplitMode,
+} from "./form-types.ts";
 export { isFileValue } from "./form-types.ts";
 
 /**

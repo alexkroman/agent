@@ -7,6 +7,7 @@
 import type { AgentDef } from '@alexkroman1/aai';
 import type { AgentEnv } from '@alexkroman1/aai/host-internal';
 import { createRecordingWorkflows } from '@alexkroman1/aai/testing';
+import { createRouteContext } from '@alexkroman1/aai/testing';
 import { createRunSnapshot } from '@alexkroman1/aai/testing';
 import { createSlotStore } from '@alexkroman1/aai/testing';
 import { createStubWorkflows } from '@alexkroman1/aai/testing';
@@ -23,12 +24,15 @@ import { expectDeployable } from '@alexkroman1/aai/testing';
 import { expectDialogOk } from '@alexkroman1/aai/testing';
 import { expectDialogRefused } from '@alexkroman1/aai/testing';
 import { expectPromptBuiltinsDeclared } from '@alexkroman1/aai/testing';
+import { expectSlotContract } from '@alexkroman1/aai/testing';
 import { expectToolOk } from '@alexkroman1/aai/testing';
 import { FetchRouteHandler } from '@alexkroman1/aai/testing';
 import { FetchRouteHit } from '@alexkroman1/aai/testing';
 import { FetchRouteRequest } from '@alexkroman1/aai/testing';
 import { FetchRoutesOptions } from '@alexkroman1/aai/testing';
 import { FetchRouteTable } from '@alexkroman1/aai/testing';
+import { FiredEvent } from '@alexkroman1/aai/testing';
+import { fireEvent } from '@alexkroman1/aai/testing';
 import { isEvent } from '@alexkroman1/aai/testing';
 import type { LanguageModel } from 'ai';
 import type { ModelMessage } from 'ai';
@@ -37,11 +41,15 @@ import { parseToolInput } from '@alexkroman1/aai/testing';
 import type { PrepareStepFunction } from 'ai';
 import { ProjectFiles } from '@alexkroman1/aai/testing';
 import type { ProviderEnv } from '@alexkroman1/aai/host-internal';
+import { RecordedSignal } from '@alexkroman1/aai/testing';
 import { RecordedSleep } from '@alexkroman1/aai/testing';
 import { RecordedStart } from '@alexkroman1/aai/testing';
 import { RecordedStep } from '@alexkroman1/aai/testing';
 import { RecordingWorkflows } from '@alexkroman1/aai/testing';
 import { RecordingWorkflowsOptions } from '@alexkroman1/aai/testing';
+import { RouteContextOverrides } from '@alexkroman1/aai/testing';
+import { routeHandlerOf } from '@alexkroman1/aai/testing';
+import { routeOf } from '@alexkroman1/aai/testing';
 import { runGuardrail } from '@alexkroman1/aai/testing';
 import { RunSnapshotOverrides } from '@alexkroman1/aai/testing';
 import { runTool } from '@alexkroman1/aai/testing';
@@ -49,6 +57,10 @@ import { SaidLine } from '@alexkroman1/aai/testing';
 import { schemaInputIssues } from '@alexkroman1/aai/testing';
 import { SentEvent } from '@alexkroman1/aai/testing';
 import type { SessionEvent } from '@alexkroman1/aai';
+import { sessionEvent } from '@alexkroman1/aai/testing';
+import { SessionEventFields } from '@alexkroman1/aai/testing';
+import { SessionEventRest } from '@alexkroman1/aai/testing';
+import { SlotContractOptions } from '@alexkroman1/aai/testing';
 import type { StepResult } from 'ai';
 import { STUB_SPEECH_PCM_BYTES } from '@alexkroman1/aai/testing';
 import { StubClientInbox } from '@alexkroman1/aai/testing';
@@ -115,21 +127,28 @@ import type { ToolChoice } from '@alexkroman1/aai';
 import { ToolContextOverrides } from '@alexkroman1/aai/testing';
 import { toolInputIssues } from '@alexkroman1/aai/testing';
 import type { ToolInputSchema } from '@alexkroman1/aai';
+import { toolNameOf } from '@alexkroman1/aai/testing';
 import { toolOf } from '@alexkroman1/aai/testing';
 import { ToolRunner } from '@alexkroman1/aai/testing';
 import { toolRunner } from '@alexkroman1/aai/testing';
 import type { ToolSet } from 'ai';
 import { WORKFLOW_CONTEXT_NOW } from '@alexkroman1/aai/testing';
+import { WorkflowAppLike } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
 import { WorkflowContextOptions } from '@alexkroman1/aai/testing';
 import { WorkflowContextRecorder } from '@alexkroman1/aai/testing';
 import type { WorkflowDef } from '@alexkroman1/aai';
+import { WorkflowDefOf } from '@alexkroman1/aai/workflow-api';
+import { WorkflowNameOf } from '@alexkroman1/aai/workflow-api';
+import { WorkflowOutputOf } from '@alexkroman1/aai/workflow-api';
 import type { WorkflowRunStatus } from '@alexkroman1/aai/workflow-api';
 
 // @public
 export function createMemoryJournal(): WorkflowJournal;
 
 export { createRecordingWorkflows }
+
+export { createRouteContext }
 
 export { createRunSnapshot }
 
@@ -171,6 +190,8 @@ export { expectDialogRefused }
 
 export { expectPromptBuiltinsDeclared }
 
+export { expectSlotContract }
+
 export { expectToolOk }
 
 export { FetchRouteHandler }
@@ -182,6 +203,10 @@ export { FetchRouteRequest }
 export { FetchRoutesOptions }
 
 export { FetchRouteTable }
+
+export { FiredEvent }
+
+export { fireEvent }
 
 // @public @input
 export interface HostAgentOptions {
@@ -220,6 +245,8 @@ export { parseToolInput }
 
 export { ProjectFiles }
 
+export { RecordedSignal }
+
 export { RecordedSleep }
 
 export { RecordedStart }
@@ -229,6 +256,12 @@ export { RecordedStep }
 export { RecordingWorkflows }
 
 export { RecordingWorkflowsOptions }
+
+export { RouteContextOverrides }
+
+export { routeHandlerOf }
+
+export { routeOf }
 
 // @public
 type RunCodeExecutor = (code: string) => Promise<string | {
@@ -252,9 +285,12 @@ export { runTool }
 // @public
 export function runWorkflow<P extends ToolInputSchema, R>(def: WorkflowDef<P, R>, input: Record<string, unknown>, options?: RunWorkflowOptions): Promise<WorkflowTestHandle<R>>;
 
+// @public (undocumented)
+export function runWorkflow<App extends WorkflowAppLike, Name extends WorkflowNameOf<App>>(agent: App, name: Name, input: Record<string, unknown>, options?: RunWorkflowOptions): Promise<WorkflowTestHandle<WorkflowOutputOf<WorkflowDefOf<App, Name>>>>;
+
 // @public @input
 export type RunWorkflowOptions = {
-    name?: string;
+    key?: string;
     journal?: WorkflowJournal;
     logger?: Logger;
     crashAt?: string;
@@ -282,6 +318,14 @@ export type ScriptedToolCall = {
 };
 
 export { SentEvent }
+
+export { sessionEvent }
+
+export { SessionEventFields }
+
+export { SessionEventRest }
+
+export { SlotContractOptions }
 
 export { STUB_SPEECH_PCM_BYTES }
 
@@ -450,6 +494,8 @@ export { ToolContextOverrides }
 
 export { toolInputIssues }
 
+export { toolNameOf }
+
 export { toolOf }
 
 export { ToolRunner }
@@ -472,8 +518,10 @@ export const workflowJournalBrand: unique symbol;
 
 // @public @sealed
 export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
+    readonly key: string;
     advanceSleep(correlationIds?: readonly string[]): Promise<WorkflowTestHandle<R>>;
-    signal(token: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
+    signal(token: string, payload?: unknown, options?: WorkflowTestSignalOptions): Promise<WorkflowTestHandle<R>>;
+    signalRun(label: string, payload?: unknown, options?: WorkflowTestSignalOptions): Promise<WorkflowTestHandle<R>>;
     readonly signalled: boolean;
     expireWaits(): Promise<WorkflowTestHandle<R>>;
     restart(): Promise<WorkflowTestHandle<R>>;
@@ -501,6 +549,11 @@ export type WorkflowTestRun<R> = {
     readonly crashed: boolean;
     readonly waits: readonly WorkflowTestWait[];
     readonly resumable: boolean;
+};
+
+// @public @input
+export type WorkflowTestSignalOptions = {
+    holdMs?: number | undefined;
 };
 
 // @public @sealed

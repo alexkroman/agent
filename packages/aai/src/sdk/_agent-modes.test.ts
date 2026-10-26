@@ -74,10 +74,10 @@ describe("assertModeFields", () => {
 
   test.each([
     "silence",
+    "promptContext",
     "voicePresets",
     "toolChoice",
     "builtinTools",
-    "syncState",
     "events",
     "telephony",
     "idleTimeoutMs",
@@ -94,6 +94,8 @@ describe("assertModeFields", () => {
     // `agent()` fills `systemPrompt` and `maxSteps`, and the default fill the
     // three stages, on every definition — so the config boundary sees them on a
     // workflow app it built itself, and on a runtime's effective providers.
+    // (`syncState` is a framework-owned field refused by `agent()` for every
+    // mode; a workflow app's is simply never collected.)
     const filled = { systemPrompt: "p", maxSteps: 3, stt: {}, llm: {}, tts: {} };
     expect(() => assertModeFields("workflow-app", filled)).not.toThrow();
   });
@@ -120,8 +122,8 @@ describe("agent() and toAgentConfig carry the mode", () => {
     expect(() => raw({ mode: "text", tts: { kind: "assemblyai", options: {} } })).toThrow(
       /`tts` .* "text" agent/,
     );
-    expect(() => untyped({ mode: "workflow-app", workflows, syncState: () => 0 })).toThrow(
-      /`syncState` .* "workflow-app" agent/,
+    expect(() => untyped({ mode: "workflow-app", workflows, events: {} })).toThrow(
+      /`events` .* "workflow-app" agent/,
     );
   });
 

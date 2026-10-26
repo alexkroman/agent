@@ -23,8 +23,10 @@ mechanism — what belongs here is which duplication it replaced:
 
 - **`stepEnv` / `requireStepEnv`** — the agent env, published into the process
   by whatever is serving the workflow. An UNPUBLISHED slot falls back to
-  `process.env`, which is what keeps an exported step callable from a spec with
-  `vi.stubEnv`; that is how every one of these templates tests its steps.
+  `process.env`, which is what keeps an exported step callable from a spec;
+  `installStubGateway` and `installStubWorld` seed `ASSEMBLYAI_API_KEY` there
+  for the test, so no template spec stubs it by hand (`apiKey: false` is the
+  missing-key spec's opt-out).
 - **`stepGenerate`** — `research-handoff-agent` and `link-digest-workflow` had
   each hand-rolled the same forty lines and had already diverged on two of them
   (the empty-completion case, and which statuses are worth a retry).
@@ -113,9 +115,10 @@ starts one and answers the turn); `link-digest-workflow` and
 `transcription-workflow` are declared with `workflowApp()` and the workflow IS
 the product — no `stt`/`llm`/`tts`, no tools, and a `client.tsx` that mounts
 with `mountPage()` rather than `mountClient()`. Those fields are not merely
-omitted there: `WorkflowAppAgentParams` refuses them, so a `systemPrompt`
-addressed to a model that never runs — which `link-digest-workflow` shipped — no
-longer type-checks.
+omitted there: `WorkflowAppAgentParams` refuses them, so a `promptContext`
+addressed to a model that never runs no longer type-checks (and a
+`system-prompt.md` beside one, which `link-digest-workflow` once shipped, fails
+the layout gate).
 
 **`link-digest-workflow` really reads the page too.** `fetchArticle` fetches the
 URL and reduces the HTML to text — crudely, on purpose, since a real extractor
@@ -133,12 +136,13 @@ the payload really does have to cross the queue.
 
 `link-digest-workflow`'s spec asserts the DECLARATION as well as those steps,
 and the declaration half is what carries the template's shape: the `page` field,
-the workflow's NAME (the page starts a run by that string, so a rename is a
-runtime 400 rather than a compile error), the input schema (both the call-site
-validation and the JSON Schema `GET /workflows` serves), and `requiredEnv` —
-which is load-bearing here in a way it is not for a voice agent, since a
-workflow app declares no providers and so nothing else in its config names a
-credential.
+the workflow's NAME (the page's hooks are typed by the app def, so a rename is a
+compile error there; the spec pins the registry key the API serves), the input
+schema (both the call-site validation and the JSON Schema `GET /workflows`
+serves), and `requiredEnv` — which is load-bearing here in a way it is not for a
+voice agent, since a workflow app declares no providers and so nothing else in
+its config names a credential (hence `workflowApp()`'s default of
+`["ASSEMBLYAI_API_KEY"]`).
 
 **`template-page-mount.test.ts` correlates BOTH ends of the front door with the
 agent that declares it** — the helper (`agent()` vs `workflowApp()`) and the
@@ -194,12 +198,13 @@ Three things the conversion taught, each worth copying into the next one:
   `medication-safety-agent`'s `fda.ts` says so in place, and `konsistent.json`'s
   `template-tool-owns-no-sibling` is why reaching it through the other tool FILE
   is the version that goes wrong quietly.
-- **A workflow DECLARATION needs a home that is neither half.**
+- **A workflow DECLARATION is its `workflows/` file's default export.**
   `research-handoff-agent` and `meeting-recap-agent` reach a run by passing the
   definition rather than its name (which is what types the input), and four or
-  five tool files each name it, so `workflow({ … })` moved from `agent.ts` into
-  `shared.ts`. The BODY stays in `workflows/` by convention, so a spec can
-  import the steps without the agent.
+  five tool files each name it — they import `../workflows/<name>.ts`, whose
+  default export `workflowRegistry` registers under the file name, the way
+  `toolRegistry` registers a tool. The steps stay exported beside it, so a spec
+  can import them without the agent.
 
 It replaced 62 map entries whose whole content was
 `snake_case_name: camelCaseImport`; `konsistent.json`'s
@@ -222,12 +227,13 @@ import agentDef from "virtual:aai/agent";
 
 `retail-orders-agent`'s `registry.test.ts` is the one template that still writes
 the lowering out, with **`deployedAgent`** (`@alexkroman1/aai/testing`) over its
-own glob and a `?raw` read of `system-prompt.md`. That is deliberate: the tool
-registry is that file's subject, and it is the worked example for a project
-whose runner cannot register a Vite plugin. **`withDiscoveredTools`, the
-tools-only half this section used to name, is not exported** — a spec that
-lowered the tools and forgot the prompt measured the framework default and
-reported green, so the two halves are one call now.
+own glob — the tools half only, since nothing there reads the prompt and no
+template imports `system-prompt.md?raw`. That is deliberate: the tool registry
+is that file's subject, and it is the worked example for a project whose runner
+cannot register a Vite plugin. **`withDiscoveredTools`, the tools-only half this
+section used to name, is not exported** — a spec that lowered the tools and
+forgot the prompt measured the framework default and reported green, so the two
+halves are one call now.
 
 **The glob belongs to the importing file rather than to a shared helper, and
 that is the whole lesson of the bug it replaced.** Five specs imported this
@@ -266,17 +272,18 @@ all — the slot is what carries that guarantee now, which is most of why
 `sessionSlot()` exists, and there is no per-agent state type left for a map to
 have checked.
 
-The one thing a template may still hand-roll here is a **fallback that would
-cost the browser bundle**: `retail-orders-agent`'s client builds its empty view
-from a seedless `emptyRetailState()` rather than from the projection, because
-the slot's factory pulls a 107 KB `seed.json` and importing it would ship the
-whole catalog to the browser. It says so in place.
+A seeded slot — `retail-orders-agent`'s factory pulls a 107 KB `seed.json` —
+used to force the client onto a hand-built empty view, because `projected()`
+rendered `create()`. **`sessionSlot(key, create, { view, empty })` is that
+fallback declared on the slot**: `empty()` is what the projection renders for a
+session that has not touched the slot, so the page imports only the view type
+and the seed never reaches the browser bundle.
 
-That is the ONE exception to the rule the others follow: **declare the view on
-the slot (`sessionSlot(key, create, { view })`) and pass `slot.projected` at
-both ends** — `syncState: cartSlot.projected` on the agent,
-`useAgentState(cartSlot.projected)` in the client. One object, built once at
-declaration, so the two ends cannot name different views.
+So every template follows one rule: **declare the view on the slot
+(`sessionSlot(key, create, { view, sync: true })`) and read `slot.projected` in
+the client** — `useAgentState(cartSlot.projected)`. `sync: true` registers the
+projection with `agent()` (the slot's module is one `agent.ts` imports), so the
+two ends cannot name different views and the agent names nothing.
 
 ## A step that SPEAKS returns an id — the account
 

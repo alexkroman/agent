@@ -191,8 +191,9 @@ production comes from Publish.
   (`WORKSPACE_PKG_DIRS`, `_init.ts`). The spec in `init.test.ts` derives the
   expected set from `scaffold/package.json` with a floor — never hand-list it.
 - **A `*-preview` project name is refused** (`projectNameFromDir` → null): the
-  orphan-preview sweep would reap it. See the `-preview` note in
-  `packages/aai-server/CLAUDE.md`.
+  orphan-preview sweep would reap it. `aai init` makes the same refusal of the
+  directory name, so the author learns at scaffold time rather than at publish.
+  See the `-preview` note in `packages/aai-server/CLAUDE.md`.
 - **Directory names go through the platform's `slugifyName`**
   (`@alexkroman1/aai/slugify`), never a local regex, so the CLI and studio agree
   (`my_agent/` → `my-agent`).
@@ -246,9 +247,11 @@ production comes from Publish.
 A project with a `client.tsx` and no `vite.config.*` gets `react({ exclude })` +
 `tailwindcss()` from `_client-plugins.ts`, loaded from the PROJECT's
 `node_modules` (walked by hand: `createRequire` also reads pnpm's `NODE_PATH`);
-missing ones fail `client_plugins_missing`. A project `vite.config.*` wins
-whole. `aai init` drops the UI deps (`CLIENT_ONLY_DEPENDENCIES`, `_init.ts`)
-from a project with no `client.tsx`; `vite` stays (vitest, `vite/client`).
+missing ones fail `client_plugins_missing`, whose hint names EVERYTHING a
+headless `aai init` removed (`CLIENT_ONLY_DEPENDENCIES`, declared beside the
+hint in `_client-plugins.ts` by manifest field, so the two cannot drift). A
+project `vite.config.*` wins whole. `aai init` drops those UI deps from a
+project with no `client.tsx`; `vite` stays (vitest, `vite/client`).
 
 - **`REACT_REFRESH_EXCLUDE` must keep `dist/` and `client.tsx`.** A LINKED
   `aai-ui` resolves outside `node_modules`, so its bundled chunks became refresh
@@ -317,6 +320,23 @@ the summary.
 
 ## Bundling rules
 
+- **`workflows/<name>.ts` is discovered the way `tools/<name>.ts` is.** The
+  generated worker entry (`worker-bundler.ts`) imports every file under
+  `workflows/` and `tools/` RECURSIVELY that passes the SDK's one file rule
+  (`isRegistryModuleFile` on `@alexkroman1/aai/internal`: `.ts`/`.mts`/`.tsx`/
+  `.js`/`.mjs`, specs and `.test-d.ts` excepted) and hands them to
+  `workflowRegistry` + `withWorkflows` (`@alexkroman1/aai/manifest`), which
+  registers each file whose DEFAULT export is a `workflow()` def (by its brand —
+  a plain `{ run }` object is a helper) under its file name and skips the rest —
+  a body's helpers (`prompts.ts`, `media.ts`, `lib/x.ts`) live in that directory
+  too, so an unlike-`tools/` file is not an error; a nested DEF is refused
+  naming the flat path. An explicit `agent({ workflows })` entry wins a name
+  clash and warns naming the file; the same def declared both ways is silent,
+  and under ANOTHER name registers once, as declared, with a warning.
+  `virtual:aai/agent` (`aai/src/host/testing-vite.ts`) applies the same rule and
+  recursion, so a spec sees exactly the set a build ships;
+  `runWorkflow(agentDef, "<name>", input)` runs one by that name. A
+  `workflows`/`tools` FILE where the directory should be is refused by name.
 - **Nothing scans a workflow body for replay-unsafe calls** (`Date.now()`,
   `Math.random()`, `fetch(`…) — a known gap. A replacement must work off the
   source of `workflows/*.ts`, outside every `ctx.step(…)` callback, and stay a
@@ -419,6 +439,11 @@ is what approves an origin** (user intent, not repo content) and is remembered.
   set); `aaiEnv()` sets it for spawned CLIs (`VITEST` cleared). The guard is in
   the code path because a config can omit a setup file, and a polluted
   `approvedServers` would let a cloned repo collect the developer's key.
+- **A worker import prints each `console.warn` line once per process**
+  (`withDedupedWarnings`, `_bundler.ts`): `aai build` evaluates the worker twice
+  (vendor pre-build, then the full build), and a warning the bundle's SDK copy
+  prints at module evaluation (`withWorkflows`' name clash) came out twice; the
+  SDK cannot dedupe across copies, so the one process that imports both does.
 - **`aai build`, `aai dev` and `aai deploy` execute the repo's code locally**
   (`evalWorkerBundle` / `evalWorkerConfig`, and the project's `vite.config.ts`
   since `buildAgentBundle` does not pass `configFile: false` — only the guest's

@@ -2,10 +2,10 @@ import { isToolFailure } from "@alexkroman1/aai";
 import { z } from "zod";
 import { AddressFields, planUserAddress } from "../address.ts";
 import { stageAction } from "../pending.ts";
-import { retailTool } from "../store.ts";
+import { callFlow, retailSlot } from "../store.ts";
 
-export default retailTool({
-  name: "modify_user_address",
+export default retailSlot.updateTool({
+  dialog: callFlow,
   when: "serving",
   send: { type: "STAGED" },
   description:
@@ -22,5 +22,4 @@ export default retailTool({
     if (isToolFailure(plan)) return plan;
     return stageAction(state, { kind: "modify_user_address", plan });
   },
-  summary: (_args, result) => `staged: ${result.read_back}`,
 });

@@ -4,6 +4,12 @@
 
 ```ts
 
+// @public
+type AgentTranscriptRecovery = "turn-failed" | "session-failed" | (string & {});
+
+// @public
+type AnyDialog = Dialog<unknown>;
+
 // @public @input
 type AnyWorkflowDef<R = unknown> = {
     description?: string;
@@ -11,13 +17,15 @@ type AnyWorkflowDef<R = unknown> = {
     uploads?: readonly string[];
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<never, R>;
+    describeRun?(run: never): string;
+    cancelNote?: string | undefined;
 };
 
 // @public
 type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public
-type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | (string & {});
+type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | "workflow_status" | "workflow_progress" | "workflow_cancel" | (string & {});
 
 // @public @input
 interface ClientEventMap {
@@ -70,6 +78,119 @@ interface DelegateToolCall {
     name: string;
 }
 
+// @public
+export function describeAgent<const D extends ToolBearingAgent & {
+    readonly name: string;
+    readonly stt?: unknown;
+    readonly llm?: unknown;
+    readonly tts?: unknown;
+}>(agent: D, define: (run: ToolRunner, agent: D) => void): void;
+
+// @public @sealed
+interface Dialog<E = {
+    type: string;
+}> {
+    readonly key: string;
+    readonly machine: unknown;
+    matches(ctx: SlotHolder, state: string): boolean;
+    position(ctx: SlotHolder): DialogPosition;
+    projection<V>(project: (position: DialogPosition) => V): StateProjection<V>;
+    receive(ctx: SlotHolder, event: SessionEvent): DialogPosition;
+    reset(ctx: SlotHolder): DialogPosition;
+    send(ctx: SlotHolder, event: E): DialogPosition;
+    timeout(ctx: SlotHolder): DialogTimeout | undefined;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>, options?: DialogSendOptions<R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
+    voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
+}
+
+// @public @input
+interface DialogGate<R, E, K extends string = string> {
+    reset?: true;
+    send?: E;
+    sendFrom?: DialogSendFrom<R, E, K>;
+    when?: string | readonly string[];
+}
+
+// @public @sealed
+interface DialogPosition {
+    readonly done: boolean;
+    readonly instruction?: string;
+    readonly persona?: string;
+    readonly state: string;
+}
+
+// @public
+type DialogSendFrom<R, E, K extends string = string> = ((result: NoInfer<Exclude<R, ToolFailure>>) => E | undefined) | K;
+
+// @public
+type DialogSendFromChecked<K extends string, R, E, T> = string extends K ? T : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? T : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+
+// @public
+type DialogSendFromGuard<K extends string, R, E> = string extends K ? unknown : unknown extends R ? unknown : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? unknown : {
+    sendFrom: DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+};
+
+// @public
+type DialogSendFromKey<S, E> = keyof {
+    [K in keyof S as S[K] extends EventNameOf<E> | undefined ? K : never]: never;
+} & string;
+
+// @public @sealed
+type DialogSendFromMisuse<K extends string, Keys extends string> = {
+    readonly "sendFrom names a result field that holds no event name of this dialog": K;
+    readonly "the fields that do": Keys;
+};
+
+// @public @input
+interface DialogSendOptions<R, E, K extends string = string> {
+    sendFrom: DialogSendFrom<R, E, K>;
+}
+
+// @public @input
+interface DialogTimeout {
+    readonly afterMs: number;
+    readonly event: {
+        readonly type: string;
+    };
+}
+
+// @public @input
+interface DialogToolDef<P extends ToolInputSchema | undefined, R, E, K extends string = string> extends Omit<ToolDef<P, R>, "execute">, DialogGate<R, E, K> {
+    execute(args: InferSchemaOutput<P>, ctx: ToolContext): R | ToolFailure | Promise<R | ToolFailure>;
+}
+
+// @public @sealed
+interface DialogToolResult<R> extends DialogPosition {
+    readonly result: R;
+}
+
+// @public @input
+interface DialogVoiceConfig {
+    readonly interruption?: PipelineTuning["interruption"];
+    readonly temperature?: number;
+    readonly toolChoice?: ToolChoice;
+    readonly voice?: string;
+}
+
+// @public
+type EventNameOf<E> = (E & {
+    type: string;
+})["type"];
+
+// @public
+type FetchRouteHandler = (request: FetchRouteRequest) => StubStepAnswer | undefined | Promise<StubStepAnswer | undefined>;
+
+// @public @sealed
+type FetchRouteRequest = StubStepRequest & {
+    readonly host: string;
+    readonly pathname: string;
+    readonly searchParams: URLSearchParams;
+    readonly json: unknown;
+};
+
+// @public
+type FetchRouteTable = Readonly<Record<string, FetchRouteHandler | StubStepAnswer>>;
+
 // @public @input
 type FindByKeyOptions = {
     since?: number | Date;
@@ -117,13 +238,18 @@ type GenerateResult = {
 type GuardrailVerdict = true | string;
 
 // @public
-type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : never;
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S extends undefined ? Record<string, never> : never;
 
 // @public
 export function installStubClientInbox(options?: StubClientInboxOptions): StubClientInbox;
 
 // @public
-export function installStubGateway(replies: string | readonly string[], options?: StubGatewayOptions): StubGatewayCall[];
+export function installStubGateway(replies: string | readonly string[], options?: InstallStubGatewayOptions): StubGatewayCall[];
+
+// @public @input
+export type InstallStubGatewayOptions = StubGatewayOptions & {
+    apiKey?: string | false | undefined;
+};
 
 // @public
 export function installStubReporter(): StubReporter;
@@ -143,8 +269,11 @@ export function installStubTranscribe(options?: StubTranscribeOptions): StubTran
 // @public
 export function installStubUploads(files: Readonly<Record<string, StubUpload>>, options?: StubUploadsOptions): StubUploads;
 
-// @public
+// @public (undocumented)
 export function installStubWorkflows(options?: StubWorkflowsOptions): WorkflowClient;
+
+// @public
+export function installStubWorld(options?: StubWorldOptions): StubWorld;
 
 // @public @input
 interface InterruptionTuning {
@@ -196,11 +325,22 @@ interface PipelineTuning {
 }
 
 // @public @input
+type PollFirstWait = {
+    waitFor: string | undefined;
+    timeoutMs: number;
+    schema?: StandardSchemaV1 | undefined;
+};
+
+// @public @input
 type PollOptions<T> = {
     everyMs: number;
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
+    first?: PollFirstWait | undefined;
+    slowAfterMs?: number | undefined;
+    onSlow?: string | undefined;
 };
 
 // @public @sealed
@@ -208,6 +348,7 @@ type PollResult<T> = {
     value: T;
     done: boolean;
     checks: number;
+    woken?: boolean;
 };
 
 // @public
@@ -220,6 +361,20 @@ interface ProviderDescriptor<Kind extends string, Options> {
 
 // @public
 type RandomSource = () => number;
+
+// @public @sealed
+interface RestoredToolCall {
+    afterMessageIndex: number;
+    // (undocumented)
+    args: Record<string, unknown>;
+    // (undocumented)
+    callId: string;
+    // (undocumented)
+    name: string;
+    // (undocumented)
+    result?: string | undefined;
+    status: "pending" | "done";
+}
 
 // @public @input
 type SayOnClientNotice = {
@@ -243,11 +398,187 @@ type SayOptions = {
     record?: boolean | undefined;
 };
 
+// @public
+type SessionErrorCode = "stt" | "llm" | "tts" | "tool" | "protocol" | "connection" | "audio" | "internal" | (string & {});
+
+// @public
+type SessionEvent<K extends SessionEventType = SessionEventType> = SessionEventMap[K];
+
+// @public @sealed
+interface SessionEventMap {
+    "agentTranscript.committed": {
+        type: "agentTranscript.committed";
+        meta: SessionEventMeta;
+        text: string;
+        recovery?: AgentTranscriptRecovery | undefined;
+        recorded?: false | undefined;
+    };
+    "agentTranscript.updated": {
+        type: "agentTranscript.updated";
+        meta: SessionEventMeta;
+        text: string;
+    };
+    "audio.completed": {
+        type: "audio.completed";
+        meta: SessionEventMeta;
+    };
+    "custom.emitted": {
+        type: "custom.emitted";
+        meta: SessionEventMeta;
+        event: string;
+        data: unknown;
+    };
+    // (undocumented)
+    "error.reported": {
+        type: "error.reported";
+        meta: SessionEventMeta;
+        code: SessionErrorCode;
+        message: string;
+        fatal: boolean;
+    };
+    "guardrail.blocked": {
+        type: "guardrail.blocked";
+        meta: SessionEventMeta;
+        direction: "input" | "output" | (string & {});
+        replacement: string;
+    };
+    "history.restored": {
+        type: "history.restored";
+        meta: SessionEventMeta;
+        messages: {
+            role: "user" | "assistant";
+            content: string;
+        }[];
+        toolCalls: RestoredToolCall[];
+    };
+    "metrics.collected": {
+        type: "metrics.collected";
+        meta: SessionEventMeta;
+        interrupted: boolean;
+        latencyMs?: number | undefined;
+        stt?: {
+            endpointingMs?: number | undefined;
+        } | undefined;
+        llm?: {
+            ttftMs?: number | undefined;
+            durationMs: number;
+            steps: number;
+            inputTokens?: number | undefined;
+            outputTokens?: number | undefined;
+        } | undefined;
+        tts?: {
+            ttfbMs?: number | undefined;
+            characters: number;
+        } | undefined;
+    };
+    "provider.failedOver": {
+        type: "provider.failedOver";
+        meta: SessionEventMeta;
+        stage: "stt" | "llm" | "tts" | (string & {});
+        from: string;
+        to: string;
+        reason: string;
+    };
+    "reply.cancelled": {
+        type: "reply.cancelled";
+        meta: SessionEventMeta;
+    };
+    "reply.completed": {
+        type: "reply.completed";
+        meta: SessionEventMeta;
+    };
+    "session.configured": {
+        type: "session.configured";
+        meta: SessionEventMeta;
+        audioFormat: string;
+        sampleRate: number;
+        ttsSampleRate: number;
+        sessionId: string;
+    };
+    "session.reset": {
+        type: "session.reset";
+        meta: SessionEventMeta;
+    };
+    "session.timedOut": {
+        type: "session.timedOut";
+        meta: SessionEventMeta;
+    };
+    "speech.started": {
+        type: "speech.started";
+        meta: SessionEventMeta;
+    };
+    // (undocumented)
+    "speech.stopped": {
+        type: "speech.stopped";
+        meta: SessionEventMeta;
+    };
+    "state.updated": {
+        type: "state.updated";
+        meta: SessionEventMeta;
+        state: Record<string, unknown>;
+    };
+    // (undocumented)
+    "tool.called": {
+        type: "tool.called";
+        meta: SessionEventMeta;
+        toolCallId: string;
+        toolName: string;
+        args: Record<string, unknown>;
+    };
+    // (undocumented)
+    "tool.completed": {
+        type: "tool.completed";
+        meta: SessionEventMeta;
+        toolCallId: string;
+        result: string;
+    };
+    "usage.updated": {
+        type: "usage.updated";
+        meta: SessionEventMeta;
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+        steps: number;
+    };
+    "userTranscript.committed": {
+        type: "userTranscript.committed";
+        meta: SessionEventMeta;
+        text: string;
+    };
+    "userTranscript.updated": {
+        type: "userTranscript.updated";
+        meta: SessionEventMeta;
+        text: string;
+        eotConfidence?: number | undefined;
+    };
+    "userTurn.exceeded": {
+        type: "userTurn.exceeded";
+        meta: SessionEventMeta;
+        limit: "words" | "duration" | (string & {});
+        words: number;
+        durationMs: number;
+    };
+}
+
+// @public @sealed
+interface SessionEventMeta {
+    at: number;
+    id: string;
+}
+
+// @public
+type SessionEventType = Extract<keyof SessionEventMap, string>;
+
 // @public @sealed
 interface SessionSpeech {
     interrupt(): boolean;
     say(text: string, options?: SayOptions): SpeechHandle;
 }
+
+// @public @input
+type SignalOptions = {
+    holdMs?: number;
+};
 
 // @public @input
 interface SilenceNudge {
@@ -264,6 +595,12 @@ interface SilenceTuning {
 // @public @input
 type SleepOptions = {
     correlationId?: string;
+};
+
+// @public @sealed
+type SlotHolder = {
+    readonly slots: SlotStore;
+    readonly sessionId: string;
 };
 
 // @public @sealed
@@ -346,9 +683,17 @@ type StartOptions = {
     notify?: boolean | string;
 };
 
+// @public @sealed
+interface StateProjection<V = unknown> {
+    (value?: unknown): V;
+    readonly create: () => unknown;
+    readonly key: string;
+}
+
 // @public @input
 type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
     maxAttempts?: number;
+    maxWaits?: number;
     schema?: S | undefined;
 };
 
@@ -552,8 +897,37 @@ type StubUploadWrite = {
 export type StubWorkflowsOptions = {
     runs?: readonly WorkflowRunSnapshot[];
     names?: readonly string[];
+    agent?: WorkflowAppLike | undefined;
     runId?: string;
     lastLine?: unknown;
+};
+
+// @public @sealed
+export type StubWorld = {
+    readonly model: StubGatewayCall[];
+    readonly provider: StubTranscribeCall[];
+    readonly speech: StubSpeechCall[];
+    readonly files: StubUploads | undefined;
+    readonly reported: StubReporter;
+};
+
+// @public @input
+export type StubWorldOptions = {
+    readonly model?: string | readonly string[] | undefined;
+    readonly transcribe?: StubTranscribeOptions | undefined;
+    readonly pages?: FetchRouteTable | readonly FetchRouteHandler[] | FetchRouteHandler | undefined;
+    readonly speech?: StubSpeechOptions | true | undefined;
+    readonly uploads?: (StubUploadsOptions & {
+        readonly files?: Readonly<Record<string, StubUpload>> | undefined;
+    }) | undefined;
+    readonly apiKey?: string | false | undefined;
+    readonly reporter?: boolean | undefined;
+};
+
+// @public @input
+type ToolBearingAgent = {
+    readonly tools: Readonly<Record<string, ToolDef>>;
+    readonly dialogs?: readonly AnyDialog[] | undefined;
 };
 
 // @public
@@ -586,15 +960,18 @@ type ToolContext = {
     deadlineAt: number;
     workflows: WorkflowClient;
     random: RandomSource;
+    turn: number;
+    now(): number;
 };
 
 // @public @input
-type ToolDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
+type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined, R = unknown> = {
     description: string;
-    inputSchema?: P;
+    inputSchema?: P | undefined;
     execute(args: InferSchemaOutput<P>, ctx: ToolContext): R;
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
+    ui?: ToolUi;
 };
 
 // @public @input
@@ -633,11 +1010,22 @@ type ToolMessagesInput = {
     failed?: string | readonly (string | ToolCompletionMessage)[];
 };
 
+// @public @sealed
+type ToolRunner = <T extends {
+    readonly execute: (...args: never[]) => unknown;
+}>(tool: T, argsOrCtx?: Parameters<T["execute"]>[0] | ToolContext, ctx?: ToolContext) => Promise<Awaited<ReturnType<T["execute"]>>>;
+
 // @public @input
 type ToolStartMessage = {
     content: string;
     when?: ToolMessageCondition[] | undefined;
     blocking?: boolean | undefined;
+};
+
+// @public @input
+type ToolUi = {
+    icon?: string | undefined;
+    label?: string | undefined;
 };
 
 // @public
@@ -686,6 +1074,11 @@ type WakeUpOptions = {
     correlationIds?: string[];
 };
 
+// @public @input
+type WorkflowAppLike = {
+    readonly workflows?: Readonly<Record<string, AnyWorkflowDef>> | undefined;
+};
+
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
 
@@ -698,6 +1091,10 @@ type WorkflowClient = {
     get(runId: string): Promise<WorkflowRunSnapshot | undefined>;
     find<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot<R>[]>;
     find(workflow: string, key: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
+    latest<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key?: string): Promise<WorkflowRunSnapshot<R> | undefined>;
+    latest(workflow: string, key?: string): Promise<WorkflowRunSnapshot | undefined>;
+    live<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key?: string): Promise<WorkflowRunSnapshot<R> | undefined>;
+    live(workflow: string, key?: string): Promise<WorkflowRunSnapshot | undefined>;
     findByKey(key: string, options?: FindByKeyOptions): Promise<WorkflowRunSnapshot[]>;
     cancelAll<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string): Promise<number>;
     cancelAll(workflow: string, key: string): Promise<number>;
@@ -705,7 +1102,9 @@ type WorkflowClient = {
     recent(workflow: string, options?: FindOptions): Promise<WorkflowRunSnapshot[]>;
     cancel(runId: string): Promise<boolean>;
     wakeUp(runId: string, options?: WakeUpOptions): Promise<number>;
-    signal(token: string, payload?: unknown): Promise<boolean>;
+    signal(token: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
+    signalRun<P extends ToolInputSchema, R>(workflow: WorkflowDef<P, R>, key: string, label: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
+    signalRun(workflow: string, key: string, label: string, payload?: unknown, options?: SignalOptions): Promise<boolean>;
     stream(runId: string, options?: StreamOptions): Promise<ReadableStream<unknown>>;
     streamTail(runId: string, options?: StreamOptions): Promise<number>;
     lastLine(runId: string, options?: StreamOptions): Promise<unknown | undefined>;
@@ -717,6 +1116,7 @@ type WorkflowClient = {
 type WorkflowContext = {
     readonly runId: string;
     readonly workflow: string;
+    readonly key: string | undefined;
     step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
     now(): Promise<number>;
@@ -729,6 +1129,12 @@ type WorkflowContext = {
     waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
     waitFor<T = unknown>(token: string): Promise<T>;
     waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
+    report<const Name extends string>(name: Name & Literal<Name>, line: string): Promise<void>;
+    signalToken(label: string): string;
+    waitForSignal<S extends StandardSchemaV1>(label: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
+    waitForSignal<S extends StandardSchemaV1>(label: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    waitForSignal<T = unknown>(label: string): Promise<T>;
+    waitForSignal<T = unknown>(label: string, options: WaitForOptions): Promise<T | undefined>;
 };
 
 // @public @input
@@ -739,6 +1145,8 @@ type WorkflowDef<P extends ToolInputSchema = ToolInputSchema, R = unknown> = {
     output?: StandardSchemaV1<unknown, R>;
     run: WorkflowBody<InferSchemaOutput<P>, R>;
     onFailure?: WorkflowFailureHandler<InferSchemaOutput<P>> | undefined;
+    describeRun?(run: WorkflowRunSnapshot<R>): string;
+    cancelNote?: string | undefined;
 };
 
 // @public @sealed
@@ -764,6 +1172,8 @@ type WorkflowRunBase = {
     createdAt: number;
     key?: string;
     label?: string;
+    startedAt?: number;
+    settledAt?: number;
 };
 
 // @public

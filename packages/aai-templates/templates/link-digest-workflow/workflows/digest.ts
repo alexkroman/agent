@@ -6,10 +6,8 @@
  * The rules are the same ones `research-handoff-agent/workflows/research.ts` spells out
  * — the body is replayed from the top on every resume, so it holds no live
  * handle and makes no undurable decision, and a step's arguments and return
- * value cross a queue and so must be JSON-shaped and small. Read that file for
- * the full argument, including where the API key comes from (a step is handed no
- * `ToolContext`, so `requireStepEnv` is what makes an authenticated call
- * possible at all). What THIS one adds is the case where NOBODY IS WAITING.
+ * value cross a queue and so must be JSON-shaped and small. What THIS one adds
+ * is the case where NOBODY IS WAITING.
  *
  * A voice agent's run is started by a caller who is on the line. This one is
  * started by a form: the page has the `runId` and the tab may be closed the
@@ -24,18 +22,19 @@
  * fetched text crosses a queue between them, which is what the cap on it is for.
  */
 
-import type { WorkflowContext } from "@alexkroman1/aai";
+import type { WorkflowContext, WorkflowInputOf } from "@alexkroman1/aai";
 import { htmlToText, type PageMetadata, pageMetadata } from "@alexkroman1/aai/html";
 import { stepFetch, stepGenerateJson, stepInfo, stepReport } from "@alexkroman1/aai/step";
 import { FatalError, orFail } from "@alexkroman1/aai/step-errors";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { z } from "zod";
+// ERASED at build time: the body names the schema's own output type without a
+// runtime cycle back through `agent.ts`.
+import type { digestInput } from "../agent.ts";
 
 /**
  * How long the digest sits before it is filed, so the wait is visible in dev.
- *
- * Milliseconds. `ctx.sleep` takes a number or a `Date` and no duration STRING —
- * one more parser to own, and no call site in the repo passed one.
+ * Milliseconds — `ctx.sleep` takes a number or a `Date`.
  */
 export const SETTLE_MS = 10_000;
 
@@ -55,15 +54,14 @@ const POINTS = 3;
 /**
  * The model a LAST attempt falls back to.
  *
- * `summarize` is given six attempts because two different things go wrong here
- * — a rate limit, and a model that answered with prose — and by the sixth the
- * cheap explanation is that this model is not going to produce the shape asked
- * for. A smaller model that returns three plain sentences beats a failed run, so
- * the last try asks a different one rather than the same one again.
+ * A rate limit is a WAIT (`maxWaits` below) and never spends an attempt, so by
+ * the last of the default three the cheap explanation is that this model is not
+ * going to produce the shape asked for. A smaller model that returns three
+ * plain sentences beats a failed run, so the last try asks a different one.
  *
- * Unset means the gateway default, which is the same model the agent's own
- * pipeline resolves. Point this at a smaller id for a real deployment; the
- * useful part of the pattern is `stepInfo()?.isLastAttempt`, not the id.
+ * Unset means the gateway default. Point this at a smaller id for a real
+ * deployment; the useful part of the pattern is `stepInfo()?.isLastAttempt`,
+ * not the id.
  */
 const FALLBACK_MODEL: string | undefined = undefined;
 
@@ -78,17 +76,21 @@ export type Digest = {
 };
 
 /**
- * The shape the model is asked for, as something that CHECKS rather than
- * something the compiler is told to believe.
+ * The shape the model is asked for, as something that CHECKS.
  *
- * `stepGenerateJson` validates against this and throws plainly when the reply
- * misses — which is what a retry is for, since a model that answered with prose
- * may well obey on the next attempt. Before the SDK took the schema, this was a
- * hand-written `isDigestShape` guard beside a hand-written fence stripper.
+ * `stepGenerateJson` renders it as JSON Schema into the prompt, validates the
+ * reply against it, and throws plainly when the reply misses — which is what a
+ * retry is for, since a model that answered with prose may well obey on the
+ * next attempt. The per-field rules live on the fields, and the cap on the
+ * points is a transform rather than a `.slice` after validation.
  */
 const DigestReply = z.object({
-  headline: z.string().trim().min(1),
-  points: z.array(z.string()).min(1),
+  headline: z.string().trim().min(1).describe("One line naming what the page says"),
+  points: z
+    .array(z.string())
+    .min(1)
+    .describe(`Exactly ${POINTS} short points`)
+    .transform((points) => points.slice(0, POINTS)),
 });
 
 /** What the page actually said, on its way from one step to the next. */
@@ -116,14 +118,12 @@ export type Article = {
  * literally the page's render model, and `WorkflowOutputOf<typeof digest>` in
  * `client.tsx` is that type, derived rather than restated.
  */
-export async function digestFlow(input: { url: string }, ctx: WorkflowContext) {
+export async function digestFlow(input: WorkflowInputOf<typeof digestInput>, ctx: WorkflowContext) {
   const article = await ctx.step("fetchArticle", () => fetchArticle(input.url));
-  // `maxAttempts: 6` was `summarize.maxRetries = 5` — five retries AFTER the
-  // first attempt, so six in all. The retry policy moved from a property on the
-  // function to the CALL, which is where it belongs: the same function called
-  // from two places may deserve different patience, and a property could not say
-  // so. A rate limit and a model that ignored the format are both expected here.
-  const digest = await ctx.step("summarize", () => summarize(article), { maxAttempts: 6 });
+  // `maxWaits`: a 429 carrying `Retry-After` is waited out rather than charged
+  // as an attempt, so the three attempts are spent on the other expected
+  // failure — a model that ignored the format.
+  const digest = await ctx.step("summarize", () => summarize(article), { maxWaits: 3 });
 
   // Suspended, not blocked: the sandbox is free to exit here and the run
   // resumes when it comes due. Nothing about the code changes if it is six
@@ -149,18 +149,9 @@ export async function fetchArticle(url: string): Promise<Article> {
   const { hostname } = new URL(url);
   await stepReport(`Reading ${hostname}…`);
 
-  // `stepFetch`, not `fetch`, and the rule has no exception for a step that
-  // makes only one request: the global pins nothing, so it offers h2 in ALPN
-  // and a server that takes it multiplexes every concurrent request from this
-  // process onto ONE connection — and a capacity limit then arrives as a stream
-  // reset with no HTTP status, which `toStepError` below has nothing to read.
-  // It also reports a connection failure with its whole `cause` chain instead
-  // of a bare `TypeError: fetch failed`. Redirects are followed by default.
-  // `orFail(stepFetch)` rather than `stepFetch` + an `ok` check: it makes the
-  // retryable/terminal split for us — a 404 or a 403 answers the same way on
-  // the fourth attempt, while a rate limit is exactly what retries are for, and
-  // its `Retry-After` reaches the engine's schedule instead of the default
-  // backoff. It also puts the server's own error text in the message.
+  // `orFail(stepFetch)`: a 404 or a 403 answers the same way on the fourth
+  // attempt, while a rate limit is exactly what retries are for, and its
+  // `Retry-After` reaches the engine's schedule.
   const response = await orFail(stepFetch)(url, {
     // Some sites answer a bare request with a challenge page; asking for HTML
     // at least says what we want. Nothing here defeats a real bot wall, and a
@@ -175,15 +166,13 @@ export async function fetchArticle(url: string): Promise<Article> {
     // Not transient: the same URL returns the same near-empty page on a retry.
     // A JS-rendered site is the usual cause and no number of attempts fixes it.
     // A direct `FatalError`, not `throwFatalStepError`: nothing is being
-    // classified here and there is no cause to preserve — this step has simply
-    // decided, and the helper is for the `catch` block where the linter would
-    // (rightly) want the original error kept.
+    // classified here and there is no cause to preserve.
     throw new FatalError(`${hostname} returned no readable text — is the page rendered in JS?`);
   }
   // One parse of the head for both of the things it is worth reading. The
   // description may be absent, and `omitUndefined` is what keeps the key off
   // the object rather than sending a `"description": undefined` across the
-  // queue — the guard IS the value, which is the case that primitive is for.
+  // queue.
   const meta = extractMetadata(html);
   return {
     url,
@@ -203,12 +192,11 @@ export async function fetchArticle(url: string): Promise<Article> {
 export async function summarize(article: Article): Promise<Digest> {
   // Which attempt is this? `undefined` outside a run — which is what a spec
   // calling this directly gets — and a spec MEANS the ordinary path, so the
-  // fallback is keyed on `=== true` rather than on truthiness.
+  // fallback is keyed on `=== true` rather than on truthiness. Read
+  // `isLastAttempt`, never `attempt === 3`: the ceiling lives at the `ctx.step`
+  // call site in `digestFlow`.
   const step = stepInfo();
   const lastChance = step?.isLastAttempt === true;
-  // `undefined` on every attempt but the last, which is what lets the option be
-  // built with `omitUndefined` rather than a conditional spread — the guard is
-  // then the value, which is the case that primitive is for.
   const model = lastChance ? FALLBACK_MODEL : undefined;
   await stepReport(
     lastChance
@@ -216,33 +204,17 @@ export async function summarize(article: Article): Promise<Digest> {
       : "Pulling out the claims worth keeping.",
   );
 
-  // `orFail(stepGenerateJson)` unwraps the fence a model puts around JSON,
-  // parses it, and validates it against `DigestReply` — and throws PLAINLY when
-  // any of those misses, which is the whole retry policy in one distinction: a
-  // model that answered with prose may answer correctly on the next attempt,
-  // where a 401 will not. The `OrFail` suffix is what makes the 401 half
-  // terminal: it is `stepGenerateJson` with `throwStepError` already applied.
   const parsed = await orFail(stepGenerateJson)(articlePrompt(article), {
     schema: DigestReply,
     system:
-      `You digest articles. Reply with JSON only: {"headline": string, "points": string[]}. ` +
-      `Give exactly ${POINTS} points. No markdown fence, no preamble.` +
+      "You digest articles." +
       // The instruction is blunter on the last try for the same reason the
-      // model is different: whatever it has been doing for five attempts is
-      // not working.
+      // model is different: whatever it has been doing so far is not working.
       (lastChance ? " Keep every point to one short sentence." : ""),
-    // Read `isLastAttempt`, never `attempt === 6`: the ceiling lives at the
-    // `ctx.step` call site in `digestFlow`, so a number written here degrades
-    // early on every run the moment somebody changes it there — silently,
-    // because the step still returns an answer.
     ...omitUndefined({ model }),
   });
 
-  return {
-    url: article.url,
-    headline: parsed.headline,
-    points: parsed.points.slice(0, POINTS),
-  };
+  return { url: article.url, headline: parsed.headline, points: parsed.points };
 }
 
 /**
@@ -251,21 +223,14 @@ export async function summarize(article: Article): Promise<Digest> {
  * Separate from `summarize` on purpose: two steps mean a crash between them
  * replays the expensive half for free and re-issues only the cheap one.
  * Returning the timestamp rather than reading a clock in the BODY is the same
- * rule — a step's result is journaled and therefore stable across replays,
- * where the same read in the body would change on every one.
- *
- * The `new Date()` below is therefore a BASELINED occurrence of
- * `guard-invariants` rule 30, and this is the reason: it is inside a step, not
- * inside a body. The rule bans a clock read anywhere in a shipped `workflows/`
- * file because the `ctx.step` callback boundary is not decidable from a line;
- * `digestFlow` is what reaches this one, as `ctx.step("file", () =>
- * file(digest))`. Anything at BODY level is the bug, not an exception.
+ * rule — a step's result is journaled and therefore stable across replays.
+ * (The `new Date()` is a BASELINED occurrence of `guard-invariants` rule 30 for
+ * that reason: it is inside a step, which is where a clock read belongs.)
  */
 export async function file(_digest: Digest): Promise<string> {
   await stepReport("Filing the digest.");
   // A real desk would write the digest to its database here. The stub writes
-  // nothing, which is what the `_` says — and it is a stub because `ctx.db` is
-  // the half of a tool context a step still cannot reach.
+  // nothing, which is what the `_` says.
   return new Date().toISOString();
 }
 
@@ -279,7 +244,7 @@ export async function file(_digest: Digest): Promise<string> {
  * opens on a scene, and its `og:description` opens on the claim. It is LABELLED
  * rather than pasted in front of the text, and it is no more trusted than the
  * body beside it: both come off a stranger's server, which is why the system
- * prompt below states the job and this side of the boundary states nothing.
+ * prompt states the job and this side of the boundary states nothing.
  *
  * Omitted entirely when the page declares none — a bare `Summary:` reads to a
  * model as an empty summary rather than as an absent one.
@@ -301,8 +266,7 @@ export function articlePrompt(article: Article): string {
  *
  * Annotated `PageMetadata` rather than left to inference, and the annotation is
  * what makes the spread below safe: this returns the SDK's own record with two
- * of its fields tidied, so a field the SDK adds later rides through untouched
- * instead of being silently dropped by a hand-written shape.
+ * of its fields tidied, so a field the SDK adds later rides through untouched.
  */
 export function extractMetadata(html: string): PageMetadata {
   const meta = pageMetadata(html);
@@ -317,17 +281,11 @@ function collapse(value: string | undefined): string | undefined {
 /**
  * Reduce HTML to the text a model should read.
  *
- * `htmlToText` is a real HTML parse (`@alexkroman1/aai/html`, over htmlparser2),
- * which matters most for the thing this MUST do: drop `<script>` and `<style>`
- * CONTENT, because a page's JavaScript in the prompt is both expensive and a way
- * to smuggle instructions past the reader. This was four `replace` calls, and
- * they had a hole exactly there — `<script[^>]*>[\s\S]*?<\/script>` needs the
- * close tag, so a page truncated mid-script (a byte cap, a dropped connection)
- * removed nothing and the tag strip put the whole script into the prompt.
- *
- * Whitespace is collapsed to single spaces afterwards because this text crosses
- * a queue between two steps and the blank lines `htmlToText` uses for block
- * structure are bytes the summary does not read.
+ * `htmlToText` is a real HTML parse (`@alexkroman1/aai/html`), which matters
+ * most for the thing this MUST do: drop `<script>` and `<style>` CONTENT,
+ * because a page's JavaScript in the prompt is both expensive and a way to
+ * smuggle instructions past the reader. Whitespace is collapsed afterwards
+ * because this text crosses a queue between two steps.
  */
 export function extractText(html: string): string {
   return htmlToText(html, { maxChars: MAX_ARTICLE_CHARS }).replace(/\s+/g, " ").trim();

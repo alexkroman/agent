@@ -5,15 +5,21 @@
 ```ts
 
 import type { AgentDef } from '@alexkroman1/aai';
-import type { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
+import { AnyWorkflowDef } from '@alexkroman1/aai/workflow-api';
+import type { ClientEventMap } from '@alexkroman1/aai';
 import type { InferSchemaOutput } from '@alexkroman1/aai';
+import type { InferToolInput } from '@alexkroman1/aai';
+import type { InferToolOutput } from '@alexkroman1/aai';
+import { INSTRUCTION_KEY } from '@alexkroman1/aai/utils';
 import { LlmProvider } from '@alexkroman1/aai/llm';
 import { ProviderEnv } from '@alexkroman1/aai/host-internal';
 import type { SessionCall } from '@alexkroman1/aai';
 import type { SessionEvent } from '@alexkroman1/aai';
 import type { StandardSchemaV1 } from '@alexkroman1/aai';
 import type { StartOptions } from '@alexkroman1/aai/workflow-api';
+import type { StateProjection } from '@alexkroman1/aai';
 import type { SttProvider } from '@alexkroman1/aai/stt';
+import type { ToolDef } from '@alexkroman1/aai';
 import type { ToolInputSchema } from '@alexkroman1/aai';
 import type { TtsProvider } from '@alexkroman1/aai/tts';
 import type { WorkflowClient } from '@alexkroman1/aai/workflow-api';
@@ -54,6 +60,12 @@ export type CriterionVerdict = {
 };
 
 // @public
+export function customEventsIn<K extends keyof ClientEventMap & string>(events: readonly SessionEvent[], name: K): readonly {
+    readonly event: K;
+    readonly data: ClientEventMap[K];
+}[];
+
+// @public (undocumented)
 export function customEventsIn(events: readonly SessionEvent[], name?: string): readonly {
     readonly event: string;
     readonly data: unknown;
@@ -138,6 +150,9 @@ export type EvalRequestFilter = string | RegExp | ((request: EvalRequest) => boo
 
 // @public
 export type EvalRoute<State = undefined> = (request: Request, info: EvalRequest, state: State) => unknown;
+
+// @public
+export function evalRunOf(turn: EvalTurn, workflow: string | AnyWorkflowDef): string;
 
 // @public @input
 export type EvalRunOptions = StartOptions & {
@@ -231,6 +246,9 @@ export type EvalToolCall = {
 };
 
 // @public
+export type EvalToolOutput<D extends ToolDef<ToolInputSchema>> = InferToolOutput<D> extends infer O ? O extends Record<string, unknown> ? Omit<O, typeof INSTRUCTION_KEY> : O : never;
+
+// @public
 export type EvalTurn = {
     readonly text: string;
     readonly events: readonly SessionEvent[];
@@ -239,6 +257,7 @@ export type EvalTurn = {
     readonly errors: readonly SessionEvent<"error.reported">[];
     readonly endedSession?: boolean;
     readonly dtmf?: readonly string[];
+    readonly workflowStarts?: readonly EvalWorkflowStart[];
 };
 
 // @public
@@ -300,8 +319,15 @@ export type EvalWorkflowsOptions = {
     readonly logger?: Logger | undefined;
 };
 
+// @public @sealed
+export type EvalWorkflowStart = {
+    readonly workflow: string;
+    readonly def: AnyWorkflowDef | undefined;
+    readonly runId: string;
+};
+
 // @public
-export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...names: readonly string[]): void;
+export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...tools: readonly ToolDef[]): void;
 
 // @public
 export function expectToolBeforeSpeech(turn: EvalTurn): void;
@@ -338,6 +364,9 @@ export type JudgeCallOptions = {
 export type JudgeInput = SimulatedCall | readonly EvalTurn[] | Pick<EvalSession, "events"> | string;
 
 // @public
+export function lastStateIn<V>(events: readonly SessionEvent[], projection: StateProjection<V>): V | undefined;
+
+// @public (undocumented)
 export function lastStateIn<T>(events: readonly SessionEvent[], slot: string, schema: StandardSchemaV1<unknown, T>): T | undefined;
 
 // @public (undocumented)
@@ -347,7 +376,7 @@ export function lastStateIn(events: readonly SessionEvent[], slot: string): unkn
 export function lastStateIn(events: readonly SessionEvent[]): Readonly<Record<string, unknown>> | undefined;
 
 // @public
-export function lastToolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
+export function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 
 // @public
 export type LogContext = Record<string, unknown>;
@@ -483,6 +512,9 @@ export type SimulationTarget = {
 };
 
 // @public
+export function statesIn<V>(events: readonly SessionEvent[], projection: StateProjection<V>): readonly V[];
+
+// @public (undocumented)
 export function statesIn<T>(events: readonly SessionEvent[], slot: string, schema: StandardSchemaV1<unknown, T>): readonly T[];
 
 // @public (undocumented)
@@ -585,10 +617,7 @@ export type StubTtsSession = TtsSession & {
 };
 
 // @public
-export function toolArgsIn<T>(calls: readonly EvalToolCall[], name: string, schema: StandardSchemaV1<unknown, T>): readonly T[];
-
-// @public (undocumented)
-export function toolArgsIn(calls: readonly EvalToolCall[], name: string): readonly Record<string, unknown>[];
+export function toolArgsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly InferToolInput<D>[];
 
 // @public
 export function toolCallsInEvents(events: readonly SessionEvent[]): readonly EvalToolCall[];
@@ -600,10 +629,10 @@ export function toolCallsInTurns(turns: readonly EvalTurn[]): readonly EvalToolC
 export function toolNames(calls: readonly EvalToolCall[]): readonly string[];
 
 // @public
-export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
+export function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 
 // @public
-export function toolResultsIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): readonly T[];
+export function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly EvalToolOutput<D>[];
 
 // @public
 export function transcriptOf(session: Pick<EvalSession, "events">, network?: EvalNetwork): string;
@@ -659,7 +688,7 @@ export interface TtsWordTiming {
 export const TURN_ENDS: ReadonlySet<SessionEvent["type"]>;
 
 // @public
-export function turnCalling(turns: readonly EvalTurn[], name: string, where?: (call: EvalToolCall) => boolean): EvalTurn;
+export function turnCalling(turns: readonly EvalTurn[], tool: ToolDef, where?: (call: EvalToolCall) => boolean): EvalTurn;
 
 // @public
 export type Unsubscribe = () => void;

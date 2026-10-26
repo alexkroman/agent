@@ -46,13 +46,11 @@
 
 import { capToolResult } from "@alexkroman1/aai/internal";
 import { errorMessage } from "@alexkroman1/aai/utils";
-import type {
-  StartOptions,
-  WorkflowClient,
-  WorkflowRunSnapshot,
-} from "@alexkroman1/aai/workflow-api";
+import type { WorkflowClient, WorkflowRunSnapshot } from "@alexkroman1/aai/workflow-api";
 import { isTerminal } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "../logger.ts";
+import { wrapStart } from "./_client-wrap.ts";
+import { forSession } from "./client-session.ts";
 import { isRunWatchClosed, type RunReader, type RunWatch, watchRun } from "./run-reads.ts";
 
 /**
@@ -274,8 +272,10 @@ export function instructionFor(request: WatchRequest, run: WorkflowRunSnapshot):
  * call", so the session id has to be captured where it is known, which is here
  * and nowhere deeper.
  *
- * Returns the client UNCHANGED when there is no notifier or no session id, so
- * the wrapper costs nothing for the agents that never use it.
+ * Returns the client with only its SESSION scope (`workflow/client-session.ts`:
+ * `"session"` and an absent start key mean this session's id) when there is
+ * no notifier, and unchanged when there is no session id, so the wrapper costs
+ * nothing for the agents that never use either.
  *
  * Lives here rather than in `../runtime/tools.ts`, which is where it was written
  * and where it is still the only caller: it is the SESSION-scoped half of the
@@ -288,12 +288,16 @@ export function withNotify(
   notifier: RunNotifier | undefined,
   sessionId: string | undefined,
 ): WorkflowClient | undefined {
-  if (!(workflows && notifier && sessionId)) return workflows;
-  // The overload is preserved by delegating with the arguments as given —
+  if (!(workflows && sessionId)) return workflows;
+  // The session scope FIRST, so the key the notifier's `start` passes down is
+  // already the session's — and so a tool's client is scoped with or without
+  // a notifier to wrap it.
+  const scoped = forSession(workflows, sessionId);
+  if (!notifier) return scoped;
   // `start` takes a definition or a name, and the watcher needs neither: the
   // run it polls reports its own declared name.
-  const start = (async (workflow: never, input: never, options?: StartOptions): Promise<string> => {
-    const runId = await workflows.start(workflow, input, options);
+  return wrapStart(scoped, async (start, workflow, input, options) => {
+    const runId = await start(workflow, input, options);
     if (options?.notify !== undefined && options.notify !== false) {
       notifier.watch({
         sessionId,
@@ -303,6 +307,5 @@ export function withNotify(
       });
     }
     return runId;
-  }) as WorkflowClient["start"];
-  return { ...workflows, start };
+  });
 }

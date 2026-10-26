@@ -1,0 +1,407 @@
+import { z } from 'zod';
+
+// @public @sealed
+export type AgentClient = WorkflowApi & {
+    config(): Promise<ClientConfigResponse>;
+    readonly baseUrl: string;
+};
+
+// @public @input
+export type AnyWorkflowDef<R = unknown> = {
+    description?: string;
+    input?: ToolInputSchema;
+    uploads?: readonly string[];
+    output?: StandardSchemaV1<unknown, R>;
+    run: WorkflowBody<never, R>;
+    describeRun?(run: never): string;
+    cancelNote?: string | undefined;
+};
+
+// @public @sealed
+export interface ClientConfigResponse {
+    greeting?: string | undefined;
+    name?: string | undefined;
+    page: "voice" | "static";
+    sessionToken?: string | undefined;
+    sessionUrl?: string | undefined;
+    tools?: Record<string, ToolUi> | undefined;
+}
+
+// @public
+export const ClientConfigResponseSchema: z.ZodType<ClientConfigResponse>;
+
+// @public
+export function createAgentClient(options: WorkflowApiClientOptions): AgentClient;
+
+// @public
+export function createWorkflowApiClient(options: WorkflowApiClientOptions): WorkflowApi;
+
+// @public
+export const DEFAULT_SIGNAL_HOLD_MS: number;
+
+// @public @sealed
+export type EventStreamFrame = {
+    event: string;
+    data: unknown;
+};
+
+// @public @input
+export type FindByKeyOptions = {
+    since?: number | Date;
+    statuses?: readonly WorkflowRunStatus[];
+    limit?: number;
+    withOutput?: boolean;
+};
+
+// @public @input
+export type FindOptions = {
+    limit?: number;
+};
+
+// @public
+type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S extends undefined ? Record<string, never> : never;
+
+// @public
+export function isTerminal<R>(run: WorkflowRunSnapshot<R> | undefined): run is TerminalWorkflowRun<R>;
+
+// @internal
+type Literal<S extends string> = string extends S ? never : S;
+
+// @public @input
+type PollFirstWait = {
+    waitFor: string | undefined;
+    timeoutMs: number;
+    schema?: StandardSchemaV1 | undefined;
+};
+
+// @public @input
+type PollOptions<T> = {
+    everyMs: number;
+    maxMs: number;
+    done: (value: T) => boolean;
+    maxAttempts?: number | undefined;
+    first?: PollFirstWait | undefined;
+    slowAfterMs?: number | undefined;
+    onSlow?: string | undefined;
+};
+
+// @public @sealed
+type PollResult<T> = {
+    value: T;
+    done: boolean;
+    checks: number;
+    woken?: boolean;
+};
+
+// @public
+export function readEventStream(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<EventStreamFrame>;
+
+// @public @input
+type SayOnClientNotice = {
+    id?: string | undefined;
+    event: string;
+    text: string;
+    data?: Record<string, unknown> | undefined;
+    sampleRate?: number | undefined;
+    voice?: string | undefined;
+    language?: string | undefined;
+    ackTimeoutMs?: number | undefined;
+    retryAfterMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    maxAttempts?: number | undefined;
+};
+
+// @public @input
+export type SignalOptions = {
+    holdMs?: number;
+};
+
+// @public @input
+type SleepOptions = {
+    correlationId?: string;
+};
+
+// @public
+interface StandardSchemaIssue {
+    readonly errors?: unknown;
+    readonly issues?: unknown;
+    // (undocumented)
+    readonly message: string;
+    // (undocumented)
+    readonly path?: readonly (PropertyKey | {
+        readonly key: PropertyKey;
+    })[] | undefined;
+}
+
+// @public
+type StandardSchemaResult<Output> = {
+    readonly value: Output;
+    readonly issues?: undefined;
+} | {
+    readonly issues: readonly StandardSchemaIssue[];
+};
+
+// @public
+interface StandardSchemaV1<Input = unknown, Output = Input> {
+    readonly "~standard": {
+        readonly version: 1;
+        readonly vendor: string;
+        readonly validate: (value: unknown) => StandardSchemaResult<Output> | Promise<StandardSchemaResult<Output>>;
+        readonly types?: {
+            readonly input: Input;
+            readonly output: Output;
+        } | undefined;
+    };
+}
+
+// @public @input
+export type StartOptions = {
+    key?: string;
+    dedupeKey?: string;
+    label?: string;
+    notify?: boolean | string;
+};
+
+// @public @input
+type StepOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    maxAttempts?: number;
+    maxWaits?: number;
+    schema?: S | undefined;
+};
+
+// @public @input
+type StepSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = StepOptions<S> & {
+    schema: S;
+};
+
+// @public @input
+export type StreamOptions = {
+    namespace?: string;
+    startIndex?: number;
+};
+
+// @public
+export type TerminalWorkflowRun<R = unknown> = Extract<WorkflowRunSnapshot<R>, {
+    status: "completed" | "failed" | "cancelled";
+}>;
+
+// @public
+type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
+
+// @public @input
+type ToolUi = {
+    icon?: string | undefined;
+    label?: string | undefined;
+};
+
+// @public
+export type UploadBody = Blob | ArrayBuffer | ArrayBufferView | string;
+
+// @public @input
+export type UploadOptions = {
+    name?: string | undefined;
+    type?: string | undefined;
+    signal?: AbortSignal | undefined;
+    onProgress?: ((progress: UploadProgress) => void) | undefined;
+    parallel?: UploadParallelOption | undefined;
+    resume?: boolean | undefined;
+};
+
+// @public
+export type UploadParallelOption = boolean | UploadPartsOptions;
+
+// @public @input
+export type UploadPartsOptions = {
+    partBytes?: number | undefined;
+    concurrency?: number | undefined;
+};
+
+// @public @sealed
+export type UploadProgress = {
+    loaded: number;
+    total: number | undefined;
+    fraction: number | undefined;
+};
+
+// @public @sealed
+type UploadRange = {
+    start: number;
+    end: number;
+};
+
+// @public @sealed
+type UploadRecord = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+    complete: boolean;
+    ranges?: readonly UploadRange[];
+};
+
+// @public @sealed
+export type UploadRef = {
+    id: string;
+    name: string;
+    type: string;
+    size: number;
+    complete: boolean;
+    url: string;
+};
+
+// @public @input
+type WaitForOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    timeoutMs: number;
+    schema?: S | undefined;
+};
+
+// @public @input
+type WaitForSchemaOptions<S extends StandardSchemaV1 = StandardSchemaV1> = {
+    schema: S;
+};
+
+// @public @input
+export type WakeUpOptions = {
+    correlationIds?: string[];
+};
+
+// @public @sealed
+export type WorkflowApi = {
+    list(options?: WorkflowApiCallOptions): Promise<WorkflowSummary[]>;
+    upload(file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
+    start(workflow: string, input?: unknown, options?: WorkflowStartOptions): Promise<string>;
+    startAndWait(workflow: string, input?: unknown, options?: WorkflowStartAndWaitOptions): Promise<WorkflowRunSnapshot>;
+    get(runId: string, options?: WorkflowGetOptions): Promise<WorkflowRunSnapshot | undefined>;
+    find(workflow: string, key: string, options?: WorkflowRunListOptions): Promise<WorkflowRunSnapshot[]>;
+    recent(workflow: string, options?: WorkflowRunListOptions): Promise<WorkflowRunSnapshot[]>;
+    cancel(runId: string, options?: WorkflowApiCallOptions): Promise<boolean>;
+    watch(runId: string, signal?: AbortSignal): Promise<Response>;
+    streamOutput(runId: string, options?: WorkflowStreamOutputOptions): Promise<Response>;
+    follow(runId: string, options?: WorkflowApiCallOptions): AsyncIterable<WorkflowRunSnapshot>;
+    followOutput(runId: string, options?: WorkflowFollowOutputOptions): AsyncIterable<unknown>;
+    wake(runId: string, options?: WakeUpOptions & WorkflowApiCallOptions): Promise<number>;
+    uploadStream(id: string, file: UploadBody, options?: UploadOptions): Promise<UploadRef>;
+    uploadInfo(id: string, options?: WorkflowApiCallOptions): Promise<UploadRecord>;
+    download(id: string, options?: WorkflowApiCallOptions): Promise<Blob>;
+};
+
+// @public @input
+export type WorkflowApiCallOptions = {
+    signal?: AbortSignal;
+};
+
+// @public @input
+export type WorkflowApiClientOptions = {
+    baseUrl: string;
+    token?: string | undefined;
+    timeoutMs?: number | undefined;
+};
+
+// @public
+export type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;
+
+// @public @sealed
+type WorkflowContext = {
+    readonly runId: string;
+    readonly workflow: string;
+    readonly key: string | undefined;
+    step<S extends StandardSchemaV1, const Name extends string>(name: Name & Literal<Name>, fn: () => unknown, options: StepSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    step<T, const Name extends string>(name: Name & Literal<Name>, fn: () => Promise<T> | T, options?: StepOptions): Promise<T>;
+    now(): Promise<number>;
+    random(): Promise<number>;
+    uuid(): Promise<string>;
+    sleep<const Label extends string>(label: Label & Literal<Label>, until: number | Date, options?: SleepOptions): Promise<void>;
+    poll<T, const Name extends string>(name: Name & Literal<Name>, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
+    sayOnClient<const Name extends string>(name: Name & Literal<Name>, clientId: string, notice: SayOnClientNotice): Promise<string>;
+    waitFor<S extends StandardSchemaV1>(token: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
+    waitFor<S extends StandardSchemaV1>(token: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    waitFor<T = unknown>(token: string): Promise<T>;
+    waitFor<T = unknown>(token: string, options: WaitForOptions): Promise<T | undefined>;
+    report<const Name extends string>(name: Name & Literal<Name>, line: string): Promise<void>;
+    signalToken(label: string): string;
+    waitForSignal<S extends StandardSchemaV1>(label: string, options: WaitForOptions<S> & WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S> | undefined>;
+    waitForSignal<S extends StandardSchemaV1>(label: string, options: WaitForSchemaOptions<S>): Promise<InferSchemaOutput<S>>;
+    waitForSignal<T = unknown>(label: string): Promise<T>;
+    waitForSignal<T = unknown>(label: string, options: WaitForOptions): Promise<T | undefined>;
+};
+
+// @public @input
+export type WorkflowFollowOutputOptions = {
+    namespace?: string;
+    fromIndex?: number;
+    signal?: AbortSignal;
+};
+
+// @public @input
+export type WorkflowGetOptions = {
+    wait?: number;
+    signal?: AbortSignal;
+};
+
+// @public @sealed
+export type WorkflowRunBase = {
+    runId: string;
+    workflow: string;
+    createdAt: number;
+    key?: string;
+    label?: string;
+    startedAt?: number;
+    settledAt?: number;
+};
+
+// @public @input
+export type WorkflowRunListOptions = {
+    limit?: number;
+    signal?: AbortSignal;
+};
+
+// @public
+export type WorkflowRunSnapshot<R = unknown> = (WorkflowRunBase & {
+    status: "pending" | "running";
+})
+/** `output` is what the workflow function returned. */
+| (WorkflowRunBase & {
+    status: "completed";
+    output: R;
+})
+/** `error` is the failure message. */
+| (WorkflowRunBase & {
+    status: "failed";
+    error: string;
+})
+/** Cancelled by {@link WorkflowClient.cancel}; it produced no output. */
+| (WorkflowRunBase & {
+    status: "cancelled";
+});
+
+// @public
+export type WorkflowRunStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+
+// @public @input
+export type WorkflowStartAndWaitOptions = {
+    key?: string;
+    wait?: number;
+    signal?: AbortSignal;
+};
+
+// @public @input
+export type WorkflowStartOptions = {
+    key?: string;
+    signal?: AbortSignal;
+};
+
+// @public @input
+export type WorkflowStreamOutputOptions = {
+    namespace?: string;
+    startIndex?: number;
+    signal?: AbortSignal;
+};
+
+// @public @sealed
+export type WorkflowSummary = {
+    name: string;
+    description?: string;
+    inputSchema?: unknown;
+    outputSchema?: unknown;
+    uploads?: readonly string[];
+};

@@ -63,31 +63,45 @@ describe("deployedAgent", () => {
     expect(def.tools).toEqual({});
   });
 
-  test("an agent.ts that already COMPOSED the file is left exactly as authored", () => {
-    // The `pizza-ordering-agent` shape: `agent.ts` imports the prompt itself and
-    // appends a computed menu. A spec must not have to know which of the two
-    // its own template does, so passing the file is right either way.
-    const composed = `${PROMPT}\n\nToday's menu: margherita, marinara.`;
-    const def = deployedAgent(agent({ name: "Pizza", systemPrompt: composed }), {
-      systemPrompt: PROMPT,
-    });
-    expect(def.systemPrompt).toBe(composed);
+  test("a def the file was already applied to is left exactly as it is", () => {
+    // A re-lowering: `deployedAgent` over `virtual:aai/agent`'s def, or a
+    // host that composed the file into a longer prompt. A spec must not have
+    // to know which, so passing the file is right either way.
+    const once = deployedAgent(agent({ name: "Pizza" }), { systemPrompt: PROMPT });
+    expect(deployedAgent(once, { systemPrompt: PROMPT })).toBe(once);
+    const composed = { ...agent({ name: "Pizza" }), systemPrompt: `${PROMPT}\n\nMenu: marinara.` };
+    expect(deployedAgent(composed, { systemPrompt: PROMPT }).systemPrompt).toBe(
+      composed.systemPrompt,
+    );
   });
 
-  test("a prompt file nothing reads, beside a DIFFERENT declared prompt, is an error", () => {
+  test("a prompt file nothing reads, beside a DIFFERENT prompt on the def, is an error", () => {
     // "I edited system-prompt.md and nothing changed", caught rather than
-    // silently producing a plausible, wrong agent.
-    expect(() =>
-      deployedAgent(agent({ name: "Desk", systemPrompt: "Something else entirely." }), {
-        systemPrompt: PROMPT,
-      }),
-    ).toThrow(/system-prompt\.md exists and nothing reads it/);
+    // silently producing a plausible, wrong agent. Only a raw config or a host
+    // can put such a string there — `agent()` refuses the key.
+    const host = { ...agent({ name: "Desk" }), systemPrompt: "Something else entirely." };
+    expect(() => deployedAgent(host, { systemPrompt: PROMPT })).toThrow(
+      /system-prompt\.md exists and nothing reads it/,
+    );
   });
 
   test("NO project files at all is refused, naming both fields", () => {
     expect(() => deployedAgent(agent({ name: "Desk" }), {})).toThrow(
       /no project files.*import\.meta\.glob.*systemPrompt/s,
     );
+  });
+
+  test("workflows alone register a workflows/ file's default export under its name", async () => {
+    const { workflow } = await import("./workflow.ts");
+    const digest = workflow({ run: async () => 1 });
+    const def = deployedAgent(agent({ name: "Desk" }), {
+      workflows: {
+        "./workflows/digest.ts": { default: digest },
+        "./workflows/prompts.ts": { P: 1 },
+      },
+    });
+    expect(def.workflows).toEqual({ digest });
+    expect(def.systemPrompt).toBe(DEFAULT_SYSTEM_PROMPT);
   });
 
   test("an EMPTY tools glob is refused — the silent half of the same bug", () => {

@@ -26,7 +26,7 @@
 
 import { agent, type SessionEvent, tool } from "@alexkroman1/aai";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
-import { withTools } from "@alexkroman1/aai/manifest";
+import { withSystemPrompt, withTools } from "@alexkroman1/aai/manifest";
 import { isChatCompletionBody, type JournalEntry, LLMock } from "@copilotkit/aimock";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { z } from "zod";
@@ -78,7 +78,7 @@ async function drain(result: { textStream: AsyncIterable<string> }): Promise<str
 function orderAgent(provider: Parameters<typeof llm>[0]) {
   const calls: unknown[] = [];
   const def = withTools(
-    agent({ name: "Orders", mode: "text", systemPrompt: SYSTEM_PROMPT, llm: llm(provider) }),
+    withSystemPrompt(agent({ name: "Orders", mode: "text", llm: llm(provider) }), SYSTEM_PROMPT),
     {
       lookup_order: tool({
         description: "Look up an order by id",

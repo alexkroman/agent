@@ -34,24 +34,16 @@ import {
   toolNames,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
 import { INBOX } from "./inbox.ts";
+import { assistantSlot } from "./shared.ts";
+import draftReply from "./tools/draft_reply.ts";
+import meetingAssistant from "./tools/meeting_assistant.ts";
+import openEmail from "./tools/open_email.ts";
+import triageInbox from "./tools/triage_inbox.ts";
 
-/**
- * What the BROWSER is sent, as this eval reads it. Parsed rather than cast, and
- * naming only the fields asserted below, so `assistantView` may grow freely.
- */
-const ProjectedAssistant = z.object({
-  phase: z.enum(["inbox", "drafting", "awaitingDecision"]),
-  proposal: z.object({ kind: z.string(), body: z.string() }).nullable(),
-  emails: z.array(z.object({ id: z.string(), status: z.string() })),
-  sent: z.array(z.unknown()),
-});
-
-const frames = (session: EvalSession) =>
-  statesIn(session.events(), "assistant", ProjectedAssistant);
-const latest = (session: EvalSession) =>
-  lastStateIn(session.events(), "assistant", ProjectedAssistant);
+/** What the BROWSER was sent, typed by the projection the page itself renders. */
+const frames = (session: EvalSession) => statesIn(session.events(), assistantSlot.projected);
+const latest = (session: EvalSession) => lastStateIn(session.events(), assistantSlot.projected);
 
 /** A triage verdict, as the JSON the scripted model returns for `respondTo`. */
 const verdict = (response: "no" | "email" | "notify") =>
@@ -91,7 +83,7 @@ describeEval(agentDef, (test) => {
     "the call opens with a triage, and a triage sends nothing",
     async ({ session, mode }) => {
       const turn = await session.say("Morning. What came in?");
-      expectCalled(turn, "triage_inbox");
+      expectCalled(turn, triageInbox);
       // Their `route_after_triage` routed EVERY email: nothing is left
       // `untriaged`. `open` is allowed because a desk that went on to open the
       // first one has still triaged all eight, and whether it opens unprompted
@@ -162,11 +154,12 @@ describeEval(agentDef, (test) => {
       const names = toolNames(calls);
       // Across BOTH turns, and named: "expected [ 'open_email' ] to include
       // 'draft_reply'" said nothing about what the desk did instead.
-      expectCalled(turns, "open_email", "draft_reply");
-      // The staging tool answered with the read-back, not a receipt.
+      expectCalled(turns, openEmail, draftReply);
+      // The staging tool answered with a proposal, not a receipt. (Its
+      // read-back instruction is the MODEL's to read and is stripped from the
+      // frame a page sees, so it is not here to assert on.)
       const staged = calls.find((call) => call.name === "draft_reply");
       expect(staged?.result).toMatch(/awaitingDecision/);
-      expect(staged?.result).toMatch(/Nothing has been sent/);
       // The assistant asks; it does not decide. An `accept` anywhere in here is
       // the agent confirming on its own initiative — neither utterance was a
       // yes to SEND, only an instruction to draft.
@@ -264,7 +257,7 @@ describeEval(agentDef, (test) => {
     async ({ session }) => {
       const turn = await session.say("Open the Docusign one.");
       const names = toolNames(turn.toolCalls);
-      expectCalled(turn, "open_email");
+      expectCalled(turn, openEmail);
       // Their `notify` route halts for the human with nothing drafted.
       expect(names).not.toContain("draft_reply");
       const view = latest(session);
@@ -297,7 +290,7 @@ describeEval(agentDef, (test) => {
       ]);
       const calls = toolCallsInTurns(turns);
       const names = toolNames(calls);
-      expectCalled(turns, "meeting_assistant");
+      expectCalled(turns, meetingAssistant);
       // The calendar is consulted before a time is ever written down: the brief
       // says never to guess free time, and a draft or an invite that came first
       // would have.
