@@ -21,16 +21,17 @@ import { describe, expect, test } from "vitest";
  * reach for. This file is the exception on purpose: its whole subject is the
  * tool REGISTRY, so doing the discovery explicitly is the thing under test
  * rather than setup around it. It is also the worked example for a project
- * whose runner is not vitest, and so cannot register the plugin.
+ * whose runner is not vitest, and so cannot register the plugin. The prompt
+ * half (`system-prompt.md`) is deliberately not lowered here — nothing below
+ * reads it, and a spec that asserts on the prompt imports `virtual:aai/agent`
+ * (`agent.test.ts`) rather than the file.
  */
 import authoredAgent from "./agent.ts";
 import { callFlow, retailSlot } from "./store.ts";
-import systemPrompt from "./system-prompt.md?raw";
 import getUserDetails from "./tools/get_user_details.ts";
 
 const retailAgent = deployedAgent(authoredAgent, {
   tools: import.meta.glob("./tools/*.ts", { eager: true }),
-  systemPrompt,
 });
 
 const registry = Object.entries(retailAgent.tools);

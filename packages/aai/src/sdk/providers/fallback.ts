@@ -31,7 +31,6 @@ export const FALLBACK_KIND = "fallback" as const;
  *
  * export default agent({
  *   name: "Support",
- *   systemPrompt: "You are a support agent. Be brief.",
  *   stt: fallback([assemblyAIStt(), deepgramStt()]),
  *   llm: fallback([
  *     llm({ provider: "assemblyai", model: "gpt-5.6-luna" }),

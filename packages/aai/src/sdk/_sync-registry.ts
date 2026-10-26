@@ -12,7 +12,7 @@
  * syncs a slot the agent did not declare.
  *
  * Declaration ORDER is kept, so the frame's key order is the module order, and
- * a key declared twice is left for `normalizeSyncState` to refuse at `agent()`
+ * a key declared twice is left for `keyedBySlot` (`_author-conveniences.ts`) to refuse at `agent()`
  * — the one place that already names the collision.
  *
  * ## An entry is CLAIMED by the first def that collects it
@@ -34,10 +34,9 @@
  * declared `sync: true` in a tool module registers after the agent was built
  * without it. The entry then lowers the tools onto the def (`withTools`) and
  * crosses the config boundary (`toAgentConfig`), both after every module has
- * evaluated, and a `syncState` this registry produced is re-collected there.
- * One the author DECLARED is never touched; the two are told apart by
- * {@link isCollectedSyncState}, an identity mark on the record this registry
- * handed out, so a declared record can never be mistaken for one.
+ * evaluated, and the def's `syncState` is extended there with what is still
+ * unclaimed. Nobody authors the field (`agent()` refuses the key), so every
+ * record is one this registry produced and extending it is always right.
  *
  * Internal (`_`-prefixed): `session-slot.ts` writes, `_author-conveniences.ts`
  * reads, nothing else touches it.
@@ -45,33 +44,20 @@
  * @module _sync-registry
  */
 
-import { isRecord } from "./is-record.ts";
 import type { StateProjection } from "./session-state.ts";
 
 const synced: StateProjection[] = [];
 
-/** The projections some def has already collected — see the module doc. */
-const claimed = new WeakSet<StateProjection>();
-
-/** The `syncState` records this registry's contents were collected into. */
-const collected = new WeakSet<object>();
-
 /**
+ * The projections some def has already collected — see the module doc.
+ *
  * Claiming assumes the BUNDLE's evaluation order — `agent.ts` first, then the
  * `tools/` modules `withTools` loads — so a loader that evaluates several
  * agents' slot modules before any of their `agent()` calls (a test harness
  * globbing every template eagerly) hands the first agent every projection.
  * Load one agent's modules at a time, as `aai-templates`' `_discovery.ts` does.
  */
-/** Mark `record` as collected from this registry rather than declared. */
-export function markCollectedSyncState(record: object): void {
-  collected.add(record);
-}
-
-/** Whether `value` is a `syncState` record this registry collected — see the module doc. */
-export function isCollectedSyncState(value: unknown): value is Record<string, unknown> {
-  return isRecord(value) && collected.has(value);
-}
+const claimed = new WeakSet<StateProjection>();
 
 /** Record a projection for `agent()` to sync by default. */
 export function registerSyncedProjection(projection: StateProjection): void {

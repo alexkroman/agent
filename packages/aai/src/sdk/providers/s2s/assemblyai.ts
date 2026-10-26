@@ -101,7 +101,6 @@ export interface AssemblyAIS2sOptions extends ProviderCredentialOptions {
  *
  * export default agent({
  *   name: "Support",
- *   systemPrompt: "You are a support agent. Be brief.",
  *   mode: "s2s",
  *   s2s: assemblyAIS2s({ voice: "jane", languages: ["en"] }),
  * });

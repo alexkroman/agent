@@ -465,7 +465,7 @@ describe("author conveniences on raw configs (no agent())", () => {
     // A raw `export default {...}` is exactly where a stale `system` survives
     // an upgrade, because no `agent()` call type-checked it on the way in.
     expect(() => rawConfig({ name: "raw", system: "Be terse." })).toThrow(
-      /`system` \(renamed to `systemPrompt`\)/,
+      /`system` \(replaced by the `system-prompt.md` file beside agent.ts\)/,
     );
   });
 

@@ -191,13 +191,6 @@ export const AgentConfigSchema = z.object({
    */
   listing: z.string().optional(),
   /**
-   * The deprecated alias of `listing`. Never WRITTEN by `toAgentConfig`
-   * (`normalizeAgentParams` folds it onto `listing` first); declared so the
-   * type-level guard sees every `AgentDef` field accounted for, and so a config
-   * built by an older SDK still parses.
-   */
-  description: z.string().optional(),
-  /**
    * The static half of `AgentInstructions.promptContext`, appended under the
    * agent's instructions by `buildSystemPrompt`. A resolver is dropped the way
    * a `systemPrompt` resolver is — the runtime holds the agent's own module and

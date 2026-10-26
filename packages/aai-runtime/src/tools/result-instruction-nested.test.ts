@@ -18,7 +18,7 @@ import { createTextAgent } from "../text-agent/index.ts";
 import { TOOL_INSTRUCTION_LABEL } from "./result-instruction.ts";
 
 function textAgent(tools: ToolRegistry): AgentDef {
-  return withTools(agent({ name: "Desk", mode: "text", systemPrompt: "Be brief." }), tools);
+  return withTools(agent({ name: "Desk", mode: "text" }), tools);
 }
 
 /** The text a tool message carries in a model call's prompt. */

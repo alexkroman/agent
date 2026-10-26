@@ -83,7 +83,7 @@ Tools: list_files, glob, grep, read_file.
 - When grep surfaces more than one file, check each before deciding
   where the change belongs.
 - Look beyond the obvious — a tool's helper may live in another file,
-  and the systemPrompt may already cover what a new rule would add.
+  and system-prompt.md may already cover what a new rule would add.
 
 **Understand the full system**
 
@@ -106,7 +106,7 @@ placeholders or guess missing parameters.
 **Before making changes:**
 
 - Is this the right file among multiple options?
-- Does the systemPrompt, an existing tool, or a built-in already cover it?
+- Does system-prompt.md, an existing tool, or a built-in already cover it?
 - How does this fit what the project already does?
 
 ## Working Style
@@ -188,7 +188,7 @@ placeholders or guess missing parameters.
   files that agent.ts imports.
 - Every tool needs a descriptive snake_case name, a zod inputSchema
   schema, and an execute function that returns a value.
-- Replies are spoken aloud — follow the "Voice rules for systemPrompt" in
+- Replies are spoken aloud — follow the "Voice rules for system-prompt.md" in
   the reference below for any prompt or greeting you write: short
   sentences, no formatting, no exclamation points.
 - In client.tsx JSX, put literal < > { } ` inside a string expression
@@ -828,8 +828,8 @@ You are a concise, friendly assistant.
 
 Three rules, each a build error naming the file:
 
-- **A file nothing reads is an error**: `system-prompt.md` beside a DIFFERENT
-  `systemPrompt` in `agent.ts` fails the build rather than being ignored.
+- **The file is the only prompt**: `agent({ systemPrompt })` is a compile error
+  in every mode, and refused at run time.
 - **An empty file is an error**, not a silent fall-through to the framework
   default. Delete the file if that is what you want.
 - **A `system-prompt/` directory is rejected.** One file, no concatenation order
@@ -840,7 +840,7 @@ a function of the session resolved per request — and is appended under the fil
 Never import the file to compose it (`agent-guide/AGENT-API.md`). `greeting`
 stays a field: a document goes in a file, a value stays in the call.
 
-## Voice rules for systemPrompt
+## Voice rules for system-prompt.md
 
 **Don't restate the voice rules — the framework always emits them.** Write only
 what the defaults cannot say: "use run_code for ANY math", "you ARE the game".
@@ -988,8 +988,7 @@ export default agent({
   promptContext?: string | ((ctx) => string); // appended UNDER system-prompt.md: a menu, a
                                              // catalogue, or per-request text over session
                                              // state (below). Refused on a workflow app.
-  systemPrompt?: string | ((ctx) => string); // usually ABSENT — write system-prompt.md; set
-                                             // only to take over the WHOLE prompt
+  // NO systemPrompt field: the prompt IS system-prompt.md, and `agent()` refuses the key.
   greeting?: string;                         // default: "Hey there..."; "" starts silent
   sttPrompt?: string;                        // STT guidance for jargon/acronyms (both voice modes)
   voicePresets?: VoicePresetName[];          // opt-in prompt presets — see below; each one
@@ -1068,9 +1067,9 @@ export default agent({
                                              // (costs streaming: nothing plays until it passes)
 
   // ── Observing the session ──────────────────────────────────────────────
-  syncState?: Record<string, StateProjection>; // show slots to the client, keyed by slot
-                                             // name: { cart: cartSlot.projected } (read it
-                                             // with useAgentState; see UI.md)
+  // NO syncState field: a slot reaches the client by declaring it
+  // `sessionSlot(key, create, { view, sync: true })` (read it with
+  // useAgentState; see UI.md); `agent()` collects those onto the def.
   events?: SessionEventHandlers;             // observe the session; "metrics.collected" is each
                                              // reply's latency/tokens: createMetricsCollector();
                                              // "error.reported" carries a SessionErrorCode (open:
@@ -1171,12 +1170,12 @@ export default agent({ name: "Pizza", promptContext: `Menu:\n${MENU.join("\n")}`
 ```
 
 A string is serialized into the config like the prompt is; a function is
-resolved per model request (per connection on S2S) from the same session context
-a `systemPrompt` resolver sees, so per-caller state goes in the function form
-shown above. A workflow app refuses the field. `greeting` stays a field,
-deliberately: it is one sentence with no structure to lose, and it crosses the
-wire to the browser beside `name` and `page`. **A document goes in a file, a
-value stays in the call.**
+resolved per model request (per connection on S2S) from the session context
+(`sessionId`, `env`, the slots), so per-caller state goes in the function form
+shown above — it is the ONE prompt field `agent.ts` writes. A workflow app
+refuses the field. `greeting` stays a field, deliberately: it is one sentence
+with no structure to lose, and it crosses the wire to the browser beside `name`
+and `page`. **A document goes in a file, a value stays in the call.**
 
 **JSON imports need no attribute.** `resolveJsonModule` is on, so
 `import data from "./knowledge.json"` is all it takes. Do NOT write
@@ -1418,8 +1417,8 @@ Five rules, and each is an error rather than advice if you get it wrong:
 
 There is nothing to declare on `agent()` — the slot owns its default, and
 `sync: true` registers its projection (the slot must be declared in a module
-`agent.ts` imports, such as `shared.ts`); an explicit
-`syncState: slot.projected` still wins. **A SEEDED slot declares `empty`** —
+`agent.ts` imports, such as `shared.ts`); `agent({ syncState })` is not a field.
+**A SEEDED slot declares `empty`** —
 `sessionSlot("catalog", loadSeed, { view, empty: () => ({ items: [] }) })` — so
 the frame a page renders before its first push is the empty shape rather than
 the seed shipped to the browser. `SlotValueOf<typeof slot>` and
@@ -2003,11 +2002,11 @@ export default workflowApp({
 ```
 
 That is the whole declaration, and the fields it does NOT take are the point: a
-workflow app has no session and no LLM loop, so `systemPrompt`, `tools`,
-`maxSteps`, `syncState`, `stt`/`llm`/`tts`/`s2s` and every voice knob are
-**compile errors** here, not fields that quietly do nothing. `greeting` stays;
-`requiredEnv` defaults to `["ASSEMBLYAI_API_KEY"]`, the one key every step
-helper reads (`requiredEnv: []` opts out). `workflowApp()` is
+workflow app has no session and no LLM loop, so `promptContext`, `maxSteps`,
+`stt`/`llm`/`tts`/`s2s` and every voice knob are **compile errors** here, not
+fields that quietly do nothing (and a `system-prompt.md` beside one is unread).
+`greeting` stays; `requiredEnv` defaults to `["ASSEMBLYAI_API_KEY"]`, the one
+key every step helper reads (`requiredEnv: []` opts out). `workflowApp()` is
 `agent({ mode: "workflow-app", … })` with the discriminant already set — same
 definition object out, so `aai build`, `aai dev` and `aai publish` treat it like
 any other agent.
@@ -3414,10 +3413,11 @@ what those tools return, and mirror it into `useState` — three things to keep 
 step, and the usual source of drift when you add a tool and forget to return the
 snapshot from it.
 
-`syncState` holds projections, not flags, because state often holds things that
-should not reach a browser (keys, PINs, scratch) or cannot be serialized.
-Whatever it returns is exactly what the client receives. It runs after every
-tool call and is sent only when the result changed.
+A slot reaches the page only when declared `sync: true`, and only through its
+`view`, because state often holds things that should not reach a browser (keys,
+PINs, scratch) or cannot be serialized. Whatever it returns is exactly what the
+client receives. It runs after every tool call and is sent only when the result
+changed.
 
 **`useEvent`** — fires for custom events from `ctx.send()`:
 

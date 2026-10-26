@@ -64,19 +64,18 @@ You are a concise, friendly assistant.
 Editing this file is most of building an agent, so it gets to be a real markdown
 file you can read.
 
-Write the prompt in one place. If `system-prompt.md` exists and `agent.ts` also
-sets `systemPrompt`, the build stops and tells you, rather than letting you edit
-a file that is being ignored.
+The file is the only place a prompt is written: `agent()` has no `systemPrompt`
+field, so there is no second copy to drift from the one the build applies.
 
 ## Your prompt is added to the framework's, not swapped in for it
 
 **Write only your own domain rules.** `"You only ever discuss pizza."` is a
 complete system prompt.
 
-Whatever you write — in `system-prompt.md` or in `systemPrompt` — is appended to
-the voice rules the framework always sends: how to speak a number, how to read a
-transcript, one question per turn, today's date. Your rules come last, under a
-header saying they win where the two conflict.
+Whatever you write in `system-prompt.md` is appended to the voice rules the
+framework always sends: how to speak a number, how to read a transcript, one
+question per turn, today's date. Your rules come last, under a header saying
+they win where the two conflict.
 
 :::caution[Never interpolate `DEFAULT_SYSTEM_PROMPT` into your prompt] That
 sends the ~10,000-character voice core twice, once by the framework and once by
@@ -107,10 +106,11 @@ console.log(DEFAULT_SYSTEM_PROMPT); // what your rules are added to
 
 ## A prompt that changes during the call
 
-A prompt computed once — a menu, a catalog — is still just a string: build it in
-`agent.ts` and pass it as `systemPrompt`. Today's date is already in every
-prompt, so that is not a reason to compute one. What this section is about is a
-prompt that has to change _during_ a call.
+Text computed once — a menu, a catalog — is still just a string: build it in
+`agent.ts` and pass it as `promptContext`, which is appended under
+`system-prompt.md`. Today's date is already in every prompt, so that is not a
+reason to compute one. What this section is about is text that has to change
+_during_ a call.
 
 Pass a function instead of a string. It is called as each model request is
 assembled, so what the agent is told can move with the conversation:
@@ -122,8 +122,7 @@ const cart = sessionSlot("cart", (): { items: string[] } => ({ items: [] }));
 
 export default agent({
   name: "Intake",
-  systemPrompt: (ctx) =>
-    `Take the caller's order. In the cart: ${cart.get(ctx).items.join(", ") || "nothing yet"}`,
+  promptContext: (ctx) => `In the cart: ${cart.get(ctx).items.join(", ") || "nothing yet"}`,
 });
 ```
 

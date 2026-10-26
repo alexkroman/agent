@@ -579,7 +579,6 @@
     "StepOptions",
     "StepSchemaOptions",
     "SttProvider",
-    "SyncStateDeclaration",
     "TelephonyAccess",
     "TelephonyCarrier",
     "TextAgentParams",

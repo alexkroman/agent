@@ -48,7 +48,7 @@
 
 import { type AgentDef, agent, type BuiltinTool } from "@alexkroman1/aai";
 import { llm } from "@alexkroman1/aai/llm";
-import { withTools } from "@alexkroman1/aai/manifest";
+import { withSystemPrompt, withTools } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { HarnessBundleAccess, StudioSession } from "aai-guest-core/types";
 import { buildWorkspaceDir } from "./build.ts";
@@ -104,23 +104,28 @@ export function createStudioAgent(session: StudioSession, deps: StudioAgentDeps)
   // so building it per family silently doubled the `tsc` runs a parallel burst
   // of `write_file` + `use_template` costs.
   const diagnostics = createPostWriteDiagnostics(deps.typecheck);
-  const authored = agent({
-    name: "AAI Studio",
-    mode: "text",
-    systemPrompt: session.system,
-    // The model is host configuration delivered by `studio/session-init`; the
-    // KEY is the caller's own and rides in as `providerEnv`, never here.
-    llm: llm({
-      provider: "assemblyai",
-      model: session.model,
-      providerOptions: omitUndefined({ region: session.region }),
+  // The studio's prompt is the HOST's, assembled per session by
+  // `aai-studio-server` — so it goes on the lowered def through the same door
+  // the build uses for a project's `system-prompt.md`; `agent()` refuses the key.
+  const authored = withSystemPrompt(
+    agent({
+      name: "AAI Studio",
+      mode: "text",
+      // The model is host configuration delivered by `studio/session-init`; the
+      // KEY is the caller's own and rides in as `providerEnv`, never here.
+      llm: llm({
+        provider: "assemblyai",
+        model: session.model,
+        providerOptions: omitUndefined({ region: session.region }),
+      }),
+      maxSteps: session.maxSteps,
+      // Unset means the PROVIDER's default, and a step truncated at it has its
+      // tool call silently dropped since ai@7.0.70 — see studio-limits.ts.
+      maxOutputTokens: session.maxOutputTokens,
+      builtinTools: STUDIO_BUILTIN_TOOLS,
     }),
-    maxSteps: session.maxSteps,
-    // Unset means the PROVIDER's default, and a step truncated at it has its
-    // tool call silently dropped since ai@7.0.70 — see studio-limits.ts.
-    maxOutputTokens: session.maxOutputTokens,
-    builtinTools: STUDIO_BUILTIN_TOOLS,
-  });
+    session.system,
+  );
   // Studio tools last: a web builtin may never shadow `write_file`. (The
   // SDK's own merge already gives a declared tool priority over a builtin
   // of the same name; this ordering is about the three studio families.)

@@ -107,13 +107,15 @@ describe("executeBuild reports WHICH prompt shipped", () => {
     expect(without.ok && without.data.systemPrompt).toContain("framework default");
   });
 
-  test("names agent.ts when the prompt is declared there", { timeout: 120_000 }, async ({
+  test("names agent.ts when a raw config declares the prompt there", { timeout: 120_000 }, async ({
     tmpDir: dir,
   }) => {
     await linkSdkNodeModules(dir);
+    // Only a raw `export default {...}` can still carry one: `agent()` refuses
+    // the key, and the prompt a project runs is its `system-prompt.md`.
     await writeFile(
       path.join(dir, "agent.ts"),
-      `import { agent } from "@alexkroman1/aai";\nexport default agent({ name: "inline", systemPrompt: "Be brief." });`,
+      `export default { name: "inline", systemPrompt: "Be brief." };`,
     );
     const result = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
     expect(result.ok && result.data.systemPrompt).toBe("agent.ts");

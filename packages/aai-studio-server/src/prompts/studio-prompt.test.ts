@@ -129,7 +129,7 @@ describe("studioSystemPrompt", () => {
     // The full scaffold reference follows.
     expect(prompt).toContain("# aai framework reference (scaffold CLAUDE.md)");
     expect(prompt).toContain("## `agent()` API");
-    expect(prompt).toContain("Voice rules for systemPrompt");
+    expect(prompt).toContain("Voice rules for system-prompt.md");
   });
 
   test("lists the SDK's real subpaths without naming removed ones", () => {

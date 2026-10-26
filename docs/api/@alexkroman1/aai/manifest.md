@@ -132,7 +132,6 @@ function toAgentConfig(source: AgentConfigSource): {
   clientInbox?: {
      sampleRate?: number;
   };
-  description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
@@ -218,7 +217,6 @@ the runtime.
   clientInbox?: {
      sampleRate?: number;
   };
-  description?: string;
   errorPhrase?: string;
   greeting: string;
   idleTimeoutMs?: number;
@@ -297,12 +295,6 @@ optional builtinTools?: readonly string[];
 {
   sampleRate?: number;
 }
-```
-
-##### description?
-
-```ts
-optional description?: string;
 ```
 
 ##### errorPhrase?

@@ -203,13 +203,12 @@ export function commandedBuiltins(config: { readonly systemPrompt: string }): Bu
  *
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { expectPromptBuiltinsDeclared } from "@alexkroman1/aai/testing";
+ * import { deployedAgent, expectPromptBuiltinsDeclared } from "@alexkroman1/aai/testing";
  *
+ * // Under vitest, `import agentDef from "virtual:aai/agent"` is this lowering made for you.
  * const commanded = expectPromptBuiltinsDeclared(
- *   agent({
- *     name: "Coda",
+ *   deployedAgent(agent({ name: "Coda", builtinTools: ["run_code"] }), {
  *     systemPrompt: "Answer every sum by calling run_code.",
- *     builtinTools: ["run_code"],
  *   }),
  * );
  * console.log(commanded); // ["run_code"]

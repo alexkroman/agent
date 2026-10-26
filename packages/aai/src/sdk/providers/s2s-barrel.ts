@@ -16,7 +16,6 @@
  *
  * export default agent({
  *   name: "Concierge",
- *   systemPrompt: "You are a hotel concierge. Be brief.",
  *   mode: "s2s",
  *   s2s: openAIS2s({ model: "gpt-realtime", voice: "marin" }),
  * });

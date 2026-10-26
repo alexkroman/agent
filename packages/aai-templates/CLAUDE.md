@@ -173,7 +173,7 @@ Rules the table carries that apply to any template:
 - A slot whose `create()` pulls a seed declares `empty` beside `view`
   (`SessionSlotOptions.empty`), so `useAgentState(slot.projected)` renders the
   empty shape and the seed never ships to the browser; a slot with a `view` is
-  declared `sync: true` rather than listed on `agent({ syncState })`.
+  declared `sync: true` — `agent({ syncState })` is not a field.
 - A slot's default is a plain value (cloned per install) unless it is computed;
   a factory exists for the seed, not for the clone.
 - Do not call `spokenOrdinal` beside `resolveOne`; it consults it internally.
@@ -469,14 +469,14 @@ in its result.
 A document goes in a file, a value stays in the call: `greeting` and `sttPrompt`
 stay fields, and text computed beside the file — a menu, a status block, a
 per-request line over a slot — is `agent({ promptContext })`, appended under it
-(`AgentPromptContext`, `packages/aai/src/sdk/agent-instructions.ts`). **No
-template imports `system-prompt.md?raw`**: `withSystemPrompt`
-(`@alexkroman1/aai/manifest`) owns the rules and its module doc the argument. A
-`system-prompt.md` alongside a different prompt STRING in `agent.ts` is a build
-error, and so is an empty file — a silently ignored prompt produces an agent
-that behaves plausibly and wrongly. A `systemPrompt` RESOLVER is for an agent
-taking over the WHOLE prompt. `_discovery.ts` resolves prompts for
-`templates.test.ts`.
+(`AgentPromptContext`, `packages/aai/src/sdk/agent-instructions.ts`).
+`agent({ systemPrompt })` is not a field in any mode (`FrameworkOwnedField`):
+the file is the only prompt. **No template imports `system-prompt.md?raw`**, not
+even a spec — a spec asserting on the prompt reads it off `virtual:aai/agent`'s
+lowered def. `withSystemPrompt` (`@alexkroman1/aai/manifest`) owns the rules and
+its module doc the argument; an empty file is a build error — a silently ignored
+prompt produces an agent that behaves plausibly and wrongly. `_discovery.ts`
+resolves prompts for `templates.test.ts`.
 
 **`coding-agent` is TEXT-mode** (`mode: "text"`), so `createRuntime` refuses it
 and it ships its own front door, `chat.ts` — the only entry point in

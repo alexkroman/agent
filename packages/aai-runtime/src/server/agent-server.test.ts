@@ -44,7 +44,6 @@ describe("createAgentServer", () => {
   test("serves the agent's own name and greeting without being told them", async () => {
     const myAgent = agent({
       name: "Support",
-      systemPrompt: "You are helpful.",
       greeting: "Hi, how can I help?",
     });
 
@@ -61,7 +60,7 @@ describe("createAgentServer", () => {
   });
 
   test("the upgrade hook still gets first look", async () => {
-    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+    const myAgent = agent({ name: "Support" });
     let sawUpgrade = false;
 
     await withServer(
@@ -99,7 +98,7 @@ describe("createAgentServer", () => {
     // with a full pipeline, and it still answers no carrier. `telephony` used
     // to default ON here, so every server built through this door mounted the
     // route whether or not the agent had a phone number.
-    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+    const myAgent = agent({ name: "Support" });
 
     await withServer({ agent: myAgent }, async (baseUrl) => {
       expect((await phoneRefusal(baseUrl)).message).toContain("404");
@@ -109,7 +108,6 @@ describe("createAgentServer", () => {
   test("the agent's own declaration is what mounts it", async () => {
     const myAgent = agent({
       name: "Support",
-      systemPrompt: "You are helpful.",
       telephony: ["twilio"],
     });
 
@@ -131,7 +129,6 @@ describe("createAgentServer", () => {
     // that does declare a carrier, with the surface taken off.
     const myAgent = agent({
       name: "Support",
-      systemPrompt: "You are helpful.",
       telephony: true,
     });
 
@@ -171,7 +168,7 @@ describe("createAgentServer", () => {
   });
 
   test("HEAD /health answers, which is the verb a load-balancer check sends", async () => {
-    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+    const myAgent = agent({ name: "Support" });
 
     await withServer({ agent: myAgent }, async (baseUrl) => {
       // 404 before this: the route table declares GET alone, so HEAD fell all
@@ -192,7 +189,7 @@ describe("createAgentServer", () => {
   test("and HEAD claims nothing else — a miss is still a miss", async () => {
     // The handler goes in front of the embedder hook, so an over-broad match
     // would silently swallow somebody else's route rather than fail visibly.
-    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+    const myAgent = agent({ name: "Support" });
 
     await withServer({ agent: myAgent }, async (baseUrl) => {
       expect((await fetch(`${baseUrl}/health/deep`, { method: "HEAD" })).status).toBe(404);
@@ -278,7 +275,7 @@ describe("createAgentServer", () => {
   });
 
   test("close() shuts the runtime down, so callers need no second call", async () => {
-    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+    const myAgent = agent({ name: "Support" });
     const server = createAgentServer({ agent: myAgent, env: ENV, logger: silentLogger });
     await server.listen(0);
     const port = server.port;
@@ -373,7 +370,7 @@ describe("the env this door forwards to the server", () => {
     // session is declined and the socket closed rather than handed a host session.
     await withServer(
       {
-        agent: agent({ name: "Support", systemPrompt: "x" }),
+        agent: agent({ name: "Support" }),
         env: { ...ENV, AAI_ALLOW_HOST: "1" },
       },
       async (baseUrl) => {
@@ -456,7 +453,6 @@ describe("the boot line names what this door mounts", () => {
     const capture = servingCapture();
     const myAgent = agent({
       name: "Support",
-      systemPrompt: "You are helpful.",
       // Declared, because the route is not mounted otherwise — which is what
       // the spec below this one asserts from the other side.
       telephony: true,
@@ -518,7 +514,7 @@ describe("the boot line names what this door mounts", () => {
     // here and forwarded, so the log cannot report a route the mount does not
     // make. This is now the DEFAULT case rather than an opt-out.
     const capture = servingCapture();
-    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+    const myAgent = agent({ name: "Support" });
 
     await withServer({ agent: myAgent, logger: capture.logger }, async (baseUrl) => {
       expect(capture.ws()).toEqual(["/websocket"]);
@@ -530,7 +526,6 @@ describe("the boot line names what this door mounts", () => {
     const capture = servingCapture();
     const myAgent = agent({
       name: "Support",
-      systemPrompt: "You are helpful.",
       telephony: ["telnyx"],
     });
 
@@ -569,7 +564,7 @@ describe("the boot line names what this door mounts", () => {
 
   test("a clientDir says so, because an operator reads / differently then", async () => {
     const capture = servingCapture();
-    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+    const myAgent = agent({ name: "Support" });
 
     await withServer(
       // The directory need not exist for the CLAIM to be right: what changes is
@@ -620,7 +615,7 @@ describe("the tables this door owes its own database", () => {
 
   test("a DATABASE_URL is provisioned, and a failure is REPORTED rather than swallowed", async () => {
     const logger = makeLogger();
-    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+    const myAgent = agent({ name: "Support" });
 
     await withServer(
       { agent: myAgent, env: { ...ENV, DATABASE_URL: deadUrl("owned") }, logger },
@@ -647,7 +642,7 @@ describe("the tables this door owes its own database", () => {
     vi.stubEnv("AAI_PLATFORM_BASE_URL", "http://127.0.0.1:1/slug");
     vi.stubEnv("AAI_GUEST_TOKEN", "guest-token");
     const logger = makeLogger();
-    const myAgent = agent({ name: "Support", systemPrompt: "You are helpful." });
+    const myAgent = agent({ name: "Support" });
 
     await withServer(
       // A `DATABASE_URL` an author also set, which is the case that decides

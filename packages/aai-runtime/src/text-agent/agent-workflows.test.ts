@@ -28,7 +28,6 @@ const desk: AgentDef = withTools(
   agent({
     name: "Desk",
     mode: "text",
-    systemPrompt: "Help.",
     workflows: { slow },
     builtinTools: ["workflow_status"],
   }),

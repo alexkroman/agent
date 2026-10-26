@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * `sessionSlot(key, create, { sync: true })` → `agent()`'s default
- * `syncState`, and the CLAIM that keeps one agent's slots out of the next.
+ * `sessionSlot(key, create, { sync: true })` → `agent()`'s `syncState`, and
+ * the CLAIM that keeps one agent's slots out of the next.
  *
  * Its own file because the registry is MODULE state: a slot declared here
  * stays registered for the rest of this module graph, which is the behaviour
@@ -24,7 +24,7 @@ function syncStateOf(params: unknown): unknown {
 describe("sync: true", () => {
   // ONE test, because the registry is module state and the runner shuffles
   // test order: each step below reads what the step before it registered.
-  test("feeds the first agent() that collects it, in declaration order, unless the agent declares its own", () => {
+  test("feeds the first agent() that collects it, in declaration order", () => {
     expect(syncedProjections()).toEqual([]);
     expect(syncStateOf(normalizeAgentParams({ name: "p" }))).toBeUndefined();
 
@@ -41,12 +41,9 @@ describe("sync: true", () => {
     expect(agent({ name: "q" }).syncState).toBeUndefined();
     expect(syncStateOf(normalizeAgentParams({ name: "q" }))).toBeUndefined();
 
-    // An explicit syncState wins, and an unsynced slot is not collected.
-    const prefs = sessionSlot("prefs", () => ({ units: "metric" }));
+    // An unsynced slot is not registered, and nothing else puts one on a def.
+    sessionSlot("prefs", () => ({ units: "metric" }));
     expect(syncedProjections().map((p) => p.key)).toEqual(["cart"]);
-    expect(agent({ name: "p", syncState: prefs.projected }).syncState).toEqual({
-      prefs: prefs.projected,
-    });
 
     // A second synced slot goes to the next agent that collects — and only to it.
     const desk = sessionSlot("desk", () => ({ open: 0 }), { sync: true });
@@ -72,31 +69,16 @@ describe("sync: true", () => {
     // A def that had no synced slot when it was built collects at the lowering too.
     const later = sessionSlot("later", () => ({ n: 0 }), { sync: true });
     expect(syncStateOf(withTools({ tools: {} }, {}))).toEqual({ later: later.projected });
-    // A DECLARED syncState is never re-collected, at either step — and a
-    // `sync: true` slot registered after it (a tools file's) is CLAIMED and
-    // named, once, rather than dropped silently or handed to the next def.
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    try {
-      const declared = agent({ name: "p", syncState: prefs.projected });
-      expect(warn).not.toHaveBeenCalled();
-      sessionSlot("stray", () => ({ n: 0 }), { sync: true });
-      expect(withTools(declared, {}).syncState).toEqual({ prefs: prefs.projected });
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(warn.mock.calls[0]?.[0]).toMatch(
-        /The slot "stray" declared `sync: true` but sits in an agent whose explicit `syncState`/,
-      );
-      expect(syncStateOf(normalizeAgentParams(declared))).toEqual({ prefs: prefs.projected });
-      expect(warn).toHaveBeenCalledTimes(1);
-      expect(agent({ name: "t" }).syncState).toBeUndefined();
-      // A declared projection that is ALSO `sync: true` is not "left out".
-      const both = sessionSlot("both", () => ({ n: 0 }), { sync: true });
-      expect(agent({ name: "u", syncState: both.projected }).syncState).toEqual({
-        both: both.projected,
-      });
-      expect(warn).toHaveBeenCalledTimes(1);
-    } finally {
-      warn.mockRestore();
-    }
+    // A record built by ANOTHER SDK copy (the bundle's def crossing into the
+    // host's config boundary) is validated and kept, and extended like any
+    // other when something new registers.
+    const foreign = { later: later.projected };
+    expect(syncStateOf(normalizeAgentParams({ name: "f", syncState: foreign }))).toBe(foreign);
+    const stray = sessionSlot("stray", () => ({ n: 0 }), { sync: true });
+    expect(
+      Object.keys(syncStateOf(withTools({ syncState: foreign, tools: {} }, {})) as object),
+    ).toEqual(["later", "stray"]);
+    expect(stray.key).toBe("stray");
 
     // Two synced slots on one key are refused where the collision is named.
     sessionSlot("twice", () => ({ open: 1 }), { sync: true });

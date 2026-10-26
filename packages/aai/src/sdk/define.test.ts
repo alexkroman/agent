@@ -69,13 +69,28 @@ describe("agent()", () => {
   // what make the call illegal, so there is nothing legal to pass.
   const agentMisuse = (config: Record<string, unknown>) => agent(config as never);
 
-  test("`system` is not a field — it was an alias of `systemPrompt` and is gone", () => {
-    // One concept, one name. The alias existed to match the Vercel AI SDK's
-    // spelling and made `agent({ system, systemPrompt })` representable, which
-    // then needed a runtime throw to forbid. It is now a stray field, so
-    // `assertNoStrayFields` reports it and points at the name that exists.
+  test("`system` is not a field — the prompt is a file, and the old alias says so", () => {
+    // One concept, one home. The alias existed to match the Vercel AI SDK's
+    // spelling; it is now a stray field, so `assertNoStrayFields` reports it
+    // and points at the file.
     expect(() => agentMisuse({ name: "t", system: "You are terse." })).toThrow(
-      /`system` \(renamed to `systemPrompt`\)/,
+      /`system` \(replaced by the `system-prompt.md` file beside agent.ts\)/,
+    );
+  });
+
+  test("`systemPrompt` and `syncState` are refused at run time, naming where each is declared", () => {
+    // The run-time twin of their absence from every member: neither bundler
+    // type-checks user code, and an options bag reaches `agent()` past the
+    // excess-property check.
+    expect(() => agentMisuse({ name: "t", systemPrompt: "Be terse." })).toThrow(
+      /the prompt IS a file. Write it in system-prompt.md/,
+    );
+    expect(() => agentMisuse({ name: "t", systemPrompt: () => "x" })).toThrow(/promptContext/);
+    expect(() => agentMisuse({ name: "t", syncState: {} })).toThrow(
+      /sessionSlot\(key, create, \{ view, sync: true \}\)/,
+    );
+    expect(() => agentMisuse({ name: "t", description: "A desk" })).toThrow(
+      /`description` \(renamed to `listing`\)/,
     );
   });
 
@@ -133,23 +148,13 @@ describe("agent()", () => {
     expect(def.tools).toEqual({});
   });
 
-  test("a systemPrompt thunk is kept AS A FUNCTION on the def", () => {
-    // The one thing `agent()` must not do with it: resolving here would make
-    // every dynamic prompt a snapshot of its first answer, and nothing
-    // downstream could tell that from a string the author wrote.
-    const systemPrompt = (): string => "computed";
-    expect(agent({ name: "Dynamic", systemPrompt }).systemPrompt).toBe(systemPrompt);
-  });
-
   test("preserves explicit values", () => {
     const def = agent({
       name: "Custom",
-      systemPrompt: "Be nice.",
       greeting: "Hello!",
       maxSteps: 10,
       builtinTools: ["web_search"],
     });
-    expect(def.systemPrompt).toBe("Be nice.");
     expect(def.greeting).toBe("Hello!");
     expect(def.maxSteps).toBe(10);
     expect(def.builtinTools).toEqual(["web_search"]);
@@ -184,7 +189,7 @@ describe("agent()", () => {
       stt,
       llm: stage,
       tts,
-      def: agent({ name: "t", systemPrompt: "p", stt, llm: stage, tts }),
+      def: agent({ name: "t", stt, llm: stage, tts }),
     };
   }
 
@@ -205,7 +210,7 @@ describe("agent()", () => {
   });
 
   test("agent without providers resolves to the default AssemblyAI pipeline", () => {
-    const def = agent({ name: "t", systemPrompt: "p" });
+    const def = agent({ name: "t" });
     const parsed = toAgentConfig(def);
     expect(parsed.mode).toBe("pipeline");
     expect(parsed.stt?.kind).toBe("assemblyai");
@@ -214,7 +219,7 @@ describe("agent()", () => {
   });
 
   test("agent with s2s descriptor resolves to mode 's2s'", () => {
-    const def = agent({ name: "t", systemPrompt: "p", mode: "s2s", s2s: assemblyAIS2s() });
+    const def = agent({ name: "t", mode: "s2s", s2s: assemblyAIS2s() });
     const parsed = toAgentConfig(def);
     expect(parsed.mode).toBe("s2s");
     expect(parsed.stt).toBeUndefined();

@@ -53,7 +53,6 @@
     // name — so they are off the root barrel and out of the docs, while still
     // appearing inline in the members' rendered signatures.
     "DefaultedAgentField",
-    "InlineToolsField",
     "InlineToolsMisuse",
     "PipelineOnlyField",
     "ProviderField",

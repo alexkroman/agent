@@ -518,8 +518,9 @@ const agentDef = deployedAgent(authored, {
 Every rule the build applies applies here too, and each is an error naming
 the file: the tool-name grammar, the default-export requirement, no nested
 files, a name declared twice, an empty prompt file, and a
-`system-prompt.md` that exists while `agent.ts` declares a different prompt
-STRING — the "I edited the prompt and nothing changed" failure.
+`system-prompt.md` that exists while the def carries a different prompt
+STRING (a raw config's, or a host's — `agent()` refuses the key) — the "I
+edited the prompt and nothing changed" failure.
 
 **Bounded by the two fields it lowers ONTO, not by `AgentDef`.** An `agent()`
 def satisfies it and comes back as its own type, so a template keeps its
@@ -1054,13 +1055,12 @@ takes, or assert on `builtinTools` directly.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { expectPromptBuiltinsDeclared } from "@alexkroman1/aai/testing";
+import { deployedAgent, expectPromptBuiltinsDeclared } from "@alexkroman1/aai/testing";
 
+// Under vitest, `import agentDef from "virtual:aai/agent"` is this lowering made for you.
 const commanded = expectPromptBuiltinsDeclared(
-  agent({
-    name: "Coda",
+  deployedAgent(agent({ name: "Coda", builtinTools: ["run_code"] }), {
     systemPrompt: "Answer every sum by calling run_code.",
-    builtinTools: ["run_code"],
   }),
 );
 console.log(commanded); // ["run_code"]
@@ -3747,11 +3747,10 @@ readonly optional systemPrompt?: string;
 
 `import prompt from "./system-prompt.md?raw"`.
 
-Omit it for a project with no `system-prompt.md`. Pass it even when
-`agent.ts` imports the file itself — whether it composes a string out of it
-or closes over it in a `systemPrompt` resolver, the def is left exactly as
-the author built it, so a spec never has to know which of the three shapes
-its own project uses.
+Omit it for a project with no `system-prompt.md`. Passing it to a def the
+file was already applied to leaves that def exactly as it is, so a spec
+never has to know whether its def is the raw `agent.ts` export or a
+lowered one.
 
 ##### tools?
 

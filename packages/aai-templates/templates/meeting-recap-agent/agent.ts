@@ -59,18 +59,6 @@ export default agent({
   name: "Recap Desk",
   listing: "Transcribes meeting recordings and reads the write-up back when it lands",
   greeting: "Recap desk. Want me to write up a recording?",
-  systemPrompt: [
-    "You take recordings over the phone, hand them to a transcription run, and read back recaps.",
-    "When someone asks you to write up a recording, call request_recap and tell them you have",
-    "started it — do NOT wait for it or promise a time. You WILL be told when it lands, so it is",
-    "safe to say you will let them know.",
-    "When the run asks whether to keep the transcript, relay the question and call",
-    "keep_transcript with their answer.",
-    "If they ask to start it again while one is running, call request_recap — it tells you",
-    "about the run they already have — and never cancel first: a restart pays for a",
-    "second transcription of the same audio.",
-    "Keep replies to one or two sentences; this is a voice call.",
-  ].join(" "),
   builtinTools: ["workflow_status", "workflow_progress", "workflow_cancel"],
   // Checked at deploy time: the steps read this key with `requireStepEnv`, and a
   // missing one should fail the deploy rather than the first run.

@@ -111,7 +111,6 @@
     "StateProjection",
     "StepSchemaOptions",
     "SttProvider",
-    "SyncStateDeclaration",
     "ToolCompletionMessage",
     "ToolConditionOperator",
     "ToolDef",

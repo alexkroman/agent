@@ -18,7 +18,7 @@
  */
 
 import { agent, tool } from "@alexkroman1/aai";
-import { withTools } from "@alexkroman1/aai/manifest";
+import { withSystemPrompt, withTools } from "@alexkroman1/aai/manifest";
 import { openEvalSession } from "@alexkroman1/aai-runtime/eval";
 import { z } from "zod";
 import { scopeOf } from "./assertions.ts";
@@ -42,16 +42,17 @@ const ORDERS: Record<string, { status: string; item: string }> = {
  */
 function supportAgent() {
   return withTools(
-    agent({
-      name: "Order Support",
-      greeting: "Order support, how can I help?",
-      systemPrompt: [
+    // The prompt goes on the lowered def the way a project's `system-prompt.md`
+    // does: `agent()` refuses the key.
+    withSystemPrompt(
+      agent({ name: "Order Support", greeting: "Order support, how can I help?" }),
+      [
         "You are an order support agent. Be brief — one or two sentences.",
         "Look an order up with lookup_order before saying anything about it.",
         "Cancel an order only with cancel_order, and only when the caller asks to cancel.",
         "Never invent an order status. Read the caller's order number back digit for digit.",
       ].join(" "),
-    }),
+    ),
     {
       lookup_order: tool({
         description: "Look up one order's status by its order number.",

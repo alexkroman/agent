@@ -235,7 +235,6 @@ export interface AssemblyAITtsOptions extends ProviderCredentialOptions {
  *
  * export default agent({
  *   name: "Support",
- *   systemPrompt: "You are a support agent. Be brief.",
  *   tts: assemblyAITts({ voice: "aai-michael" }),
  * });
  * ```

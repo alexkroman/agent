@@ -47,7 +47,6 @@ import { describe, expect, test } from "vitest";
 const SHARED = {
   name: "Line",
   greeting: "Hi! I'm running in pipeline mode. What can I help with?",
-  systemPrompt: "Answer in one or two sentences.",
 } satisfies SharedAgentParams;
 
 describe("three modes, three members", () => {

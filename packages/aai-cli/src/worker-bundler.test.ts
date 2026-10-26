@@ -273,38 +273,43 @@ describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
     expect(agentDef.systemPrompt).toContain("voice agent");
   });
 
-  test("a COMPOSED prompt keeps what the author built", async ({ tmpDir: dir }) => {
+  test("computed text beside the file rides as promptContext, the file untouched", async ({
+    tmpDir: dir,
+  }) => {
     await linkSdkNodeModules(dir);
     await fs.writeFile(
       path.join(dir, "agent.ts"),
       `import { agent } from "@alexkroman1/aai";\n` +
-        `import prompt from "./system-prompt.md?raw";\n` +
-        `export default agent({ name: "T", systemPrompt: \`\${prompt}\\nTODAY: fish\` });\n`,
+        `export default agent({ name: "T", promptContext: "TODAY: fish" });\n`,
       "utf-8",
     );
     await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
 
-    // `pizza-ordering-agent`'s shape — the file plus a computed suffix. Discovery
-    // must not apply the file a second time, and must not call this a mistake.
+    // `pizza-ordering-agent`'s shape — the file plus a computed suffix, which is
+    // `promptContext` now that `agent()` takes no prompt: the file is still
+    // applied, and the context stays its own field for the builder to append.
     const agentDef = await loadWorker(dir);
-    expect(agentDef.systemPrompt).toBe(`${PROMPT}\nTODAY: fish`);
+    expect(agentDef.systemPrompt).toBe(PROMPT);
+    expect(agentDef.promptContext).toBe("TODAY: fish");
   });
 
-  test("a RESOLVER survives the build, and puts nothing on the wire", async ({ tmpDir: dir }) => {
+  test("a raw config's RESOLVER survives the build, and puts nothing on the wire", async ({
+    tmpDir: dir,
+  }) => {
     await linkSdkNodeModules(dir);
+    // A raw `export default {...}` is the one author-side place a prompt
+    // resolver can still be written (`agent()` refuses the key); the host's
+    // `withSystemPrompt` is the other.
     await fs.writeFile(
       path.join(dir, "agent.ts"),
-      `import { agent } from "@alexkroman1/aai";\n` +
-        `import prompt from "./system-prompt.md?raw";\n` +
-        'export default agent({ name: "T", systemPrompt: (ctx) => `${prompt}\\nSession ${ctx.sessionId}.` });\n',
+      `import prompt from "./system-prompt.md?raw";\n` +
+        'export default { name: "T", systemPrompt: (ctx) => `${prompt}\\nSession ${ctx.sessionId}.` };\n',
       "utf-8",
     );
     await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");
 
-    // `text-adventure-agent`'s shape: the file, plus something only a live
-    // session knows. Discovery must not apply the file a second time and must
-    // not call the function a mistake — it used to THROW here, which made
-    // dynamic instructions unreachable from any project with a prompt file.
+    // Discovery must not apply the file a second time and must not call the
+    // function a mistake — it used to THROW here.
     const code = await buildWorker(dir, { runtime: false });
     const out = path.join(dir, "worker-resolver.mjs");
     await fs.writeFile(out, code, "utf-8");
@@ -327,10 +332,11 @@ describe("system-prompt.md discovery", { timeout: BUILD_TIMEOUT_MS }, () => {
     tmpDir: dir,
   }) => {
     await linkSdkNodeModules(dir);
+    // A raw config, since `agent({ systemPrompt })` is refused before the
+    // file is ever compared.
     await fs.writeFile(
       path.join(dir, "agent.ts"),
-      `import { agent } from "@alexkroman1/aai";\n` +
-        `export default agent({ name: "T", systemPrompt: "Inline, and not the file." });\n`,
+      `export default { name: "T", systemPrompt: "Inline, and not the file." };\n`,
       "utf-8",
     );
     await fs.writeFile(path.join(dir, "system-prompt.md"), PROMPT, "utf-8");

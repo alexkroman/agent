@@ -29,21 +29,6 @@ describe("normalizeAgentParams", () => {
     }
   });
 
-  test("folds the deprecated description onto listing, and listing wins when both are written", () => {
-    expect(normalizeAgentParams({ name: "a", description: "Books tables" })).toMatchObject({
-      listing: "Books tables",
-    });
-    expect(normalizeAgentParams({ name: "a", description: "x" })).not.toHaveProperty("description");
-    const both = normalizeAgentParams({ name: "a", description: "old", listing: "new" });
-    expect(both).toMatchObject({ listing: "new" });
-    expect(both).not.toHaveProperty("description");
-    // Present-and-undefined is dropped the same way, so a spread options bag
-    // never leaves the alias on the definition.
-    expect(normalizeAgentParams({ name: "a", description: undefined })).not.toHaveProperty(
-      "description",
-    );
-  });
-
   test("passes a non-record through untouched, for the schema to refuse", () => {
     expect(normalizeAgentParams("not a def")).toBe("not a def");
   });
@@ -89,22 +74,22 @@ describe("normalizeAgentParams", () => {
     );
   });
 
-  test("keys a syncState list by each projection's slot", () => {
+  test("keeps a collected syncState record, and refuses the authored forms", () => {
     const cart = sessionSlot("cart", () => ({ items: 0 }), { view: (c) => c });
-    const synced = field(
-      normalizeAgentParams({ name: "p", syncState: [cart.projected] }),
-      "syncState",
+    // A record keyed by slot name is what an earlier pass (or another SDK
+    // copy's) produced: validated and handed back as it is.
+    const record = { cart: cart.projected };
+    expect(field(normalizeAgentParams({ name: "p", syncState: record }), "syncState")).toBe(record);
+    // A projection or a list is the form `agent()` refuses, reaching this
+    // boundary from a raw `export default {...}`.
+    expect(() => normalizeAgentParams({ name: "p", syncState: cart.projected })).toThrow(
+      /`syncState` is not authored/,
     );
-    expect(synced).toEqual({ cart: cart.projected });
-  });
-
-  test("refuses a slot projected twice, and a list entry that is no projection", () => {
-    const cart = sessionSlot("cart2", () => ({ items: 0 }), { view: (c) => c });
+    expect(() => normalizeAgentParams({ name: "p", syncState: [cart.projected] })).toThrow(
+      /sync: true/,
+    );
     expect(() =>
-      normalizeAgentParams({ name: "p", syncState: [cart.projected, cart.projected] }),
-    ).toThrow(/projects the "cart2" slot twice/);
-    expect(() => normalizeAgentParams({ name: "p", syncState: [() => 1] })).toThrow(
-      /`syncState\[0\]` is not a slot projection/,
-    );
+      normalizeAgentParams({ name: "p", syncState: { basket: cart.projected } }),
+    ).toThrow(/`syncState.basket` is not that slot's own projection/);
   });
 });

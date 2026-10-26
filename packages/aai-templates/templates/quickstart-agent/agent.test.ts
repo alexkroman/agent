@@ -1,6 +1,6 @@
 import agentDef from "virtual:aai/agent";
 import { agent, assemblyAIPipeline, DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
-import { expectDeployable } from "@alexkroman1/aai-runtime/testing";
+import { deployedAgent, expectDeployable } from "@alexkroman1/aai-runtime/testing";
 import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect, test } from "vitest";
 
@@ -70,12 +70,15 @@ describeAgent(agentDef, () => {
     expect(expectDeployable(agent({ name: "Quickstart Assistant" })).systemPrompt).toBe(
       DEFAULT_SYSTEM_PROMPT,
     );
-    // And what a prompt of your own resolves to is your text ALONE. That is
-    // not the voice core being thrown away: the runtime emits it every
+    // And what a `system-prompt.md` of your own resolves to is your text
+    // ALONE (`deployedAgent` is the build's lowering, handed the file's text).
+    // That is not the voice core being thrown away: the runtime emits it every
     // session and appends yours under a header saying yours wins where they
     // conflict. So write only your own rules — `DEFAULT_SYSTEM_PROMPT` is
     // exported to be READ (print it, diff it across releases), not pasted in.
-    const own = agent({ name: "Quickstart Assistant", systemPrompt: "Only discuss the weather." });
+    const own = deployedAgent(agent({ name: "Quickstart Assistant" }), {
+      systemPrompt: "Only discuss the weather.",
+    });
     expect(expectDeployable(own).systemPrompt).toBe("Only discuss the weather.");
   });
 });

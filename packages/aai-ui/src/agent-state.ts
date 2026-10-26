@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Reading what the agent projects — `agent({ syncState })` — in the browser.
+ * Reading what the agent projects — the slots declared `sync: true`, collected
+ * into its `syncState` — in the browser.
  *
  * The frame is KEYED by slot name (`{ [slot]: view }`), so every reader here
  * selects ONE slot by the name the agent keyed it under. That is what lets a
@@ -73,9 +74,10 @@ export function useAgentState(): AgentStateFrame | null;
  * import { useAgentState } from "@alexkroman1/aai-ui";
  *
  * // In a real project the slot is declared beside the agent and imported here;
- * // the agent declares `syncState: cartSlot.projected`.
+ * // `sync: true` is what puts it in the agent's `syncState`.
  * const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }), {
  *   view: (cart) => ({ count: cart.items.length }),
+ *   sync: true,
  * });
  *
  * function CartBadge() {

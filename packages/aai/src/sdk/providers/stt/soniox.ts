@@ -65,7 +65,6 @@ export interface SonioxSttOptions extends ProviderCredentialOptions {
  *
  * export default agent({
  *   name: "Support",
- *   systemPrompt: "You are a support agent. Be brief.",
  *   stt: sonioxStt({ model: "stt-rt-v3", languages: ["en", "es"] }),
  * });
  * ```

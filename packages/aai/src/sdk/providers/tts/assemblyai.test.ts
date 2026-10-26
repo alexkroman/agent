@@ -17,12 +17,12 @@ import { assemblyAITts, assemblyAIVoiceWarning } from "./assemblyai.ts";
 
 /** Build a config the way an AUTHOR does — through `agent()`. */
 function configTts(tts: TtsProvider): AgentConfig {
-  return toAgentConfig(agent({ name: "x", systemPrompt: "p", tts }));
+  return toAgentConfig(agent({ name: "x", tts }));
 }
 
 /** The warnings `aai build` / `aai dev` print for an agent with this stage. */
 function warningsFor(tts: TtsProvider): string[] {
-  return agentConfigWarnings(agent({ name: "x", systemPrompt: "p", tts }));
+  return agentConfigWarnings(agent({ name: "x", tts }));
 }
 
 describe("assemblyAIVoiceWarning", () => {

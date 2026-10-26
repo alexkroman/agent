@@ -249,7 +249,7 @@ export type AgentServer = {
    * import { createAgentServer } from "@alexkroman1/aai-runtime";
    *
    * const server = createAgentServer({
-   *   agent: agent({ name: "Support", systemPrompt: "You are helpful." }),
+   *   agent: agent({ name: "Support" }),
    *   env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
    * });
    *

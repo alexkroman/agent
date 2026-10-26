@@ -115,9 +115,10 @@ starts one and answers the turn); `link-digest-workflow` and
 `transcription-workflow` are declared with `workflowApp()` and the workflow IS
 the product — no `stt`/`llm`/`tts`, no tools, and a `client.tsx` that mounts
 with `mountPage()` rather than `mountClient()`. Those fields are not merely
-omitted there: `WorkflowAppAgentParams` refuses them, so a `systemPrompt`
-addressed to a model that never runs — which `link-digest-workflow` shipped — no
-longer type-checks.
+omitted there: `WorkflowAppAgentParams` refuses them, so a `promptContext`
+addressed to a model that never runs no longer type-checks (and a
+`system-prompt.md` beside one, which `link-digest-workflow` once shipped, fails
+the layout gate).
 
 **`link-digest-workflow` really reads the page too.** `fetchArticle` fetches the
 URL and reduces the HTML to text — crudely, on purpose, since a real extractor
@@ -226,12 +227,13 @@ import agentDef from "virtual:aai/agent";
 
 `retail-orders-agent`'s `registry.test.ts` is the one template that still writes
 the lowering out, with **`deployedAgent`** (`@alexkroman1/aai/testing`) over its
-own glob and a `?raw` read of `system-prompt.md`. That is deliberate: the tool
-registry is that file's subject, and it is the worked example for a project
-whose runner cannot register a Vite plugin. **`withDiscoveredTools`, the
-tools-only half this section used to name, is not exported** — a spec that
-lowered the tools and forgot the prompt measured the framework default and
-reported green, so the two halves are one call now.
+own glob — the tools half only, since nothing there reads the prompt and no
+template imports `system-prompt.md?raw`. That is deliberate: the tool registry
+is that file's subject, and it is the worked example for a project whose runner
+cannot register a Vite plugin. **`withDiscoveredTools`, the tools-only half this
+section used to name, is not exported** — a spec that lowered the tools and
+forgot the prompt measured the framework default and reported green, so the two
+halves are one call now.
 
 **The glob belongs to the importing file rather than to a shared helper, and
 that is the whole lesson of the bug it replaced.** Five specs imported this

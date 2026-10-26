@@ -15,7 +15,6 @@
  *
  * export default agent({
  *   name: "Support",
- *   systemPrompt: "You are a support agent. Be brief.",
  *   // `stt` and `tts` keep their AssemblyAI defaults.
  *   llm: llm({ provider: "anthropic", model: "claude-sonnet-5" }),
  * });

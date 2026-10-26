@@ -85,11 +85,13 @@ describe("toAgentConfig", () => {
     expect(promptContext).not.toHaveBeenCalled();
   });
 
-  test("the listing crosses as `listing`, whichever name the author wrote", () => {
+  test("the listing crosses as `listing`, and its old name is refused naming it", () => {
     expect(toAgentConfig({ ...base, listing: "Books tables" }).listing).toBe("Books tables");
-    const aliased = toAgentConfig({ ...base, description: "Books tables" });
-    expect(aliased.listing).toBe("Books tables");
-    expect(aliased).not.toHaveProperty("description");
+    expect(() =>
+      toAgentConfig({ ...base, description: "Books tables" } as Parameters<
+        typeof toAgentConfig
+      >[0]),
+    ).toThrow(/`description` \(renamed to `listing`\)/);
   });
 
   test("the resolver is never CALLED on the way to a config", () => {

@@ -34,11 +34,11 @@ export default workflowApp({
 ```
 
 That is the whole declaration, and the fields it does NOT take are the point: a
-workflow app has no session and no LLM loop, so `systemPrompt`, `tools`,
-`maxSteps`, `syncState`, `stt`/`llm`/`tts`/`s2s` and every voice knob are
-**compile errors** here, not fields that quietly do nothing. `greeting` stays;
-`requiredEnv` defaults to `["ASSEMBLYAI_API_KEY"]`, the one key every step
-helper reads (`requiredEnv: []` opts out). `workflowApp()` is
+workflow app has no session and no LLM loop, so `promptContext`, `maxSteps`,
+`stt`/`llm`/`tts`/`s2s` and every voice knob are **compile errors** here, not
+fields that quietly do nothing (and a `system-prompt.md` beside one is unread).
+`greeting` stays; `requiredEnv` defaults to `["ASSEMBLYAI_API_KEY"]`, the one
+key every step helper reads (`requiredEnv: []` opts out). `workflowApp()` is
 `agent({ mode: "workflow-app", … })` with the discriminant already set — same
 definition object out, so `aai build`, `aai dev` and `aai publish` treat it like
 any other agent.

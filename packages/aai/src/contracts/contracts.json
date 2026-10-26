@@ -1,8 +1,10 @@
 {
   "agent": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "agent() no longer takes systemPrompt (the prompt is system-prompt.md, set on the lowered def by withSystemPrompt), syncState (collected from sessionSlot(..., { sync: true })) or the description alias of listing; SyncStateDeclaration is gone. An agent.ts writing any of the three no longer compiles and is refused at run time."
+    }
   },
   "agent-mcp": {
     "current": 1,

@@ -18,7 +18,6 @@ type AgentConfig = z.infer<typeof AgentConfigSchema>;
 const AgentConfigSchema: z.ZodObject<{
     name: z.ZodString;
     listing: z.ZodOptional<z.ZodString>;
-    description: z.ZodOptional<z.ZodString>;
     promptContext: z.ZodOptional<z.ZodString>;
     systemPrompt: z.ZodDefault<z.ZodString>;
     greeting: z.ZodDefault<z.ZodString>;
