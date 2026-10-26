@@ -65,6 +65,7 @@ export {
   GLOB_LIMIT,
   READ_LIMIT,
 } from "./host/coding-tool-descriptions.ts";
+export { type EvalWorkerOptions, runEvalWorker } from "./host/eval-worker.ts";
 export {
   createLogBuffer,
   DEFAULT_LOG_BUFFER_LINES,

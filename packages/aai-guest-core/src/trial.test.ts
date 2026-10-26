@@ -9,6 +9,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import { RUN_CODE_OUTPUT_MAX_CHARS } from "./limits.ts";
 import { rejectAllPendingHostRequests, setHostSend } from "./rpc.ts";
 import {
   type FakeHostChannel,
@@ -145,6 +146,20 @@ describe("executeTool (one-shot trial)", () => {
     expect(await runCode("console.log({ a: 1 }); console.error('and stderr')")).toBe(
       "[object Object]\nand stderr",
     );
+  });
+
+  test("run_code keeps a bounded tail of output, however much the code logs", async () => {
+    // Uncapped, this loop handed the harness thread a 400 MB string inside the
+    // 5s budget (measured with 1 MB lines) — heap every session on the sandbox
+    // shares. The cap is applied as lines are logged, in the worker.
+    const res = await runCode(
+      'for (let i = 0; i < 2000; i++) console.log("x".repeat(1000));',
+      5000,
+    );
+    expect(typeof res).toBe("string");
+    const text = res as string;
+    expect(text.length).toBeLessThan(RUN_CODE_OUTPUT_MAX_CHARS + 200);
+    expect(text).toMatch(/\[output truncated at 100000 characters\]$/);
   });
 
   test("a tool reaching for ctx.db fails, because the field does not exist", async () => {

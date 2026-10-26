@@ -789,6 +789,13 @@ export function eligibleToolMessages<T extends ToolMessageBase>(list: readonly T
 export const EMPTY_PARAMS: z.ZodObject<{}, z.core.$strip>;
 
 // @public
+export type EvalWorkerOptions = {
+    timeoutMs: number;
+    label: string;
+    timeoutMessage: string | Error;
+};
+
+// @public
 export type ExecuteTool = (name: string, args: Readonly<Record<string, unknown>>, sessionId?: string, messages?: readonly Message[], options?: ExecuteToolOptions) => Promise<string>;
 
 // @public
@@ -1537,6 +1544,9 @@ export type RunCappedOptions = {
 export type RunCodeExecutor = (code: string) => Promise<string | {
     error: string;
 }>;
+
+// @public
+export function runEvalWorker<T>(source: string, workerData: unknown, options: EvalWorkerOptions): Promise<T>;
 
 // @internal
 export const S2S_MAX_RESUME_ATTEMPTS = 5;
