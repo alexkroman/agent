@@ -101,6 +101,14 @@ describe("executeWorkflowList", () => {
     expect(call()[1].headers).toMatchObject({ Authorization: "Bearer s3cret" });
   });
 
+  test("every request carries a deadline, so a hung agent cannot hang the command", async () => {
+    // `fetch` has no timeout of its own; without `timeoutMs` the SDK client
+    // sends no signal and a server that never answers holds the CLI forever.
+    fetchMock.mockImplementation(async () => json({ workflows: [] }));
+    await executeWorkflowList("/proj", {}, ui, deps);
+    expect(call()[1].signal).toBeInstanceOf(AbortSignal);
+  });
+
   test("names the agent when it declares none, rather than printing nothing", async () => {
     fetchMock.mockImplementation(async () => json({ workflows: [] }));
     await executeWorkflowList("/proj", {}, ui, deps);

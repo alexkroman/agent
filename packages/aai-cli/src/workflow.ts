@@ -31,6 +31,7 @@ import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowRunSnapshot, WorkflowSummary } from "@alexkroman1/aai/workflow-api";
 import { createWorkflowApiClient, type WorkflowApi } from "@alexkroman1/aai/workflow-api";
 import { getServerInfo } from "./_agent.ts";
+import { DEFAULT_REQUEST_TIMEOUT_MS } from "./_api-client.ts";
 import { readProjectConfig } from "./_config.ts";
 import { CliError, type CommandResult, fail, ok } from "./_output.ts";
 import { defaultUi, type Ui } from "./_ui.ts";
@@ -146,7 +147,11 @@ async function target(cwd: string, opts: WorkflowOptions, deps: WorkflowDeps): P
   if (opts.agent !== undefined) {
     const baseUrl = agentBaseUrl(opts.agent);
     return {
-      api: createWorkflowApiClient({ baseUrl, ...omitUndefined({ token: opts.token }) }),
+      api: createWorkflowApiClient({
+        baseUrl,
+        timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
+        ...omitUndefined({ token: opts.token }),
+      }),
       name: baseUrl,
     };
   }
@@ -156,6 +161,7 @@ async function target(cwd: string, opts: WorkflowOptions, deps: WorkflowDeps): P
   return {
     api: createWorkflowApiClient({
       baseUrl: `${serverUrl}/${slug}`,
+      timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
       ...omitUndefined({ token: opts.token }),
     }),
     name: slug,
