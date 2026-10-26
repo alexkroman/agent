@@ -145,9 +145,10 @@ never writes `vi.stubEnv` for it; the one spec whose subject is the missing-key
 refusal passes `apiKey: false`, which ensures there is NO key for that test even
 when the shell exports one. A workflow that calls a model AND fetches a page AND
 transcribes installs them all at once:
-`installStubWorld({ model, pages, transcribe, speech, uploads: { files, writable } })`
-composes the seams in the one order that works and hands back every fake's call
-log (`world.model`, `world.provider`, `world.reported`, …).
+`installStubWorld({ model, pages, transcribe, speech, uploads })` (with
+`uploads: { files, writable }`) composes the seams in the one order that works
+and hands back every fake's call log (`world.model`, `world.provider`,
+`world.reported`, …).
 
 ## Evals: `agent.eval.test.ts`
 
