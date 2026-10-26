@@ -61,6 +61,7 @@ import type { LlmProvider } from "@alexkroman1/aai/llm";
 import { ASSEMBLYAI_LLM_DEFAULT_MODEL, llm } from "@alexkroman1/aai/llm";
 import { agentToolsets, agentToolsToSchemas } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
+import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { type LanguageModel, stepCountIs, streamText, type ToolSet } from "ai";
 import {
   composePreparers,
@@ -84,6 +85,7 @@ import {
   withFatalSignal,
 } from "../tools/index.ts";
 import { createUsageMeter } from "../usage-meter.ts";
+import { forSession } from "../workflow/client-session.ts";
 import { createTextAgentEvents } from "./events.ts";
 import { toContextMessages } from "./messages.ts";
 // Imported as well as re-exported below: a re-export does not bring a name into
@@ -263,6 +265,18 @@ export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
     turn: userTurnsIn(messages),
   });
 
+  /**
+   * `ctx.workflows` for one tool call: the runtime's client with `"session"`
+   * (and an absent start key) resolved to the call's session id — the same
+   * `forSession` the voice door's wiring applies (`runtime/session-factory.ts`,
+   * `runtime/tools.ts`). Handed in RAW, a tool's `ctx.workflows.start(def,
+   * input)` started a KEYLESS run: the body's `ctx.waitForSignal` threw, and
+   * the `workflow_*` builtins, keyed by `ctx.sessionId`, could not see what
+   * the conversation had started.
+   */
+  const workflowsFor = (callSessionId: string): WorkflowClient | undefined =>
+    options.workflows && forSession(options.workflows, callSessionId);
+
   const executeTool = createToolDispatcher(toolsets, (toolset, call) =>
     executeToolCall(call.name, call.args, {
       toolset,
@@ -272,7 +286,7 @@ export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
       // conversation, which is what makes its slots mean the same thing here as
       // in a session.
       sessionId: call.sessionId || sessionId,
-      workflows: options.workflows,
+      workflows: workflowsFor(call.sessionId || sessionId),
       messages: call.messages,
       // One text agent is one conversation, and its turns ARE the user
       // messages the caller hands each `stream()`: what a session counts as

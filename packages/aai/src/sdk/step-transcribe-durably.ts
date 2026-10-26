@@ -66,6 +66,7 @@ import {
   type Transcript,
 } from "./step-transcribe.ts";
 import type { PollOptions, PollResult, StepOptions } from "./workflow-ctx-options.ts";
+import { assertPollOptions } from "./workflow-poll.ts";
 
 /**
  * How often {@link transcribeUploadDurably} polls when the caller names no
@@ -139,6 +140,13 @@ export type TranscribeDurablyOptions = {
    * call here whose cost is the file.
    */
   maxAttempts?: number | undefined;
+  /**
+   * Every step's `StepOptions.maxWaits`: how many dated `Retry-After`s the
+   * provider may ask for — a 429 on the submit, a 503 on a poll — before one
+   * spends an attempt. Passed to the upload, the submit and each poll check,
+   * because a rate limit met by a fan-out lands on whichever leg is in flight.
+   */
+  maxWaits?: number | undefined;
 };
 
 /**
@@ -225,6 +233,11 @@ export async function transcribeUploadDurably(
   const request = omitUndefined({ apiKeyEnv: options.apiKeyEnv });
   const everyMs = options.everyMs ?? TRANSCRIBE_POLL_EVERY_MS;
   const maxMs = options.maxMs ?? TRANSCRIBE_POLL_MAX_MS;
+  // The poll's budget is refused BEFORE the upload and the submit run, with
+  // the same sentence `ctx.poll` would have thrown after them: a config error
+  // must not cost a recording's upload and a job on the provider's side.
+  assertPollOptions(TRANSCRIBE_DURABLY_STEPS.poll, { everyMs, maxMs });
+  const waits: StepOptions = omitUndefined({ maxWaits: options.maxWaits });
 
   // Upload and submit are two steps, not one, for the measurement
   // `step-transcribe.ts` records: a retry of the cheap half must not repeat the
@@ -232,20 +245,22 @@ export async function transcribeUploadDurably(
   const uploaded = await ctx.step(
     TRANSCRIBE_DURABLY_STEPS.upload,
     () => stepTranscribeUpload(uploadId, request).catch(throwStepError),
-    omitUndefined({ maxAttempts: options.maxAttempts }),
+    { ...waits, ...omitUndefined({ maxAttempts: options.maxAttempts }) },
   );
   const submit: TranscribeSubmitOptions = {
     ...request,
     ...omitUndefined({ params: options.params, models: options.models }),
   };
-  const { id } = await ctx.step(TRANSCRIBE_DURABLY_STEPS.submit, () =>
-    stepTranscribeSubmit(uploaded.audioUrl, submit).catch(throwStepError),
+  const { id } = await ctx.step(
+    TRANSCRIBE_DURABLY_STEPS.submit,
+    () => stepTranscribeSubmit(uploaded.audioUrl, submit).catch(throwStepError),
+    waits,
   );
 
   const polled = await ctx.poll<TranscribeProgress>(
     TRANSCRIBE_DURABLY_STEPS.poll,
     () => stepTranscribePoll(id, request).catch(throwStepError),
-    { everyMs, maxMs, done: (progress) => progress.done },
+    { everyMs, maxMs, done: (progress) => progress.done, ...waits },
   );
   const progress = polled.value;
   if (!progress.done) {

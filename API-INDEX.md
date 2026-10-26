@@ -20,7 +20,7 @@ of it — and want the import.
 
 - [Agent authoring](#agent-authoring) — 616 names
 - [Browser client](#browser-client) — 207 names
-- [Testing and evals](#testing-and-evals) — 268 names
+- [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 248 names
 - [Framework internals](#framework-internals) — 516 names
 
@@ -919,6 +919,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `WorkflowTestHandle` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | A started run, plus the four things a spec can do to it. |
 | `WorkflowTestRead` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | One journaled determinism read — what `ctx.now()`, `ctx.random()` or `ctx.uuid()` answered, and will answer again on every later walk. |
 | `WorkflowTestRun` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | The run, as it stands after the last thing the driver did. |
+| `WorkflowTestSignalOptions` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | What `WorkflowTestHandle.signal` and `WorkflowTestHandle.signalRun` take beside the payload: `SignalOptions.holdMs`, as `ctx.workflows` takes it. |
 | `WorkflowTestStep` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | One step the run journaled. |
 | `WorkflowTestWait` | type | `@alexkroman1/aai-runtime/testing` | `aai-runtime:testing` | One wait the run's journal holds. |
 | `aaiAgentPlugin` | function | `@alexkroman1/aai/testing/vite` |  | Serve `AAI_AGENT_MODULE` for the agent project a spec sits in. |

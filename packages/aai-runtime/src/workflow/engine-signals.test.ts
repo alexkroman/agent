@@ -7,9 +7,10 @@
  */
 
 import type { WorkflowContext } from "@alexkroman1/aai";
+import { DEFAULT_SIGNAL_HOLD_MS } from "@alexkroman1/aai/workflow-api";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { harness } from "./_engine-harness.ts";
-import { clearHeldSignals, heldSignalCount } from "./held-signals.ts";
+import { clearHeldSignals, heldSignalCount, takeHeldSignal } from "./held-signals.ts";
 
 afterEach(clearHeldSignals);
 
@@ -77,6 +78,47 @@ describe("ctx.waitForSignal", () => {
     expect(await world.engine.signal("digest:sess-1:approval", { approved: true })).toBe(true);
     expect(await world.engine.execute(runId)).toBe("completed");
     expect(await world.engine.readOutput(runId)).toBe("published");
+  });
+
+  test("a second run under the SAME key fails at the wait, naming the label, the key and the fix", async () => {
+    // The token carries no run component, so "run it again" in one session
+    // derives the token the first run still holds. The journal's sentence
+    // names the token; the engine's names what to change.
+    const world = harness({ digest: body });
+    const first = await world.engine.start("digest", [{}], { key: "sess-1" });
+    expect(await world.engine.execute(first)).toBe("running");
+    const second = await world.engine.start("digest", [{}], { key: "sess-1" });
+    expect(await world.engine.execute(second)).toBe("failed");
+    const { error } = (await world.engine.getRun(second)) ?? {};
+    expect(error?.message).toContain(`"digest:sess-1:approval" is already held by run ${first}`);
+    expect(error?.message).toContain(
+      'This run of "digest" under key "sess-1" reached ctx.waitForSignal("approval")',
+    );
+    expect(error?.message).toContain("A second concurrent run needs a distinct StartOptions.key");
+    // The first run is untouched by the collision: its wait still answers.
+    expect(await world.engine.signal("digest:sess-1:approval", { approved: true })).toBe(true);
+    expect(await world.engine.execute(first)).toBe("completed");
+  });
+
+  test("an infinite hold is clamped to the default window rather than kept for the life of the process", async () => {
+    vi.useFakeTimers();
+    try {
+      const world = harness({ digest: body });
+      expect(
+        await world.engine.signal(
+          "digest:sess-1:approval",
+          { approved: true },
+          { holdMs: Number.POSITIVE_INFINITY },
+        ),
+      ).toBe(true);
+      expect(heldSignalCount()).toBe(1);
+      vi.setSystemTime(Date.now() + DEFAULT_SIGNAL_HOLD_MS + 1);
+      // Past the default window the hold is gone — an `Infinity` expiry never
+      // was, and every later run under the key would have taken it.
+      expect(takeHeldSignal("digest:sess-1:approval")).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("a signal sent BEFORE the wait is reached is lost without a hold, and kept with one", async () => {

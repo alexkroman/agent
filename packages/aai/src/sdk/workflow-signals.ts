@@ -22,6 +22,13 @@
  * derive, and both body methods THROW rather than mint one from `undefined`:
  * a run parked on `digest:undefined:approval` is a run nobody can answer.
  *
+ * **The token carries no run id, so ONE live wait may hold it at a time.** Two
+ * runs of one workflow under one key — a caller's "run it again" while the
+ * first is still parked — derive the same token for the same label, and the
+ * second FAILS at that wait rather than sharing an answer nobody could route
+ * (`aai-runtime`'s `replay/waits.ts` names the label and key in the refusal).
+ * A second concurrent run of a workflow wants a distinct `StartOptions.key`.
+ *
  * Every `WorkflowContext` delegates to the two helpers here, as it does to
  * `pollWorkflow`, so the engine, the `/testing` recorder and an eval agree on
  * the token for one label.
@@ -64,12 +71,20 @@ export type SignalHost = {
  * `ctx.signalToken(label)` over `host`, or a throw naming the fix when the run
  * has no key.
  *
+ * `method` is the name the refusal reports — `ctx.waitForSignal` when reached
+ * through {@link waitForSignalWorkflow}, so a body that never called
+ * `signalToken` is not told it did.
+ *
  * @internal
  */
-export function signalTokenFor(host: SignalHost, label: string): string {
+export function signalTokenFor(
+  host: SignalHost,
+  label: string,
+  method = "ctx.signalToken",
+): string {
   if (host.key === undefined) {
     throw new Error(
-      `ctx.signalToken(${JSON.stringify(label)}): this run of ${JSON.stringify(host.workflow)} ` +
+      `${method}(${JSON.stringify(label)}): this run of ${JSON.stringify(host.workflow)} ` +
         "has no key, so no signal token can be derived for it. Start it with a key — " +
         "ctx.workflows.start(def, input, { key }) — which a tool gets by default (the " +
         "session id); a body or a route must pass one explicitly.",
@@ -101,6 +116,6 @@ export async function waitForSignalWorkflow(
 ): Promise<unknown> {
   // `async`, so a keyless run's refusal is a REJECTION like every other wait
   // failure, never a synchronous throw out of an `await`-less call.
-  const token = signalTokenFor(host, label);
+  const token = signalTokenFor(host, label, "ctx.waitForSignal");
   return await host.waitFor(token, options);
 }

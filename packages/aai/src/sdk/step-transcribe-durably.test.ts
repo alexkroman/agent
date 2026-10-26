@@ -143,6 +143,33 @@ describe("transcribeUploadDurably", () => {
     ]);
   });
 
+  test("hands `maxWaits` to every step — a rate limit lands on whichever leg is in flight", async () => {
+    arrange();
+    installStubTranscribe();
+    const ctx = createWorkflowContext();
+
+    await transcribeUploadDurably(ctx, "rec", { maxWaits: 4 });
+
+    expect(ctx.steps.map((step) => [step.name, step.maxWaits])).toEqual([
+      [upload, 4],
+      [submit, 4],
+      [poll, 4],
+    ]);
+  });
+
+  test("refuses an unusable poll budget BEFORE the upload and the submit run", async () => {
+    arrange();
+    const provider = installStubTranscribe();
+    const ctx = createWorkflowContext();
+
+    await expect(transcribeUploadDurably(ctx, "rec", { everyMs: 0 })).rejects.toThrow(
+      /ctx\.poll\("transcribePoll"\): everyMs/,
+    );
+    // Nothing journaled, nothing uploaded: a config error costs no recording.
+    expect(ctx.steps).toEqual([]);
+    expect(provider.calls).toEqual([]);
+  });
+
   test("reads the credential from `apiKeyEnv` on every leg", async () => {
     arrange();
     vi.stubEnv("OTHER_KEY", "sk-other");
@@ -189,6 +216,33 @@ describe("transcribeUploadDurably", () => {
       expect(err).toSatisfy(FatalError.is);
       expect((err as Error).message).toContain("corrupt audio");
       expect(ctx.steps.filter((step) => step.name === poll)).toHaveLength(1);
+    });
+
+    test("an id naming no upload is FATAL on the first attempt", async () => {
+      arrange();
+      const provider = installStubTranscribe();
+
+      const err = await transcribeUploadDurably(createWorkflowContext(), "nope").catch(
+        (e: unknown) => e,
+      );
+
+      expect(err).toSatisfy(FatalError.is);
+      expect((err as Error).message).toMatch(/No upload with id nope/);
+      expect(provider.calls).toEqual([]);
+    });
+
+    test("a missing API key is FATAL on the first attempt, named", async () => {
+      arrange();
+      vi.stubEnv("ASSEMBLYAI_API_KEY", undefined);
+      const provider = installStubTranscribe();
+
+      const err = await transcribeUploadDurably(createWorkflowContext(), "rec").catch(
+        (e: unknown) => e,
+      );
+
+      expect(err).toSatisfy(FatalError.is);
+      expect((err as Error).message).toMatch(/ASSEMBLYAI_API_KEY/);
+      expect(provider.calls).toEqual([]);
     });
 
     test("an upload still arriving is refused before the upload leg, fatally", async () => {

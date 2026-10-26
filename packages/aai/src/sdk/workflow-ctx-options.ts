@@ -318,6 +318,11 @@ export type PollOptions<T> = {
   /** Each check's `StepOptions.maxAttempts`. */
   maxAttempts?: number | undefined;
   /**
+   * Each check's `StepOptions.maxWaits` — a far side's dated `Retry-After` on
+   * a check is waited out of this budget rather than spending an attempt.
+   */
+  maxWaits?: number | undefined;
+  /**
    * Park on a callback ONCE before the first check — `ctx.waitFor(waitFor, {
    * timeoutMs, schema })` ahead of the loop, journaled exactly as that call is.
    *

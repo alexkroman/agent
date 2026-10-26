@@ -521,8 +521,8 @@ export const workflowJournalBrand: unique symbol;
 export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
     readonly key: string;
     advanceSleep(correlationIds?: readonly string[]): Promise<WorkflowTestHandle<R>>;
-    signal(token: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
-    signalRun(label: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
+    signal(token: string, payload?: unknown, options?: WorkflowTestSignalOptions): Promise<WorkflowTestHandle<R>>;
+    signalRun(label: string, payload?: unknown, options?: WorkflowTestSignalOptions): Promise<WorkflowTestHandle<R>>;
     readonly signalled: boolean;
     expireWaits(): Promise<WorkflowTestHandle<R>>;
     restart(): Promise<WorkflowTestHandle<R>>;
@@ -550,6 +550,11 @@ export type WorkflowTestRun<R> = {
     readonly crashed: boolean;
     readonly waits: readonly WorkflowTestWait[];
     readonly resumable: boolean;
+};
+
+// @public @input
+export type WorkflowTestSignalOptions = {
+    holdMs?: number | undefined;
 };
 
 // @public @sealed

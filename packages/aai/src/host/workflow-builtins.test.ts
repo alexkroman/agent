@@ -33,6 +33,20 @@ function runs(...list: RunSnapshotOverrides[]): WorkflowRunSnapshot[] {
   });
 }
 
+/**
+ * A `findByKey` over `list` that honours `statuses` and `limit`, as the client's
+ * does — the builtins now ask it a STATUS question, and a fake that answered
+ * every call with the same list would hide exactly the bug the question fixes.
+ */
+function keyedOver(list: WorkflowRunSnapshot[]) {
+  return vi.fn(async (_key: string, options?: { statuses?: readonly string[]; limit?: number }) => {
+    const kept = options?.statuses
+      ? list.filter((run) => options.statuses?.includes(run.status))
+      : list;
+    return kept.slice(0, options?.limit ?? kept.length);
+  });
+}
+
 /** A tool context whose session is `sess-1`, over the given client fakes. */
 function harness(over: Parameters<typeof createStubWorkflows>[0]) {
   const workflows = createStubWorkflows(over);
@@ -58,34 +72,55 @@ describe("registration", () => {
 });
 
 describe("workflow_status", () => {
-  test("lists the session's newest runs across every workflow, each with the author's line", async () => {
-    const findByKey = vi.fn(async () =>
-      runs({ status: "completed", output: 1 }, { workflow: "other" }),
-    );
+  test("lists the session's runs across every workflow, live first, each with the author's line", async () => {
+    const findByKey = keyedOver(runs({ status: "completed", output: 1 }, { workflow: "other" }));
     const { call } = harness({ findByKey });
     expect(await call("workflow_status")).toEqual({
       runs: [
-        { runId: "wrun_0", workflow: "digest", status: "completed", line: "Digest is completed." },
         {
           runId: "wrun_1",
           workflow: "other",
           status: "running",
           line: "the other run is still in progress.",
         },
+        { runId: "wrun_0", workflow: "digest", status: "completed", line: "Digest is completed." },
       ],
     });
-    // Keyed by the SESSION, three at most, and the outputs left unread.
+    // Keyed by the SESSION, three at most, the outputs left unread — and the
+    // live ones asked for by STATUS, not picked out of the newest few.
+    expect(findByKey).toHaveBeenCalledWith("sess-1", {
+      limit: 3,
+      statuses: ["pending", "running"],
+      withOutput: false,
+    });
     expect(findByKey).toHaveBeenCalledWith("sess-1", { limit: 3, withOutput: false });
   });
 
-  test("narrows to one workflow through `find`, and says when nothing was started", async () => {
+  test("a live run older than the newest three is still listed, first", async () => {
+    // Oldest last: the parked run was started before three quick ones finished.
+    const findByKey = keyedOver(
+      runs(
+        { status: "completed", output: 1 },
+        { status: "completed", output: 2 },
+        { status: "completed", output: 3 },
+        { runId: "wrun_old", status: "running" },
+      ),
+    );
+    const { call } = harness({ findByKey });
+    const result = (await call("workflow_status")) as { runs: { runId: string }[] };
+    expect(result.runs.map((run) => run.runId)).toEqual(["wrun_old", "wrun_0", "wrun_1"]);
+  });
+
+  test("narrows to one workflow through `find` and `live`, and says when nothing was started", async () => {
     const find = vi.fn(async () => []);
-    const { call } = harness({ find });
+    const live = vi.fn(async () => undefined);
+    const { call } = harness({ find, live });
     expect(await call("workflow_status", { workflow: "digest" })).toEqual({
       runs: [],
       note: "Nothing has been started yet.",
     });
     expect(find).toHaveBeenCalledWith("digest", "sess-1", { limit: 3 });
+    expect(live).toHaveBeenCalledWith("digest", "sess-1");
   });
 });
 
@@ -140,28 +175,44 @@ describe("workflow_cancel", () => {
     expect(live).toHaveBeenCalledWith("other", "sess-1");
   });
 
-  test("across every workflow, ONE read finds the live run, and tells finished from never started", async () => {
-    const findByKey = vi.fn(async () =>
+  test("across every workflow, a STATUS read finds the live run, and tells finished from never started", async () => {
+    const findByKey = keyedOver(
       runs({ status: "completed", output: 1 }, { status: "failed", error: "x" }, {}),
     );
     const cancel = vi.fn(async () => true);
     const { call } = harness({ findByKey, cancel });
     expect(await call("workflow_cancel")).toMatchObject({ cancelled: true, runId: "wrun_2" });
     expect(findByKey).toHaveBeenCalledTimes(1);
-    expect(findByKey).toHaveBeenCalledWith("sess-1", { limit: 10, withOutput: false });
+    expect(findByKey).toHaveBeenCalledWith("sess-1", {
+      limit: 1,
+      statuses: ["pending", "running"],
+      withOutput: false,
+    });
 
     const finished = harness({
-      findByKey: async () => runs({ status: "completed", output: 1 }),
+      findByKey: keyedOver(runs({ status: "completed", output: 1 })),
     });
     expect(await finished.call("workflow_cancel")).toEqual({
       cancelled: false,
       note: "That one had already finished.",
     });
-    const nothing = harness({ findByKey: async () => [] });
+    const nothing = harness({ findByKey: keyedOver([]) });
     expect(await nothing.call("workflow_cancel")).toEqual({
       cancelled: false,
       note: "Nothing has been started yet.",
     });
+  });
+
+  test("stops a live run older than the session's newest ten", async () => {
+    const quick = Array.from({ length: 10 }, (_, i) => ({
+      status: "completed" as const,
+      output: i,
+    }));
+    const findByKey = keyedOver(runs(...quick, { runId: "wrun_old", status: "running" }));
+    const cancel = vi.fn(async () => true);
+    const { call } = harness({ findByKey, cancel });
+    expect(await call("workflow_cancel")).toMatchObject({ cancelled: true, runId: "wrun_old" });
+    expect(cancel).toHaveBeenCalledWith("wrun_old");
   });
 
   test("a cancel that lost the race to the run finishing says so", async () => {

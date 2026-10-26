@@ -60,9 +60,20 @@ describe("transcribeKey", () => {
     expect(transcribeKey({ apiKeyEnv: "MY_STT_KEY" })).toBe("k_named");
   });
 
-  test("fails by name when the key is not set", () => {
+  test("fails by name when the key is not set, as a refusal of this family — NOT retryable", () => {
     vi.stubEnv("MY_STT_KEY", undefined);
-    expect(() => transcribeKey({ apiKeyEnv: "MY_STT_KEY" })).toThrow(/MY_STT_KEY/);
+    const err = (() => {
+      try {
+        transcribeKey({ apiKeyEnv: "MY_STT_KEY" });
+      } catch (e: unknown) {
+        return e;
+      }
+    })();
+    expect(err).toBeInstanceOf(TranscribeError);
+    expect((err as Error).message).toMatch(/MY_STT_KEY/);
+    // `throwStepError` reads this and stops the engine on the first attempt:
+    // three attempts find the same missing key.
+    expect(err).toMatchObject({ retryable: false });
   });
 });
 

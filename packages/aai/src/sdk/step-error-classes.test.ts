@@ -55,6 +55,17 @@ describe("RetryableError", () => {
     const at = new Date("2030-01-01T00:00:00.000Z");
     expect(new RetryableError("later", { retryAfter: at }).retryAfter).toEqual(at);
   });
+
+  test("remembers whether the delay was NAMED, which the default fill cannot tell a reader", () => {
+    // The filled default is a second ahead of the clock, so `retryAfter` alone
+    // reads as "the far side asked for later" on every catch — this is the
+    // field `StepOptions.maxWaits` reads instead.
+    expect(new RetryableError("later").retryAfterNamed).toBe(false);
+    expect(new RetryableError("later", { cause: "x" }).retryAfterNamed).toBe(false);
+    expect(new RetryableError("later", { retryAfter: 0 }).retryAfterNamed).toBe(true);
+    expect(new RetryableError("later", { retryAfter: 5000 }).retryAfterNamed).toBe(true);
+    expect(new RetryableError("later", { retryAfter: new Date() }).retryAfterNamed).toBe(true);
+  });
 });
 
 describe("the brand", () => {

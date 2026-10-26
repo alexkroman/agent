@@ -50,9 +50,14 @@ describe("ctx.waitForSignal", () => {
     await expect(ctx.waitForSignal("approval", { timeoutMs: 10 })).resolves.toBeUndefined();
   });
 
-  test("refuses a keyless run before touching the wait", async () => {
+  test("refuses a keyless run before touching the wait, naming the method the body called", async () => {
     const ctx = createWorkflowContext({ workflow: "digest" });
-    await expect(ctx.waitForSignal("approval")).rejects.toThrow(/has no key/);
+    const err = await ctx.waitForSignal("approval").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect((err as Error).message).toMatch(/has no key/);
+    // The body wrote `waitForSignal`, so the sentence says that — not the
+    // `signalToken` it derives through.
+    expect((err as Error).message).toMatch(/^ctx\.waitForSignal\("approval"\)/);
     expect(ctx.waited).toEqual([]);
   });
 

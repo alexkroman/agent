@@ -561,6 +561,11 @@ export type WorkflowContext = {
    * and decides the type, a `timeoutMs` adds the `undefined` arm.
    *
    * THROWS when the run has no key, as {@link WorkflowContext.signalToken} does.
+   *
+   * The token carries no run id, so one live wait holds it at a time: a second
+   * concurrent run of this workflow under the SAME key fails here, with a
+   * refusal naming the label and key — start it under a distinct
+   * `StartOptions.key`.
    */
   waitForSignal<S extends StandardSchemaV1>(
     label: string,

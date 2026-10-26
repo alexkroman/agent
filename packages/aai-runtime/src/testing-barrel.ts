@@ -216,6 +216,7 @@ export type {
   WorkflowTestHandle,
   WorkflowTestRead,
   WorkflowTestRun,
+  WorkflowTestSignalOptions,
   WorkflowTestStep,
   WorkflowTestWait,
 } from "./testing/run-workflow-types.ts";
