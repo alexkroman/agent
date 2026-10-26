@@ -16,6 +16,7 @@ import agentDef from "virtual:aai/agent";
 // what the agent chose.
 import { type DialogToolResult, isToolFailure } from "@alexkroman1/aai";
 import type { ToolFailure } from "@alexkroman1/aai/utils";
+import { toolOf } from "@alexkroman1/aai-runtime/testing";
 import {
   describeEval,
   describeToolCalls,
@@ -34,7 +35,8 @@ import reportLocation from "./tools/report_location.ts";
 import serviceDisclosure from "./tools/service_disclosure.ts";
 
 /** Whether a call ran its body, rather than being refused by a gate or a check. */
-const succeeded = (call: EvalToolCall) => !isToolFailure(toolResultIn([call], call.name));
+const succeeded = (call: EvalToolCall) =>
+  !isToolFailure(toolResultIn([call], toolOf(agentDef, call.name)));
 
 /** A gated tool's envelope, position kept, or a throw quoting the refusal. */
 function landed<R>(answer: DialogToolResult<R> | ToolFailure): DialogToolResult<R> {

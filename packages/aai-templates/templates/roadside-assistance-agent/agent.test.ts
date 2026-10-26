@@ -590,12 +590,10 @@ describeAgent(agentDef, (run) => {
       // file would go on passing while the pin named nothing.
       expect(toolOf(agentDef, pinned)).toBe(dispatchTruck);
 
-      // And run it BY THAT NAME, through the agent's own table and its schema —
-      // the path the model takes, which calling `.execute` directly skips.
+      // And run the def the pin resolved to, through the agent's own table and
+      // its schema — the path the model takes, which `.execute` directly skips.
       const ran = landed(
-        (await run(pinned, { destination: "Millfield Auto", towMiles: 31 }, ctx)) as Awaited<
-          ReturnType<typeof dispatchTruck.execute>
-        >,
+        await run(dispatchTruck, { destination: "Millfield Auto", towMiles: 31 }, ctx),
       );
       expect(ran.result.alreadyDispatched).toBe(false);
     });
