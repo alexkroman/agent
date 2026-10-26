@@ -19,17 +19,9 @@
  * can write.
  */
 
-// A worker thread is what bounds a catastrophic regex (`grepWorkspaceBounded`),
-// and the ban's stated reason ("not available in Firecracker guest VMs") does
-// not describe where this runs: the coding tools are for a container, and the
-// studio guest has run `run_code` in a worker thread on every call for as long
-// as that executor has existed (`aai-guest-core/trial.ts`). Same line-scoped
-// suppression and argument as `coding-spawn.ts`'s `child_process` import.
-// biome-ignore lint/style/noRestrictedImports: see above.
-import { Worker } from "node:worker_threads";
-import pTimeout from "p-timeout";
 import picomatch from "picomatch";
 import { errorMessage } from "../sdk/utils.ts";
+import { runEvalWorker } from "./eval-worker.ts";
 import { MAX_WORKSPACE_FILES } from "./workspace-files.ts";
 
 /** Matches returned before the result is capped. */
@@ -235,8 +227,9 @@ parentPort.postMessage(scanFiles(d.files, d.paths, d.source, d.flags, d.limit, d
  * deadline is a promise race whose timer never gets to fire, so in the studio
  * guest every HTTP route, preview session and the host control socket stalled
  * behind one `grep`. `run_code` was the same wedge and got the same cure
- * (`aai-guest-core/trial.ts`): only `terminate()` stops a thread mid-match.
- * One isolate spawn per search is the price.
+ * (`aai-guest-core/trial.ts`), through the same {@link runEvalWorker}: only
+ * `terminate()` stops a thread mid-match. One isolate spawn per search is the
+ * price.
  *
  * @throws {CodingGrepError} for every refusal {@link grepWorkspace} makes, and
  * when the scan outlives `timeoutMs`.
@@ -251,9 +244,9 @@ export async function grepWorkspaceBounded(
   // Only the files the glob kept cross the thread boundary.
   const selected: Record<string, string> = {};
   for (const path of plan.paths) selected[path] = files[path] ?? "";
-  const worker = new Worker(GREP_WORKER, {
-    eval: true,
-    workerData: {
+  const hits = await runEvalWorker<GrepHit[]>(
+    GREP_WORKER,
+    {
       files: selected,
       paths: plan.paths,
       source: plan.source,
@@ -261,23 +254,15 @@ export async function grepWorkspaceBounded(
       limit: plan.limit,
       maxLine: MAX_SEARCHABLE_LINE,
     },
-  });
-  const settled = new Promise<GrepHit[]>((resolve, reject) => {
-    worker.once("message", resolve);
-    worker.once("error", reject);
-    worker.once("exit", (code) => reject(new Error(`grep worker exited (${code})`)));
-  });
-  try {
-    const hits = await pTimeout(settled, {
-      milliseconds: timeoutMs,
-      message: new CodingGrepError(
+    {
+      timeoutMs,
+      label: "grep",
+      timeoutMessage: new CodingGrepError(
         `grep timed out after ${timeoutMs}ms — the pattern ${JSON.stringify(pattern)} ` +
           "backtracks catastrophically on this workspace. Simplify it (no nested " +
           "quantifiers like (a+)+), or pass literal: true.",
       ),
-    });
-    return formatHits(files, hits, plan);
-  } finally {
-    void worker.terminate();
-  }
+    },
+  );
+  return formatHits(files, hits, plan);
 }

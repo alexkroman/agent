@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 206 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
-- [Framework internals](#framework-internals) — 518 names
+- [Framework internals](#framework-internals) — 520 names
 
 ## Agent authoring
 
@@ -1391,6 +1391,7 @@ trace or a type error can be traced back to something.
 | `ELEVENLABS_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
 | `EMPTY_PARAMS` | const | `@alexkroman1/aai/host-internal` |  |  |
 | `Epoch` | interface · `@internal` | `@alexkroman1/aai/internal` |  |  |
+| `EvalWorkerOptions` | type | `@alexkroman1/aai/host-internal` |  | Options for `runEvalWorker`. |
 | `ExecuteTool`, `ExecuteToolOptions` | type | `@alexkroman1/aai/host-internal` |  | Executes a named tool with parsed arguments and returns its string result. |
 | `FALLBACK_KIND` | const | `@alexkroman1/aai/host-internal` |  | The `kind` of a fallback descriptor, reserved at every stage. |
 | `FfmpegChild` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
@@ -1771,6 +1772,7 @@ trace or a type error can be traced back to something.
 | `routeTable` | function | `@alexkroman1/aai/host-internal` |  | Parse a table's keys once, for repeated matching. |
 | `runAgentGuardrails` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `runCapped`, `RunCappedOptions` | function | `@alexkroman1/aai/host-internal` |  | Run one child process, capturing capped output tails. |
+| `runEvalWorker` | function | `@alexkroman1/aai/host-internal` |  | Start `source` in a fresh worker with `workerData`, and resolve with the first message it posts. |
 | `safeFetch` | const | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | `globalThis.fetch` wrapped in SSRF validation — the default for every network builtin. |
 | `sayOnClientWorkflow` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `selectToolMessage` | function | `@alexkroman1/aai/host-internal` |  | One of the eligible messages, drawn — the VARIANT rule. |

@@ -10,7 +10,7 @@
     "packages/aai-runtime/src/_mock-ws.ts": 1,
     "packages/aai-templates/templates/tabletop-rpg-agent/client.tsx": 2,
     "packages/aai/src/host/_ffmpeg-spawn.ts": 1,
-    "packages/aai/src/host/coding-grep.ts": 1,
+    "packages/aai/src/host/eval-worker.ts": 1,
     "packages/aai/src/host/coding-spawn.ts": 1,
     "packages/aai/src/index.ts": 1,
     "packages/aai/src/sdk/session-event-map.ts": 1
