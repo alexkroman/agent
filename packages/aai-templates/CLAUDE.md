@@ -326,7 +326,7 @@ read it back; a hand-written `request/status/progress/cancel` quartet is the
 `workflow_status`/`workflow_progress`/`workflow_cancel` builtins plus
 `describeRun`/`cancelNote` on the def. A signal is `ctx.waitForSignal(label)` in
 the body and `ctx.workflows.signalRun(def, "session", label, payload)` in the
-tool — no `tokens.ts` module holding a string two files must agree on
+tool — no module of token strings two files must agree on
 (`packages/aai/src/sdk/workflow-signals.ts`).
 
 ### A step can authenticate now, so no template's I/O is a fixture
