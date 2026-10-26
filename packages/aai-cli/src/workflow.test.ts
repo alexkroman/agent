@@ -306,6 +306,34 @@ describe("--agent targets a server the caller is running themselves", () => {
   });
 });
 
+describe("a body that is not the workflow API's shape fails bad_response", () => {
+  // The client casts; these used to die on `workflows is not iterable` and
+  // `Cannot read properties of null`.
+  test.each([
+    ["list", { workflows: 5 }, () => executeWorkflowList("/proj", {}, ui, deps)],
+    ["list", { workflows: [null] }, () => executeWorkflowList("/proj", {}, ui, deps)],
+    ["runs", { runs: [null] }, () => executeWorkflowRuns("/proj", "digest", {}, ui, deps)],
+    [
+      "runs",
+      { runs: [{ runId: "r", status: "exploded" }] },
+      () => executeWorkflowRuns("/proj", "digest", {}, ui, deps),
+    ],
+    [
+      "show",
+      { runId: 7, status: "running" },
+      () => executeWorkflowShow("/proj", "r", {}, ui, deps),
+    ],
+  ])("%s answering %j", async (_verb, body, run) => {
+    fetchMock.mockImplementation(async () => json(body));
+    expect(await run()).toMatchObject({
+      ok: false,
+      code: "bad_response",
+      error: expect.stringContaining("Unexpected response"),
+      hint: expect.stringContaining("workflow API"),
+    });
+  });
+});
+
 describe("a project with no deployment", () => {
   test("names the cause FIRST, and both ways out", async () => {
     // The reproduction: `aai workflow list` in an undeployed project reported
