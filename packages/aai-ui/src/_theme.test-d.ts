@@ -8,7 +8,7 @@
  * without a word. The `?: undefined` guards on each member are what make the
  * mixed literal a compile error, and this file is what keeps them there.
  *
- * Probed with a conditional rather than `@ts-expect-error`: an assignability
+ * Probed with a conditional rather than a suppression directive: an assignability
  * question answered as `true`/`false` names the shape that moved, where a
  * suppressed error passes on ANY error.
  */

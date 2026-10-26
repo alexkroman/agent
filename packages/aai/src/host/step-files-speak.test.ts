@@ -13,7 +13,7 @@ import { STUB_SPEECH_PCM_BYTES } from "../sdk/testing-speech.ts";
 import { installStubSpeech, installStubUploads } from "../sdk/testing-vitest.ts";
 import { WAV_HEADER_BYTES } from "../sdk/wav.ts";
 import { ffmpegProcess } from "./_ffmpeg-spawn.ts";
-import { stepSpeakToUpload } from "./step-files-speak.ts";
+import { type SpeakMasterFormat, stepSpeakToUpload } from "./step-files-speak.ts";
 
 const MP3 = new Uint8Array([0xff, 0xfb, 0x90, 0x00]);
 
@@ -60,7 +60,7 @@ describe("stepSpeakToUpload", () => {
     const spawn = vi.spyOn(ffmpegProcess, "spawn");
     // The type refuses these; a JS author or a cast reaches them, and what they
     // reached was a stored `type: ""` and `… is not iterable`.
-    const bad = "ogg" as never;
+    const bad: SpeakMasterFormat = JSON.parse('"ogg"');
     await expect(stepSpeakToUpload("hi", { master: bad, name: "x.ogg" })).rejects.toThrow(
       /unknown master format "ogg"; known formats: wav, mp3/,
     );

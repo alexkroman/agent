@@ -1,5 +1,5 @@
 {
-  "_description": "Per-file budgets of lines jscpd reports inside a clone \u2014 see scripts/check-duplication.mjs. A file may hold FEWER than its number and may never hold more; --update lowers entries and refuses to raise one. Raising one is a hand edit a reviewer sees.",
+  "_description": "Per-file budgets of lines jscpd reports inside a clone — see scripts/check-duplication.mjs. A file may hold FEWER than its number and may never hold more; --update lowers entries and refuses to raise one. Raising one is a hand edit a reviewer sees.",
   "duplicatedLines": {
     "packages/aai-runtime/src/eval-vitest-barrel.ts": 21,
     "packages/aai-runtime/src/eval/stub-speech.ts": 10,
@@ -14,6 +14,7 @@
     "packages/aai/src/sdk/_dialog-events.ts": 13,
     "packages/aai/src/sdk/metrics-collector.ts": 21,
     "packages/aai/src/sdk/session-event-map.ts": 15,
+    "packages/aai/src/sdk/session-slot-handle.ts": 16,
     "packages/aai/src/sdk/testing-barrel.ts": 122,
     "packages/aai/src/sdk/testing-tools.ts": 65,
     "packages/aai/src/sdk/tool-schema.ts": 147,

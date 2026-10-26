@@ -1,5 +1,8 @@
 ---
 "@alexkroman1/aai": minor
+"@alexkroman1/aai-ui": patch
+"@alexkroman1/aai-runtime": patch
+"@alexkroman1/aai-cli": patch
 "aai-server": patch
 ---
 
@@ -48,3 +51,24 @@ parameter admits `undefined`, `WorkflowInputOf` reads a schema or a declaration,
 `WorkflowInputOf` family to `workflow-readings`,
 `RouteContext.sessionTranscript` is required, `installStubWorld` returns `files`
 and takes `uploads` as one object.
+
+Hardening from an adversarial pass over the new surface: a returned
+`ToolFailure` from an `updateTool` body, `report` or `transact` stores nothing;
+`reset: true` runs after `require`/`prepare` and its `send` is honoured;
+function-form `sendFrom` narrows on slot tools and `sendFrom: "field"` naming a
+non-event field is a compile error; nested `$instruction` keys are lifted;
+plain-value slot defaults are checked at declaration; `workflowApp()` takes no
+`workflows`, a def with none refuses every typed hook name, `isWorkflowDef`
+requires a `workflow()`-made def, nested `workflows/**` defs are refused and a
+def declared under a name is not re-registered under its file; `sync: true`
+projections are claimed by every agent form; signal holds need a live run,
+`maxWaits` counts only a NAMED delay, the builtins see live runs first, the text
+agent scopes `ctx.workflows` by session; `TranscribeDurablyOptions`/
+`PollOptions.maxWaits`; a missing upload or key is fatal; call briefs survive
+TwiML whitespace and surrogate pairs, `readCallBrief` refuses a multi-line id
+and trims the secret, `x-api-key` reaches a deployed route; `onSessionEnd` fires
+once; `useRoute` resets on a path change and refuses a negative `pollMs`;
+`routeFetch` headers are case-folded; an empty run `key` is refused on both
+ends; `<WorkflowFields>` reads nullable enums, literal unions and numeric
+selects; the theme forms are exclusive; `installStubGateway({ apiKey: false })`
+clears the env; `fireEvent` refuses an empty `events` map.

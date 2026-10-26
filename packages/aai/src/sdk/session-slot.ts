@@ -305,11 +305,18 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
    * mutator's does. It is how a slot tool's `report` sees the stored value
    * while a failure it returns can still store nothing (`_slot-tools.ts`).
    */
-  const window = <R, R2 = R>(
+  function window<R, R2 = R>(
     ctx: SlotHolder,
     mutate: (draft: T) => R,
     finish?: (stored: DeepReadonly<T>, result: R) => R2,
-  ): R2 => {
+  ): R2;
+  // The implementation answers `R | R2`, which the one visible signature
+  // narrows to `R2` (it defaults to `R`) — so no cast is needed inside.
+  function window<R, R2>(
+    ctx: SlotHolder,
+    mutate: (draft: T) => R,
+    finish?: (stored: DeepReadonly<T>, result: R) => R2,
+  ): R | R2 {
     if (open.has(ctx.sessionId)) {
       throw new Error(
         `A mutation of the "${key}" slot is already open for this session. The value you were handed IS the draft — mutate that, and do not call set/reset/update on the same slot from inside it, because the draft is stored when the outer mutator returns and would overwrite it.`,
@@ -326,7 +333,7 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
       // Inside the window, so the hook is synchronous and a nested write from
       // it is refused like any other.
       const ready = settled(draft);
-      const out = finish === undefined ? (result as unknown as R2) : finish(frozen(ready), result);
+      const out = finish === undefined ? result : finish(frozen(ready), result);
       slots(ctx).write(key, ready, { durable });
       return out;
     } finally {
@@ -334,7 +341,7 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
       // of the session. Nothing is stored on that path — see this method's doc.
       open.delete(ctx.sessionId);
     }
-  };
+  }
 
   const update = <R>(ctx: SlotHolder, mutate: (draft: T) => R): R => window(ctx, mutate);
 

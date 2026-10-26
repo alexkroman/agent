@@ -322,13 +322,13 @@ member it governs**:
 - **Slot tools are one pipeline** (`_slot-tools.ts`): dialog refusal → `require`
   (frozen value) → `prepare` (async, then `require` again) → the dialog's
   `reset` → the window (`execute(args, draft, [prepared,] ctx)`, `after`,
-  `caps`, then `report` on the value about to be stored and the gate's
-  `decide`) → `send`/`sendFrom` + envelope. **A `ToolFailure` RETURNED from
-  `execute`, `report` or `transact`'s `commit` stores nothing**, carried out
-  of the window as a private throw (`ReturnedFailure`); a `sendFrom` field
-  holding no event name is refused inside the window too. `updateTool`'s
-  overloads select stages; `slot.transact(ctx, { require?, prepare, commit })`
-  is the non-tool form. A tool declaring `prepare` or `dialog` is async.
+  `caps`, then `report` on the value about to be stored and the gate's `decide`)
+  → `send`/`sendFrom` + envelope. **A `ToolFailure` RETURNED from `execute`,
+  `report` or `transact`'s `commit` stores nothing**, carried out of the window
+  as a private throw (`ReturnedFailure`); a `sendFrom` field holding no event
+  name is refused inside the window too. `updateTool`'s overloads select stages;
+  `slot.transact(ctx, { require?, prepare, commit })` is the non-tool form. A
+  tool declaring `prepare` or `dialog` is async.
 - **A plain-value default is checked at DECLARATION** with the store's own walk
   (`assertStorable`, no freeze), naming the slot and the field; an `after` throw
   on the default or the `empty` frame is framed with the slot and the phase,
@@ -383,13 +383,13 @@ module doc owns it, `packages/aai-runtime/DIALOG-CLAUDE.md` owns the knobs.
 - **The gate halves are `_dialog-gate.ts`**, shared by `dialog.tool` and a slot
   tool declaring `dialog` (`SlotDialogGate`). `AnyDialog` assignability depends
   on `DialogSendFromKey`'s `keyof`-over-remapped-keys spelling (comment there).
-  Slot-side type traps (`session-slot-gate.test-d.ts`): `SlotDialogGate.sendFrom`
-  spells its return `NoInfer<E> & { type: EventNameOf<NoInfer<E>> }` so a plain
-  literal narrows; the gated overload stays FIRST (a zero-parameter arrow's
-  return type is cached by the first overload that checks it); `UngatedDef` is
-  the message a refused gated def is reported with; `DialogSendFromGuard`
-  fails `sendFrom: "count"` at the CALL (its doc says why `NoInfer` and the
-  `unknown extends R` arm).
+  Slot-side type traps (`session-slot-gate.test-d.ts`):
+  `SlotDialogGate.sendFrom` spells its return
+  `NoInfer<E> & { type: EventNameOf<NoInfer<E>> }` so a plain literal narrows;
+  the gated overload stays FIRST (a zero-parameter arrow's return type is cached
+  by the first overload that checks it); `UngatedDef` is the message a refused
+  gated def is reported with; `DialogSendFromGuard` fails `sendFrom: "count"` at
+  the CALL (its doc says why `NoInfer` and the `unknown extends R` arm).
 - Types sit beside factories: `dialog-types.ts`/`dialog-handle.ts`,
   `session-slot-types.ts`, re-exported from the factories.
 
