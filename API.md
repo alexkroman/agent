@@ -16592,7 +16592,7 @@ export type EvalWorkflowStart = {
 };
 
 // @public
-export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...names: readonly string[]): void;
+export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...tools: readonly ToolDef[]): void;
 
 // @public
 export function expectToolBeforeSpeech(turn: EvalTurn): void;
@@ -17429,7 +17429,7 @@ export type EvalWorkflowTestContext = {
 export { eventsOf }
 
 // @public
-export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...names: readonly string[]): void;
+export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...tools: readonly ToolDef[]): void;
 
 // @public
 export function expectToolBeforeSpeech(turn: EvalTurn): void;
@@ -20892,7 +20892,7 @@ export type EvalWorkflowTestContext = {
 export { eventsOf }
 
 // @public
-export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...names: readonly string[]): void;
+export function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...tools: readonly ToolDef[]): void;
 
 // @public
 export function expectToolBeforeSpeech(turn: EvalTurn): void;

@@ -146,12 +146,21 @@ an eval's harness needs — `describeEval`, the readers and claims,
 `@alexkroman1/aai-runtime/testing/vitest`:
 
 ```ts
-import { agent } from "@alexkroman1/aai";
+// file: tools/look_up.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Look an order up",
+  inputSchema: z.object({ orderId: z.string() }),
+  execute: ({ orderId }) => ({ orderId, status: "shipped" }),
+});
+
+// file: agent.eval.test.ts
+import agentDef from "virtual:aai/agent";
 import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-
-// In an eval this is `import agentDef from "virtual:aai/agent"`.
-const agentDef = agent({ name: "Orders" });
+import lookUp from "./tools/look_up.ts";
 
 describeEval(agentDef, (test) => {
   test(
@@ -159,7 +168,10 @@ describeEval(agentDef, (test) => {
     async ({ session }) => {
       // `say()` returns THAT turn — the reply, its tool calls, its events.
       const turn = await session.say("where is order W1234?");
-      expectCalled(turn, "look_up");
+      // A claim takes the tool's DEF, never its name string: the file's default
+      // export (`builtinTool("run_code")` for a builtin), matched by the name the
+      // agent registered it under, so a renamed file fails here by name.
+      expectCalled(turn, lookUp);
       expect(turn.text).toMatch(/shipped/i);
     },
     // What a SCRIPTED model answers with when there is no key (below).

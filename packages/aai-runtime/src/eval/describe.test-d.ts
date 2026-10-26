@@ -37,7 +37,7 @@ import {
 } from "./events.ts";
 import { type EvalNetwork, evalNetwork } from "./network.ts";
 import type { EvalTurn } from "./session.ts";
-import { turnCalling } from "./turns.ts";
+import { expectCalled, turnCalling } from "./turns.ts";
 
 type Row = { status: string };
 const def = agent({ name: "Types" });
@@ -174,6 +174,9 @@ test("a reader handed the tool DEF answers the def's own types", () => {
   expectTypeOf(turnCalling(turns, placeOrder)).toEqualTypeOf<EvalTurn>();
   expectTypeOf(turnCalling(turns, builtinTool("run_code"))).toEqualTypeOf<EvalTurn>();
   expectTypeOf<string>().not.toExtend<Parameters<typeof turnCalling>[1]>();
+  // The claim takes defs too — each rest argument is a def, never a name.
+  expectTypeOf(expectCalled(turns, placeOrder, builtinTool("run_code"))).toBeVoid();
+  expectTypeOf<string>().not.toExtend<Parameters<typeof expectCalled>[1]>();
 });
 
 test("a result's `$instruction` is not readable off a def-typed reader — the wire never carries it", () => {

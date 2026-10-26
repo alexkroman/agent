@@ -12,6 +12,7 @@
 
 import agentDef from "virtual:aai/agent";
 import type { SessionEvent } from "@alexkroman1/aai";
+import { builtinTool } from "@alexkroman1/aai/tools";
 import { isToolFailure } from "@alexkroman1/aai/utils";
 import {
   createVmRunCode,
@@ -108,7 +109,7 @@ describeEval(
         // log stays empty and `revisit` has nothing to find. It reports the
         // sentence spoken in place of the call, where `expected [] to deeply
         // equal [ 'recommend' ]` reported neither.
-        expectCalled(turn, "recommend");
+        expectCalled(turn, recommend);
         expect(toolNames(turn.toolCalls)).toEqual(["recommend"]);
         expect(turn.toolCalls[0]!.args).toEqual({ category: "book", mood: "spooky" });
 
@@ -206,7 +207,7 @@ describeEval(
         // about a companion that talked its way through the sum instead, and it
         // names a cancelled reply, which is the usual reason a turn reached for
         // nothing.
-        expectCalled(turn, "run_code");
+        expectCalled(turn, builtinTool("run_code"));
         // The recipe is the prompt's, and it is two constants: a 90-minute cycle
         // plus the 15 minutes it takes to fall asleep. Arithmetic done in the
         // model's head has neither of them anywhere in the code. `runCodeIn`

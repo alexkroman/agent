@@ -18,7 +18,7 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 620 names
+- [Agent authoring](#agent-authoring) — 619 names
 - [Browser client](#browser-client) — 206 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
@@ -51,7 +51,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `AgentRoutes` | interface | `@alexkroman1/aai` |  | The `routes` field of an agent declaration — see this module's header. |
 | `AgentSessionContext` | interface | `@alexkroman1/aai` |  | The session a per-session author function is running for. |
 | `AgentSessionLifecycle` | interface | `@alexkroman1/aai` |  | The session-bracketing half of an agent declaration — see this module's header. |
-| `AgentSystemPrompt` | type | `@alexkroman1/aai` |  | What `agent({ systemPrompt })` accepts: the text, or a function that answers it per request from the live `AgentSessionContext`. |
+| `AgentSystemPrompt` | type | `@alexkroman1/aai` |  | What `AgentDef.systemPrompt` holds: the text, or a function that answers it per request from the live `AgentSessionContext`. |
 | `AgentVoicePresets` | interface | `@alexkroman1/aai` |  | The opt-in prompt presets, extended by `AgentDef`. |
 | `AnyDialog` | type | `@alexkroman1/aai` |  | Any dialog, whatever its machine and event union — what `AgentDeclaration.dialogs` holds. |
 | `AnySessionEvent` | interface | `@alexkroman1/aai` | `aai:events` | What a `"*"` handler receives: ANY event, by its envelope alone. |
@@ -111,7 +111,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `DEFAULT_RETRY_DELAY_MS` | const | `@alexkroman1/aai/step-errors` |  | How long a `RetryableError` that names no delay waits. |
 | `DEFAULT_SIGNAL_HOLD_MS` | const | `@alexkroman1/aai/workflow-api` (also `@alexkroman1/aai`) |  | How long `WorkflowClient.signalRun` holds a payload for a wait the run has not reached yet — see `SignalOptions.holdMs`. |
 | `DEFAULT_STEP_MAX_ATTEMPTS` | const | `@alexkroman1/aai` |  | Attempts a step gets when `StepOptions.maxAttempts` says nothing. |
-| `DEFAULT_SYSTEM_PROMPT` | const | `@alexkroman1/aai` | `aai:defaults` | Default system prompt used when `systemPrompt` is not provided. |
+| `DEFAULT_SYSTEM_PROMPT` | const | `@alexkroman1/aai` | `aai:defaults` | Default system prompt used when the agent keeps no `system-prompt.md`. |
 | `DELEGATE_TOOL_NAME` | const | `@alexkroman1/aai` | `aai:persona` | The name the model hands a TASK off by. |
 | `DTMF_KEYS` | const | `@alexkroman1/aai/experimental` |  | The keys `sendDtmf` accepts: the twelve on a phone pad, the four `A`–`D` column keys, and `w`, a half-second pause between keys (Twilio's `sendDigits` … |
 | `DeepReadonly` | type | `@alexkroman1/aai` | `aai:state` | `Readonly<T>`, all the way down. |
@@ -297,7 +297,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `StandardSchemaV1` | interface | `@alexkroman1/aai` | `aai:standard-schema` | The [Standard Schema](https://standardschema.dev) V1 interface, inlined as the spec recommends (it is a types-only contract). |
 | `StandardWebhookOptions` | interface | `@alexkroman1/aai` |  | What `verifyStandardWebhook` takes beside the request and secret. |
 | `StartOptions` | type | `@alexkroman1/aai/workflow-api` |  | Per-run options for `WorkflowClient.start` — `ctx.workflows.start`, from a TOOL. |
-| `StateProjection` | interface | `@alexkroman1/aai` | `aai:state` | One slot's contribution to the `agent_state` frame — what `SessionSlot.projected` is, and what `agent({ syncState })` takes. |
+| `StateProjection` | interface | `@alexkroman1/aai` | `aai:state` | One slot's contribution to the `agent_state` frame — what `SessionSlot.projected` is, and what `AgentDef.syncState` holds for a slot declared `sync: true`. |
 | `StepFetchInit` | type | `@alexkroman1/aai/step` | `aai:step` | What `stepFetch` accepts. |
 | `StepGenerateError` | class | `@alexkroman1/aai/step` | `aai:step` | A model call that failed, with the one thing a step has to decide from. |
 | `StepInfo` | type | `@alexkroman1/aai/step` | `aai:step` | Which step is running, and which attempt of it. |
@@ -309,7 +309,6 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `StepTransportError` | class | `@alexkroman1/aai/step` | `aai:step` | A request that never got an answer. |
 | `StreamOptions` | type | `@alexkroman1/aai/workflow-api` |  | Options for `WorkflowClient.stream`. |
 | `SttProvider` | type | `@alexkroman1/aai/stt` (also `@alexkroman1/aai`) | `aai:stt` | Descriptor for an STT provider. |
-| `SyncStateDeclaration` | type | `@alexkroman1/aai` |  | What `agent({ syncState })` accepts: one slot projection, or a list of them. |
 | `TEXTBELT_CHANNEL_HANDLER` | const | `@alexkroman1/aai/channels` | `aai:channels` | Textbelt as a `ChannelHandler`, typed on its own options — registered WITH its options narrowing, so `render` and `advice` are handed a checked value. |
 | `TEXTBELT_CHANNEL_KIND` | const | `@alexkroman1/aai/channels` | `aai:channels` | The `kind` tag on a Textbelt channel descriptor. |
 | `TEXTBELT_MAX_MESSAGE_CHARS` | const | `@alexkroman1/aai/channels` | `aai:channels` | The longest text a Textbelt channel sends, in characters; a longer render is cut with an ellipsis. |
@@ -957,7 +956,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `evalTextCredentials` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | Can this machine run a TEXT agent's eval live, and if not, which key is missing? |
 | `evalWorkflowCredentials` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | Can this machine run workflow evals against `agent`? |
 | `eventsOf` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai:testing-events` | Every event in `events` named `type`, in order, typed as that member. |
-| `expectCalled` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-assert` | Every name in `names` was called in this turn, and a throw naming what the agent did INSTEAD when one was not. |
+| `expectCalled` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-assert` | Every tool in `tools` was called in this turn, and a throw naming what the agent did INSTEAD when one was not. |
 | `expectDeployable` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing-deploy` | Run the invariants a deployable agent owes, and hand back the RESOLVED config so a spec can go on to assert its own specifics — a chosen model, a declared … |
 | `expectDialogOk` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | The dialog envelope a gated tool answered, keeping WHERE the dialog landed. |
 | `expectDialogRefused` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | The refusal a gated tool answered with, or a throw saying the gate did NOT hold. |
