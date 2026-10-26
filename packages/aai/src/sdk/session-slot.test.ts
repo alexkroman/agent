@@ -2,6 +2,7 @@
 import { describe, expect, expectTypeOf, test, vi } from "vitest";
 import { z } from "zod";
 import { agentToolsToSchemas } from "./_internal-types.ts";
+import { omitUndefined } from "./omit-undefined.ts";
 import type { ToolInputSchema } from "./schema.ts";
 import { sessionSlot } from "./session-slot.ts";
 import type { SlotUpdateToolDef } from "./session-slot-types.ts";
@@ -815,5 +816,90 @@ describe("a plain value as the default", () => {
     const made = sessionSlot("made-cart", factory);
     expect(made.get(createToolContext())).toEqual({ items: [], nextId: 1 });
     expect(factory).toHaveBeenCalledOnce();
+  });
+
+  test("one the store would refuse is refused at DECLARATION, naming the slot and the field", () => {
+    // What the first `get` would throw, said where the value is in hand — and
+    // before `projected()` has rendered a frame the first tool call disagrees
+    // with. Each of these used to get past the declaration: `structuredClone`
+    // drops a class instance's prototype silently, renders a `Date` and a
+    // `Map`, and throws a bare `DataCloneError` on a function.
+    class Counter {
+      n = 0;
+      bump() {
+        this.n += 1;
+      }
+    }
+    expect(() => sessionSlot("counter", new Counter())).toThrow(
+      /The default of the "counter" slot cannot be stored: counter is a Counter instance, which does not survive being stored/,
+    );
+    expect(() => sessionSlot("dated", { when: new Date(0), m: new Map() })).toThrow(
+      /"dated" slot cannot be stored: dated\.when is a Date/,
+    );
+    expect(() => sessionSlot("formatted", { n: 0, fmt: (x: number) => `${x}` })).toThrow(
+      /"formatted" slot cannot be stored: formatted\.fmt is a function, which cannot be stored/,
+    );
+    // The same walk the store runs, with its cause kept.
+    let caught: unknown;
+    try {
+      sessionSlot("dated-again", { when: new Date(0) });
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as Error).cause).toMatchObject({ name: "SlotValueError" });
+    // A virtual slot is unchecked, as its stores are; a factory is not in hand.
+    expect(() => sessionSlot("virtual", { when: new Date(0) }, { durable: false })).not.toThrow();
+    expect(() => sessionSlot("lazy", () => ({ when: new Date(0) }))).not.toThrow();
+  });
+
+  test("a plain default is not frozen by the check", () => {
+    const DEFAULT = { items: [] as string[] };
+    sessionSlot("unfrozen", DEFAULT);
+    expect(Object.isFrozen(DEFAULT)).toBe(false);
+    expect(Object.isFrozen(DEFAULT.items)).toBe(false);
+  });
+});
+
+describe("an `after` hook that throws on a value the slot itself produced", () => {
+  const ranked = (name: string, empty?: () => { items: string[]; top?: string }) =>
+    sessionSlot(name, (): { items: string[]; top?: string } => ({ items: [] }), {
+      after: (v) => {
+        if (v.items.length === 0) throw new Error("cannot rank an empty list");
+        v.top = v.items.join(",");
+      },
+      ...omitUndefined({ empty }),
+    });
+
+  test("is framed with the slot and the phase on the default, with the cause kept", () => {
+    const slot = ranked("ranked");
+    const ctx = createToolContext();
+    let caught: unknown;
+    try {
+      slot.get(ctx);
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as Error).message).toBe(
+      'The after hook of the "ranked" slot failed on the default: cannot rank an empty list',
+    );
+    expect((caught as Error).cause).toMatchObject({ message: "cannot rank an empty list" });
+    expect(() => slot.reset(ctx)).toThrow(/failed on the default/);
+    expect(() => slot.projected()).toThrow(/"ranked" slot failed on the default/);
+  });
+
+  test("…and on the empty frame", () => {
+    const slot = ranked("ranked-empty", () => ({ items: [] }));
+    expect(() => slot.projected()).toThrow(
+      'The after hook of the "ranked-empty" slot failed on the empty frame: cannot rank an empty list',
+    );
+  });
+
+  test("a caller's own value is the caller's failure: bare, as before", () => {
+    const slot = ranked("ranked-set");
+    const ctx = createToolContext();
+    expect(() => slot.set(ctx, { items: [] })).toThrow("cannot rank an empty list");
+    expect(() => slot.set(ctx, { items: [] })).not.toThrow(/failed on/);
+    expect(() => slot.update(ctx, (v) => v.items.push("a"))).not.toThrow();
+    expect(slot.get(ctx).top).toBe("a");
   });
 });

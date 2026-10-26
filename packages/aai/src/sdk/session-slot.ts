@@ -30,7 +30,12 @@ import type { DeepReadonly } from "./deep-readonly.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import type { SessionSlot } from "./session-slot-handle.ts";
 import type { SessionSlotOptions } from "./session-slot-types.ts";
-import type { SlotHolder, SlotStore, StateProjection } from "./session-state.ts";
+import {
+  assertStorable,
+  type SlotHolder,
+  type SlotStore,
+  type StateProjection,
+} from "./session-state.ts";
 
 // Re-exported rather than defined here: it is the type of what `get` hands
 // back, so it belongs beside `sessionSlot` on the root barrel — and it is its
@@ -48,6 +53,7 @@ export type {
   SessionSlot,
   SlotDraftOf,
   SlotValueOf,
+  UngatedDef,
 } from "./session-slot-handle.ts";
 // The types a CALLER writes live in their own module (this file was at the
 // 500-line cap) and are re-exported here, so `@alexkroman1/aai` — and a reader
@@ -87,7 +93,10 @@ export type { SlotHolder } from "./session-state.ts";
  *   access (and again on `reset`), or the plain VALUE, which the slot
  *   `structuredClone`s on every install so no two sessions share it. A shared
  *   module-level default therefore no longer needs the
- *   `() => structuredClone(DEFAULT)` wrapper — pass `DEFAULT`. A slot whose
+ *   `() => structuredClone(DEFAULT)` wrapper — pass `DEFAULT`. A plain value
+ *   a durable slot could not store — a class instance, a `Date`, a `Map`, a
+ *   function field — is refused HERE, naming the slot and the field, by the
+ *   same check every store runs. A slot whose
  *   value IS a function (a virtual slot holding a callback) must use the
  *   factory form, since a function argument is read as one.
  * @param options - See {@link SessionSlotOptions}. `view` is the one worth
@@ -129,6 +138,24 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
   options: SessionSlotOptions<T, After, V> = {},
 ): SessionSlot<K, T, V> {
   const durable = options.durable ?? true;
+  // A plain default is in hand, so what the store would refuse on the first
+  // `get` is refused HERE, naming the slot — with the same walk the store runs,
+  // so `projected()` (which renders the blank without storing it) and the
+  // first `get` can never disagree about it. `structuredClone` would otherwise
+  // drop a class instance's prototype silently, render a `Date`, and throw a
+  // bare `DataCloneError` on a function field. Checked without the store's
+  // freeze: the module's copy stays the author's own. A virtual slot is
+  // unchecked, as its stores are.
+  if (durable && typeof create !== "function") {
+    try {
+      assertStorable(create, key);
+    } catch (error) {
+      throw new Error(
+        `The default of the "${key}" slot cannot be stored: ${(error as Error).message} For a value that is not plain data, declare the slot virtual ({ durable: false }) and use the factory form.`,
+        { cause: error },
+      );
+    }
+  }
   // The factory the rest of this function works with. A plain value is cloned
   // per install, which is the wrapper every template wrote by hand and the one
   // an author forgets — `() => DEFAULT` hands every session the same object.
@@ -185,14 +212,26 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
    * draft and the projection's empty frame all go through it, so a derived
    * field cannot differ between the default and the first update.
    */
-  const settled = (value: T): T => {
-    options.after?.(value);
+  const settled = (value: T, phase?: string): T => {
+    try {
+      options.after?.(value);
+    } catch (error) {
+      // A hook written for a populated value and run on the shape the slot
+      // itself produced is the slot's failure to frame, not the hook's: bare,
+      // the error reaches a page as "syncState projection failed" and a tool
+      // as its own message, naming neither the slot nor what it was handed.
+      if (phase === undefined) throw error;
+      throw new Error(
+        `The after hook of the "${key}" slot failed on ${phase}: ${(error as Error).message}`,
+        { cause: error },
+      );
+    }
     return applyCaps(value);
   };
 
   /** `settled`, then written — answering the value as stored. */
-  const store = (ctx: SlotHolder, value: T): T => {
-    const ready = settled(value);
+  const store = (ctx: SlotHolder, value: T, phase?: string): T => {
+    const ready = settled(value, phase);
     slots(ctx).write(key, ready, { durable });
     return ready;
   };
@@ -205,11 +244,15 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
     );
   };
 
+  /** What `after` ran on when it was not a caller's own value, for the error that frames its throw. */
+  const DEFAULT = "the default";
+  const EMPTY = "the empty frame";
+
   const get = (ctx: SlotHolder): DeepReadonly<T> => {
     const existing = slots(ctx).read(key);
     if (existing !== undefined) return existing as DeepReadonly<T>;
     // A fresh default needs no copy: nothing else has a reference to it.
-    return frozen(store(ctx, make()));
+    return frozen(store(ctx, make(), DEFAULT));
   };
 
   /**
@@ -244,7 +287,8 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
     // and never exceeds its caps, and the frame rendered before the first tool
     // call should describe the same shape. `empty` is the seeded slot's blank,
     // so a seed never ships to the browser.
-    const blank = (): T => settled(options.empty === undefined ? make() : options.empty());
+    const blank = (): T =>
+      options.empty === undefined ? settled(make(), DEFAULT) : settled(options.empty(), EMPTY);
     const projection = (value?: unknown): P =>
       view((value === undefined ? blank() : value) as DeepReadonly<T>);
     // The slot's own factory rather than a captured default: the runtime
@@ -254,7 +298,18 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
     return Object.assign(projection, { key, create: make as () => unknown });
   };
 
-  const update = <R>(ctx: SlotHolder, mutate: (draft: T) => R): R => {
+  /**
+   * The mutation window. `finish`, when given, runs INSIDE it on the value
+   * about to be stored — hooked and capped, not yet written — and its return
+   * is the window's; a throw from it discards the draft exactly as the
+   * mutator's does. It is how a slot tool's `report` sees the stored value
+   * while a failure it returns can still store nothing (`_slot-tools.ts`).
+   */
+  const window = <R, R2 = R>(
+    ctx: SlotHolder,
+    mutate: (draft: T) => R,
+    finish?: (stored: DeepReadonly<T>, result: R) => R2,
+  ): R2 => {
     if (open.has(ctx.sessionId)) {
       throw new Error(
         `A mutation of the "${key}" slot is already open for this session. The value you were handed IS the draft — mutate that, and do not call set/reset/update on the same slot from inside it, because the draft is stored when the outer mutator returns and would overwrite it.`,
@@ -262,27 +317,30 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
     }
     const existing = current(ctx);
     // A fresh value needs no copy — nothing else has a reference to it yet.
-    // Unhooked: `after` runs on the draft at the end of this window, in `store`.
+    // Unhooked: `after` runs on the draft at the end of this window, below.
     const draft = existing === undefined ? make() : privateCopy(existing);
     open.add(ctx.sessionId);
-    let result: R;
     try {
-      result = mutate(draft);
+      const result = mutate(draft);
       assertSynchronous(key, result, "update");
       // Inside the window, so the hook is synchronous and a nested write from
       // it is refused like any other.
-      store(ctx, draft);
+      const ready = settled(draft);
+      const out = finish === undefined ? (result as unknown as R2) : finish(frozen(ready), result);
+      slots(ctx).write(key, ready, { durable });
+      return out;
     } finally {
       // In `finally` so a throwing mutator does not wedge the slot for the rest
       // of the session. Nothing is stored on that path — see this method's doc.
       open.delete(ctx.sessionId);
     }
-    return result;
   };
+
+  const update = <R>(ctx: SlotHolder, mutate: (draft: T) => R): R => window(ctx, mutate);
 
   // What the tool builders in `_slot-tools.ts` need of this slot: the key, a
   // frozen read, and the window. They never touch the store directly.
-  const core: SlotCore<T> = { key, get, update };
+  const core: SlotCore<T> = { key, get, update: window };
 
   // Built HERE, at declaration, which is the field's whole guarantee: one
   // object for the life of the module, so the two ends pass the same
@@ -332,7 +390,7 @@ export function sessionSlot<const K extends string, T, After = void, V = DeepRea
     reset(ctx) {
       assertNoOpenDraft(ctx, "reset");
       // No copy: a fresh default is a value nothing else has a reference to.
-      return frozen(store(ctx, make()));
+      return frozen(store(ctx, make(), DEFAULT));
     },
     // The public signatures are OVERLOADS over the stages a def declares (gate,
     // `prepare`, `report`), each intersected with authoring guards

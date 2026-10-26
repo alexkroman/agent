@@ -4799,7 +4799,7 @@ export interface Dialog<E = {
     reset(ctx: SlotHolder): DialogPosition;
     send(ctx: SlotHolder, event: E): DialogPosition;
     timeout(ctx: SlotHolder): DialogTimeout | undefined;
-    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K>, options?: DialogSendOptions<R, E, K>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>, options?: DialogSendOptions<R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
@@ -4861,6 +4861,11 @@ export type DialogSendFrom<R, E, K extends string = string> = ((result: NoInfer<
 
 // @public
 export type DialogSendFromChecked<K extends string, R, E, T> = string extends K ? T : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? T : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+
+// @public
+export type DialogSendFromGuard<K extends string, R, E> = string extends K ? unknown : unknown extends R ? unknown : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? unknown : {
+    sendFrom: DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+};
 
 // @public
 export type DialogSendFromKey<S, E> = keyof {
@@ -5785,26 +5790,26 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
         type: string;
     } = {
         type: string;
-    }, K extends string = string>(def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E, K>, options?: DialogSendOptions<Awaited<R>, E, K>): DialogSendFromChecked<K, Awaited<R>, E, ToolDef<P, GatedOutput<R>>>;
+    }, K extends string = string>(def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E, K> & NoInfer<DialogSendFromGuard<K, Awaited<R>, E>>, options?: DialogSendOptions<Awaited<R>, E, K>): DialogSendFromChecked<K, Awaited<R>, E, ToolDef<P, GatedOutput<R>>>;
     // (undocumented)
-    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R> & UngatedDef): ToolDef<P, R>;
     transact<Prep, R>(ctx: SlotHolder, tx: SlotTransaction<T, Prep, R>): Promise<R | ToolFailure>;
     update<R>(ctx: SlotHolder, mutate: (draft: T) => R): RejectThenableResult<R>;
     updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unknown, R = unknown, R2 = R, E extends {
         type: string;
     } = {
         type: string;
-    }, K extends string = string>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
+    }, K extends string = string>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R> & NoInfer<DialogSendFromGuard<K, Awaited<R2>, E>>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, Awaited<R2>, E, ToolDef<P, GatedOutput<R2>>>;
     // (undocumented)
-    updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unknown, R = unknown, R2 = R>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & RejectThenable<R>): ToolDef<P, Promise<R2 | ToolFailure>>;
+    updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unknown, R = unknown, R2 = R>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & RejectThenable<R> & UngatedDef): ToolDef<P, Promise<R2 | ToolFailure>>;
     // (undocumented)
     updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R, E extends {
         type: string;
     } = {
         type: string;
-    }, K extends string = string>(def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
+    }, K extends string = string>(def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R> & NoInfer<DialogSendFromGuard<K, Awaited<R2>, E>>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, Awaited<R2>, E, ToolDef<P, GatedOutput<R2>>>;
     // (undocumented)
-    updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R>(def: SlotUpdateToolDef<P, T, R, R2> & RejectThenable<R>): ToolDef<P, R2 | Extract<R, ToolFailure>>;
+    updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R>(def: SlotUpdateToolDef<P, T, R, R2> & RejectThenable<R> & UngatedDef): ToolDef<P, R2 | Extract<R, ToolFailure>>;
 }
 
 // @public
@@ -5869,6 +5874,9 @@ export interface SlotDialogGate<R, E extends {
     type: string;
 }, K extends string = string> extends DialogGate<Awaited<R>, NoInfer<E>, K> {
     dialog: Dialog<E>;
+    sendFrom?: DialogSendFrom<Awaited<R>, NoInfer<E> & {
+        type: EventNameOf<NoInfer<E>>;
+    }, K>;
 }
 
 // @public
@@ -5909,6 +5917,7 @@ export interface SlotTransaction<T, Prep, R> {
 
 // @public @input
 export interface SlotUpdateToolDef<P extends ToolInputSchema | undefined, T, R, R2 = R> extends SlotToolDef<P, T, R> {
+    execute(args: InferSchemaOutput<P>, draft: T, ctx: ToolContext): R;
     report?: (stored: DeepReadonly<T>, partial: NoInfer<Exclude<R, ToolFailure>>) => R2;
 }
 
@@ -6239,6 +6248,11 @@ export interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDe
     // (undocumented)
     schema: StandardSchemaV1<unknown, T>;
 }
+
+// @public
+export type UngatedDef = {
+    readonly dialog?: "this def declares `dialog`, so it is a GATED tool, and the gated overload refused it: one of `when`, `send`, `sendFrom` or `reset` does not fit that dialog, or `report` was declared on `tool`";
+};
 
 // @public @input
 export interface UsageLimits {
@@ -8046,7 +8060,7 @@ interface Dialog<E = {
     reset(ctx: SlotHolder): DialogPosition;
     send(ctx: SlotHolder, event: E): DialogPosition;
     timeout(ctx: SlotHolder): DialogTimeout | undefined;
-    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K>, options?: DialogSendOptions<R, E, K>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>, options?: DialogSendOptions<R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
@@ -8071,6 +8085,11 @@ type DialogSendFrom<R, E, K extends string = string> = ((result: NoInfer<Exclude
 
 // @public
 type DialogSendFromChecked<K extends string, R, E, T> = string extends K ? T : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? T : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+
+// @public
+type DialogSendFromGuard<K extends string, R, E> = string extends K ? unknown : unknown extends R ? unknown : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? unknown : {
+    sendFrom: DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+};
 
 // @public
 type DialogSendFromKey<S, E> = keyof {
@@ -11670,7 +11689,7 @@ interface Dialog<E = {
     reset(ctx: SlotHolder): DialogPosition;
     send(ctx: SlotHolder, event: E): DialogPosition;
     timeout(ctx: SlotHolder): DialogTimeout | undefined;
-    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K>, options?: DialogSendOptions<R, E, K>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>, options?: DialogSendOptions<R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
@@ -11706,6 +11725,11 @@ type DialogSendFrom<R, E, K extends string = string> = ((result: NoInfer<Exclude
 
 // @public
 type DialogSendFromChecked<K extends string, R, E, T> = string extends K ? T : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? T : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+
+// @public
+type DialogSendFromGuard<K extends string, R, E> = string extends K ? unknown : unknown extends R ? unknown : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? unknown : {
+    sendFrom: DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+};
 
 // @public
 type DialogSendFromKey<S, E> = keyof {
@@ -12377,26 +12401,26 @@ interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
         type: string;
     } = {
         type: string;
-    }, K extends string = string>(def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E, K>, options?: DialogSendOptions<Awaited<R>, E, K>): DialogSendFromChecked<K, Awaited<R>, E, ToolDef<P, GatedOutput<R>>>;
+    }, K extends string = string>(def: SlotToolDef<P, DeepReadonly<T>, R> & SlotDialogGate<R, E, K> & NoInfer<DialogSendFromGuard<K, Awaited<R>, E>>, options?: DialogSendOptions<Awaited<R>, E, K>): DialogSendFromChecked<K, Awaited<R>, E, ToolDef<P, GatedOutput<R>>>;
     // (undocumented)
-    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R>): ToolDef<P, R>;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: SlotToolDef<P, DeepReadonly<T>, R> & UngatedDef): ToolDef<P, R>;
     transact<Prep, R>(ctx: SlotHolder, tx: SlotTransaction<T, Prep, R>): Promise<R | ToolFailure>;
     update<R>(ctx: SlotHolder, mutate: (draft: T) => R): RejectThenableResult<R>;
     updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unknown, R = unknown, R2 = R, E extends {
         type: string;
     } = {
         type: string;
-    }, K extends string = string>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
+    }, K extends string = string>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R> & NoInfer<DialogSendFromGuard<K, Awaited<R2>, E>>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, Awaited<R2>, E, ToolDef<P, GatedOutput<R2>>>;
     // (undocumented)
-    updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unknown, R = unknown, R2 = R>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & RejectThenable<R>): ToolDef<P, Promise<R2 | ToolFailure>>;
+    updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, Prep = unknown, R = unknown, R2 = R>(def: SlotPreparedToolDef<P, T, Prep, R, R2> & RejectThenable<R> & UngatedDef): ToolDef<P, Promise<R2 | ToolFailure>>;
     // (undocumented)
     updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R, E extends {
         type: string;
     } = {
         type: string;
-    }, K extends string = string>(def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, R2, E, ToolDef<P, GatedOutput<R2>>>;
+    }, K extends string = string>(def: SlotUpdateToolDef<P, T, R, R2> & SlotDialogGate<R2, E, K> & RejectThenable<R> & NoInfer<DialogSendFromGuard<K, Awaited<R2>, E>>, options?: DialogSendOptions<R2, E, K>): DialogSendFromChecked<K, Awaited<R2>, E, ToolDef<P, GatedOutput<R2>>>;
     // (undocumented)
-    updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R>(def: SlotUpdateToolDef<P, T, R, R2> & RejectThenable<R>): ToolDef<P, R2 | Extract<R, ToolFailure>>;
+    updateTool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, R2 = R>(def: SlotUpdateToolDef<P, T, R, R2> & RejectThenable<R> & UngatedDef): ToolDef<P, R2 | Extract<R, ToolFailure>>;
 }
 
 // @public @sealed
@@ -12438,6 +12462,9 @@ interface SlotDialogGate<R, E extends {
     type: string;
 }, K extends string = string> extends DialogGate<Awaited<R>, NoInfer<E>, K> {
     dialog: Dialog<E>;
+    sendFrom?: DialogSendFrom<Awaited<R>, NoInfer<E> & {
+        type: EventNameOf<NoInfer<E>>;
+    }, K>;
 }
 
 // @public @sealed
@@ -12475,6 +12502,7 @@ interface SlotTransaction<T, Prep, R> {
 
 // @public @input
 interface SlotUpdateToolDef<P extends ToolInputSchema | undefined, T, R, R2 = R> extends SlotToolDef<P, T, R> {
+    execute(args: InferSchemaOutput<P>, draft: T, ctx: ToolContext): R;
     report?: (stored: DeepReadonly<T>, partial: NoInfer<Exclude<R, ToolFailure>>) => R2;
 }
 
@@ -13109,6 +13137,11 @@ interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     schema: StandardSchemaV1<unknown, T>;
 }
 
+// @public
+type UngatedDef = {
+    readonly dialog?: "this def declares `dialog`, so it is a GATED tool, and the gated overload refused it: one of `when`, `send`, `sendFrom` or `reset` does not fit that dialog, or `report` was declared on `tool`";
+};
+
 // @public @input
 interface UserTurnLimit {
     maxDurationMs?: number | undefined;
@@ -13423,7 +13456,7 @@ interface Dialog<E = {
     reset(ctx: SlotHolder): DialogPosition;
     send(ctx: SlotHolder, event: E): DialogPosition;
     timeout(ctx: SlotHolder): DialogTimeout | undefined;
-    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K>, options?: DialogSendOptions<R, E, K>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
+    tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown, K extends string = string>(def: DialogToolDef<P, R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>, options?: DialogSendOptions<R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
     voiceConfig(ctx: SlotHolder): DialogVoiceConfig | undefined;
 }
 
@@ -13448,6 +13481,11 @@ type DialogSendFrom<R, E, K extends string = string> = ((result: NoInfer<Exclude
 
 // @public
 type DialogSendFromChecked<K extends string, R, E, T> = string extends K ? T : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? T : DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+
+// @public
+type DialogSendFromGuard<K extends string, R, E> = string extends K ? unknown : unknown extends R ? unknown : [K] extends [DialogSendFromKey<Exclude<R, ToolFailure>, E>] ? unknown : {
+    sendFrom: DialogSendFromMisuse<K, DialogSendFromKey<Exclude<R, ToolFailure>, E>>;
+};
 
 // @public
 type DialogSendFromKey<S, E> = keyof {

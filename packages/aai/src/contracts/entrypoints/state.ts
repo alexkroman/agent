@@ -34,4 +34,7 @@ export {
   type SlotValueOf,
   type StateProjection,
   sessionSlot,
+  // What the UNGATED `tool`/`updateTool` overloads say about `dialog`: the
+  // message a gated def that fits no overload is reported with.
+  type UngatedDef,
 } from "../../index.ts";

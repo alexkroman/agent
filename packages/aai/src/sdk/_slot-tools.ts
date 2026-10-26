@@ -5,9 +5,10 @@
  * selection of stages from.
  *
  * In order: the dialog refusal (`dialog`), `require` on the frozen value, the
- * async `prepare` with a second `require` behind it, the synchronous window
- * (the body, then the slot's `after` and `caps`), `report` on the value
- * actually stored, and the dialog's transition with its envelope. Each stage
+ * async `prepare` with a second `require` behind it, the dialog's `reset`,
+ * the synchronous window (the body, then the slot's `after` and `caps`, then
+ * `report` on the value about to be stored and the gate's decision), and the
+ * dialog's transition with its envelope. Each stage
  * is optional and the order is fixed, which is what lets the handle's four
  * `updateTool` overloads be one function here: a def declares the stages it
  * wants and the rest are skipped.
@@ -29,6 +30,7 @@ import {
   compileDialogGate,
   type ErasedGate,
   type ErasedSendOptions,
+  type GateEvent,
 } from "./_dialog-gate.ts";
 import type { DeepReadonly } from "./deep-readonly.ts";
 import type { AnyDialog } from "./dialog-handle.ts";
@@ -42,7 +44,18 @@ import { isToolFailure, type ToolFailure } from "./utils.ts";
 export type SlotCore<T> = {
   readonly key: string;
   get(ctx: SlotHolder): DeepReadonly<T>;
-  update<R>(ctx: SlotHolder, mutate: (draft: T) => R): R;
+  /**
+   * The mutation window, with an optional second step run INSIDE it on the
+   * value about to be stored — after the slot's `after` hook and `caps`, before
+   * the write — whose return is the window's result and whose throw discards
+   * the draft like the mutator's own. `report` runs there, so a failure it
+   * returns stores nothing.
+   */
+  update<R, R2 = R>(
+    ctx: SlotHolder,
+    mutate: (draft: T) => R,
+    finish?: (stored: DeepReadonly<T>, result: R) => R2,
+  ): R2;
 };
 
 /** The args a built tool is called with — validated upstream, untyped here. */
@@ -143,8 +156,67 @@ function wireFields<T>(
   return wire;
 }
 
-/** A body as the pipeline runs it: the window (or read) after `prepare`, before `report`'s settle. */
-type PipelineBody = (args: Args, ctx: ToolContext, prepared: unknown[]) => unknown;
+/**
+ * A RETURNED failure, carried out of a mutation window as a throw.
+ *
+ * The gate's rule is that a failed tool did not do the thing, and the slot's
+ * is that a mutator which threw stored nothing — so a body that mutated its
+ * draft and then returned a {@link ToolFailure} must store nothing either, or
+ * the model is told the tool failed while the slot (and the page) show it
+ * succeeded. The window discards on a throw, so the failure is thrown through
+ * it and caught right outside, where it becomes the tool's result again.
+ * Private: nothing an author writes can meet it.
+ */
+class ReturnedFailure {
+  readonly failure: ToolFailure;
+  constructor(failure: ToolFailure) {
+    this.failure = failure;
+  }
+}
+
+/** Run `step` through a window; a returned failure thrown out of it is the result. */
+function discardingOnFailure<R>(step: () => R, failed: (failure: ToolFailure) => R): R {
+  try {
+    return step();
+  } catch (error) {
+    if (error instanceof ReturnedFailure) return failed(error.failure);
+    throw error;
+  }
+}
+
+/** Throw a returned failure out of the window it was returned in; anything else passes. */
+function refuseFailure<R>(result: R): R {
+  if (isToolFailure(result)) throw new ReturnedFailure(result);
+  return result;
+}
+
+/**
+ * What a body hands the pipeline: its settled result, and the event the gate
+ * decided from it — decided where the body ran, so that a mutating tool
+ * decides INSIDE its window and a bad `sendFrom` field discards the draft.
+ */
+type Outcome = { readonly result: unknown; readonly event: GateEvent | undefined };
+
+/** The gate's `decide`, or nothing to decide for an ungated tool. */
+type Decide = (result: unknown) => GateEvent | undefined;
+
+const undecided: Decide = () => undefined;
+
+/**
+ * A body as the pipeline runs it, in two forms: the SYNCHRONOUS one an
+ * ungated, unprepared tool answers directly (so a sync body's declared `R` is
+ * what the tool answers), and the one the async pipeline awaits, handed what
+ * `prepare` produced and the gate's `decide`.
+ */
+type PipelineBody = {
+  sync(args: Args, ctx: ToolContext): unknown;
+  staged(
+    args: Args,
+    ctx: ToolContext,
+    prepared: unknown[],
+    decide: Decide,
+  ): Outcome | Promise<Outcome>;
+};
 
 /**
  * The one pipeline both builders are a selection of stages from: the dialog
@@ -167,7 +239,7 @@ function buildPipeline<T>(
   if (gate === undefined && prepare === undefined) {
     return {
       ...wire,
-      execute: (args, ctx) => require?.(core.get(ctx), args) ?? body(args, ctx, []),
+      execute: (args, ctx) => require?.(core.get(ctx), args) ?? body.sync(args, ctx),
     };
   }
   return {
@@ -186,8 +258,12 @@ function buildPipeline<T>(
         if (again) return again;
         prepared = [value];
       }
-      const result = await body(args, ctx, prepared);
-      return gate === undefined ? result : gate.settle(ctx, result);
+      // Every setup stage has passed: a `reset` is applied here, not before
+      // `require`, so a tool refused by its own precondition does not restart
+      // the conversation.
+      gate?.enter(ctx);
+      const { result, event } = await body.staged(args, ctx, prepared, gate?.decide ?? undecided);
+      return gate === undefined ? result : gate.settle(ctx, result, event);
     },
   };
 }
@@ -203,7 +279,14 @@ export function buildSlotTool<T>(
   options?: SendOptions,
 ): ToolDef {
   const { execute } = def;
-  return buildPipeline(core, def, options, (args, ctx) => execute(args, core.get(ctx), ctx));
+  return buildPipeline(core, def, options, {
+    sync: (args, ctx) => execute(args, core.get(ctx), ctx),
+    // No window to decide inside of: a read body is settled, then decided.
+    staged: async (args, ctx, _prepared, decide) => {
+      const result = await execute(args, core.get(ctx), ctx);
+      return { result, event: decide(result) };
+    },
+  });
 }
 
 /**
@@ -224,22 +307,52 @@ export function buildUpdateTool<T>(
     throw mustBeSync(key, ", and this one is `async`");
   }
 
-  /** The window, then `report` on what it stored. */
-  const commit: PipelineBody = (args, ctx, prepared) => {
-    const result = core.update(ctx, (draft) => {
-      const out = execute(args, draft, ...prepared, ctx);
-      // The half the declaration-time check cannot see. Its mutations would be
-      // committed at the end of the synchronous part and it would then mutate a
-      // frozen draft — a `TypeError` from somewhere unrelated. Named here.
-      assertSynchronous(key, out, "updateTool");
-      return out;
-    });
-    // A failure has no partial result to complete, and is answered unchanged
-    // so the gate's "nothing sent on a failure" reads the same value.
-    if (report === undefined || isToolFailure(result)) return result;
-    return report(core.get(ctx), result);
-  };
-  return buildPipeline(core, def, options, commit);
+  /**
+   * The window: the body on the draft, then — still inside it, on the value
+   * about to be stored — `report` and the gate's decision. A failure RETURNED
+   * by either, like a throw, stores nothing; so does a `sendFrom` field that
+   * holds no event name, which `decide` refuses. A `report` that answers a
+   * promise is settled after the window closed, so its failure cannot discard.
+   */
+  const commit = (
+    args: Args,
+    ctx: ToolContext,
+    prepared: unknown[],
+    decide: Decide,
+  ): Outcome | Promise<Outcome> =>
+    discardingOnFailure(
+      () =>
+        core.update(
+          ctx,
+          (draft) => {
+            const out = execute(args, draft, ...prepared, ctx);
+            // The half the declaration-time check cannot see. Its mutations
+            // would be committed at the end of the synchronous part and it
+            // would then mutate a frozen draft — a `TypeError` from somewhere
+            // unrelated. Named here.
+            assertSynchronous(key, out, "updateTool");
+            return refuseFailure(out);
+          },
+          (stored, partial): Outcome | Promise<Outcome> => {
+            const result = report === undefined ? partial : report(stored, partial);
+            if (isThenable(result)) {
+              return Promise.resolve(result).then((settled) => ({
+                result: settled,
+                event: decide(settled),
+              }));
+            }
+            return { result: refuseFailure(result), event: decide(result) };
+          },
+        ),
+      (failure) => ({ result: failure, event: undefined }),
+    );
+  return buildPipeline(core, def, options, {
+    sync: (args, ctx) => {
+      const outcome = commit(args, ctx, [], undecided);
+      return isThenable(outcome) ? outcome.then((o) => o.result) : outcome.result;
+    },
+    staged: commit,
+  });
 }
 
 /** `SessionSlot.transact`: `prepare` ahead of the window, from a plain tool. */
@@ -254,9 +367,14 @@ export async function transactSlot<T, Prep, R>(
   if (isToolFailure(prepared)) return prepared;
   const again = tx.require?.(core.get(ctx));
   if (again) return again;
-  return core.update(ctx, (draft) => {
-    const result = tx.commit(draft, prepared);
-    assertSynchronous(core.key, result, "transact");
-    return result;
-  });
+  // A `commit` that returned a failure stores nothing, like one that threw.
+  return discardingOnFailure(
+    () =>
+      core.update(ctx, (draft) => {
+        const result = tx.commit(draft, prepared);
+        assertSynchronous(core.key, result, "transact");
+        return refuseFailure(result);
+      }),
+    (failure) => failure,
+  );
 }

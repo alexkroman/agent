@@ -14,7 +14,7 @@
 
 import type { DeepReadonly } from "./deep-readonly.ts";
 import type { Dialog } from "./dialog-handle.ts";
-import type { DialogGate } from "./dialog-types.ts";
+import type { DialogGate, DialogSendFrom, EventNameOf } from "./dialog-types.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import type { ToolContext, ToolDef } from "./types.ts";
 import type { ToolFailure } from "./utils.ts";
@@ -154,6 +154,17 @@ export interface SlotToolDef<P extends ToolInputSchema | undefined, V, R>
 export interface SlotUpdateToolDef<P extends ToolInputSchema | undefined, T, R, R2 = R>
   extends SlotToolDef<P, T, R> {
   /**
+   * The mutation body: handed the DRAFT, stored when it returns.
+   *
+   * **A {@link ToolFailure} it RETURNS stores nothing**, exactly as a throw
+   * does: the draft's mutations are discarded, nothing is pushed to the
+   * client, and the failure is the tool's whole result. The gate's rule is
+   * that a failed tool did not do the thing, and the slot keeps the same
+   * rule — a body that pushed an item and then answered `toolFailure(…)` has
+   * declined, not half-succeeded.
+   */
+  execute(args: InferSchemaOutput<P>, draft: T, ctx: ToolContext): R;
+  /**
    * Complete the body's result from the value ACTUALLY STORED — after the
    * slot's `after` hook and `caps` have applied, which the draft inside the
    * window has not seen yet.
@@ -164,6 +175,13 @@ export interface SlotUpdateToolDef<P extends ToolInputSchema | undefined, T, R, 
    * returns. Reporting from the stored value is the only reading that cannot
    * disagree with the next `get`. A `sendFrom` on a gated tool sees the
    * reported value.
+   *
+   * **It runs INSIDE the window**, on the value about to be stored, so a
+   * {@link ToolFailure} it returns — or a throw — stores nothing, like the
+   * body's own; it may not write the slot. A `report` that answers a promise
+   * is settled after the window closed, and a failure it then resolves to
+   * cannot discard. It reads the value BEFORE the dialog's `send`, so what an
+   * `onEnter` hook writes to this slot during the move is not in `stored`.
    *
    * **Skipped when the body returned a {@link ToolFailure}**, which is answered
    * unchanged: a failure has no partial result to complete.
@@ -193,6 +211,11 @@ export interface SlotPreparedToolDef<P extends ToolInputSchema | undefined, T, P
    * it awaits what the body needs — a model call, an HTTP lookup — and answers
    * it, or a {@link ToolFailure} that becomes the tool's result with no window
    * opened. `require`, if declared, is re-run on the fresh value afterwards.
+   *
+   * The failure is read STRUCTURALLY (`isToolFailure`): any record with a
+   * string `error` field is one, so a fetched payload that happens to carry
+   * `error: ""` ends the tool here. Rename or strip that field before
+   * answering it.
    */
   prepare(
     args: InferSchemaOutput<P>,
@@ -211,7 +234,14 @@ export interface SlotPreparedToolDef<P extends ToolInputSchema | undefined, T, P
  * refusal before, the transition and the `{ ...position, result }` envelope
  * after, nothing sent on a {@link ToolFailure} — around its own read or update
  * window. `E` is read from the dialog handle alone (`NoInfer` on the gate's
- * own fields), so a misspelled event is reported at `send`, not at `dialog`.
+ * own fields): with `send: E` an inference site too, a misspelled event was
+ * simply inferred INTO `E`, and `Dialog<E>` — whose every `E` sits in a
+ * bivariant method parameter — still accepted the handle.
+ *
+ * **A misuse is still reported on the `dialog:` line**, not at `send`: an
+ * overload that fails every candidate is reported against the LAST one, the
+ * ungated overload, where `dialog` is the first thing wrong. What that line
+ * says is {@link UngatedDef}'s message, which names the gate fields to check.
  *
  * @typeParam R - The tool's result as the gate reads it (reported, for an
  *   `updateTool`).
@@ -224,6 +254,25 @@ export interface SlotDialogGate<R, E extends { type: string }, K extends string 
   extends DialogGate<Awaited<R>, NoInfer<E>, K> {
   /** The dialog this tool is gated on. */
   dialog: Dialog<E>;
+  /**
+   * {@link DialogGate.sendFrom}, with the function form's return spelled so a
+   * plain `{ type: "QUOTED" }` literal keeps its literal.
+   *
+   * On {@link Dialog.tool} `E` is fixed by the handle, so the arrow's
+   * contextual return type is the concrete union and the literal narrows.
+   * Here `E` is a type parameter of the SAME call, and `NoInfer<E>`'s
+   * apparent type is its constraint, `{ type: string }` — so a bare
+   * `() => ({ type: "QUOTED" })` inferred `{ type: string }` (a zero-parameter
+   * arrow is checked before `dialog` has supplied `E`, and its return type is
+   * cached), failed the gated overload, and the author was told `dialog` does
+   * not exist on `SlotToolDef`. Intersecting `{ type: EventNameOf<NoInfer<E>> }`
+   * puts an INSTANTIABLE type (an indexed access over the type parameter,
+   * constrained to `string`) in the `type` property's contextual position,
+   * which is a literal context; once `E` is known the intersection is `E`
+   * itself, so a payload an event declares is still required and
+   * `{ type: "TYPO" }` is still refused.
+   */
+  sendFrom?: DialogSendFrom<Awaited<R>, NoInfer<E> & { type: EventNameOf<NoInfer<E>> }, K>;
 }
 
 /**
@@ -242,7 +291,11 @@ export interface SlotTransaction<T, Prep, R> {
   require?: (value: DeepReadonly<T>) => ToolFailure | undefined;
   /** The await, handed the frozen value; a {@link ToolFailure} ends the transaction with no window. */
   prepare(value: DeepReadonly<T>): Prep | ToolFailure | Promise<Prep | ToolFailure>;
-  /** The synchronous window, handed the draft and what `prepare` produced. */
+  /**
+   * The synchronous window, handed the draft and what `prepare` produced. A
+   * {@link ToolFailure} it returns stores nothing, like a throw — see
+   * {@link SlotUpdateToolDef.execute}.
+   */
   commit(draft: T, prepared: Prep): R;
 }
 
@@ -367,6 +420,13 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
    * may have left the draft in a shape the hook itself cannot handle, and an
    * error thrown from the hook would replace the one that actually explains the
    * failure. Nothing is stored in that case either.
+   *
+   * **A throw from it on a value the SLOT produced is framed**: on the default
+   * and on the `empty` frame the error names the slot and the phase ("failed
+   * on the default", "on the empty frame"), with the hook's own error as its
+   * `cause`, since a hook written for a populated value is most often tripped
+   * by the blank the slot made for it. On a caller's own value (`set`, a draft)
+   * it is the caller's error, unchanged.
    *
    * **It runs INSIDE the mutation window, so it is synchronous too** — an
    * `async` hook is a compile error naming the rule — see `RejectThenable`,

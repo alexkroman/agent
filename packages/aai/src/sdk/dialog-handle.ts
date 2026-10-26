@@ -19,6 +19,7 @@
 import type {
   DialogPosition,
   DialogSendFromChecked,
+  DialogSendFromGuard,
   DialogSendOptions,
   DialogTimeout,
   DialogToolDef,
@@ -158,8 +159,8 @@ export interface Dialog<E = { type: string }> {
     R = unknown,
     K extends string = string,
   >(
-    def: DialogToolDef<P, R, E, K>,
-    options?: DialogSendOptions<R, E, K>,
+    def: DialogToolDef<P, R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>,
+    options?: DialogSendOptions<R, E, K> & NoInfer<DialogSendFromGuard<K, R, E>>,
   ): DialogSendFromChecked<K, R, E, ToolDef<P, Promise<DialogToolResult<R> | ToolFailure>>>;
   /**
    * A `syncState` projection of this dialog's position, so a client can render

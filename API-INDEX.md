@@ -18,7 +18,7 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 616 names
+- [Agent authoring](#agent-authoring) — 618 names
 - [Browser client](#browser-client) — 207 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 248 names
@@ -138,6 +138,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `DialogPosition` | interface | `@alexkroman1/aai` |  | Where a dialog currently is. |
 | `DialogSendFrom` | type | `@alexkroman1/aai` |  | What `DialogGate.sendFrom` accepts: a function of the success result answering the event (or `undefined` to stay put), or the NAME of a result field holding … |
 | `DialogSendFromChecked` | type | `@alexkroman1/aai` |  | `T` — the tool a gated call answers — unless the field-name `sendFrom` written as `K` names no field of the success result (`R` minus its failure arm) holding … |
+| `DialogSendFromGuard` | type | `@alexkroman1/aai` |  | The call-site half of `DialogSendFromChecked`: `unknown` (no constraint) unless the field-name `sendFrom` written as `K` names no field of the success result … |
 | `DialogSendFromKey` | type | `@alexkroman1/aai` |  | The keys of a success result `S` whose value names an event of `E` — the STRING form of `DialogGate.sendFrom`. |
 | `DialogSendFromMisuse` | type | `@alexkroman1/aai` |  | The compile error a `sendFrom: "field"` gets when `field` holds no event name of the dialog — a message TYPE, on the pattern of `SyncMutationMisuse`: what … |
 | `DialogSendOptions` | interface | `@alexkroman1/aai` |  | The second argument of `Dialog.tool` (and of a gated slot tool): the transition, declared AFTER the def rather than inside it. |
@@ -349,6 +350,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `TurnTakingTuning` | interface | `@alexkroman1/aai` | `aai:turn-taking` | WHEN the caller's turn ends and the agent's begins. |
 | `TypedDelegateResult` | interface | `@alexkroman1/aai` | `aai:subagent` | Run a subagent to completion — the signature of `ctx.delegate`. |
 | `TypedSpeakerDef` | interface | `@alexkroman1/aai` | `aai:subagent` | A `SpeakerDef` that declares a `SpeakerDef.schema` — what `speaker` returns for one, so `ctx.delegate` types `object`. |
+| `UngatedDef` | type | `@alexkroman1/aai` | `aai:state` | What the UNGATED overloads of `SessionSlot.tool` and `SessionSlot.updateTool` say about `dialog`: a message, so the one line `tsc` prints for a gated def that … |
 | `UnsupportedRecordingError` | class | `@alexkroman1/aai/step` | `aai:step` | A recording `parseWav` will not read. |
 | `UntypedJsonBody` | type | `@alexkroman1/aai/tools` | `aai:builtins` | What an unparameterized call answers with — see the module doc for why this rather than `DefaultToolResult` (which is `any`, and absorbs the `\| ToolFailure` … |
 | `UploadBody` | type | `@alexkroman1/aai/workflow-api` |  | What an upload call accepts as the file's bytes. |

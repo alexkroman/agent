@@ -25,6 +25,7 @@ import { dialog } from "./dialog.ts";
 import type { AnyDialog } from "./dialog-handle.ts";
 import type {
   DialogEvent,
+  DialogSendFromGuard,
   DialogSendFromMisuse,
   DialogSpec,
   DialogToolResult,
@@ -249,11 +250,36 @@ test("the field-name `sendFrom` admits only a key holding an event name — chec
   // Written ABOVE `execute`, where a callback would see `unknown`: the name needs no ordering.
   const above = claim.tool({ sendFrom: "next", description: "Above", execute: body });
   expectTypeOf<InferToolOutput<typeof above>>().toEqualTypeOf<Want>();
-  // A field holding no event name is the misuse TYPE, naming the fields that do.
-  const wrong = claim.tool({ description: "Wrong", sendFrom: "note", execute: body });
-  expectTypeOf(wrong).toEqualTypeOf<DialogSendFromMisuse<"note", "next">>();
-  const absent = claim.tool({ description: "Absent", execute: body }, { sendFrom: "nope" });
-  expectTypeOf(absent).toEqualTypeOf<DialogSendFromMisuse<"nope", "next">>();
+  // A field holding no event name fails the CALL (`DialogSendFromGuard`): the
+  // def is not assignable to the parameter once `K` is that field, and what
+  // the intersection demands of `sendFrom` is the misuse type naming the
+  // fields that would have worked. Stated as relations rather than as a
+  // suppressed error, which would pass on any error at all.
+  type Body = ReturnType<typeof body>;
+  type Ev = { type: "QUOTED" };
+  type Def<K extends string> = Parameters<typeof claim.tool<ToolInputSchema, Body, K>>[0];
+  expectTypeOf<{ description: string; sendFrom: "next"; execute: typeof body }>().toExtend<
+    Def<"next">
+  >();
+  expectTypeOf<{ description: string; sendFrom: "note"; execute: typeof body }>().not.toExtend<
+    Def<"note">
+  >();
+  expectTypeOf<DialogSendFromGuard<"note", Body, Ev>>().toEqualTypeOf<{
+    sendFrom: DialogSendFromMisuse<"note", "next">;
+  }>();
+  // The second argument is guarded the same way.
+  type Options<K extends string> = NonNullable<
+    Parameters<typeof claim.tool<ToolInputSchema, Body, K>>[1]
+  >;
+  expectTypeOf<{ sendFrom: "next" }>().toExtend<Options<"next">>();
+  expectTypeOf<{ sendFrom: "nope" }>().not.toExtend<Options<"nope">>();
+  // And the misuse type is still what a failed call reads as.
+  expectTypeOf<DialogSendFromGuard<"nope", Body, Ev>>().toEqualTypeOf<{
+    sendFrom: DialogSendFromMisuse<"nope", "next">;
+  }>();
+  // Inert while `R` is unresolved, which is what lets `execute` settle it.
+  expectTypeOf<DialogSendFromGuard<"note", unknown, Ev>>().toEqualTypeOf<unknown>();
+  expectTypeOf<DialogSendFromGuard<string, Body, Ev>>().toEqualTypeOf<unknown>();
 });
 
 /**
@@ -297,12 +323,13 @@ test("the field-name `sendFrom` works beside an execute with unannotated paramet
     sendFrom: "next",
   });
   expectTypeOf<InferToolOutput<typeof failing>>().toEqualTypeOf<Want>();
-  const typo = claim.tool({
-    description: "T",
-    execute: (_a, _ctx): Out => ({ n: 1 }),
-    sendFrom: "n",
-  });
-  expectTypeOf(typo).toEqualTypeOf<DialogSendFromMisuse<"n", "next">>();
+  // A typo'd field fails the call; the guard that refuses it names `next`.
+  expectTypeOf<DialogSendFromGuard<"n", Out, { type: "QUOTED" }>>().toEqualTypeOf<{
+    sendFrom: DialogSendFromMisuse<"n", "next">;
+  }>();
+  expectTypeOf<DialogSendFromGuard<"n", Out | ToolFailure, { type: "QUOTED" }>>().toEqualTypeOf<{
+    sendFrom: DialogSendFromMisuse<"n", "next">;
+  }>();
 });
 
 test("a gated updateTool subtracts the failure arm for both sendFrom forms, prepare or not", () => {

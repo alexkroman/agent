@@ -38,6 +38,41 @@ describe("splitInstruction", () => {
   });
 });
 
+describe("splitInstruction below the top level", () => {
+  test("a list of withInstruction rows: the key leaves every row, the sentence is said once", () => {
+    const rows = [1, 2, 3].map((id) => withInstruction({ id }, "Say one."));
+    expect(splitInstruction(JSON.stringify(rows))).toEqual({
+      result: '[{"id":1},{"id":2},{"id":3}]',
+      instruction: "Say one.",
+    });
+  });
+
+  test("nested records: stripped at every depth, sentences joined in encounter order", () => {
+    const raw = JSON.stringify(
+      withInstruction(
+        {
+          inner: withInstruction(
+            { id: 1, deeper: [withInstruction({ n: 2 }, "Third.")] },
+            "Second.",
+          ),
+          after: withInstruction({ ok: true }, "Third."),
+        },
+        "First.",
+      ),
+    );
+    expect(splitInstruction(raw)).toEqual({
+      result: '{"inner":{"id":1,"deeper":[{"n":2}]},"after":{"ok":true}}',
+      instruction: "First. Second. Third.",
+    });
+  });
+
+  test("a non-string under the key is a tool's own data, at any depth", () => {
+    const raw = '{"rows":[{"$instruction":42}],"$instruction":{"x":1}}';
+    expect(splitInstruction(raw).result).toBe(raw);
+    expect(splitInstruction(raw)).not.toHaveProperty("instruction");
+  });
+});
+
 describe("withInstructionForModel", () => {
   test("appends the instruction under its label, blank-line separated, or nothing", () => {
     expect(withInstructionForModel("shaped", "Say the count.")).toBe(
