@@ -58,7 +58,7 @@ import { omitUndefined } from "../sdk/omit-undefined.ts";
 import type { ToolDef } from "../sdk/tool-def.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { applyEdit, CodingEditError, clearEditMisses, rewriteHint } from "./coding-edit.ts";
-import { CodingGrepError, globMatcher, grepWorkspace } from "./coding-grep.ts";
+import { CodingGrepError, globMatcher, grepWorkspaceBounded } from "./coding-grep.ts";
 import { outputWithKillNote, runCapped } from "./coding-spawn.ts";
 import {
   BASH_TIMEOUT_MAX_MS,
@@ -259,7 +259,7 @@ export function createCodingTools<const N extends CodingToolName = CodingToolNam
         try {
           // Read only what the glob selects — a data or generated file the
           // filter excludes must not cost I/O and memory on every search.
-          // `glob` is consumed HERE and not forwarded: `grepWorkspace` would
+          // `glob` is consumed HERE and not forwarded: the search would
           // otherwise compile the identical matcher a second time and re-test
           // every path that has already passed this filter.
           const { glob, ...searchOpts } = opts;
@@ -275,7 +275,7 @@ export function createCodingTools<const N extends CodingToolName = CodingToolNam
               files[rel] = await readFile(abs, "utf-8");
             }),
           );
-          return grepWorkspace(files, pattern, searchOpts);
+          return await grepWorkspaceBounded(files, pattern, searchOpts);
         } catch (err) {
           if (err instanceof CodingGrepError) return `Error: ${err.message}`;
           throw err;

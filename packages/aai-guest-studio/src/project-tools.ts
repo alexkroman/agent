@@ -245,6 +245,40 @@ async function updateDependencies(io: ProjectIo, requested?: string[]): Promise<
   }
 }
 
+/**
+ * The response body, or null once it passes `maxBytes` — read chunk by chunk
+ * and CANCELLED at the cap, never buffered whole and measured after.
+ *
+ * Bound the read, not the kept value (the rule `fetchCappedText` follows for
+ * the web builtins, which this package cannot import): `arrayBuffer()` then a
+ * size check let a model-chosen URL that streams forever fill guest memory
+ * until V8 refused the allocation, and `content-length` is no guard — a
+ * chunked response does not send one.
+ */
+async function readBodyCapped(response: Response, maxBytes: number): Promise<Uint8Array | null> {
+  if (!response.body) return new Uint8Array();
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
 async function downloadToWorkspace(io: ProjectIo, url: string, rel: string): Promise<string> {
   let abs: string;
   try {
@@ -258,10 +292,13 @@ async function downloadToWorkspace(io: ProjectIo, url: string, rel: string): Pro
   } catch (err) {
     return `Error: fetch failed: ${errorMessage(err)}`;
   }
-  if (!response.ok) return `Error: ${url} answered ${response.status} ${response.statusText}`;
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > MAX_STUDIO_FILE_BYTES) {
-    return `Error: response is ${bytes.byteLength} bytes (max ${MAX_STUDIO_FILE_BYTES}) — too large to sync to the project`;
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    return `Error: ${url} answered ${response.status} ${response.statusText}`;
+  }
+  const bytes = await readBodyCapped(response, MAX_STUDIO_FILE_BYTES);
+  if (bytes === null) {
+    return `Error: response is over ${MAX_STUDIO_FILE_BYTES} bytes — too large to sync to the project`;
   }
   let text: string;
   try {

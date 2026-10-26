@@ -294,6 +294,36 @@ describe("download_to_workspace (fetch mocked)", () => {
     await expect(readFile(path.join(dir, "huge.txt"))).rejects.toThrow();
   });
 
+  test("an endless body is cut off at the cap, not buffered whole first", async () => {
+    // The cap used to be checked AFTER `arrayBuffer()`, i.e. after reading the
+    // entire response into guest memory: a model-chosen URL streaming forever
+    // (or for gigabytes) never got to the check. Pulled chunks are counted so
+    // the test shows the read stopped near the cap and the stream was released.
+    let pulled = 0;
+    let cancelled = false;
+    const chunk = new Uint8Array(64 * 1024).fill(0x78);
+    const endless = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pulled += chunk.byteLength;
+        controller.enqueue(chunk);
+      },
+      cancel() {
+        cancelled = true;
+      },
+    });
+    safeFetchMock.mockResolvedValue(new Response(endless, { status: 200 }));
+
+    const result = await execute("download_to_workspace", {
+      url: "https://example.com/forever.txt",
+      path: "forever.txt",
+    });
+
+    expect(result).toContain("too large to sync to the project");
+    expect(pulled).toBeLessThan(MAX_STUDIO_FILE_BYTES + 4 * chunk.byteLength);
+    expect(cancelled).toBe(true);
+    await expect(readFile(path.join(dir, "forever.txt"))).rejects.toThrow();
+  });
+
   test("a binary body is refused with guidance instead of corrupting the sync", async () => {
     // 0xFF 0xFE is not valid utf-8, so the fatal decoder throws.
     safeFetchMock.mockResolvedValue(new Response(new Uint8Array([0xff, 0xfe]), { status: 200 }));

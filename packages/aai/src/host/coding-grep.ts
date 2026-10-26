@@ -13,11 +13,21 @@
  * which on a multi-file workspace burns context to answer "where is this
  * defined".
  *
- * A catastrophic model-supplied regex costs the CPU of whatever process runs
- * the tool — which is the agent's own sandbox, and is why the per-call tool
- * deadline is what bounds this rather than a pattern analysis nobody can write.
+ * A catastrophic model-supplied regex cannot be bounded by a timer on the
+ * thread running it, so the tool runs the scan in a worker it can terminate
+ * ({@link grepWorkspaceBounded}) rather than trusting a pattern analysis nobody
+ * can write.
  */
 
+// A worker thread is what bounds a catastrophic regex (`grepWorkspaceBounded`),
+// and the ban's stated reason ("not available in Firecracker guest VMs") does
+// not describe where this runs: the coding tools are for a container, and the
+// studio guest has run `run_code` in a worker thread on every call for as long
+// as that executor has existed (`aai-guest-core/trial.ts`). Same line-scoped
+// suppression and argument as `coding-spawn.ts`'s `child_process` import.
+// biome-ignore lint/style/noRestrictedImports: see above.
+import { Worker } from "node:worker_threads";
+import pTimeout from "p-timeout";
 import picomatch from "picomatch";
 import { errorMessage } from "../sdk/utils.ts";
 import { MAX_WORKSPACE_FILES } from "./workspace-files.ts";
@@ -30,7 +40,7 @@ const MAX_LINE_LENGTH = 200;
  * Lines longer than this are not matched against at all — a perf guard so a
  * minified or data line doesn't dominate the scan budget. (It is NOT the
  * backtracking bound: catastrophic patterns explode at tens of characters;
- * the per-call tool deadline is what bounds those.)
+ * {@link GREP_TIMEOUT_MS} on a terminable worker is what bounds those.)
  */
 const MAX_SEARCHABLE_LINE = 10_000;
 
@@ -89,29 +99,95 @@ function emitMatch(path: string, lines: string[], i: number, context: number, ou
   }
 }
 
-/** Search one file; returns how many matches it contributed. */
-function grepFile(
-  path: string,
-  content: string,
-  matcher: RegExp,
-  context: number,
-  remaining: number,
-  out: string[],
-): number {
-  const lines = content.split("\n");
-  let found = 0;
-  for (const [i, line] of lines.entries()) {
-    if (found >= remaining) break;
-    // Overlong lines are skipped, not searched — see MAX_SEARCHABLE_LINE.
-    if (line.length > MAX_SEARCHABLE_LINE || !matcher.test(line)) continue;
-    emitMatch(path, lines, i, context, out);
-    found += 1;
+/** One hit: the file and the 0-indexed line that matched. */
+type GrepHit = [path: string, line: number];
+
+/**
+ * The scan itself: every line of every listed file tested against the regex,
+ * up to `limit` hits.
+ *
+ * SELF-CONTAINED on purpose — no reference to anything outside its own body —
+ * because {@link grepWorkspaceBounded} ships its source text into a worker
+ * thread (`scanFiles.toString()`). One definition serves both the in-process
+ * {@link grepWorkspace} and the worker, so the two cannot disagree on which
+ * lines are searched. Overlong lines are skipped, not searched — see
+ * MAX_SEARCHABLE_LINE, which is passed in for the same reason.
+ */
+function scanFiles(
+  files: Record<string, string>,
+  paths: string[],
+  source: string,
+  flags: string,
+  limit: number,
+  maxLine: number,
+): GrepHit[] {
+  const matcher = new RegExp(source, flags);
+  const hits: GrepHit[] = [];
+  for (const path of paths) {
+    const lines = (files[path] ?? "").split("\n");
+    for (let i = 0; i < lines.length; i += 1) {
+      if (hits.length >= limit) return hits;
+      const line = lines[i] ?? "";
+      if (line.length <= maxLine && matcher.test(line)) hits.push([path, i]);
+    }
   }
-  return found;
+  return hits;
+}
+
+/** A validated search: what {@link scanFiles} runs and how its hits print. */
+type GrepPlan = {
+  paths: string[];
+  source: string;
+  flags: string;
+  limit: number;
+  context: number;
+};
+
+/**
+ * Validate the inputs and fix the search's shape. Every refusal the caller
+ * can act on (empty pattern, bad regex, bad glob) is thrown from HERE, on the
+ * calling thread, so the bounded path reports them exactly as the plain one.
+ */
+function planGrep(files: Record<string, string>, pattern: string, opts: GrepOptions): GrepPlan {
+  if (pattern.length === 0) throw new CodingGrepError("pattern must not be empty");
+  const matcher = buildMatcher(pattern, opts);
+  const pathFilter = opts.glob ? globMatcher(opts.glob) : null;
+  return {
+    paths: Object.keys(files)
+      .sort()
+      .filter((path) => !pathFilter || pathFilter(path)),
+    source: matcher.source,
+    flags: matcher.flags,
+    limit: Math.max(1, Math.min(opts.limit ?? DEFAULT_LIMIT, MAX_WORKSPACE_FILES * 100)),
+    context: Math.max(0, opts.context ?? 0),
+  };
+}
+
+/** Print the hits in grep's output shape. */
+function formatHits(files: Record<string, string>, hits: GrepHit[], plan: GrepPlan): string {
+  if (hits.length === 0) return "No matches found";
+  const out: string[] = [];
+  const split = new Map<string, string[]>();
+  for (const [path, i] of hits) {
+    let lines = split.get(path);
+    if (!lines) {
+      lines = (files[path] ?? "").split("\n");
+      split.set(path, lines);
+    }
+    emitMatch(path, lines, i, plan.context, out);
+  }
+  // Say so when results were dropped: a silent cap reads as "that's all there is".
+  return hits.length >= plan.limit
+    ? `${out.join("\n")}\n\n[Stopped at ${plan.limit} matches.]`
+    : out.join("\n");
 }
 
 /**
- * Search `files` for `pattern`, in grep's output shape.
+ * Search `files` for `pattern`, in grep's output shape — IN PROCESS.
+ *
+ * A catastrophic pattern blocks the calling thread for as long as it
+ * backtracks; a host that takes model-supplied patterns wants
+ * {@link grepWorkspaceBounded}.
  *
  * @throws {CodingGrepError} when the pattern is empty or not a valid regex
  * or glob.
@@ -121,21 +197,87 @@ export function grepWorkspace(
   pattern: string,
   opts: GrepOptions = {},
 ): string {
-  if (pattern.length === 0) throw new CodingGrepError("pattern must not be empty");
-  const matcher = buildMatcher(pattern, opts);
-  const pathFilter = opts.glob ? globMatcher(opts.glob) : null;
-  const limit = Math.max(1, Math.min(opts.limit ?? DEFAULT_LIMIT, MAX_WORKSPACE_FILES * 100));
-  const context = Math.max(0, opts.context ?? 0);
+  const plan = planGrep(files, pattern, opts);
+  const hits = scanFiles(
+    files,
+    plan.paths,
+    plan.source,
+    plan.flags,
+    plan.limit,
+    MAX_SEARCHABLE_LINE,
+  );
+  return formatHits(files, hits, plan);
+}
 
-  const out: string[] = [];
-  let found = 0;
-  for (const path of Object.keys(files).sort()) {
-    if (found >= limit) break;
-    if (pathFilter && !pathFilter(path)) continue;
-    found += grepFile(path, files[path] ?? "", matcher, context, limit - found, out);
+/** Wall-clock cap on one bounded search. */
+export const GREP_TIMEOUT_MS = 10_000;
+
+/**
+ * The worker body for {@link grepWorkspaceBounded}: {@link scanFiles}'s own
+ * source, called on `workerData`. A STRING rather than a sibling file for the
+ * reason `run_code`'s worker is one (`aai-guest-core/trial.ts`): the guest
+ * harness bundles this module into a single artifact with no second file to
+ * start a worker from. The pattern travels as data, never spliced in.
+ */
+const GREP_WORKER = `
+const { parentPort, workerData: d } = require("node:worker_threads");
+const scanFiles = ${scanFiles.toString()};
+parentPort.postMessage(scanFiles(d.files, d.paths, d.source, d.flags, d.limit, d.maxLine));
+`;
+
+/**
+ * {@link grepWorkspace} with the scan in a worker thread that is TERMINATED at
+ * `timeoutMs` — the form for a model-supplied pattern.
+ *
+ * A regex match is synchronous and never yields, so a timer on the calling
+ * thread cannot interrupt one: `(a+)+$` against forty `a`s and a `!` backtracks
+ * for days, and in-process that wedged the WHOLE process — the per-call tool
+ * deadline is a promise race whose timer never gets to fire, so in the studio
+ * guest every HTTP route, preview session and the host control socket stalled
+ * behind one `grep`. `run_code` was the same wedge and got the same cure
+ * (`aai-guest-core/trial.ts`): only `terminate()` stops a thread mid-match.
+ * One isolate spawn per search is the price.
+ *
+ * @throws {CodingGrepError} for every refusal {@link grepWorkspace} makes, and
+ * when the scan outlives `timeoutMs`.
+ */
+export async function grepWorkspaceBounded(
+  files: Record<string, string>,
+  pattern: string,
+  opts: GrepOptions = {},
+  timeoutMs: number = GREP_TIMEOUT_MS,
+): Promise<string> {
+  const plan = planGrep(files, pattern, opts);
+  // Only the files the glob kept cross the thread boundary.
+  const selected: Record<string, string> = {};
+  for (const path of plan.paths) selected[path] = files[path] ?? "";
+  const worker = new Worker(GREP_WORKER, {
+    eval: true,
+    workerData: {
+      files: selected,
+      paths: plan.paths,
+      source: plan.source,
+      flags: plan.flags,
+      limit: plan.limit,
+      maxLine: MAX_SEARCHABLE_LINE,
+    },
+  });
+  const settled = new Promise<GrepHit[]>((resolve, reject) => {
+    worker.once("message", resolve);
+    worker.once("error", reject);
+    worker.once("exit", (code) => reject(new Error(`grep worker exited (${code})`)));
+  });
+  try {
+    const hits = await pTimeout(settled, {
+      milliseconds: timeoutMs,
+      message: new CodingGrepError(
+        `grep timed out after ${timeoutMs}ms — the pattern ${JSON.stringify(pattern)} ` +
+          "backtracks catastrophically on this workspace. Simplify it (no nested " +
+          "quantifiers like (a+)+), or pass literal: true.",
+      ),
+    });
+    return formatHits(files, hits, plan);
+  } finally {
+    void worker.terminate();
   }
-
-  if (found === 0) return "No matches found";
-  // Say so when results were dropped: a silent cap reads as "that's all there is".
-  return found >= limit ? `${out.join("\n")}\n\n[Stopped at ${limit} matches.]` : out.join("\n");
 }
