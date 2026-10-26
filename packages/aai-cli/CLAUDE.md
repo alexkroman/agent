@@ -150,8 +150,8 @@ lines.
   value is `--flag=-x`); `defineExec` refuses positionals beyond the declared
   ones, naming them (`extraPositionals: "own"` for `secret put`, whose extra is
   a credential), and any `--server` that is not an absolute http(s) URL
-  (`parseServerFlag` in `_utils.ts`, the one rule `resolveServerUrl` applies too). `--`
-  before a command is a usage error. Numbers are decimal digits only
+  (`parseServerFlag` in `_utils.ts`, the one rule `resolveServerUrl` applies
+  too). `--` before a command is a usage error. Numbers are decimal digits only
   (`parseDecimalInt`: `Number()` read `0x10`, `1e3`, `""`); ports are 1–65535.
 - **Server- and agent-supplied text is made terminal-safe IN THE SEAM**
   (`createUi`, via `sanitizeTerminalText`): every escape sequence but SGR is
