@@ -266,8 +266,9 @@ export type WorkspaceSnapshot = {
 
 /**
  * Read `dir` into a workspace file map, skipping (and NAMING) what cannot be
- * carried: too many files, an oversized one, an unreadable one, a symlink, or
- * bytes that aren't UTF-8.
+ * carried: too many files, an oversized one, or bytes that aren't UTF-8.
+ *
+ * An unreadable file and a symlink are skipped and named the same way.
  *
  * Files are read concurrently — they are independent, and a snapshot reads up
  * to {@link MAX_WORKSPACE_FILES} of them — but results are consumed in path
