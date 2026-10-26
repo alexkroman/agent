@@ -10,7 +10,7 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { createWorkflowCommand } from "./cli-workflow.ts";
+import { createWorkflowCommand, MAX_WORKFLOW_RUNS_LIMIT } from "./cli-workflow.ts";
 
 const executors = {
   executeWorkflowList: vi.fn().mockResolvedValue({ ok: true, data: {} }),
@@ -72,8 +72,29 @@ describe("the workflow command group", () => {
     await expect(
       subs.runs?.run({ args: { workflow: "digest", limit: "lots", json: false } }),
     ).rejects.toThrow(/process\.exit/);
-    expect(error).toHaveBeenCalledWith("--limit must be a number");
+    expect(error).toHaveBeenCalledWith("--limit must be a whole number from 1 to 100");
     expect(executors.executeWorkflowRuns).not.toHaveBeenCalled();
+  });
+
+  // `Number()` accepted every one of these: hex and exponent spellings, a
+  // fraction, a negative, zero, a page far past the server's bound, and blank
+  // (read as 0).
+  test.each(["0x10", "1e3", "1.5", "-1", "0", "101", "1000000000", "", "  ", "-Infinity"])(
+    "--limit %j is refused as not a whole number in range",
+    async (limit) => {
+      const { defaultUi } = await import("./_ui.ts");
+      const error = vi.spyOn(defaultUi.log, "error").mockImplementation(() => undefined);
+      await expect(
+        subs.runs?.run({ args: { workflow: "digest", limit, json: false } }),
+      ).rejects.toThrow(/process\.exit/);
+      expect(error).toHaveBeenCalledWith("--limit must be a whole number from 1 to 100");
+      expect(executors.executeWorkflowRuns).not.toHaveBeenCalled();
+    },
+  );
+
+  test("the cap is the runtime's own page bound", async () => {
+    const { MAX_WORKFLOW_FIND_LIMIT } = await import("@alexkroman1/aai-runtime");
+    expect(MAX_WORKFLOW_RUNS_LIMIT).toBe(MAX_WORKFLOW_FIND_LIMIT);
   });
 
   test("a numeric --limit reaches the executor as a number", async () => {

@@ -2,16 +2,21 @@
 import * as clack from "@clack/prompts";
 import { describe, expect, test, vi } from "vitest";
 import { CANCEL, createFakeUi, stubProcessExit } from "./_test-utils.ts";
-import { createUi, parsePort, unwrapCancel } from "./_ui.ts";
+import { createUi, parsePort, type UiTerm, unwrapCancel } from "./_ui.ts";
 
 describe("parsePort", () => {
   test("parses valid port", () => {
     expect(parsePort("3000")).toBe(3000);
   });
 
-  test("parses port 0", () => {
-    expect(parsePort("0")).toBe(0);
-  });
+  // `Number()` read `0x10` as 16 and `1e3` as 1000 — a port the user never
+  // typed, bound without a word. No command documents 0 ("any free port").
+  test.each(["0", "0x10", "1e3", "3000.0", "+3000", " 3000", "", "  ", "0b11", "Infinity"])(
+    "refuses %j",
+    (raw) => {
+      expect(() => parsePort(raw)).toThrow(`Invalid port: ${raw}`);
+    },
+  );
 
   test("parses port 65535", () => {
     expect(parsePort("65535")).toBe(65_535);
@@ -40,6 +45,59 @@ describe("createUi: notify before silence()", () => {
     expect(spy).toHaveBeenCalledWith("boom");
     // Human mode must not double-report by also writing the raw line.
     expect(stderr).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * The seam is where server- and agent-supplied text is made terminal-safe, so
+ * no call site has to remember: `aai list` names, error bodies, `aai logs`
+ * lines, workflow names all go out through these paths.
+ */
+describe("createUi: escape sequences never reach the terminal raw", () => {
+  const HOSTILE = "name\u001B]52;c;ZXZpbA==\u0007\u001B[2J\u001B]0;title\u0007";
+
+  test("log keeps colour and drops the rest", () => {
+    const spy = vi.spyOn(clack.log, "message").mockImplementation(() => undefined);
+    createUi().log.message(`\u001B[36m${HOSTILE}\u001B[39m`);
+    expect(spy).toHaveBeenCalledWith("\u001B[36mname\u001B[39m");
+  });
+
+  test("a silenced notify (plain stderr) and writeErr are cleaned too", () => {
+    const stderr = vi.spyOn(process.stderr, "write").mockReturnValue(true);
+    const ui = createUi();
+    ui.silence();
+    ui.notify("error", HOSTILE);
+    ui.writeErr(`bell\u0007${HOSTILE}`);
+    expect(stderr.mock.calls.map(([chunk]) => chunk)).toEqual(["name\n", "bell\\x07name\n"]);
+  });
+
+  test("prompt messages, select labels and hints, and spinner text", async () => {
+    const select = vi.fn(async () => "a");
+    const confirm = vi.fn(async () => true);
+    const start = vi.fn();
+    const stop = vi.fn();
+    const term = {
+      ...clack,
+      select,
+      confirm,
+      spinner: () => ({ start, stop }),
+    } as UiTerm;
+    const ui = createUi(term);
+    await ui.prompts.confirm({ message: HOSTILE });
+    await ui.prompts.select({
+      message: HOSTILE,
+      options: [{ value: "a", label: HOSTILE, hint: HOSTILE }],
+    });
+    const spinner = ui.prompts.spinner();
+    spinner.start(HOSTILE);
+    spinner.stop(HOSTILE);
+    expect(confirm).toHaveBeenCalledWith({ message: "name" });
+    expect(select).toHaveBeenCalledWith({
+      message: "name",
+      options: [{ value: "a", label: "name", hint: "name" }],
+    });
+    expect(start).toHaveBeenCalledWith("name");
+    expect(stop).toHaveBeenCalledWith("name");
   });
 });
 

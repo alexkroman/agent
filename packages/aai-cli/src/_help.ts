@@ -35,8 +35,9 @@ export const HELP_SECTIONS: readonly HelpSection[] = [
  */
 export const BARE_AAI_HELP = [
   "With no command, `aai` in an agent directory (one with agent.ts) runs `aai publish`:",
-  "it pushes to the studio and deploys to PRODUCTION. At a terminal it asks first;",
-  "a non-interactive run publishes without asking. Elsewhere it runs `aai init`.",
+  "it pushes to the studio and deploys to PRODUCTION. At a terminal it asks first, and",
+  "with its output piped it refuses (run `aai publish`); with no terminal on stdin it",
+  "publishes without asking. Elsewhere it runs `aai init`.",
 ];
 
 const heading = (text: string): string => styleText(["bold", "underline"], text);

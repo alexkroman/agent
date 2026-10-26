@@ -93,9 +93,10 @@ A narrowed run must never report a green verdict over specs it skipped.
 the brokered `/:slug/workflows` surface. **Never an `apiRequest`**: that surface
 takes the agent's own bearer (`AAI_WORKFLOW_API_TOKEN`, `--token`) or none, so
 sending the platform API key would leak it. Every request brokers (may boot the
-sandbox). `--limit` is parsed in the command so a bad value names the flag.
-Requests are the SDK's `createWorkflowApiClient`; `api.get`'s `undefined` on 404
-also means "no workflow API", so `HINT_BROKER` lists all three causes.
+sandbox). `--limit` is parsed in the command so a bad value names the flag (1 to
+`MAX_WORKFLOW_RUNS_LIMIT`, the runtime's page bound, pinned equal). Requests are
+the SDK's `createWorkflowApiClient`; `api.get`'s `undefined` on 404 also means
+"no workflow API", so `HINT_BROKER` lists all three causes.
 
 **`aai logs` reads a RING, so `--follow` polls** (`logs.ts` → `GET /:slug/logs`,
 the guest's bounded buffer with a cursor — see
@@ -133,9 +134,35 @@ failed poll under `--follow` is not a failed command; only a signal ends it.
   every visible subcommand once) and says what bare `aai` does. **Flags are
   kebab-case**; camelCase still parses, unadvertised.
 - **Pre-parse failures honour JSON mode too.** `usageForMode` and
-  `assertKnownFlags` run in the `runDefault().then(assertKnownFlags)` chain
-  before `defineExec`, so a new guard there owes an explicit `getOutputMode({})`
-  branch. `cli.test.ts` covers it by running the real bin with stdout piped.
+  `assertKnownArgv` run in the `runDefault().then(assertKnownArgv)` chain before
+  `defineExec`, so a new guard there owes an explicit `argvOutputMode` branch.
+  `cli.test.ts` covers it by running the real bin with stdout piped.
+- **argv is refused, never silently reinterpreted** — citty's fallbacks are each
+  a wrong action: `--version`/`-v` beside a command prints the version and runs
+  nothing (`wantsVersionElsewhere`; citty answers it only alone); `--help=1` is
+  refused; `findMalformedFlags` refuses `--no-X` for a non-switch and a
+  valueless string flag (`--server --json` took `--json` as the URL; a dash-led
+  value is `--flag=-x`); `defineExec` refuses positionals beyond the declared
+  ones, naming them (`extraPositionals: "own"` for `secret put`, whose extra is
+  a credential), and any `--server` that is not an absolute http(s) URL
+  (`checkServerFlag`; `resolveServerUrl` tests PROVIDED, not truthy). `--`
+  before a command is a usage error. Numbers are decimal digits only
+  (`parseDecimalInt`: `Number()` read `0x10`, `1e3`, `""`); ports are 1–65535.
+- **Server- and agent-supplied text is made terminal-safe IN THE SEAM**
+  (`createUi`, via `sanitizeTerminalText`): every escape sequence but SGR is
+  removed and other C0/C1 controls render as `\xNN` on every log, notify,
+  prompt, select label, spinner and `writeErr` path — so no call site has to
+  remember an OSC 52 or `ESC c` in a project name or error body.
+- **The JSON result line is `resultLine(result)`**: DATA verbatim
+  (JSON-escaped), only `error`/`hint`/`data.warnings` stripped of every escape.
+  `writeLine` writes what it is given; never strip the whole serialized line (it
+  rewrote `dir` while the real directory kept the ESC byte).
+- **EPIPE exits with the code the run owes** (`oweExitCode`, set by `runCommand`
+  before writing, 0 for `--help`/`--version`; 1 if nothing was owed), never a
+  flat 0 that hides a failure under `pipefail`.
+- **Bare `aai` in an agent directory** (`bareAaiPublish`): stdin and stdout TTY
+  → confirm; stdin TTY with stdout piped (`aai | tee log`) → refuse, naming
+  `aai publish`; no TTY on stdin → publish (a script is deliberate).
 - **`aai init` with no `--template` picks one** (`promptTemplate`, a select over
   `listTemplates()`, `quickstart-agent` first). **Never without a human**:
   `--yes` and `silent` (JSON mode) resolve `DEFAULT_TEMPLATE`; the specs
@@ -217,6 +244,11 @@ production comes from Publish.
   kills the actor and wedges watching.
 - **Reporting success sits outside the `listen` try/catch** — a throwing
   notifier (`aai dev | head`) must not tear down a bound server.
+- **Every logger `aai dev` hands out is `devLogger`** — the runtime's, the
+  delivery door's AND `createServerForRuntime`'s (`logger` in the serve
+  options). Left unset, a server falls back to `consoleLogger` (`console.log`),
+  a stdout line ahead of `--json`'s one result line. Likewise `runVitest` sends
+  vitest's stdout to fd 2 when the `Ui` is silenced (`aai test/eval/build`).
 - **`viteDevConfig`'s proxy table (`_dev-vite-config.ts`) is the whole agent API
   as the browser sees it** — with a `client.tsx`, Vite owns the port and answers
   anything unlisted with a bare 404. **It is DERIVED from `SERVER_ROUTES`**
@@ -267,9 +299,13 @@ project with no `client.tsx`; `vite` stays (vitest, `vite/client`).
 - **`--tunnel`** (`_dev-tunnel.ts`): cloudflared quick tunnel (binary
   `AAI_CLOUDFLARED_PATH` or `PATH`, never installed) to the PRINTED port; its
   URL becomes `PUBLIC_URL` before the first build. `--on-public-url <cmd>` runs
-  with the URL once up and with it EMPTY on exit; a failing hook warns. The
-  tunnel dying exits 1. The scrape excludes `api.trycloudflare.com` (a failed
-  request logs it).
+  with the URL once up and with it EMPTY on exit; a failing hook warns. **The
+  hook is its own process group** (`detached`, `shell: true` is `sh -c`), and a
+  stop signals the GROUP — SIGTERM, then SIGKILL after `HOOK_KILL_GRACE_MS` — or
+  the shell dies and its real work survives. The startup run is bounded
+  (`HOOK_STARTUP_TIMEOUT_MS`) and aborted by shutdown; the withdrawal run by
+  `HOOK_SHUTDOWN_TIMEOUT_MS`. The tunnel dying exits 1. The scrape excludes
+  `api.trycloudflare.com` (a failed request logs it).
 - **`AAI_DEV_SOURCE=1`** (`_dev-source.ts`): a `link:`ed SDK runs from `src/`.
   `bin.mjs` adds `@dev/source` to Node's conditions (source CLI only);
   `devSourceViteConfig` adds it to every Vite build, beside Vite's defaults

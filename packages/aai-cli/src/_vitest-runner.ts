@@ -125,8 +125,16 @@ export type VitestDeps = { readonly ui?: Ui | undefined; readonly exec?: VitestE
 export type VitestExec = (
   cmd: string,
   args: string[],
-  opts: { cwd: string; stdio: "inherit"; env?: NodeJS.ProcessEnv },
+  opts: { cwd: string; stdio: VitestStdio; env?: NodeJS.ProcessEnv },
 ) => unknown;
+
+/**
+ * Where vitest's output goes: the terminal in human mode, and in JSON mode its
+ * stdout onto OUR STDERR (fd 2). Inherited there too, the reporter wrote ten
+ * lines ahead of `aai test`/`eval`/`build`'s one result line, so a `jq` over
+ * the output parsed none of it.
+ */
+export type VitestStdio = "inherit" | ["inherit", 2, "inherit"];
 
 /**
  * Run vitest over `candidates` (or, with `all`, the whole project) in the given
@@ -159,7 +167,8 @@ export function runVitest(cwd: string, opts: VitestRunOptions): string[] | false
     [...args, "run", "--root", ".", ...(opts.extraArgs ?? []), ...files],
     {
       cwd,
-      stdio: "inherit",
+      // The terminal the command was handed says which mode it is in.
+      stdio: (opts.ui ?? defaultUi).silenced ? ["inherit", 2, "inherit"] : "inherit",
       // `omitUndefined`, not a conditional spread: `guard-invariants` rule 2.
       ...omitUndefined({ env: opts.env ? { ...process.env, ...opts.env } : undefined }),
     },

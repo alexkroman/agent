@@ -56,6 +56,19 @@ describe("runVitest", () => {
     expect(opts.env).toBeUndefined();
   });
 
+  test("in JSON mode vitest's stdout goes to stderr, so the result line is alone", async ({
+    tmpDir,
+    deps,
+    exec,
+  }) => {
+    await writeFile(path.join(tmpDir, "agent.test.ts"), "// test file");
+    runVitest(tmpDir, { ...deps, candidates });
+    expect(exec.mock.calls[0]?.[2].stdio).toBe("inherit");
+    deps.ui.silence();
+    runVitest(tmpDir, { ...deps, candidates });
+    expect(exec.mock.calls[1]?.[2].stdio).toEqual(["inherit", 2, "inherit"]);
+  });
+
   test("runs the project-local vitest bin directly when installed", async ({
     tmpDir,
     deps,

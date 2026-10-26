@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import type { QuickTunnel } from "./_dev-tunnel.ts";
+import { HOOK_STARTUP_TIMEOUT_MS, type QuickTunnel } from "./_dev-tunnel.ts";
 import { createFakeUi, stubProcessExit } from "./_test-utils.ts";
 import { type DevDeps, executeDev } from "./dev.ts";
 
@@ -208,6 +208,50 @@ describe("executeDev --tunnel / --on-public-url", () => {
         cwd: "/tmp/agent",
         timeoutMs: 10_000,
       });
+    });
+  });
+
+  // The startup run was awaited with no bound and never killed: a hung hook
+  // kept `aai dev` from finishing startup and outlived Ctrl-C.
+  test("the startup run is bounded, and a signal mid-run aborts it before the withdrawal", async () => {
+    await withCapturedHandlers(async (handlers) => {
+      mockCleanup.mockResolvedValue(undefined);
+      const f = fakeTunnelDeps();
+      let startupSignal: AbortSignal | undefined;
+      f.runPublicUrlHook.mockImplementationOnce(async (command, url, o) => {
+        f.events.push(`hook:${command}:${url}`);
+        startupSignal = (o as { signal?: AbortSignal }).signal;
+        // Hangs until stopped, as a stuck publish script would.
+        await new Promise((resolve) => startupSignal?.addEventListener("abort", resolve));
+        f.events.push("startup-hook.stopped");
+        return null;
+      });
+      const started = executeDev(
+        { cwd: "/tmp/agent", port: "3123", tunnel: true, onPublicUrl: "./publish.sh" },
+        f.deps,
+      );
+      await vi.waitFor(() => expect(startupSignal).toBeDefined());
+      expect(f.runPublicUrlHook).toHaveBeenCalledWith("./publish.sh", TUNNEL_URL, {
+        cwd: "/tmp/agent",
+        timeoutMs: HOOK_STARTUP_TIMEOUT_MS,
+        signal: startupSignal,
+      });
+      handlers.get("SIGINT")?.();
+      await vi.waitFor(() => expect(process.exit).toHaveBeenCalledWith(0));
+      await started;
+      expect(startupSignal?.aborted).toBe(true);
+      expect(f.events).toEqual(
+        expect.arrayContaining([
+          `hook:./publish.sh:${TUNNEL_URL}`,
+          "startup-hook.stopped",
+          "hook:./publish.sh:",
+        ]),
+      );
+      // Stopped by the shutdown, not failed: no warning for it.
+      expect(mockNotify).not.toHaveBeenCalledWith(
+        "warn",
+        expect.stringContaining("--on-public-url"),
+      );
     });
   });
 

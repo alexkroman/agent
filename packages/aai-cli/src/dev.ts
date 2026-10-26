@@ -7,6 +7,7 @@ import { startTracing } from "@alexkroman1/aai-runtime/tracing";
 import { devBindHost } from "./_dev-env.ts";
 import {
   HOOK_SHUTDOWN_TIMEOUT_MS,
+  HOOK_STARTUP_TIMEOUT_MS,
   type QuickTunnel,
   runPublicUrlHook,
   startQuickTunnel,
@@ -140,7 +141,12 @@ export async function executeDev(
     await tunnel?.close();
     throw err;
   }
+  // Stops a STARTUP run of the hook still in flight when a signal arrives: it
+  // used to be awaited unbounded and never killed, so a hung hook kept the
+  // command from returning and outlived Ctrl-C.
+  const startupHook = new AbortController();
   cleanup = async () => {
+    startupHook.abort();
     // The hook's withdrawal first, while the URL it names still answers.
     // Each `await` is guarded rather than written `await tunnel?.close()`: an
     // awaited `undefined` still yields, and a plain `aai dev` must start its
@@ -160,7 +166,11 @@ export async function executeDev(
     // `notify`, not `log`: a supervisor reading a piped `aai dev` needs the one
     // line it cannot get anywhere else.
     ui.notify("info", `Public URL: ${publicUrl}`);
-    if (hook) await runHook(ui, runHookCommand, hook, publicUrl, opts.cwd);
+    if (hook) {
+      await runHook(ui, runHookCommand, hook, publicUrl, opts.cwd, HOOK_STARTUP_TIMEOUT_MS, {
+        signal: startupHook.signal,
+      });
+    }
   }
   ui.log.info("Press Ctrl-C to stop");
 
@@ -204,11 +214,14 @@ async function runHook(
   command: string,
   url: string,
   cwd: string,
-  timeoutMs?: number,
+  timeoutMs: number,
+  extra: { signal?: AbortSignal } = {},
 ) {
   const phase = url ? "with the public URL" : "to withdraw the public URL";
   try {
-    const code = await run(command, url, { cwd, timeoutMs });
+    const code = await run(command, url, { cwd, timeoutMs, ...extra });
+    // Stopped by shutdown: not a hook failure worth a line.
+    if (extra.signal?.aborted) return;
     if (code !== 0) ui.notify("warn", `--on-public-url exited ${code ?? "(timed out)"} ${phase}.`);
   } catch (err) {
     ui.notify("warn", `--on-public-url could not run ${phase}: ${errorDetail(err)}`);

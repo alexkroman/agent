@@ -314,6 +314,11 @@ export async function startDevServer(
       // open their own provider connections, so they get `providerEnv`.
       env: serverEnv,
       ...omitUndefined({ auth: ticketing?.auth }),
+      // The server's own lines (its listen banner among them) go where the
+      // runtime's do. Unset, `createServerForRuntime` falls back to
+      // `consoleLogger`, whose `info` is `console.log` — a line on stdout
+      // ahead of `aai dev --json`'s one result line.
+      logger: devLogger,
       // Host sessions inherit this agent's stt/llm/tts pipeline config.
       hostBaseAgent: agentDef,
       // Served pre-connection via GET /client-config.
