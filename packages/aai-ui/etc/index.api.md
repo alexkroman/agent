@@ -170,14 +170,12 @@ export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSess
     theme?: ClientTheme;
     css?: string;
     component?: ComponentType;
-    name?: string;
     sidebar?: ComponentType;
     sidebarWidth?: string;
     sidebarPosition?: "left" | "right";
     icon?: ReactNode;
     subtitle?: string;
     buttonText?: string;
-    tools?: ToolDisplayConfig;
 };
 
 export { ClientConfigResponse }
@@ -767,12 +765,6 @@ export interface ToolCallRowProps {
 
 // @public
 export type ToolCallRowVariant = "default" | "compact";
-
-// @public @input
-export type ToolDisplayConfig = Record<string, {
-    icon?: string | undefined;
-    label?: string | undefined;
-}>;
 
 // @public
 export function UploadProgressBar(input: {

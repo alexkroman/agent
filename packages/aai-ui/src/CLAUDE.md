@@ -63,9 +63,10 @@ gate, recall and report coalescing).
   browsers do not follow.
 - **The session lookup re-brokers per ATTEMPT** so a reconnect reaches a
   replacement sandbox — never memoize it across the render-time lookup.
-  `mountClient()`'s render lookup is skipped when `mountClient({ name })` is set
-  (on the platform it is the broker and can boot a sandbox); a custom
-  `component` ignores it.
+  `mountClient()`'s render lookup is issued ONCE: at mount for the default shell
+  (its start card shows the agent's own `name`; there is no `name` option), and
+  under a custom `component` only once the session has STARTED (on the platform
+  it is the broker and can boot a sandbox).
 - **`apiUrl` (shown by `ApiUrlChip`) is the long-lived platform endpoint**
   (`wss://host/:slug/websocket`), never the sandbox tunnel URL, which rots.
 - **A session ticket is asked for per ATTEMPT** (`session/ticket.ts`):
@@ -144,9 +145,9 @@ gate, recall and report coalescing).
   `sidebarPosition`) must be honoured by BOTH `rootFor` branches; `icon` reaches
   the start card and the header. The forwarding bag is a MAPPED type over `Pick`
   because of `exactOptionalPropertyTypes`. **A tool's icon and label come from
-  client-config's `tools`** (`tool({ ui })` on the SDK side);
-  `mountClient({ tools })` is merged OVER them per tool name, an override and
-  never the only source.
+  client-config's `tools`** (`tool({ ui })` on the SDK side), installed into
+  `ToolConfigContext` as served; `ClientConfig` has no `tools` map and no `name`
+  — both are the agent's own declaration, never restated by a page.
 - **Session resume is on by default in `sessionStorage`**
   (`session/resume-store.ts`). Do not wire `onSessionId`/`resumeSessionId` by
   hand, and never into `localStorage` (a stale id suppresses the greeting and

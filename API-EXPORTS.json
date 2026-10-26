@@ -2367,7 +2367,6 @@
     "ToolCallRow",
     "ToolCallRowProps",
     "ToolCallRowVariant",
-    "ToolDisplayConfig",
     "UploadProgressBar",
     "UploadStatus",
     "UseClientRunsOptions",

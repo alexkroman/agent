@@ -36,7 +36,6 @@ describe("mountClient (unmocked session core)", () => {
 
   it("clicking the start button opens a socket to the /websocket endpoint", () => {
     using _handle = mountClient({
-      name: "Smoke Test",
       target: "#app",
       platformUrl: "http://test.local",
       WebSocket: recordingWebSocketClass((socket) => {

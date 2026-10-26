@@ -191,7 +191,7 @@ Rules the table carries that apply to any template:
   an invented `message`/`say`/`guidance` field the prompt begs the model to
   read.
 - A tool's icon and label are `tool({ ui })`, served with the declaration;
-  `mountClient({ tools })` is an override, not the home.
+  `mountClient()` has no `tools` map (and no `name`) to restate them in.
 - A tool reads the clock and the turn from `ctx.now()` and `ctx.turn`, never
   `Date.now()` or a counter kept in a slot; a module a tool hands the clock to
   takes it as an argument (`roadside-assistance-agent`'s `reserveTruck`). A

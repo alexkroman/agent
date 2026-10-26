@@ -6249,7 +6249,7 @@ export interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDe
     schema: StandardSchemaV1<unknown, T>;
 }
 
-// @public
+// @public @sealed
 export type UngatedDef = {
     readonly dialog?: "this def declares `dialog`, so it is a GATED tool, and the gated overload refused it: one of `when`, `send`, `sendFrom` or `reset` does not fit that dialog, or `report` was declared on `tool`";
 };
@@ -13137,7 +13137,7 @@ interface TypedSpeakerDef<T, N extends string = string> extends SpeakerDef<N> {
     schema: StandardSchemaV1<unknown, T>;
 }
 
-// @public
+// @public @sealed
 type UngatedDef = {
     readonly dialog?: "this def declares `dialog`, so it is a GATED tool, and the gated overload refused it: one of `when`, `send`, `sendFrom` or `reset` does not fit that dialog, or `report` was declared on `tool`";
 };
@@ -19593,11 +19593,10 @@ export { runTool }
 export function runWorkflow<P extends ToolInputSchema, R>(def: WorkflowDef<P, R>, input: Record<string, unknown>, options?: RunWorkflowOptions): Promise<WorkflowTestHandle<R>>;
 
 // @public (undocumented)
-export function runWorkflow<App extends WorkflowAppLike, Name extends WorkflowNameOf<App>>(agent: App, name: Name, input: Record<string, unknown>, options?: Omit<RunWorkflowOptions, "name">): Promise<WorkflowTestHandle<WorkflowOutputOf<WorkflowDefOf<App, Name>>>>;
+export function runWorkflow<App extends WorkflowAppLike, Name extends WorkflowNameOf<App>>(agent: App, name: Name, input: Record<string, unknown>, options?: RunWorkflowOptions): Promise<WorkflowTestHandle<WorkflowOutputOf<WorkflowDefOf<App, Name>>>>;
 
 // @public @input
 export type RunWorkflowOptions = {
-    name?: string;
     key?: string;
     journal?: WorkflowJournal;
     logger?: Logger;
@@ -21047,14 +21046,12 @@ export type ClientConfig = Pick<VoiceSessionOptions, "onSessionId" | "resumeSess
     theme?: ClientTheme;
     css?: string;
     component?: ComponentType;
-    name?: string;
     sidebar?: ComponentType;
     sidebarWidth?: string;
     sidebarPosition?: "left" | "right";
     icon?: ReactNode;
     subtitle?: string;
     buttonText?: string;
-    tools?: ToolDisplayConfig;
 };
 
 export { ClientConfigResponse }
@@ -21644,12 +21641,6 @@ export interface ToolCallRowProps {
 
 // @public
 export type ToolCallRowVariant = "default" | "compact";
-
-// @public @input
-export type ToolDisplayConfig = Record<string, {
-    icon?: string | undefined;
-    label?: string | undefined;
-}>;
 
 // @public
 export function UploadProgressBar(input: {
@@ -22399,7 +22390,7 @@ type ToolCallOutcome = {
 // @internal
 export const ToolConfigContext: Context<ToolDisplayConfig>;
 
-// @public @input
+// @public @sealed
 type ToolDisplayConfig = Record<string, {
     icon?: string | undefined;
     label?: string | undefined;

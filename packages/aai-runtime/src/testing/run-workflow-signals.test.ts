@@ -54,7 +54,8 @@ describe("a signal with no payload", () => {
         return polled.woken;
       },
     });
-    const run = await runWorkflow(polling, {}, { name: "polling" });
+    // The agent form, so the token below carries the name a deployment would.
+    const run = await runWorkflow({ name: "App", workflows: { polling } }, "polling", {});
     await run.signal(`polling:${run.key}:go`);
     expect(run.signalled).toBe(true);
     expect(run.output).toBe(true);
@@ -84,7 +85,7 @@ describe("a signal AHEAD of the wait", () => {
   });
 
   test("signal holds only when asked, as `ctx.workflows.signal` does", async () => {
-    const run = await runWorkflow(slow, {}, { name: "slow" });
+    const run = await runWorkflow({ name: "App", workflows: { slow } }, "slow", {});
     const token = `slow:${run.key}:approval`;
     await run.signal(token, { ok: true });
     expect(run.signalled).toBe(false);

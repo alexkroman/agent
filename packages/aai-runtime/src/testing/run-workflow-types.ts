@@ -218,7 +218,7 @@ export type WorkflowTestSignalOptions = {
  *   run: async (_input, ctx) => await ctx.waitFor<{ approved: boolean }>("approval"),
  * });
  *
- * const run = await runWorkflow(review, {}, { name: "review" });
+ * const run = await runWorkflow(review, {});
  * await run.signal("approval", { approved: true });
  * console.log(run.status, run.output);
  * ```
@@ -357,18 +357,16 @@ export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
 /**
  * What {@link runWorkflow} takes.
  *
+ * The run's NAME is not an option: it is the name the def is registered
+ * under — `runWorkflow(agentDef, "digest", input)` names it, and a bare def
+ * runs under the name its agent declared it with (`workflowNameOf`), else
+ * `"workflow"`. A spec that asserts on `ctx.workflow` or on a signal token
+ * uses the agent form.
+ *
  * @input
  * @public
  */
 export type RunWorkflowOptions = {
-  /**
-   * The name the workflow is registered under, as `agent({ workflows })` keys
-   * it. Defaults to `"workflow"`.
-   *
-   * It is what the body reads as `ctx.workflow`, and what a run's record
-   * carries — so a spec asserting on either passes the real key.
-   */
-  name?: string;
   /**
    * The correlation key the run is started with — `StartOptions.key`, which
    * the body reads as `ctx.key` and `ctx.signalToken`/`ctx.waitForSignal`

@@ -189,9 +189,6 @@ export {
   type ToolCallRowProps,
   type ToolCallRowVariant,
 } from "./components/tool-call-row.tsx";
-// The value type a caller names to write `ClientConfig.tools`. The CONTEXT
-// `mountClient()` installs it into is internal — see `internal.ts`.
-export type { ToolDisplayConfig } from "./components/tool-config-context.ts";
 // The bar over the one wait a run cannot describe — storing a form's files, which
 // happens BEFORE the run that carries their ids exists.
 export { UploadProgressBar } from "./components/upload-progress.tsx";

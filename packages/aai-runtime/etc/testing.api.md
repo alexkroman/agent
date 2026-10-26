@@ -286,11 +286,10 @@ export { runTool }
 export function runWorkflow<P extends ToolInputSchema, R>(def: WorkflowDef<P, R>, input: Record<string, unknown>, options?: RunWorkflowOptions): Promise<WorkflowTestHandle<R>>;
 
 // @public (undocumented)
-export function runWorkflow<App extends WorkflowAppLike, Name extends WorkflowNameOf<App>>(agent: App, name: Name, input: Record<string, unknown>, options?: Omit<RunWorkflowOptions, "name">): Promise<WorkflowTestHandle<WorkflowOutputOf<WorkflowDefOf<App, Name>>>>;
+export function runWorkflow<App extends WorkflowAppLike, Name extends WorkflowNameOf<App>>(agent: App, name: Name, input: Record<string, unknown>, options?: RunWorkflowOptions): Promise<WorkflowTestHandle<WorkflowOutputOf<WorkflowDefOf<App, Name>>>>;
 
 // @public @input
 export type RunWorkflowOptions = {
-    name?: string;
     key?: string;
     journal?: WorkflowJournal;
     logger?: Logger;

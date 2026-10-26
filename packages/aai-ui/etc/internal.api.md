@@ -182,7 +182,7 @@ type ToolCallOutcome = {
 // @internal
 export const ToolConfigContext: Context<ToolDisplayConfig>;
 
-// @public @input
+// @public @sealed
 type ToolDisplayConfig = Record<string, {
     icon?: string | undefined;
     label?: string | undefined;

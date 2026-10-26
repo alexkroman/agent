@@ -5,9 +5,11 @@
     "dropped": {}
   },
   "client": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "mountClient()'s name and tools options are removed, with the ToolDisplayConfig type that named the tools map: the agent's name and each tool's icon and label are the agent's own declaration — agent({ name }) and tool({ ui }) — read from its GET /client-config body, never restated by a page. A page that passed name drops it (the default shell shows the agent's own; a custom component owns the page title); one that passed tools moves each entry onto the tool's ui."
+    }
   },
   "client-dir": {
     "current": 1,

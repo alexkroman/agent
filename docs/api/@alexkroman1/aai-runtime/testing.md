@@ -1787,15 +1787,18 @@ is what `ctx.workflows.start` does on every real path: a body is written
 against a validated input, so handing it an unvalidated one tests a call that
 cannot happen.
 
-**Two forms.** Handed a DEF, the run is named by `options.name`, else by the
-name the def was declared under (`workflowNameOf`, recorded when the agent
-declaring it was lowered — a `virtual:aai/agent` import), else `"workflow"`.
-Handed the AGENT and a workflow's name — `runWorkflow(agentDef, "digest",
-input)`, with `agentDef` from `virtual:aai/agent` — the def is the one the
-agent declares (or the build discovered in `workflows/`) under that name,
-and the run carries that name, so a body that reads `ctx.workflow`, starts a
-sibling by name or is found by `ctx.workflows.find` sees what a deployment
-would. An unknown name throws, listing the ones the agent has.
+**Two forms.** Handed a DEF, the run is named by the name the def was
+declared under (`workflowNameOf`, recorded when the agent declaring it was
+lowered — a `virtual:aai/agent` import), else `"workflow"`; there is no
+`name` option. Handed the AGENT and a workflow's name —
+`runWorkflow(agentDef, "digest", input)`, with `agentDef` from
+`virtual:aai/agent` — the def is the one the agent declares (or the build
+discovered in `workflows/`) under that name, and the run carries that name,
+so a body that reads `ctx.workflow`, starts a sibling by name or is found by
+`ctx.workflows.find` sees what a deployment would. An unknown name throws,
+listing the ones the agent has. A spec that asserts on the name (a signal
+token, `ctx.workflow`) uses the agent form, which is the one a deployment
+runs.
 
 ##### Type Parameters
 
@@ -1842,9 +1845,7 @@ const digest = workflow({
   },
 });
 
-const run = await runWorkflow(digest, { url: "https://example.com/a" }, {
-  name: "digest",
-});
+const run = await runWorkflow(digest, { url: "https://example.com/a" });
 
 // It slept rather than blocking, and said for how long.
 console.log(run.status, run.wakeAt);
@@ -1877,7 +1878,7 @@ function runWorkflow<App extends WorkflowAppLike, Name extends string>(
    agent: App, 
    name: Name, 
    input: Record<string, unknown>, 
-   options?: Omit<RunWorkflowOptions, "name">
+   options?: RunWorkflowOptions
 ): Promise<WorkflowTestHandle<WorkflowOutputOf<WorkflowDefOf<App, Name>>>>;
 ```
 
@@ -1892,15 +1893,18 @@ is what `ctx.workflows.start` does on every real path: a body is written
 against a validated input, so handing it an unvalidated one tests a call that
 cannot happen.
 
-**Two forms.** Handed a DEF, the run is named by `options.name`, else by the
-name the def was declared under (`workflowNameOf`, recorded when the agent
-declaring it was lowered — a `virtual:aai/agent` import), else `"workflow"`.
-Handed the AGENT and a workflow's name — `runWorkflow(agentDef, "digest",
-input)`, with `agentDef` from `virtual:aai/agent` — the def is the one the
-agent declares (or the build discovered in `workflows/`) under that name,
-and the run carries that name, so a body that reads `ctx.workflow`, starts a
-sibling by name or is found by `ctx.workflows.find` sees what a deployment
-would. An unknown name throws, listing the ones the agent has.
+**Two forms.** Handed a DEF, the run is named by the name the def was
+declared under (`workflowNameOf`, recorded when the agent declaring it was
+lowered — a `virtual:aai/agent` import), else `"workflow"`; there is no
+`name` option. Handed the AGENT and a workflow's name —
+`runWorkflow(agentDef, "digest", input)`, with `agentDef` from
+`virtual:aai/agent` — the def is the one the agent declares (or the build
+discovered in `workflows/`) under that name, and the run carries that name,
+so a body that reads `ctx.workflow`, starts a sibling by name or is found by
+`ctx.workflows.find` sees what a deployment would. An unknown name throws,
+listing the ones the agent has. A spec that asserts on the name (a signal
+token, `ctx.workflow`) uses the agent form, which is the one a deployment
+runs.
 
 ##### Type Parameters
 
@@ -1928,7 +1932,7 @@ would. An unknown name throws, listing the ones the agent has.
 
 ###### options?
 
-`Omit`\<[`RunWorkflowOptions`](#runworkflowoptions), `"name"`\>
+[`RunWorkflowOptions`](#runworkflowoptions)
 
 ##### Returns
 
@@ -1949,9 +1953,7 @@ const digest = workflow({
   },
 });
 
-const run = await runWorkflow(digest, { url: "https://example.com/a" }, {
-  name: "digest",
-});
+const run = await runWorkflow(digest, { url: "https://example.com/a" });
 
 // It slept rather than blocking, and said for how long.
 console.log(run.status, run.wakeAt);
@@ -4782,13 +4784,18 @@ type RunWorkflowOptions = {
   key?: string;
   logger?: Logger;
   maxDeliveries?: number;
-  name?: string;
 };
 ```
 
 **`Input`**
 
 What [runWorkflow](#runworkflow) takes.
+
+The run's NAME is not an option: it is the name the def is registered
+under — `runWorkflow(agentDef, "digest", input)` names it, and a bare def
+runs under the name its agent declared it with (`workflowNameOf`), else
+`"workflow"`. A spec that asserts on `ctx.workflow` or on a signal token
+uses the agent form.
 
 #### Properties
 
@@ -4857,18 +4864,6 @@ How many deliveries the driver may make before it gives up.
 A bound rather than a timeout: a body that suspends and is woken in a loop
 would otherwise spin, and a spec that hangs reports the runner's timeout
 instead of the loop. Defaults to [DEFAULT\_MAX\_DELIVERIES](#default_max_deliveries).
-
-##### name?
-
-```ts
-optional name?: string;
-```
-
-The name the workflow is registered under, as `agent({ workflows })` keys
-it. Defaults to `"workflow"`.
-
-It is what the body reads as `ctx.workflow`, and what a run's record
-carries — so a spec asserting on either passes the real key.
 
 ***
 
@@ -7090,7 +7085,7 @@ const review = workflow({
   run: async (_input, ctx) => await ctx.waitFor<{ approved: boolean }>("approval"),
 });
 
-const run = await runWorkflow(review, {}, { name: "review" });
+const run = await runWorkflow(review, {});
 await run.signal("approval", { approved: true });
 console.log(run.status, run.output);
 ```

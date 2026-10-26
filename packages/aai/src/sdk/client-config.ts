@@ -74,8 +74,8 @@ export const ClientConfigResponseSchema: z.ZodType<ClientConfigResponse> = z.obj
    * and label a `tool({ ui })` declared, so the default client and a custom
    * chrome render a call the way the tool said to before the first call
    * arrives. Built by `toolUiMap` from the agent's own toolsets; absent for an
-   * agent whose tools declare none. `mountClient({ tools })` overrides it per
-   * key.
+   * agent whose tools declare none. The page installs it as served — there is
+   * no `mountClient({ tools })` map to override it with.
    */
   tools: z.record(z.string(), ToolUiSchema).optional(),
 });

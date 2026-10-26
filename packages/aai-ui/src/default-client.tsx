@@ -14,11 +14,12 @@
  * ever true of a voice agent. Both mounts have a default shell now, so it is
  * true of either.
  *
- * The name is FORWARDED rather than looked up twice: on the platform this
- * endpoint is the broker, so a request able to boot a sandbox should not be
- * issued once here and again by the shell. Both shells treat an explicit name as
- * final and skip their own lookup. An agent that declared none still costs the
- * shell its own request, which is what it cost before.
+ * The name is FORWARDED to `mountPage()` rather than looked up twice: it treats
+ * an explicit name as final. The voice shell takes no name — `mountClient()`
+ * reads the agent's own from its `client-config` lookup — so it issues that
+ * request itself; on the platform this endpoint is the broker, and the request
+ * here has already booted the sandbox the shell's then reaches, which is what
+ * an agent that declared no name always cost.
  */
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { fetchClientConfig } from "./client-config.ts";
@@ -27,7 +28,7 @@ import { mountPage } from "./page.tsx";
 
 /** The two mounts the default client chooses between, injectable for a spec. */
 export type DefaultClientMounts = {
-  mountClient: (config: { name?: string }) => unknown;
+  mountClient: (config: Record<string, never>) => unknown;
   mountPage: (config: { name?: string }) => unknown;
 };
 
@@ -44,10 +45,9 @@ export async function bootDefaultClient(
   mounts: DefaultClientMounts = { mountClient, mountPage },
 ): Promise<void> {
   const config = await fetchClientConfig();
-  const named = omitUndefined({ name: config.name });
   if (config.page === "static") {
-    mounts.mountPage(named);
+    mounts.mountPage(omitUndefined({ name: config.name }));
     return;
   }
-  mounts.mountClient(named);
+  mounts.mountClient({});
 }

@@ -22,12 +22,11 @@ import type { ToolFailure } from "./utils.ts";
  * How a tool call is DISPLAYED by a page — the icon and the label a client
  * shows while the call runs and once it lands. Nothing here reaches the model.
  *
- * Declared on the tool rather than in the page's `mountClient({ tools })` map
- * because the tool is the one that knows what it does: a page that named every
- * tool twice (once here, once in the map) drifted the moment a tool was
+ * Declared on the tool rather than in a map on the page because the tool is
+ * the one that knows what it does: a page that named every tool twice (once
+ * here, once in a `mountClient({ tools })` map) drifted the moment a tool was
  * renamed, and a custom chrome had to restate the map or show raw names. The
- * map stays as an OVERRIDE, keyed by the same name — see `ToolDisplayConfig` in
- * `@alexkroman1/aai-ui`.
+ * page has no such map; this declaration is the one place the icon lives.
  *
  * @input
  * @public
@@ -238,7 +237,7 @@ export type ToolDef<
    * How a page displays this tool's calls — see {@link ToolUi}. Carried on the
    * wire declaration (`ToolSchema.ui`) the way `messages` is, so the default
    * client and a custom chrome render the same icon and label under `aai dev`
-   * and on the platform, with `mountClient({ tools })` as an override.
+   * and on the platform.
    */
   ui?: ToolUi;
 };
