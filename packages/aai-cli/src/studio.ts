@@ -21,7 +21,7 @@ import { isPathInside } from "@alexkroman1/aai-runtime/internal";
 import { checkedResponse } from "./_api-client.ts";
 import { updateProjectConfig } from "./_config.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
-import { resolveServerEnv } from "./_server-common.ts";
+import { readUploadableEnv } from "./_server-common.ts";
 import {
   collectSourceFiles,
   fetchStudioProject,
@@ -314,7 +314,10 @@ async function syncEnvSecrets(
   ui: Ui,
   request: StudioDeps["apiRequest"],
 ): Promise<string[]> {
-  const env = await resolveServerEnv(cwd);
+  // The FILE's values only, never the shell's: the repo picks the names, so a
+  // shell-wins merge let a cloned `.env` declaring `GITHUB_TOKEN=` upload the
+  // user's exported token (`readUploadableEnv` has the symlink rule too).
+  const env = await readUploadableEnv(cwd);
   const names = Object.keys(env);
   if (names.length === 0) return [];
   // The PROJECT route, not the deployed slug's: a project has a preview agent

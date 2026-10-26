@@ -64,6 +64,19 @@ describe("executeSecretList", () => {
     expect(url).toBe("http://localhost:9999/test-agent/secret");
   });
 
+  test("a name holding a newline cannot fake an extra output line", async () => {
+    // `"X\n  FAKE_LINE"` printed as two names, one of which does not exist.
+    mockApiRequest.mockResolvedValue({ vars: ["REAL", "X\n  FAKE_LINE"] });
+
+    await executeSecretList("/tmp", undefined, ui, platform);
+
+    const lines = ui.said("message");
+    expect(lines.every((l) => !l.includes("\n"))).toBe(true);
+    expect(lines).toContain("  REAL");
+    expect(lines).toContain('  "X\\n  FAKE_LINE" (not a valid name)');
+    expect(ui.said("warn").join("\n")).toContain("1 name from test-agent is not a valid");
+  });
+
   test("returns empty list when no secrets exist", async () => {
     mockApiRequest.mockResolvedValue({ vars: [] });
 
