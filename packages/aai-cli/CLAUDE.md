@@ -95,14 +95,19 @@ takes the agent's own bearer (`AAI_WORKFLOW_API_TOKEN`, `--token`) or none, so
 sending the platform API key would leak it. Every request brokers (may boot the
 sandbox). `--limit` is parsed in the command so a bad value names the flag.
 Requests are the SDK's `createWorkflowApiClient`; `api.get`'s `undefined` on 404
-also means "no workflow API", so `HINT_BROKER` lists all three causes.
+also means "no workflow API", so `HINT_BROKER` lists all three causes. The
+client CASTS, so `list`/`runs`/`show` check the shape they print and fail
+`bad_response` (`checked`, `workflow.ts`).
 
 **`aai logs` reads a RING, so `--follow` polls** (`logs.ts` → `GET /:slug/logs`,
 the guest's bounded buffer with a cursor — see
 `packages/aai-guest/src/harness/CLAUDE.md`). It must say that the ring dies with
 the sandbox, distinguish `running` from `lines.length`, and print `dropped`. A
-failed poll under `--follow` is not a failed command; only a signal ends it.
-`--json` reports the line count, not the lines.
+failed poll under `--follow` is not a failed command; only a signal ends it — so
+every check of a page sits inside `readPage` (malformed lines are skipped and
+counted, never thrown from the print). Lines are deduped by `seq` (reset when
+the cursor goes backwards: a new ring). `--json` reports the line count, not the
+lines.
 
 ### Command plumbing
 
@@ -277,7 +282,11 @@ project with no `client.tsx`; `vite` stays (vitest, `vite/client`).
   assert the BUILT shape. The default UI still comes from `aai-ui/dist`.
 - **`--local`** on `secret put`/`delete` edits `<cwd>/.env` via
   `_dotenv-file.ts`, round-tripped through `parseEnv` (last assignment wins,
-  multi-line values, mode kept, new file 0600, atomic rename).
+  multi-line values, mode kept, new file 0600, atomic rename). Only TOP-LEVEL
+  assignments match (`scanAssignments` mirrors how `parseEnv` spans quotes), and
+  **every edit is judged by `parseEnv`**: unless exactly the one key changed,
+  the file is refused untouched. A symlinked `.env` and a value with `\r` (which
+  `parseEnv` deletes) are refused.
 
 ## Running the SDK's own server (`aai dev` and host mode)
 
@@ -411,6 +420,23 @@ is what approves an origin** (user intent, not repo content) and is remembered.
   (`secretRequest`, `_slug-api.ts`): linked → `/studio/projects/:project/secret`
   (fans out to production and preview agents); unlinked → the per-slug route.
   `aai publish`'s `.env` sync does the same.
+- **`aai publish` uploads only values WRITTEN in `.env`, never the shell's**
+  (`readUploadableEnv`, `_server-common.ts`). `resolveServerEnv`'s shell-wins
+  merge lets the repo pick the names and the shell the values — a cloned
+  `GITHUB_TOKEN=` line uploaded the user's token — so it stays for commands that
+  upload nothing (`dev`, `eval`, `start`). A `.env` symlinked OUT of the project
+  is refused by name (`.env -> ~/.aws/credentials` uploaded AWS keys).
+- **Every platform request goes through `guardedFetch`** (`_api-client.ts`;
+  `apiRequest` and `aai login`): **redirects are refused, never followed**
+  (fetch re-sends a 307's body cross-origin — `secret put` delivered the value
+  to the target); **one deadline per attempt, body included** (60 s; push/pull 5
+  min, Publish 10 min in `_studio.ts`); **the decoded body is capped while
+  streaming** (`MAX_RESPONSE_BYTES`, derived from the workspace caps — a gzip
+  bomb reached 3 GB). Each refusal has its own message, never "check your
+  network", and is not retried. The 401 hint names `aai login`: bare `aai` in a
+  project publishes.
+- **`aai secret list` prints a non-env-name name JSON-escaped and flagged** — a
+  server string with a newline could fake output lines.
 - **The API key is stored 0600 in the global `config.json`** (`AAI_CONFIG_DIR`
   overrides the dir).
 - **`ensureApiKey` has exactly ONE source: the key `aai login` saved.** No
