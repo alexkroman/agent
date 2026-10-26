@@ -9,6 +9,7 @@
  * away.
  */
 
+import { MAX_WORKFLOW_FIND_LIMIT } from "@alexkroman1/aai-runtime";
 import { describe, expect, test, vi } from "vitest";
 import { createWorkflowCommand, MAX_WORKFLOW_RUNS_LIMIT } from "./cli-workflow.ts";
 
@@ -92,8 +93,7 @@ describe("the workflow command group", () => {
     },
   );
 
-  test("the cap is the runtime's own page bound", async () => {
-    const { MAX_WORKFLOW_FIND_LIMIT } = await import("@alexkroman1/aai-runtime");
+  test("the cap is the runtime's own page bound", () => {
     expect(MAX_WORKFLOW_RUNS_LIMIT).toBe(MAX_WORKFLOW_FIND_LIMIT);
   });
 
