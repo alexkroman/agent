@@ -174,13 +174,13 @@ gate, recall and report coalescing).
   `/:slug/` reaches `/:slug/api`); `useRoute`'s default `?client=` is the
   session identity's, read per request, and none under `mountPage()`. Both take
   `headers` (an `authorization` for an `apiKeyRoute`); `useRoute`'s poll
-  (`pollMs`) is `repeatUntil`'s loop, re-armed from the settled read and
-  stopped by `until(value)`, with `headers`/`until` read per request so an
-  inline literal re-arms nothing. `useRouteMutation` is the write half with the
-  same default: `run` never rejects, the error shown is the highest-numbered
-  SETTLED write's, and nothing runs after unmount. `useClientRuns` is those two
-  over a `clientRunsRoutes()` pair — its row type is the SDK's, re-exported,
-  never restated.
+  (`pollMs`) is `repeatUntil`'s loop, re-armed from the settled read and stopped
+  by `until(value)`, with `headers`/`until` read per request so an inline
+  literal re-arms nothing. `useRouteMutation` is the write half with the same
+  default: `run` never rejects, the error shown is the highest-numbered SETTLED
+  write's, and nothing runs after unmount. `useClientRuns` is those two over a
+  `clientRunsRoutes()` pair — its row type is the SDK's, re-exported, never
+  restated.
 
 ## Client identity and the inbox
 

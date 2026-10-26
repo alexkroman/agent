@@ -75,7 +75,7 @@ export function propertyBodyLines(source, names) {
     `^\\s*(?:async\\s+)?(?:${names.join("|")})\\s*(?:\\(|:\\s*(?:async\\s*)?(?:\\(|function\\b|[A-Za-z_$][\\w$]*\\s*=>))`,
   );
   for (let at = 0; at < lines.length; at++) {
-    if (!opens.test(lines[at])) continue;
+    if (!opens.test(lines[at] ?? "")) continue;
     for (let end = at; end <= bodyEnd(lines, at); end++) inside.add(end + 1);
   }
   return inside;
@@ -94,7 +94,7 @@ function bodyEnd(lines, at) {
   let depth = 0;
   let opened = false;
   for (let end = at; end < lines.length; end++) {
-    for (const char of lines[end]) {
+    for (const char of lines[end] ?? "") {
       if (char === "{") {
         depth += 1;
         opened = true;
