@@ -8,9 +8,10 @@ import {
   isLocalOnlyFile,
   layerScaffoldFiles,
   readScaffoldFiles,
-  writeFileWithParents,
+  walkWorkspaceFiles,
 } from "@alexkroman1/aai/workspace-files";
 import { getMonorepoRoot } from "./_agent.ts";
+import { refuseUnsafeTarget, writeFileNoFollow } from "./_safe-write.ts";
 import { errorMessage } from "./_utils.ts";
 
 /** The GitHub repo (owner/name) that hosts this project and its templates. */
@@ -104,9 +105,33 @@ export function scaffoldDir(): string {
  * read from the target: whether a project already has a given file is the one
  * thing the rule asks about it, and `package.json`'s content the one thing it
  * merges.
+ *
+ * Only the paths the rule will WRITE are screened ({@link refuseUnsafeTarget}),
+ * after the existence probe: a file the project already has is left alone, so
+ * a `CLAUDE.md -> AGENTS.md` link is fine, while a DANGLING one reads as
+ * missing, lands in the write set, and is refused rather than written through.
  */
 export async function layerScaffold(targetDir: string): Promise<void> {
-  const scaffold = await readScaffoldFiles(scaffoldDir());
+  const writes = await planScaffold(targetDir);
+  await Promise.all(
+    Object.entries(writes).map(([rel, content]) =>
+      writeFileNoFollow(path.join(targetDir, rel), content),
+    ),
+  );
+}
+
+/** Each scaffold directory, read once per process — it cannot change under a run. */
+const scaffoldReads = new Map<string, Promise<Record<string, string>>>();
+
+/** What {@link layerScaffold} would write into `targetDir`, every path screened. */
+async function planScaffold(targetDir: string): Promise<Record<string, string>> {
+  const dir = scaffoldDir();
+  let read = scaffoldReads.get(dir);
+  if (!read) {
+    read = readScaffoldFiles(dir);
+    scaffoldReads.set(dir, read);
+  }
+  const scaffold = await read;
   const existing: Record<string, string> = {};
   await Promise.all(
     [...Object.keys(scaffold), "CLAUDE.md"].map(async (rel) => {
@@ -119,11 +144,18 @@ export async function layerScaffold(targetDir: string): Promise<void> {
     }),
   );
   const writes = layerScaffoldFiles(existing, scaffold);
-  await Promise.all(
-    Object.entries(writes).map(([rel, content]) =>
-      writeFileWithParents(path.join(targetDir, rel), content),
-    ),
-  );
+  await Promise.all(Object.keys(writes).map((rel) => refuseUnsafeTarget(targetDir, rel)));
+  return writes;
+}
+
+/**
+ * Screen `targetDir` for what {@link layerScaffold} would write, without
+ * writing anything — for a caller that writes OTHER files first (`aai pull`,
+ * `aai init`) and must refuse before the first of them rather than leave a
+ * half-written tree. Its own writes only shrink the set the later layer adds.
+ */
+export async function refuseUnsafeScaffoldTargets(targetDir: string): Promise<void> {
+  await planScaffold(targetDir);
 }
 
 /**
@@ -162,11 +194,19 @@ export function templateCopyFilter(src: string): boolean {
 /**
  * Copy a template into targetDir, merging scaffold files underneath. `root` is
  * the templates root, resolved by {@link resolveTemplatesDir} unless given.
+ *
+ * `extraTargets` are the paths the CALLER will write afterwards (`aai init`'s
+ * `.env` and README): they are screened with the template's and the
+ * scaffold's, before the copy, so a symlink or a file/directory clash
+ * anywhere in the target is refused while the directory is still untouched.
+ * It used to surface midway — a `tools/` symlinked to a directory failed the
+ * copy with EISDIR and left a half-scaffolded project behind.
  */
 export async function downloadAndMergeTemplate(
   template: string,
   targetDir: string,
   root: string = resolveTemplatesDir(),
+  extraTargets: readonly string[] = [],
 ): Promise<void> {
   const templatesDir = path.join(root, "templates");
 
@@ -174,6 +214,16 @@ export async function downloadAndMergeTemplate(
   if (!names.includes(template)) {
     throw new Error(`Unknown template "${template}". Available templates: ${names.join(", ")}`);
   }
+
+  // The same set `templateCopyFilter` lets through: ignored directories are
+  // not walked and local-only files are skipped.
+  const templateFiles = await walkWorkspaceFiles(path.join(templatesDir, template), {
+    skipFile: isLocalOnlyFile,
+  });
+  await Promise.all(
+    [...templateFiles, ...extraTargets].map((rel) => refuseUnsafeTarget(targetDir, rel)),
+  );
+  await refuseUnsafeScaffoldTargets(targetDir);
 
   // Copy template-specific files first
   await fs.cp(path.join(templatesDir, template), targetDir, {

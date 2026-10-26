@@ -93,16 +93,22 @@ A narrowed run must never report a green verdict over specs it skipped.
 the brokered `/:slug/workflows` surface. **Never an `apiRequest`**: that surface
 takes the agent's own bearer (`AAI_WORKFLOW_API_TOKEN`, `--token`) or none, so
 sending the platform API key would leak it. Every request brokers (may boot the
-sandbox). `--limit` is parsed in the command so a bad value names the flag.
-Requests are the SDK's `createWorkflowApiClient`; `api.get`'s `undefined` on 404
-also means "no workflow API", so `HINT_BROKER` lists all three causes.
+sandbox). `--limit` is parsed in the command so a bad value names the flag (1 to
+`MAX_WORKFLOW_RUNS_LIMIT`, the runtime's page bound, pinned equal). Requests are
+the SDK's `createWorkflowApiClient`; `api.get`'s `undefined` on 404 also means
+"no workflow API", so `HINT_BROKER` lists all three causes. The client CASTS, so
+`list`/`runs`/`show` check the shape they print and fail `bad_response`
+(`checked`, `workflow.ts`).
 
 **`aai logs` reads a RING, so `--follow` polls** (`logs.ts` → `GET /:slug/logs`,
 the guest's bounded buffer with a cursor — see
 `packages/aai-guest/src/harness/CLAUDE.md`). It must say that the ring dies with
 the sandbox, distinguish `running` from `lines.length`, and print `dropped`. A
-failed poll under `--follow` is not a failed command; only a signal ends it.
-`--json` reports the line count, not the lines.
+failed poll under `--follow` is not a failed command; only a signal ends it — so
+every check of a page sits inside `readPage` (malformed lines are skipped and
+counted, never thrown from the print). Lines are deduped by `seq` (reset when
+the cursor goes backwards: a new ring). `--json` reports the line count, not the
+lines.
 
 ### Command plumbing
 
@@ -133,9 +139,35 @@ failed poll under `--follow` is not a failed command; only a signal ends it.
   every visible subcommand once) and says what bare `aai` does. **Flags are
   kebab-case**; camelCase still parses, unadvertised.
 - **Pre-parse failures honour JSON mode too.** `usageForMode` and
-  `assertKnownFlags` run in the `runDefault().then(assertKnownFlags)` chain
-  before `defineExec`, so a new guard there owes an explicit `getOutputMode({})`
-  branch. `cli.test.ts` covers it by running the real bin with stdout piped.
+  `assertKnownArgv` run in the `runDefault().then(assertKnownArgv)` chain before
+  `defineExec`, so a new guard there owes an explicit `argvOutputMode` branch.
+  `cli.test.ts` covers it by running the real bin with stdout piped.
+- **argv is refused, never silently reinterpreted** — citty's fallbacks are each
+  a wrong action: `--version`/`-v` beside a command prints the version and runs
+  nothing (`wantsVersionElsewhere`; citty answers it only alone); `--help=1` is
+  refused; `findMalformedFlags` refuses `--no-X` for a non-switch and a
+  valueless string flag (`--server --json` took `--json` as the URL; a dash-led
+  value is `--flag=-x`); `defineExec` refuses positionals beyond the declared
+  ones, naming them (`extraPositionals: "own"` for `secret put`, whose extra is
+  a credential), and any `--server` that is not an absolute http(s) URL
+  (`parseServerFlag` in `_utils.ts`, the one rule `resolveServerUrl` applies
+  too). `--` before a command is a usage error. Numbers are decimal digits only
+  (`parseDecimalInt`: `Number()` read `0x10`, `1e3`, `""`); ports are 1–65535.
+- **Server- and agent-supplied text is made terminal-safe IN THE SEAM**
+  (`createUi`, via `sanitizeTerminalText`): every escape sequence but SGR is
+  removed and other C0/C1 controls render as `\xNN` on every log, notify,
+  prompt, select label, spinner and `writeErr` path — so no call site has to
+  remember an OSC 52 or `ESC c` in a project name or error body.
+- **The JSON result line is `resultLine(result)`**: DATA verbatim
+  (JSON-escaped), only `error`/`hint`/`data.warnings` stripped of every escape.
+  `writeLine` writes what it is given; never strip the whole serialized line (it
+  rewrote `dir` while the real directory kept the ESC byte).
+- **EPIPE exits with the code the run owes** (`oweExitCode`, set by `runCommand`
+  before writing, 0 for `--help`/`--version`; 1 if nothing was owed), never a
+  flat 0 that hides a failure under `pipefail`.
+- **Bare `aai` in an agent directory** (`bareAaiPublish`): stdin and stdout TTY
+  → confirm; stdin TTY with stdout piped (`aai | tee log`) → refuse, naming
+  `aai publish`; no TTY on stdin → publish (a script is deliberate).
 - **`aai init` with no `--template` picks one** (`promptTemplate`, a select over
   `listTemplates()`, `quickstart-agent` first). **Never without a human**:
   `--yes` and `silent` (JSON mode) resolve `DEFAULT_TEMPLATE`; the specs
@@ -153,7 +185,18 @@ production comes from Publish.
   (`PUT /studio/projects/:project/source`), fast-forward-checked against
   `studioSourceHash` in `.aai/project.json`; 409 = the studio edited since the
   last pull, `--force` overwrites.
-- **`aai publish`** pushes, syncs `.env` into the agent's secrets (always before
+- **No `studioSourceHash` means the existence probe runs, linked or not.** A
+  `studioProject` alone is what a cloned repo's `.aai/project.json` can carry;
+  without the probe it PUT with no `baseHash`, overwriting whoever owned that
+  name. `project_exists` refuses it; `--force` overrides. A `studioProject` (or
+  `slug`) read from the file passes `isUsableProjectName` — the slug grammar and
+  the `-preview` refusal `projectNameFromDir` applies.
+- **A slug the server returns is validated before it is written**
+  (`isSlugShaped` inside the `checkedResponse` predicate: publish's `slug`,
+  pull's `deployedSlug`), so `../../admin` fails `bad_response` and nothing is
+  recorded.
+- **`aai publish`** resolves the target (trust check, key) FIRST, then
+  typechecks, then pushes, syncs `.env` into the agent's secrets (always before
   the deploy, first publish included), then runs the studio's Publish route (the
   in-sandbox `aai deploy`). A bare `aai` in a project offers to publish and
   confirms on a TTY first.
@@ -164,6 +207,18 @@ production comes from Publish.
   `dependencies`/`devDependencies`/`scripts` fill per ENTRY — a studio manifest
   carries no toolchain (it is baked in the guest), and per-entry keeps the
   workspace's exact pins.
+- **A pull is screened WHOLE before its first write** (`planPull`, `studio.ts`):
+  an empty name, a control character, a `.`/`..`/empty segment, an escape, or a
+  file that is also another path's directory refuses it (`unsafe_pull`). A path
+  push would never send (`IGNORED_WORKSPACE_DIRS`, `isLocalOnlyFile` — git
+  metadata, `.aai`, `.env`, lockfiles) is SKIPPED and named in `warnings`: a
+  pulled git config can run commands.
+- **Nothing is written through a symlink** (`_safe-write.ts`): every target —
+  workspace files, scaffold paths, `.aai/project.json`, and `aai init`'s
+  template paths, `.env` and README — is screened with `lstat` component by
+  component BEFORE any write (`refuseUnsafeTarget` → `symlink_in_path` /
+  `path_conflict`), and written with `O_NOFOLLOW`. A dangling link read as
+  ENOENT is how `.gitignore -> ~/x` created a file outside the project.
 - **A pull that finds nothing prints the project list** (a typo shows other
   projects; empty means another account's login —
   `packages/aai-server/CLAUDE.md`). The extra request never replaces the 404; it
@@ -171,7 +226,9 @@ production comes from Publish.
 - **`aai delete` in a linked directory deletes the STUDIO PROJECT**
   (`DELETE /studio/projects/:project`, cascading server-side) and clears the
   link fields from `.aai/project.json`, keeping `serverUrl` — stale link fields
-  make the next push unrecoverable without `--force`.
+  make the next push unrecoverable without `--force`. **It asks first**: a TTY
+  gets `ui.prompts.confirm` naming the project; anything else (a pipe, JSON
+  mode) must pass `--yes` or fails `usage`.
 - **`layerScaffold` substitutes the scaffold's `CLAUDE.md`** with a ~30-line
   pointer at `node_modules/@alexkroman1/aai/AGENT_GUIDE.md`
   (`PROJECT_GUIDE_POINTER` has the argument). Matched on full path — a
@@ -179,8 +236,9 @@ production comes from Publish.
 - **A workspace carries UTF-8 text only.** Both snapshots (`collectSourceFiles`
   here, the guest's `snapshotWorkspace`) decode with
   `TextDecoder({ fatal: true, ignoreBOM: true })` and SKIP non-UTF-8 files,
-  warning by name. `ignoreBOM` is load-bearing (the default strips a BOM). Skips
-  also ride the JSON result as `warnings`, since `log.warn` is silent there.
+  warning by name. `ignoreBOM` is load-bearing (the default strips a BOM). An
+  unreadable file and a symlink are skipped and named the same way. Skips also
+  ride the JSON result as `warnings`, since `log.warn` is silent there.
 - **Lockfiles never sync in either direction**; `.env` is the one extra rule
   this side adds (`studio.ts`/`_studio.ts`; the walk, caps and decode come from
   `@alexkroman1/aai/workspace-files`).
@@ -193,7 +251,10 @@ production comes from Publish.
 - **A `*-preview` project name is refused** (`projectNameFromDir` → null): the
   orphan-preview sweep would reap it. `aai init` makes the same refusal of the
   directory name, so the author learns at scaffold time rather than at publish.
-  See the `-preview` note in `packages/aai-server/CLAUDE.md`.
+  See the `-preview` note in `packages/aai-server/CLAUDE.md`. `aai init` also
+  refuses a directory name holding a control or bidi-override character
+  (`DECEPTIVE_NAME_CHARS`), which `slugifyName` would silently drop, and seeds
+  `.env` at 0600.
 - **Directory names go through the platform's `slugifyName`**
   (`@alexkroman1/aai/slugify`), never a local regex, so the CLI and studio agree
   (`my_agent/` → `my-agent`).
@@ -217,6 +278,11 @@ production comes from Publish.
   kills the actor and wedges watching.
 - **Reporting success sits outside the `listen` try/catch** — a throwing
   notifier (`aai dev | head`) must not tear down a bound server.
+- **Every logger `aai dev` hands out is `devLogger`** — the runtime's, the
+  delivery door's AND `createServerForRuntime`'s (`logger` in the serve
+  options). Left unset, a server falls back to `consoleLogger` (`console.log`),
+  a stdout line ahead of `--json`'s one result line. Likewise `runVitest` sends
+  vitest's stdout to fd 2 when the `Ui` is silenced (`aai test/eval/build`).
 - **`viteDevConfig`'s proxy table (`_dev-vite-config.ts`) is the whole agent API
   as the browser sees it** — with a `client.tsx`, Vite owns the port and answers
   anything unlisted with a bare 404. **It is DERIVED from `SERVER_ROUTES`**
@@ -267,9 +333,13 @@ project with no `client.tsx`; `vite` stays (vitest, `vite/client`).
 - **`--tunnel`** (`_dev-tunnel.ts`): cloudflared quick tunnel (binary
   `AAI_CLOUDFLARED_PATH` or `PATH`, never installed) to the PRINTED port; its
   URL becomes `PUBLIC_URL` before the first build. `--on-public-url <cmd>` runs
-  with the URL once up and with it EMPTY on exit; a failing hook warns. The
-  tunnel dying exits 1. The scrape excludes `api.trycloudflare.com` (a failed
-  request logs it).
+  with the URL once up and with it EMPTY on exit; a failing hook warns. **The
+  hook is its own process group** (`detached`, `shell: true` is `sh -c`), and a
+  stop signals the GROUP — SIGTERM, then SIGKILL after `HOOK_KILL_GRACE_MS` — or
+  the shell dies and its real work survives. The startup run is bounded
+  (`HOOK_STARTUP_TIMEOUT_MS`) and aborted by shutdown; the withdrawal run by
+  `HOOK_SHUTDOWN_TIMEOUT_MS`. The tunnel dying exits 1. The scrape excludes
+  `api.trycloudflare.com` (a failed request logs it).
 - **`AAI_DEV_SOURCE=1`** (`_dev-source.ts`): a `link:`ed SDK runs from `src/`.
   `bin.mjs` adds `@dev/source` to Node's conditions (source CLI only);
   `devSourceViteConfig` adds it to every Vite build, beside Vite's defaults
@@ -277,7 +347,11 @@ project with no `client.tsx`; `vite` stays (vitest, `vite/client`).
   assert the BUILT shape. The default UI still comes from `aai-ui/dist`.
 - **`--local`** on `secret put`/`delete` edits `<cwd>/.env` via
   `_dotenv-file.ts`, round-tripped through `parseEnv` (last assignment wins,
-  multi-line values, mode kept, new file 0600, atomic rename).
+  multi-line values, mode kept, new file 0600, atomic rename). Only TOP-LEVEL
+  assignments match (`scanAssignments` mirrors how `parseEnv` spans quotes), and
+  **every edit is judged by `parseEnv`**: unless exactly the one key changed,
+  the file is refused untouched. A symlinked `.env` and a value with `\r` (which
+  `parseEnv` deletes) are refused.
 
 ## Running the SDK's own server (`aai dev` and host mode)
 
@@ -411,6 +485,23 @@ is what approves an origin** (user intent, not repo content) and is remembered.
   (`secretRequest`, `_slug-api.ts`): linked → `/studio/projects/:project/secret`
   (fans out to production and preview agents); unlinked → the per-slug route.
   `aai publish`'s `.env` sync does the same.
+- **`aai publish` uploads only values WRITTEN in `.env`, never the shell's**
+  (`readUploadableEnv`, `_server-common.ts`). `resolveServerEnv`'s shell-wins
+  merge lets the repo pick the names and the shell the values — a cloned
+  `GITHUB_TOKEN=` line uploaded the user's token — so it stays for commands that
+  upload nothing (`dev`, `eval`, `start`). A `.env` symlinked OUT of the project
+  is refused by name (`.env -> ~/.aws/credentials` uploaded AWS keys).
+- **Every platform request goes through `guardedFetch`** (`_api-client.ts`;
+  `apiRequest` and `aai login`): **redirects are refused, never followed**
+  (fetch re-sends a 307's body cross-origin — `secret put` delivered the value
+  to the target); **one deadline per attempt, body included** (60 s; push/pull 5
+  min, Publish 10 min in `_studio.ts`); **the decoded body is capped while
+  streaming** (`MAX_RESPONSE_BYTES`, derived from the workspace caps — a gzip
+  bomb reached 3 GB). Each refusal has its own message, never "check your
+  network", and is not retried. The 401 hint names `aai login`: bare `aai` in a
+  project publishes.
+- **`aai secret list` prints a non-env-name name JSON-escaped and flagged** — a
+  server string with a newline could fake output lines.
 - **The API key is stored 0600 in the global `config.json`** (`AAI_CONFIG_DIR`
   overrides the dir).
 - **`ensureApiKey` has exactly ONE source: the key `aai login` saved.** No
@@ -444,13 +535,17 @@ is what approves an origin** (user intent, not repo content) and is remembered.
   (vendor pre-build, then the full build), and a warning the bundle's SDK copy
   prints at module evaluation (`withWorkflows`' name clash) came out twice; the
   SDK cannot dedupe across copies, so the one process that imports both does.
-- **`aai build`, `aai dev` and `aai deploy` execute the repo's code locally**
-  (`evalWorkerBundle` / `evalWorkerConfig`, and the project's `vite.config.ts`
-  since `buildAgentBundle` does not pass `configFile: false` — only the guest's
-  untrusted builds do). Running them on an untrusted clone runs that code.
-  `aai deploy` imports its bundle for the credential preflight (`_preflight.ts`,
-  since the platform stores no agent config — see "The platform stores no agent
-  config" in `packages/aai-server/CLAUDE.md`), doubling as a smoke test.
+- **`aai build`, `aai dev`, `aai deploy`, `aai publish` and a bare `aai` (which
+  runs publish) execute the repo's code locally** (`evalWorkerBundle` /
+  `evalWorkerConfig`, the project's `vite.config.ts` since `buildAgentBundle`
+  does not pass `configFile: false` — only the guest's untrusted builds do — and
+  the typecheck gate, which spawns the project's own `node_modules` `tsc`).
+  Running them on an untrusted clone runs that code. `publish` resolves the
+  target (server trust check, API key) before its typecheck, so an unapproved
+  `serverUrl` or a missing login fails first. `aai deploy` imports its bundle
+  for the credential preflight (`_preflight.ts`, since the platform stores no
+  agent config — see "The platform stores no agent config" in
+  `packages/aai-server/CLAUDE.md`), doubling as a smoke test.
 
 ## Self-hosting and `aai build --target`
 
@@ -461,47 +556,11 @@ warning, the Vercel/Deno/Modal emits, the Node/Deno/Bun certification and the
 Bun floor, and why there is no runtime `tools/` scan — are in
 `SELF-HOSTING-CLAUDE.md` beside this file.
 
-## Fault mode: a suite run against a server that keeps dying
+## Fault mode, and the e2e suite's package manager
 
-`AAI_FAULT_PROFILE=<name>` makes every test that boots via
-`startSupervisedDevServer` (`_fault-mode.ts`) run against an `aai dev` child
-that is **SIGKILLed and restarted** at declared points; unset, it is a plain
-spawn.
-
-```sh
-AAI_FAULT_PROFILE=restart-on-boot pnpm test:e2e     # the whole suite, under faults
-```
-
-- **SIGKILL only** — a graceful stop releases graphile-worker's locks and skips
-  the recovery path under test.
-- **No seed, no PRNG**: points are keyed on logical events, so runs are
-  reproducible. Randomized exploration uses fast-check elsewhere.
-- **A profile that matches nothing FAILS**: `awaitSettled()` throws naming
-  unfired points plus recent server lines; `stop()` warns on zero injections.
-- **`afterHealthy` exists because JSON mode silences `aai dev`'s boot line**;
-  workflow log lines go straight to stderr and are valid triggers.
-- **Assert from `awaitSettled()`** (all kills done and `/health` answers).
-  `assertPlanConsumed()` is for tests whose subject is the profile.
-  `restart-on-boot` is the whole-suite profile.
-- `AAI_FAULT_PROFILE` is declared in `check:e2e` and `check:integration` `env`
-  in `turbo.json` (strict env mode, and separate cache entries).
-- **Not in CI**: a hard-killed in-flight step is never redelivered
-  (graphile-worker's `is_available` has no time term), so mid-run profiles are
-  red for a real reason. CI runs `_fault-mode.scenario.test.ts`, the
-  supervisor's own spec against a fake server.
-
-### The other fault mode lives in `aai-runtime`, and faults a SOCKET
-
-`packages/aai-runtime/src/server/_fault-socket.ts` is a TCP proxy that SEVERS
-live connections, to test session resume. Choose correctly:
-
-- **This mode kills a PROCESS; that one cuts a CONNECTION.** A restart preserves
-  durable slot state (`aai-runtime/session-state/store.ts`) but not the call; a
-  socket drop is the only disconnect a session survives.
-- **It severs (`destroy()`), never closes** — a clean close is "user hung up",
-  which aai-ui does not reconnect from;
-  `aai-runtime/src/server/session-resume.scenario.test.ts` asserts **1006**.
-- **It is a proxy** so no fault injector lives in production code.
+`AAI_FAULT_PROFILE` (a suite run against an `aai dev` that is SIGKILLed and
+restarted) and `AAI_TEST_PM` / `AAI_REQUIRE_REGISTRY` (the pnpm-only e2e
+install) are in `TESTING-CLAUDE.md` beside this file.
 
 ## `run_code` under `aai dev` / `aai start` is OPT-IN: `AAI_RUN_CODE=deno`
 
@@ -523,20 +582,6 @@ passes it through `AgentServerOptions.runCode`.
 host `--no-remote` refuses. The module doc lists every flag and why;
 `_run-code-deno.scenario.test.ts` proves each denial against a real `deno`
 (skipping, announced, without one; `AAI_REQUIRE_DENO` makes that a failure).
-
-## The e2e suite is pnpm-only in CI
-
-`e2e.test.ts` installs an `aai init` project from a mock verdaccio registry. CI
-runs pnpm only; `publint` + `attw` cover non-pnpm `exports` resolution.
-`AAI_TEST_PM` (`_e2e-test-utils.ts`, in `check:e2e`'s `env`) switches the
-install to reproduce a user report — a debugging tool, not covered ground:
-
-```sh
-AAI_TEST_PM=npm pnpm test:e2e
-```
-
-**`AAI_REQUIRE_REGISTRY`**, also in `check:e2e`'s `env`, disables the
-`isRegistryProxyFailure` excuse for a failed install; CI sets it.
 
 ## Windows is NOT tested, and is currently broken
 

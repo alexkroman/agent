@@ -68,10 +68,23 @@ describe("fetchStudioProject", () => {
   });
 
   test("returns the workspace when it carries files and a hash", async () => {
-    const project = { files: { "agent.ts": "x" }, sourceHash: "h1", deployedSlug: "p" };
+    const project = { files: { "agent.ts": "x" }, sourceHash: "h1", deployedSlug: "my-agent" };
     fetchMock.mockResolvedValue(json(project));
     expect(await fetchStudioProject(SERVER, "k", "p")).toEqual(project);
   });
+
+  // `deployedSlug` is persisted into .aai/project.json by `aai pull` and joined
+  // into later request URLs; a server that returned `../../admin` had it
+  // written verbatim.
+  test.each([["../../admin"], ["UPPER"], [""], [42]])(
+    "a deployedSlug that is not slug-shaped (%j) is refused",
+    async (deployedSlug) => {
+      fetchMock.mockResolvedValue(json({ files: {}, sourceHash: "h1", deployedSlug }));
+      await expect(fetchStudioProject(SERVER, "k", "p")).rejects.toMatchObject({
+        code: "bad_response",
+      });
+    },
+  );
 
   test("a 200 whose files are not all strings is refused", async () => {
     fetchMock.mockResolvedValue(json({ files: { "agent.ts": 1 }, sourceHash: "h" }));

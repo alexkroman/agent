@@ -10,9 +10,8 @@ import {
   type ProjectConfig,
   readGlobalConfig,
   readProjectConfig,
-  serverOrigin,
 } from "./_config.ts";
-import { stripTrailingSlash } from "./_utils.ts";
+import { parseServerFlag, serverOrigin, stripTrailingSlash } from "./_utils.ts";
 
 export const DEFAULT_SERVER = "https://alexkroman--aai-server-web-server.modal.run";
 export const DEFAULT_DEV_SERVER = "http://localhost:8080";
@@ -74,7 +73,7 @@ export function resolveServerUrl(
   approvedOrigins: readonly string[] = [],
 ): string {
   // An explicit flag is a direct statement of user intent, not repo content.
-  if (explicit) return stripTrailingSlash(explicit);
+  if (explicit !== undefined) return stripTrailingSlash(parseServerFlag(explicit));
   if (isDevMode()) return DEFAULT_DEV_SERVER;
   if (!configUrl) return DEFAULT_SERVER;
 
@@ -139,7 +138,7 @@ export async function resolveApprovedServer(
   );
   // Passing --server is the user approving that origin; remember it so later
   // commands in this project don't need the flag again.
-  if (explicitServer) await approveServer(serverUrl);
+  if (explicitServer !== undefined) await approveServer(serverUrl);
   // Before the key is resolved, and before any caller can interpolate it.
   assertValidConfigSlug(config?.slug);
   return { config, globalConfig, serverUrl };

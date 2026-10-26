@@ -4,7 +4,7 @@ import type { Readable } from "node:stream";
 import { isRecord, plural } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { checkedResponse, isStringArray } from "./_api-client.ts";
-import { deleteLocalSecret, putLocalSecret } from "./_dotenv-file.ts";
+import { deleteLocalSecret, ENV_NAME_RE, putLocalSecret } from "./_dotenv-file.ts";
 import { CliError, type CommandResult, fail, type OutputMode, ok } from "./_output.ts";
 import { type PlatformDeps, REAL_PLATFORM, secretRequest } from "./_slug-api.ts";
 import { defaultUi, type Ui, unwrapCancel } from "./_ui.ts";
@@ -298,8 +298,19 @@ export async function executeSecretList(
     ui.log.info("No secrets set. Use `aai secret put <name>` to add one.");
   } else {
     ui.log.message(`${vars.length} ${plural(vars.length, "secret")}:`);
+    // A name is the SERVER's string, printed into the user's terminal: one
+    // holding a newline (or an escape sequence) could fake further output
+    // lines. A name no secret can have is shown quoted and escaped, and flagged.
+    let odd = 0;
     for (const v of vars) {
-      ui.log.message(`  ${v}`);
+      const valid = ENV_NAME_RE.test(v);
+      if (!valid) odd++;
+      ui.log.message(valid ? `  ${v}` : `  ${JSON.stringify(v)} (not a valid name)`);
+    }
+    if (odd > 0) {
+      ui.log.warn(
+        `${odd} ${plural(odd, "name")} from ${target} ${odd === 1 ? "is" : "are"} not a valid secret name — shown escaped.`,
+      );
     }
   }
   return ok({ secrets: vars });

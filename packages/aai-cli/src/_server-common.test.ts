@@ -2,8 +2,43 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, vi } from "vitest";
-import { DEPLOY_ENV_FILES, declaredEnvNames, resolveServerEnv } from "./_server-common.ts";
+import {
+  DEPLOY_ENV_FILES,
+  declaredEnvNames,
+  readUploadableEnv,
+  resolveServerEnv,
+} from "./_server-common.ts";
 import { test } from "./_test-utils.ts";
+
+describe("readUploadableEnv", () => {
+  test("file values only: a shell export never fills or overrides a key", async ({
+    tmpDir: dir,
+  }) => {
+    vi.stubEnv("GITHUB_TOKEN", "from-shell");
+    vi.stubEnv("K", "from-shell");
+    await fs.writeFile(path.join(dir, ".env"), "GITHUB_TOKEN=\nK=from-file\n");
+    expect(await readUploadableEnv(dir)).toEqual({ K: "from-file" });
+  });
+
+  test("a symlink inside the project is followed; one leaving it is refused", async ({
+    tmpDir: dir,
+  }) => {
+    const project = path.join(dir, "p");
+    await fs.mkdir(project);
+    await fs.writeFile(path.join(project, ".env.production"), "K=v\n");
+    await fs.symlink(".env.production", path.join(project, ".env"));
+    expect(await readUploadableEnv(project)).toEqual({ K: "v" });
+
+    await fs.writeFile(path.join(dir, "credentials"), "AWS_KEY=secret\n");
+    await fs.rm(path.join(project, ".env"));
+    await fs.symlink(path.join(dir, "credentials"), path.join(project, ".env"));
+    await expect(readUploadableEnv(project)).rejects.toThrow(/outside the project/);
+  });
+
+  test("no file is no entries", async ({ tmpDir: dir }) => {
+    expect(await readUploadableEnv(dir)).toEqual({});
+  });
+});
 
 describe("resolveServerEnv", () => {
   test("returns empty env without .env file and no declared keys", async () => {

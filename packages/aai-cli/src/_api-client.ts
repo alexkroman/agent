@@ -9,11 +9,186 @@
  */
 
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { MAX_WORKSPACE_FILE_BYTES, MAX_WORKSPACE_FILES } from "@alexkroman1/aai/workspace-files";
 import { FetchError, ofetch } from "ofetch";
+import pTimeout from "p-timeout";
 import { CliError } from "./_output.ts";
 
+/**
+ * `aai login`, not bare `aai`: in a project, bare `aai` offers to PUBLISH,
+ * which is the last thing a rejected key should lead to.
+ */
 export const HINT_INVALID_API_KEY =
-  "Your API key may be invalid. Run `aai` to re-enter your AssemblyAI API key.";
+  "Your API key may be invalid. Run `aai login` to link your account again.";
+
+/**
+ * How long one ATTEMPT may take, response body included, unless the caller
+ * says otherwise. With no bound a server that accepts and never answers held
+ * `aai list` forever — three times over, once per retry.
+ */
+export const DEFAULT_REQUEST_TIMEOUT_MS = 60_000;
+
+/**
+ * The routes that legitimately take minutes, by the `action` every request
+ * names — one table, so a heavy route cannot inherit the default by omission.
+ *
+ * - `pull`/`push`: a whole workspace each way (up to `MAX_WORKSPACE_FILES` ×
+ *   `MAX_WORKSPACE_FILE_BYTES`, ~25 MB), minutes on a slow uplink.
+ * - `publish`: the in-guest `aai deploy` (330 s, `WORKSPACE_DEPLOY_TIMEOUT_MS`
+ *   in `aai-studio-server`) after the broker may cold-start the sandbox.
+ * - `deploy`: a gzipped worker bundle up, then the slug lock and a sandbox
+ *   spawn server-side — kept under the in-guest 330 s, so the CLI reports its
+ *   own timeout rather than being killed by it.
+ */
+const ACTION_TIMEOUT_MS: Readonly<Record<string, number>> = {
+  pull: 300_000,
+  push: 300_000,
+  publish: 600_000,
+  deploy: 300_000,
+};
+
+/** The per-attempt deadline a request for `action` gets by default. */
+export function requestTimeoutMs(action: string): number {
+  return ACTION_TIMEOUT_MS[action] ?? DEFAULT_REQUEST_TIMEOUT_MS;
+}
+
+/**
+ * The largest decoded response body accepted — counted as it streams, so a
+ * compression bomb is cut off at the cap rather than inflated into memory.
+ *
+ * Derived from the biggest legitimate answer, `aai pull`'s whole workspace:
+ * at most `MAX_WORKSPACE_FILES` files of `MAX_WORKSPACE_FILE_BYTES`, and JSON
+ * spells one byte in at most six characters (`\u0000`), plus slack for the
+ * envelope (paths, hashes, a publish's build log). About 162 MB.
+ */
+export const MAX_RESPONSE_BYTES = MAX_WORKSPACE_FILES * MAX_WORKSPACE_FILE_BYTES * 6 + 8 * 2 ** 20;
+
+/** The server answered a 3xx, which the CLI refuses to follow. */
+export class RedirectRefusedError extends Error {
+  readonly status: number;
+  /** The Location's origin, when the response named one. */
+  readonly target: string | undefined;
+  constructor(status: number, target: string | undefined) {
+    super(`redirected (HTTP ${status})${target ? ` to ${target}` : ""}`);
+    this.name = "RedirectRefusedError";
+    this.status = status;
+    this.target = target;
+  }
+}
+
+/** One attempt outlived its deadline. */
+export class RequestTimeoutError extends Error {
+  readonly ms: number;
+  constructor(ms: number) {
+    super(`no complete response within ${Math.round(ms / 1000)}s`);
+    this.name = "RequestTimeoutError";
+    this.ms = ms;
+  }
+}
+
+/** The decoded response body passed its cap while streaming. */
+export class ResponseTooLargeError extends Error {
+  readonly limit: number;
+  constructor(limit: number) {
+    super(`response body exceeded ${Math.round(limit / 2 ** 20)} MiB`);
+    this.name = "ResponseTooLargeError";
+    this.limit = limit;
+  }
+}
+
+/** The three refusals {@link guardedFetch} makes — none of which a retry fixes. */
+export function isGuardError(
+  err: unknown,
+): err is RedirectRefusedError | RequestTimeoutError | ResponseTooLargeError {
+  return (
+    err instanceof RedirectRefusedError ||
+    err instanceof RequestTimeoutError ||
+    err instanceof ResponseTooLargeError
+  );
+}
+
+/**
+ * `inner`, with the three things a credentialed CLI request must not do by
+ * default: follow a redirect, wait forever, or buffer an unbounded body.
+ *
+ * - **Redirects are refused, never followed** (`redirect: "manual"`, then any
+ *   3xx throws): fetch re-sends a 307/308's BODY — a secret value, a
+ *   workspace — to the new location, across origins.
+ * - **One deadline covers the whole attempt** — headers AND body, since a
+ *   server that sends headers and then trickles is the same hang. It wraps
+ *   each read with `p-timeout`, so it holds for an injected fetch that ignores
+ *   the signal too, and aborts the real request when it fires.
+ * - **The decoded body is counted as it streams** and the stream errors past
+ *   `maxBytes`.
+ *
+ * Exported for `aai login`, which talks to the same server with raw fetch.
+ */
+export function guardedFetch(
+  inner: typeof globalThis.fetch,
+  limits: { timeoutMs: number; maxBytes: number },
+): typeof globalThis.fetch {
+  return async (input, init) => {
+    const { timeoutMs, maxBytes } = limits;
+    const deadline = Date.now() + timeoutMs;
+    const controller = new AbortController();
+    const signal = init?.signal
+      ? AbortSignal.any([init.signal, controller.signal])
+      : controller.signal;
+    const timedOut = (): never => {
+      const err = new RequestTimeoutError(timeoutMs);
+      controller.abort(err);
+      throw err;
+    };
+    const res = await pTimeout(inner(input, { ...init, redirect: "manual", signal }), {
+      milliseconds: timeoutMs,
+      fallback: timedOut,
+    });
+    // `opaqueredirect` is what a browser-style fetch reports for a manual
+    // redirect; Node hands back the real 3xx. 304 is not a redirect.
+    if (
+      res.type === "opaqueredirect" ||
+      (res.status >= 300 && res.status < 400 && res.status !== 304)
+    ) {
+      await res.body?.cancel().catch(() => undefined);
+      throw new RedirectRefusedError(res.status, locationOrigin(res, input));
+    }
+    if (res.body === null || res.status === 304) return res;
+    const reader = res.body.getReader();
+    let total = 0;
+    const body = new ReadableStream<Uint8Array>({
+      async pull(out) {
+        const chunk = await pTimeout(reader.read(), {
+          milliseconds: Math.max(0, deadline - Date.now()),
+          fallback: () => {
+            void reader.cancel().catch(() => undefined);
+            return timedOut();
+          },
+        });
+        if (chunk.done) return out.close();
+        total += chunk.value.byteLength;
+        if (total > maxBytes) {
+          await reader.cancel().catch(() => undefined);
+          throw new ResponseTooLargeError(maxBytes);
+        }
+        out.enqueue(chunk.value);
+      },
+      cancel: (reason) => reader.cancel(reason),
+    });
+    return new Response(body, {
+      status: res.status,
+      statusText: res.statusText,
+      headers: res.headers,
+    });
+  };
+}
+
+/** The origin a redirect points at, resolved against the request URL. */
+function locationOrigin(res: Response, input: Parameters<typeof fetch>[0]): string | undefined {
+  const location = res.headers.get("location");
+  if (location === null) return undefined;
+  const base = input instanceof Request ? input.url : String(input);
+  return URL.parse(location, base)?.origin ?? location;
+}
 
 /** 404 hint for requests scoped to a deployed agent's slug. */
 export const HINT_NOT_DEPLOYED =
@@ -44,6 +219,13 @@ export type ApiRequestOptions = {
   /** Delay between retries in ms (default 300). Tests pass 0 so retry-path
    * assertions don't sleep real wall-clock time. */
   retryDelay?: number;
+  /**
+   * Per-attempt deadline, response body included (default
+   * {@link requestTimeoutMs} for `action`). Tests shrink it.
+   */
+  timeoutMs?: number;
+  /** Decoded response cap (default {@link MAX_RESPONSE_BYTES}); tests shrink it. */
+  maxResponseBytes?: number;
   /** Optional fetch implementation for testing. Defaults to globalThis.fetch. */
   fetch?: typeof globalThis.fetch;
   /**
@@ -81,8 +263,15 @@ export function apiTestSeam(opts: ApiTestSeam): ApiTestSeam {
  */
 export async function apiRequest<T = unknown>(url: string, opts: ApiRequestOptions): Promise<T> {
   // A custom fetch implementation must be wired at client-creation time —
-  // ofetch ignores a per-request `fetch` option.
-  const client = opts.fetch ? ofetch.create({}, { fetch: opts.fetch }) : ofetch;
+  // ofetch ignores a per-request `fetch` option. Always wrapped: see
+  // `guardedFetch` for the redirect, deadline and size rules. (ofetch's own
+  // `timeout` is not used — it clears once headers arrive, so a trickled body
+  // still hung.)
+  const fetch = guardedFetch(opts.fetch ?? globalThis.fetch, {
+    timeoutMs: opts.timeoutMs ?? requestTimeoutMs(opts.action),
+    maxBytes: opts.maxResponseBytes ?? MAX_RESPONSE_BYTES,
+  });
+  const client = ofetch.create({}, { fetch });
   try {
     return await client<T>(url, {
       method: opts.method ?? "GET",
@@ -90,6 +279,12 @@ export async function apiRequest<T = unknown>(url: string, opts: ApiRequestOptio
       ...omitUndefined({ body: opts.body }),
       retry: opts.retry ?? 2,
       retryDelay: opts.retryDelay ?? 300,
+      // ofetch retries any error thrown by fetch as if it were a 500. A
+      // refused redirect, a timeout or an oversized body would answer the
+      // same again (and a hang would cost the deadline once per attempt).
+      onRequestError(ctx) {
+        if (isGuardError(ctx.error)) ctx.options.retry = false;
+      },
     });
   } catch (err) {
     if (opts.allow404 && err instanceof FetchError && err.statusCode === 404) {
@@ -181,7 +376,9 @@ function zodIssueMessages(value: unknown): string[] {
  */
 export function describeErrorBody(data: unknown): string {
   if (typeof data === "string") return data;
-  if (!isRecord(data)) return JSON.stringify(data ?? "");
+  // Absent or null is NOTHING, so the caller can fall back to the status text.
+  if (data === undefined || data === null) return "";
+  if (!isRecord(data)) return JSON.stringify(data);
   const error = data.error;
   if (typeof error === "string") return unwrapEmbeddedErrors(error);
   if (isRecord(error)) {
@@ -202,13 +399,48 @@ export function describeErrorBody(data: unknown): string {
 
 /** Format an ofetch failure into a descriptive, action-centric error. */
 function toApiError(err: unknown, url: string, opts: ApiRequestOptions): Error {
+  // A guard refusal arrives bare (thrown while ofetch read the body) or as a
+  // FetchError's cause (thrown by the fetch call) — either way it is not a
+  // network failure, and "check your network" would send the user the wrong way.
+  const guard = err instanceof FetchError ? err.cause : err;
+  if (isGuardError(guard)) return guardError(guard, url, opts.action);
   if (err instanceof FetchError && err.statusCode !== undefined) {
     const status = err.statusCode;
-    const body = describeErrorBody(err.data);
+    // An empty body (a 431 from a proxy, say) said nothing at all after the
+    // colon; the status text at least names the failure.
+    const body = describeErrorBody(err.data) || err.statusText || "(empty response)";
     const hint = status === 401 ? HINT_INVALID_API_KEY : opts.hints?.[status];
     return new Error(`${opts.action} failed (HTTP ${status}): ${body}${hint ? `\n  ${hint}` : ""}`);
   }
   const hint = "Check your network connection and verify the server URL is correct.";
   const cause = err instanceof FetchError && err.cause !== undefined ? err.cause : err;
   return new Error(`${opts.action} failed: could not reach ${url}\n  ${hint}`, { cause });
+}
+
+/** The sentence for each {@link guardedFetch} refusal, naming what happened. */
+function guardError(
+  err: RedirectRefusedError | RequestTimeoutError | ResponseTooLargeError,
+  url: string,
+  action: string,
+): Error {
+  if (err instanceof RedirectRefusedError) {
+    return new Error(
+      `${action} failed: ${url} answered with a redirect (HTTP ${err.status})` +
+        `${err.target ? ` to ${err.target}` : ""}, and the CLI does not follow redirects.\n` +
+        "  Nothing was sent to the redirect target. If the server moved, pass its new URL with --server.",
+      { cause: err },
+    );
+  }
+  if (err instanceof RequestTimeoutError) {
+    return new Error(
+      `${action} failed: ${url} did not finish responding within ${Math.round(err.ms / 1000)}s.\n` +
+        "  The server may be overloaded or stuck — try again shortly.",
+      { cause: err },
+    );
+  }
+  return new Error(
+    `${action} failed: the response from ${url} is larger than ${Math.round(err.limit / 2 ** 20)} MiB, ` +
+      "so the CLI stopped reading it.\n  No aai response is that large — check that --server points at an aai platform server.",
+    { cause: err },
+  );
 }

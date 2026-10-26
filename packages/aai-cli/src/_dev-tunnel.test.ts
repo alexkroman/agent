@@ -165,7 +165,12 @@ describe("runPublicUrlHook (fake child)", () => {
     const slow = new FakeChild();
     slow.kill.mockImplementation(() => true);
     expect(
-      await runPublicUrlHook("x", "", { cwd: "/p", timeoutMs: 5, spawn: fakeSpawn(slow).asSpawn }),
+      await runPublicUrlHook("x", "", {
+        cwd: "/p",
+        timeoutMs: 5,
+        killGraceMs: 5,
+        spawn: fakeSpawn(slow).asSpawn,
+      }),
     ).toBeNull();
     expect(slow.kill).toHaveBeenCalledWith("SIGTERM");
 
@@ -173,5 +178,59 @@ describe("runPublicUrlHook (fake child)", () => {
     const done = runPublicUrlHook("x", "", { cwd: "/p", spawn: fakeSpawn(broken).asSpawn });
     broken.emit("error", new Error("spawn /bin/sh EACCES"));
     await expect(done).rejects.toThrow("EACCES");
+  });
+
+  // `shell: true` is `sh -c`: signalling the CHILD reached only the shell, and
+  // the hook's real process outlived the timeout and `aai dev` itself.
+  test("runs in its own process group, and a stop signals the GROUP: TERM, then KILL", async () => {
+    const slow = Object.assign(new FakeChild(), { pid: 4242 });
+    const { spawn, asSpawn } = fakeSpawn(slow);
+    const killGroup = vi.fn();
+    expect(
+      await runPublicUrlHook("x", URL, {
+        cwd: "/p",
+        timeoutMs: 5,
+        killGraceMs: 5,
+        spawn: asSpawn,
+        killGroup,
+      }),
+    ).toBeNull();
+    expect(spawn).toHaveBeenCalledWith("x", expect.objectContaining({ detached: true }));
+    expect(killGroup.mock.calls).toEqual([
+      [4242, "SIGTERM"],
+      [4242, "SIGKILL"],
+    ]);
+    expect(slow.kill).not.toHaveBeenCalled();
+  });
+
+  test("a spawn error is reported even when shutdown aborts the wait", async () => {
+    const broken = new FakeChild();
+    const abort = new AbortController();
+    const done = runPublicUrlHook("x", URL, {
+      cwd: "/p",
+      signal: abort.signal,
+      killGraceMs: 5,
+      spawn: fakeSpawn(broken).asSpawn,
+      killGroup: vi.fn(),
+    });
+    broken.emit("error", new Error("spawn /bin/sh ENOENT"));
+    abort.abort();
+    await expect(done).rejects.toThrow("ENOENT");
+  });
+
+  test("an abort stops it like a timeout does", async () => {
+    const slow = Object.assign(new FakeChild(), { pid: 7 });
+    const killGroup = vi.fn();
+    const abort = new AbortController();
+    const done = runPublicUrlHook("x", URL, {
+      cwd: "/p",
+      signal: abort.signal,
+      killGraceMs: 5,
+      spawn: fakeSpawn(slow).asSpawn,
+      killGroup,
+    });
+    abort.abort();
+    expect(await done).toBeNull();
+    expect(killGroup).toHaveBeenCalledWith(7, "SIGTERM");
   });
 });

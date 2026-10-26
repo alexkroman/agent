@@ -98,6 +98,7 @@ auto-loads only `CLAUDE.md`):
 | Sibling | Covers |
 | --- | --- |
 | `packages/aai-cli/SELF-HOSTING-CLAUDE.md` | Self-hosting: `aai start` and the built worker, `aai build --target`'s per-host emits (Vercel, Deno, Modal), the deploy-env warning, and the Node/Deno/Bun certification of the serve half |
+| `packages/aai-cli/TESTING-CLAUDE.md` | Testing the CLI against a dying server (`AAI_FAULT_PROFILE`, the SIGKILL-and-restart fault mode, and how it differs from aai-runtime's socket fault proxy) and the pnpm-only e2e suite (`AAI_TEST_PM`, `AAI_REQUIRE_REGISTRY`) |
 | `packages/aai-guest-studio/CODING-AGENT-TESTS-CLAUDE.md` | Testing the studio coding agent: the agent-level unit spec through `runTextAgent`, and the agent's own EVAL — what is real in a case, the one thing that is per-case (the system prompt), and why it lives in `aai-guest-studio` rather than `aai-evals` |
 | `packages/aai-runtime/DIALOG-CLAUDE.md` | What each dialog voice knob can and cannot do |
 | `packages/aai-runtime/JOURNAL-CLAUDE.md` | The workflow journal and the replay engine's decisions |

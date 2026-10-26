@@ -56,19 +56,55 @@ export type LogsOpts = {
   signal?: AbortSignal | undefined;
 };
 
-function isLogsPage(value: unknown): value is LogsPage {
+/**
+ * The page's envelope. `lines` is only checked to BE an array here: one bad
+ * entry must not cost the good ones (see {@link checkedLines}).
+ */
+function isLogsPage(
+  value: unknown,
+): value is Omit<LogsPage, "lines" | "dropped"> & { lines: unknown[]; dropped?: number } {
   return (
     isRecord(value) &&
     Array.isArray(value.lines) &&
-    typeof value.cursor === "number" &&
+    Number.isFinite(value.cursor) &&
+    (value.dropped === undefined || Number.isFinite(value.dropped)) &&
     typeof value.running === "boolean"
   );
 }
 
-/** One rendered line: time, then the text. `stderr` is called out by name. */
+/** `at` is not required: a line with a bad time still has text worth showing. */
+function isLogLine(value: unknown): value is Omit<LogLine, "at"> & { at: unknown } {
+  return (
+    isRecord(value) &&
+    Number.isFinite(value.seq) &&
+    (value.stream === "stdout" || value.stream === "stderr") &&
+    typeof value.text === "string"
+  );
+}
+
+/** A page's well-formed lines, and how many were not. */
+type CheckedPage = LogsPage & { malformed: number };
+
+/**
+ * The lines that are lines. Under `--follow` one `null` entry threw
+ * `Cannot read properties of null` OUTSIDE the poll's catch and ended the
+ * command, so entries are checked one by one and the bad ones counted.
+ */
+function checkedLines(lines: unknown[]): { lines: LogLine[]; malformed: number } {
+  const good = lines
+    .filter(isLogLine)
+    .map((l) => ({ ...l, at: typeof l.at === "number" ? l.at : Number.NaN }));
+  return { lines: good, malformed: lines.length - good.length };
+}
+
+/**
+ * One rendered line: time, then the text. `stderr` is called out by name. A
+ * timestamp that is not a time renders as dashes, not `NaN:NaN:NaN.NaN`.
+ */
 export function formatLine(line: LogLine): string {
   const mark = line.stream === "stderr" ? " ERR" : "";
-  return `${formatLogTime(line.at)}${mark}  ${line.text}`;
+  const time = Number.isFinite(line.at) ? formatLogTime(line.at) : "--:--:--.---";
+  return `${time}${mark}  ${line.text}`;
 }
 
 /**
@@ -82,9 +118,10 @@ async function readPage(
   target: SlugTarget,
   after: number,
   platform: PlatformDeps,
-): Promise<LogsPage> {
+): Promise<CheckedPage> {
   const data = await slugRequestOn(target, `/logs?after=${after}`, { action: "logs" }, platform);
-  return checkedResponse(data, isLogsPage, `the logs route for ${target.slug}`);
+  const page = checkedResponse(data, isLogsPage, `the logs route for ${target.slug}`);
+  return { ...page, dropped: page.dropped ?? 0, ...checkedLines(page.lines) };
 }
 
 type LogsData = { slug: string; lines: number; running: boolean };
@@ -106,7 +143,8 @@ export async function executeLogs(
   const { slug } = target;
   const page = await readPage(target, -1, platform);
   let cursor = page.cursor;
-  let printed = printPage(page, ui);
+  const seen = { lastSeq: Number.NEGATIVE_INFINITY };
+  let printed = printPage(page, ui, seen);
 
   if (!opts.follow) {
     if (printed === 0) {
@@ -134,17 +172,27 @@ export async function executeLogs(
     // A failed poll is not a failed command: an agent between sandboxes answers
     // exactly like a network blip, and the next tick is a second away. Only a
     // signalled stop ends the loop.
+    // Every check of the page is inside `readPage`, so inside this catch —
+    // a malformed entry once threw from the print below and ended the follow.
     const next = await readPage(target, cursor, platform).catch(() => undefined);
     if (!next) continue;
+    // A cursor that went BACKWARDS is a fresh ring (a new sandbox numbers
+    // from zero again), so its lines are new even at seqs already printed.
+    if (next.cursor < cursor) seen.lastSeq = Number.NEGATIVE_INFINITY;
     cursor = next.cursor;
     running = next.running;
-    printed += printPage(next, ui);
+    printed += printPage(next, ui, seen);
   }
   return ok({ slug, lines: printed, running });
 }
 
-/** Write a page's lines (and any gap) to the log. Returns how many lines. */
-function printPage(page: LogsPage, ui: Ui): number {
+/**
+ * Write a page's NEW lines (and any gap) to the log. Returns how many lines.
+ *
+ * `seen.lastSeq` dedupes: a server whose cursor does not advance answers the
+ * same page every second, and printed it every second.
+ */
+function printPage(page: CheckedPage, ui: Ui, seen: { lastSeq: number }): number {
   if (page.dropped > 0) {
     // Reported rather than swallowed: a tail that silently skips is
     // indistinguishable from an agent that went quiet.
@@ -152,6 +200,15 @@ function printPage(page: LogsPage, ui: Ui): number {
       `… ${page.dropped} earlier line(s) dropped — the agent printed faster than this read`,
     );
   }
-  for (const line of page.lines) ui.log.message(formatLine(line));
-  return page.lines.length;
+  if (page.malformed > 0) {
+    ui.log.warn(`… ${page.malformed} malformed line(s) in the server's answer skipped`);
+  }
+  let count = 0;
+  for (const line of page.lines) {
+    if (line.seq <= seen.lastSeq) continue;
+    seen.lastSeq = line.seq;
+    ui.log.message(formatLine(line));
+    count++;
+  }
+  return count;
 }

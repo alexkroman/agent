@@ -7,15 +7,19 @@ import { omitUndefined, plural } from "@alexkroman1/aai/utils";
 import { defineCommand, runMain, showUsage } from "citty";
 import { BUILD_TARGETS } from "./_build-target.ts";
 import {
+  argvOutputMode,
+  builtinWithValue,
   commandPath,
   defineExec,
+  findMalformedFlags,
   findUnknownFlags,
   platformArgs,
   resolveArgv,
   sharedArgs,
+  wantsVersionElsewhere,
 } from "./_cli-common.ts";
 import { rootHelp } from "./_help.ts";
-import { fail, getOutputMode, installStdoutGuard } from "./_output.ts";
+import { fail, installStdoutGuard, ok, oweExitCode, resultLine } from "./_output.ts";
 import { logs, secret } from "./_resource-commands.ts";
 import { list, publish, pull, push } from "./_studio-commands.ts";
 import { defaultUi, parsePort } from "./_ui.ts";
@@ -325,6 +329,7 @@ const del = defineExec({
     description: "Delete the studio project and its deployed agents",
   },
   args: {
+    yes: { type: "boolean", alias: "y", description: "Delete without asking for confirmation" },
     ...platformArgs,
   },
   // The link in `.aai/project.json` is what it deletes; a directory that has
@@ -332,7 +337,9 @@ const del = defineExec({
   cwd: "any",
   async run({ args, cwd, ui }) {
     const { executeDelete } = await import("./delete.ts");
-    return executeDelete({ cwd, server: args.server }, ui);
+    // NOT defaulted to `--yes` in JSON mode the way `init` is: init's prompts
+    // pick defaults, this one guards an irreversible delete.
+    return executeDelete({ cwd, server: args.server, yes: args.yes }, ui);
   },
 });
 
@@ -393,10 +400,46 @@ export const mainCommand = defineCommand({
   },
 });
 
+/**
+ * What a bare `aai` in an agent directory does about publishing, by which of
+ * stdin and stdout are terminals.
+ *
+ * Publishing is an outward-facing act (it syncs source to the studio and
+ * deploys to production), so when a human is there a bare `aai` (often "what
+ * does this do?") must be confirmed. A terminal on STDIN is what says a human
+ * is there; stdout is only where the answer goes. Requiring BOTH to prompt let
+ * `aai | tee log` at a terminal publish without asking — so a human whose
+ * stdout is piped is refused, and can say `aai publish`. Non-TTY stdin keeps
+ * the implicit behaviour: a script invoking bare `aai` is deliberate.
+ */
+export function bareAaiPublish(tty: {
+  stdin: boolean;
+  stdout: boolean;
+}): "confirm" | "refuse" | "publish" {
+  if (!tty.stdin) return "publish";
+  return tty.stdout ? "confirm" : "refuse";
+}
+
 if (process.env.VITEST !== "true") {
   // JSON mode writes to stdout, which may be a pipe whose consumer exits
   // early (`aai … --json | head -1`) — EPIPE must not crash with a raw stack.
   installStdoutGuard();
+
+  /**
+   * Report a pre-parse failure the way the active output mode allows, then
+   * exit 1. These guards run BEFORE citty parses, so they cannot lean on
+   * `defineExec`'s mode plumbing.
+   */
+  const reportAndExit = async (label: string, hint: string): Promise<never> => {
+    oweExitCode(1);
+    if (argvOutputMode(process.argv.slice(2)) === "json") {
+      await defaultUi.writeResult(resultLine(fail("usage", label, hint)));
+    } else {
+      defaultUi.log.error(label);
+      defaultUi.log.info(hint);
+    }
+    process.exit(1);
+  };
 
   // A default command is injected ONLY on a truly bare `aai` — a leading
   // flag no longer counts as "no subcommand". It used to, which meant a
@@ -408,11 +451,17 @@ if (process.env.VITEST !== "true") {
       process.argv.splice(2, 0, "init");
       return;
     }
-    // Publishing is an outward-facing act (it syncs source to the studio
-    // and deploys to production) — when there's a human at the terminal,
-    // make sure a bare `aai` (often "what does this do?") means it. Non-TTY
-    // keeps the implicit behavior: scripts invoking bare `aai` are deliberate.
-    if (process.stdin.isTTY && process.stdout.isTTY) {
+    const action = bareAaiPublish({
+      stdin: Boolean(process.stdin.isTTY),
+      stdout: Boolean(process.stdout.isTTY),
+    });
+    if (action === "refuse") {
+      await reportAndExit(
+        "Not publishing: a bare `aai` deploys to production, and its output is not a terminal to confirm on.",
+        "Run `aai publish` to publish explicitly, or `aai --help` to see all commands.",
+      );
+    }
+    if (action === "confirm") {
       const confirmed = await defaultUi.prompts.confirm({
         message: "Publish this agent to production?",
       });
@@ -434,37 +483,40 @@ if (process.env.VITEST !== "true") {
   const usageForMode: typeof showUsage = async (cmd, parent) => {
     const argv = process.argv.slice(2);
     const wantsHelp = argv.includes("--help") || argv.includes("-h");
-    if (wantsHelp || getOutputMode({}) === "human") {
+    if (wantsHelp || argvOutputMode(argv) === "human") {
+      // Help asked for is a success, which an EPIPE (`aai --help | head -1`)
+      // must exit with; citty's own error path sets 1 after this returns.
+      if (wantsHelp) oweExitCode(0);
       // The ROOT gets the grouped help (`_help.ts`); a subcommand keeps citty's.
       if ((cmd as unknown) === mainCommand) defaultUi.writeOut(await rootHelp(mainCommand));
       else await showUsage(cmd, parent);
       return;
     }
     const named = commandPath(cmd, parent);
+    oweExitCode(1);
     await defaultUi.writeResult(
-      `${JSON.stringify(
+      resultLine(
         fail(
           "usage",
           `Invalid arguments for \`${named}\`.`,
           `Run \`${named} --help\` to see the arguments it accepts.`,
         ),
-      )}\n`,
+      ),
     );
   };
 
   /**
-   * Report a pre-parse failure the way the active output mode allows, then
-   * exit 1. These guards run BEFORE citty parses, so they cannot lean on
-   * `defineExec`'s mode plumbing.
+   * Answer `--version` where citty would not (see `wantsVersionElsewhere`):
+   * print it and exit 0 WITHOUT running the command — one result line in
+   * JSON mode, the bare version otherwise.
    */
-  const reportAndExit = async (label: string, hint: string): Promise<never> => {
-    if (getOutputMode({}) === "json") {
-      await defaultUi.writeResult(`${JSON.stringify(fail("usage", label, hint))}\n`);
-    } else {
-      defaultUi.log.error(label);
-      defaultUi.log.info(hint);
-    }
-    process.exit(1);
+  const printVersionAndExit = async (argv: string[]): Promise<never> => {
+    oweExitCode(0);
+    const { version } = mainMeta;
+    await defaultUi.writeResult(
+      argvOutputMode(argv) === "json" ? resultLine(ok({ version })) : `${version}\n`,
+    );
+    process.exit(0);
   };
 
   /**
@@ -483,27 +535,53 @@ if (process.env.VITEST !== "true") {
    * An unknown FLAG is refused because citty drops one silently, so
    * `aai push --serverr=http://x` exited 0 having pushed to the DEFAULT server.
    * `--server` decides where the API key and secret values go, so a typo that
-   * quietly retargets it is worth failing on.
+   * quietly retargets it is worth failing on — and so is a KNOWN flag citty
+   * would misread (`findMalformedFlags`: `--no-server`, a valueless `--server`).
    *
    * The command check comes first because a flag can only be judged against
    * the right command's `argsDef` — which is why `resolveArgv` reports the two
    * together instead of leaving the order to this call site.
    */
   const assertKnownArgv = async (): Promise<void> => {
-    const { named, unknownCommand, argsDef, rest } = await resolveArgv(
-      mainCommand,
-      process.argv.slice(2),
-    );
+    const argv = process.argv.slice(2);
+    const { named, unknownCommand, argsDef, rest } = await resolveArgv(mainCommand, argv);
     if (unknownCommand !== undefined) {
       await reportAndExit(
         `Unknown command: ${unknownCommand}`,
         `Run \`${named.join(" ")} --help\` to see the commands it accepts.`,
       );
     }
+    // `aai -- publish`: the root takes no positionals, and citty answered with
+    // a stray "No command specified." on stderr.
+    if (named.length === 1 && rest.includes("--")) {
+      await reportAndExit(
+        "`--` cannot come before a command.",
+        "Put the command first: `aai <command> [OPTIONS] -- [ARGS]`.",
+      );
+    }
+    const valued = builtinWithValue(argv);
+    if (valued !== undefined) {
+      const flag = valued.split("=")[0];
+      await reportAndExit(
+        `${flag} takes no value.`,
+        `Pass it bare: \`${named.join(" ")} ${flag}\`.`,
+      );
+    }
+    if (wantsVersionElsewhere(argv)) await printVersionAndExit(argv);
+    // Malformed first: in `--limit -5` the `-5` is a would-be VALUE, and
+    // "--limit needs a value" says so where "Unknown option: -5" would not.
+    const malformed = findMalformedFlags(rest, argsDef);
+    if (malformed.length > 0) {
+      await reportAndExit(
+        `Invalid ${plural(malformed.length, "option")}: ${malformed.join("; ")}`,
+        `Run \`${named.join(" ")} --help\` to see the options it accepts.`,
+      );
+    }
     const unknown = findUnknownFlags(rest, argsDef);
-    if (unknown.length === 0) return;
-    const label = `Unknown ${plural(unknown.length, "option")}: ${unknown.join(", ")}`;
-    await reportAndExit(label, "Run `aai <command> --help` to see the options it accepts.");
+    if (unknown.length > 0) {
+      const label = `Unknown ${plural(unknown.length, "option")}: ${unknown.join(", ")}`;
+      await reportAndExit(label, "Run `aai <command> --help` to see the options it accepts.");
+    }
   };
 
   // API key acquisition happens inside the platform commands, after citty

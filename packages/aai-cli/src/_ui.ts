@@ -14,8 +14,10 @@
  */
 
 import { styleText } from "node:util";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import * as clack from "@clack/prompts";
-import { writeLine } from "./_output.ts";
+import { CliError, sanitizeTerminalText, writeLine } from "./_output.ts";
+import { parseDecimalInt } from "./_utils.ts";
 
 /** The levels a command reports at. `message` is an unadorned line. */
 export type LogLevel = "info" | "success" | "error" | "warn" | "step" | "message";
@@ -66,7 +68,7 @@ export type Ui = {
   silence(): void;
   /** Whether {@link Ui.silence} has run. */
   readonly silenced: boolean;
-  /** Write the JSON result line to stdout, resolving once flushed (ANSI stripped). */
+  /** Write the JSON result line (`resultLine`, `_output.ts`) to stdout, resolving once flushed. */
   writeResult(line: string): Promise<void>;
   /** Write one raw line to stdout — `--help`, never a result. */
   writeOut(line: string): void;
@@ -79,13 +81,44 @@ const noop = () => {
   /* no-op */
 };
 
-/** The real terminal: clack for humans, `process.stdout`/`stderr` for the rest. */
-export function createUi(): Ui {
+/**
+ * Terminal-safe text: every escape sequence but colour removed, other controls
+ * rendered visibly (`sanitizeTerminalText`, `_output.ts`).
+ *
+ * Applied HERE, on every human path out of the real terminal, rather than at
+ * the call sites: a project name from `aai list`, a server's error body, an
+ * `aai logs` line, a workflow name all reach the terminal through this seam,
+ * and any one call site that forgot would hand the server an OSC 52 clipboard
+ * write or a screen clear. Colour survives because our own `styleText` output
+ * is SGR.
+ */
+const safe = (text: string): string => sanitizeTerminalText(text, { keepSgr: true });
+/** {@link safe} for an optional label, hint or spinner message. */
+const safeOpt = (text: string | undefined): string | undefined =>
+  text === undefined ? undefined : safe(text);
+
+/** `opts` with its `message` made {@link safe} — the shape every clack prompt takes. */
+function safeMessage<T extends { message: string }>(opts: T): T {
+  return { ...opts, message: safe(opts.message) };
+}
+
+/** The clack calls {@link createUi} makes — a spec hands in a recorder. */
+export type UiTerm = Pick<
+  typeof clack,
+  "log" | "confirm" | "text" | "password" | "select" | "intro" | "cancel" | "isCancel"
+> & { spinner(): UiSpinner };
+
+/**
+ * The real terminal: clack for humans, `process.stdout`/`stderr` for the rest.
+ * `term` is clack itself unless a spec passes a recorder (its namespace cannot
+ * be spied on).
+ */
+export function createUi(term: UiTerm = clack): Ui {
   let silenced = false;
   const level =
     (name: LogLevel) =>
     (message: string): void => {
-      if (!silenced) clack.log[name](message);
+      if (!silenced) term.log[name](safe(message));
     };
   const log: UiLog = {
     info: level("info"),
@@ -96,7 +129,7 @@ export function createUi(): Ui {
     message: level("message"),
   };
   const writeErr = (line: string): void => {
-    process.stderr.write(`${line}\n`);
+    process.stderr.write(`${safe(line)}\n`);
   };
   return {
     log,
@@ -116,16 +149,34 @@ export function createUi(): Ui {
     },
     writeErr,
     prompts: {
-      confirm: clack.confirm,
-      text: clack.text,
-      password: clack.password,
-      select: clack.select,
-      spinner: () => (silenced ? { start: noop, stop: noop } : clack.spinner()),
-      intro: (title) => {
-        if (!silenced) clack.intro(title);
+      confirm: (opts) => term.confirm(safeMessage(opts)),
+      text: (opts) => term.text(safeMessage(opts)),
+      password: (opts) => term.password(safeMessage(opts)),
+      // Option labels and hints too: `aai init`'s choices are template names.
+      select: (opts) =>
+        term.select({
+          ...safeMessage(opts),
+          options: opts.options.map((o) => ({
+            ...o,
+            ...omitUndefined({
+              label: safeOpt(o.label),
+              hint: safeOpt(o.hint),
+            }),
+          })),
+        }),
+      spinner: () => {
+        if (silenced) return { start: noop, stop: noop };
+        const spin = term.spinner();
+        return {
+          start: (message) => spin.start(safeOpt(message)),
+          stop: (message) => spin.stop(safeOpt(message)),
+        };
       },
-      cancel: (message) => clack.cancel(message),
-      isCancel: (value): value is symbol => clack.isCancel(value),
+      intro: (title) => {
+        if (!silenced) term.intro(safe(title));
+      },
+      cancel: (message) => term.cancel(safe(message)),
+      isCancel: (value): value is symbol => term.isCancel(value),
     },
   };
 }
@@ -157,12 +208,18 @@ export function fmtUrl(url: string): string {
 /**
  * Parse and validate a port string. Returns the numeric port or throws.
  * Zod-free for the startup-cost reason in the module doc.
+ *
+ * 1–65535: no command here documents port 0 ("any free port"), and both
+ * `aai dev` and `aai start` print the port they were given.
  */
 export function parsePort(raw: string): number {
-  // `Number("")` is 0, so an empty/whitespace string must be rejected up front.
-  const port = raw.trim() === "" ? Number.NaN : Number(raw);
-  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
-    throw new Error(`Invalid port: ${raw}. Must be a number between 0 and 65535.`);
+  const port = parseDecimalInt(raw, 1, 65_535);
+  if (port === undefined) {
+    throw new CliError(
+      "usage",
+      `Invalid port: ${raw}. Must be a whole number from 1 to 65535.`,
+      "Pass --port as plain decimal digits, e.g. --port 3000.",
+    );
   }
   return port;
 }

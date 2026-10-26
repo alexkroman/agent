@@ -28,14 +28,21 @@ function emittedWorker(connected = true) {
 
 describe("isStartWorker", () => {
   test("only a cluster-forked process our fork gave a slot", () => {
-    expect(isStartWorker({ NODE_UNIQUE_ID: "1", AAI_START_SLOT: "0" })).toBe(true);
-    expect(isStartWorker({ AAI_START_SLOT: "0" })).toBe(false);
-    expect(isStartWorker({ NODE_UNIQUE_ID: "1" })).toBe(false);
-    expect(isStartWorker({})).toBe(false);
+    expect(isStartWorker({ AAI_START_SLOT: "0" }, true)).toBe(true);
+    expect(isStartWorker({ AAI_START_SLOT: "0" }, false)).toBe(false);
+    expect(isStartWorker({}, true)).toBe(false);
+    expect(isStartWorker({}, false)).toBe(false);
   });
 });
 
 describe("nodeCluster", () => {
+  test("forks workers whose stdout is the primary's STDERR", () => {
+    // A worker runs this same command; on the primary's stdout its own result
+    // line would be a second one after `--json`'s.
+    nodeCluster(cluster);
+    expect(cluster.settings.stdio).toEqual(["inherit", 2, "inherit", "ipc"]);
+  });
+
   test("wraps an emitting worker ONCE, forwarding messages, kills and sends", () => {
     const adapter = nodeCluster(cluster);
     const raw = emittedWorker();

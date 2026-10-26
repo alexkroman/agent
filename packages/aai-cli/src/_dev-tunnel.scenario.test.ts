@@ -116,4 +116,21 @@ describe("runPublicUrlHook", () => {
     expect(await readFile(path.join(dir, "out.txt"), "utf-8")).toBe("[]");
     expect(await runPublicUrlHook("sleep 30", "", { cwd: dir, timeoutMs: 300 })).toBeNull();
   });
+
+  // The shell is not the hook: `sh -c` forks the real work, and a SIGTERM to
+  // the shell alone left that grandchild running after the timeout.
+  test("a timed-out hook's GRANDCHILD is stopped with it", async () => {
+    const dir = await scratch();
+    const pidFile = path.join(dir, "pid");
+    expect(
+      await runPublicUrlHook(`sleep 30 & echo $! > "${pidFile}"; wait`, "", {
+        cwd: dir,
+        timeoutMs: 500,
+        killGraceMs: 200,
+      }),
+    ).toBeNull();
+    const pid = Number((await readFile(pidFile, "utf-8")).trim());
+    expect(pid).toBeGreaterThan(0);
+    await vi.waitFor(() => expect(() => process.kill(pid, 0)).toThrow(), { timeout: 2000 });
+  });
 });

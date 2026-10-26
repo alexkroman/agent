@@ -13,9 +13,17 @@ import {
   type ParsedArgs,
   type Resolvable,
 } from "citty";
-import { CliError, type CommandResult, fail, getOutputMode, type OutputMode } from "./_output.ts";
+import {
+  CliError,
+  type CommandResult,
+  fail,
+  getOutputMode,
+  type OutputMode,
+  oweExitCode,
+  resultLine,
+} from "./_output.ts";
 import { defaultUi, type Ui } from "./_ui.ts";
-import { AGENT_ENTRY, errorMessage, fileExists, resolveCwd } from "./_utils.ts";
+import { AGENT_ENTRY, errorMessage, fileExists, parseServerFlag, resolveCwd } from "./_utils.ts";
 
 /** Shared arg definitions for citty commands. */
 export const sharedArgs = {
@@ -79,15 +87,22 @@ function canonicalFlag(flag: string): string {
 
 /** Every flag name and alias `argsDef` declares, plus citty's built-ins. */
 function declaredFlagNames(argsDef: ArgsDef): Set<string> {
-  const declared = new Set([...BUILTIN_FLAGS].map(canonicalFlag));
+  return new Set(
+    [...BUILTIN_FLAGS].map(canonicalFlag).concat([...declaredFlagTypes(argsDef).keys()]),
+  );
+}
+
+/** Each declared flag's canonical name and alias, mapped to its citty `type`. */
+function declaredFlagTypes(argsDef: ArgsDef): Map<string, string | undefined> {
+  const types = new Map<string, string | undefined>();
   for (const [name, def] of Object.entries(argsDef)) {
     const { type, alias } = def as { type?: string; alias?: string | string[] };
     if (type === "positional") continue;
-    declared.add(canonicalFlag(name));
-    if (typeof alias === "string") declared.add(canonicalFlag(alias));
-    else if (Array.isArray(alias)) for (const a of alias) declared.add(canonicalFlag(a));
+    for (const spelling of [name, ...(alias === undefined ? [] : [alias].flat())]) {
+      types.set(canonicalFlag(spelling), type);
+    }
   }
-  return declared;
+  return types;
 }
 
 /** The flag part of `raw` (`--server` from `--server=x`), or null if positional. */
@@ -96,6 +111,109 @@ function flagToken(raw: string): string | null {
   if (!raw.startsWith("-") || raw === "-" || /^-\d/.test(raw)) return null;
   const eq = raw.indexOf("=");
   return eq === -1 ? raw : raw.slice(0, eq);
+}
+
+/**
+ * Declared flags in `rawArgs` that citty would MISREAD, one sentence each.
+ *
+ * Two shapes, both of which citty turns into a silent fallback rather than an
+ * error — and on `--server`, the fallback is the DEFAULT origin receiving the
+ * API key while the user had named another:
+ *
+ * - **`--no-X` for a flag that is not a switch.** `canonicalFlag` drops the
+ *   `no-` so `--no-json` is known; it also let `--no-server` through, which
+ *   citty parses as `server: false` — "not given".
+ * - **A value-taking flag with no value.** `--server` last parses as `""`, and
+ *   `--server --json` takes `--json` AS the URL (and loses JSON mode). A value
+ *   that genuinely starts with `-` is still expressible: `--flag=-value`.
+ */
+export function findMalformedFlags(rawArgs: string[], argsDef: ArgsDef): string[] {
+  const types = declaredFlagTypes(argsDef);
+  const problems: string[] = [];
+  for (let i = 0; i < rawArgs.length; i++) {
+    const raw = rawArgs[i] ?? "";
+    if (raw === "--") break;
+    const { problem, takesNext } = judgeFlag(raw, rawArgs[i + 1], types);
+    if (problem !== undefined) problems.push(problem);
+    // The next token is this flag's value, which is not a flag or a positional.
+    if (takesNext) i++;
+  }
+  return problems;
+}
+
+/** One token of {@link findMalformedFlags}: its problem, and whether `next` is its value. */
+function judgeFlag(
+  raw: string,
+  next: string | undefined,
+  types: Map<string, string | undefined>,
+): { problem?: string; takesNext: boolean } {
+  const token = flagToken(raw);
+  // Unknown flags are `findUnknownFlags`' to report.
+  const type = token === null ? undefined : types.get(canonicalFlag(token));
+  if (token === null || type === undefined) return { takesNext: false };
+  const bare = token.replace(/^--?/, "");
+  if (bare.startsWith("no-")) {
+    return type === "boolean"
+      ? { takesNext: false }
+      : {
+          problem: `${token}: --${bare.slice(3)} takes a value and cannot be negated`,
+          takesNext: false,
+        };
+  }
+  if (type !== "string" || raw.includes("=")) return { takesNext: false };
+  // Any dash-led next token, `-5` included: citty's parser reads it as a flag,
+  // not this one's value, and hands the flag "" without a word.
+  if (next === undefined || next === "--" || (next.startsWith("-") && next !== "-")) {
+    return {
+      problem: `${token} needs a value (one starting with "-" is written ${token}=VALUE)`,
+      takesNext: false,
+    };
+  }
+  return { takesNext: true };
+}
+
+/** argv up to a bare `--`, after which every token is positional. */
+function flagRegion(argv: readonly string[]): readonly string[] {
+  const end = argv.indexOf("--");
+  return end === -1 ? argv : argv.slice(0, end);
+}
+
+/**
+ * The output mode `argv` selects, for a guard that runs BEFORE citty parses:
+ * an explicit `--json`/`--no-json` wins, as `getOutputMode` has it for a
+ * parsed command, then the TTY test.
+ */
+export function argvOutputMode(argv: readonly string[]): OutputMode {
+  let json: boolean | undefined;
+  for (const raw of flagRegion(argv)) {
+    if (raw === "--json" || raw === "--json=true") json = true;
+    else if (raw === "--no-json" || raw === "--json=false") json = false;
+  }
+  return getOutputMode({ json });
+}
+
+/**
+ * Whether `argv` asks for the version in a place citty would not answer it.
+ *
+ * citty prints the version only when `--version`/`-v` is the SOLE argument;
+ * anywhere else the built-in flag passed the unknown-flag guard and was then
+ * ignored, so `aai publish -v` published, `aai init --version` scaffolded and
+ * `aai dev --version` started a server. `--help` keeps precedence (citty
+ * answers it wherever it appears).
+ */
+export function wantsVersionElsewhere(argv: readonly string[]): boolean {
+  if (argv.length <= 1) return false;
+  const flags = flagRegion(argv);
+  if (flags.some((raw) => raw === "--help" || raw === "-h")) return false;
+  return flags.some((raw) => raw === "--version" || raw === "-v");
+}
+
+/**
+ * A built-in flag given a value (`--help=1`), which citty matches by exact
+ * text and so would NOT treat as a request for help — it ran the command.
+ */
+export function builtinWithValue(argv: readonly string[]): string | undefined {
+  return flagRegion(argv).find((raw) => /^(--help|-h|--version|-v)=/.test(raw));
 }
 
 /**
@@ -236,9 +354,12 @@ export async function runCommand(
     // the JSON result line (for a long time it reached machines only).
     if (result.hint) ui.log.info(result.hint);
   }
+  // Owed BEFORE the write: if the reader has gone (EPIPE), `installStdoutGuard`
+  // exits with this rather than a flat 0 that hides the failure.
+  oweExitCode(result.ok ? 0 : 1);
   // Await the flush before exiting: on a pipe (the JSON-mode case) stdout is
   // async, so process.exit() would truncate the JSON line just queued.
-  if (mode === "json") await ui.writeResult(`${JSON.stringify(result)}\n`);
+  if (mode === "json") await ui.writeResult(resultLine(result));
   if (!result.ok) process.exit(1);
 }
 
@@ -313,6 +434,12 @@ export function defineExec<const T extends ArgsDef, P extends CwdPolicy>(
     meta: CommandMeta;
     args: T;
     cwd: P;
+    /**
+     * Who refuses positionals beyond the declared ones: `"refuse"` (the
+     * default) here, naming them; `"own"` the body, for a command whose extra
+     * token must NOT be echoed (`aai secret put NAME value` — a credential).
+     */
+    extraPositionals?: "refuse" | "own";
     run: (ctx: ExecContext<T, P>) => Promise<CommandResult<unknown>>;
   },
   deps: { ui?: Ui } = {},
@@ -324,13 +451,44 @@ export function defineExec<const T extends ArgsDef, P extends CwdPolicy>(
     async run({ args }) {
       await runCommand(
         { json: jsonFlag(args) },
-        async (mode) =>
-          // Inside `runCommand`'s body, so the cwd policy's own failure ("No
-          // agent.ts found…") converges on the same emitter as everything else
-          // rather than escaping as an unhandled rejection.
-          spec.run({ args, mode, cwd: await resolvePolicyCwd(spec.cwd), ui }),
+        async (mode) => {
+          // Inside `runCommand`'s body, so these refusals and the cwd policy's
+          // own failure ("No agent.ts found…") converge on the same emitter as
+          // everything else rather than escaping as an unhandled rejection.
+          // `?? []`: a spec calling `run` directly may hand in args without `_`.
+          if (spec.extraPositionals !== "own") refuseExtraPositionals(spec, args._ ?? []);
+          const server: unknown = (args as Record<string, unknown>).server;
+          if ("server" in spec.args && server !== undefined) parseServerFlag(server);
+          return spec.run({ args, mode, cwd: await resolvePolicyCwd(spec.cwd), ui });
+        },
         ui,
       );
     },
   });
+}
+
+/**
+ * Refuse positionals beyond what the command declares, naming them.
+ *
+ * citty drops an undeclared positional silently, so `aai delete other-project`
+ * deleted the LINKED project — not the one named — and `aai dev x y z` started
+ * as if nothing had been typed. A destructive command acting on something
+ * other than what its argv names is worth a usage error.
+ */
+function refuseExtraPositionals(
+  spec: { meta: CommandMeta; args: ArgsDef },
+  positionals: readonly string[],
+): void {
+  const declared = Object.values(spec.args).filter(
+    (def) => (def as { type?: string }).type === "positional",
+  ).length;
+  const extras = positionals.slice(declared);
+  if (extras.length === 0) return;
+  const name = isRecord(spec.meta) && typeof spec.meta.name === "string" ? spec.meta.name : "";
+  throw new CliError(
+    "usage",
+    `Unexpected ${extras.length === 1 ? "argument" : "arguments"}: ${extras.join(" ")}`,
+    `\`${name}\` takes ${declared === 0 ? "no" : `at most ${declared}`} positional ` +
+      `${declared === 1 ? "argument" : "arguments"}. Run it with --help to see what it accepts.`,
+  );
 }

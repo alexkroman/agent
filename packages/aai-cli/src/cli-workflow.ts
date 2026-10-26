@@ -12,6 +12,15 @@
 import { defineCommand } from "citty";
 import { defineExec, platformArgs } from "./_cli-common.ts";
 import { CliError } from "./_output.ts";
+import { parseDecimalInt } from "./_utils.ts";
+
+/**
+ * The most runs one `aai workflow runs` asks for: the runtime's
+ * `MAX_WORKFLOW_FIND_LIMIT`, which the server clamps to (restated rather than
+ * imported, to keep `aai-runtime`'s barrel off the CLI's startup path;
+ * `cli-workflow.test.ts` pins the two equal).
+ */
+export const MAX_WORKFLOW_RUNS_LIMIT = 100;
 
 /**
  * `--token` for an agent whose operator set `AAI_WORKFLOW_API_TOKEN`.
@@ -119,9 +128,17 @@ export function createWorkflowCommand(
       const { executeWorkflowRuns } = await load();
       // Parsed here rather than in the executor so a non-numeric value fails as a
       // CLI error naming the flag, not as a query the server rejects.
-      const limit = args.limit === undefined ? undefined : Number(args.limit);
-      if (limit !== undefined && !Number.isFinite(limit)) {
-        throw new CliError("bad_limit", "--limit must be a number");
+      // Decimal digits only (`parseDecimalInt`): `Number()` let `0x10`, `1e9`,
+      // `1.5`, `-1` and `""` (as 0) through. Capped at the server's page bound.
+      const limit =
+        args.limit === undefined
+          ? undefined
+          : parseDecimalInt(args.limit, 1, MAX_WORKFLOW_RUNS_LIMIT);
+      if (args.limit !== undefined && limit === undefined) {
+        throw new CliError(
+          "bad_limit",
+          `--limit must be a whole number from 1 to ${MAX_WORKFLOW_RUNS_LIMIT}`,
+        );
       }
       return executeWorkflowRuns(cwd, args.workflow, { ...workflowOpts(args), limit }, ui);
     },

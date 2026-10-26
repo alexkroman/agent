@@ -8,6 +8,7 @@ import { readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { collectSourceFiles, projectNameFromDir, type StudioDeps } from "./_studio.ts";
 import { bundledTemplatesDir } from "./_templates.ts";
 import { createFakeUi, type FakeUi, test } from "./_test-utils.ts";
+import { fileExists } from "./_utils.ts";
 import { executeDelete } from "./delete.ts";
 import { executeList, executePublish, executePull, executePush } from "./studio.ts";
 
@@ -255,9 +256,117 @@ describe("executePull", () => {
     routeApi({
       "GET /studio/projects/proj": { files: { "../evil.ts": "x" }, sourceHash: "h" },
     });
-    await expect(executePull({ cwd: dir, project: "proj" }, ui, deps)).rejects.toThrow(
-      "escapes the project directory",
-    );
+    await expect(executePull({ cwd: dir, project: "proj" }, ui, deps)).rejects.toMatchObject({
+      code: "unsafe_pull",
+    });
+    expect(await fileExists(path.join(dir, "evil.ts"))).toBe(false);
+  });
+
+  // The pull side never applied the push side's exclusions: a row holding
+  // `.git/config` (with a `core.fsmonitor`) made the next `git status` run a
+  // command, and a row's `.aai/project.json` survived under the link write.
+  test("skips — and names — every path a push would never have sent", async ({ tmpDir: dir }) => {
+    routeApi({
+      "GET /studio/projects/proj": {
+        files: {
+          "agent.ts": "export {};",
+          ".git/config": "[core]\n\tfsmonitor = touch /tmp/pwned\n",
+          ".aai/project.json": '{"serverUrl":"https://evil.test"}',
+          ".env": "SECRET=1",
+          "pnpm-lock.yaml": "lock",
+          "src/node_modules/dep/index.js": "x",
+        },
+        sourceHash: "h1",
+      },
+    });
+
+    const result = await executePull({ cwd: dir, project: "proj" }, ui, deps);
+    const target = path.join(dir, "proj");
+    expect(await fileExists(path.join(target, "agent.ts"))).toBe(true);
+    for (const rel of [".git/config", ".env", "pnpm-lock.yaml", "src/node_modules"]) {
+      expect(await fileExists(path.join(target, rel))).toBe(false);
+    }
+    expect((await readProjectConfig(target))?.serverUrl).toBe("https://api.test");
+    // Named, in the result as well — `log.warn` is silent in JSON mode.
+    const warnings = (result as { data: { warnings?: string[] } }).data.warnings ?? [];
+    expect(warnings).toHaveLength(5);
+    expect(warnings.join("\n")).toContain(".git/config");
+    expect(ui.said("warn")).toEqual(warnings);
+  });
+
+  // Each of these failed MIDWAY, after `agent.ts` had landed, under a comment
+  // promising all-or-nothing.
+  test.for([
+    ["an empty name", { "": "x" }],
+    ["a file that is also a directory", { a: "x", "a/b": "y" }],
+    ["a NUL", { "x\u0000y": "x" }],
+    ["a newline", { "x\ny": "x" }],
+    ["a `.` segment", { "src/./x.ts": "x" }],
+    ["an empty segment", { "src//x.ts": "x" }],
+    ["an absolute path", { "/etc/x": "x" }],
+  ] as const)("refuses %s before writing anything", async ([, extra], { tmpDir: dir }) => {
+    routeApi({
+      "GET /studio/projects/proj": {
+        files: { "agent.ts": "export {};", ...extra },
+        sourceHash: "h",
+      },
+    });
+    await expect(executePull({ cwd: dir, project: "proj" }, ui, deps)).rejects.toMatchObject({
+      code: "unsafe_pull",
+    });
+    expect(await fileExists(path.join(dir, "proj"))).toBe(false);
+  });
+
+  // `--force` into a directory that already holds links: the write followed
+  // them out of the target.
+  test.for([
+    ["a symlinked file", "agent.ts", "victim.txt"],
+    ["a symlinked directory", "linkdir", ""],
+  ] as const)("--force refuses to write through %s", async ([, link, victim], { tmpDir: dir }) => {
+    const outside = path.join(dir, "outside");
+    await fs.mkdir(outside);
+    await fs.writeFile(path.join(outside, "victim.txt"), "original");
+    const target = path.join(dir, "proj");
+    await fs.mkdir(target);
+    await fs.symlink(path.join(outside, victim), path.join(target, link));
+    routeApi({
+      "GET /studio/projects/proj": {
+        files: { "agent.ts": "pwned", "linkdir/x.ts": "pwned", "other.ts": "x" },
+        sourceHash: "h",
+      },
+    });
+
+    await expect(
+      executePull({ cwd: dir, project: "proj", force: true }, ui, deps),
+    ).rejects.toMatchObject({ code: "symlink_in_path" });
+    expect(await fs.readdir(outside)).toEqual(["victim.txt"]);
+    expect(await fs.readFile(path.join(outside, "victim.txt"), "utf-8")).toBe("original");
+    expect(await fileExists(path.join(target, "other.ts"))).toBe(false);
+  });
+
+  test("a deployedSlug that is not slug-shaped fails bad_response and writes nothing", async ({
+    tmpDir: dir,
+  }) => {
+    routeApi({
+      "GET /studio/projects/proj": {
+        files: { "agent.ts": "x" },
+        sourceHash: "h",
+        deployedSlug: "../../admin",
+      },
+    });
+    await expect(executePull({ cwd: dir, project: "proj" }, ui, deps)).rejects.toMatchObject({
+      code: "bad_response",
+    });
+    expect(await fileExists(path.join(dir, "proj"))).toBe(false);
+  });
+
+  test("refuses a project name that is not slug-shaped before any request", async ({
+    tmpDir: dir,
+  }) => {
+    await expect(executePull({ cwd: dir, project: "../proj" }, ui, deps)).rejects.toMatchObject({
+      code: "invalid_project",
+    });
+    expect(mockApiRequest).not.toHaveBeenCalled();
   });
 });
 
@@ -400,6 +509,53 @@ describe("executePush", () => {
     });
     expect((await executePush({ cwd, force: true }, ui, deps)).ok).toBe(true);
   });
+
+  // `.aai/project.json` arrives with a cloned repo. A `studioProject` with no
+  // `studioSourceHash` skipped the existence probe and PUT with no baseHash —
+  // an unconditional overwrite of whoever already owned that project name.
+  test("a link with no fast-forward token still refuses an existing project", async ({
+    tmpDir: cwd,
+  }) => {
+    await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+    resolveDeployTarget.mockResolvedValue({
+      ...TARGET,
+      config: { serverUrl: "https://api.test", studioProject: "victim" },
+    });
+    routeApi({
+      "GET /studio/projects/victim": { files: { "agent.ts": "theirs" }, sourceHash: "h9" },
+    });
+    await expect(executePush({ cwd }, ui, deps)).rejects.toMatchObject({ code: "project_exists" });
+    expect(mockApiRequest).not.toHaveBeenCalledWith(
+      expect.stringContaining("/source"),
+      expect.anything(),
+    );
+
+    // `--force` is still the explicit override.
+    routeApi({
+      "GET /studio/projects/victim": { files: { "agent.ts": "theirs" }, sourceHash: "h9" },
+      "PUT /studio/projects/victim/source": { sourceHash: "h10", created: false },
+    });
+    expect((await executePush({ cwd, force: true }, ui, deps)).ok).toBe(true);
+  });
+
+  test.for([
+    ["a path-shaped studioProject", { studioProject: "../admin" }],
+    ["a `-preview` studioProject", { studioProject: "demo-preview" }],
+    ["a `-preview` slug naming the first push", { slug: "demo-preview" }],
+  ] as const)(
+    "refuses %s from .aai/project.json before any request",
+    async ([, link], { tmpDir: cwd }) => {
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      resolveDeployTarget.mockResolvedValue({
+        ...TARGET,
+        config: { serverUrl: "https://api.test", studioSourceHash: "h1", ...link },
+      });
+      await expect(executePush({ cwd }, ui, deps)).rejects.toMatchObject({
+        code: "invalid_project",
+      });
+      expect(mockApiRequest).not.toHaveBeenCalled();
+    },
+  );
 });
 
 describe("executePublish", () => {
@@ -511,6 +667,40 @@ describe("executePublish", () => {
     );
   });
 
+  test("a returned slug that is not slug-shaped is refused and never recorded", async ({
+    tmpDir: cwd,
+  }) => {
+    await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+    await writeProjectConfig(cwd, {
+      serverUrl: "https://api.test",
+      studioProject: "proj",
+      studioSourceHash: "h1",
+      slug: "proj",
+    });
+    resolveDeployTarget.mockResolvedValue({ ...TARGET, config: await readProjectConfig(cwd) });
+    routeApi({
+      "PUT /studio/projects/proj/source": { sourceHash: "h2", created: false },
+      "POST /studio/projects/proj/deploy": { ok: true, slug: "../../admin", output: "ok" },
+    });
+
+    await expect(executePublish({ cwd, skipTypecheck: true }, ui, deps)).rejects.toMatchObject({
+      code: "bad_response",
+    });
+    expect((await readProjectConfig(cwd))?.slug).toBe("proj");
+  });
+
+  // The typecheck gate runs the project's OWN node_modules tsc. An untrusted
+  // `serverUrl` (or no login) has to stop the command before that, not after.
+  test("resolves the deploy target before the typecheck runs any project code", async ({
+    tmpDir: cwd,
+  }) => {
+    await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+    resolveDeployTarget.mockRejectedValue(new Error("Refusing to send your API key"));
+
+    await expect(executePublish({ cwd }, ui, deps)).rejects.toThrow("Refusing to send");
+    expect(ui.said("step")).not.toContain("Type checking…");
+  });
+
   test("reports skipped files in the result, like push does", async ({ tmpDir: cwd }) => {
     await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
     await fs.writeFile(path.join(cwd, "huge.txt"), "x".repeat(256_001));
@@ -579,6 +769,55 @@ describe("executePublish", () => {
     expect(order).toEqual(["secrets", "deploy"]);
   });
 
+  test("the .env sync uploads the FILE's values, never the shell's", async ({ tmpDir: dir }) => {
+    // A cloned repo's `.env` chooses the names; with shell-wins resolution a
+    // blank `GITHUB_TOKEN=` line uploaded the user's exported token.
+    vi.stubEnv("GITHUB_TOKEN", "ghp_from_the_users_shell");
+    vi.stubEnv("K", "shell-value");
+    const cwd = path.join(dir, "fresh-agent");
+    await fs.mkdir(cwd);
+    await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+    await fs.writeFile(path.join(cwd, ".env"), "GITHUB_TOKEN=\nK=file-value\n");
+    let uploaded: unknown;
+    routeApi({
+      "GET /studio/projects/fresh-agent": null,
+      "PUT /studio/projects/fresh-agent/source": { sourceHash: "h1", created: true },
+      "PUT /studio/projects/fresh-agent/secret": (opts: { body: unknown }) => {
+        uploaded = opts.body;
+        return { ok: true };
+      },
+      "POST /studio/projects/fresh-agent/deploy": {
+        ok: true,
+        slug: "fresh-agent",
+        url: "/fresh-agent/",
+        output: "ok",
+      },
+    });
+
+    expect((await executePublish({ cwd, skipTypecheck: true }, ui, deps)).ok).toBe(true);
+    expect(uploaded).toEqual({ K: "file-value" });
+  });
+
+  test("a .env symlinked out of the project is refused before anything uploads", async ({
+    tmpDir: dir,
+  }) => {
+    const cwd = path.join(dir, "fresh-agent");
+    await fs.mkdir(cwd);
+    await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+    await fs.writeFile(path.join(dir, "credentials"), "AWS_SECRET_ACCESS_KEY=hunter2\n");
+    await fs.symlink(path.join(dir, "credentials"), path.join(cwd, ".env"));
+    routeApi({
+      "GET /studio/projects/fresh-agent": null,
+      "PUT /studio/projects/fresh-agent/source": { sourceHash: "h1", created: true },
+    });
+
+    await expect(executePublish({ cwd, skipTypecheck: true }, ui, deps)).rejects.toThrow(
+      /\.env is a symlink to .*credentials, outside the project/,
+    );
+    const urls = mockApiRequest.mock.calls.map(([url]) => String(url));
+    expect(urls.some((u) => u.endsWith("/secret") || u.endsWith("/deploy"))).toBe(false);
+  });
+
   test("does not tell the user to publish twice", async ({ tmpDir: dir }) => {
     // The message was the symptom the docs copied. There is no second publish
     // to wait for, so nothing may say there is — and `log.info` is silenced in
@@ -627,14 +866,60 @@ describe("executePublish", () => {
 });
 
 describe("executeDelete", () => {
-  test("a linked directory deletes the STUDIO PROJECT (server-side cascade)", async () => {
+  test("a linked directory deletes the STUDIO PROJECT (server-side cascade)", async ({
+    tmpDir: cwd,
+  }) => {
     resolveDeployTarget.mockResolvedValue({
       ...TARGET,
       config: { serverUrl: "https://api.test", studioProject: "proj", slug: "proj" },
     });
     routeApi({ "DELETE /studio/projects/proj": { ok: true } });
-    const result = await executeDelete({ cwd: "/tmp" }, ui, deps);
+    const result = await executeDelete({ cwd, yes: true }, ui, deps);
     expect(result).toEqual({ ok: true, data: { project: "proj", slug: "proj" } });
+  });
+
+  // It deleted a project and every agent deployed from it with no question.
+  test("without --yes and with nobody to ask, refuses — naming --yes", async ({ tmpDir: cwd }) => {
+    resolveDeployTarget.mockResolvedValue({
+      ...TARGET,
+      config: { serverUrl: "https://api.test", studioProject: "proj" },
+    });
+    await expect(executeDelete({ cwd, interactive: false }, ui, deps)).rejects.toMatchObject({
+      code: "usage",
+      hint: expect.stringContaining("--yes"),
+    });
+    // The slug-only path (no studio link) asks too.
+    resolveDeployTarget.mockResolvedValue({
+      ...TARGET,
+      config: { serverUrl: "https://api.test", slug: "my-agent" },
+    });
+    await expect(executeDelete({ cwd, interactive: false }, ui, deps)).rejects.toMatchObject({
+      code: "usage",
+    });
+    expect(mockApiRequest).not.toHaveBeenCalled();
+  });
+
+  test("at a terminal, asks naming the project, and a no deletes nothing", async ({
+    tmpDir: cwd,
+  }) => {
+    resolveDeployTarget.mockResolvedValue({
+      ...TARGET,
+      config: { serverUrl: "https://api.test", studioProject: "proj" },
+    });
+    ui.prompts.confirm.mockResolvedValueOnce(false);
+    const result = await executeDelete({ cwd, interactive: true }, ui, deps);
+    expect(result).toEqual({ ok: true, data: { cancelled: true } });
+    expect(ui.prompts.confirm).toHaveBeenCalledWith({
+      message: expect.stringContaining("studio project proj"),
+    });
+    expect(mockApiRequest).not.toHaveBeenCalled();
+
+    routeApi({ "DELETE /studio/projects/proj": { ok: true } });
+    ui.prompts.confirm.mockResolvedValueOnce(true);
+    expect(await executeDelete({ cwd, interactive: true }, ui, deps)).toEqual({
+      ok: true,
+      data: { project: "proj" },
+    });
   });
 
   test("clears the now-dangling studio link so the next publish can recreate", async ({
@@ -652,7 +937,7 @@ describe("executeDelete", () => {
     });
     routeApi({ "DELETE /studio/projects/proj": { ok: true } });
 
-    await executeDelete({ cwd }, ui, deps);
+    await executeDelete({ cwd, yes: true }, ui, deps);
 
     // Leaving the link behind sent the next push a stale `baseHash` for a
     // project that no longer exists, which the server answers 409 —

@@ -101,6 +101,14 @@ describe("executeWorkflowList", () => {
     expect(call()[1].headers).toMatchObject({ Authorization: "Bearer s3cret" });
   });
 
+  test("every request carries a deadline, so a hung agent cannot hang the command", async () => {
+    // `fetch` has no timeout of its own; without `timeoutMs` the SDK client
+    // sends no signal and a server that never answers holds the CLI forever.
+    fetchMock.mockImplementation(async () => json({ workflows: [] }));
+    await executeWorkflowList("/proj", {}, ui, deps);
+    expect(call()[1].signal).toBeInstanceOf(AbortSignal);
+  });
+
   test("names the agent when it declares none, rather than printing nothing", async () => {
     fetchMock.mockImplementation(async () => json({ workflows: [] }));
     await executeWorkflowList("/proj", {}, ui, deps);
@@ -303,6 +311,34 @@ describe("--agent targets a server the caller is running themselves", () => {
       /--agent/,
     );
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("a body that is not the workflow API's shape fails bad_response", () => {
+  // The client casts; these used to die on `workflows is not iterable` and
+  // `Cannot read properties of null`.
+  test.each([
+    ["list", { workflows: 5 }, () => executeWorkflowList("/proj", {}, ui, deps)],
+    ["list", { workflows: [null] }, () => executeWorkflowList("/proj", {}, ui, deps)],
+    ["runs", { runs: [null] }, () => executeWorkflowRuns("/proj", "digest", {}, ui, deps)],
+    [
+      "runs",
+      { runs: [{ runId: "r", status: "exploded" }] },
+      () => executeWorkflowRuns("/proj", "digest", {}, ui, deps),
+    ],
+    [
+      "show",
+      { runId: 7, status: "running" },
+      () => executeWorkflowShow("/proj", "r", {}, ui, deps),
+    ],
+  ])("%s answering %j", async (_verb, body, run) => {
+    fetchMock.mockImplementation(async () => json(body));
+    expect(await run()).toMatchObject({
+      ok: false,
+      code: "bad_response",
+      error: expect.stringContaining("Unexpected response"),
+      hint: expect.stringContaining("workflow API"),
+    });
   });
 });
 

@@ -27,10 +27,15 @@
  * client's methods.
  */
 
-import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
-import type { WorkflowRunSnapshot, WorkflowSummary } from "@alexkroman1/aai/workflow-api";
+import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import type {
+  WorkflowRunSnapshot,
+  WorkflowRunStatus,
+  WorkflowSummary,
+} from "@alexkroman1/aai/workflow-api";
 import { createWorkflowApiClient, type WorkflowApi } from "@alexkroman1/aai/workflow-api";
 import { getServerInfo } from "./_agent.ts";
+import { DEFAULT_REQUEST_TIMEOUT_MS } from "./_api-client.ts";
 import { readProjectConfig } from "./_config.ts";
 import { CliError, type CommandResult, fail, ok } from "./_output.ts";
 import { defaultUi, type Ui } from "./_ui.ts";
@@ -143,23 +148,20 @@ function agentBaseUrl(raw: string): string {
  * the server already running.
  */
 async function target(cwd: string, opts: WorkflowOptions, deps: WorkflowDeps): Promise<Target> {
+  const client = (baseUrl: string): WorkflowApi =>
+    createWorkflowApiClient({
+      baseUrl,
+      timeoutMs: DEFAULT_REQUEST_TIMEOUT_MS,
+      ...omitUndefined({ token: opts.token }),
+    });
   if (opts.agent !== undefined) {
     const baseUrl = agentBaseUrl(opts.agent);
-    return {
-      api: createWorkflowApiClient({ baseUrl, ...omitUndefined({ token: opts.token }) }),
-      name: baseUrl,
-    };
+    return { api: client(baseUrl), name: baseUrl };
   }
   const config = await deps.readProjectConfig(cwd);
   if (!config?.slug) throw new CliError("no_deployment", NO_DEPLOYMENT, HINT_AGENT);
   const { serverUrl, slug } = await deps.getServerInfo(cwd, opts.server);
-  return {
-    api: createWorkflowApiClient({
-      baseUrl: `${serverUrl}/${slug}`,
-      ...omitUndefined({ token: opts.token }),
-    }),
-    name: slug,
-  };
+  return { api: client(`${serverUrl}/${slug}`), name: slug };
 }
 
 /**
@@ -221,6 +223,67 @@ async function attempt<T>(
   }
 }
 
+/**
+ * The client's answer CHECKED against the shape the verb prints, as a failure
+ * result rather than a crash.
+ *
+ * `createWorkflowApiClient` casts what the agent sends, so `{"workflows":5}`
+ * died on `workflows is not iterable` and `[null]` on `Cannot read properties
+ * of null` — stack traces where this command's own sentence belongs. The same
+ * reason as `checkedResponse` (`_api-client.ts`), whose hint names `--server`;
+ * this surface is the agent's, so the hint names that.
+ */
+function checked<T>(
+  value: unknown,
+  isExpected: (value: unknown) => value is T,
+  what: string,
+): { ok: true; value: T } | Failure {
+  if (isExpected(value)) return { ok: true, value };
+  return {
+    ok: false,
+    code: "bad_response",
+    error: `Unexpected response from ${what}.`,
+    hint: HINT_BAD_RESPONSE,
+  };
+}
+
+/** Every `WorkflowRunStatus` — a record, so a new status fails to compile here. */
+const RUN_STATUSES: Readonly<Record<WorkflowRunStatus, true>> = {
+  pending: true,
+  running: true,
+  completed: true,
+  failed: true,
+  cancelled: true,
+};
+
+/** A run as this command prints it: an id, a known status, and the fields `formatRun` reads. */
+function isRun(value: unknown): value is Run {
+  return (
+    isRecord(value) &&
+    typeof value.runId === "string" &&
+    typeof value.status === "string" &&
+    Object.hasOwn(RUN_STATUSES, value.status) &&
+    (value.key === undefined || typeof value.key === "string") &&
+    (value.status !== "failed" || typeof value.error === "string")
+  );
+}
+
+function isWorkflowSummaries(value: unknown): value is WorkflowSummary[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (w) =>
+        isRecord(w) &&
+        typeof w.name === "string" &&
+        (w.description === undefined || typeof w.description === "string"),
+    )
+  );
+}
+
+function isRuns(value: unknown): value is Run[] {
+  return Array.isArray(value) && value.every(isRun);
+}
+
 /** `aai workflow list` — what this agent declares. */
 export async function executeWorkflowList(
   cwd: string,
@@ -231,7 +294,9 @@ export async function executeWorkflowList(
   const { api, name } = await target(cwd, opts, deps);
   const res = await attempt("workflow_list_failed", () => api.list());
   if (!res.ok) return res;
-  const workflows = res.value;
+  const listed = checked(res.value, isWorkflowSummaries, `the workflow list of ${name}`);
+  if (!listed.ok) return listed;
+  const workflows = listed.value;
   if (workflows.length === 0) {
     ui.log.info(`${name} declares no workflows`);
   } else {
@@ -254,12 +319,14 @@ export async function executeWorkflowRuns(
   ui: Ui = defaultUi,
   deps: WorkflowDeps = REAL_DEPS,
 ): Promise<CommandResult<{ runs: Run[] }>> {
-  const { api } = await target(cwd, opts, deps);
+  const { api, name } = await target(cwd, opts, deps);
   const res = await attempt("workflow_runs_failed", () =>
     api.recent(workflow, { limit: opts.limit ?? DEFAULT_RUN_LIMIT }),
   );
   if (!res.ok) return res;
-  const runs = res.value;
+  const listed = checked(res.value, isRuns, `the runs of ${workflow} on ${name}`);
+  if (!listed.ok) return listed;
+  const runs = listed.value;
   if (runs.length === 0) ui.log.info(`No runs of ${workflow} yet`);
   for (const run of runs) ui.log.info(formatRun(run));
   return ok({ runs });
@@ -281,7 +348,7 @@ export async function executeWorkflowShow(
   ui: Ui = defaultUi,
   deps: WorkflowDeps = REAL_DEPS,
 ): Promise<CommandResult<{ run: Run }>> {
-  const { api } = await target(cwd, opts, deps);
+  const { api, name } = await target(cwd, opts, deps);
   const res = await attempt("workflow_show_failed", () => api.get(runId));
   if (!res.ok) return res;
   // `get` resolves undefined for a 404, which the API answers for BOTH an
@@ -293,7 +360,9 @@ export async function executeWorkflowShow(
   if (res.value === undefined) {
     return fail("workflow_show_failed", `No run ${runId}`, HINT_BROKER);
   }
-  const run = res.value;
+  const shown = checked(res.value, isRun, `run ${runId} on ${name}`);
+  if (!shown.ok) return shown;
+  const run = shown.value;
   ui.log.info(formatRun(run));
   // The output is the reason `show` exists next to `runs`, and it is the one
   // field a line cannot hold — printed as JSON so a shell can pipe it.
@@ -312,6 +381,7 @@ export async function executeWorkflowCancel(
   const { api } = await target(cwd, opts, deps);
   const res = await attempt("workflow_cancel_failed", () => api.cancel(runId));
   if (!res.ok) return res;
+  // Not checked like the others: the client reduces the body to a boolean.
   const cancelled = res.value;
   // Not a failure when false: the run was already terminal, which is an ANSWER —
   // the same reason the route replies 200 either way.
@@ -331,3 +401,8 @@ export async function executeWorkflowCancel(
 const HINT_BROKER =
   "The agent may declare no workflows, or its sandbox may still be starting — try again shortly. " +
   "Pass --token if the agent sets AAI_WORKFLOW_API_TOKEN.";
+
+/** What a body that is not the workflow API's shape is told. */
+const HINT_BAD_RESPONSE =
+  "That target does not answer like an aai agent's workflow API. Check --agent (or the " +
+  "project's deployment) points at an aai agent, then try again.";
