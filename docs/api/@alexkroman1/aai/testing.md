@@ -1367,9 +1367,11 @@ readonly [`AnyDialog`](index.md#anydialog)[]
 
 #### Throws
 
-When the agent declares neither `events` nor `dialogs` — there is
-  nothing to drive, and a spec that fired into nothing would pass against
-  nothing.
+When the agent declares no `events` handler and no `dialogs` — an
+  absent `events` or an empty `{}` alike — since there is nothing to drive,
+  and a spec that fired into nothing would pass against nothing. A
+  `TypeError` when `event` is not a session event (built by
+  [sessionEvent](#sessionevent)).
 
 #### Example
 
@@ -2826,7 +2828,9 @@ discovered from.
 Only a def a DEPLOYED agent registered has one: import the agent as
 `virtual:aai/agent` under vitest, or lower it with `deployedAgent`, before
 reading a tool by its def. A def built inline in a spec has never been a
-file, so it has no name, and the throw says so.
+file, so it has no name, and the throw says so — as it does for a ROSTER
+tool (one declared on a persona's `tools`), which is minted under the
+speaker rather than discovered from a file and is read by its name string.
 
 #### Parameters
 

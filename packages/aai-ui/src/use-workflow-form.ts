@@ -80,6 +80,11 @@ export type UseWorkflowSubmitOptions = {
    * input both collides and carries what they typed — `use-run-key.ts` argues
    * every alternative. What was chosen is reported back as
    * `WorkflowSubmission.scope`.
+   *
+   * **An empty or whitespace key THROWS** at the hook (and the route answers
+   * 400): `""` is not "no key" but one key shared by every visitor whose key
+   * computed to it — `user?.id ?? ""` before login. Pass `undefined` until the
+   * key is known.
    */
   key?: string | { readonly storage?: "session" | "local" | undefined };
   /**

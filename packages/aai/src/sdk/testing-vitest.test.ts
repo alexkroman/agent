@@ -211,6 +211,22 @@ describe("installStubGateway seeds the credential", () => {
     expect(process.env.ASSEMBLYAI_API_KEY).toBeUndefined();
   });
 
+  test("`apiKey: false` ENSURES there is none, so the refusal spec passes under an exporting shell", async () => {
+    // "Seed nothing" left the missing-key spec green on CI and red on a
+    // developer's machine with the key exported — the normal state of anyone
+    // running `aai dev`. The shell's value is stubbed away for the test.
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "from-the-shell");
+    installStubGateway("reply", { apiKey: false });
+    expect(process.env.ASSEMBLYAI_API_KEY).toBeUndefined();
+    await expect(stepGenerate("hi")).rejects.toThrow(/ASSEMBLYAI_API_KEY/);
+  });
+
+  test("and the shell's value is back by the next test", () => {
+    // The previous test's `vi.stubEnv` is unwound by `unstubEnvs`; what this
+    // pins is that `apiKey: false`'s own restore did not leave it undefined.
+    expect(process.env.ASSEMBLYAI_API_KEY).not.toBe("from-the-shell");
+  });
+
   test("and the seed is gone by the next test", () => {
     // `unstubEnvs` would do this too; the explicit restore is for a project
     // whose config does not set it.
@@ -281,6 +297,18 @@ describe("installStubWorld", () => {
     expect(world.reported.lines).toEqual(["recorded"]);
   });
 
+  test("a SECOND world replaces the first's reporter, so the world held last records", async () => {
+    // `reporter ?? !hasStepReporter()` saw the first world's reporter and left
+    // it in place, so the second world's `reported` was inert while its every
+    // other leg had taken over — last publish wins for the model, and now for
+    // the narration too.
+    const first = installStubWorld({ model: "first" });
+    const second = installStubWorld({ model: "second" });
+    await stepReport("narrated");
+    expect(second.reported.lines).toEqual(["narrated"]);
+    expect(first.reported.lines).toEqual([]);
+  });
+
   test("a `pages` handler is the last leg, and an unanswered request throws naming it", async () => {
     installStubWorld({ pages: () => undefined });
     await expect(stepFetch("https://example.test/none")).rejects.toThrow(
@@ -348,5 +376,12 @@ describeAgent(
 describeAgent(agent({ name: "Mute" }), (run) => {
   test("a tool-less agent keeps its deployable case, and the runner refuses at the call", async () => {
     await expect(run("anything")).rejects.toThrow("declares no tools");
+  });
+
+  test("the refusal names the helper the author called, not `toolRunner`", async () => {
+    // `toolRunner` appears nowhere in a `describeAgent` suite; a sentence
+    // naming it sends the author looking for a call they never wrote.
+    await expect(run("anything")).rejects.toThrow(/^describeAgent\(agent, …\) was handed/);
+    await expect(run("anything")).rejects.not.toThrow(/toolRunner\(/);
   });
 });

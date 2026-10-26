@@ -83,6 +83,17 @@ describe("GET /runs — the `limit` a caller supplies", () => {
     expect(body).not.toHaveProperty("truncatedTo");
   });
 
+  test("a BLANK key is refused rather than widened to the keyless read", async () => {
+    // `?key=` with nothing after it used to fall through to `recent`, so a page
+    // whose key computed to `""` read every run of the workflow — and the write
+    // under `""` is refused, so there is nothing such a lookup could honestly find.
+    const { res, body } = await listRuns("workflow=digest&key=");
+    expect(res.status).toBe(400);
+    expect(body.error).toMatch(/"key" must not be blank/);
+    const spaced = await listRuns("workflow=digest&key=%20%20");
+    expect(spaced.res.status).toBe(400);
+  });
+
   test("the keyed read is bounded by the same ceiling", async () => {
     // `find` and `recent` are one route and one clamp; a bound on half of it is
     // no bound at all.

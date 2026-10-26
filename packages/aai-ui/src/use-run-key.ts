@@ -119,6 +119,27 @@ function mintRunKey(storage: StorageKind): string {
 }
 
 /**
+ * Refuse a caller's key that is empty or whitespace.
+ *
+ * A key is the lookup CAPABILITY (see the module doc), so one that computes to
+ * `""` is not "no key": it is ONE key, SHARED by every visitor whose key came
+ * out the same way — `user?.id ?? ""` before the login resolves is the natural
+ * way to write it — and they then record and recover each other's runs. The
+ * server refuses the same value with a 400 (`workflow/api/runs.ts`), but a
+ * refusal at the hook names the line that computed it.
+ */
+function assertUsableRunKey(key: string): void {
+  if (key.trim() !== "") return;
+  throw new Error(
+    `useWorkflowSubmit({ key }) was given ${JSON.stringify(key)}, an empty key. ` +
+      "A key is the lookup capability runs are recorded under, so an empty one would be " +
+      'SHARED by every visitor whose key computed to "" (a `user?.id ?? ""` before login is ' +
+      "the usual cause). Pass undefined until the key is known — the hook mints a per-page " +
+      "key of its own — or a non-blank string.",
+  );
+}
+
+/**
  * The key `useWorkflowSubmit` uses when the page named none.
  *
  * Two things it does that a plain `useRunKey()` at the call site cannot, and
@@ -138,12 +159,15 @@ function mintRunKey(storage: StorageKind): string {
  *
  * @param explicit - The caller's own key, or undefined for a page with none.
  * @returns The key to record runs under and look them up by.
+ * @throws When the caller's key is empty or whitespace — see
+ *   {@link assertUsableRunKey}.
  *
  * @internal
  */
 export function useDefaultRunKey(
   explicit: string | { readonly storage?: StorageKind | undefined } | undefined,
 ): string {
+  if (typeof explicit === "string") assertUsableRunKey(explicit);
   // STORAGE is touched only when the first render had no key of its own; a page
   // that named one mints nothing at all. Either way the value is frozen for the
   // component's life, which is what makes the next load able to produce the

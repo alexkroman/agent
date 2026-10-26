@@ -69,7 +69,14 @@ type ChatMessage = {
 };
 
 // @public @input
-type ClientTheme = ClientThemeTokens | ClientThemePreset;
+type ClientTheme = (ClientThemeTokens & {
+    mode?: undefined;
+}) | (ClientThemePreset & {
+    bg?: undefined;
+    text?: undefined;
+    surface?: undefined;
+    border?: undefined;
+});
 
 // @public @input
 type ClientThemePreset = {

@@ -31,12 +31,17 @@
  * contribute the schema's shape now, so the form is all declared.
  */
 
-import { isRecord } from "@alexkroman1/aai/utils";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowSummary } from "@alexkroman1/aai/workflow-api";
-import type { JSX } from "react";
+import { type JSX, useEffect } from "react";
 import { useWorkflows } from "../use-workflows.ts";
 import type { WorkflowAppLike, WorkflowNameOf } from "../workflow-def-types.ts";
-import { fieldKindFor, schemaTypeOf, type WorkflowFieldRender } from "../workflow-field-kind.ts";
+import {
+  fieldKindFor,
+  schemaChoicesOf,
+  schemaTypeOf,
+  type WorkflowFieldRender,
+} from "../workflow-field-kind.ts";
 import { useDeclareFieldsPending } from "./_form-readiness.ts";
 import {
   CheckboxField,
@@ -55,8 +60,14 @@ type JsonSchemaProperty = {
   default?: unknown;
 };
 
+/**
+ * The object schema's own slice. `properties` values are `unknown` because a
+ * listing from a library other than zod may carry a BOOLEAN schema (`true`,
+ * legal JSON Schema for "anything") or `null`; each is read through `isRecord`
+ * before anything reads a keyword off it.
+ */
 type JsonObjectSchema = {
-  properties?: Record<string, JsonSchemaProperty>;
+  properties?: Record<string, unknown>;
   required?: string[];
 };
 
@@ -134,7 +145,9 @@ export function WorkflowFields<App extends WorkflowAppLike = WorkflowAppLike>({
   // Unconditional, because a hook cannot be: the listing is only REQUESTED when
   // a name was passed, which is what keeps a page that already holds its
   // summaries from fetching them twice.
-  const { workflows, loading } = useWorkflows(typeof workflow === "string" ? {} : { skip: true });
+  const { workflows, loading, error } = useWorkflows(
+    typeof workflow === "string" ? {} : { skip: true },
+  );
   const summary =
     typeof workflow === "string" ? workflows.find((entry) => entry.name === workflow) : workflow;
   // Tell the enclosing `<Form>` that its fields do not exist yet, so a click
@@ -143,6 +156,22 @@ export function WorkflowFields<App extends WorkflowAppLike = WorkflowAppLike>({
   // no workflow is a PERMANENT absence, and holding the form shut for it would
   // replace a bad error message with a form that never submits.
   useDeclareFieldsPending(loading);
+  // That permanent absence is SAID, once the listing has answered: the string
+  // form is the one the compiler cannot check (`<WorkflowFields<typeof agentDef>>`
+  // is), and a typo'd name otherwise renders an empty form that submits `{}`
+  // with nothing anywhere naming the typo. A listing that failed is the hook's
+  // `error`, not a missing name, and is not reported here.
+  const unknownName =
+    typeof workflow === "string" && !loading && error === undefined && summary === undefined;
+  const declared = workflows.map((entry) => entry.name).join(", ");
+  useEffect(() => {
+    if (!unknownName) return;
+    console.warn(
+      `[aai-ui] <WorkflowFields workflow=${JSON.stringify(workflow)}> matches no workflow ` +
+        `the agent declares (${declared === "" ? "none listed" : declared}); it renders no ` +
+        "fields. Check the name against agent({ workflows }).",
+    );
+  }, [unknownName, workflow, declared]);
   const schema = asObjectSchema(summary?.inputSchema);
   if (!schema?.properties) return null;
   const required = new Set(schema.required ?? []);
@@ -154,16 +183,21 @@ export function WorkflowFields<App extends WorkflowAppLike = WorkflowAppLike>({
 
   return (
     <>
-      {Object.entries(schema.properties).map(([name, property]) => (
-        <SchemaField
-          key={name}
-          name={name}
-          property={property}
-          required={required.has(name)}
-          upload={uploads.has(name)}
-          render={render?.[name]}
-        />
-      ))}
+      {Object.entries(schema.properties).map(([name, property]) =>
+        // A boolean or null property schema is legal JSON Schema with nothing
+        // to read off it — skipped like any other shape with no honest control,
+        // where it used to throw reading `.description` off `null`.
+        isRecord(property) ? (
+          <SchemaField
+            key={name}
+            name={name}
+            property={property as JsonSchemaProperty}
+            required={required.has(name)}
+            upload={uploads.has(name)}
+            render={render?.[name]}
+          />
+        ) : null,
+      )}
     </>
   );
 }
@@ -221,17 +255,25 @@ function SchemaField({
           {...hint}
         />
       );
-    case "select":
+    case "select": {
+      const choices = schemaChoicesOf(property) ?? [];
+      // A `<select>` can only hold strings, so a numeric set (`z.literal([1, 2])`,
+      // `{ type: "number", enum: [1, 2] }`) is marked for `collectValues` to
+      // read back as NUMBERS — submitted as `"1"`, the schema refused every
+      // choice the form offered.
+      const numeric = choices.length > 0 && choices.every((value) => typeof value === "number");
       return (
         <SelectField
           name={name}
           label={label}
           required={required}
-          options={(property.enum ?? []).map((value) => String(value))}
+          options={choices.map((value) => String(value))}
+          {...omitUndefined({ "data-aai-value": numeric ? "number" : undefined })}
           {...hint}
           {...defaults}
         />
       );
+    }
     case "checkbox":
       return (
         <CheckboxField

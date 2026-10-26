@@ -135,8 +135,11 @@ gate, recall and report coalescing).
   unmount, not removed. `theme-css-vars.test.tsx` holds these. **The short form
   `{ primary, mode }` is resolved to the five tokens BEFORE `ThemeProvider`**
   (`resolveClientTheme`, `_theme.ts`), so nothing below the mount knows two
-  shapes exist; `mountClient({ css })` injects a page sheet into `<head>` for
-  the mount's lifetime, after the tokens are on `:root`.
+  shapes exist; the two forms are EXCLUSIVE at the type level (`?: undefined`
+  guards on `ClientTheme`, pinned in `_theme.test-d.ts`), and a token given as
+  `""` is dropped with a `console.warn` rather than written as an empty custom
+  property. `mountClient({ css })` injects a page sheet into `<head>` for the
+  mount's lifetime, after the tokens are on `:root`.
 - **`ClientConfig` display fields** (`icon`, `subtitle`, `buttonText`,
   `sidebarPosition`) must be honoured by BOTH `rootFor` branches; `icon` reaches
   the start card and the header. The forwarding bag is a MAPPED type over `Pick`
@@ -412,8 +415,10 @@ Reports what the run WROTE (`useWorkflowRun` reports its state).
   NOT recall (it would start a second run on the first run's upload).
 - **Run recovery**: `useWorkflowSubmit` mints a per-page key in `sessionStorage`
   (`use-run-key.ts`) and calls `find(workflow, key)` once on mount. `key`
-  overrides (e.g. an account id); `useRunKey({ storage: "local" })` outlives the
-  tab; `recover: false` skips the lookup. `useWorkflowStream` has neither.
+  overrides (e.g. an account id) — an empty or whitespace key THROWS at the hook
+  and is a 400 at the route, since `""` would be one key shared by every visitor
+  whose key computed to it; `useRunKey({ storage: "local" })` outlives the tab;
+  `recover: false` skips the lookup. `useWorkflowStream` has neither.
 - **`useWorkflowRuns(workflow, { limit, key })`** reads history once and returns
   `refresh` (no polling). Each READ bumps a `createEpoch()` generation, not only
   unmount, so a slow earlier read cannot overwrite a newer one.

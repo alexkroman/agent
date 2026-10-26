@@ -20828,7 +20828,7 @@ import type { FormHTMLAttributes } from 'react';
 import { FunctionComponent } from 'react';
 import type { InputHTMLAttributes } from 'react';
 import { isTerminal } from '@alexkroman1/aai/workflow-api';
-import type { JSX } from 'react';
+import { JSX } from 'react';
 import { MemoExoticComponent } from 'react';
 import { ReactNode } from 'react';
 import type { SelectHTMLAttributes } from 'react';
@@ -21005,7 +21005,14 @@ export { ClientRunsResponse }
 export { ClientRunStatus }
 
 // @public @input
-export type ClientTheme = ClientThemeTokens | ClientThemePreset;
+export type ClientTheme = (ClientThemeTokens & {
+    mode?: undefined;
+}) | (ClientThemePreset & {
+    bg?: undefined;
+    text?: undefined;
+    surface?: undefined;
+    border?: undefined;
+});
 
 // @public @input
 export type ClientThemePreset = {
@@ -22211,7 +22218,14 @@ type ChatMessage = {
 };
 
 // @public @input
-type ClientTheme = ClientThemeTokens | ClientThemePreset;
+type ClientTheme = (ClientThemeTokens & {
+    mode?: undefined;
+}) | (ClientThemePreset & {
+    bg?: undefined;
+    text?: undefined;
+    surface?: undefined;
+    border?: undefined;
+});
 
 // @public @input
 type ClientThemePreset = {

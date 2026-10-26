@@ -96,17 +96,72 @@ function isStringListSchema(schema: Record<string, unknown>): boolean {
   return schemaTypeOf(schema) === "array" && schemaTypeOf(schema.items) === "string";
 }
 
+/** The members of a schema's `anyOf`/`oneOf`, when it is a union at all. */
+function unionMembersOf(schema: Record<string, unknown>): readonly unknown[] | undefined {
+  const members = schema.anyOf ?? schema.oneOf;
+  return Array.isArray(members) ? members : undefined;
+}
+
+/** `{ type: "null" }` — the half of a nullable union that wants no control. */
+function isNullSchema(member: unknown): boolean {
+  return isRecord(member) && member.type === "null";
+}
+
+/**
+ * The schema with a NULLABLE union unwrapped: `anyOf: [X, { type: "null" }]`
+ * reads as `X`, the way `type: ["string", "null"]` reads as `"string"`.
+ *
+ * Zod 4 converts `z.enum([…]).nullable()` (and any nullable whose inner schema
+ * carries keywords of its own) to that `anyOf`, where a bare
+ * `z.string().nullable()` becomes the type list — so a required nullable enum
+ * used to reach the type switch with no `type` at all, render NO control, and
+ * leave a required property out of every submission. A union with two or more
+ * non-null members is some other shape and is answered as itself; a schema
+ * that is not an object has no answer.
+ *
+ * Not exported from the package barrel, like {@link schemaTypeOf}.
+ */
+export function nonNullSchemaOf(schema: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(schema)) return undefined;
+  const members = unionMembersOf(schema);
+  if (members === undefined) return schema;
+  const rest = members.filter((member) => !isNullSchema(member));
+  return rest.length === 1 ? nonNullSchemaOf(rest[0]) : schema;
+}
+
+/**
+ * The choices a select renders for `schema`, or undefined when it is not a
+ * closed set: a non-empty `enum`, or the `const` of each member of a union of
+ * literals — which is how zod 4 converts `z.union([z.literal("p"),
+ * z.literal("q")])`, where `z.enum` and `z.literal([1, 2])` convert to `enum`.
+ * The values keep their own type (`[1, 2]` stays numeric), so the control can
+ * submit what the schema declared.
+ *
+ * Not exported from the package barrel, like {@link schemaTypeOf}.
+ */
+export function schemaChoicesOf(schema: unknown): readonly unknown[] | undefined {
+  const inner = nonNullSchemaOf(schema);
+  if (inner === undefined) return undefined;
+  if (Array.isArray(inner.enum)) return inner.enum.length > 0 ? inner.enum : undefined;
+  const members = unionMembersOf(inner)?.filter((member) => !isNullSchema(member));
+  if (members === undefined || members.length === 0) return undefined;
+  const consts = members.map((member) => (isRecord(member) ? member.const : undefined));
+  return consts.every((value) => value !== undefined) ? consts : undefined;
+}
+
 /**
  * A property's declared type, taking the first non-null member of a union.
  *
  * `["string", "null"]` is how an optional-and-nullable field converts; the
- * control is the one the non-null half wants. Not exported from the package
- * barrel — the published question is the KIND, and this is the one detail
+ * control is the one the non-null half wants. A nullable `anyOf` is read the
+ * same way ({@link nonNullSchemaOf}). Not exported from the package barrel —
+ * the published question is the KIND, and this is the one detail
  * `<WorkflowFields>` needs past it (an integer's `step`).
  */
 export function schemaTypeOf(schema: unknown): string | undefined {
-  if (!isRecord(schema)) return undefined;
-  const { type } = schema;
+  const inner = nonNullSchemaOf(schema);
+  if (inner === undefined) return undefined;
+  const { type } = inner;
   if (typeof type === "string") return type;
   return Array.isArray(type) ? type.find((member) => member !== "null") : undefined;
 }
@@ -122,8 +177,11 @@ export function schemaTypeOf(schema: unknown): string | undefined {
  *    person to type an id no person has. The declaration is the workflow's
  *    (`workflow({ uploads: [...] })`), not the schema's, precisely because a
  *    marker inside the schema would only work for the library that carried it.
- * 2. **Then a non-empty `enum`**, before the type switch: an enum of strings
- *    is a `string` too, and a select is the narrower, better control.
+ * 2. **Then a closed set of choices**, before the type switch: a non-empty
+ *    `enum`, or a union of `const` literals (`schemaChoicesOf`) — an enum
+ *    of strings is a `string` too, and a select is the narrower, better
+ *    control. A nullable union (`anyOf: [X, { type: "null" }]`) is read as `X`
+ *    throughout, as `type: [X, "null"]` already was.
  * 3. **Then the type** — `boolean`, `number`/`integer`, `string`.
  * 4. **Then the two non-scalar shapes with a control** — an array of strings
  *    is `"lines"`, an object of exactly `{ name: string, text: string }` is
@@ -164,10 +222,13 @@ export function fieldKindFor(
 ): WorkflowFieldKind {
   if (options?.upload === true) return "file";
   if (options?.render !== undefined) return options.render;
-  if (!isRecord(schema)) return "none";
-  const { enum: choices } = schema;
-  if (Array.isArray(choices) && choices.length > 0) return "select";
-  switch (schemaTypeOf(schema)) {
+  // The nullable half is unwrapped ONCE, here: a required `z.enum().nullable()`
+  // is an `anyOf` the type switch cannot read, and the control is the one its
+  // non-null member wants.
+  const inner = nonNullSchemaOf(schema);
+  if (inner === undefined) return "none";
+  if (schemaChoicesOf(inner) !== undefined) return "select";
+  switch (schemaTypeOf(inner)) {
     case "boolean":
       return "checkbox";
     case "number":
@@ -176,9 +237,9 @@ export function fieldKindFor(
     case "string":
       return "text";
     case "array":
-      return isStringListSchema(schema) ? "lines" : "none";
+      return isStringListSchema(inner) ? "lines" : "none";
     case "object":
-      return isNamedTextSchema(schema) ? "namedText" : "none";
+      return isNamedTextSchema(inner) ? "namedText" : "none";
     default:
       return "none";
   }

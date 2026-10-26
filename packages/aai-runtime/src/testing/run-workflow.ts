@@ -286,6 +286,11 @@ async function runDef<P extends ToolInputSchema, R>(
   const { resumableRuns } = store;
   if (resumableRuns) journal.resumableRuns = (limit) => resumableRuns.call(store, limit);
 
+  // A world handed in is one another run may still be LIVE in, and two live runs
+  // of one workflow under one key share their signal tokens — see
+  // `refuseLiveTwin` for what that did.
+  if (options.journal !== undefined) await refuseLiveTwin(store, name, key);
+
   const state = {
     engine: build(name, def, journal, logger, dispatch),
     status: "pending",
@@ -452,6 +457,37 @@ async function runDef<P extends ToolInputSchema, R>(
 
   await drain();
   return handle;
+}
+
+/**
+ * Refuse a second run of `name` under `key` while a first is still live in the
+ * same journal.
+ *
+ * A signal token is derived from (workflow, key, label) — `workflowSignalToken`
+ * — so two live runs sharing all three HOLD THE SAME TOKENS: the second's body
+ * failed at its first `waitForSignal` ("token … is already held by run A"),
+ * and its `signalRun("first")` then reported `signalled: true` having woken run
+ * A, whose own later signal found nothing to answer. Both runs start under
+ * `DEFAULT_RUN_KEY` unless a spec says otherwise, which made the collision the
+ * default outcome of the documented "pass `journal` to start two runs in the
+ * same world". The engine's own message names the token; this one names the
+ * key and the fix, at the call that started the twin.
+ *
+ * Only a LIVE twin: a settled run holds no tokens, so sharing a world with one
+ * (the case the shared-journal spec exercises) is untouched.
+ */
+async function refuseLiveTwin(store: JournalStore, name: string, key: string): Promise<void> {
+  for (const record of await store.listRuns(name, RESUMABLE_SCAN_LIMIT)) {
+    if (isTerminalStatus(record.status)) continue;
+    const entry = await store.readStep(record.runId, RUN_KEY_STEP);
+    if (entry?.output !== key) continue;
+    throw new Error(
+      `runWorkflow: run ${record.runId} of "${name}" is still live in this journal under the ` +
+        `key ${JSON.stringify(key)}, so a second run under the same key would share its signal ` +
+        "tokens — a signalRun() meant for one reaches the other. Give the second run its own " +
+        `key — runWorkflow(…, { journal, key: "<another>" }) — or let the first settle first.`,
+    );
+  }
 }
 
 /** The mutable half of a handle — see the getters above. */

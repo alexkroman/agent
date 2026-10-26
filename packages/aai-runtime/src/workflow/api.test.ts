@@ -78,6 +78,23 @@ describe("POST /runs", () => {
     expect(((await res.json()) as { error: string }).error).toContain("Body must name a workflow");
   });
 
+  test("a BLANK key is refused: it would be one key shared by every caller who computed it", async () => {
+    // `user?.id ?? ""` before a login is the natural way to write it, and every
+    // visitor whose key came out `""` then records, finds and cancels each
+    // other's runs — there is no per-user filtering behind `find`.
+    harness = await serve({ engine: () => fakeClient() });
+    for (const key of ["", "   "]) {
+      const res = await fetch(`${harness.url}/workflows/runs`, {
+        method: "POST",
+        body: JSON.stringify({ workflow: "digest", key }),
+      });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { error: string }).error).toMatch(
+        /"key" must not be blank.*user\?\.id \?\? ""/,
+      );
+    }
+  });
+
   test("a non-string key is REFUSED rather than coerced", async () => {
     // Coerced, it would be indexed as `"7"` and never match the `find` a caller
     // writes with the number they passed.

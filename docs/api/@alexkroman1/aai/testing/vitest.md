@@ -172,8 +172,8 @@ one installed in `beforeAll` is gone before the first test runs. Without
 
 **It also seeds `ASSEMBLYAI_API_KEY`** for the test when the process holds
 none, since `stepGenerate` refuses by name without one and the fake never
-reads it — `apiKey: false` opts out. The seed is put back when the test
-finishes.
+reads it — `apiKey: false` ensures there is NONE, whatever the shell exports.
+Either way the previous value is put back when the test finishes.
 
 #### Parameters
 
@@ -427,15 +427,17 @@ which `stepGenerate` retries against until its budget runs out; a shipped
 template carries a paragraph warning about exactly this. Here the order is
 fixed, and a spec names only the legs it has.
 
-It also seeds `ASSEMBLYAI_API_KEY` (unless `apiKey: false`), because
-`stepGenerate` refuses by name without one and the fake never reads it; the
-previous value is put back when the test finishes. `stubGatewayRoute` itself
+It also seeds `ASSEMBLYAI_API_KEY` (`apiKey: false` ensures there is none
+instead), because `stepGenerate` refuses by name without one and the fake
+never reads it; the previous value is put back when the test finishes. `stubGatewayRoute` itself
 cannot seed anything — it installs nothing and owns no lifetime — so the
 seeding lives with the installers.
 
 `installStubReporter` is installed too, so what the steps narrated is on
 `reported` without a second call — unless a reporter is already published
-(an eval's), which is left in place: `reporter` decides.
+(an eval's), which is left in place: `reporter` decides. A SECOND world in
+one test replaces the first's reporter along with its other legs, so the
+world a spec holds last is the one whose `reported` records.
 
 #### Parameters
 
@@ -500,8 +502,9 @@ optional apiKey?: string | false;
 
 The `ASSEMBLYAI_API_KEY` to seed for this test, when the process holds
 none — see [installStubWorld](#installstubworld). Defaults to a recognizable stub
-value; `false` seeds nothing, for the one spec whose subject IS the
-missing-key refusal.
+value; `false` ENSURES there is none for the test (a key the shell exports
+is stubbed away and put back afterwards), for the one spec whose subject
+IS the missing-key refusal.
 
 ***
 
@@ -674,7 +677,8 @@ readonly optional apiKey?: string | false;
 ```
 
 The `ASSEMBLYAI_API_KEY` to seed for this test, when the process holds
-none. Defaults to a recognizable stub value; `false` seeds nothing.
+none. Defaults to a recognizable stub value; `false` ensures there is
+none for the test, whatever the shell exports.
 
 ##### model?
 
@@ -713,8 +717,10 @@ readonly optional reporter?: boolean;
 Publish the recording reporter (`installStubReporter`). Defaults to
 publishing one only when NO reporter is published yet — inside
 `describeEval` the harness's reporter is what `run.reported` reads, and a
-stub published over it emptied that log. `false` never publishes one;
-`true` always does.
+stub published over it emptied that log — or when the one published is an
+EARLIER world's, which this one replaces like every other leg (its
+`reported` then records; the earlier world's stops). `false` never
+publishes one; `true` always does.
 
 ##### speech?
 

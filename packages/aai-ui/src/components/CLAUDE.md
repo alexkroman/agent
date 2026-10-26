@@ -122,11 +122,16 @@ theme rules are in `../CLAUDE.md`.
   example: its `mustCover` (`z.array(z.string())`) and `source`
   (`z.object({ name, text })`) render from the schema alone, so its form is one
   `<WorkflowFields workflow="redline" />` and no hand-written field. No
-  `exclude`/`only`; `SchemaField` reads only `type`, `enum`, `items`,
-  `properties`, `required`, `description`, `default` (no `min`/`max`). A
-  hand-written control (a conditionally-shown field, a shape outside the two)
-  sits beside `<WorkflowFields>` in the same `<Form>` and must be for a property
-  it SKIPS, or the property renders twice.
+  `exclude`/`only`; `SchemaField` reads only `type`, `enum`, `const`,
+  `anyOf`/`oneOf` (a nullable union reads as its non-null member, a union of
+  `const`s as a select — `nonNullSchemaOf`/`schemaChoicesOf`), `items`,
+  `properties`, `required`, `description`, `default` (no `min`/`max`). A numeric
+  choice set marks its `<select data-aai-value="number">` so `collectValues`
+  submits numbers; a non-object property schema is skipped. A name the listing
+  lacks `console.warn`s once (the string form is the one the compiler cannot
+  check). A hand-written control (a conditionally-shown field, a shape outside
+  the two) sits beside `<WorkflowFields>` in the same `<Form>` and must be for a
+  property it SKIPS, or the property renders twice.
 - `useFlash`, `useCopy` and `fieldKindFor` exist for the studio's tooling; their
   unexercised names are in `template-api-allowlist.json` on purpose.
 

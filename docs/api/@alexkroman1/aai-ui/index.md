@@ -1160,8 +1160,11 @@ The ORDER is the contract, and it is the half a reader cannot infer:
    person to type an id no person has. The declaration is the workflow's
    (`workflow({ uploads: [...] })`), not the schema's, precisely because a
    marker inside the schema would only work for the library that carried it.
-2. **Then a non-empty `enum`**, before the type switch: an enum of strings
-   is a `string` too, and a select is the narrower, better control.
+2. **Then a closed set of choices**, before the type switch: a non-empty
+   `enum`, or a union of `const` literals (`schemaChoicesOf`) — an enum
+   of strings is a `string` too, and a select is the narrower, better
+   control. A nullable union (`anyOf: [X, { type: "null" }]`) is read as `X`
+   throughout, as `type: [X, "null"]` already was.
 3. **Then the type** — `boolean`, `number`/`integer`, `string`.
 4. **Then the two non-scalar shapes with a control** — an array of strings
    is `"lines"`, an object of exactly `{ name: string, text: string }` is
@@ -6346,8 +6349,15 @@ A [ClientRun](#clientrun)'s status: a run's own, with `pending` said as
 
 ```ts
 type ClientTheme = 
-  | ClientThemeTokens
-  | ClientThemePreset;
+  | ClientThemeTokens & {
+  mode?: undefined;
+}
+  | ClientThemePreset & {
+  bg?: undefined;
+  border?: undefined;
+  surface?: undefined;
+  text?: undefined;
+};
 ```
 
 **`Input`**
@@ -6355,6 +6365,15 @@ type ClientTheme =
 Theme color overrides for the AAI UI components: the five tokens
 ([ClientThemeTokens](#clientthemetokens)), or an accent plus a light/dark mode
 ([ClientThemePreset](#clientthemepreset)). Either resolves to a [ResolvedClientTheme](#resolvedclienttheme).
+
+The two forms are EXCLUSIVE: a theme naming `mode` may name no token but
+`primary`, and a theme naming a token may not name `mode`. Without the
+guards a mixed `{ primary, mode: "dark", bg }` compiled (an object literal is
+checked against the union as a whole, so a key from either member passed)
+and `bg` was silently dropped — the preset's derived neutrals won. The guard
+is `?: undefined` rather than `?: never` so an options bag that spells a hole
+as `undefined` still fits. `{ primary }` alone is both forms and resolves
+alike.
 
 ***
 
@@ -11417,6 +11436,11 @@ route's 256-character bound, and anything derived from a person's own
 input both collides and carries what they typed — `use-run-key.ts` argues
 every alternative. What was chosen is reported back as
 `WorkflowSubmission.scope`.
+
+**An empty or whitespace key THROWS** at the hook (and the route answers
+400): `""` is not "no key" but one key shared by every visitor whose key
+computed to it — `user?.id ?? ""` before login. Pass `undefined` until the
+key is known.
 
 ##### parallel?
 

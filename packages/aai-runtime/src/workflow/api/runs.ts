@@ -89,6 +89,33 @@ const WAKE_QUERY_KEY = "correlationId";
 const START_RUN_FIELDS = ["workflow", "input", "key", "wait"] as const;
 
 /**
+ * Why a caller's `key` is refused, or undefined when it is a usable one — the
+ * ONE reading the write ({@link startRun}) and the lookup ({@link findRuns})
+ * share, so what can be recorded and what can be looked up cannot disagree.
+ *
+ * Too long is refused for the reason on {@link MAX_WORKFLOW_KEY_LENGTH}. BLANK
+ * is refused for what a key IS: the lookup capability, with no per-user
+ * filtering behind `find`. `""` is not "no key" but one key every caller whose
+ * key computed to it (`user?.id ?? ""` before a login) would share, each then
+ * finding and cancelling the others' runs — and `?key=` with nothing after it
+ * used to fall through to the keyless `recent`, silently widening a page's
+ * own-runs read to every run of the workflow.
+ */
+function keyRefusal(key: string): string | undefined {
+  if (key.length > MAX_WORKFLOW_KEY_LENGTH) {
+    return `"key" must be at most ${MAX_WORKFLOW_KEY_LENGTH} characters`;
+  }
+  if (key.trim() === "") {
+    return (
+      '"key" must not be blank: a key is the lookup capability runs are found by, so "" would be ' +
+      'one key shared by every caller whose key computed to it (a `user?.id ?? ""` before login). ' +
+      "Omit the key until it is known, or pass a non-blank string."
+    );
+  }
+  return undefined;
+}
+
+/**
  * Longest correlation key this API accepts.
  *
  * `key` was bounded only by {@link MAX_WORKFLOW_INPUT_BYTES}, so a 64 kB key was
@@ -156,10 +183,9 @@ export async function startRun(
     sendJson(res, 400, { error: '"key" must be a string when present' });
     return;
   }
-  if (key !== undefined && key.length > MAX_WORKFLOW_KEY_LENGTH) {
-    sendJson(res, 400, {
-      error: `"key" must be at most ${MAX_WORKFLOW_KEY_LENGTH} characters`,
-    });
+  const refused = key === undefined ? undefined : keyRefusal(key);
+  if (refused !== undefined) {
+    sendJson(res, 400, { error: refused });
     return;
   }
   // `start` rejects an unknown name and an input failing the workflow's own
@@ -447,11 +473,12 @@ export async function findRuns(
     sendJson(res, 400, { error: "A `workflow` query parameter is required" });
     return;
   }
-  // The same bound the WRITE takes, so what can be recorded and what can be
-  // looked up cannot disagree — and so this read cannot be handed an unbounded
-  // caller string to index against either.
-  if (key !== null && key.length > MAX_WORKFLOW_KEY_LENGTH) {
-    sendJson(res, 400, { error: `\`key\` must be at most ${MAX_WORKFLOW_KEY_LENGTH} characters` });
+  // The WRITE's own refusals (`keyRefusal`), so what can be recorded and what
+  // can be looked up cannot disagree — this read is handed neither an unbounded
+  // caller string to index against nor a blank one nobody could have recorded.
+  const refused = key === null ? undefined : keyRefusal(key);
+  if (refused !== undefined) {
+    sendJson(res, 400, { error: refused });
     return;
   }
   const page = findPageOr400(res, params.get("limit"));
