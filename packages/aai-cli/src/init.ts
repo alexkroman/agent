@@ -10,7 +10,7 @@ import {
   type PackageManagerInfo,
   runInit,
 } from "./_init.ts";
-import { type CommandResult, ok } from "./_output.ts";
+import { CliError, type CommandResult, ok } from "./_output.ts";
 import { projectNameFromDir } from "./_studio.ts";
 import { listTemplates } from "./_templates.ts";
 import { defaultUi, type Ui, unwrapCancel } from "./_ui.ts";
@@ -80,6 +80,24 @@ async function withSpinner<T>(
 }
 
 const DEFAULT_PROJECT_NAME = "my-voice-agent";
+
+/**
+ * Characters a directory name must not carry: C0/C1 controls (a newline
+ * splits every log line and shell command that later names the directory)
+ * and the bidirectional overrides and isolates, which make a name RENDER as
+ * something other than what it is (a U+202E reverses everything after it).
+ * `slugifyName` drops them from the PROJECT name, so the check below never
+ * saw them; the directory on disk kept them.
+ */
+const DECEPTIVE_NAME_CHARS = /[\p{Cc}\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/u;
+
+/** `name` with each {@link DECEPTIVE_NAME_CHARS} character spelled `\u{\u2026}`. */
+function escapeDeceptive(name: string): string {
+  return name.replace(
+    new RegExp(DECEPTIVE_NAME_CHARS.source, "gu"),
+    (c) => `\\u{${(c.codePointAt(0) ?? 0).toString(16)}}`,
+  );
+}
 
 /** Prompt for project name or return default when --yes is set. */
 async function promptProjectName(ui: Ui, yes?: boolean): Promise<string> {
@@ -399,6 +417,14 @@ export async function executeInit(
   }
 
   const dir = opts.dir ?? (await promptProjectName(ui, opts.yes));
+  if (DECEPTIVE_NAME_CHARS.test(dir)) {
+    throw new CliError(
+      "invalid_dir",
+      // Escaped, so the error does not render the very trick it refuses.
+      `Refusing the directory name "${escapeDeceptive(dir)}": it contains a control or bidirectional-override character.`,
+      "Pick a name of plain printable characters.",
+    );
+  }
   const monorepoRoot = getMonorepoRoot();
   const cwd = resolveTargetDir(dir);
 

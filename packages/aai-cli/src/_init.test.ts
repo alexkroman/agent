@@ -31,6 +31,55 @@ describe("runInit", () => {
     expect(content).toBe("ASSEMBLYAI_API_KEY=");
   });
 
+  test("creates .env private (0600) — it is where the README says the key goes", async ({
+    tmpDir: dir,
+  }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "my-agent");
+    await runInit({ targetDir: target, template: "quickstart-agent" });
+    expect((await fs.stat(path.join(target, ".env"))).mode & 0o777).toBe(0o600);
+  });
+
+  // A dangling `.gitignore -> <outside>`: the old existence probe READ through
+  // it, saw ENOENT, and the scaffold write that followed created the link's
+  // target outside the project.
+  test("refuses a dangling symlink at a scaffold path, writing nothing outside", async ({
+    tmpDir: dir,
+  }) => {
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "my-agent");
+    const outside = path.join(dir, "outside", "created.txt");
+    await fs.mkdir(path.join(dir, "outside"));
+    await fs.mkdir(target);
+    await fs.symlink(outside, path.join(target, "package.json"));
+
+    await expect(
+      runInit({ targetDir: target, template: "quickstart-agent" }),
+    ).rejects.toMatchObject({ code: "symlink_in_path" });
+    expect(await fileExists(outside)).toBe(false);
+    // Refused BEFORE the copy: nothing of the template landed either.
+    expect(await fileExists(path.join(target, "agent.ts"))).toBe(false);
+  });
+
+  test("refuses a symlinked directory on a template path up front, not half-scaffolded", async ({
+    tmpDir: dir,
+  }) => {
+    await useFakeTemplates(dir);
+    await writeFiles(path.join(process.env.AAI_TEMPLATES_DIR ?? "", "templates/quickstart-agent"), {
+      "tools/lookup.ts": "export {};",
+    });
+    const target = path.join(dir, "my-agent");
+    await fs.mkdir(path.join(dir, "elsewhere"));
+    await fs.mkdir(target);
+    await fs.symlink(path.join(dir, "elsewhere"), path.join(target, "tools"));
+
+    await expect(
+      runInit({ targetDir: target, template: "quickstart-agent" }),
+    ).rejects.toMatchObject({ code: "symlink_in_path" });
+    expect(await fs.readdir(path.join(dir, "elsewhere"))).toEqual([]);
+    expect(await fileExists(path.join(target, "agent.ts"))).toBe(false);
+  });
+
   test("creates README.md with project name", async ({ tmpDir: dir }) => {
     await useFakeTemplates(dir);
     const target = path.join(dir, "cool-agent");
