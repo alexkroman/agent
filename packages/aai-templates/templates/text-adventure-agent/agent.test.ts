@@ -145,12 +145,10 @@ describeAgent(agentDef, (run) => {
 
     test("the schemas say what a spoken argument has to be turned into", async () => {
       // Points are a NUMBER: a schema that took a string would let "ten" reach `+=`.
-      expect(await parseToolInput(agentDef, "game_state_score", { value: 10 })).toEqual({
+      expect(await parseToolInput(gameStateScore, { value: 10 })).toEqual({
         value: 10,
       });
-      await expect(
-        parseToolInput(agentDef, "game_state_score", { value: "ten" }),
-      ).rejects.toThrow();
+      await expect(parseToolInput(gameStateScore, { value: "ten" })).rejects.toThrow();
       // And the read takes nothing at all, which is what makes `run(gameStateGet, ctx)` legal.
       expect(toolOf(agentDef, "game_state_get").inputSchema).toBeUndefined();
     });

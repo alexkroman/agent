@@ -1,6 +1,6 @@
 /** The def a DEPLOYED agent runs: authored, plus what `tools/` and the prompt add. */
 import agentDef from "virtual:aai/agent";
-import type { ToolContext } from "@alexkroman1/aai";
+import type { ToolContext, ToolDef } from "@alexkroman1/aai";
 import { isToolFailure } from "@alexkroman1/aai";
 import {
   createToolContext,
@@ -11,6 +11,7 @@ import {
   fireEvent,
   sessionEvent,
   toolInputIssues,
+  toolNameOf,
 } from "@alexkroman1/aai-runtime/testing";
 import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
 import { describe, expect, test } from "vitest";
@@ -56,6 +57,7 @@ import modifyRestaurantReservation from "./tools/modify_restaurant_reservation.t
 import orderFlowers from "./tools/order_flowers.ts";
 import recordCard from "./tools/record_card.ts";
 import recordFollowup from "./tools/record_followup.ts";
+import recordGroupInquiry from "./tools/record_group_inquiry.ts";
 import recordGuestDetails from "./tools/record_guest_details.ts";
 import reinstateBooking from "./tools/reinstate_booking.ts";
 import requestFlightReconfirmation from "./tools/request_flight_reconfirmation.ts";
@@ -172,16 +174,17 @@ describeAgent(agentDef, (run) => {
       // asserted through `toolInputIssues`, which is the SDK's reader for exactly
       // this: `toolRunner` deliberately passes arguments straight through, so a
       // tool driven through it never meets its own schema.
-      const dated: [string, Record<string, unknown>][] = [
-        ["check_restaurant_availability", { partySize: 2 }],
-        ["check_room_availability", { checkIn: "2026-06-09", guests: 2 }],
-        ["schedule_wakeup_call", { room: "412", time: "07:00" }],
+      const dated: [ToolDef, string, Record<string, unknown>][] = [
+        [checkRestaurantAvailability, "date", { partySize: 2 }],
+        [checkRoomAvailability, "checkOut", { checkIn: "2026-06-09", guests: 2 }],
+        [scheduleWakeupCall, "date", { room: "412", time: "07:00" }],
       ];
-      for (const [name, rest] of dated) {
-        const field = name === "check_room_availability" ? "checkOut" : "date";
+      for (const [def, field, rest] of dated) {
         for (const value of ["2026-02-30", "next tuesday"]) {
-          const issues = await toolInputIssues(agentDef, name, { ...rest, [field]: value });
-          expect(JSON.stringify(issues), `${name} accepted ${value}`).toMatch(/YYYY-MM-DD/);
+          const issues = await toolInputIssues(def, { ...rest, [field]: value });
+          expect(JSON.stringify(issues), `${toolNameOf(def)} accepted ${value}`).toMatch(
+            /YYYY-MM-DD/,
+          );
         }
       }
     });
@@ -1049,14 +1052,12 @@ describeAgent(agentDef, (run) => {
       expect(tours.policy).toContain("Half-day city highlights");
       expect(tours.policy).toContain("65 dollars per person");
       expect(POLICIES.spa.body).toContain("140 dollars per person");
-      expect(
-        await toolInputIssues(agentDef, "lookup_policy", { topic: "not_a_topic" }),
-      ).toBeDefined();
+      expect(await toolInputIssues(lookupPolicy, { topic: "not_a_topic" })).toBeDefined();
     });
 
     test("a group under fifteen is not a group, and a car with five is not the hotel car", async () => {
       expect(
-        await toolInputIssues(agentDef, "record_group_inquiry", {
+        await toolInputIssues(recordGroupInquiry, {
           company: "Acme",
           contactName: "A",
           contactPhone: "1",
@@ -1067,7 +1068,7 @@ describeAgent(agentDef, (run) => {
         }),
       ).toBeDefined();
       expect(
-        await toolInputIssues(agentDef, "book_airport_car", {
+        await toolInputIssues(bookAirportCar, {
           room: "401",
           pickupDate: addDays(TODAY, 1),
           pickupTime: "06:00",

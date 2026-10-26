@@ -688,7 +688,7 @@ export interface TtsWordTiming {
 export const TURN_ENDS: ReadonlySet<SessionEvent["type"]>;
 
 // @public
-export function turnCalling(turns: readonly EvalTurn[], name: string, where?: (call: EvalToolCall) => boolean): EvalTurn;
+export function turnCalling(turns: readonly EvalTurn[], tool: ToolDef, where?: (call: EvalToolCall) => boolean): EvalTurn;
 
 // @public
 export type Unsubscribe = () => void;

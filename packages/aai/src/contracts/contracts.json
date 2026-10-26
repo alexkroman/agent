@@ -153,7 +153,7 @@
     "current": 2,
     "supported": [2],
     "dropped": {
-      "1": "A tool is reached by its DEF only: the name forms are gone — runTool(agent, name, …), ToolRunner's (name, …) call shape, and the claimed expectToolOk<T>(unknown)/expectDialogOk<T>(unknown) overloads. A spec passes the tool file's default export (or a speaker's tools entry, or builtinTool(name)); a string in the tool position no longer compiles."
+      "1": "Every testing helper reaches a tool by its DEF, never a name string. runTool(agent, name, ...) and ToolRunner's (name, ...) call shape are gone (runTool(def, ...) is the ungated unit run; toolRunner(agent)(def) resolves by identity and runs through the gate); the claimed expectToolOk<T>(unknown) / expectDialogOk<T>(unknown) overloads are gone; and parseToolInput(agent, name, value) / toolInputIssues(agent, name, value) are now parseToolInput(def, value) / toolInputIssues(def, value) — the schema is on the def, the parsed value is InferToolInput<typeof def>, and no agent is taken since the gate runs only on a call. A spec passes the tool file's default export, a speaker's tools entry or toolOf(agentDef, name) for a minted tool; a string in the tool position no longer compiles."
     }
   },
   "testing-client": {

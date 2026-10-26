@@ -1,5 +1,5 @@
 import agentDef from "virtual:aai/agent";
-import { createSeededRandom, type InferToolInput } from "@alexkroman1/aai";
+import { createSeededRandom } from "@alexkroman1/aai";
 import { instructionOf, stripInstruction } from "@alexkroman1/aai/utils";
 import {
   createToolContext,
@@ -97,18 +97,12 @@ describeAgent(agentDef, (run) => {
 
     test("add_pizza schema defaults quantity to 1 and rejects non-positive quantities", async () => {
       const base = { size: "small", crust: "thin", toppings: [] };
-      // The tool's OWN parsed-argument type, so a schema that stopped defaulting
-      // `quantity` — or dropped it — fails here at compile time.
-      const parsed = await parseToolInput<InferToolInput<typeof addPizza>>(
-        agentDef,
-        "add_pizza",
-        base,
-      );
+      // Typed by the def's OWN parsed-argument type, so a schema that stopped
+      // defaulting `quantity` — or dropped it — fails here at compile time.
+      const parsed = await parseToolInput(addPizza, base);
       expect(parsed.quantity).toBe(1);
-      expect(await toolInputIssues(agentDef, "add_pizza", { ...base, quantity: 0 })).toBeDefined();
-      expect(
-        await toolInputIssues(agentDef, "add_pizza", { ...base, quantity: 1.5 }),
-      ).toBeDefined();
+      expect(await toolInputIssues(addPizza, { ...base, quantity: 0 })).toBeDefined();
+      expect(await toolInputIssues(addPizza, { ...base, quantity: 1.5 })).toBeDefined();
     });
   });
 

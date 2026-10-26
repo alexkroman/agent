@@ -1820,13 +1820,17 @@ The case's fake network, whose refused requests are listed
 ```ts
 function turnCalling(
    turns: readonly EvalTurn[], 
-   name: string, 
+   tool: ToolDef, 
    where?: (call: EvalToolCall) => boolean
 ): EvalTurn;
 ```
 
-The turn `name` was called in — the FIRST one, and a throw naming what
-happened instead when there is none.
+The turn `tool` was called in — the FIRST one, and a throw naming what
+happened instead when there is none. Takes the DEF, as every reader next door
+does (`toolResultIn(calls, def)`): the tool file's default export, a
+speaker's `tools` entry, `toolOf(agentDef, name)` for a minted tool or
+`builtinTool(name)` for a builtin, matched against the wire by the name the
+agent registered it under (`toolNameOf`). A name string does not compile.
 
 The claim a multi-turn case actually wants to make, and the whole reason
 [EvalSession.sayAll](#sayall) exists: "the desk staged the change on the turn it
@@ -1876,7 +1880,7 @@ import cancelPendingOrder from "./tools/cancel_pending_order.ts";
 export async function stagesBeforeCommitting(session: EvalSession): Promise<string> {
   const turns = await session.sayAll(["I want to cancel W1234", "Go ahead."]);
   // The turn it staged in, whichever that turned out to be.
-  const staging = turnCalling(turns, "cancel_pending_order");
+  const staging = turnCalling(turns, cancelPendingOrder);
   return toolResultIn(staging.toolCalls, cancelPendingOrder).state;
 }
 ```
@@ -1887,9 +1891,9 @@ export async function stagesBeforeCommitting(session: EvalSession): Promise<stri
 
 readonly [`EvalTurn`](#evalturn)[]
 
-##### name
+##### tool
 
-`string`
+[`ToolDef`](../aai/index.md#tooldef)
 
 ##### where?
 

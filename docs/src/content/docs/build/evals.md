@@ -260,7 +260,7 @@ describeEval(agentDef, (test) => {
       const turns = await session.sayAll(["I want to cancel W1234", "Yes, go ahead."]);
 
       // The turn it staged in, whichever that turned out to be.
-      const staging = turnCalling(turns, "cancel_order");
+      const staging = turnCalling(turns, cancelOrder);
       expect(toolResultIn(staging.toolCalls, cancelOrder).state).toBe("pending");
     },
     {

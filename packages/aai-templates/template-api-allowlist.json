@@ -114,7 +114,6 @@
     "SyncStateDeclaration",
     "ToolCompletionMessage",
     "ToolConditionOperator",
-    "ToolDef",
     "ToolDelayedMessage",
     "ToolInputSchema",
     "ToolMessageCondition",

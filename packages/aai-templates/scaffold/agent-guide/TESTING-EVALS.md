@@ -56,12 +56,17 @@ a named const so it stays typed); for a tool the roster minted (`handoff`,
 `delegate`) it is `toolOf(agentDef, HANDOFF_TOOL_NAME)`; for a builtin it is
 `builtinTool("workflow_cancel")` from `@alexkroman1/aai/tools`, which no
 `toolRunner` runs (the runtime merges builtins in at session start) but every
-eval reader takes. A string in the tool position is a compile error. **Unwrap a
-result that may be a refusal with `expectToolOk(result)`**, which subtracts the
-`ToolFailure` arm (and a gated tool's envelope) and throws quoting the refusal;
-`expectDialogRefused(result)` asserts a gate HELD. Do not copy an `ok<T>()`
-helper into a spec, and do not claim a result's type — `expectToolOk<T>(…)`
-takes no claim; the def already types it.
+eval reader takes. A string in the tool position is a compile error. **The
+schema is asked through the same def**: `parseToolInput(def, value)` answers the
+parsed input typed as `execute` receives it (a dropped default is a compile
+error in the spec that reads it) and `toolInputIssues(def, value)` the issues or
+`undefined` — no agent, since validation is the schema's alone and the gate runs
+only on a call. **Unwrap a result that may be a refusal with
+`expectToolOk(result)`**, which subtracts the `ToolFailure` arm (and a gated
+tool's envelope) and throws quoting the refusal; `expectDialogRefused(result)`
+asserts a gate HELD. Do not copy an `ok<T>()` helper into a spec, and do not
+claim a result's type — `expectToolOk<T>(…)` takes no claim; the def already
+types it.
 
 ```ts no-check
 import agentDef from "virtual:aai/agent";
@@ -221,12 +226,13 @@ per-case factory: `ctx.workflowClient`. A failure prints the conversation.
 `toolResultIn(turn.toolCalls, placeOrder)` is typed by the tool's `execute` and
 throws naming what WAS called when the tool was not (exactly once;
 `toolResultsIn` for several; `lastToolResultIn` for the settled last;
-`toolArgsIn` for what the model asked). The def is the same one `run` takes — a
-file's default export, a speaker's `tools` entry, `toolOf(agentDef, name)` for a
-minted tool, `builtinTool(name)` for a builtin — and the readers take no name
-string. `lastStateIn(session.events(), slot.projected)` is the frame the page
-saw, typed by the projection and checked against its default keys, so a field
-the view gained or lost fails here instead of being cast past;
+`toolArgsIn` for what the model asked); `turnCalling(turns, def)` is the turn a
+`sayAll` call reached it in. The def is the same one `run` takes — a file's
+default export, a speaker's `tools` entry, `toolOf(agentDef, name)` for a minted
+tool, `builtinTool(name)` for a builtin — and the readers take no name string.
+`lastStateIn(session.events(), slot.projected)` is the frame the page saw, typed
+by the projection and checked against its default keys, so a field the view
+gained or lost fails here instead of being cast past;
 `customEventsIn(events, "order.progress")` is typed by `ClientEventMap`. **An
 agent that hands off to a run** declares its step HTTP on the suite —
 `describeEval(agentDef, define, { steps: { routes, hold: "first" } })` — and the

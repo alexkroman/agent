@@ -1,22 +1,34 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { agent, tool } from "./define.ts";
 import { parseSchemaInput, parseToolInput, schemaInputIssues, toolInputIssues } from "./testing.ts";
-import type { ToolDef } from "./types.ts";
+import { withTools } from "./tool-registry.ts";
 
-const addPizza: ToolDef = {
+const addPizza = tool({
   description: "Add a pizza",
   inputSchema: z.object({
     size: z.enum(["small", "large"]),
     quantity: z.number().int().positive().default(1),
   }),
   execute: (args) => args,
-};
+});
 
 /** A tool that takes no arguments at all — the case that must not read as "accepted". */
-const viewOrder: ToolDef = { description: "View the order", execute: () => ({}) };
+const viewOrder = tool({ description: "View the order", execute: () => ({}) });
 
-const agentDef = { tools: { add_pizza: addPizza, view_order: viewOrder } };
+/**
+ * Lowered once, so a failure can name each def by the name its agent
+ * registered it under — the pairing `virtual:aai/agent` records the same way.
+ */
+withTools(agent({ name: "Schema Fixtures" }), { add_pizza: addPizza, view_order: viewOrder });
+
+/** Built inline and never lowered: it has no name, only a description. */
+const inline = tool({
+  description: "Pick a seat",
+  inputSchema: z.object({ row: z.number().int() }),
+  execute: ({ row }) => row,
+});
 
 describe("parseSchemaInput", () => {
   test("returns the PARSED value, defaults applied", async () => {
@@ -61,44 +73,48 @@ describe("schemaInputIssues", () => {
 });
 
 describe("parseToolInput", () => {
-  test("does the lookup, then the validation", async () => {
-    const parsed = await parseToolInput<{ quantity: number }>(agentDef, "add_pizza", {
-      size: "small",
-      quantity: 3,
-    });
+  test("validates against the def's schema and answers the PARSED value, typed by it", async () => {
+    const parsed = await parseToolInput(addPizza, { size: "small", quantity: 3 });
     expect(parsed.quantity).toBe(3);
+    // The schema's own default — what the positive case wants the value for.
+    expect((await parseToolInput(addPizza, { size: "large" })).quantity).toBe(1);
   });
 
-  test("a refusal names the TOOL, not just 'the schema'", async () => {
-    await expect(parseToolInput(agentDef, "add_pizza", { size: "enormous" })).rejects.toThrow(
+  test("a refusal names the TOOL by its registered name, not just 'the schema'", async () => {
+    await expect(parseToolInput(addPizza, { size: "enormous" })).rejects.toThrow(
       /^Tool add_pizza refused that input:/,
+    );
+  });
+
+  test("a def no agent lowered is named by its description rather than refused", async () => {
+    // The schema is on the def, so nothing here needs the registry: an inline
+    // def is as valid a subject as a lowered one, and the message still says
+    // WHICH tool.
+    expect(await parseToolInput(inline, { row: 4 })).toEqual({ row: 4 });
+    await expect(parseToolInput(inline, { row: "four" })).rejects.toThrow(
+      /^The tool \(described as "Pick a seat"\) refused that input:/,
     );
   });
 
   test("a tool that declares no inputSchema says so rather than crashing", async () => {
     // `undefined["~standard"]` names the property rather than the problem.
-    await expect(parseToolInput(agentDef, "view_order", {})).rejects.toThrow(
+    await expect(parseToolInput(viewOrder, {})).rejects.toThrow(
       "Tool view_order declares no input schema",
-    );
-  });
-
-  test("a missing tool fails with toolOf's sentence, which names the ones that exist", async () => {
-    await expect(parseToolInput(agentDef, "add_pizzas", {})).rejects.toThrow(
-      "The agent declares no tool named add_pizzas. It declares: add_pizza, view_order.",
     );
   });
 });
 
 describe("toolInputIssues", () => {
   test("is the negative half — the assertion behind 'the schema refuses that'", async () => {
-    expect(await toolInputIssues(agentDef, "add_pizza", { size: "small" })).toBeUndefined();
-    expect(await toolInputIssues(agentDef, "add_pizza", { size: "enormous" })).toBeDefined();
+    expect(await toolInputIssues(addPizza, { size: "small" })).toBeUndefined();
+    expect(await toolInputIssues(addPizza, { size: "enormous" })).toBeDefined();
+    expect(await toolInputIssues(inline, { row: 1.5 })).toBeDefined();
   });
 
   test("a tool with no schema throws rather than answering 'no issues'", async () => {
     // Answering `undefined` would read as "accepted", which is the one wrong
     // answer available here.
-    await expect(toolInputIssues(agentDef, "view_order", { anything: true })).rejects.toThrow(
+    await expect(toolInputIssues(viewOrder, { anything: true })).rejects.toThrow(
       "declares no input schema",
     );
   });

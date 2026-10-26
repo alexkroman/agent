@@ -19,7 +19,7 @@ of it — and want the import.
 ## Contents
 
 - [Agent authoring](#agent-authoring) — 620 names
-- [Browser client](#browser-client) — 207 names
+- [Browser client](#browser-client) — 206 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
 - [Framework internals](#framework-internals) — 517 names
@@ -686,7 +686,6 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `ToolCallOutcome` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | How a page answers a tool call it ran — see `BrowserSession.sendToolResult`. |
 | `ToolCallRow`, `ToolCallRowProps` | component | `@alexkroman1/aai-ui` | `aai-ui:components` | The design system's console row for one tool invocation: a small outlined "TOOL" chip (or a custom `icon`), the tool title in mono, a truncated detail preview, … |
 | `ToolCallRowVariant` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | Size preset for `ToolCallRow`: `"default"` is the deployed agent UI's scale, `"compact"` the studio transcript's denser one. |
-| `ToolDisplayConfig` | type | `@alexkroman1/aai-ui` | `aai-ui:client` | Display configuration for a tool call in the UI, keyed by tool name. |
 | `UploadProgressBar` | component | `@alexkroman1/aai-ui` | `aai-ui:workflow-files` | How far a form's files have got, rendered as a bar. |
 | `UploadStatus` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow-files` | What `WorkflowSubmission.upload` reports while the bytes are going. |
 | `UseClientRunsResult` | type | `@alexkroman1/aai-ui` | `aai-ui:agent-routes` | What `useClientRuns` returns. |
@@ -988,7 +987,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `openEvalTextAgent` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | Open an eval conversation against a real text agent. |
 | `openEvalWorkflows` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | Open a workflow app for evaluation. |
 | `parseSchemaInput` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | Validate `value` against `schema`, or throw naming every issue. |
-| `parseToolInput` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | Validate `value` against the input schema of the tool `name`. |
+| `parseToolInput` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | Validate `value` against `tool`'s input schema, typed by the def. |
 | `resolveEvalMode` | function | `@alexkroman1/aai-runtime/eval/vitest` (also `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | Live if this machine can be, stub if it cannot — unless a caller has said which it wants. |
 | `resolveWorkflowEvalMode` | function | `@alexkroman1/aai-runtime/eval/vitest` (also `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | `resolveEvalMode` for a WORKFLOW app, whose credentials are a different question. |
 | `routeHandlerOf` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing-network` | A table's value as a handler: a handler is itself; a fixed answer is given to every request it is asked, a `Response` CLONED per request — a body is read once, … |
@@ -1023,7 +1022,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `toolArgsIn` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-assert` | Every call to `tool` in `calls`, with its ARGUMENTS — what the agent asked for, in call order, typed by the def's `inputSchema`. |
 | `toolCallsInEvents` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-assert` | The tool calls in `events`, each paired with the result event that answered it. |
 | `toolCallsInTurns` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-assert` | Every tool call across `turns`, flattened, in call order — the whole call. |
-| `toolInputIssues` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | The issues the tool `name`'s input schema found in `value`, or `undefined`. |
+| `toolInputIssues` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | The issues `tool`'s input schema found in `value`, or `undefined`. |
 | `toolNameOf` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | The name the model calls `def` by — the `tools/<name>.ts` file it was discovered from, or the key it sits under on a speaker's `tools` map. |
 | `toolNames` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-assert` | The names of `calls`, in call order — what the agent reached for. |
 | `toolOf` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | The tool `name` is declared under, or a throw naming the ones that are. |
@@ -1031,7 +1030,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `toolResultsIn` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-assert` | Every call to `tool` in `calls`, with its RESULT parsed and typed by the def — what each answered, in call order. |
 | `toolRunner` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | `runTool` bound to one agent and GATED by it — the `run(...)` a spec actually calls, and what `describeAgent` hands its body. |
 | `transcriptOf` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-assert` | The session as `User:`/`Agent:` lines with each tool call beneath the turn that made it, as `[tool(args) -> result]`, then any request the network REFUSED — … |
-| `turnCalling` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-assert` | The turn `name` was called in — the FIRST one, and a throw naming what happened instead when there is none. |
+| `turnCalling` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-assert` | The turn `tool` was called in — the FIRST one, and a throw naming what happened instead when there is none. |
 | `walkPhoneTree`, `WalkPhoneTreeOptions` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval-phone-tree` | Put an eval session through `tree`: play each menu's prompt as the caller's side of the line, follow the keys the agent pressed, and stop at the leaf it got … |
 
 ## Hosting and tooling

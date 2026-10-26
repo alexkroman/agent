@@ -177,7 +177,7 @@ describeEval(dispatchAgent, (test) => {
       // a case pinned to turn two is a flake with a misleading name. A shift
       // that never dispatched at all fails HERE, with every turn's tool list in
       // the message, rather than as an `undefined` three assertions later.
-      const dispatching = turnCalling(turns, "resources_dispatch");
+      const dispatching = turnCalling(turns, resourcesDispatch);
       const rolled = landed(toolResultIn(dispatching.toolCalls, resourcesDispatch));
       // Units really assigned — `dispatched` is empty when every requested
       // callsign was busy, which is the case the fourth test owns.

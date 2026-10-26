@@ -33,6 +33,8 @@
  * @module
  */
 
+import type { ToolDef } from "@alexkroman1/aai";
+import { toolNameOf } from "@alexkroman1/aai/testing";
 import { type AnyWorkflowDef, workflowNameOf } from "@alexkroman1/aai/workflow-api";
 import { describeToolCalls, type EvalToolCall } from "./events.ts";
 import type { EvalTurn, EvalWorkflowStart } from "./session.ts";
@@ -237,8 +239,12 @@ export function expectCalled(
 }
 
 /**
- * The turn `name` was called in — the FIRST one, and a throw naming what
- * happened instead when there is none.
+ * The turn `tool` was called in — the FIRST one, and a throw naming what
+ * happened instead when there is none. Takes the DEF, as every reader next door
+ * does (`toolResultIn(calls, def)`): the tool file's default export, a
+ * speaker's `tools` entry, `toolOf(agentDef, name)` for a minted tool or
+ * `builtinTool(name)` for a builtin, matched against the wire by the name the
+ * agent registered it under (`toolNameOf`). A name string does not compile.
  *
  * The claim a multi-turn case actually wants to make, and the whole reason
  * {@link EvalSession.sayAll} exists: "the desk staged the change on the turn it
@@ -288,16 +294,17 @@ export function expectCalled(
  * export async function stagesBeforeCommitting(session: EvalSession): Promise<string> {
  *   const turns = await session.sayAll(["I want to cancel W1234", "Go ahead."]);
  *   // The turn it staged in, whichever that turned out to be.
- *   const staging = turnCalling(turns, "cancel_pending_order");
+ *   const staging = turnCalling(turns, cancelPendingOrder);
  *   return toolResultIn(staging.toolCalls, cancelPendingOrder).state;
  * }
  * ```
  */
 export function turnCalling(
   turns: readonly EvalTurn[],
-  name: string,
+  tool: ToolDef,
   where?: (call: EvalToolCall) => boolean,
 ): EvalTurn {
+  const name = toolNameOf(tool);
   const found = turns.find((turn) =>
     turn.toolCalls.some((call) => call.name === name && (where === undefined || where(call))),
   );

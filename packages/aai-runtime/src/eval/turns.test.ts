@@ -9,7 +9,8 @@
  * and a message is exactly the thing a live eval never checks.
  */
 
-import type { SessionEvent } from "@alexkroman1/aai";
+import { agent, type SessionEvent, tool } from "@alexkroman1/aai";
+import { withTools } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test } from "vitest";
 import type { EvalToolCall } from "./events.ts";
@@ -22,6 +23,26 @@ import {
   toolCallsInTurns,
   turnCalling,
 } from "./turns.ts";
+
+/**
+ * The defs `turnCalling` is handed. It takes a DEF and matches the wire by the
+ * name it was lowered under, so the fixtures are lowered once here — `withTools`
+ * records the pairing, as `virtual:aai/agent` does — and the turns are
+ * hand-built against those names.
+ */
+const bare = (description: string) => tool({ description, execute: () => ({}) });
+const findUserIdByEmail = bare("Find a user by email");
+const getOrderDetails = bare("Get an order");
+const cancelPendingOrder = bare("Stage a cancellation");
+const transferToHumanAgents = bare("Transfer");
+const anything = bare("Anything at all");
+withTools(agent({ name: "Turn Fixtures" }), {
+  find_user_id_by_email: findUserIdByEmail,
+  get_order_details: getOrderDetails,
+  cancel_pending_order: cancelPendingOrder,
+  transfer_to_human_agents: transferToHumanAgents,
+  anything,
+});
 
 const call = (name: string, result?: string): EvalToolCall => ({
   toolCallId: `c-${name}`,
@@ -122,40 +143,40 @@ describe("toolCallsInTurns", () => {
 describe("turnCalling", () => {
   test("answers the FIRST turn the tool was called in, whatever its index", () => {
     // The whole point: the claim is "the turn it staged in", never "turn two".
-    expect(turnCalling(CALL, "cancel_pending_order")).toBe(CALL[1]);
-    expect(turnCalling(CALL, "find_user_id_by_email")).toBe(CALL[0]);
+    expect(turnCalling(CALL, cancelPendingOrder)).toBe(CALL[1]);
+    expect(turnCalling(CALL, findUserIdByEmail)).toBe(CALL[0]);
   });
 
   test("THROWS naming every turn's tools, rather than answering undefined", () => {
     // The failure the templates' `expect(x, "<hand-built message>").toBeDefined()`
     // pattern existed to produce, and the reason the return type is `EvalTurn`.
-    expect(() => turnCalling(CALL, "transfer_to_human_agents")).toThrow(
+    expect(() => turnCalling(CALL, transferToHumanAgents)).toThrow(
       /no turn called "transfer_to_human_agents"/,
     );
-    expect(() => turnCalling(CALL, "transfer_to_human_agents")).toThrow(
+    expect(() => turnCalling(CALL, transferToHumanAgents)).toThrow(
       /turn 1 called find_user_id_by_email; turn 2 called get_order_details, cancel_pending_order/,
     );
   });
 
   test("no turns at all says so rather than printing an empty shape", () => {
-    expect(() => turnCalling([], "anything")).toThrow(/no turns were driven/);
+    expect(() => turnCalling([], anything)).toThrow(/no turns were driven/);
   });
 
   test("`where` selects the call that did the thing, not merely the name", () => {
     // `travel-concierge-agent`'s `stagingTurn`: the interesting turn is the one whose
     // call STAGED something rather than being refused by the gate.
-    const staged = turnCalling(CALL, "cancel_pending_order", (c) =>
+    const staged = turnCalling(CALL, cancelPendingOrder, (c) =>
       /awaitingConfirmation/.test(c.result ?? ""),
     );
     expect(staged).toBe(CALL[1]);
-    expect(
-      turnCalling(CALL, "cancel_pending_order", (c) => /"cancelled"/.test(c.result ?? "")),
-    ).toBe(CALL[2]);
+    expect(turnCalling(CALL, cancelPendingOrder, (c) => /"cancelled"/.test(c.result ?? ""))).toBe(
+      CALL[2],
+    );
   });
 
   test("called but unmatched is a DIFFERENT finding from never called", () => {
     // Only one of the two is about the agent ignoring the tool.
-    expect(() => turnCalling(CALL, "cancel_pending_order", () => false)).toThrow(
+    expect(() => turnCalling(CALL, cancelPendingOrder, () => false)).toThrow(
       /2 call\(s\) to "cancel_pending_order" and none matched the predicate/,
     );
   });

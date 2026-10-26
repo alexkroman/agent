@@ -735,13 +735,11 @@ describeAgent(agentDef, (run) => {
         { updateNpcBond: -1 },
         { timeOfDay: "noonish" }, // not a phase
       ]) {
-        expect
-          .soft(await toolInputIssues(agentDef, "update_state", bad), JSON.stringify(bad))
-          .toBeDefined();
+        expect.soft(await toolInputIssues(updateState, bad), JSON.stringify(bad)).toBeDefined();
       }
 
       await expect(
-        parseToolInput(agentDef, "update_state", {
+        parseToolInput(updateState, {
           addClockSegments: 6,
           updateNpcBond: 4,
           timeOfDay: "night",

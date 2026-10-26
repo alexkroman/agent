@@ -106,6 +106,20 @@ export function toolNameOf(def: ToolDef<ToolInputSchema>): string {
   return name;
 }
 
+/**
+ * How a failure names `def`: `Tool <name>` once an agent lowered it, else by
+ * its description — for a helper that needs no name to do its job (the schema
+ * is on the def) and must still say WHICH tool refused. `parseToolInput` and
+ * `toolInputIssues` validate a def a spec built inline as readily as a lowered
+ * one, so this never throws where {@link toolNameOf} would.
+ */
+export function describeToolForMessage(def: ToolDef<ToolInputSchema>): string {
+  const name = NAMES.get(def);
+  if (name !== undefined) return `Tool ${name}`;
+  const described = describeDef(def);
+  return described === "" ? "The tool" : `The tool${described}`;
+}
+
 /** The def's description, when it has one, so the message says WHICH tool. */
 function describeDef(def: ToolDef<ToolInputSchema>): string {
   return typeof def.description === "string" && def.description !== ""
