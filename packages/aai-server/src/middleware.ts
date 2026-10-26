@@ -289,11 +289,15 @@ export async function requireOwner(
  */
 export async function assertStillOwner(
   apiKey: string,
-  opts: { slug: string; store: BundleStore },
+  opts: { slug: string; store: BundleStore; allowUnclaimed?: boolean },
 ): Promise<void> {
-  if ((await verifySlugOwner(apiKey, opts)).status !== "owned") {
-    throw new HTTPException(404, { message: `Agent ${opts.slug} not found` });
-  }
+  const { status } = await verifySlugOwner(apiKey, opts);
+  // `allowUnclaimed` is the DELETE's: a slug already gone has nothing of anyone
+  // else's to take, and a repeated delete stays the idempotent 200 it was. A
+  // WRITE to an unclaimed slug must still refuse — it would pre-seed state the
+  // next owner silently inherits.
+  if (status === "owned" || (status === "unclaimed" && opts.allowUnclaimed === true)) return;
+  throw new HTTPException(404, { message: `Agent ${opts.slug} not found` });
 }
 
 export const slugMw = createMiddleware<HonoEnv>(async (c, next) => {

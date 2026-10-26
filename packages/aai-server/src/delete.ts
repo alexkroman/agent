@@ -33,7 +33,9 @@ export async function deleteAgentResources(
   owner?: string,
 ): Promise<void> {
   await env.slugLock(slug, async () => {
-    if (owner !== undefined) await assertStillOwner(owner, { slug, store: env.store });
+    if (owner !== undefined) {
+      await assertStillOwner(owner, { slug, store: env.store, allowUnclaimed: true });
+    }
     // The app database used to be dropped here, before the agents row, so a
     // cluster that would not answer failed the delete with a 503 rather than
     // stranding a schema nothing referenced. There is no app database now —

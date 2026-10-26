@@ -32,6 +32,7 @@
 import { promisify } from "node:util";
 import { gunzip } from "node:zlib";
 import { createMiddleware } from "hono/factory";
+import { readStreamCapped } from "./_read-capped.ts";
 import { MAX_WORKER_SIZE } from "./constants.ts";
 import type { HonoEnv } from "./context.ts";
 
@@ -51,46 +52,6 @@ export const MAX_INFLATED_BODY_BYTES = 4 * MAX_WORKER_SIZE;
 
 function isOutputTooLarge(err: unknown): boolean {
   return err instanceof Error && "code" in err && err.code === "ERR_BUFFER_TOO_LARGE";
-}
-
-/**
- * Buffer a request body while counting bytes; returns null the moment the
- * running total exceeds `maxBytes` (the stream is cancelled, not drained).
- *
- * **Preallocating from `Content-Length` was tried and is NOT here**, because the
- * copy it removes is the wrong one. A chunk list plus `Buffer.concat` does hold
- * the compressed bytes twice — but `DEPLOY_BODY_CONCURRENCY`'s own measurement
- * says a max-size deploy is **28 KB on the wire**, since the worker gzips
- * ~1000:1, so that second copy is tens of kilobytes and the ~164 MB it reports
- * is all downstream: the inflated buffer, the re-wrapped `Request`, and
- * `JSON.parse`'s UTF-16 string plus object graph. Allocating `Content-Length`
- * bytes up front would trade a 28 KB saving for a 120 MB allocation an
- * authenticated caller could trigger with a declared length and an empty body,
- * plus a lying-sender branch to get wrong. The single-chunk case below is the
- * part that is free.
- */
-async function readBodyCapped(req: Request, maxBytes: number): Promise<Buffer | null> {
-  const body = req.body;
-  if (!body) return Buffer.alloc(0);
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  const reader = body.getReader();
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => undefined);
-      return null;
-    }
-    chunks.push(value);
-  }
-  // `Buffer.concat` copies even for one chunk, and one chunk is the ordinary
-  // case for a body this small — the CLI's gzipped deploy arrives well inside a
-  // single read. `Buffer.from` over the existing memory rather than a copy of it.
-  const only = chunks.length === 1 ? chunks[0] : undefined;
-  if (only) return Buffer.from(only.buffer, only.byteOffset, only.byteLength);
-  return Buffer.concat(chunks);
 }
 
 /**
@@ -117,7 +78,7 @@ export function createGzipRequestMw(maxBytes: number = MAX_INFLATED_BODY_BYTES) 
     // Read the compressed bytes from the raw Request (not c.req.arrayBuffer(),
     // which would cache the compressed bytes as the parsed body), counting as
     // we go so a body without (or lying about) Content-Length is still capped.
-    const compressed = await readBodyCapped(c.req.raw, maxBytes);
+    const compressed = await readStreamCapped(c.req.raw.body, maxBytes);
     if (compressed === null) {
       return c.json({ error: "Request body too large" }, 413);
     }

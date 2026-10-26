@@ -252,6 +252,7 @@ export function createPgAgentRateLimiters(sql: SqlExec): {
   workflowRateLimiter: RateLimiter;
   workflowStartRateLimiter: RateLimiter;
   agentRoutesRateLimiter: RateLimiter;
+  ownerAuthFailureRateLimiter: RateLimiter;
 } {
   return {
     deployRateLimiter: createPgRateLimiter(sql, { name: "deploy-ip", ...DEPLOY_IP_RATE_LIMIT }),
@@ -266,6 +267,10 @@ export function createPgAgentRateLimiters(sql: SqlExec): {
     agentRoutesRateLimiter: createPgRateLimiter(sql, {
       name: "agent-routes-ip",
       ...AGENT_ROUTES_IP_RATE_LIMIT,
+    }),
+    ownerAuthFailureRateLimiter: createPgRateLimiter(sql, {
+      name: "owner-auth-failure-ip",
+      ...OWNER_AUTH_FAILURE_IP_RATE_LIMIT,
     }),
   };
 }

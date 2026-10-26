@@ -25,7 +25,7 @@
 import { isRecord } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
-import { isOneOf, requiredInt, requiredSize, requiredString } from "../_body-fields.ts";
+import { isOneOf, requiredInt, requiredString } from "../_body-fields.ts";
 import type { AppContext } from "../context.ts";
 import { createLogger } from "../logger.ts";
 import {
@@ -192,10 +192,10 @@ function plan(method: Method, ctx: Ctx, body: Record<string, unknown>): Platform
     }
     case "readEvents": {
       const startIndex = requiredInt(body, "startIndex");
-      const limit = requiredSize(body, "limit");
-      if (limit > MAX_SESSION_EVENT_READ_LIMIT) {
+      const limit = requiredInt(body, "limit");
+      if (limit < 0 || limit > MAX_SESSION_EVENT_READ_LIMIT) {
         throw new HTTPException(400, {
-          message: `limit must be at most ${MAX_SESSION_EVENT_READ_LIMIT}`,
+          message: `limit must be between 0 and ${MAX_SESSION_EVENT_READ_LIMIT}`,
         });
       }
       return (sql) => readEvents(sql, slug, sessionId, startIndex, limit);

@@ -198,7 +198,7 @@ export function createQueueDeliverer(opts: QueueDelivererOptions): DeliverMessag
     // Capped: the answer is tenant code's, buffered here on every attempt.
     const answer = await readGuestBody(res);
     if (answer === null) throw new Error("guest answer exceeded the size cap");
-    const text = Buffer.from(answer).toString("utf8");
+    const text = answer.toString("utf8");
     if (!res.ok) {
       // The BODY is in the error, truncated: a step that threw answers 500 with
       // the tenant's own message, and without it the only record of why a run

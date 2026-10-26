@@ -1,5 +1,6 @@
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { context as otelContext, propagation } from "@opentelemetry/api";
+import { readStreamCapped } from "../_read-capped.ts";
 import { TRACEPARENT_HEADER } from "../tracing-propagator.ts";
 // Copyright 2026 the AAI authors. MIT license.
 /**
@@ -209,25 +210,11 @@ export const GUEST_RESPONSE_BODY_MAX_BYTES = 1_048_576;
  * as it arrives, never trusted from `content-length` (a chunked answer has
  * none, and the guest writes the header anyway).
  */
-export async function readGuestBody(
+export function readGuestBody(
   res: Response,
   maxBytes: number = GUEST_RESPONSE_BODY_MAX_BYTES,
-): Promise<Uint8Array | null> {
-  if (!res.body) return new Uint8Array(0);
-  const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel().catch(() => undefined);
-      return null;
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks);
+): Promise<Buffer | null> {
+  return readStreamCapped(res.body, maxBytes);
 }
 
 /** {@link readGuestBody} parsed as JSON; throws on an oversized or malformed body. */
@@ -237,7 +224,7 @@ export async function readGuestJson(
 ): Promise<unknown> {
   const bytes = await readGuestBody(res, maxBytes);
   if (bytes === null) throw new Error(`guest response exceeded ${maxBytes} bytes`);
-  return JSON.parse(Buffer.from(bytes).toString("utf8"));
+  return JSON.parse(bytes.toString("utf8"));
 }
 
 /** Copy an allow-listed subset of `from` into a fresh `Headers`. */
