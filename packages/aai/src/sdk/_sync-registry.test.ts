@@ -10,7 +10,7 @@
  */
 import { describe, expect, test, vi } from "vitest";
 import { normalizeAgentParams } from "./_author-conveniences.ts";
-import { syncedProjections } from "./_sync-registry.ts";
+import { claimUnsyncedProjections, syncedProjections } from "./_sync-registry.ts";
 import { agent, workflowApp } from "./define.ts";
 import { sessionSlot } from "./session-slot.ts";
 import { withTools } from "./tool-registry.ts";
@@ -25,14 +25,23 @@ describe("sync: true", () => {
   // ONE test, because the registry is module state and the runner shuffles
   // test order: each step below reads what the step before it registered.
   test("feeds the first agent() that collects it, in declaration order", () => {
-    expect(syncedProjections()).toEqual([]);
+    // The registry is shared by every spec this worker has run (`isolate` is
+    // off for this package), so what an earlier file registered is DRAINED
+    // first and every reading below is relative to this point: a spec that
+    // declared a `sync: true` slot and collected it is not a leak, and one
+    // that left it unclaimed would otherwise hand it to the first `agent()`
+    // here and fail an assertion about nothing this test did.
+    claimUnsyncedProjections();
+    const base = syncedProjections().length;
+    const registeredHere = () => syncedProjections().slice(base);
+    expect(registeredHere()).toEqual([]);
     expect(syncStateOf(normalizeAgentParams({ name: "p" }))).toBeUndefined();
 
     const cart = sessionSlot("cart", () => ({ items: [] as string[] }), {
       view: (cart) => ({ count: cart.items.length }),
       sync: true,
     });
-    expect(syncedProjections()).toEqual([cart.projected]);
+    expect(registeredHere()).toEqual([cart.projected]);
     const first = agent({ name: "p" });
     expect(first.syncState).toEqual({ cart: cart.projected });
 
@@ -43,7 +52,7 @@ describe("sync: true", () => {
 
     // An unsynced slot is not registered, and nothing else puts one on a def.
     sessionSlot("prefs", () => ({ units: "metric" }));
-    expect(syncedProjections().map((p) => p.key)).toEqual(["cart"]);
+    expect(registeredHere().map((p) => p.key)).toEqual(["cart"]);
 
     // A second synced slot goes to the next agent that collects — and only to it.
     const desk = sessionSlot("desk", () => ({ open: 0 }), { sync: true });
