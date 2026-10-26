@@ -24,7 +24,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { render } from "@testing-library/react";
 import { createElement } from "react";
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 import { ThemeProvider } from "./context.ts";
 import type { ClientTheme } from "./types.ts";
 
@@ -40,6 +40,13 @@ function mount(theme?: ClientTheme) {
 }
 
 describe("the theme as CSS custom properties", () => {
+  // This package runs `isolate: false`, so `:root` is shared with whatever ran
+  // earlier in the worker: a theme another file left published would read as
+  // one a HOST page set, and the restore test below would keep it.
+  beforeEach(() => {
+    for (const name of VARS) document.documentElement.style.removeProperty(name);
+  });
+
   test("publishes all five defaults on :root", () => {
     mount();
     expect(varsOnRoot()).toEqual({
