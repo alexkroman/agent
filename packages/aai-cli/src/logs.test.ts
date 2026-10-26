@@ -123,6 +123,50 @@ describe("executeLogs", () => {
       expect(written().join("\n")).toContain("recovered");
     });
 
+    test("a malformed line is skipped and counted; the follow keeps going", async () => {
+      // A `null` in `lines` threw `Cannot read properties of null` outside the
+      // poll's catch and exited 1.
+      const controller = new AbortController();
+      mockApiRequest
+        .mockResolvedValueOnce(page())
+        .mockResolvedValueOnce(page({ lines: [null, line(0, "good")], cursor: 0 }))
+        .mockResolvedValueOnce(page({ dropped: "lots", cursor: 0 })) // bad page: skipped
+        .mockImplementation(() => {
+          controller.abort();
+          return Promise.resolve(page({ lines: [line(1, "later")], cursor: 1 }));
+        });
+
+      const result = await executeLogs(
+        "/tmp/proj",
+        { follow: true, pollMs: 1, signal: controller.signal },
+        ui,
+        platform,
+      );
+
+      expect(result.ok).toBe(true);
+      expect(written().join("\n")).toContain("good");
+      expect(written().join("\n")).toContain("later");
+      expect(ui.said("warn").join("\n")).toContain("1 malformed line(s)");
+    });
+
+    test("a cursor that never advances does not re-print the same lines", async () => {
+      const controller = new AbortController();
+      let polls = 0;
+      mockApiRequest.mockImplementation(() => {
+        if (++polls === 4) controller.abort();
+        return Promise.resolve(page({ lines: [line(0, "once")], cursor: -1 }));
+      });
+
+      await executeLogs(
+        "/tmp/proj",
+        { follow: true, pollMs: 1, signal: controller.signal },
+        ui,
+        platform,
+      );
+
+      expect(written().filter((w) => w.includes("once"))).toHaveLength(1);
+    });
+
     test("an already-aborted signal reads once and stops", async () => {
       mockApiRequest.mockResolvedValue(page({ lines: [line(0, "only")] }));
 
@@ -150,5 +194,11 @@ describe("formatLine", () => {
 
   test("leads with a millisecond-resolution timestamp", () => {
     expect(formatLine(line(0, "x"))).toMatch(/^\d{2}:\d{2}:\d{2}\.\d{3} /);
+  });
+
+  test("a non-number timestamp renders as dashes, keeping the text", async () => {
+    mockApiRequest.mockResolvedValue(page({ lines: [{ ...line(0, "kept"), at: "soon" }] }));
+    await executeLogs("/tmp/proj", {}, ui, platform);
+    expect(written()).toEqual(["--:--:--.---  kept"]);
   });
 });
