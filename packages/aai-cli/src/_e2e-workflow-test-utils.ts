@@ -41,9 +41,11 @@ import { vi } from "vitest";
 /**
  * The lab's bodies — two flows and two steps, no provider.
  *
- * Under `workflows/` because that is where an author puts them and where the
- * scaffold's tooling looks; nothing about the directory is load-bearing to the
- * engine any more, which reads a body off `agent({ workflows })`.
+ * Under `workflows/` as a HELPER: the registry skips a file whose default
+ * export is not a `workflow()` def, so the bodies live beside the two def files
+ * (`workflows/labSleep.ts`, `workflows/labCount.ts`) that discovery registers
+ * under their file names — the same path a template's own `workflows/<name>.ts`
+ * takes, with no edit to the scaffolded `agent.ts` at all.
  *
  * **There is no webhook flow.** It parked on `createWebhook()` and was resumed
  * by an HTTP delivery. It was dropped while the engine's equivalent —
@@ -52,7 +54,7 @@ import { vi } from "vitest";
  * writable again. See `dev-workflow.scenario.test.ts` for the same hole stated
  * at length.
  */
-const LAB_FLOWS_TS = `// Written by the e2e suite — a provider-free workflow lab.
+const LAB_FLOWS_TS = `// Written by the e2e suite — a provider-free workflow lab (bodies; not a def).
 import type { WorkflowContext } from "@alexkroman1/aai";
 import { stepReport } from "@alexkroman1/aai/step";
 
@@ -116,40 +118,43 @@ test("the lab declares a sleeper", () => {
 });
 `;
 
-/** The declarations `agent.ts` names, kept out of `workflows/` like every template's. */
-const LAB_DECL_TS = `// Written by the e2e suite — declarations for the workflow lab.
+/** The two discovered defs, one file each, named for the workflow they register. */
+const LAB_SLEEP_TS = `// Written by the e2e suite — discovered as the "labSleep" workflow.
 import { workflow } from "@alexkroman1/aai";
 import { z } from "zod";
-import { labCountFlow, labSleepFlow } from "./workflows/lab.ts";
+import { labSleepFlow } from "./lab-flows.ts";
 
-export const labSleep = workflow({
+export default workflow({
   description: "Sleep for N seconds and report the wall clock either side",
   input: z.object({ seconds: z.number() }),
   run: labSleepFlow,
 });
+`;
 
-export const labCount = workflow({
+const LAB_COUNT_TS = `// Written by the e2e suite — discovered as the "labCount" workflow.
+import { workflow } from "@alexkroman1/aai";
+import { z } from "zod";
+import { labCountFlow } from "./lab-flows.ts";
+
+export default workflow({
   description: "Count to N, one journaled step and one durable sleep per tick",
   input: z.object({ steps: z.number() }),
   run: labCountFlow,
 });
 `;
 
-/**
- * The line in a template's `agent.ts` the lab is spliced into.
- *
- * An anchored replace rather than a rewrite of the file: the template's own
- * workflow stays declared, so the original "does a scaffolded workflow template
- * build and boot" assertion is unchanged and the lab rides alongside it. If a
- * template ever stops spelling this line exactly, {@link installWorkflowLab}
- * throws naming it rather than silently installing nothing.
- */
-const WORKFLOWS_ANCHOR = "  workflows: { research },";
+/** What the sibling spec imports: the defs under the names the runs are started by. */
+const LAB_DECL_TS = `// Written by the e2e suite — the lab's defs under their workflow names.
+export { default as labCount } from "./workflows/labCount.ts";
+export { default as labSleep } from "./workflows/labSleep.ts";
+`;
 
 /** Add the lab to an already-scaffolded project, in place. */
 export function installWorkflowLab(projectDir: string): void {
   fs.mkdirSync(path.join(projectDir, "workflows"), { recursive: true });
-  fs.writeFileSync(path.join(projectDir, "workflows", "lab.ts"), LAB_FLOWS_TS);
+  fs.writeFileSync(path.join(projectDir, "workflows", "lab-flows.ts"), LAB_FLOWS_TS);
+  fs.writeFileSync(path.join(projectDir, "workflows", "labSleep.ts"), LAB_SLEEP_TS);
+  fs.writeFileSync(path.join(projectDir, "workflows", "labCount.ts"), LAB_COUNT_TS);
   fs.writeFileSync(path.join(projectDir, "lab.ts"), LAB_DECL_TS);
   fs.writeFileSync(path.join(projectDir, "lab.test.ts"), LAB_SPEC_TS);
 
@@ -162,22 +167,10 @@ export function installWorkflowLab(projectDir: string): void {
   // unrun-spec reporting that shipped broken for longer.
   fs.rmSync(path.join(projectDir, "agent.test.ts"), { force: true });
 
-  const agentPath = path.join(projectDir, "agent.ts");
-  const agent = fs.readFileSync(agentPath, "utf8");
-  if (!agent.includes(WORKFLOWS_ANCHOR)) {
-    throw new Error(
-      `e2e workflow lab: agent.ts no longer contains ${JSON.stringify(WORKFLOWS_ANCHOR)}. ` +
-        "The template changed shape — re-point the anchor rather than dropping the lab, " +
-        "or the lifecycle tests silently assert nothing.",
-    );
-  }
-  fs.writeFileSync(
-    agentPath,
-    `import { labCount, labSleep } from "./lab.ts";\n${agent}`.replace(
-      WORKFLOWS_ANCHOR,
-      "  workflows: { research, labSleep, labCount },",
-    ),
-  );
+  // Nothing is spliced into `agent.ts`: a `workflows/<name>.ts` default export
+  // is discovered by the build, so the template's own workflow and the lab's two
+  // register side by side. The lifecycle tests start runs BY NAME, so a lab the
+  // registry did not pick up fails them loudly on the first `startRun`.
 }
 
 /** One run, as the read routes report it. */
