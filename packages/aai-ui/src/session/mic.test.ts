@@ -7,7 +7,7 @@
  * with the connection.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AudioMockContext, findWorkletNode, installAudioMocks } from "../_react-test-utils.ts";
 import {
   lastSocket,
@@ -15,12 +15,21 @@ import {
   makeConfig,
   resetLastSocket,
 } from "../_session-core-test-utils.ts";
+import { loadAudioModules } from "./audio-setup.ts";
 import { createBrowserSession } from "./browser-session.ts";
 import type { BrowserSession } from "./types.ts";
 
 describe("BrowserSession mic mute", () => {
   let core: BrowserSession;
   let audio: AudioMockContext;
+
+  // Warm the memoized audio imports before any test's `vi.waitFor` (1 s)
+  // starts counting, as drain.test.ts and fuzz-reconnect.test.ts do: on a cold
+  // worker under coverage the first load can outlast that budget, and every
+  // test in the file then waits on the same still-pending import.
+  beforeAll(async () => {
+    await loadAudioModules();
+  });
 
   beforeEach(() => {
     resetLastSocket();

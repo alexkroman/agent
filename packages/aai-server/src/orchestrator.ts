@@ -43,6 +43,7 @@ import { createMiddleware } from "hono/factory";
 import { z } from "zod";
 import { createSemaphore } from "./_semaphore.ts";
 import { createCachedDirReader } from "./_static-files.ts";
+import { TtlCache } from "./_ttl-cache.ts";
 import { createAgentLogsHandler } from "./agent-logs.ts";
 import { registerAgentApiRoutes } from "./agent-routes-handler.ts";
 import { startAgentSweeps } from "./agent-sweeps.ts";
@@ -66,7 +67,13 @@ import {
   localSlugLock,
   type SlugMutationLock,
 } from "./platform/lock.ts";
-import { createRateLimiter, DEPLOY_IP_RATE_LIMIT, type RateLimiter } from "./rate-limit.ts";
+import {
+  CLIENT_IP_RATE_LIMIT_WINDOW_MS,
+  createRateLimiter,
+  DEPLOY_IP_RATE_LIMIT,
+  OWNER_AUTH_FAILURE_IP_RATE_LIMIT,
+  type RateLimiter,
+} from "./rate-limit.ts";
 import type { SandboxDirectory } from "./sandbox/directory.ts";
 import { watchAgentInvalidation } from "./sandbox/invalidate.ts";
 import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
@@ -139,6 +146,8 @@ export type OrchestratorOpts = {
    * is per-replica, which is correct for a single process and weak for ten.
    */
   deployRateLimiter?: RateLimiter;
+  /** Per-IP limiter for FAILED authentications on the owner routes. */
+  ownerAuthFailureRateLimiter?: RateLimiter;
   /** Per-IP limiter for the whole `/:slug/workflows/*` surface. */
   workflowRateLimiter?: RateLimiter;
   /** Per-IP limiter for `POST /:slug/workflows/runs` — starting runs. */
@@ -377,16 +386,41 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     ...omitUndefined({ isDraining: opts.isDraining }),
   });
 
+  // Charged on a 401 only (OWNER_AUTH_FAILURE_IP_RATE_LIMIT has why), and
+  // checked BEFORE `existingOwnerMw`, so a refused caller costs no verification.
+  // The limiter's verdict is remembered per IP because charging happens after
+  // the request; the window it reports is the one honoured.
+  const ownerAuthLimiter =
+    opts.ownerAuthFailureRateLimiter ?? createRateLimiter(OWNER_AUTH_FAILURE_IP_RATE_LIMIT);
+  const ownerAuthRefusedUntil = new TtlCache<number>(CLIENT_IP_RATE_LIMIT_WINDOW_MS);
+  const ownerAuthRateMw = createMiddleware<HonoEnv>(async (c, next) => {
+    const ip = clientIp(c.req.raw);
+    const until = ownerAuthRefusedUntil.get(ip) ?? 0;
+    if (until > Date.now()) {
+      return c.json({ error: "Too many failed authentications — try again later" }, 429, {
+        "Retry-After": String(Math.max(1, Math.ceil((until - Date.now()) / 1000))),
+      });
+    }
+    await next();
+    if (c.res.status !== 401) return;
+    const verdict = await ownerAuthLimiter.check(ip);
+    if (!verdict.ok) {
+      const retryMs = verdict.retryAfterSeconds * 1000;
+      ownerAuthRefusedUntil.set(ip, Date.now() + retryMs, { ttlMs: retryMs });
+    }
+  });
+
   const agents = new Hono<HonoEnv>();
   agents.use("*", slugMw);
 
   // Deploys go through the top-level `POST /deploy` (slug in the body). Every
   // owner-scoped route here operates on an existing agent's data/secrets and
   // uses existingOwnerMw, which rejects unclaimed slugs.
-  agents.delete("/", existingOwnerMw, handleDelete);
-  agents.get("/secret", existingOwnerMw, handleSecretList);
+  agents.delete("/", ownerAuthRateMw, existingOwnerMw, handleDelete);
+  agents.get("/secret", ownerAuthRateMw, existingOwnerMw, handleSecretList);
   agents.put(
     "/secret",
+    ownerAuthRateMw,
     existingOwnerMw,
     secretBodyLimit,
     zValidator("json", SecretUpdatesSchema),
@@ -394,6 +428,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   );
   agents.delete(
     "/secret/:key",
+    ownerAuthRateMw,
     existingOwnerMw,
     zValidator("param", z.object({ key: SecretKeySchema })),
     handleSecretDelete,
@@ -403,6 +438,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // unlike every other `/:slug/*` route it never BOOTS a sandbox (agent-logs.ts).
   agents.get(
     "/logs",
+    ownerAuthRateMw,
     existingOwnerMw,
     createAgentLogsHandler({
       slots: opts.slots,

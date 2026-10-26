@@ -20,6 +20,7 @@ import { describe, expect, test, vi } from "vitest";
 import type { HonoEnv } from "../context.ts";
 import {
   createPlatformFrameLoop,
+  dispatchOrigin,
   type PlatformFrameSink,
   platformHandshakeRefusal,
   platformSocketSlug,
@@ -100,6 +101,36 @@ describe("a frame becomes a request the app routes", () => {
       expect(answers[0]).toMatchObject({ t: "res", id: 3, status: 404 });
     });
     expect(seen).toHaveLength(0);
+  });
+
+  test.each([
+    ["another slug's route", "h/victim-agent/session-state?"],
+    ["a route outside /:slug", "h/deploy?"],
+    ["a fragment", "h/victim-agent/session-state#"],
+  ])("a forged Host cannot move a frame onto %s", async (_label, host) => {
+    // `Host` is written by the guest that opened the socket, and the dispatch URL
+    // is concatenated from it — the same boundary as the route table above.
+    const { app, seen } = appEchoing();
+    const answers: Record<string, unknown>[] = [];
+    const handle = createPlatformFrameLoop(
+      { app, store },
+      { ...CTX, origin: dispatchOrigin(host) },
+      (frame) => answers.push({ ...frame }),
+    );
+    handle(request(5, PLATFORM_ROUTES.sessionState));
+    await vi.waitFor(() => {
+      expect(answers).toHaveLength(1);
+    });
+    expect(seen.map((s) => new URL(s.url).pathname)).toEqual([`/${SLUG}/session-state`]);
+  });
+
+  test.each([
+    [undefined, "http://127.0.0.1"],
+    ["", "http://127.0.0.1"],
+    ["platform.test:8080", "http://platform.test:8080"],
+    ["[::1]:3000", "http://[::1]:3000"],
+  ])("the dispatch origin of Host %j is %s", (host, origin) => {
+    expect(dispatchOrigin(host)).toBe(origin);
   });
 
   test("a throw that escapes the app is a 500 rather than a frame with no reply", async () => {

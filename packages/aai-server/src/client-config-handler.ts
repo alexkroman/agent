@@ -39,7 +39,7 @@ import {
 import { HTTPException } from "hono/http-exception";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { AppContext } from "./context.ts";
-import { forwardToGuest } from "./guest/forward.ts";
+import { forwardToGuest, readGuestJson } from "./guest/forward.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest/routes.ts";
 import { guestTokenFor } from "./guest/token.ts";
 import { brokerSessionUrlOrThrow, notFoundMessage } from "./sandbox/broker.ts";
@@ -158,7 +158,7 @@ export function createAgentClientConfigHandler(
         timeoutMs: GUEST_CONFIG_TIMEOUT_MS,
       });
       if (!res.ok) return {};
-      const parsed = ClientConfigResponseSchema.safeParse(await res.json());
+      const parsed = ClientConfigResponseSchema.safeParse(await readGuestJson(res));
       if (!parsed.success) return {};
       const { name, greeting, page, tools } = parsed.data;
       const config = omitUndefined({ name, greeting, page, tools });

@@ -26,6 +26,7 @@ import type { LogLine, LogPage, LogStream } from "@alexkroman1/aai/host-internal
 import { isRecord } from "@alexkroman1/aai/utils";
 import { MANAGE_REQUEST_TIMEOUT_MS } from "./constants.ts";
 import type { AppContext } from "./context.ts";
+import { readGuestJson } from "./guest/forward.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest/routes.ts";
 import { guestTokenFor } from "./guest/token.ts";
 import { createLogger } from "./logger.ts";
@@ -92,7 +93,7 @@ export async function readGuestLogs(opts: ReadGuestLogsOpts): Promise<LogPage> {
     // before this route existed — deployed agents outlive platform versions by
     // design. An empty pane is the right degradation; an error is not.
     if (!res.ok) return emptyLogPage(after);
-    return parseLogPage(await res.json(), after);
+    return parseLogPage(await readGuestJson(res), after);
   } catch (err) {
     log.debug("guest log read failed", { error: errorMessage(err) });
     return emptyLogPage(after);

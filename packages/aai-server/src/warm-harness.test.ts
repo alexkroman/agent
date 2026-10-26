@@ -10,7 +10,9 @@
 
 import { describe, expect, it } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
-import { drainProcStream } from "./warm-harness.ts";
+import { oversizedGuestBody } from "./_request-test-utils.ts";
+import { GUEST_RESPONSE_BODY_MAX_BYTES } from "./guest/forward.ts";
+import { agentServerFromGuest, drainProcStream } from "./warm-harness.ts";
 
 function streamOf(chunks: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
@@ -42,5 +44,24 @@ describe("drainProcStream", () => {
       },
     });
     await expect(drainProcStream(stream, "[l]")).resolves.toBeUndefined();
+  });
+});
+
+describe("agentServerFromGuest", () => {
+  it("reads an oversized status answer no further than the cap, as idle", async () => {
+    const guest = oversizedGuestBody(8 * GUEST_RESPONSE_BODY_MAX_BYTES);
+    const handle = agentServerFromGuest({
+      proc: {
+        stdout: new ReadableStream({ start: (c) => c.close() }),
+        stderr: new ReadableStream({ start: (c) => c.close() }),
+        wait: () => new Promise<number>(() => undefined),
+      },
+      terminate: async () => undefined,
+      origin: "wss://tunnel.test:443",
+      token: "t",
+      fetchFn: async () => guest.response(),
+    });
+    await expect(handle.activeSessions()).resolves.toBe(0);
+    expect(guest.pulledBytes()).toBeLessThanOrEqual(2 * GUEST_RESPONSE_BODY_MAX_BYTES);
   });
 });

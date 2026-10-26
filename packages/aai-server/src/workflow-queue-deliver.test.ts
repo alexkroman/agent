@@ -21,8 +21,9 @@
 import { describe, expect, test } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
 import { createTestStore } from "./_orchestrator-test-utils.ts";
-import { type GuestCall, recordingGuest } from "./_request-test-utils.ts";
+import { type GuestCall, oversizedGuestBody, recordingGuest } from "./_request-test-utils.ts";
 import { fakeSandbox } from "./_sandbox-test-utils.ts";
+import { GUEST_RESPONSE_BODY_MAX_BYTES } from "./guest/forward.ts";
 import { GUEST_ROUTES } from "./guest/routes.ts";
 import type { ResolveSandboxOpts } from "./sandbox/resolve.ts";
 import { attachSandbox, claimSlot, createSlotCache } from "./sandbox/slots.ts";
@@ -435,5 +436,13 @@ describe("createQueueDeliverer", () => {
     await deliver(message());
     expect(logs.warns()).toEqual([]);
     expect(logs.infos()).toEqual([]);
+  });
+  test("an oversized guest answer fails the delivery without being buffered whole", async () => {
+    // The answer is tenant code's; read whole, it held the replica's memory
+    // for the length of the delivery timeout on every attempt.
+    const guest = oversizedGuestBody(8 * GUEST_RESPONSE_BODY_MAX_BYTES);
+    const { deliver } = await resident(() => guest.response());
+    await expect(deliver(message())).rejects.toThrow(/size cap/);
+    expect(guest.pulledBytes()).toBeLessThanOrEqual(2 * GUEST_RESPONSE_BODY_MAX_BYTES);
   });
 });

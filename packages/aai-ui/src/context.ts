@@ -397,6 +397,58 @@ const THEME_VARS = {
   primary: "--aai-primary",
 } as const satisfies Record<keyof ResolvedClientTheme, `--aai-${string}`>;
 
+/** What the page's own `:root` and `body` carried before any provider wrote to them. */
+type PageStyles = {
+  vars: (readonly [prop: string, value: string])[];
+  htmlBg: string;
+  bodyBg: string;
+};
+
+/**
+ * Every LIVE provider's theme, oldest first, and the page they all wrote over.
+ *
+ * Page-wide rather than per provider, because the page is: two providers that
+ * each snapshot `:root` at mount and restore it at unmount only undo each other
+ * in reverse order. Unmounted in MOUNT order (two `mountClient`s disposed as
+ * they were created, or Testing Library's `cleanup`, which unmounts in render
+ * order), the first restored the page and the second then wrote the first's
+ * tokens back — a stale theme left on a page with no client on it. Now the
+ * newest live theme paints, and the page is restored only when the last
+ * provider goes, whichever order they go in.
+ */
+const liveThemes: ResolvedClientTheme[] = [];
+let pageBefore: PageStyles | null = null;
+
+function readPageStyles(): PageStyles {
+  const { body, documentElement: html } = document;
+  return {
+    vars: Object.values(THEME_VARS).map(
+      (prop) => [prop, html.style.getPropertyValue(prop)] as const,
+    ),
+    htmlBg: html.style.background,
+    bodyBg: body.style.background,
+  };
+}
+
+function writePageStyles(page: PageStyles): void {
+  const { body, documentElement: html } = document;
+  for (const [prop, value] of page.vars) {
+    if (value === "") html.style.removeProperty(prop);
+    else html.style.setProperty(prop, value);
+  }
+  html.style.background = page.htmlBg;
+  body.style.background = page.bodyBg;
+}
+
+function paintTheme(theme: ResolvedClientTheme): void {
+  const { body, documentElement: html } = document;
+  for (const [field, prop] of Object.entries(THEME_VARS)) {
+    html.style.setProperty(prop, theme[field as keyof typeof THEME_VARS]);
+  }
+  body.style.background = theme.bg;
+  html.style.background = theme.bg;
+}
+
 /**
  * Publish the theme to CSS, and paint the page with it.
  *
@@ -427,32 +479,21 @@ function useThemeStyles(theme: ResolvedClientTheme): void {
   const { bg, surface, text, border, primary } = theme;
   useEffect(() => {
     if (typeof document === "undefined") return;
-    const { body, documentElement: html } = document;
-    const values: ResolvedClientTheme = { bg, surface, text, border, primary };
-    const previousVars = Object.entries(THEME_VARS).map(
-      ([field, prop]) =>
-        [
-          prop,
-          html.style.getPropertyValue(prop),
-          values[field as keyof typeof THEME_VARS],
-        ] as const,
-    );
-    for (const [prop, , next] of previousVars) html.style.setProperty(prop, next);
-
-    const previousBg = { body: body.style.background, html: html.style.background };
-    body.style.background = bg;
-    html.style.background = bg;
-
+    const entry: ResolvedClientTheme = { bg, surface, text, border, primary };
+    if (liveThemes.length === 0) pageBefore = readPageStyles();
+    liveThemes.push(entry);
+    paintTheme(entry);
     return () => {
-      // Restored rather than removed: a host page may have set its own
-      // `--aai-*` before mounting, and a client disposed mid-page must leave
-      // that page as it found it.
-      for (const [prop, before] of previousVars) {
-        if (before === "") html.style.removeProperty(prop);
-        else html.style.setProperty(prop, before);
+      liveThemes.splice(liveThemes.indexOf(entry), 1);
+      const newest = liveThemes.at(-1);
+      if (newest) paintTheme(newest);
+      else if (pageBefore) {
+        // Restored rather than removed: a host page may have set its own
+        // `--aai-*` before mounting, and a client disposed mid-page must leave
+        // that page as it found it.
+        writePageStyles(pageBefore);
+        pageBefore = null;
       }
-      body.style.background = previousBg.body;
-      html.style.background = previousBg.html;
     };
   }, [bg, surface, text, border, primary]);
 }

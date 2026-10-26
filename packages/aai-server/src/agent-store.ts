@@ -86,9 +86,23 @@ const GET_SQL = `select slug, credential_hashes, worker_hash, client_files,
   harness_image_tag, version
 from ${TABLE} where slug = $1`;
 
+/**
+ * A FRESH row's version is the database clock in microseconds, never `1`.
+ *
+ * The version is what a guest's bearer, its session-ticket key and its
+ * fleet-wide sandbox name are derived from (`agentSandboxName(slug, version)`),
+ * and a delete leaves no tombstone. Restarting at 1 made a re-claimed slug's
+ * first deploy byte-identical to the deleted one's: the previous tenant's
+ * guest, which holds its bearer by design, authenticated as the new tenant's.
+ * Every earlier version of the slug is below this one — a series that started
+ * at its own insert instant and grew by one per serialized mutation cannot
+ * outrun the clock — and it stays inside `bigint` and JS's safe integers.
+ */
+const FRESH_VERSION_SQL = "(extract(epoch from clock_timestamp()) * 1000000)::bigint";
+
 const PUT_SQL = `insert into ${TABLE} as a
   (slug, credential_hashes, worker_hash, client_files, harness_image_tag, version)
-values ($1, $2::text::jsonb, $3, $4::text::jsonb, $5, 1)
+values ($1, $2::text::jsonb, $3, $4::text::jsonb, $5, ${FRESH_VERSION_SQL})
 on conflict (slug) do update set
   credential_hashes = excluded.credential_hashes,
   worker_hash = excluded.worker_hash,
@@ -162,12 +176,16 @@ export function createPgAgentRows(sql: SqlExec): AgentRows {
 /** In-memory agent rows for local dev and tests — same semantics. */
 export function createMemoryAgentRows(): AgentRows {
   const rows = new Map<string, AgentRecord>();
+  // The last version each slug held, kept across a delete: the memory arm's
+  // stand-in for the Postgres clock start (see FRESH_VERSION_SQL) — a
+  // re-claimed slug must never repeat a deleted deploy's version.
+  const retired = new Map<string, number>();
   return {
     get(slug) {
       return Promise.resolve(rows.get(slug) ?? null);
     },
     put(record) {
-      const version = (rows.get(record.slug)?.version ?? 0) + 1;
+      const version = (rows.get(record.slug)?.version ?? retired.get(record.slug) ?? 0) + 1;
       // Structured-clone so callers can't mutate stored state through the
       // input object (parity with the Postgres round trip).
       rows.set(
@@ -181,6 +199,8 @@ export function createMemoryAgentRows(): AgentRows {
       return Promise.resolve();
     },
     delete(slug) {
+      const gone = rows.get(slug);
+      if (gone) retired.set(slug, gone.version);
       rows.delete(slug);
       return Promise.resolve();
     },

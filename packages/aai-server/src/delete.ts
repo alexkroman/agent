@@ -1,12 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
 import type { AppContext, HonoEnv } from "./context.ts";
 import { createLogger } from "./logger.ts";
+import { assertStillOwner } from "./middleware.ts";
 
 const log = createLogger("agent.delete");
 
 export function handleDelete(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
-  return deleteAgentResources(c.env, slug).then(() =>
+  return deleteAgentResources(c.env, slug, c.var.apiKey).then(() =>
     c.json({ ok: true, message: `Deleted ${slug}` }),
   );
 }
@@ -20,12 +21,21 @@ export function handleDelete(c: AppContext): Promise<Response> {
  * Shared by the agent service's `DELETE /:slug` and the studio's project
  * delete, which cascades to the project's deployed and preview agents —
  * one delete path, exactly like deploy.
+ *
+ * `owner` is the caller's API key when ownership was decided before the lock
+ * (`DELETE /:slug`): it is checked again under the lock, so a delete queued
+ * behind a re-claim of the slug cannot take the next tenant's agent
+ * ({@link assertStillOwner}).
  */
 export async function deleteAgentResources(
   env: Pick<HonoEnv["Bindings"], "secrets" | "slugLock" | "store">,
   slug: string,
+  owner?: string,
 ): Promise<void> {
   await env.slugLock(slug, async () => {
+    if (owner !== undefined) {
+      await assertStillOwner(owner, { slug, store: env.store, allowUnclaimed: true });
+    }
     // The app database used to be dropped here, before the agents row, so a
     // cluster that would not answer failed the delete with a 503 rather than
     // stranding a schema nothing referenced. There is no app database now —

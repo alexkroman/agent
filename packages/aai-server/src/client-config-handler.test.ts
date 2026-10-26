@@ -7,8 +7,9 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createTestOrchestrator } from "./_orchestrator-test-utils.ts";
-import { deployAgent } from "./_request-test-utils.ts";
+import { deployAgent, oversizedGuestBody } from "./_request-test-utils.ts";
 import { fakeSandbox } from "./_sandbox-test-utils.ts";
+import { GUEST_RESPONSE_BODY_MAX_BYTES } from "./guest/forward.ts";
 import { attachSandbox, claimSlot, createSlotCache } from "./sandbox/slots.ts";
 
 /** A deployed `slug` with a resident fake sandbox, whose guest answers `guestFetch`. */
@@ -67,5 +68,17 @@ describe("createAgentClientConfigHandler", () => {
       [a, b].map(async (res) => ((await res.json()) as { sessionToken: string }).sessionToken),
     );
     expect(ta).not.toBe(tb);
+  });
+  test("an oversized guest answer degrades without being buffered whole", async () => {
+    // Any anonymous page load reaches this read, and a degraded answer is not
+    // memoized — so an unbounded read would be a per-request amplifier.
+    const guest = oversizedGuestBody(8 * GUEST_RESPONSE_BODY_MAX_BYTES);
+    const { fetch } = await brokerWith("huge", async () => guest.response());
+
+    const res = await fetch("/huge/client-config");
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).not.toHaveProperty("name");
+    expect(guest.pulledBytes()).toBeLessThanOrEqual(2 * GUEST_RESPONSE_BODY_MAX_BYTES);
   });
 });
