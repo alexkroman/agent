@@ -120,6 +120,44 @@ describe("sessions", () => {
     expect(hits("/tool_router/session")).toHaveLength(2);
   });
 
+  test("two calls that lose the same session share one remake, however slow the store's delete", async () => {
+    // A step's tool calls run concurrently, so both 404s land together. The
+    // store's delete is slower than its get (a remote KV), which is what let
+    // the second caller read the lost id back before the first had forgotten it.
+    let n = 0;
+    serve((req) => {
+      if (path(req) === "/tool_router/session") {
+        return { status: 201, body: { session_id: `trs_${++n}` } };
+      }
+      if (path(req) === "/tool_router/session/trs_0/execute") {
+        return refusal(404, "Session not found");
+      }
+      return { body: { data: "ok", log_id: "l" } };
+    });
+    const memory = new Map<string, string>([["default:u1", "trs_0"]]);
+    const settle = async (turns: number) => {
+      for (let i = 0; i < turns; i++) await Promise.resolve();
+    };
+    const apps = composio({
+      sessionStore: {
+        get: (u, k) => memory.get(`${k}:${u}`),
+        set: (u, k, id) => void memory.set(`${k}:${u}`, id),
+        delete: async (u, k) => {
+          await settle(200);
+          memory.delete(`${k}:${u}`);
+        },
+      },
+    });
+    const [a, b] = await Promise.all([
+      apps.execute(ctx, "u1", "X", {}),
+      apps.execute(ctx, "u1", "X", {}),
+    ]);
+    expect(a).toEqual({ ok: true, data: "ok", logId: "l" });
+    expect(b).toEqual(a);
+    expect(hits("/tool_router/session")).toHaveLength(1);
+    expect(memory.get("default:u1")).toBe("trs_1");
+  });
+
   test("a 404 that does not name the session is not a lost session", async () => {
     serve((req) =>
       path(req) === "/tool_router/session"
