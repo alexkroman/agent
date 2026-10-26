@@ -19,7 +19,7 @@ const answered = {
 
 describe("expectToolOk", () => {
   test("hands back the tool's own value from inside the envelope", () => {
-    expect(expectToolOk<{ quoted: number }>(answered)).toEqual({ quoted: 42 });
+    expect(expectToolOk(answered)).toEqual({ quoted: 42 });
   });
 
   test("throws NAMING the refusal, which is the whole reason it exists", () => {
@@ -49,9 +49,7 @@ describe("expectToolOk", () => {
   });
 
   test("throws on a plain tool's refusal too", () => {
-    expect(() => expectToolOk<{ quoted: number }>(toolFailure("No stock."))).toThrow(
-      "tool refused: No stock.",
-    );
+    expect(() => expectToolOk(toolFailure("No stock."))).toThrow("tool refused: No stock.");
   });
 
   test("a `result` of undefined is still a result", () => {
@@ -64,7 +62,7 @@ describe("expectToolOk", () => {
 
 describe("expectDialogOk", () => {
   test("keeps where the dialog landed", () => {
-    expect(expectDialogOk<{ quoted: number }>(answered)).toEqual({
+    expect(expectDialogOk(answered)).toEqual({
       result: { quoted: 42 },
       state: "quote.pending",
       done: false,

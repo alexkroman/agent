@@ -31,6 +31,7 @@
 // SESSION's model stays live.
 
 import agentDef from "virtual:aai/agent";
+import { builtinTool } from "@alexkroman1/aai/tools";
 import type { FetchRouteHandler, FetchRouteRequest } from "@alexkroman1/aai-runtime/testing";
 import {
   describeEval,
@@ -85,7 +86,11 @@ const provider: FetchRouteHandler = (request) => {
     : { body: { status: "completed", text: TRANSCRIPT_TEXT, audio_duration: 254 } };
 };
 
-/** `workflow_cancel`'s answer. */
+/**
+ * `workflow_cancel`'s answer. A builtin is reached by its def like any tool
+ * (`builtinTool`), but the SDK types that def's result loosely, so the shape
+ * is still PROVED through a schema rather than read off `any`.
+ */
 const Cancelled = z.object({ cancelled: z.boolean(), note: z.string() });
 
 /** Every tool call in this turn that READS a run, whichever the model picked. */
@@ -202,7 +207,9 @@ describeEval(
         const runId = evalRunOf(started, recap);
         const turn = await session.say("Forget it — cancel that, please.");
 
-        const answer = toolResultIn(turn.toolCalls, "workflow_cancel", Cancelled);
+        const answer = Cancelled.parse(
+          toolResultIn(turn.toolCalls, builtinTool("workflow_cancel")),
+        );
         expect(answer.cancelled).toBe(true);
         // The sentence is the declaration's `cancelNote`, and a documented
         // promise of this template: cancellation is NOT cooperative here.

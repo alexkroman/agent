@@ -127,6 +127,53 @@ export const triage: SpeakerDef<"triage"> = speaker({
   ].join(" "),
 });
 
+/**
+ * Billing's own tools, declared as a MAP the speaker carries. Named here rather
+ * than inline so a spec reaches each one by its def — `run(billingTools.lookup_invoice)`,
+ * `toolResultIn(calls, billingTools.lookup_invoice)` — exactly as it reaches a
+ * `tools/` file through the file's default export: `agent({ roster })` records
+ * each entry under its key, and the def's `execute` types the result.
+ */
+export const billingTools = {
+  lookup_invoice: deskSlot.tool({
+    description: "List the caller's invoices, or one invoice by id.",
+    inputSchema: z.object({
+      invoiceId: z.string().optional().describe("One invoice; omit to list all of them."),
+    }),
+    execute({ invoiceId }, desk) {
+      const account = verifiedAccount(desk);
+      if ("error" in account) return account;
+      const invoices =
+        invoiceId === undefined
+          ? account.invoices
+          : account.invoices.filter((one) => one.id === invoiceId);
+      if (invoices.length === 0) return toolFailure(`No invoice ${invoiceId} on this account.`);
+      return {
+        invoices: invoices.map((one) => ({
+          ...one,
+          status: desk.refunded.includes(one.id) ? "refunded" : one.status,
+        })),
+      };
+    },
+  }),
+  issue_refund: deskSlot.updateTool({
+    description:
+      "Refund one invoice in full. Only after the caller has confirmed the invoice id and amount.",
+    inputSchema: z.object({ invoiceId: z.string() }),
+    execute({ invoiceId }, desk) {
+      const account = verifiedAccount(desk);
+      if ("error" in account) return account;
+      const invoice = account.invoices.find((one) => one.id === invoiceId);
+      if (!invoice) return toolFailure(`No invoice ${invoiceId} on this account.`);
+      if (invoice.status === "refunded" || desk.refunded.includes(invoiceId)) {
+        return toolFailure(`${invoiceId} has already been refunded.`);
+      }
+      desk.refunded.push(invoiceId);
+      return { refunded: invoiceId, amount: invoice.amount };
+    },
+  }),
+};
+
 export const billing = speaker({
   name: "billing",
   speaks: true,
@@ -137,46 +184,41 @@ export const billing = speaker({
     "invoice with the caller before issuing one. If the caller turns out to have a",
     "line or equipment problem, hand them to support.",
   ].join(" "),
-  tools: {
-    lookup_invoice: deskSlot.tool({
-      description: "List the caller's invoices, or one invoice by id.",
-      inputSchema: z.object({
-        invoiceId: z.string().optional().describe("One invoice; omit to list all of them."),
-      }),
-      execute({ invoiceId }, desk) {
-        const account = verifiedAccount(desk);
-        if ("error" in account) return account;
-        const invoices =
-          invoiceId === undefined
-            ? account.invoices
-            : account.invoices.filter((one) => one.id === invoiceId);
-        if (invoices.length === 0) return toolFailure(`No invoice ${invoiceId} on this account.`);
-        return {
-          invoices: invoices.map((one) => ({
-            ...one,
-            status: desk.refunded.includes(one.id) ? "refunded" : one.status,
-          })),
-        };
-      },
-    }),
-    issue_refund: deskSlot.updateTool({
-      description:
-        "Refund one invoice in full. Only after the caller has confirmed the invoice id and amount.",
-      inputSchema: z.object({ invoiceId: z.string() }),
-      execute({ invoiceId }, desk) {
-        const account = verifiedAccount(desk);
-        if ("error" in account) return account;
-        const invoice = account.invoices.find((one) => one.id === invoiceId);
-        if (!invoice) return toolFailure(`No invoice ${invoiceId} on this account.`);
-        if (invoice.status === "refunded" || desk.refunded.includes(invoiceId)) {
-          return toolFailure(`${invoiceId} has already been refunded.`);
-        }
-        desk.refunded.push(invoiceId);
-        return { refunded: invoiceId, amount: invoice.amount };
-      },
-    }),
-  },
+  tools: billingTools,
 });
+
+/** Support's own tools — a map for the same reason `billingTools` is one. */
+export const supportTools = {
+  run_diagnostic: deskSlot.tool({
+    description: "Test the caller's line and report what it finds.",
+    execute(_args, desk) {
+      const account = verifiedAccount(desk);
+      if ("error" in account) return account;
+      return {
+        line: account.line,
+        needsTechnician: account.line !== "healthy",
+      };
+    },
+  }),
+  schedule_technician: deskSlot.updateTool({
+    description: "Book a technician visit. Only after run_diagnostic reported a fault.",
+    inputSchema: z.object({
+      day: z.string().describe("The day, as the caller said it."),
+      window: z.enum(["morning", "afternoon"]),
+    }),
+    execute({ day, window }, desk) {
+      const account = verifiedAccount(desk);
+      if ("error" in account) return account;
+      if (account.line === "healthy") {
+        return toolFailure(
+          "The diagnostic found no fault; there is nothing to send a technician for.",
+        );
+      }
+      desk.appointment = { day, window };
+      return { booked: desk.appointment };
+    },
+  }),
+};
 
 export const support = speaker({
   name: "support",
@@ -187,37 +229,7 @@ export const support = speaker({
     "book a technician only when the diagnostic says the fault is on our side.",
     "If the caller wants to talk about a bill instead, hand them to billing.",
   ].join(" "),
-  tools: {
-    run_diagnostic: deskSlot.tool({
-      description: "Test the caller's line and report what it finds.",
-      execute(_args, desk) {
-        const account = verifiedAccount(desk);
-        if ("error" in account) return account;
-        return {
-          line: account.line,
-          needsTechnician: account.line !== "healthy",
-        };
-      },
-    }),
-    schedule_technician: deskSlot.updateTool({
-      description: "Book a technician visit. Only after run_diagnostic reported a fault.",
-      inputSchema: z.object({
-        day: z.string().describe("The day, as the caller said it."),
-        window: z.enum(["morning", "afternoon"]),
-      }),
-      execute({ day, window }, desk) {
-        const account = verifiedAccount(desk);
-        if ("error" in account) return account;
-        if (account.line === "healthy") {
-          return toolFailure(
-            "The diagnostic found no fault; there is nothing to send a technician for.",
-          );
-        }
-        desk.appointment = { day, window };
-        return { booked: desk.appointment };
-      },
-    }),
-  },
+  tools: supportTools,
 });
 
 /**

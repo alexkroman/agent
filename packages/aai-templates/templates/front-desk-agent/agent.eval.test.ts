@@ -13,6 +13,8 @@ import agentDef from "virtual:aai/agent";
 // every tool on the active persona, and still executes the tool a script names
 // — so a stub run proves the wiring and proves nothing about what the agent chose.
 import { HANDOFF_TOOL_NAME } from "@alexkroman1/aai";
+import { isToolFailure } from "@alexkroman1/aai/utils";
+import { expectToolOk, toolOf } from "@alexkroman1/aai-runtime/testing";
 import {
   describeEval,
   evalSimulation,
@@ -20,16 +22,15 @@ import {
   toolResultIn,
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import { z } from "zod";
+import { billingTools } from "./shared.ts";
 import verifyAccount from "./tools/verify_account.ts";
 
-// The desks' tools are the roster's, not files, so an eval reads them by name
-// and a schema; `verify_account` is a file and is read by its def, typed.
-const Handoff = z.object({ handoff: z.literal(true), from: z.string(), to: z.string() });
-const Refusal = z.object({ error: z.string() });
-const Invoices = z.object({
-  invoices: z.array(z.object({ id: z.string(), amount: z.number(), status: z.string() })),
-});
+// Every tool is read by its DEF, typed by its `execute`: `verify_account` is a
+// file, billing's `lookup_invoice` is an entry on its `tools` map (recorded
+// under that key when `agent({ roster })` ran), and the minted `handoff` comes
+// off the deployed agent's table through `toolOf`.
+const { lookup_invoice: lookupInvoice } = billingTools;
+const handoff = toolOf(agentDef, HANDOFF_TOOL_NAME);
 
 describeEval(agentDef, (test) => {
   test(
@@ -61,7 +62,9 @@ describeEval(agentDef, (test) => {
       // lookup before verification is exactly what the gate exists to stop, and
       // a lookup attempted here is refused because billing is not speaking.
       for (const call of turn.toolCalls.filter((c) => c.name === "lookup_invoice")) {
-        expect(toolResultIn([call], call.name, Refusal).error).toContain("billing persona");
+        const answered = toolResultIn([call], lookupInvoice);
+        if (!isToolFailure(answered)) throw new Error(`an invoice was read: ${call.result}`);
+        expect(answered.error).toContain("billing persona");
       }
       expect(turn.completed).toBe(true);
     },
@@ -80,7 +83,8 @@ describeEval(agentDef, (test) => {
         "I don't have a billing question, my internet has been down since this morning.",
       );
       expect(toolNames(turn.toolCalls)).toContain(HANDOFF_TOOL_NAME);
-      expect(toolResultIn(turn.toolCalls, HANDOFF_TOOL_NAME, Handoff)).toMatchObject({
+      expect(toolResultIn(turn.toolCalls, handoff)).toMatchObject({
+        handoff: true,
         from: "triage",
         to: "support",
       });
@@ -104,7 +108,7 @@ describeEval(agentDef, (test) => {
       // because the handoff turn 1 made is the session's, not the turn's.
       const turn = await session.say("What's on invoice INV-1001-2?");
       expect(toolNames(turn.toolCalls)).toEqual(["lookup_invoice"]);
-      expect(toolResultIn(turn.toolCalls, "lookup_invoice", Invoices).invoices).toEqual([
+      expect(expectToolOk(toolResultIn(turn.toolCalls, lookupInvoice)).invoices).toEqual([
         { id: "INV-1001-2", amount: 79.5, status: "open" },
       ]);
     },
@@ -152,8 +156,8 @@ describeEval(agentDef, (test) => {
       // in — and a refused attempt along the way is the gate working.
       const reads = call.metrics.toolCalls
         .filter((c) => c.name === "lookup_invoice")
-        .map((c) => toolResultIn([c], c.name, Invoices.or(Refusal)))
-        .flatMap((result) => ("invoices" in result ? result.invoices : []));
+        .map((c) => toolResultIn([c], lookupInvoice))
+        .flatMap((result) => (isToolFailure(result) ? [] : result.invoices));
       expect(reads, call.transcript()).toContainEqual({
         id: "INV-1001-2",
         amount: 79.5,

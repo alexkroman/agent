@@ -120,7 +120,7 @@ describeEval(
       "a custom tool's global fetch is routed, and the log holds this repeat alone",
       async ({ session, network }) => {
         const turn = await session.say("how warm is it?");
-        expect(toolResultIn(turn.toolCalls, "weather")).toEqual({ temperature: 54.4 });
+        expect(toolResultIn(turn.toolCalls, weather)).toEqual({ temperature: 54.4 });
         expect(network?.calls("api.open-meteo.com")).toHaveLength(1);
         passed("global");
       },
@@ -147,7 +147,7 @@ describeEval(
       "an unrouted host is refused, the tool sees the failure, and the log says so",
       async ({ session, network }) => {
         const turn = await session.say("call the restaurant");
-        expect(JSON.stringify(toolResultIn(turn.toolCalls, "place_call"))).toMatch(/refused/);
+        expect(JSON.stringify(toolResultIn(turn.toolCalls, placeCall))).toMatch(/refused/);
         expect(network?.refused().map((r) => r.host)).toEqual(["api.twilio.com"]);
         expect(() => network?.expectNoOutbound(/twilio/)).toThrow(/1 were attempted/);
         passed("refused");
@@ -173,7 +173,7 @@ describeEval(
         const turn = await session.say("save a note");
         // One POST, then a count of one — two on the second repeat if the rows
         // had carried over.
-        expect(toolResultIn(turn.toolCalls, "add_row")).toEqual({ count: 1 });
+        expect(toolResultIn(turn.toolCalls, addRow)).toEqual({ count: 1 });
         expect(network?.requests()).toHaveLength(2);
         expect(network).not.toBe(shared);
         passed("factory");
@@ -204,7 +204,7 @@ describeEval(
       "a suite INSTANCE with state starts every repeat with fresh state, read off ctx.network",
       async ({ session, network }) => {
         const turn = await session.say("save a note");
-        expect(toolResultIn(turn.toolCalls, "add_row")).toEqual({ count: 1 });
+        expect(toolResultIn(turn.toolCalls, addRow)).toEqual({ count: 1 });
         // Typed: no cast, no module-level `let` holding the rows.
         expect(network.state.rows).toEqual([{}]);
         passed("state");

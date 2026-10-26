@@ -18,9 +18,10 @@
  *
  * - `_testing-context.ts` — `createToolContext`, whose `ctx.speech` records into
  *   `ctx.said` (`_testing-session-speech.ts`).
- * - `testing-tools.ts` — `toolOf` / `runTool` / `toolRunner`, the tool under the
- *   name the model calls it by, the last of those being `runTool` with the agent
- *   bound; `testing-discovery.ts` — `deployedAgent`, which lowers a project's
+ * - `testing-tools.ts` — `runTool` / `toolRunner`, a tool run by its DEF (the
+ *   file's default export, or a speaker's `tools` entry), the second of those
+ *   with the agent bound and its gates applied; `toolOf`, the lookup by the
+ *   name the model calls; `testing-discovery.ts` — `deployedAgent`, which lowers a project's
  *   own FILES (`tools/`, `system-prompt.md`) onto its `agent.ts` default export
  *   the way the build does — the one function a spec needs.
  * - `_testing-tool-results.ts` — `expectToolOk` / `expectDialogOk`, unwrapping what a gated

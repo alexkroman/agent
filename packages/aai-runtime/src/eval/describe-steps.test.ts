@@ -68,7 +68,7 @@ describeEval(
         const runId = evalRunOf(turn, poll);
         // The same id the tool answered the model with — read off the client,
         // not parsed out of the result.
-        expect(toolResultIn(turn.toolCalls, "start_job")).toEqual({ runId });
+        expect(toolResultIn(turn.toolCalls, startJob)).toEqual({ runId });
         await vi.waitFor(() => expect(steps?.held).toBe(true));
         expect(steps?.requests.map((request) => request.pathname)).toEqual(["/jobs/j1"]);
         const runs = await (workflows?.runs() ?? []);
@@ -112,7 +112,7 @@ describeEval(
       "a declared key nobody has is a placeholder in the PROCESS env, for a tool outside a run",
       async ({ session }) => {
         const turn = await session.say("read it");
-        expect(toolResultIn(turn.toolCalls, "read_key")).toEqual({ key: STUB_ENV_VALUE });
+        expect(toolResultIn(turn.toolCalls, readKey)).toEqual({ key: STUB_ENV_VALUE });
       },
       { stubReply: [{ tool: "read_key" }, "Read."] },
     );

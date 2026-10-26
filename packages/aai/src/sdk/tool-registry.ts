@@ -40,6 +40,7 @@
 
 import { withCollectedSyncState } from "./_author-conveniences.ts";
 import { moduleNameOf, SPEC_RE } from "./_module-registry.ts";
+import { recordToolNames } from "./_testing-tool-names.ts";
 import { isRecord } from "./is-record.ts";
 import type { Toolset } from "./toolset.ts";
 import type { ToolDef } from "./types.ts";
@@ -213,6 +214,12 @@ export function toolRegistry(modules: ToolModules): ToolRegistry {
  * constraint as optional and widened to `readonly string[]`, so a def that
  * carries none still passes and this module still names no builtin catalog.
  *
+ * **It also RECORDS each def's name** (`_testing-tool-names.ts`). This is the
+ * one step every lowering goes through that pairs a def with the name the
+ * model calls, and a spec handed the def later — `toolResultIn(calls, def)`,
+ * `toolNameOf(def)` — has nowhere else to learn it. A `WeakMap` write per
+ * tool, so a lowering that nobody tests costs nothing.
+ *
  * @public
  */
 export function withTools<
@@ -244,6 +251,7 @@ export function withTools<
       );
     }
   }
+  recordToolNames(registry);
   // The lowering is also where every module has evaluated, so a slot synced
   // in a `tools/*.ts` file — registered after `agent()` ran — joins the
   // agent's default `syncState` here. See `withCollectedSyncState`.

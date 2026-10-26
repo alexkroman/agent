@@ -1080,13 +1080,11 @@ readonly [`SessionEvent`](../aai/index.md#sessionevent)[]
 
 ### lastToolResultIn()
 
-#### Call Signature
-
 ```ts
 function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 ```
 
-The result of the LAST call to `name` in `calls`, parsed.
+The result of the LAST call to `tool` in `calls`, parsed and typed by the def.
 
 One of three result readers, told apart by how many calls the claim allows:
 [toolResultIn](#toolresultin) — EXACTLY one (zero or two throw); this — at least one,
@@ -1103,106 +1101,50 @@ The LAST rather than the first, because a repeated call is the agent settling
 on an answer and the settled one is what the caller was told.
 
 ```ts
+// file: tools/game_state_score.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Award points",
+  inputSchema: z.object({ points: z.number() }),
+  execute: ({ points }) => ({ score: points }),
+});
+
+// file: agent.eval.test.ts
 import {
   type EvalTurn,
   lastToolResultIn,
   toolCallsInTurns,
 } from "@alexkroman1/aai-runtime/eval";
-import { z } from "zod";
+import gameStateScore from "./tools/game_state_score.ts";
 
 export function finalScore(turns: readonly EvalTurn[]): number {
   const calls = toolCallsInTurns(turns);
   // The score as it finally stood, even if the narrator awarded twice.
-  const scored = lastToolResultIn(calls, "game_state_score", z.object({ score: z.number() }));
-  return scored.score;
+  return lastToolResultIn(calls, gameStateScore).score;
 }
 ```
 
-##### Type Parameters
+#### Type Parameters
 
-###### D
+##### D
 
 `D` *extends* [`ToolDef`](../aai/index.md#tooldef)\<[`ToolInputSchema`](../aai/index.md#toolinputschema)\>
 
-##### Parameters
+#### Parameters
 
-###### calls
+##### calls
 
 readonly [`EvalToolCall`](#evaltoolcall)[]
 
-###### tool
+##### tool
 
 `D`
 
-##### Returns
+#### Returns
 
 [`EvalToolOutput`](#evaltooloutput)\<`D`\>
-
-#### Call Signature
-
-```ts
-function lastToolResultIn<T = unknown>(
-   calls: readonly EvalToolCall[], 
-   name: string, 
-   schema?: StandardSchemaV1<unknown, T>
-): T;
-```
-
-The result of the LAST call to `name` in `calls`, parsed.
-
-One of three result readers, told apart by how many calls the claim allows:
-[toolResultIn](#toolresultin) — EXACTLY one (zero or two throw); this — at least one,
-the settled last; [toolResultsIn](#toolresultsin) — every call, in order (zero is `[]`).
-
-[toolResultIn](#toolresultin) refuses a scope holding two calls to one tool, and that
-refusal is right for a single TURN: two calls there is usually the finding.
-Across turns it is ordinary — a caller nudges, the agent re-reads the state,
-and a case reading `toolCallsInTurns(turns)` meets a duplicate through no
-fault of the agent's — and a live model calls a median of one tool per reply
-(`DEFAULT_MAX_STEPS`), so the claims that survive it are read across turns.
-
-The LAST rather than the first, because a repeated call is the agent settling
-on an answer and the settled one is what the caller was told.
-
-```ts
-import {
-  type EvalTurn,
-  lastToolResultIn,
-  toolCallsInTurns,
-} from "@alexkroman1/aai-runtime/eval";
-import { z } from "zod";
-
-export function finalScore(turns: readonly EvalTurn[]): number {
-  const calls = toolCallsInTurns(turns);
-  // The score as it finally stood, even if the narrator awarded twice.
-  const scored = lastToolResultIn(calls, "game_state_score", z.object({ score: z.number() }));
-  return scored.score;
-}
-```
-
-##### Type Parameters
-
-###### T
-
-`T` = `unknown`
-
-##### Parameters
-
-###### calls
-
-readonly [`EvalToolCall`](#evaltoolcall)[]
-
-###### name
-
-`string`
-
-###### schema?
-
-[`StandardSchemaV1`](../aai/index.md#standardschemav1)\<`unknown`, `T`\>
-
-##### Returns
-
-`T`
 
 ***
 
@@ -1604,154 +1546,49 @@ readonly `Readonly`\<`Record`\<`string`, `unknown`\>\>[]
 
 ### toolArgsIn()
 
-#### Call Signature
-
 ```ts
 function toolArgsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly InferToolInput<D>[];
 ```
 
-Every call to `name` in `calls`, with its ARGUMENTS — what the agent asked
-for, in call order.
+Every call to `tool` in `calls`, with its ARGUMENTS — what the agent asked
+for, in call order, typed by the def's `inputSchema`.
 
 The plural half of [toolResultIn](#toolresultin), and the one that was missing: nine
 eval files wrote `calls.filter((c) => c.name === X).map((c) => c.args.…)` and
 three of them wrapped it in a local `codeIn`/`fetchedUrls`/`drugsIn` reader —
 twenty-two `.filter((c) => c.name === …)` sites across the corpus.
 
-**Pass the SCHEMA when the case reads a FIELD.** `args` is
-`Record<string, unknown>` on the wire — the model produced it and nothing
-validated it, since the tool executor is where a bad call is rejected — so the
-alternative is `String(c.args.code ?? "")`, which turns an argument the model
-renamed, or never sent, into `""`. That is a claim about the agent silently
-becoming a claim about nothing: an eval asserting `codeIn(turn)` contains
-`Math.PI` passes on an empty string only if the case ALSO asserted the call
-happened, and three of them did not. With a schema, arguments that stopped
-matching FAIL naming the field.
+`args` is `Record<string, unknown>` on the wire — the model produced it, and
+the tool executor validated it against `inputSchema` before `execute` ran —
+so the def's input type is what each call carried, and a case reads a field
+off it with no cast. The alternative, `String(c.args.code ?? "")`, turns an
+argument the model renamed, or never sent, into `""`: a claim about the
+agent silently becoming a claim about nothing.
 
 ZERO calls answers `[]` rather than throwing, unlike [toolResultIn](#toolresultin) —
 "it never called this" is a claim the plural form is used to make
-(`expect(toolArgsIn(calls, "run_code")).toHaveLength(0)`), where for the
+(`expect(toolArgsIn(calls, runCode)).toHaveLength(0)`), where for the
 singular it can only be a mistake.
 
-##### Type Parameters
+#### Type Parameters
 
-###### D
+##### D
 
 `D` *extends* [`ToolDef`](../aai/index.md#tooldef)\<[`ToolInputSchema`](../aai/index.md#toolinputschema)\>
 
-##### Parameters
+#### Parameters
 
-###### calls
+##### calls
 
 readonly [`EvalToolCall`](#evaltoolcall)[]
 
-###### tool
+##### tool
 
 `D`
 
-##### Returns
+#### Returns
 
 readonly [`InferToolInput`](../aai/index.md#infertoolinput)\<`D`\>[]
-
-#### Call Signature
-
-```ts
-function toolArgsIn<T>(
-   calls: readonly EvalToolCall[], 
-   name: string, 
-   schema: StandardSchemaV1<unknown, T>
-): readonly T[];
-```
-
-Every call to `name` in `calls`, with its ARGUMENTS — what the agent asked
-for, in call order.
-
-The plural half of [toolResultIn](#toolresultin), and the one that was missing: nine
-eval files wrote `calls.filter((c) => c.name === X).map((c) => c.args.…)` and
-three of them wrapped it in a local `codeIn`/`fetchedUrls`/`drugsIn` reader —
-twenty-two `.filter((c) => c.name === …)` sites across the corpus.
-
-**Pass the SCHEMA when the case reads a FIELD.** `args` is
-`Record<string, unknown>` on the wire — the model produced it and nothing
-validated it, since the tool executor is where a bad call is rejected — so the
-alternative is `String(c.args.code ?? "")`, which turns an argument the model
-renamed, or never sent, into `""`. That is a claim about the agent silently
-becoming a claim about nothing: an eval asserting `codeIn(turn)` contains
-`Math.PI` passes on an empty string only if the case ALSO asserted the call
-happened, and three of them did not. With a schema, arguments that stopped
-matching FAIL naming the field.
-
-ZERO calls answers `[]` rather than throwing, unlike [toolResultIn](#toolresultin) —
-"it never called this" is a claim the plural form is used to make
-(`expect(toolArgsIn(calls, "run_code")).toHaveLength(0)`), where for the
-singular it can only be a mistake.
-
-##### Type Parameters
-
-###### T
-
-`T`
-
-##### Parameters
-
-###### calls
-
-readonly [`EvalToolCall`](#evaltoolcall)[]
-
-###### name
-
-`string`
-
-###### schema
-
-[`StandardSchemaV1`](../aai/index.md#standardschemav1)\<`unknown`, `T`\>
-
-##### Returns
-
-readonly `T`[]
-
-#### Call Signature
-
-```ts
-function toolArgsIn(calls: readonly EvalToolCall[], name: string): readonly Record<string, unknown>[];
-```
-
-Every call to `name` in `calls`, with its ARGUMENTS — what the agent asked
-for, in call order.
-
-The plural half of [toolResultIn](#toolresultin), and the one that was missing: nine
-eval files wrote `calls.filter((c) => c.name === X).map((c) => c.args.…)` and
-three of them wrapped it in a local `codeIn`/`fetchedUrls`/`drugsIn` reader —
-twenty-two `.filter((c) => c.name === …)` sites across the corpus.
-
-**Pass the SCHEMA when the case reads a FIELD.** `args` is
-`Record<string, unknown>` on the wire — the model produced it and nothing
-validated it, since the tool executor is where a bad call is rejected — so the
-alternative is `String(c.args.code ?? "")`, which turns an argument the model
-renamed, or never sent, into `""`. That is a claim about the agent silently
-becoming a claim about nothing: an eval asserting `codeIn(turn)` contains
-`Math.PI` passes on an empty string only if the case ALSO asserted the call
-happened, and three of them did not. With a schema, arguments that stopped
-matching FAIL naming the field.
-
-ZERO calls answers `[]` rather than throwing, unlike [toolResultIn](#toolresultin) —
-"it never called this" is a claim the plural form is used to make
-(`expect(toolArgsIn(calls, "run_code")).toHaveLength(0)`), where for the
-singular it can only be a mistake.
-
-##### Parameters
-
-###### calls
-
-readonly [`EvalToolCall`](#evaltoolcall)[]
-
-###### name
-
-`string`
-
-##### Returns
-
-readonly `Record`\<`string`, `unknown`\>[]
 
 ***
 
@@ -1826,9 +1663,9 @@ strongest claim about tool ORDER available, and the reason this is an export
 of its own rather than folded into the diagnostic.
 
 Names only: a claim about what a tool was ASKED for goes through
-[toolArgsIn](#toolargsin) with a schema, because `args` is `unknown` on the wire and
-reading a field off it by hand is how an argument the model renamed becomes
-`""`.
+[toolArgsIn](#toolargsin) with the tool's def, because `args` is `unknown` on the
+wire and reading a field off it by hand is how an argument the model renamed
+becomes `""`.
 
 #### Parameters
 
@@ -1844,15 +1681,13 @@ readonly `string`[]
 
 ### toolResultIn()
 
-#### Call Signature
-
 ```ts
 function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 ```
 
-The result of the ONE call to `name` in `calls`, parsed — zero calls or two
-throw. [lastToolResultIn](#lasttoolresultin) allows repeats; [toolResultsIn](#toolresultsin) reads
-them all.
+The result of the ONE call to `tool` in `calls`, parsed and typed by the def
+— zero calls or two throw. [lastToolResultIn](#lasttoolresultin) allows repeats;
+[toolResultsIn](#toolresultsin) reads them all.
 
 `EvalToolCall.result` is the serialized string the model was handed, so every
 eval that asserts on what a tool ANSWERED was parsing and indexing it by
@@ -1860,103 +1695,48 @@ hand — five files had written the same helper. What matters more than the
 parse is the THROW: a `find` that misses answers `undefined`, and a case then
 asserts against nothing and passes. This names what was called instead.
 
-**Handed the tool's DEF, the result is TYPED** — `InferToolOutput<typeof
-placeOrder>`, the type its `execute` declares, minus the `$instruction` key
-a `withInstruction` result carries (the runtime strips it before the frame
-is recorded, so the wire value never has it) — and the wire name is read off
-the def (`toolNameOf`), so a renamed file fails here by name. For a
-`dialog.tool` the envelope type is known (`DialogToolResult<R> | ToolFailure`),
-so `dialogResultSchema` is no longer needed to read one; `expectToolOk`
-unwraps it. The def form parses JSON and claims the shape; a result whose
-shape has to be PROVED still takes the string and a schema.
+**The tool is its DEF** — a `tools/` file's default export, or a speaker's
+`tools` entry for a roster tool — and the result is TYPED by it:
+`InferToolOutput<typeof placeOrder>`, the type its `execute` declares, minus
+the `$instruction` key a `withInstruction` result carries (the runtime strips
+it before the frame is recorded, so the wire value never has it). The wire
+name is read off the def (`toolNameOf`), so a renamed file fails here by
+name. For a `dialog.tool` the envelope type is known
+(`DialogToolResult<R> | ToolFailure`), and `expectToolOk` unwraps it. A
+refusal the GATE answered (a roster entry off the line) parses as the
+`ToolFailure` arm, which `isToolFailure` narrows.
 
-##### Type Parameters
+#### Type Parameters
 
-###### D
+##### D
 
 `D` *extends* [`ToolDef`](../aai/index.md#tooldef)\<[`ToolInputSchema`](../aai/index.md#toolinputschema)\>
 
-##### Parameters
+#### Parameters
 
-###### calls
+##### calls
 
 readonly [`EvalToolCall`](#evaltoolcall)[]
 
-###### tool
+##### tool
 
 `D`
 
-##### Returns
+#### Returns
 
 [`EvalToolOutput`](#evaltooloutput)\<`D`\>
-
-#### Call Signature
-
-```ts
-function toolResultIn<T = unknown>(
-   calls: readonly EvalToolCall[], 
-   name: string, 
-   schema?: StandardSchemaV1<unknown, T>
-): T;
-```
-
-The result of the ONE call to `name` in `calls`, parsed — zero calls or two
-throw. [lastToolResultIn](#lasttoolresultin) allows repeats; [toolResultsIn](#toolresultsin) reads
-them all.
-
-`EvalToolCall.result` is the serialized string the model was handed, so every
-eval that asserts on what a tool ANSWERED was parsing and indexing it by
-hand — five files had written the same helper. What matters more than the
-parse is the THROW: a `find` that misses answers `undefined`, and a case then
-asserts against nothing and passes. This names what was called instead.
-
-**Handed the tool's DEF, the result is TYPED** — `InferToolOutput<typeof
-placeOrder>`, the type its `execute` declares, minus the `$instruction` key
-a `withInstruction` result carries (the runtime strips it before the frame
-is recorded, so the wire value never has it) — and the wire name is read off
-the def (`toolNameOf`), so a renamed file fails here by name. For a
-`dialog.tool` the envelope type is known (`DialogToolResult<R> | ToolFailure`),
-so `dialogResultSchema` is no longer needed to read one; `expectToolOk`
-unwraps it. The def form parses JSON and claims the shape; a result whose
-shape has to be PROVED still takes the string and a schema.
-
-##### Type Parameters
-
-###### T
-
-`T` = `unknown`
-
-##### Parameters
-
-###### calls
-
-readonly [`EvalToolCall`](#evaltoolcall)[]
-
-###### name
-
-`string`
-
-###### schema?
-
-[`StandardSchemaV1`](../aai/index.md#standardschemav1)\<`unknown`, `T`\>
-
-##### Returns
-
-`T`
 
 ***
 
 ### toolResultsIn()
 
-#### Call Signature
-
 ```ts
 function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly EvalToolOutput<D>[];
 ```
 
-Every call to `name` in `calls`, with its RESULT parsed — what each answered,
-in call order. The plural of [toolResultIn](#toolresultin) (exactly one) and
-[lastToolResultIn](#lasttoolresultin) (the last of several).
+Every call to `tool` in `calls`, with its RESULT parsed and typed by the def
+— what each answered, in call order. The plural of [toolResultIn](#toolresultin)
+(exactly one) and [lastToolResultIn](#lasttoolresultin) (the last of several).
 
 [toolResultIn](#toolresultin) refuses more than one call on purpose: "the one call to
 X" is the common claim and two of them is usually a finding. The plural is the
@@ -1967,72 +1747,25 @@ report. An incomplete call throws here too, naming its position.
 
 ZERO calls answers `[]`, for the reason [toolArgsIn](#toolargsin) gives.
 
-##### Type Parameters
+#### Type Parameters
 
-###### D
+##### D
 
 `D` *extends* [`ToolDef`](../aai/index.md#tooldef)\<[`ToolInputSchema`](../aai/index.md#toolinputschema)\>
 
-##### Parameters
+#### Parameters
 
-###### calls
+##### calls
 
 readonly [`EvalToolCall`](#evaltoolcall)[]
 
-###### tool
+##### tool
 
 `D`
 
-##### Returns
+#### Returns
 
 readonly [`EvalToolOutput`](#evaltooloutput)\<`D`\>[]
-
-#### Call Signature
-
-```ts
-function toolResultsIn<T = unknown>(
-   calls: readonly EvalToolCall[], 
-   name: string, 
-   schema?: StandardSchemaV1<unknown, T>
-): readonly T[];
-```
-
-Every call to `name` in `calls`, with its RESULT parsed — what each answered,
-in call order. The plural of [toolResultIn](#toolresultin) (exactly one) and
-[lastToolResultIn](#lasttoolresultin) (the last of several).
-
-[toolResultIn](#toolresultin) refuses more than one call on purpose: "the one call to
-X" is the common claim and two of them is usually a finding. The plural is the
-other half, and three eval files had written it as
-`.map((c) => c.result ?? "")` — which turns "the tool never returned" into an
-empty string, i.e. drops exactly the finding [toolResultIn](#toolresultin) throws to
-report. An incomplete call throws here too, naming its position.
-
-ZERO calls answers `[]`, for the reason [toolArgsIn](#toolargsin) gives.
-
-##### Type Parameters
-
-###### T
-
-`T` = `unknown`
-
-##### Parameters
-
-###### calls
-
-readonly [`EvalToolCall`](#evaltoolcall)[]
-
-###### name
-
-`string`
-
-###### schema?
-
-[`StandardSchemaV1`](../aai/index.md#standardschemav1)\<`unknown`, `T`\>
-
-##### Returns
-
-readonly `T`[]
 
 ***
 
@@ -2126,15 +1859,25 @@ reporting the tool as never called: those are different findings and only one
 of them is about the agent ignoring the tool.
 
 ```ts
-import { type EvalSession, toolResultIn, turnCalling } from "@alexkroman1/aai-runtime/eval";
+// file: tools/cancel_pending_order.ts
+import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
+
+export default tool({
+  description: "Stage a cancellation",
+  inputSchema: z.object({ orderId: z.string() }),
+  execute: () => ({ state: "pending" }),
+});
+
+// file: agent.eval.test.ts
+import { type EvalSession, toolResultIn, turnCalling } from "@alexkroman1/aai-runtime/eval";
+import cancelPendingOrder from "./tools/cancel_pending_order.ts";
 
 export async function stagesBeforeCommitting(session: EvalSession): Promise<string> {
   const turns = await session.sayAll(["I want to cancel W1234", "Go ahead."]);
   // The turn it staged in, whichever that turned out to be.
   const staging = turnCalling(turns, "cancel_pending_order");
-  return toolResultIn(staging.toolCalls, "cancel_pending_order", z.object({ state: z.string() }))
-    .state;
+  return toolResultIn(staging.toolCalls, cancelPendingOrder).state;
 }
 ```
 

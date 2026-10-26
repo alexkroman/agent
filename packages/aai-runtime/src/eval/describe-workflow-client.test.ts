@@ -59,7 +59,7 @@ describeEval(
       "a factory's client is this case's ctx.workflows, fresh on every repeat",
       async ({ session, workflowClient, workflows }) => {
         const turn = await session.say("remind me to call the plumber");
-        expect(toolResultIn(turn.toolCalls, "remind_me")).toEqual({ runId: "wrun_rec_1" });
+        expect(toolResultIn(turn.toolCalls, remindMe)).toEqual({ runId: "wrun_rec_1" });
         // Typed: the log is the factory's own, and it holds THIS repeat alone.
         expect(workflowClient.started("remind").map((s) => s.input)).toEqual([{ text: "plumber" }]);
         // Recorded, never run: the run it "started" reads back as running.
@@ -108,7 +108,7 @@ describeEval(
           }),
         );
         const turn = await session.say("cancel my reminders");
-        expect(toolResultIn(turn.toolCalls, "cancel_reminders")).toEqual({ cancelled: 1 });
+        expect(toolResultIn(turn.toolCalls, cancelAll)).toEqual({ cancelled: 1 });
         expect(workflowClient.cancelled).toEqual(["wrun_pending"]);
         passed("seeded");
       },

@@ -45,15 +45,23 @@ thing written out.
 **Open the suite with `describeAgent(agentDef, (run) => …)`**: a `describe`
 named after the agent whose first case is "is deployable" (`expectDeployable`; a
 config the platform refuses is a spec measuring nothing), handed the agent's
-typed runner. **`run(toolDef, args, ctx?)` is typed end to end**: handed the
-tool file's default export, the arguments are checked and the result is what
-`execute` returns — no `as` cast — and the def is resolved in the agent's table
-by identity, so a dialog gate or a roster still refuses it as it would the
-model. `run("name", …)` is the model's own form and answers `unknown`. **Unwrap
-a result that may be a refusal with `expectToolOk(result)`**, which subtracts
-the `ToolFailure` arm (and a gated tool's envelope) and throws quoting the
-refusal; `expectDialogRefused(result)` asserts a gate HELD. Do not copy an
-`ok<T>()` helper into a spec.
+typed runner. **A tool is reached by its DEF, never by its name string.**
+`run(toolDef, args, ctx?)` is typed end to end: handed the def, the arguments
+are checked and the result is what `execute` returns — no `as` cast — and the
+def is resolved in the agent's table by identity, so a dialog gate or a roster
+still refuses it as it would the model. The def is the tool file's default
+export (`import placeOrder from "./tools/place_order.ts"`); for a roster tool it
+is the speaker's `tools` entry (`billing.tools.lookup_invoice` — keep the map in
+a named const so it stays typed); for a tool the roster minted (`handoff`,
+`delegate`) it is `toolOf(agentDef, HANDOFF_TOOL_NAME)`; for a builtin it is
+`builtinTool("workflow_cancel")` from `@alexkroman1/aai/tools`, which no
+`toolRunner` runs (the runtime merges builtins in at session start) but every
+eval reader takes. A string in the tool position is a compile error. **Unwrap a
+result that may be a refusal with `expectToolOk(result)`**, which subtracts the
+`ToolFailure` arm (and a gated tool's envelope) and throws quoting the refusal;
+`expectDialogRefused(result)` asserts a gate HELD. Do not copy an `ok<T>()`
+helper into a spec, and do not claim a result's type — `expectToolOk<T>(…)`
+takes no claim; the def already types it.
 
 ```ts no-check
 import agentDef from "virtual:aai/agent";
@@ -212,9 +220,13 @@ per-case factory: `ctx.workflowClient`. A failure prints the conversation.
 **Read what a turn did through the DEF, not a schema you restate.**
 `toolResultIn(turn.toolCalls, placeOrder)` is typed by the tool's `execute` and
 throws naming what WAS called when the tool was not (exactly once;
-`toolResultsIn` for several); `lastStateIn(session.events(), slot.projected)` is
-the frame the page saw, typed by the projection and checked against its default
-keys, so a field the view gained or lost fails here instead of being cast past;
+`toolResultsIn` for several; `lastToolResultIn` for the settled last;
+`toolArgsIn` for what the model asked). The def is the same one `run` takes — a
+file's default export, a speaker's `tools` entry, `toolOf(agentDef, name)` for a
+minted tool, `builtinTool(name)` for a builtin — and the readers take no name
+string. `lastStateIn(session.events(), slot.projected)` is the frame the page
+saw, typed by the projection and checked against its default keys, so a field
+the view gained or lost fails here instead of being cast past;
 `customEventsIn(events, "order.progress")` is typed by `ClientEventMap`. **An
 agent that hands off to a run** declares its step HTTP on the suite —
 `describeEval(agentDef, define, { steps: { routes, hold: "first" } })` — and the

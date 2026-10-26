@@ -545,9 +545,6 @@ export function lastStateIn(events: readonly SessionEvent[]): Readonly<Record<st
 // @public
 export function lastToolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 
-// @public (undocumented)
-export function lastToolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
-
 // @public
 export type LogContext = Record<string, unknown>;
 
@@ -857,12 +854,6 @@ export { StubWorldOptions }
 // @public
 export function toolArgsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly InferToolInput<D>[];
 
-// @public (undocumented)
-export function toolArgsIn<T>(calls: readonly EvalToolCall[], name: string, schema: StandardSchemaV1<unknown, T>): readonly T[];
-
-// @public (undocumented)
-export function toolArgsIn(calls: readonly EvalToolCall[], name: string): readonly Record<string, unknown>[];
-
 // @public
 export function toolCallsInEvents(events: readonly SessionEvent[]): readonly EvalToolCall[];
 
@@ -875,14 +866,8 @@ export function toolNames(calls: readonly EvalToolCall[]): readonly string[];
 // @public
 export function toolResultIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): EvalToolOutput<D>;
 
-// @public (undocumented)
-export function toolResultIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): T;
-
 // @public
 export function toolResultsIn<D extends ToolDef<ToolInputSchema>>(calls: readonly EvalToolCall[], tool: D): readonly EvalToolOutput<D>[];
-
-// @public (undocumented)
-export function toolResultsIn<T = unknown>(calls: readonly EvalToolCall[], name: string, schema?: StandardSchemaV1<unknown, T>): readonly T[];
 
 // @public
 export function transcriptOf(session: Pick<EvalSession, "events">, network?: EvalNetwork): string;

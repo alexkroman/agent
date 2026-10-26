@@ -123,7 +123,7 @@ describeEval(stubSuiteAgent, (test) => {
       // own test cannot see is the failure this file exists to prevent.
       const turn = await session.say("what do you make of it?");
       expect(turn.text).toBe("the turn's own line");
-      expect(toolResultIn(turn.toolCalls, "judge")).toEqual({ verdict: "sound" });
+      expect(toolResultIn(turn.toolCalls, judge)).toEqual({ verdict: "sound" });
     },
     {
       stubReply: [{ tool: "judge", args: { claim: "it holds" } }, "the turn's own line"],
@@ -143,13 +143,15 @@ describeEval(stubSuiteAgent, (test) => {
       // The refusal arrives as the tool's own failure, which is the honest
       // shape: `judge` is what called `generate`.
       const turn = await session.say("what do you make of it?");
-      expect(toolResultIn(turn.toolCalls, "judge", z.object({ error: z.string() })).error).toMatch(
+      expect(toolResultIn(turn.toolCalls, judge)).toEqual({
         // Both halves matter, and they come from different layers now: the
         // rejection is `createGenerateFn`'s (so a LIVE model is caught too),
         // and the script-blaming sentence is the eval harness re-attributing
         // it — "the model" being the case author's own script here.
-        /stubGenerate answered something the call's own schema rejects.*measuring the script/s,
-      );
+        error: expect.stringMatching(
+          /stubGenerate answered something the call's own schema rejects.*measuring the script/s,
+        ),
+      });
     },
     {
       stubReply: [{ tool: "judge", args: { claim: "it holds" } }, "the turn's own line"],

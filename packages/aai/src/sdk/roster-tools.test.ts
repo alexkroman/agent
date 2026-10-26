@@ -14,7 +14,7 @@ import { type ToolInputSchema, toToolJsonSchema } from "./schema.ts";
 import { speaker } from "./speaker.ts";
 import { createToolContext } from "./testing.ts";
 import { stubDelegate } from "./testing-delegate.ts";
-import { runTool, toolOf } from "./testing-tools.ts";
+import { toolOf, toolRunner } from "./testing-tools.ts";
 import { withTools } from "./tool-registry.ts";
 import type { ResolvedAgentDef, Toolset } from "./toolset.ts";
 import type { ToolDef } from "./types.ts";
@@ -126,18 +126,18 @@ describe("the gate", () => {
     expect(rosterSet().gate("lookup_invoice", ctx)).toBeUndefined();
   });
 
-  it("is what a spec meets through `runTool` by name — the tool as a call reaches it", async () => {
+  it("is what a spec meets through a runner handed the speaker's def — the call reaches it", async () => {
+    const run = toolRunner(frontDesk);
     const ctx = createToolContext();
-    const refused = await runTool(frontDesk, "lookup_invoice", { id: "INV-1" }, ctx);
+    // The speaker's `tools` entry IS the minted def, so the runner finds it by
+    // identity — and the roster's own gate answers first.
+    const refused = await run(lookupInvoice, { id: "INV-1" }, ctx);
     expect(isToolFailure(refused)).toBe(true);
     expect(refused).toMatchObject({ reason: "persona" });
     // `toolOf` is the LOOKUP: the author's own def, ungated.
     expect(toolOf(frontDesk, "lookup_invoice")).toBe(lookupInvoice);
     desk.handoff(ctx, billing);
-    expect(await runTool(frontDesk, "lookup_invoice", { id: "INV-1" }, ctx)).toEqual({
-      id: "INV-1",
-      total: 42,
-    });
+    expect(await run(lookupInvoice, { id: "INV-1" }, ctx)).toEqual({ id: "INV-1", total: 42 });
   });
 
   it("leaves the def as the author wrote it — the gate is the toolset's, not a wrapper", () => {

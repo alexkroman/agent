@@ -15,9 +15,11 @@
     "dropped": {}
   },
   "eval-assert": {
-    "current": 1,
-    "supported": [1],
-    "dropped": {}
+    "current": 2,
+    "supported": [2],
+    "dropped": {
+      "1": "The eval readers take the tool DEF only: the (calls, name, schema?) forms of toolResultIn, lastToolResultIn, toolResultsIn and toolArgsIn are gone. A case passes the tool file's default export, a speaker's tools entry, toolOf(agentDef, name) for a minted tool, or builtinTool(name) for a builtin; a string in the tool position no longer compiles."
+    }
   },
   "eval-network": {
     "current": 1,

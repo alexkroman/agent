@@ -644,6 +644,12 @@ described by a type the caller did not already name. `builtinTools` joins the
 constraint as optional and widened to `readonly string[]`, so a def that
 carries none still passes and this module still names no builtin catalog.
 
+**It also RECORDS each def's name** (`_testing-tool-names.ts`). This is the
+one step every lowering goes through that pairs a def with the name the
+model calls, and a spec handed the def later — `toolResultIn(calls, def)`,
+`toolNameOf(def)` — has nowhere else to learn it. A `WeakMap` write per
+tool, so a lowering that nobody tests costs nothing.
+
 #### Type Parameters
 
 ##### D

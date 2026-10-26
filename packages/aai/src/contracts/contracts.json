@@ -151,8 +151,10 @@
   },
   "testing": {
     "current": 2,
-    "supported": [1, 2],
-    "dropped": {}
+    "supported": [2],
+    "dropped": {
+      "1": "A tool is reached by its DEF only: the name forms are gone — runTool(agent, name, …), ToolRunner's (name, …) call shape, and the claimed expectToolOk<T>(unknown)/expectDialogOk<T>(unknown) overloads. A spec passes the tool file's default export (or a speaker's tools entry, or builtinTool(name)); a string in the tool position no longer compiles."
+    }
   },
   "testing-client": {
     "current": 1,

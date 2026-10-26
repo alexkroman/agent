@@ -4,10 +4,10 @@
  *
  * A tool answers its own value or a `ToolFailure`; a `dialog()` tool wraps the
  * value in a {@link DialogToolResult} — the author's own value under `result`,
- * in the position the dialog reached. The DIRECT call (`runTool(theTool, …)`,
- * `theTool.execute(…)`) keeps the tool's type; the lookup by NAME answers
- * `unknown`, because tool discovery is a build step and there is no tool map at
- * the type level to recover the author's `R` from.
+ * in the position the dialog reached. A run keeps the tool's own type
+ * (`runTool(theTool, …)`, a `toolRunner`'s `run(theTool, …)`,
+ * `theTool.execute(…)`), so what these unwrap is TYPED and nothing here takes
+ * a type a spec merely claims.
  *
  * Every spec wrote the same lines — check for a refusal, throw naming it, reach
  * through `.result` for a dialog tool — and a template may not import from
@@ -37,19 +37,17 @@ import { isToolFailure, type ToolFailure } from "./utils.ts";
  * value comes back as it is. Either way a `ToolFailure` throws HERE, naming it,
  * rather than as an `undefined` read off the failure several assertions later.
  *
- * **Typed by INFERENCE**: handed a typed result — `runTool(theTool, …)`, or
- * `theTool.execute(…)` directly — it answers that type minus `ToolFailure`
- * (for a dialog tool, the type under `result`), so no type argument is needed.
- * The name form (`runTool(agent, "name", …)`, a `toolRunner`) answers
- * `unknown`, because a name is a string; there, say the type you expect —
- * `expectToolOk<Order>(…)` — which is unchecked at runtime, like any claim about
- * a value crossing an `unknown` boundary.
+ * **Typed by INFERENCE**: handed a result — `runTool(theTool, …)`, a runner's
+ * `run(theTool, …)`, or `theTool.execute(…)` directly — it answers that type
+ * minus `ToolFailure` (for a dialog tool, the type under `result`), so no type
+ * argument is written. There is no claimed form: a result is typed by the def
+ * that produced it, and `expectToolOk<Order>(x)` compiles only when `x` already
+ * IS an `Order`.
  *
  * Use {@link expectDialogOk} to keep WHERE a dialog landed, and
  * {@link expectDialogRefused} when the refusal is the subject.
  *
- * @typeParam R - What was handed in, inferred — never written. The CLAIMED form
- *   below takes the type a spec asserts instead.
+ * @typeParam R - What was handed in, inferred — never written.
  *
  * @param result - What a tool's `execute`, `runTool` or a `toolRunner` answered.
  *
@@ -79,35 +77,8 @@ import { isToolFailure, type ToolFailure } from "./utils.ts";
 export function expectToolOk<R>(
   result: R,
 ): R extends DialogToolResult<infer V> ? V : Exclude<R, ToolFailure>;
-/**
- * What a tool answered, minus the refusal — the CLAIMED form, for a result
- * typed `unknown` (`runTool(agent, "name", …)`, a `toolRunner`).
- *
- * `T` is what the spec says the tool answers, unchecked at runtime. Behaves as
- * the inferred form does: a dialog envelope is unwrapped, a plain value passes
- * through, a `ToolFailure` throws quoting the refusal.
- *
- * @typeParam T - The type the spec claims for the tool's own value.
- *
- * @example
- * ```ts
- * import agentDef from "virtual:aai/agent";
- * import { expectToolOk, toolRunner } from "@alexkroman1/aai/testing";
- * import { expect, test } from "vitest";
- *
- * const run = toolRunner(agentDef);
- *
- * test("place_order answers an id", async () => {
- *   const order = expectToolOk<{ id: string }>(await run("place_order", { item: "pizza" }));
- *   expect(order.id).toMatch(/^ord_/);
- * });
- * ```
- *
- * @public
- */
-export function expectToolOk<T>(result: unknown): T;
-// The inferred signature's return is a conditional over `R`, which no runtime
-// value can be checked against; the two guards below are what make it true.
+// The signature's return is a conditional over `R`, which no runtime value can
+// be checked against; the two guards below are what make it true.
 export function expectToolOk(result: unknown): unknown {
   // The refusal FIRST, for the reason `expectDialogOk` gives.
   if (isToolFailure(result)) throw new Error(`tool refused: ${result.error}`);
@@ -140,10 +111,10 @@ function isDialogEnvelope(value: unknown): value is { result: unknown } {
  * on anything that is not a dialog envelope: keeping a position claims there is
  * one.
  *
- * **Typed by INFERENCE**, as {@link expectToolOk} is: handed a typed envelope
- * (`runTool(theTool, …)`, `theTool.execute(…)`) it keeps the type under
- * `result`; the name form answers `unknown`, where the claimed overload below
- * takes the type the spec asserts.
+ * **Typed by INFERENCE**, as {@link expectToolOk} is: handed the envelope a
+ * run answered (`runTool(theTool, …)`, a runner's `run(theTool, …)`,
+ * `theTool.execute(…)`) it keeps the type under `result`. There is no claimed
+ * form.
  *
  * @typeParam R - What was handed in, inferred — never written.
  *
@@ -153,15 +124,26 @@ function isDialogEnvelope(value: unknown): value is { result: unknown } {
  *
  * @example
  * ```ts
+ * // file: tools/quote.ts
+ * import { tool } from "@alexkroman1/aai";
+ *
+ * // In a project this is a `dialog.tool(...)`, whose envelope the dialog writes.
+ * export default tool({
+ *   description: "Quote the job",
+ *   execute: () => ({ result: { quoted: 42 }, state: "quote.pending", done: false }),
+ * });
+ *
+ * // file: agent.test.ts
  * import agentDef from "virtual:aai/agent";
- * import { createToolContext, expectDialogOk, runTool } from "@alexkroman1/aai/testing";
+ * import { createToolContext, expectDialogOk, toolRunner } from "@alexkroman1/aai/testing";
  * import { expect, test } from "vitest";
+ * import quote from "./tools/quote.ts";
+ *
+ * const run = toolRunner(agentDef);
  *
  * test("quote moves the dialog on", async () => {
  *   const ctx = createToolContext();
- *   const answered = expectDialogOk<{ quoted: number }>(
- *     await runTool(agentDef, "quote", {}, ctx),
- *   );
+ *   const answered = expectDialogOk(await run(quote, ctx));
  *   expect(answered.state).toBe("quote.pending");
  *   expect(answered.result.quoted).toBe(42);
  * });
@@ -174,17 +156,6 @@ export function expectDialogOk<R>(
 ): [Exclude<R, ToolFailure>] extends [DialogToolResult<infer V>]
   ? DialogToolResult<V>
   : DialogToolResult<unknown>;
-/**
- * The dialog envelope a gated tool answered — the CLAIMED form, for a result
- * typed `unknown` (`runTool(agent, "name", …)`, a `toolRunner`): `T` is what
- * the spec says is under `result`, unchecked at runtime, as
- * {@link expectToolOk}'s claimed form is.
- *
- * @typeParam T - The type the spec claims for the tool's own value.
- *
- * @public
- */
-export function expectDialogOk<T>(result: unknown): DialogToolResult<T>;
 export function expectDialogOk(result: unknown): DialogToolResult<unknown> {
   // The refusal FIRST, because it is the case worth reporting well: a
   // `ToolFailure` is a record without `result`, so the envelope check below
@@ -275,13 +246,14 @@ function describeValue(value: unknown): string {
 /**
  * The envelope a gated tool answers with, as a schema around the tool's own.
  *
- * {@link expectDialogOk} unwraps a value a spec HOLDS. An eval holds the
- * serialized copy the model was handed and reads it back through a schema —
- * `toolResultIn(turn.toolCalls, "set_stay", schema)` — so it needs the same
- * envelope as a schema rather than as a function, and three shipped evals had
- * each written it out: `z.object({ result, state: z.string(), done:
- * z.boolean() })`, under a comment saying the shape was the SDK's. It is, and
- * this is where it lives: `result` is whatever the author's `execute` returned,
+ * {@link expectDialogOk} unwraps a value a spec HOLDS. A harness that holds the
+ * SERIALIZED copy the model was handed — a transcript, a recording — reads it
+ * back through a schema, so it needs the same envelope as a schema rather than
+ * as a function, and three shipped evals had each written it out:
+ * `z.object({ result, state: z.string(), done: z.boolean() })`, under a comment
+ * saying the shape was the SDK's. It is, and this is where it lives (an eval
+ * reading a live turn takes the DEF instead: `toolResultIn(turn.toolCalls,
+ * setStay)` is typed by it). `result` is whatever the author's `execute` returned,
  * `state` is where the call landed, `done` whether that state is final, and
  * `instruction` is the state's own brief when it declares one — the fields of
  * {@link DialogToolResult}, which a `dialog.tool` writes and no tool file does.
@@ -299,8 +271,7 @@ function describeValue(value: unknown): string {
  * import { dialogResultSchema } from "@alexkroman1/aai/testing";
  * import { z } from "zod";
  *
- * // In an eval: `toolResultIn(turn.toolCalls, "set_stay", Stay)`. Holding the
- * // serialized result yourself, it is the same parse:
+ * // Holding the serialized result yourself, it is one parse:
  * const Stay = dialogResultSchema(z.object({ options: z.string() }));
  * const stay = Stay.parse(
  *   JSON.parse('{"result":{"options":"garden view"},"state":"booking.room","done":false}'),

@@ -61,8 +61,9 @@ one no agent spec should be without (a config the platform refuses is a spec
 measuring nothing), and binding the runner is the line every file repeated.
 
 The body takes vitest's own `test`/`expect` from `vitest` as usual; only the
-runner is handed in, so a case reads `run(addItem, { … })` typed, or
-`run("add_item", …)` by name.
+runner is handed in, so a case reads `run(addItem, { … })` typed by the def
+— a tool file's default export, or a speaker's `tools` entry — and gated as
+the agent gates it.
 
 #### Type Parameters
 
