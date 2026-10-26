@@ -56,7 +56,13 @@ export {
   toolRegistry,
   withTools,
 } from "./tool-registry.ts";
-export { type ToolSchema, ToolSchemaSchema } from "./tool-schema.ts";
+export {
+  type ToolSchema,
+  ToolSchemaSchema,
+  type ZodMessageLines,
+  type ZodMessageRole,
+  type ZodWhenClause,
+} from "./tool-schema.ts";
 // `toolUiMap` beside the schemas it mirrors: the pre-connection client config's
 // `tools` field is built from the agent's toolsets by every server that holds
 // the definition. Also on `/internal`, zod-free, for the guest harness.

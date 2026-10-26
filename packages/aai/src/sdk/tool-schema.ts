@@ -44,7 +44,8 @@ export const ToolUiSchema: z.ZodType<ToolUi> = z
  */
 // The pieces of the inferred type, named once: `ToolMessagesSchema` repeats the
 // `when` clause under all four kinds, and the annotation would otherwise too.
-type ZodWhenClause = z.ZodOptional<
+/** @internal */
+export type ZodWhenClause = z.ZodOptional<
   z.ZodArray<
     z.ZodObject<
       {
@@ -58,10 +59,12 @@ type ZodWhenClause = z.ZodOptional<
     >
   >
 >;
-type ZodMessageLines<Extra extends z.core.$ZodShape> = z.ZodOptional<
+/** @internal */
+export type ZodMessageLines<Extra extends z.core.$ZodShape> = z.ZodOptional<
   z.ZodArray<z.ZodObject<{ content: z.ZodString; when: ZodWhenClause } & Extra, z.core.$strip>>
 >;
-type ZodMessageRole = z.ZodOptional<z.ZodEnum<{ assistant: "assistant"; system: "system" }>>;
+/** @internal */
+export type ZodMessageRole = z.ZodOptional<z.ZodEnum<{ assistant: "assistant"; system: "system" }>>;
 
 export const ToolSchemaSchema: z.ZodObject<
   {
