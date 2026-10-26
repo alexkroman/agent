@@ -3797,12 +3797,23 @@ workflow promises. With no `output` nothing changes: the result type is
 inferred from the body exactly as before. Both answer the same
 `WorkflowDef<P, R>`, so nothing downstream can tell which was used.
 
-##### Examples
+##### Example
 
-`agent.ts` — declare the workflow beside the agent. A tool is a FILE, so
+`agent.ts` declares the workflow beside the agent. A tool is a FILE, so
 `agent()` takes no `tools`. Declaring `output` beside `input` is what makes
-the run's result checked where it completes and typed where it is read.
-```ts no-check
+the run's result checked where it completes and typed where it is read;
+`tools/research.ts` is the tool that starts a run.
+```ts
+// file: workflows/digest.ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+import { stepGenerate } from "@alexkroman1/aai/step";
+
+export async function digestFlow(input: { topic: string }, ctx: WorkflowContext) {
+  const headline = await ctx.step("headline", () => stepGenerate(`Headline: ${input.topic}`));
+  return { topic: input.topic, headline };
+}
+
+// file: agent.ts
 import { agent, workflow } from "@alexkroman1/aai";
 import { z } from "zod";
 import { digestFlow } from "./workflows/digest.ts";
@@ -3818,10 +3829,8 @@ export default agent({
   name: "Researcher",
   workflows: { digest },
 });
-```
 
-`tools/research.ts` — the tool that starts a run.
-```ts no-check
+// file: tools/research.ts
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import { digest } from "../agent.ts";

@@ -13,7 +13,7 @@
  * no two agreed on the budget, the step names, or what happens when the budget
  * runs out.
  *
- * ```ts no-check
+ * ```ts
  * import { transcribeUploadDurably } from "@alexkroman1/aai/step";
  * import type { WorkflowContext } from "@alexkroman1/aai/workflow-api";
  *
@@ -199,7 +199,7 @@ export type DurableTranscript = Transcript & {
  *   and where to read it.
  *
  * @example
- * ```ts no-check
+ * ```ts
  * import { stepReport, transcribeUploadDurably } from "@alexkroman1/aai/step";
  * import type { WorkflowContext } from "@alexkroman1/aai/workflow-api";
  *

@@ -245,7 +245,20 @@ export type WorkflowSubmission<R = unknown, I = unknown> = {
  * generic. `podcast-digest-workflow`'s `client.tsx` composed exactly that.
  *
  * @example
- * ```tsx no-check
+ * ```tsx
+ * // file: agent.ts
+ * import { agent, workflow } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
+ * export const dailyDigest = workflow({
+ *   input: z.object({ hour: z.number() }),
+ *   output: z.object({ posted: z.string() }),
+ *   run: async ({ hour }) => ({ posted: `daily at ${hour}:00` }),
+ * });
+ *
+ * export default agent({ name: "Digest", workflows: { dailyDigest } });
+ *
+ * // file: client.tsx
  * import type { WorkflowSubmissionOf } from "@alexkroman1/aai-ui";
  * import type { dailyDigest } from "./agent.ts";
  *

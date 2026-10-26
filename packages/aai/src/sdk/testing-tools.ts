@@ -423,8 +423,22 @@ export interface ToolRunner {
  * so it is found in the table by identity and the result keeps the type its
  * `execute` declares, gate included:
  *
- * ```ts no-check
+ * ```ts
+ * // file: tools/add_item.ts
+ * import { tool } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
+ * export default tool({
+ *   description: "Add an item to the order",
+ *   inputSchema: z.object({ item: z.string() }),
+ *   execute: ({ item }) => ({ added: item }),
+ * });
+ *
+ * // file: agent.test.ts
+ * import type { ToolRunner } from "@alexkroman1/aai/testing";
  * import addItem from "./tools/add_item.ts";
+ *
+ * declare const run: ToolRunner; // `toolRunner(agentDef)`, as above
  *
  * const { added } = await run(addItem, { item: "apple" }); // typed: `added` is a string
  * ```
