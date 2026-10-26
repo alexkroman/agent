@@ -193,20 +193,24 @@ machinery it would exercise is the SDK's own, tested in `ffmpeg.test.ts`.
 #### Example
 
 ```ts
-import { installStubFfmpeg, installStubUploads } from "@alexkroman1/aai-runtime/testing/vitest";
+import { probeMedia, runFfmpeg } from "@alexkroman1/aai/ffmpeg";
+import { installStubFfmpeg } from "@alexkroman1/aai-runtime/testing/vitest";
 import { writeFile } from "node:fs/promises";
-import { ingestRecording } from "./workflows/ingest.ts";
+import { expect, test } from "vitest";
 
-test("the ingest levels the recording", async () => {
-  installStubUploads({ upl_1: { bytes: new Uint8Array(2048), name: "call.m4a" } }, { writable: true });
-  installStubFfmpeg(async ({ args }) => {
-    if (args.includes("-show_streams")) return { stdout: PROBE_JSON };
-    if (args.includes("null")) return { stderr: LOUDNORM_STDERR };
+test("a scripted ffmpeg answers each call by its args", async () => {
+  const ffmpeg = installStubFfmpeg(async ({ args }) => {
+    if (args.includes("-show_streams")) {
+      return { stdout: '{"streams":[{"codec_type":"audio"}],"format":{"duration":"1.0"}}' };
+    }
+    // A transcode's output is whatever the script writes at the out path.
     await writeFile(args.at(-1) ?? "", new Uint8Array(32_000));
     return {};
   });
-  const result = await ingestRecording("upl_1");
-  expect(result.durationMs).toBe(1000);
+  const info = await probeMedia("call.m4a");
+  expect(info.durationSec).toBe(1);
+  await runFfmpeg(["-i", "call.m4a", "out.wav"]);
+  expect(ffmpeg.calls).toHaveLength(2);
 });
 ```
 
