@@ -3,6 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parseEnv } from "node:util";
+import { CliError } from "./_output.ts";
 import { errorCode } from "./_utils.ts";
 
 /**
@@ -109,6 +110,66 @@ export async function resolveServerEnv(
   }
 
   return env;
+}
+
+/**
+ * The values WRITTEN in the project's dotenv `files` — never the shell's —
+ * for a caller that UPLOADS them (`aai publish`'s secret sync).
+ *
+ * {@link resolveServerEnv}'s shell-wins rule is right for a process that runs
+ * here and wrong for one that sends: there a repo's `.env` chooses the KEYS and
+ * the shell supplies the VALUES, so a cloned project declaring `GITHUB_TOKEN=`
+ * had the user's exported token stored as its agent's secret. Here the file is
+ * the whole answer; empty values are dropped as there.
+ *
+ * A dotenv file that is a SYMLINK out of the project is refused, naming it:
+ * `.env -> ~/.aws/credentials` is a committed link (git stores symlinks), and
+ * following it uploaded the AWS keys. A link that stays inside the project
+ * (`.env -> .env.production`) is fine.
+ */
+export async function readUploadableEnv(
+  cwd: string,
+  files: readonly string[] = [".env"],
+): Promise<Record<string, string>> {
+  const env: Record<string, string> = {};
+  for (const file of files) {
+    const full = path.join(cwd, file);
+    await assertInsideProject(cwd, full);
+    for (const [key, val] of Object.entries(await readDotenv(full))) {
+      if (val === "") delete env[key];
+      else env[key] = val;
+    }
+  }
+  return env;
+}
+
+/** Refuse `file` when it is a symlink whose real path leaves `cwd`. */
+async function assertInsideProject(cwd: string, file: string): Promise<void> {
+  let isLink: boolean;
+  try {
+    isLink = (await fs.lstat(file)).isSymbolicLink();
+  } catch (err) {
+    if (errorCode(err) === "ENOENT") return;
+    throw err;
+  }
+  if (!isLink) return;
+  const [root, real] = await Promise.all([
+    fs.realpath(cwd),
+    fs.realpath(file).catch((err: unknown) => {
+      // A dangling link reads as absent, like a missing file.
+      if (errorCode(err) === "ENOENT") return;
+      throw err;
+    }),
+  ]);
+  if (real === undefined) return;
+  const rel = path.relative(root, real);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new CliError(
+      "unsafe_env_file",
+      `${file} is a symlink to ${real}, outside the project — its contents will not be uploaded as secrets.`,
+      "Replace the link with a regular .env holding only this agent's secrets.",
+    );
+  }
 }
 
 /**

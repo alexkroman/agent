@@ -579,6 +579,55 @@ describe("executePublish", () => {
     expect(order).toEqual(["secrets", "deploy"]);
   });
 
+  test("the .env sync uploads the FILE's values, never the shell's", async ({ tmpDir: dir }) => {
+    // A cloned repo's `.env` chooses the names; with shell-wins resolution a
+    // blank `GITHUB_TOKEN=` line uploaded the user's exported token.
+    vi.stubEnv("GITHUB_TOKEN", "ghp_from_the_users_shell");
+    vi.stubEnv("K", "shell-value");
+    const cwd = path.join(dir, "fresh-agent");
+    await fs.mkdir(cwd);
+    await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+    await fs.writeFile(path.join(cwd, ".env"), "GITHUB_TOKEN=\nK=file-value\n");
+    let uploaded: unknown;
+    routeApi({
+      "GET /studio/projects/fresh-agent": null,
+      "PUT /studio/projects/fresh-agent/source": { sourceHash: "h1", created: true },
+      "PUT /studio/projects/fresh-agent/secret": (opts: { body: unknown }) => {
+        uploaded = opts.body;
+        return { ok: true };
+      },
+      "POST /studio/projects/fresh-agent/deploy": {
+        ok: true,
+        slug: "fresh-agent",
+        url: "/fresh-agent/",
+        output: "ok",
+      },
+    });
+
+    expect((await executePublish({ cwd, skipTypecheck: true }, ui, deps)).ok).toBe(true);
+    expect(uploaded).toEqual({ K: "file-value" });
+  });
+
+  test("a .env symlinked out of the project is refused before anything uploads", async ({
+    tmpDir: dir,
+  }) => {
+    const cwd = path.join(dir, "fresh-agent");
+    await fs.mkdir(cwd);
+    await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+    await fs.writeFile(path.join(dir, "credentials"), "AWS_SECRET_ACCESS_KEY=hunter2\n");
+    await fs.symlink(path.join(dir, "credentials"), path.join(cwd, ".env"));
+    routeApi({
+      "GET /studio/projects/fresh-agent": null,
+      "PUT /studio/projects/fresh-agent/source": { sourceHash: "h1", created: true },
+    });
+
+    await expect(executePublish({ cwd, skipTypecheck: true }, ui, deps)).rejects.toThrow(
+      /\.env is a symlink to .*credentials, outside the project/,
+    );
+    const urls = mockApiRequest.mock.calls.map(([url]) => String(url));
+    expect(urls.some((u) => u.endsWith("/secret") || u.endsWith("/deploy"))).toBe(false);
+  });
+
   test("does not tell the user to publish twice", async ({ tmpDir: dir }) => {
     // The message was the symptom the docs copied. There is no second publish
     // to wait for, so nothing may say there is — and `log.info` is silenced in
