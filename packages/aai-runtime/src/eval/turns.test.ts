@@ -36,12 +36,23 @@ const getOrderDetails = bare("Get an order");
 const cancelPendingOrder = bare("Stage a cancellation");
 const transferToHumanAgents = bare("Transfer");
 const anything = bare("Anything at all");
+// `expectCalled`'s defs: it takes the def too, and names the tool on the wire.
+const openEmail = bare("Open an email");
+const draftReply = bare("Stage a reply");
+const accept = bare("Accept a draft");
+const researchTopic = bare("Research a topic");
+const startGame = bare("Start a game");
 withTools(agent({ name: "Turn Fixtures" }), {
   find_user_id_by_email: findUserIdByEmail,
   get_order_details: getOrderDetails,
   cancel_pending_order: cancelPendingOrder,
   transfer_to_human_agents: transferToHumanAgents,
   anything,
+  open_email: openEmail,
+  draft_reply: draftReply,
+  accept,
+  research_topic: researchTopic,
+  start_game: startGame,
 });
 
 const call = (name: string, result?: string): EvalToolCall => ({
@@ -234,7 +245,7 @@ describe("expectToolBeforeSpeech", () => {
 describe("expectCalled", () => {
   test("passes when every named tool was called, in any order", () => {
     const ok = turn("Here's the draft.", [call("open_email"), call("draft_reply")], true, []);
-    expect(() => expectCalled(ok, "draft_reply", "open_email")).not.toThrow();
+    expect(() => expectCalled(ok, draftReply, openEmail)).not.toThrow();
   });
 
   test("the ANNOUNCING case says so, and quotes the sentence", () => {
@@ -242,27 +253,27 @@ describe("expectCalled", () => {
     // its turn. `expected [] to deeply equal [ 'recommend' ]` is what this
     // replaces.
     const promised = turn("I'll look into home battery prices for you.", [], true, []);
-    expect(() => expectCalled(promised, "research_topic")).toThrow(
+    expect(() => expectCalled(promised, researchTopic)).toThrow(
       /never called research_topic — called no tools and only spoke — "I'll look into home battery/,
     );
   });
 
   test("a turn that called something ELSE is a different sentence", () => {
     const wrong = turn("Eight came in.", [call("triage_inbox")], true, []);
-    expect(() => expectCalled(wrong, "open_email")).toThrow(
+    expect(() => expectCalled(wrong, openEmail)).toThrow(
       /never called open_email — called triage_inbox, and said "Eight came in\."/,
     );
   });
 
   test("names every missing tool, not just the first", () => {
     const only = turn("Opened it.", [call("open_email")], true, []);
-    expect(() => expectCalled(only, "open_email", "draft_reply", "accept")).toThrow(
+    expect(() => expectCalled(only, openEmail, draftReply, accept)).toThrow(
       /never called draft_reply, accept/,
     );
   });
 
   test("silence with no tools is its own wording", () => {
-    expect(() => expectCalled(turn("", [], true, []), "start_game")).toThrow(
+    expect(() => expectCalled(turn("", [], true, []), startGame)).toThrow(
       /called no tools and said nothing/,
     );
   });
@@ -276,7 +287,7 @@ describe("expectCalled over a turn LIST", () => {
       turn("Dana is asking about the VPC.", [call("open_email")], true, []),
       turn("Here's the draft.", [call("draft_reply")], true, []),
     ];
-    expect(() => expectCalled(turns, "open_email", "draft_reply")).not.toThrow();
+    expect(() => expectCalled(turns, openEmail, draftReply)).not.toThrow();
   });
 
   test("a miss across the list names every call and every sentence", () => {
@@ -284,13 +295,18 @@ describe("expectCalled over a turn LIST", () => {
       turn("Dana is asking about the VPC.", [call("open_email")], true, []),
       turn("I'll write that up.", [], true, []),
     ];
-    expect(() => expectCalled(turns, "draft_reply")).toThrow(
+    expect(() => expectCalled(turns, draftReply)).toThrow(
       /never called draft_reply — called open_email, and said "Dana is asking about the VPC\. I'll write that up\."/,
     );
   });
 
   test("an empty list is a scope that called nothing", () => {
-    expect(() => expectCalled([], "open_email")).toThrow(/called no tools and said nothing/);
+    expect(() => expectCalled([], openEmail)).toThrow(/called no tools and said nothing/);
+  });
+
+  test("a def no agent lowered is refused by `toolNameOf`, before any claim about the turn", () => {
+    const inline = bare("Never lowered");
+    expect(() => expectCalled([], inline)).toThrow(/handed a tool no agent registered/);
   });
 });
 

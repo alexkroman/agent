@@ -208,7 +208,7 @@ describeEval(agentDef, (test) => {
       // it has no scores of its own to re-order by — and it must not screen from
       // scratch, which would throw the ranking the caller just heard away.
       const names = toolNames(turn.toolCalls);
-      expectCalled(turn, "rescore_with_feedback");
+      expectCalled(turn, rescoreWithFeedback);
       expect(names).not.toContain("screen_candidates");
       const rescored = landed(toolResultIn(turn.toolCalls, rescoreWithFeedback));
       expect(rescored.state).toBe("reviewing");

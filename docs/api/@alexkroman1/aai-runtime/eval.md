@@ -714,11 +714,17 @@ what the agent says it needs and no unrelated shell variable reaches it.
 ### expectCalled()
 
 ```ts
-function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...names: readonly string[]): void;
+function expectCalled(scope: EvalTurn | readonly EvalTurn[], ...tools: readonly ToolDef[]): void;
 ```
 
-Every name in `names` was called in this turn, and a throw naming what the
-agent did INSTEAD when one was not.
+Every tool in `tools` was called in this turn, and a throw naming what the
+agent did INSTEAD when one was not. Takes the DEF, as every reader next door
+does (`toolResultIn(calls, def)`, [turnCalling](#turncalling)): the tool file's
+default export, a speaker's `tools` entry, `toolOf(agentDef, name)` for a
+minted tool or `builtinTool(name)` for a builtin, matched against the wire by
+the name the agent registered it under (`toolNameOf`). A name string does
+not compile, and a renamed file fails at the lookup naming the def rather
+than as a claim that quietly matched nothing.
 
 ## The finding this exists to name
 
@@ -742,15 +748,39 @@ expected [ 'open_email' ] to include 'draft_reply'
 What a reader needs is the tools that WERE called and the sentence the agent
 said in place of the one it skipped — which is what makes "it promised and
 stopped" distinguishable from "it reached for the wrong tool" without opening
-the transcript.
+the transcript. The message names each tool by its wire name, the one the
+transcript shows.
 
 ```ts
+// file: tools/open_email.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Open an email",
+  inputSchema: z.object({ id: z.string() }),
+  execute: ({ id }) => ({ id, body: "…" }),
+});
+
+// file: tools/draft_reply.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Stage a reply",
+  inputSchema: z.object({ id: z.string(), text: z.string() }),
+  execute: () => ({ state: "staged" }),
+});
+
+// file: agent.eval.test.ts
 import { expectCalled, type EvalTurn } from "@alexkroman1/aai-runtime/eval";
+import draftReply from "./tools/draft_reply.ts";
+import openEmail from "./tools/open_email.ts";
 
 export function stagedTheDraft(turn: EvalTurn): void {
   // Throws: `never called draft_reply — called open_email, and said "I'll
   // draft a yes."` rather than `expected [ 'open_email' ] to include …`.
-  expectCalled(turn, "open_email", "draft_reply");
+  expectCalled(turn, openEmail, draftReply);
 }
 ```
 
@@ -767,9 +797,9 @@ cannot satisfy a two-tool claim inside one.
 
 [`EvalTurn`](#evalturn) \| readonly [`EvalTurn`](#evalturn)[]
 
-##### names
+##### tools
 
-...readonly `string`[]
+...readonly [`ToolDef`](../aai/index.md#tooldef)[]
 
 #### Returns
 

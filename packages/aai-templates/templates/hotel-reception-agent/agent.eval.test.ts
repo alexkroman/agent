@@ -32,6 +32,7 @@ import cancelRoomBooking from "./tools/cancel_room_booking.ts";
 import dispatchEmergency from "./tools/dispatch_emergency.ts";
 import setStay from "./tools/set_stay.ts";
 import takeGuestMessage from "./tools/take_guest_message.ts";
+import verifyBooking from "./tools/verify_booking.ts";
 
 /** A gated tool's envelope, position kept, or a throw quoting the refusal. */
 function landed<R>(answer: DialogToolResult<R> | ToolFailure): DialogToolResult<R> {
@@ -60,7 +61,7 @@ describeEval(agentDef, (test) => {
       // then the dates the caller already gave, recorded rather than re-asked.
       const names = toolNames(calls);
       expect(names[0], describeToolCalls(calls)).toBe("start_room_booking");
-      expectCalled(turns, "set_stay");
+      expectCalled(turns, setStay);
       expect(names).not.toContain("record_guest_details");
       expect(names).not.toContain("record_card");
 
@@ -108,7 +109,7 @@ describeEval(agentDef, (test) => {
       ]);
       const calls = toolCallsInTurns(turns);
       const names = toolNames(calls);
-      expectCalled(turns, "verify_booking", "cancel_room_booking");
+      expectCalled(turns, verifyBooking, cancelRoomBooking);
       // Once each, and in that order.
       expect(names.filter((n) => n === "verify_booking")).toHaveLength(1);
       expect(names.filter((n) => n === "cancel_room_booking")).toHaveLength(1);

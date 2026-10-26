@@ -23,6 +23,7 @@ import {
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import { notebookSlot } from "./shared.ts";
+import listNotes from "./tools/list_notes.ts";
 import saveNote from "./tools/save_note.ts";
 
 describeEval(agentDef, (test) => {
@@ -35,7 +36,7 @@ describeEval(agentDef, (test) => {
       // One note, one call: the whole press is one thought. The name is read
       // off the def, so a renamed file fails here rather than matching nothing.
       const saved = toolNameOf(saveNote);
-      expectCalled(turn, saved);
+      expectCalled(turn, saveNote);
       expect(toolNames(turn.toolCalls).filter((name) => name === saved)).toHaveLength(1);
       // The notebook as the PAGE has it: the last frame pushed, read through
       // the same projection `client.tsx` renders.
@@ -61,7 +62,7 @@ describeEval(agentDef, (test) => {
     async ({ session }) => {
       await session.say("Boiler in the basement reads one point two bar.");
       const turn = await session.say("What have I got so far?");
-      expectCalled(turn, "list_notes");
+      expectCalled(turn, listNotes);
       expect(turn.text.toLowerCase()).toContain("boiler");
     },
     {

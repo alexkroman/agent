@@ -21,7 +21,7 @@
  *   run: async (_input, ctx) => await ctx.waitFor<{ approved: boolean }>("approval:1"),
  * });
  *
- * const run = await runWorkflow(approve, { draft: "…" }, { name: "approve" });
+ * const run = await runWorkflow(approve, { draft: "…" });
  * console.log(run.status); // "running" — parked on the reviewer
  *
  * await run.signal("approval:1", { approved: true });

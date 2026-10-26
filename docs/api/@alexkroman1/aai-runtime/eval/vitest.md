@@ -17,16 +17,27 @@ from another — and an eval needs no other import from either package for its
 harness:
 
 ```ts
-import type { AgentDef } from "@alexkroman1/aai";
-import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/testing/vitest";
+// file: tools/look_up.ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
 
-declare const agentDef: AgentDef;
+export default tool({
+  description: "Look an order up",
+  inputSchema: z.object({ orderId: z.string() }),
+  execute: ({ orderId }) => ({ orderId, status: "shipped" }),
+});
+
+// file: agent.eval.test.ts
+import agentDef from "virtual:aai/agent";
+import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/testing/vitest";
+import lookUp from "./tools/look_up.ts";
 
 describeEval(agentDef, (test) => {
   test(
     "looks the order up before answering",
     async ({ session }) => {
-      expectCalled(await session.say("where is order W1234?"), "look_up");
+      // The claim takes the tool's DEF, matched by the name the agent registered.
+      expectCalled(await session.say("where is order W1234?"), lookUp);
     },
     { stubReply: "Order W1234 shipped yesterday." },
   );
