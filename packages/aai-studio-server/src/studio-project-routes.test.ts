@@ -177,6 +177,34 @@ describe("project CRUD", () => {
     ).toBe(404);
   });
 
+  test("a file DELETE asks whether the file EXISTS, not whether its content is truthy", async () => {
+    await createProject(fetch);
+    // An empty file is a file: `.gitkeep`, a placeholder module.
+    await authFetch(fetch, "/studio/projects/proj/file", {
+      method: "PUT",
+      body: { path: "empty.ts", content: "" },
+    });
+    const del = await authFetch(fetch, "/studio/projects/proj/file?path=empty.ts", {
+      method: "DELETE",
+    });
+    expect(del.status).toBe(200);
+    const { files } = (await (
+      await authFetch(fetch, "/studio/projects/proj", { method: "GET" })
+    ).json()) as { files: Record<string, string> };
+    expect(Object.hasOwn(files, "empty.ts")).toBe(false);
+
+    // A name only the file map's PROTOTYPE holds is no file: no write, no
+    // preview, and no 200 for deleting nothing.
+    schedulePreviewMock.mockClear();
+    for (const path of ["toString", "constructor", "__proto__"]) {
+      const res = await authFetch(fetch, `/studio/projects/proj/file?path=${path}`, {
+        method: "DELETE",
+      });
+      expect(res.status).toBe(404);
+    }
+    expect(schedulePreviewMock).not.toHaveBeenCalled();
+  });
+
   test("delete project removes it from the list", async () => {
     await createProject(fetch);
     await authFetch(fetch, "/studio/projects/proj", { method: "DELETE" });

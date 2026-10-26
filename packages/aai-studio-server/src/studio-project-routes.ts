@@ -209,7 +209,9 @@ export function registerProjectRoutes(studio: Hono<StudioHonoEnv>, deps: Project
     const workspace = await mutateWorkspace(c.env.workspaces, scope, project, (current) => {
       // Reset per attempt: a conflict retry re-derives from a fresh read.
       deleted = false;
-      if (!current.files[path]) return null;
+      // Own-key presence, never truthiness: an empty file is a file, and a
+      // name only the map's prototype holds (`toString`) is not.
+      if (!Object.hasOwn(current.files, path)) return null;
       deleted = true;
       const files = { ...current.files };
       delete files[path];
