@@ -72,3 +72,20 @@ once; `useRoute` resets on a path change and refuses a negative `pollMs`;
 ends; `<WorkflowFields>` reads nullable enums, literal unions and numeric
 selects; the theme forms are exclusive; `installStubGateway({ apiKey: false })`
 clears the env; `fireEvent` refuses an empty `events` map.
+
+The old forms each of these replaced are REMOVED, not deprecated: `agent()`
+takes no `description` (write `listing`), no `systemPrompt` (write
+`system-prompt.md` beside `agent.ts`, plus `promptContext` for computed text; a
+host sets a prompt on the lowered def with `withSystemPrompt`) and no
+`syncState` (declare the slot `sync: true`); `mountClient` takes no `name` or
+`tools` (both come from the agent's own client config); `runWorkflow`'s options
+carry no `name` (the agent form names the run); and every testing helper reaches
+a tool by its DEF, never a name string — `run`, `runTool`,
+`toolResultIn`/`lastToolResultIn`/`toolResultsIn`/`toolArgsIn`,
+`parseToolInput`/`toolInputIssues` (no agent argument either), `turnCalling`,
+`expectCalled`, and the claimed `expectToolOk<T>`/`expectDialogOk<T>` overloads.
+A roster tool is reached through its speaker's `tools` map, a builtin through
+`builtinTool("workflow_cancel")` on `@alexkroman1/aai/tools`. Epochs:
+`aai:agent` 2, `aai:testing` 2, `aai-runtime:testing` 2,
+`aai-runtime:eval-assert` 2, `aai-ui:client` 2, each with the previous epoch
+dropped.
