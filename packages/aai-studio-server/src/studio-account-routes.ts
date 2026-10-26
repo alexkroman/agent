@@ -28,6 +28,7 @@ import {
   requireStudioUser,
   userApiKeySecretName,
 } from "aai-server/http";
+import type { SecretStore } from "aai-server/stores";
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { StudioHonoEnv } from "./studio-context.ts";
@@ -54,6 +55,25 @@ const CliLinkGrantSchema = z.object({
 });
 type CliLinkGrant = z.infer<typeof CliLinkGrantSchema>;
 const CLI_LINK_TTL_MS = 10 * 60_000;
+
+/**
+ * Rotation RELEASES the key rotated away from. Storing a key proves only that
+ * AssemblyAI accepts it, not that it is this account's — a pasted colleague's
+ * key, corrected a minute later, left its mapping naming us: the colleague's
+ * CLI then read and wrote this account's projects, and could never claim its
+ * own key (the PUT's 409). Only OUR mapping goes; a foreign one was never ours
+ * to drop.
+ */
+async function releaseRotatedKey(
+  secrets: SecretStore,
+  uid: string,
+  previousKey: string,
+): Promise<void> {
+  const name = apiKeyOwnerSecretName(previousKey);
+  if ((await secrets.get(name)) !== uid) return;
+  await secrets.delete(name);
+  invalidateApiKeyOwner(secrets, previousKey);
+}
 
 export function registerAccountRoutes(studio: Hono<StudioHonoEnv>): void {
   // Public: what the login screen should render — Supabase GitHub-OAuth
@@ -99,6 +119,8 @@ export function registerAccountRoutes(studio: Hono<StudioHonoEnv>): void {
     if (currentOwner !== null && currentOwner !== user.id) {
       return c.json({ error: "That API key is already linked to another account" }, 409);
     }
+    // Read before the write below replaces it: rotation releases this key.
+    const previousKey = await c.env.secrets.get(userApiKeySecretName(user.id));
     // Both directions: the session→key lookup every JWT request rides, and
     // the key→user reverse mapping that lands raw-key callers (`aai login`'d
     // CLIs) in this user's studio scope. See apiKeyOwnerSecretName for the
@@ -111,6 +133,9 @@ export function registerAccountRoutes(studio: Hono<StudioHonoEnv>): void {
     // after the resolver caches' TTL.
     invalidateUserApiKey(c.env.secrets, user.id);
     invalidateApiKeyOwner(c.env.secrets, apiKey);
+    if (previousKey !== null && previousKey !== apiKey) {
+      await releaseRotatedKey(c.env.secrets, user.id, previousKey);
+    }
     return c.json({ ok: true });
   });
 
