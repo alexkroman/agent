@@ -208,3 +208,14 @@ export {
   type WalkPhoneTreeOptions,
   walkPhoneTree,
 } from "./eval-vitest-barrel.ts";
+// The runtime's own installer for the ffmpeg toolchain: a scripted child in
+// place of the binary, through the SDK's `ffmpegProcess` seam. Declared here
+// rather than beside `installStubUploads` because that file is `sdk/`, which
+// may not reach the host-side seam (`sdk-host-boundary`).
+export {
+  installStubFfmpeg,
+  type StubFfmpeg,
+  type StubFfmpegCall,
+  type StubFfmpegReply,
+  type StubFfmpegScript,
+} from "./testing/stub-ffmpeg.ts";

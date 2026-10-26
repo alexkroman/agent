@@ -56,7 +56,13 @@ Four rules came out of building it, each of which a first draft gets wrong:
   (`@alexkroman1/aai/step-files`), which also prepends the standing flags
   (`-nostdin` among them — the one whose absence hangs a guest). That is what
   makes 100% line coverage of the decisions possible in the UNIT tier, with no
-  subprocess.
+  subprocess. The spawn itself is reachable from that tier too:
+  `installStubFfmpeg` (`@alexkroman1/aai-runtime/testing/vitest`) swaps the
+  child the SDK's runners spawn for a scripted one, so `ingestRecording` runs
+  end to end in `agent.test.ts` with the probe answering JSON, the measure pass
+  printing the captured `loudnorm` block, and the normalize pass writing the PCM
+  and the silence log itself. A fake script on `AAI_FFMPEG_PATH` is NOT the
+  alternative: that is a subprocess, which puts the spec in the scenario tier.
 - **A temp file may not cross a step boundary**, so the shape of an ffmpeg step
   is decided by materialization cost rather than by retry granularity.
   `ingestRecording` runs `ffprobe` and both `loudnorm` passes in ONE step

@@ -2844,6 +2844,32 @@ type FetchDispatcher = RequestInit extends {
     dispatcher?: infer D;
 } ? NonNullable<D> : never;
 
+// @internal
+export type FfmpegChild = {
+    readonly stdout: {
+        on(event: "data", cb: (chunk: Buffer) => void): unknown;
+    } | null;
+    readonly stderr: {
+        on(event: "data", cb: (chunk: Buffer) => void): unknown;
+    } | null;
+    readonly stdin: {
+        on(event: "error", cb: (err: Error) => void): unknown;
+        end(bytes: Uint8Array): unknown;
+    } | null;
+    on(event: "error", cb: (err: NodeJS.ErrnoException) => void): unknown;
+    on(event: "close", cb: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
+    kill(signal: NodeJS.Signals): unknown;
+};
+
+// @internal
+export const ffmpegProcess: {
+    spawn: (binary: string, args: string[], options: {
+        cwd?: string;
+        signal: AbortSignal;
+        stdio: ["ignore" | "pipe", "pipe", "pipe"];
+    }) => FfmpegChild;
+};
+
 // @public @input
 type FindByKeyOptions = {
     since?: number | Date;
@@ -20274,6 +20300,9 @@ export interface HostAgentOptions {
 
 export { installStubClientInbox }
 
+// @public
+export function installStubFfmpeg(script?: StubFfmpegScript): StubFfmpeg;
+
 export { installStubGateway }
 
 export { InstallStubGatewayOptions }
@@ -20551,6 +20580,29 @@ export const STUB_LLM_API_KEY_ENV = "AAI_EVAL_STUB_LLM_KEY";
 
 // @public
 export const STUB_SPEECH_API_KEY_ENV = "AAI_EVAL_FAKE_SPEECH_KEY";
+
+// @public @sealed
+export type StubFfmpeg = {
+    readonly calls: StubFfmpegCall[];
+};
+
+// @public @sealed
+export type StubFfmpegCall = {
+    readonly binary: string;
+    readonly args: readonly string[];
+    readonly stdin: Uint8Array | undefined;
+};
+
+// @public @input
+export type StubFfmpegReply = {
+    readonly stdout?: string | Uint8Array | undefined;
+    readonly stderr?: string | undefined;
+    readonly exitCode?: number | undefined;
+    readonly spawnError?: Error | undefined;
+};
+
+// @public @input
+export type StubFfmpegScript = (call: StubFfmpegCall) => StubFfmpegReply | undefined | Promise<StubFfmpegReply | undefined>;
 
 export { StubGatewayRoute }
 

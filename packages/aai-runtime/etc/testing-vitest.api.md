@@ -485,6 +485,9 @@ export interface HostAgentOptions {
 
 export { installStubClientInbox }
 
+// @public
+export function installStubFfmpeg(script?: StubFfmpegScript): StubFfmpeg;
+
 export { installStubGateway }
 
 export { InstallStubGatewayOptions }
@@ -762,6 +765,29 @@ export const STUB_LLM_API_KEY_ENV = "AAI_EVAL_STUB_LLM_KEY";
 
 // @public
 export const STUB_SPEECH_API_KEY_ENV = "AAI_EVAL_FAKE_SPEECH_KEY";
+
+// @public @sealed
+export type StubFfmpeg = {
+    readonly calls: StubFfmpegCall[];
+};
+
+// @public @sealed
+export type StubFfmpegCall = {
+    readonly binary: string;
+    readonly args: readonly string[];
+    readonly stdin: Uint8Array | undefined;
+};
+
+// @public @input
+export type StubFfmpegReply = {
+    readonly stdout?: string | Uint8Array | undefined;
+    readonly stderr?: string | undefined;
+    readonly exitCode?: number | undefined;
+    readonly spawnError?: Error | undefined;
+};
+
+// @public @input
+export type StubFfmpegScript = (call: StubFfmpegCall) => StubFfmpegReply | undefined | Promise<StubFfmpegReply | undefined>;
 
 export { StubGatewayRoute }
 
