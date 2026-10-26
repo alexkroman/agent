@@ -325,4 +325,19 @@ describe("layerScaffold", () => {
     const pkg = JSON.parse(await fs.readFile(path.join(target, "package.json"), "utf-8"));
     expect(pkg.name).toBe("scaffold");
   });
+
+  // The existence probe READ the path: a dangling link answered ENOENT, so the
+  // scaffold "filled the gap" by writing through it — outside the project.
+  test("never writes through a dangling symlink at a scaffold path", async ({ tmpDir: dir }) => {
+    await useFakeRoot(dir);
+    const target = path.join(dir, "pulled");
+    await fs.mkdir(target);
+    const outside = path.join(dir, "outside.txt");
+    await fs.symlink(outside, path.join(target, "tsconfig.json"));
+
+    await expect(layerScaffold(target)).rejects.toMatchObject({ code: "symlink_in_path" });
+    expect(await fileExists(outside)).toBe(false);
+    // Screened before ANY write, so the rest of the scaffold did not land either.
+    expect(await fileExists(path.join(target, "package.json"))).toBe(false);
+  });
 });

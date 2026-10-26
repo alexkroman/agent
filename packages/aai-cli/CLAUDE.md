@@ -185,7 +185,18 @@ production comes from Publish.
   (`PUT /studio/projects/:project/source`), fast-forward-checked against
   `studioSourceHash` in `.aai/project.json`; 409 = the studio edited since the
   last pull, `--force` overwrites.
-- **`aai publish`** pushes, syncs `.env` into the agent's secrets (always before
+- **No `studioSourceHash` means the existence probe runs, linked or not.** A
+  `studioProject` alone is what a cloned repo's `.aai/project.json` can carry;
+  without the probe it PUT with no `baseHash`, overwriting whoever owned that
+  name. `project_exists` refuses it; `--force` overrides. A `studioProject` (or
+  `slug`) read from the file passes `isUsableProjectName` — the slug grammar and
+  the `-preview` refusal `projectNameFromDir` applies.
+- **A slug the server returns is validated before it is written**
+  (`isSlugShaped` inside the `checkedResponse` predicate: publish's `slug`,
+  pull's `deployedSlug`), so `../../admin` fails `bad_response` and nothing is
+  recorded.
+- **`aai publish`** resolves the target (trust check, key) FIRST, then
+  typechecks, then pushes, syncs `.env` into the agent's secrets (always before
   the deploy, first publish included), then runs the studio's Publish route (the
   in-sandbox `aai deploy`). A bare `aai` in a project offers to publish and
   confirms on a TTY first.
@@ -196,6 +207,18 @@ production comes from Publish.
   `dependencies`/`devDependencies`/`scripts` fill per ENTRY — a studio manifest
   carries no toolchain (it is baked in the guest), and per-entry keeps the
   workspace's exact pins.
+- **A pull is screened WHOLE before its first write** (`planPull`, `studio.ts`):
+  an empty name, a control character, a `.`/`..`/empty segment, an escape, or a
+  file that is also another path's directory refuses it (`unsafe_pull`). A path
+  push would never send (`IGNORED_WORKSPACE_DIRS`, `isLocalOnlyFile` — git
+  metadata, `.aai`, `.env`, lockfiles) is SKIPPED and named in `warnings`: a
+  pulled git config can run commands.
+- **Nothing is written through a symlink** (`_safe-write.ts`): every target —
+  workspace files, scaffold paths, `.aai/project.json`, and `aai init`'s
+  template paths, `.env` and README — is screened with `lstat` component by
+  component BEFORE any write (`refuseUnsafeTarget` → `symlink_in_path` /
+  `path_conflict`), and written with `O_NOFOLLOW`. A dangling link read as
+  ENOENT is how `.gitignore -> ~/x` created a file outside the project.
 - **A pull that finds nothing prints the project list** (a typo shows other
   projects; empty means another account's login —
   `packages/aai-server/CLAUDE.md`). The extra request never replaces the 404; it
@@ -203,7 +226,9 @@ production comes from Publish.
 - **`aai delete` in a linked directory deletes the STUDIO PROJECT**
   (`DELETE /studio/projects/:project`, cascading server-side) and clears the
   link fields from `.aai/project.json`, keeping `serverUrl` — stale link fields
-  make the next push unrecoverable without `--force`.
+  make the next push unrecoverable without `--force`. **It asks first**: a TTY
+  gets `ui.prompts.confirm` naming the project; anything else (a pipe, JSON
+  mode) must pass `--yes` or fails `usage`.
 - **`layerScaffold` substitutes the scaffold's `CLAUDE.md`** with a ~30-line
   pointer at `node_modules/@alexkroman1/aai/AGENT_GUIDE.md`
   (`PROJECT_GUIDE_POINTER` has the argument). Matched on full path — a
@@ -211,8 +236,9 @@ production comes from Publish.
 - **A workspace carries UTF-8 text only.** Both snapshots (`collectSourceFiles`
   here, the guest's `snapshotWorkspace`) decode with
   `TextDecoder({ fatal: true, ignoreBOM: true })` and SKIP non-UTF-8 files,
-  warning by name. `ignoreBOM` is load-bearing (the default strips a BOM). Skips
-  also ride the JSON result as `warnings`, since `log.warn` is silent there.
+  warning by name. `ignoreBOM` is load-bearing (the default strips a BOM). An
+  unreadable file and a symlink are skipped and named the same way. Skips also
+  ride the JSON result as `warnings`, since `log.warn` is silent there.
 - **Lockfiles never sync in either direction**; `.env` is the one extra rule
   this side adds (`studio.ts`/`_studio.ts`; the walk, caps and decode come from
   `@alexkroman1/aai/workspace-files`).
@@ -225,7 +251,10 @@ production comes from Publish.
 - **A `*-preview` project name is refused** (`projectNameFromDir` → null): the
   orphan-preview sweep would reap it. `aai init` makes the same refusal of the
   directory name, so the author learns at scaffold time rather than at publish.
-  See the `-preview` note in `packages/aai-server/CLAUDE.md`.
+  See the `-preview` note in `packages/aai-server/CLAUDE.md`. `aai init` also
+  refuses a directory name holding a control or bidi-override character
+  (`DECEPTIVE_NAME_CHARS`), which `slugifyName` would silently drop, and seeds
+  `.env` at 0600.
 - **Directory names go through the platform's `slugifyName`**
   (`@alexkroman1/aai/slugify`), never a local regex, so the CLI and studio agree
   (`my_agent/` → `my-agent`).
@@ -506,13 +535,17 @@ is what approves an origin** (user intent, not repo content) and is remembered.
   (vendor pre-build, then the full build), and a warning the bundle's SDK copy
   prints at module evaluation (`withWorkflows`' name clash) came out twice; the
   SDK cannot dedupe across copies, so the one process that imports both does.
-- **`aai build`, `aai dev` and `aai deploy` execute the repo's code locally**
-  (`evalWorkerBundle` / `evalWorkerConfig`, and the project's `vite.config.ts`
-  since `buildAgentBundle` does not pass `configFile: false` — only the guest's
-  untrusted builds do). Running them on an untrusted clone runs that code.
-  `aai deploy` imports its bundle for the credential preflight (`_preflight.ts`,
-  since the platform stores no agent config — see "The platform stores no agent
-  config" in `packages/aai-server/CLAUDE.md`), doubling as a smoke test.
+- **`aai build`, `aai dev`, `aai deploy`, `aai publish` and a bare `aai` (which
+  runs publish) execute the repo's code locally** (`evalWorkerBundle` /
+  `evalWorkerConfig`, the project's `vite.config.ts` since `buildAgentBundle`
+  does not pass `configFile: false` — only the guest's untrusted builds do — and
+  the typecheck gate, which spawns the project's own `node_modules` `tsc`).
+  Running them on an untrusted clone runs that code. `publish` resolves the
+  target (server trust check, API key) before its typecheck, so an unapproved
+  `serverUrl` or a missing login fails first. `aai deploy` imports its bundle
+  for the credential preflight (`_preflight.ts`, since the platform stores no
+  agent config — see "The platform stores no agent config" in
+  `packages/aai-server/CLAUDE.md`), doubling as a smoke test.
 
 ## Self-hosting and `aai build --target`
 

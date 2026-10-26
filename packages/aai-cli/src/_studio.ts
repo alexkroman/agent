@@ -55,8 +55,29 @@ export function collectSourceFiles(dir: string): Promise<WorkspaceSnapshot> {
  */
 export function projectNameFromDir(dir: string): string | null {
   const name = slugifyName(path.basename(dir), MAX_SLUG_LENGTH);
-  if (name.endsWith(PREVIEW_SLUG_SUFFIX)) return null;
-  return VALID_SLUG_RE.test(name) ? name : null;
+  return isUsableProjectName(name) ? name : null;
+}
+
+/**
+ * The rule {@link projectNameFromDir} applies, for a name that did NOT come
+ * from a directory: `studioProject` (or an older `slug`) read out of
+ * `.aai/project.json`. That file is in the working tree, i.e. it arrives with
+ * a cloned repo, and the name it holds picks which studio project a push
+ * overwrites — so it gets the slug grammar and the `-preview` refusal too.
+ */
+export function isUsableProjectName(name: string): boolean {
+  return (
+    name.length <= MAX_SLUG_LENGTH && !name.endsWith(PREVIEW_SLUG_SUFFIX) && isSlugShaped(name)
+  );
+}
+
+/**
+ * Slug grammar alone — what a slug the SERVER hands back must satisfy before
+ * it is written into `.aai/project.json`. A preview slug is legitimate there
+ * (it names an agent, not a project), so this is not {@link isUsableProjectName}.
+ */
+export function isSlugShaped(value: unknown): value is string {
+  return typeof value === "string" && VALID_SLUG_RE.test(value);
 }
 
 /** The shareable studio URL for a project — what every command prints. */
@@ -159,13 +180,19 @@ export function fetchStudioProject(
   );
 }
 
-/** A pulled workspace, as the wire must actually carry it. */
+/**
+ * A pulled workspace, as the wire must actually carry it. `deployedSlug` is
+ * written into `.aai/project.json` and later joined into request URLs, so it
+ * must be slug-shaped: a `../../admin` from a hostile or broken server used to
+ * be persisted verbatim.
+ */
 function isStudioProject(value: unknown): value is StudioProject {
   return (
     isRecord(value) &&
     isRecord(value.files) &&
     Object.values(value.files).every((v) => typeof v === "string") &&
-    typeof value.sourceHash === "string"
+    typeof value.sourceHash === "string" &&
+    (value.deployedSlug === undefined || isSlugShaped(value.deployedSlug))
   );
 }
 

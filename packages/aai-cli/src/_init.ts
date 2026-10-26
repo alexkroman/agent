@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { CLIENT_ONLY_DEPENDENCIES } from "./_client-plugins.ts";
+import { writeFileNoFollow } from "./_safe-write.ts";
 import { downloadAndMergeTemplate, REPO_URL } from "./_templates.ts";
 import { compareCodeUnits, fileExists, isEexist, readJson, writeJson } from "./_utils.ts";
 
@@ -359,11 +360,40 @@ export async function stripClientDependencies(targetDir: string): Promise<void> 
   if (changed) await writeJson(pkgPath, pkgJson);
 }
 
+/**
+ * Seed `.env` from `.env.example`, born 0600.
+ *
+ * It is the file the README tells the author to put their AssemblyAI key in,
+ * so it is created private rather than inheriting `copyFile`'s 0644 (the
+ * example's mode under the umask) — a key written into it later would
+ * otherwise be world-readable from the moment it lands. EXCLUSIVE: never
+ * overwrite an existing `.env` — it may hold the user's real secrets (e.g.
+ * re-running `aai init --force` in an existing project) — and `O_EXCL` also
+ * refuses a symlink at that path, dangling or not.
+ */
+async function seedDotEnv(targetDir: string): Promise<void> {
+  let example: string;
+  try {
+    example = await fs.readFile(path.join(targetDir, ".env.example"), "utf-8");
+  } catch {
+    return; // no .env.example in the template — nothing to seed
+  }
+  try {
+    await writeFileNoFollow(path.join(targetDir, ".env"), example, {
+      exclusive: true,
+      mode: 0o600,
+    });
+  } catch (err: unknown) {
+    if (!isEexist(err)) throw err; // .env already exists — leave it
+  }
+}
+
 export async function runInit(opts: InitOptions): Promise<void> {
   const { targetDir, template } = opts;
   const pm: PackageManagerInfo = opts.packageManager ?? { name: "npm" };
 
-  await downloadAndMergeTemplate(template, targetDir);
+  // `.env` and the README are written below, after the copy — screened with it.
+  await downloadAndMergeTemplate(template, targetDir, undefined, [".env", "README.md"]);
   // Before the dev-mode link below, so it pins nothing a headless project dropped.
   await stripClientDependencies(targetDir);
 
@@ -383,17 +413,7 @@ export async function runInit(opts: InitOptions): Promise<void> {
     await stampPackageManager(targetDir, pm);
   }
 
-  try {
-    // COPYFILE_EXCL: never overwrite an existing .env — it may hold the user's
-    // real secrets (e.g. re-running `aai init --force` in an existing project).
-    await fs.copyFile(
-      path.join(targetDir, ".env.example"),
-      path.join(targetDir, ".env"),
-      fs.constants.COPYFILE_EXCL,
-    );
-  } catch {
-    /* no .env.example in template, or .env already exists — leave it */
-  }
+  await seedDotEnv(targetDir);
 
   const readmePath = path.join(targetDir, "README.md");
   const slug = path.basename(path.resolve(targetDir));

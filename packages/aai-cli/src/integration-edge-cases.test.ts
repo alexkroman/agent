@@ -118,7 +118,7 @@ describe("init creates working project", () => {
 describe("JSON output mode", () => {
   test("executeDelete returns structured result", async ({ api, ui, projectDir: dir }) => {
     const { executeDelete } = await import("./delete.ts");
-    const result = await executeDelete({ cwd: dir, server: api.url }, ui);
+    const result = await executeDelete({ cwd: dir, server: api.url, yes: true }, ui);
     expect(result).toEqual({ ok: true, data: { slug: "my-agent" } });
   });
 

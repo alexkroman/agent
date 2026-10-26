@@ -14,17 +14,22 @@
  */
 
 import { existsSync } from "node:fs";
-import { mkdir, readdir, writeFile } from "node:fs/promises";
+import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { isRecord, omitUndefined, plural } from "@alexkroman1/aai/utils";
+import { IGNORED_WORKSPACE_DIRS, isLocalOnlyFile } from "@alexkroman1/aai/workspace-files";
 import { isPathInside } from "@alexkroman1/aai-runtime/internal";
+import type { resolveDeployTarget } from "./_agent.ts";
 import { checkedResponse } from "./_api-client.ts";
 import { updateProjectConfig } from "./_config.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
+import { refuseUnsafeTarget, writeFileNoFollow } from "./_safe-write.ts";
 import { readUploadableEnv } from "./_server-common.ts";
 import {
   collectSourceFiles,
   fetchStudioProject,
+  isSlugShaped,
+  isUsableProjectName,
   listStudioProjects,
   projectNameFromDir,
   publishStudioProject,
@@ -34,7 +39,7 @@ import {
   studioProjectApiUrl,
   studioProjectUrl,
 } from "./_studio.ts";
-import { layerScaffold } from "./_templates.ts";
+import { layerScaffold, refuseUnsafeScaffoldTargets } from "./_templates.ts";
 import { defaultUi, fmtUrl, type Ui } from "./_ui.ts";
 import { formatCappedList } from "./_utils.ts";
 
@@ -57,30 +62,104 @@ export async function executeList(
   return ok({ projects });
 }
 
-/** Write a pulled file map under `dir`, refusing paths that escape it. */
-async function materializeFiles(dir: string, files: Record<string, string>): Promise<void> {
-  // Resolve and screen EVERY path before writing any: a pull that turns out to
-  // contain an escaping path leaves nothing behind rather than a half-written
-  // tree. The writes themselves are independent, so they run concurrently.
-  const targets = Object.entries(files).map(([rel, content]) => {
-    const abs = path.resolve(dir, rel);
-    // `isPathInside`, not a third copy of the line: this was open-coded here and
-    // in `aai-guest/studio-workspace-fs.ts`, and both copies were correct only
-    // for an absolute, normalized, trailing-slash-free `dir` — a precondition
-    // nothing stated, so a `dir` with a trailing separator refused every path in
-    // the tree. `aai-runtime/internal` is a permitted import here; `aai-server`
-    // and `aai-guest` are not.
-    if (!isPathInside(dir, abs)) {
-      throw new Error(`Pulled file path escapes the project directory: ${rel}`);
-    }
-    return { abs, content };
-  });
-  await Promise.all(
-    targets.map(async ({ abs, content }) => {
-      await mkdir(path.dirname(abs), { recursive: true });
-      await writeFile(abs, content, "utf-8");
-    }),
+/** A refusal of the pulled map as a whole: nothing has been written yet. */
+function unsafePull(rel: string, reason: string): CliError {
+  return new CliError(
+    "unsafe_pull",
+    `The studio sent a file path aai pull will not write: ${JSON.stringify(rel)} (${reason}).`,
+    "Nothing was written. Rename or delete that file in the studio, then pull again.",
   );
+}
+
+/** C0 controls, DEL and the C1 range — a NUL truncates a path at the syscall. */
+const CONTROL_CHARS = /\p{Cc}/u;
+
+/**
+ * The paths a push would never have sent: inside a directory the walk does not
+ * enter (`.git`, `.aai`, `node_modules`, …) or a local-only file (`.env`, a
+ * lockfile). The rules are the push side's own (`IGNORED_WORKSPACE_DIRS` and
+ * `isLocalOnlyFile`, which `collectSourceFiles` walks with), applied to the
+ * other direction: a row holding `.git/config` with a `core.fsmonitor` made
+ * the next `git status` run a command, and a row's `.aai/project.json`
+ * survived the link write below it.
+ */
+function isNeverSyncedPath(segments: readonly string[]): boolean {
+  const name = segments.at(-1) ?? "";
+  return segments.slice(0, -1).some((s) => IGNORED_WORKSPACE_DIRS.has(s)) || isLocalOnlyFile(name);
+}
+
+/**
+ * Screen a pulled file map as a WHOLE, before anything is written: a path that
+ * is empty, carries a control character, has a `.`/`..`/empty segment, escapes
+ * `dir`, or names a file that is also another path's parent directory refuses
+ * the pull. Each of those used to fail midway, after `agent.ts` had already
+ * landed, under a comment promising all-or-nothing. Paths a push would never
+ * have sent are not errors — they are SKIPPED, and named in `skipped`.
+ */
+function planPull(
+  dir: string,
+  files: Record<string, string>,
+): { writes: { rel: string; abs: string; content: string }[]; skipped: string[] } {
+  const all = new Set(Object.keys(files));
+  const writes: { rel: string; abs: string; content: string }[] = [];
+  const skipped: string[] = [];
+  for (const [rel, content] of Object.entries(files)) {
+    const { abs, segments } = screenPulledPath(dir, rel, all);
+    if (isNeverSyncedPath(segments)) skipped.push(rel);
+    else writes.push({ rel, abs, content });
+  }
+  return { writes, skipped };
+}
+
+/** One path of {@link planPull}: its resolved target and segments, or a refusal. */
+function screenPulledPath(
+  dir: string,
+  rel: string,
+  all: ReadonlySet<string>,
+): { abs: string; segments: string[] } {
+  if (rel === "") throw unsafePull(rel, "an empty path");
+  if (CONTROL_CHARS.test(rel)) throw unsafePull(rel, "a control character");
+  const segments = rel.split("/");
+  if (segments.some((s) => s === "" || s === "." || s === "..")) {
+    throw unsafePull(rel, "an empty, `.` or `..` segment");
+  }
+  const abs = path.resolve(dir, rel);
+  // `isPathInside`, not a third copy of the line: this was open-coded here and
+  // in `aai-guest/studio-workspace-fs.ts`, and both copies were correct only
+  // for an absolute, normalized, trailing-slash-free `dir` — a precondition
+  // nothing stated, so a `dir` with a trailing separator refused every path in
+  // the tree. `aai-runtime/internal` is a permitted import here; `aai-server`
+  // and `aai-guest` are not.
+  if (!isPathInside(dir, abs)) throw unsafePull(rel, "it escapes the project directory");
+  for (let i = 1; i < segments.length; i++) {
+    const parent = segments.slice(0, i).join("/");
+    if (all.has(parent)) throw unsafePull(rel, `${parent} is also a file`);
+  }
+  return { abs, segments };
+}
+
+/**
+ * Write a pulled file map under `dir`, refusing (before ANY write) a path
+ * {@link planPull} rejects or one that would go through a symlink already on
+ * disk, and skipping what push would never have sent. Returns the warnings.
+ */
+async function materializeFiles(dir: string, files: Record<string, string>): Promise<string[]> {
+  const { writes, skipped } = planPull(dir, files);
+  // Screen the disk as well as the names, and for EVERY path this pull will
+  // write: a `--force` pull into a directory holding `agent.ts ->
+  // ../outside/victim.txt` (or a symlinked subdirectory) wrote through the
+  // link. The scaffold's paths and the link file are written later, by other
+  // functions, so they are screened here too — refusing before the first write.
+  await Promise.all([
+    ...writes.map(({ rel }) => refuseUnsafeTarget(dir, rel)),
+    refuseUnsafeTarget(dir, ".aai/project.json"),
+    refuseUnsafeScaffoldTargets(dir),
+  ]);
+  // The writes are independent, so they run concurrently.
+  await Promise.all(writes.map(({ abs, content }) => writeFileNoFollow(abs, content)));
+  return skipped
+    .sort((a, b) => a.localeCompare(b))
+    .map((rel) => `${rel} is never synced (push does not send it either) — not written.`);
 }
 
 /**
@@ -117,7 +196,16 @@ export async function executePull(
   },
   ui: Ui = defaultUi,
   deps: StudioDeps = REAL_STUDIO_DEPS,
-): Promise<CommandResult<{ project: string; dir: string; files: number }>> {
+): Promise<CommandResult<{ project: string; dir: string; files: number; warnings?: string[] }>> {
+  // The name is written into `.aai/project.json` as the link, so it is held to
+  // the slug grammar every studio project name already satisfies.
+  if (!isSlugShaped(opts.project)) {
+    throw new CliError(
+      "invalid_project",
+      `${JSON.stringify(opts.project)} is not a studio project name.`,
+      "Run `aai list` to see your projects.",
+    );
+  }
   const { serverUrl, apiKey } = await deps.resolveDeployTarget(opts.cwd, opts.server);
   const remote = await fetchStudioProject(serverUrl, apiKey, opts.project, deps.apiRequest);
   if (!remote) {
@@ -138,7 +226,8 @@ export async function executePull(
     );
   }
 
-  await materializeFiles(target, remote.files);
+  const warnings = await materializeFiles(target, remote.files);
+  for (const warning of warnings) ui.log.warn(warning);
   // The workspace stores source; the scaffold (package.json, tsconfig, …)
   // completes it into a runnable project — never overwriting a file the
   // workspace supplied, mirroring the guest's ensureProjectShape.
@@ -150,11 +239,17 @@ export async function executePull(
     ...omitUndefined({ slug: remote.deployedSlug }),
   });
 
-  const count = Object.keys(remote.files).length;
+  const count = Object.keys(remote.files).length - warnings.length;
   ui.log.success(`Pulled ${opts.project} (${count} files) into ${target}`);
   ui.log.info(`Next: cd ${opts.dir ?? opts.project} && pnpm install && aai dev`);
   ui.log.info(`Studio: ${fmtUrl(studioProjectUrl(serverUrl, opts.project))}`);
-  return ok({ project: opts.project, dir: target, files: count });
+  return ok({
+    project: opts.project,
+    dir: target,
+    files: count,
+    // See PushOutcome.warnings — silenced in JSON mode, so they ride here.
+    ...(warnings.length > 0 ? { warnings } : {}),
+  });
 }
 
 type PushOutcome = {
@@ -176,6 +271,46 @@ type PushOutcome = {
 };
 
 /**
+ * A project name read from `.aai/project.json` arrives with the working tree —
+ * a cloned repo can carry one — so it passes the rule a directory name does.
+ */
+function refuseUnusableRecordedName(recorded: string | undefined): void {
+  if (recorded === undefined || isUsableProjectName(recorded)) return;
+  throw new CliError(
+    "invalid_project",
+    `.aai/project.json names the studio project ${JSON.stringify(recorded)}, which is not a usable project name.`,
+    'Fix or delete .aai/project.json (a name ending in "-preview" belongs to the studio\'s preview agents), or run `aai pull <project>` to link an existing one.',
+  );
+}
+
+/**
+ * The worker entry imports `../agent.ts`, so a tree missing it cannot build.
+ * `collectSourceFiles` DROPS a file that is over the byte cap or not UTF-8
+ * and only WARNS — and `log.warn` is silenced in JSON mode — so an oversized
+ * agent.ts left `push` reporting success and the server, handed a tree with
+ * no entry, answered a confusing `No agent.ts found in the current directory`.
+ * Fail here with the real reason. Scoped to a file that EXISTS on disk but
+ * did not sync: a directory with genuinely no agent.ts is left to the
+ * server's own check (it may be a sync-only push the studio completes).
+ */
+function refuseUnsyncedEntry(
+  cwd: string,
+  files: Record<string, string>,
+  warnings: readonly string[],
+): void {
+  if (files["agent.ts"] || !existsSync(path.join(cwd, "agent.ts"))) return;
+  const reason = warnings.find((w) => w.startsWith("agent.ts "));
+  throw new CliError(
+    "entry_not_synced",
+    reason ?? "agent.ts exists locally but was not synced.",
+    "The entry file must sync to deploy — reduce its size or fix its encoding.",
+  );
+}
+
+/** What `resolveDeployTarget` answers: the project config, server and key. */
+type DeployTarget = Awaited<ReturnType<typeof resolveDeployTarget>>;
+
+/**
  * The shared push core: collect local source, resolve (or mint) the linked
  * project, sync atomically, record the new fast-forward token.
  */
@@ -187,38 +322,32 @@ async function pushProject(
   },
   ui: Ui,
   deps: StudioDeps,
+  /** Already resolved by the caller (`publish` resolves it before typechecking). */
+  target?: DeployTarget,
 ): Promise<PushOutcome> {
-  const { config, serverUrl, apiKey } = await deps.resolveDeployTarget(opts.cwd, opts.server);
+  const { config, serverUrl, apiKey } =
+    target ?? (await deps.resolveDeployTarget(opts.cwd, opts.server));
   const { files, warnings } = await collectSourceFiles(opts.cwd);
   for (const warning of warnings) ui.log.warn(warning);
   if (Object.keys(files).length === 0) {
     throw new Error("Nothing to push — this directory has no project files.");
   }
-  // The worker entry imports `../agent.ts`, so a tree missing it cannot build.
-  // `collectSourceFiles` DROPS a file that is over the byte cap or not UTF-8
-  // and only WARNS — and `log.warn` is silenced in JSON mode — so an oversized
-  // agent.ts left `push` reporting success and the server, handed a tree with
-  // no entry, answered a confusing `No agent.ts found in the current directory`.
-  // Fail here with the real reason. Scoped to a file that EXISTS on disk but
-  // did not sync: a directory with genuinely no agent.ts is left to the
-  // server's own check (it may be a sync-only push the studio completes).
-  if (!files["agent.ts"] && existsSync(path.join(opts.cwd, "agent.ts"))) {
-    const reason = warnings.find((w) => w.startsWith("agent.ts "));
-    throw new CliError(
-      "entry_not_synced",
-      reason ?? "agent.ts exists locally but was not synced.",
-      "The entry file must sync to deploy — reduce its size or fix its encoding.",
-    );
-  }
+  refuseUnsyncedEntry(opts.cwd, files, warnings);
 
   let project = config?.studioProject;
   let baseHash = config?.studioSourceHash;
   let slug = config?.slug;
-  if (!project) {
+  refuseUnusableRecordedName(project ?? slug);
+  // The existence probe runs whenever there is no fast-forward token, LINKED
+  // or not. A `studioProject` with no `studioSourceHash` is exactly what a
+  // repo can ship in `.aai/project.json`, and it used to skip the probe and
+  // PUT with no `baseHash` — an unconditional overwrite of whatever project
+  // that name already held.
+  if (!(project && baseHash)) {
     // First push from this directory: link it. The deployed slug (an older
     // project.json) or the directory name names the project; a same-named
     // project already in the studio must be an explicit choice to overwrite.
-    project = slug ?? projectNameFromDir(opts.cwd) ?? undefined;
+    project = project ?? slug ?? projectNameFromDir(opts.cwd) ?? undefined;
     if (!project) {
       throw new Error(
         `Can't derive a project name from ${path.basename(opts.cwd)} — rename the directory or run \`aai pull <project>\` to link an existing one.`,
@@ -353,9 +482,14 @@ export async function executePublish(
     warnings?: string[];
   }>
 > {
+  // Target FIRST, typecheck second. The gate runs the project's own
+  // `node_modules` tsc — project code — so an untrusted `serverUrl` in a cloned
+  // repo's `.aai/project.json`, or a missing login, must fail before it runs,
+  // not after.
+  const target = await deps.resolveDeployTarget(opts.cwd, opts.server);
   const { assertTypechecks } = await import("./_typecheck-gate.ts");
   await assertTypechecks(opts.cwd, { skip: opts.skipTypecheck, ui });
-  const pushed = await pushProject(opts, ui, deps);
+  const pushed = await pushProject(opts, ui, deps, target);
   const { project, serverUrl, apiKey } = pushed;
 
   // ALWAYS before the deploy, first publish included. Secrets are merged into
@@ -382,8 +516,11 @@ export async function executePublish(
       { skipTypecheck: opts.skipTypecheck },
       deps.apiRequest,
     ),
+    // `slug` slug-SHAPED, not merely a string: it is written into
+    // .aai/project.json and joined into later request URLs, and a returned
+    // `../../admin` was persisted verbatim.
     (value): value is { slug: string; output: string } =>
-      isRecord(value) && typeof value.slug === "string" && typeof value.output === "string",
+      isRecord(value) && isSlugShaped(value.slug) && typeof value.output === "string",
     `the publish route at ${serverUrl}`,
   );
   if (result.output.trim()) ui.log.message(result.output.trim());

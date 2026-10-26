@@ -359,6 +359,33 @@ describe("executeInit", () => {
     expect(await fileExists(path.join(target, "agent.ts"))).toBe(false);
   });
 
+  // `slugifyName` strips these from the PROJECT name, so the `-preview` check
+  // above passed them; the directory on disk kept a newline or a U+202E that
+  // makes it render as a different name. Built from code points so this file
+  // itself carries no invisible characters.
+  test.for([
+    ["a newline", `my${String.fromCodePoint(0x0a)}agent`],
+    ["a right-to-left override", `evil${String.fromCodePoint(0x20_2e)}st.ta`],
+    ["a bidi isolate", `my${String.fromCodePoint(0x20_66)}agent`],
+  ] as const)(
+    "refuses a directory name containing %s, writing nothing",
+    async ([, name], { tmpDir: dir }) => {
+      await useFakeTemplates(dir);
+      const target = path.join(dir, name);
+      await expect(
+        executeInit(
+          { dir: target, template: "quickstart-agent" },
+          { silent: true, ui, exec: execaMock },
+        ),
+      ).rejects.toMatchObject({
+        code: "invalid_dir",
+        // Escaped: the refusal must not render the trick it refuses.
+        message: expect.not.stringContaining(name),
+      });
+      expect(await fileExists(target)).toBe(false);
+    },
+  );
+
   test("--force overwrites an existing project", async ({ tmpDir: dir }) => {
     await useFakeTemplates(dir);
     const target = path.join(dir, "existing");
