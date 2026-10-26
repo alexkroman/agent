@@ -22919,7 +22919,7 @@ type ToolCallOutcome = {
 export const ToolConfigContext: Context<ToolDisplayConfig>;
 
 // @public @sealed
-type ToolDisplayConfig = Record<string, {
+export type ToolDisplayConfig = Record<string, {
     icon?: string | undefined;
     label?: string | undefined;
 }>;

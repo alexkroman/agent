@@ -70,11 +70,14 @@ describe("runTool", () => {
   test("refuses a value with no `execute`, naming what it was handed", async () => {
     // The two things that used to land here: the agent (the old name form's
     // first argument) and the `undefined` a mistyped import answers with.
-    const loose = runTool as unknown as (tool: unknown, args?: unknown) => Promise<unknown>;
-    await expect(loose(agentDef, {})).rejects.toThrow(
+    // Reached the way an untyped caller reaches it — through `Reflect.apply`,
+    // which the def-typed signature cannot refuse.
+    await expect(Reflect.apply(runTool, undefined, [agentDef, {}])).rejects.toThrow(
       "runTool(tool, …) was handed a object with no `execute` rather than a tool",
     );
-    await expect(loose(undefined)).rejects.toThrow("was handed undefined rather than a tool");
+    await expect(Reflect.apply(runTool, undefined, [undefined])).rejects.toThrow(
+      "was handed undefined rather than a tool",
+    );
   });
 
   test("a no-argument tool may pass the context in the arguments' place", async () => {

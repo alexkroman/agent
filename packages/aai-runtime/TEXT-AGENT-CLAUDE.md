@@ -575,8 +575,8 @@ pieces to make it for free.
   fail every other suite for a filter aimed at one (`aai-evals/register.ts`
   warns for the same reason).
 
-- **`expectCalled(turn, ...defs)`** names the tier's most common finding. A
-  live model calls a median of ONE tool per reply (`DEFAULT_MAX_STEPS`) and then
+- **`expectCalled(turn, ...defs)`** names the tier's most common finding. A live
+  model calls a median of ONE tool per reply (`DEFAULT_MAX_STEPS`) and then
   speaks, so "it announced and stopped" is how most cases fail — and it arrived
   as four different sentences (`expected [] to deeply equal [ 'recommend' ]`,
   `expected undefined to be defined`,

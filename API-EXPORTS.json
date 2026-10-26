@@ -2492,6 +2492,7 @@
     "TRANSCRIBING_PLACEHOLDER",
     "ThemeProvider",
     "ToolConfigContext",
+    "ToolDisplayConfig",
     "UiUrlChip",
     "VOICE_CAPTURE_CONSTRAINTS",
     "buildAgentUrl",

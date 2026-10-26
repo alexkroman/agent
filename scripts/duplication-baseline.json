@@ -16,7 +16,6 @@
     "packages/aai/src/sdk/session-event-map.ts": 15,
     "packages/aai/src/sdk/session-slot-handle.ts": 16,
     "packages/aai/src/sdk/testing-barrel.ts": 122,
-    "packages/aai/src/sdk/testing-tools.ts": 65,
     "packages/aai/src/sdk/tool-schema.ts": 147,
     "packages/aai/tsdown.config.ts": 21,
     "scripts/_api-contracts.mjs": 6,

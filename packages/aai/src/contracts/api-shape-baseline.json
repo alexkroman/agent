@@ -138,7 +138,6 @@
     "protocol: SessionCommand",
     "state: SlotDraftOf",
     "state: SlotValueOf",
-    "tool: InferToolInput",
     "tool: InferToolOutput",
     "tool: ToolMessages",
     "workflow-readings: WorkflowDefOf",

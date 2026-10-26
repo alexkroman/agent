@@ -46,7 +46,7 @@ export { buildAgentUrl, loadClientConfig } from "./client-config.ts";
 // `client-config` `tools` (each `tool({ ui })`); not something component-tier
 // users pass themselves, and its value type is not on the root: nothing an
 // author writes names it.
-export { ToolConfigContext } from "./components/tool-config-context.ts";
+export { ToolConfigContext, type ToolDisplayConfig } from "./components/tool-config-context.ts";
 // The default shell's URL chips. Rendered by `mountClient()` in every session mode;
 // a custom chrome composes its own header rather than borrowing these.
 export { ApiUrlChip, SessionUrlChips, UiUrlChip } from "./components/url-chips.tsx";

@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 206 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
-- [Framework internals](#framework-internals) — 517 names
+- [Framework internals](#framework-internals) — 518 names
 
 ## Agent authoring
 
@@ -1584,6 +1584,7 @@ trace or a type error can be traced back to something.
 | `ThemeProvider` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `ToolConfigContext` | const · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `ToolDefRecord` | type | `@alexkroman1/aai/host-internal` |  | Resolved builtin tool definitions, keyed by tool name. |
+| `ToolDisplayConfig` | type | `@alexkroman1/aai-ui/internal` |  | Display configuration for a tool call in the UI, keyed by tool name: the icon and label each tool declared with `tool({ ui })`, as the agent serves them in its … |
 | `ToolMessageBase` | type | `@alexkroman1/aai/host-internal` |  | The two fields every message kind carries, as one type for the selector to be generic over (`tool-messages-select.ts`). |
 | `TraceParent` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `TransportEventBody` | type | `@alexkroman1/aai-runtime/internal` |  | One reportable event, envelope-free — the session stamps `meta` when it emits. |
