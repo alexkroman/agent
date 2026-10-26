@@ -122,6 +122,7 @@ describe("aai login", () => {
         ? new Response(JSON.stringify({ mode: "dev" }), { status: 200 })
         : new Response(null, { status: 307, headers: { Location: "https://evil.example/x" } }),
     );
+    const keyBefore = (await readGlobalConfig()).apiKey;
     const err = (await executeLogin(
       {},
       { ui: createFakeUi(), fetchFn, openBrowser: vi.fn(), pollIntervalMs: 1 },
@@ -130,7 +131,7 @@ describe("aai login", () => {
     expect(err.code).toBe("login_failed");
     expect(err.message).toContain("redirected (HTTP 307) to https://evil.example");
     expect(fetchFn.mock.calls.every(([, init]) => init?.redirect === "manual")).toBe(true);
-    expect((await readGlobalConfig()).apiKey).toBeUndefined();
+    expect((await readGlobalConfig()).apiKey).toBe(keyBefore);
   });
 
   test("a server that never answers fails on the deadline, naming it", async () => {
