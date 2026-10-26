@@ -170,10 +170,11 @@ what those tools return, and mirror it into `useState` — three things to keep 
 step, and the usual source of drift when you add a tool and forget to return the
 snapshot from it.
 
-`syncState` holds projections, not flags, because state often holds things that
-should not reach a browser (keys, PINs, scratch) or cannot be serialized.
-Whatever it returns is exactly what the client receives. It runs after every
-tool call and is sent only when the result changed.
+A slot reaches the page only when declared `sync: true`, and only through its
+`view`, because state often holds things that should not reach a browser (keys,
+PINs, scratch) or cannot be serialized. Whatever it returns is exactly what the
+client receives. It runs after every tool call and is sent only when the result
+changed.
 
 **`useEvent`** — fires for custom events from `ctx.send()`:
 

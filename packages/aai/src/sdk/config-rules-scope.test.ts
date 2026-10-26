@@ -72,12 +72,6 @@ describe("listing", () => {
     );
   });
 
-  test("the deprecated `description` crosses AS `listing`, so the wire has one field", () => {
-    const config = rawConfig({ name: "Line", description: "Books dental appointments" });
-    expect(config.listing).toBe("Books dental appointments");
-    expect(config).not.toHaveProperty("description");
-  });
-
   test("unset stays unset", () => {
     expect(rawConfig({ name: "Line" }).listing).toBeUndefined();
   });

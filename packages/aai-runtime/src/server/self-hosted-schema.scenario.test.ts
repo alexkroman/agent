@@ -136,7 +136,7 @@ describeWithPg("a self-hosted server provisions its own tables", () => {
       // really uses — `selectJournal` reports `postgres` for it either way, and
       // the tables are owed either way, but a door serving `/workflows/*` is
       // the deployment the 42P01 was reported from.
-      agent: agent({ name: "Self-hosted probe", systemPrompt: "You are a probe." }),
+      agent: agent({ name: "Self-hosted probe" }),
       env: { ASSEMBLYAI_API_KEY: "not-dialled", DATABASE_URL: databaseUrl() },
       logger: silentLogger,
     });

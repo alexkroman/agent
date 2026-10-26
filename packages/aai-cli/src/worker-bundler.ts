@@ -174,9 +174,9 @@ const SYSTEM_PROMPT_FILE = "system-prompt.md";
  * The other half of "a file beside `agent.ts` can BE the thing", and it happens
  * here for the same reason `discoverModuleFiles` does — the guest has no
  * filesystem, so the read belongs where the bundle is assembled. What the file
- * MEANS is `withSystemPrompt`'s to decide (the author may have imported and
- * composed it, in which case discovery must not apply it twice); this only
- * answers whether there is one.
+ * MEANS is `withSystemPrompt`'s to decide (a raw config may carry a prompt
+ * string of its own, which the file must not silently lose); this only answers
+ * whether there is one.
  */
 async function hasSystemPromptFile(cwd: string): Promise<boolean> {
   // A `system-prompt/` DIRECTORY is rejected rather than ignored. eve supports
@@ -190,7 +190,7 @@ async function hasSystemPromptFile(cwd: string): Promise<boolean> {
   const nestedStat = await fs.stat(nested).catch(() => undefined);
   if (nestedStat?.isDirectory() === true) {
     throw new Error(
-      `${nested} is a directory. A system prompt is ONE file — rename it to ${SYSTEM_PROMPT_FILE}, or import the pieces yourself and compose them into \`systemPrompt\`. There is deliberately no concatenation order for a directory.`,
+      `${nested} is a directory. A system prompt is ONE file — rename it to ${SYSTEM_PROMPT_FILE}, and put text computed beside it in \`promptContext\`. There is deliberately no concatenation order for a directory.`,
     );
   }
   try {

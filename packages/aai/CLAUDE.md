@@ -116,10 +116,10 @@ types, `LlmSpec`, the voice catalog, all three `…Of<typeof def>` readings,
 subpath, and `/utils`' formatters stay on `/utils` (read by a page or a step).
 
 `DEFAULT_SYSTEM_PROMPT` is exported to be READ (printed, diffed, asserted), not
-composed against: `agent({ systemPrompt })` does NOT replace the prompt —
-`buildSystemPrompt` always emits the voice sections and APPENDS the author's
-rules under a precedence header, and strips a leading verbatim copy of the
-constant.
+composed against: a `system-prompt.md` does NOT replace the prompt —
+`buildSystemPrompt` always emits the voice sections and APPENDS the file's rules
+under a precedence header, and strips a leading verbatim copy of the constant.
+`agent({ systemPrompt })` is not a field (`FrameworkOwnedField`).
 
 ## New features ship in `/experimental` first
 
@@ -260,9 +260,11 @@ an explicit deny-list instead of copying fields**:
 - **`agent()`** derives each member of its parameters from `AgentDef` (`Omit`
   plus `Pick` per mode) plus the conveniences `normalizeAgentParams`
   (`sdk/_author-conveniences.ts`) lowers away (`llm` as a model-id string via
-  `sdk/providers/llm/shared/from-string.ts`, and the endpointing pair). A voice
-  has no shorthand: it is the TTS descriptor's option. Never re-declare the
-  shape inline — neither bundler typechecks user code. `define.test-d.ts` and
+  `sdk/providers/llm/shared/from-string.ts`, and the endpointing pair), minus
+  the two FRAMEWORK-OWNED fields (`systemPrompt` from `system-prompt.md`,
+  `syncState` from `sync: true` slots) no member carries. A voice has no
+  shorthand: it is the TTS descriptor's option. Never re-declare the shape
+  inline — neither bundler typechecks user code. `define.test-d.ts` and
   `define-modes.test-d.ts` lock this. **Defaults go through `omitUndefined`**: a
   spread lets a present-and-`undefined` key (from an options bag) beat the
   default, yielding `undefined` required fields.

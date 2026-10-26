@@ -1,13 +1,15 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * A system prompt that is computed per request rather than fixed for the call.
+ * The agent's instructions: the system prompt a lowered definition carries,
+ * and the `promptContext` an author appends under it — either of which may be
+ * computed per request rather than fixed for the call.
  *
- * `AgentDef.systemPrompt` was typed `string`, and the transports had supported
- * a per-request resolver the whole time — `SystemPromptOption` in
- * `@alexkroman1/aai-runtime` has been `string | (() => string)`, re-resolved at
- * request-assembly time on every path (pipeline, speculation, OpenAI Realtime,
- * the runtime transport). The capability was built and simply unreachable from
- * an `agent.ts`. This is the type that exposes it.
+ * The prompt itself is not authored (`system-prompt.md` is; see
+ * `system-prompt-file.ts`), so the per-request form an `agent.ts` reaches is
+ * `promptContext`. The transports have supported a per-request resolver the
+ * whole time — `SystemPromptOption` in `@alexkroman1/aai-runtime` has been
+ * `string | (() => string)`, re-resolved at request-assembly time on every
+ * path (pipeline, speculation, OpenAI Realtime, the runtime transport).
  *
  * **The resolver takes the session**, which the runtime-internal thunk did not.
  * A nullary resolver can vary the prompt by wall-clock time and nothing else —
@@ -51,8 +53,16 @@
 import type { AgentSessionContext } from "./agent-session-context.ts";
 
 /**
- * What `agent({ systemPrompt })` accepts: the text, or a function that answers
- * it per request from the live {@link AgentSessionContext}.
+ * What `AgentDef.systemPrompt` holds: the text, or a function that answers it
+ * per request from the live {@link AgentSessionContext}.
+ *
+ * Nothing in an `agent.ts` writes it. The build sets the discovered
+ * `system-prompt.md` through `withSystemPrompt` (`@alexkroman1/aai/manifest`),
+ * which is also how a host sets a prompt of its own on a lowered definition;
+ * the per-request form an author reaches is {@link AgentPromptContext}, which
+ * lands under the file. A resolver here is a HOST's — a runtime that composes
+ * the whole prompt per session — and is left exactly as written by
+ * `withSystemPrompt`.
  *
  * The function is SYNCHRONOUS: the request is being built, and there is no
  * point at which a promise could be awaited without putting a round trip in
@@ -61,37 +71,6 @@ import type { AgentSessionContext } from "./agent-session-context.ts";
  *
  * A plain string is not called or wrapped; it reaches `buildSystemPrompt`
  * as written.
- *
- * ## With a `system-prompt.md`
- *
- * Almost every real agent keeps its prose in a file beside `agent.ts`, and a
- * resolver composes against that file by IMPORTING it — the same
- * `?raw` import the composed-string case takes, closed over by the function:
- *
- * ```ts
- * // file: shared.ts
- * import { sessionSlot } from "@alexkroman1/aai";
- *
- * export const gameSlot = sessionSlot("game", () => ({ room: "cavern", torches: 2 }));
- * export const statusBlock = (game: { room: string; torches: number }): string =>
- *   `Room: ${game.room}. Torches left: ${game.torches}.`;
- *
- * // file: agent.ts
- * import { agent } from "@alexkroman1/aai";
- * import { gameSlot, statusBlock } from "./shared.ts";
- * import prompt from "./system-prompt.md?raw";
- *
- * export default agent({
- *   name: "Cavern Adventure",
- *   systemPrompt: (ctx) => `${prompt}\n\n${statusBlock(gameSlot.get(ctx))}`,
- * });
- * ```
- *
- * The generated bundle entry still discovers the file and hands it to
- * `withSystemPrompt` (`sdk/system-prompt-file.ts`), which leaves a resolver
- * exactly as written — an author who declared a function has taken over
- * composing the prompt. That module's header owns the argument, including why
- * the file is not passed to the resolver as a second argument.
  *
  * @public
  */
@@ -143,20 +122,19 @@ export function systemPromptResolver(
  *
  * The field exists because a `system-prompt.md` is the right home for a
  * prompt and the wrong home for a value: an author with a file AND a line of
- * context to add ("Today's specials: …", "The caller's account tier") had to
- * import the file with `?raw` and compose a full {@link AgentSystemPrompt}
- * resolver — at which point `withSystemPrompt` could no longer check that the
- * file was read, and the file was declared twice. `promptContext` is the
- * sentence on its own: the file stays undeclared and discovered, the override
- * form of `systemPrompt` is reserved for an author taking over the whole
- * prompt, and the context lands under whichever of the two is in force,
- * separated by a blank line.
+ * context to add ("Today's specials: …", "The caller's account tier") used to
+ * import the file and compose a full prompt resolver — at which point
+ * `withSystemPrompt` could no longer check that the file was read, and the
+ * file was declared twice. `promptContext` is the sentence on its own: the
+ * file stays undeclared and discovered, and the context lands under it (or
+ * under whatever prompt the lowered def carries), separated by a blank line.
+ * It is the ONE place an `agent.ts` puts prompt text; the prompt itself is
+ * not a parameter.
  *
- * A string is serialized into the agent's config like `systemPrompt` is, so a
- * listing or a build sees it; a function is resolved per session exactly as a
- * `systemPrompt` resolver is — synchronous, from the same
- * {@link AgentSessionContext}, re-asked per model request on the pipeline and
- * per connection on S2S.
+ * A string is serialized into the agent's config like the prompt is, so a
+ * listing or a build sees it; a function is resolved per session —
+ * synchronous, from the {@link AgentSessionContext}, re-asked per model
+ * request on the pipeline and per connection on S2S.
  *
  * ```ts
  * import { agent, sessionSlot } from "@alexkroman1/aai";
@@ -186,9 +164,9 @@ export type AgentPromptContext = string | ((ctx: AgentSessionContext) => string)
 export interface AgentInstructions {
   /**
    * Context appended under the agent's instructions — the discovered
-   * `system-prompt.md`, or a `systemPrompt` override — separated by a blank
-   * line. See {@link AgentPromptContext} for the two forms and when each is
-   * resolved. A workflow app refuses it: nothing there reads a prompt.
+   * `system-prompt.md` — separated by a blank line. See
+   * {@link AgentPromptContext} for the two forms and when each is resolved.
+   * A workflow app refuses it: nothing there reads a prompt.
    */
   promptContext?: AgentPromptContext;
 }

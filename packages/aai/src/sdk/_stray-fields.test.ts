@@ -104,13 +104,16 @@ describe("stray agent fields", () => {
     );
   });
 
-  test("a REMOVED field is named as renamed, which edit distance cannot reach", () => {
-    // `system` to `systemPrompt` is six edits, past any cap a useful
-    // suggestion can afford — and it is the mistake most worth catching,
-    // because the author did not typo anything: they wrote a field that
-    // used to work.
+  test("a REMOVED field is named with its replacement, which edit distance cannot reach", () => {
+    // `system` to a file is no edit at all, and `description` to `listing` is
+    // past any cap a useful suggestion can afford — and these are the mistakes
+    // most worth catching, because the author did not typo anything: they
+    // wrote a field that used to work.
     expect(() => configOf({ name: "A", system: "Be brief." })).toThrow(
-      /`system` \(renamed to `systemPrompt`\)/,
+      /`system` \(replaced by the `system-prompt.md` file beside agent.ts\)/,
+    );
+    expect(() => configOf({ name: "A", description: "A desk" })).toThrow(
+      /`description` \(renamed to `listing`\)/,
     );
   });
 

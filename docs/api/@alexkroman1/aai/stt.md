@@ -18,7 +18,6 @@ import { deepgramStt } from "@alexkroman1/aai/stt";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   // `llm` and `tts` keep their AssemblyAI defaults.
   stt: deepgramStt({ model: "nova-3", language: "en" }),
 });
@@ -106,7 +105,6 @@ import { assemblyAIStt } from "@alexkroman1/aai/stt";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   stt: assemblyAIStt({ languages: ["en"] }),
 });
 ```
@@ -147,7 +145,6 @@ import { deepgramStt } from "@alexkroman1/aai/stt";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   stt: deepgramStt({ model: "nova-3", language: "en" }),
 });
 ```
@@ -187,7 +184,6 @@ import { elevenLabsStt } from "@alexkroman1/aai/stt";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   stt: elevenLabsStt({ model: "scribe_v2_realtime", language: "en" }),
 });
 ```
@@ -214,7 +210,6 @@ import { assemblyAIStt, deepgramStt, fallback } from "@alexkroman1/aai/stt";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   stt: fallback([assemblyAIStt(), deepgramStt()]),
   llm: fallback([
     llm({ provider: "assemblyai", model: "gpt-5.6-luna" }),
@@ -272,7 +267,6 @@ import { assemblyAIStt, deepgramStt, fallback } from "@alexkroman1/aai/stt";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   stt: fallback([assemblyAIStt(), deepgramStt()]),
   llm: fallback([
     llm({ provider: "assemblyai", model: "gpt-5.6-luna" }),
@@ -330,7 +324,6 @@ import { assemblyAIStt, deepgramStt, fallback } from "@alexkroman1/aai/stt";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   stt: fallback([assemblyAIStt(), deepgramStt()]),
   llm: fallback([
     llm({ provider: "assemblyai", model: "gpt-5.6-luna" }),
@@ -405,7 +398,6 @@ import { sonioxStt } from "@alexkroman1/aai/stt";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   stt: sonioxStt({ model: "stt-rt-v3", languages: ["en", "es"] }),
 });
 ```

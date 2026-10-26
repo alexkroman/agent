@@ -146,7 +146,7 @@ type App = { name: string; mode: "workflow-app"; workflows: Workflows };
 
 test("a workflow app carries only what a page and a deploy read", () => {
   expectTypeOf<
-    AgentAccepts<App & { greeting: string; description: string; requiredEnv: readonly string[] }>
+    AgentAccepts<App & { greeting: string; listing: string; requiredEnv: readonly string[] }>
   >().toEqualTypeOf<true>();
   expectTypeOf<AgentAccepts<App & { systemPrompt: string }>>().toEqualTypeOf<false>();
   expectTypeOf<AgentAccepts<App & { maxSteps: number }>>().toEqualTypeOf<false>();

@@ -31,14 +31,19 @@ const log = createLogger("studio.prompt");
 const FALLBACK_GUIDE = `## agent() essentials
 
 \`\`\`ts
-// agent.ts — there is no \`tools\` field. A tool is a FILE.
+// agent.ts — there is no \`tools\` field (a tool is a FILE) and no
+// \`systemPrompt\` field (the prompt is the system-prompt.md beside it).
 import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "Support Agent",
-  systemPrompt: "You are a concise, friendly voice support agent.",
   greeting: "Hi, how can I help?",
 });
+\`\`\`
+
+\`\`\`md
+<!-- system-prompt.md — the whole prompt, appended to the framework's voice rules -->
+You are a concise, friendly voice support agent.
 \`\`\`
 
 \`\`\`ts
@@ -64,7 +69,8 @@ export default tool({
 - A FORM-fronted product (submit a job, watch it, read the result) is a
   workflow app instead: \`workflowApp({ name, workflows })\` with its bodies
   in \`workflows/*.ts\`, and a client.tsx mounted with \`mountPage()\`. It has no
-  session, so systemPrompt/tools/providers are type errors on one.
+  session, so promptContext/providers are type errors on one and a
+  system-prompt.md beside it is unread.
 - Pipeline mode is the default: declaring no providers gives the
   all-AssemblyAI pipeline (voice: "…" picks its TTS voice), and any subset
   of stt/llm/tts (factories from "@alexkroman1/aai/stt", "/llm", "/tts")

@@ -343,8 +343,8 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
    * **Absent, the WHOLE value is projected.** Declare a view to narrow it — to
    * what the page renders, rather than to whatever the slot happens to hold.
    *
-   * `syncState` takes ONE projection per slot; a page that needs a second
-   * shape of the same slot derives it from this one.
+   * A slot has ONE projection; a page that needs a second shape of the same
+   * slot derives it from this one.
    *
    * ```ts
    * import { agent, sessionSlot } from "@alexkroman1/aai";
@@ -352,9 +352,10 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
    * type Cart = { items: string[]; nextId: number };
    * export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [], nextId: 1 }), {
    *   view: (cart) => ({ count: cart.items.length }),
+   *   sync: true,
    * });
    *
-   * export default agent({ name: "Shop", syncState: cartSlot.projected });
+   * export default agent({ name: "Shop" });
    * ```
    */
   view?: (value: DeepReadonly<T>) => V;
@@ -437,14 +438,12 @@ export interface SessionSlotOptions<T, After = void, V = DeepReadonly<T>> {
    */
   after?: ((draft: T) => After) & RejectThenable<After>;
   /**
-   * Register {@link SessionSlot.projected} with `agent()`, so an `agent.ts`
-   * that declares no `syncState` syncs every slot declared with `sync: true`.
+   * Register {@link SessionSlot.projected} with `agent()`, which collects
+   * every slot declared with `sync: true` into `AgentDef.syncState` — the
+   * only way a slot reaches the browser, since `syncState` is not a parameter.
    *
    * The slot is then declared ONCE, view and all, and the agent names nothing:
    * `sessionSlot("cart", create, { view, sync: true })` is the whole wiring.
-   * An explicit `agent({ syncState })` still wins — registration is the
-   * default, not an addition — and a registered slot the agent projects by
-   * hand is one projection, not two.
    *
    * **It works because `agent.ts` and `shared.ts` share one bundle**: the
    * registry is module state in the SDK copy the bundle carries, and

@@ -263,7 +263,7 @@ function toolCallsOf(step: StepResult<ToolSet>): TextAgentTestToolCall[] {
  * import { agent } from "@alexkroman1/aai";
  * import { runTextAgent } from "@alexkroman1/aai-runtime/testing";
  *
- * const desk = agent({ name: "Desk", mode: "text", systemPrompt: "Be brief." });
+ * const desk = agent({ name: "Desk", mode: "text" }); // the prompt is system-prompt.md
  *
  * const run = await runTextAgent(desk, "where is order 7?", {
  *   script: [

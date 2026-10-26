@@ -27,8 +27,7 @@ function textAgent(def: Parameters<typeof agent>[0], tools: ToolRegistry = {}): 
   return withTools(agent(def), tools);
 }
 
-const desk = (tools: ToolRegistry = {}) =>
-  textAgent({ name: "Desk", mode: "text", systemPrompt: "Be brief." }, tools);
+const desk = (tools: ToolRegistry = {}) => textAgent({ name: "Desk", mode: "text" }, tools);
 
 describe("runTextAgent", () => {
   test("hands back what the agent said, per step and concatenated", async () => {
@@ -218,7 +217,6 @@ describe("runTextAgent", () => {
       }),
       "look",
       {
-        systemPrompt: "Answer like a pirate.",
         script: [{ toolCalls: [{ name: "look" }] }, { text: "Arr." }],
       },
     );

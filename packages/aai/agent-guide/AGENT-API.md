@@ -37,8 +37,7 @@ export default agent({
   promptContext?: string | ((ctx) => string); // appended UNDER system-prompt.md: a menu, a
                                              // catalogue, or per-request text over session
                                              // state (below). Refused on a workflow app.
-  systemPrompt?: string | ((ctx) => string); // usually ABSENT — write system-prompt.md; set
-                                             // only to take over the WHOLE prompt
+  // NO systemPrompt field: the prompt IS system-prompt.md, and `agent()` refuses the key.
   greeting?: string;                         // default: "Hey there..."; "" starts silent
   sttPrompt?: string;                        // STT guidance for jargon/acronyms (both voice modes)
   voicePresets?: VoicePresetName[];          // opt-in prompt presets — see below; each one
@@ -117,9 +116,9 @@ export default agent({
                                              // (costs streaming: nothing plays until it passes)
 
   // ── Observing the session ──────────────────────────────────────────────
-  syncState?: Record<string, StateProjection>; // show slots to the client, keyed by slot
-                                             // name: { cart: cartSlot.projected } (read it
-                                             // with useAgentState; see UI.md)
+  // NO syncState field: a slot reaches the client by declaring it
+  // `sessionSlot(key, create, { view, sync: true })` (read it with
+  // useAgentState; see UI.md); `agent()` collects those onto the def.
   events?: SessionEventHandlers;             // observe the session; "metrics.collected" is each
                                              // reply's latency/tokens: createMetricsCollector();
                                              // "error.reported" carries a SessionErrorCode (open:
@@ -220,12 +219,12 @@ export default agent({ name: "Pizza", promptContext: `Menu:\n${MENU.join("\n")}`
 ```
 
 A string is serialized into the config like the prompt is; a function is
-resolved per model request (per connection on S2S) from the same session context
-a `systemPrompt` resolver sees, so per-caller state goes in the function form
-shown above. A workflow app refuses the field. `greeting` stays a field,
-deliberately: it is one sentence with no structure to lose, and it crosses the
-wire to the browser beside `name` and `page`. **A document goes in a file, a
-value stays in the call.**
+resolved per model request (per connection on S2S) from the session context
+(`sessionId`, `env`, the slots), so per-caller state goes in the function form
+shown above — it is the ONE prompt field `agent.ts` writes. A workflow app
+refuses the field. `greeting` stays a field, deliberately: it is one sentence
+with no structure to lose, and it crosses the wire to the browser beside `name`
+and `page`. **A document goes in a file, a value stays in the call.**
 
 **JSON imports need no attribute.** `resolveJsonModule` is on, so
 `import data from "./knowledge.json"` is all it takes. Do NOT write

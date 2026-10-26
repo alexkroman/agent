@@ -109,7 +109,7 @@ const SERVER_KEEPALIVE_TIMEOUT_MS = 10_000;
  * import { agent } from "@alexkroman1/aai";
  * import { createRuntime, createServerForRuntime } from "@alexkroman1/aai-runtime";
  *
- * const myAgent = agent({ name: "Support", systemPrompt: "…" });
+ * const myAgent = agent({ name: "Support" }); // the prompt is system-prompt.md
  * const runtime = createRuntime({
  *   agent: myAgent,
  *   env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },

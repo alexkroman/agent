@@ -18,7 +18,6 @@ import { llm } from "@alexkroman1/aai/llm";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   // `stt` and `tts` keep their AssemblyAI defaults.
   llm: llm({ provider: "anthropic", model: "claude-sonnet-5" }),
 });
@@ -97,7 +96,6 @@ import { llm } from "@alexkroman1/aai/llm";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   llm: llm({ provider: "assemblyai", model: "qwen3-next-80b-a3b" }),
 });
 ```

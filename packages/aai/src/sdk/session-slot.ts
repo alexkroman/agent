@@ -101,8 +101,8 @@ export type { SlotHolder } from "./session-state.ts";
  *   factory form, since a function argument is read as one.
  * @param options - See {@link SessionSlotOptions}. `view` is the one worth
  *   knowing about up front: it declares what the BROWSER sees, so
- *   {@link SessionSlot.projected} is the one object `agent({ syncState })` and
- *   `useAgentState` both take; `sync: true` hands it to `agent()` for you.
+ *   {@link SessionSlot.projected} is the one object `AgentDef.syncState` holds
+ *   and `useAgentState` takes; `sync: true` is what hands it to `agent()`.
  *
  * @example
  * ```ts

@@ -31,6 +31,18 @@ import type { AgentDeclaration, AgentDef } from "./types.ts";
 export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
 
 /**
+ * The {@link AgentDef} fields the FRAMEWORK writes and no author member
+ * carries, in any mode: `systemPrompt` is the `system-prompt.md` beside
+ * `agent.ts` (the build discovers it and `withSystemPrompt` sets it), and
+ * `syncState` is collected from the slots declared
+ * `sessionSlot(key, create, { sync: true })`. Both sit on the lowered def for
+ * the runtime to read; neither is a parameter of `agent()`, so writing one is
+ * an excess-property error, and `define.ts` refuses the same two keys at run
+ * time for a caller the type never saw.
+ */
+export type FrameworkOwnedField = "systemPrompt" | "syncState";
+
+/**
  * The field a tool USED to be declared with, subtracted from every member so
  * it can be re-typed as {@link InlineToolsMisuse}.
  */
@@ -84,16 +96,22 @@ export type PipelineOnlyField =
  * @input
  * @public
  */
+// The two framework-owned fields are spelled as `FrameworkOwnedField` spells
+// them, rather than by that name, so the published shape reaches no unexported
+// name (the same reason the workflow-app member spells the text member's two
+// drops); `define.test-d.ts` pins the two spellings against each other.
 export type SharedAgentParams = Omit<
   AgentDeclaration,
   | DefaultedAgentField
+  | "systemPrompt"
+  | "syncState"
   // The mode selector: each member re-declares the value it accepts.
   | "mode"
   | ProviderField
   | PipelineOnlyField
   | keyof AgentModelTuning
 > &
-  Partial<Pick<AgentDeclaration, Exclude<DefaultedAgentField, InlineToolsField>>> & {
+  Partial<Pick<AgentDeclaration, "greeting" | "maxSteps">> & {
     /** Not a field — see `InlineToolsMisuse`. */
     tools?: InlineToolsMisuse;
   };
@@ -188,24 +206,22 @@ export type TextOnlyExcludedField = Exclude<keyof SharedAgentParams, keyof TextA
 /**
  * The fields a WORKFLOW APP drops beyond what {@link SharedAgentParams} and
  * the text member already subtract: a page over the workflow HTTP API has no
- * session and makes no model request, so nothing reads a system prompt,
- * executes a model-chosen tool, or opens the socket `syncState` pushes over.
+ * session and makes no model request, so nothing reads prompt text, executes
+ * a model-chosen tool, or opens a session socket.
  *
  * Only the workflow-app-specific fields: the provider stages, the pipeline
- * knobs and the model-request knobs are already absent from
- * {@link SharedAgentParams}, so a new one is absent from the workflow-app
- * member for free. `description` is deliberately NOT here: a listing wants one
- * whatever the front door is.
+ * knobs, the model-request knobs and the two framework-owned fields are
+ * already absent from {@link SharedAgentParams}, so a new one is absent from
+ * the workflow-app member for free. `listing` is deliberately NOT here: a
+ * listing wants one whatever the front door is.
  */
 export type WorkflowAppOnlyField =
-  | "systemPrompt"
   | "promptContext"
   | "voicePresets"
   | "maxSteps"
   | "toolChoice"
   | "builtinTools"
   | "roster"
-  | "syncState"
   | "events"
   | "sessionContext"
   | "onSessionEnd"

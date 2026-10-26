@@ -42,8 +42,14 @@ a new field cannot skip it.
   reaches both.
 - **A guardrail is pipeline-only**; `assertGuardrailScope` refuses s2s (already
   spoke) and text mode (hands its caller the stream) by name.
-- **`systemPrompt` takes a RESOLVER** `(ctx: AgentSessionContext) => string`,
-  called per model request — `agent-instructions.ts` owns it.
+- **`systemPrompt` and `syncState` are FRAMEWORK-OWNED** (`FrameworkOwnedField`,
+  `agent-params.ts`): absent from every `agent()` member and refused at run time
+  by `define.ts`'s `FRAMEWORK_OWNED` table. The prompt is `system-prompt.md`,
+  set on the lowered def by `withSystemPrompt` (`@alexkroman1/aai/manifest`) —
+  the ONE door a host uses too (the studio's coding agent, a runtime spec); a
+  spec that needs a RESOLVER `(ctx: AgentSessionContext) => string` on the def
+  spreads it over `agent()`'s result. An author's computed text is
+  `promptContext` — `agent-instructions.ts` owns both.
 
 ## `agent()`'s legality is a discriminated union, not message types
 
@@ -135,7 +141,10 @@ detail; the rules:
   `import.meta.glob("./tools/*.ts", { eager: true })`'s RESULT; a `readdir` +
   `import()` is refused (it loads a second copy of the SDK). Bounded to
   `ToolBearingAgent & { systemPrompt }` so `AgentDef` stays off this contract;
-  `expectDeployable` returns the narrow `DeployedConfig`.
+  `expectDeployable` returns the narrow `DeployedConfig`. A spec that asserts on
+  the prompt reads it off the lowered def (`virtual:aai/agent`), never off a
+  `?raw` import of the file — a prompt reached by a second route is one the
+  build might not be applying.
 - **`runTool(tool, args?, ctx?)`** is typed end to end; the name form answers
   `unknown` (import the tool file instead of casting) and runs through the
   toolset's GATE. Args and ctx are told apart by SHAPE; an omitted context is a
@@ -299,13 +308,13 @@ member it governs**:
 - **A durable value is checked STRUCTURALLY in every backend** (`Map` → `{}`,
   `Date` → string, `NaN` → null don't throw). Running it in memory too is what
   makes memory a valid double.
-- **`syncState` takes `slot.projected`, or a list of them** — callable and
-  carrying key and default, so a session that ran no tool still renders.
-  `normalizeSyncState` (`_author-conveniences.ts`) resolves it to the record
-  keyed by SLOT NAME that `AgentDef.syncState` holds, so the frame is
+- **`AgentDef.syncState` is COLLECTED, never authored**: `agent()` refuses the
+  key, and `resolveSyncState` (`_author-conveniences.ts`) fills the record keyed
+  by SLOT NAME from the `sync: true` registry, so the frame is
   `{ [slot]: view }` and the browser selects by the same name; one slot twice is
-  refused. A slot has ONE view, declared with
-  `sessionSlot(key, create, { view })`; there is no per-call
+  refused. At the config boundary a record is validated and kept (one built by
+  another SDK copy included) and the authored forms are refused. A slot has ONE
+  view, declared with `sessionSlot(key, create, { view })`; there is no per-call
   `slot.projection(view)`.
 - **`caps` bounds a TOP-LEVEL array on every store, AFTER `after`**;
   `SlotCaps<T>` admits only array keys, bad caps refused at declaration
@@ -315,10 +324,10 @@ member it governs**:
   default and the first update.
 - **`create` may be a plain value** (cloned per install) or a factory; `empty`
   is what `projected()` renders for a seeded slot; `sync: true` registers
-  `projected` (`_sync-registry.ts`) for `agent()` to collect when no `syncState`
-  is declared — one bundle, one registry, so the slot must be in a module
-  `agent.ts` imports. `SlotValueOf`/`SlotDraftOf` read a handle's two value
-  types.
+  `projected` (`_sync-registry.ts`) for `agent()` to collect — the only way a
+  slot reaches the page; one bundle, one registry, so the slot must be in a
+  module `agent.ts` imports. `SlotValueOf`/`SlotDraftOf` read a handle's two
+  value types.
 - **Slot tools are one pipeline** (`_slot-tools.ts`): dialog refusal → `require`
   (frozen value) → `prepare` (async, then `require` again) → the dialog's
   `reset` → the window (`execute(args, draft, [prepared,] ctx)`, `after`,

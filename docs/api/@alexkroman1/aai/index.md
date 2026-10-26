@@ -18,15 +18,13 @@ The AAI voice-agent SDK — the AUTHORING surface, and only that.
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
 
+// `sync: true` is what the browser sees; the prompt is system-prompt.md.
 export const cart = sessionSlot("cart", () => ({ items: [] as string[] }), {
   view: (c) => ({ count: c.items.length }),
+  sync: true,
 });
 
-export default agent({
-  name: "Storefront",
-  systemPrompt: "You help callers order from the catalog.",
-  syncState: cart.projected,
-});
+export default agent({ name: "Storefront" });
 ```
 
 With no provider fields that runs the all-AssemblyAI STT → LLM → TTS
@@ -190,10 +188,14 @@ export default agent({
 ```
 
 **Session state is not declared here either** — a [sessionSlot](#sessionslot-1) owns its
-own default and its own storage, so there is no `state` factory to remember.
-`syncState` takes that slot's projection, or a list of them — or nothing,
-when the slots were declared `sync: true`: those are collected here by
-default, and an explicit `syncState` replaces them.
+own default and its own storage, so there is no `state` factory to remember,
+and a slot declared `sessionSlot(key, create, { sync: true })` is what the
+browser sees: `agent()` collects those projections into
+[AgentDef.syncState](#syncstate-2), which is not a parameter.
+
+**Nor is the system prompt** — it is the `system-prompt.md` beside
+`agent.ts`, discovered by the build; text computed beside it is
+[AgentDeclaration.promptContext](#promptcontext).
 
 **Default pipeline with another voice and a different LLM**
 
@@ -212,10 +214,12 @@ export default agent({
 
 ```ts
 function agent<W extends Readonly<Record<string, WorkflowDef>> = EmptyWorkflows>(def: Omit<AgentDeclaration, 
-  | "mode"
   | "systemPrompt"
   | "greeting"
   | "maxSteps"
+  | "tools"
+  | "syncState"
+  | "mode"
   | "stt"
   | "llm"
   | "tts"
@@ -225,14 +229,13 @@ function agent<W extends Readonly<Record<string, WorkflowDef>> = EmptyWorkflows>
   | "silence"
   | "errorPhrase"
   | "startFailurePhrase"
+  | "inputGuardrails"
+  | "outputGuardrails"
   | "resetToolChoice"
   | "usageLimits"
   | "temperature"
   | "maxOutputTokens"
-  | "maxRetries"
-  | "inputGuardrails"
-  | "outputGuardrails"
-  | "tools"> & Partial<Pick<AgentDeclaration, "systemPrompt" | "greeting" | "maxSteps">> & {
+  | "maxRetries"> & Partial<Pick<AgentDeclaration, "greeting" | "maxSteps">> & {
   tools?: "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing";
 } & {
   mode: "s2s";
@@ -256,10 +259,12 @@ Define a speech-to-speech agent: `mode: "s2s"` and its `s2s` descriptor. See
 ###### def
 
 `Omit`\<[`AgentDeclaration`](#agentdeclaration), 
-  \| `"mode"`
   \| `"systemPrompt"`
   \| `"greeting"`
   \| `"maxSteps"`
+  \| `"tools"`
+  \| `"syncState"`
+  \| `"mode"`
   \| `"stt"`
   \| `"llm"`
   \| `"tts"`
@@ -269,14 +274,13 @@ Define a speech-to-speech agent: `mode: "s2s"` and its `s2s` descriptor. See
   \| `"silence"`
   \| `"errorPhrase"`
   \| `"startFailurePhrase"`
+  \| `"inputGuardrails"`
+  \| `"outputGuardrails"`
   \| `"resetToolChoice"`
   \| `"usageLimits"`
   \| `"temperature"`
   \| `"maxOutputTokens"`
-  \| `"maxRetries"`
-  \| `"inputGuardrails"`
-  \| `"outputGuardrails"`
-  \| `"tools"`\> & `Partial`\<`Pick`\<[`AgentDeclaration`](#agentdeclaration), `"systemPrompt"` \| `"greeting"` \| `"maxSteps"`\>\> & \{
+  \| `"maxRetries"`\> & `Partial`\<`Pick`\<[`AgentDeclaration`](#agentdeclaration), `"greeting"` \| `"maxSteps"`\>\> & \{
   `tools?`: `` "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing" ``;
 \} & \{
   `mode`: `"s2s"`;
@@ -340,7 +344,7 @@ import { agent } from "@alexkroman1/aai";
 export default agent({
   name: "Docs Assistant",
   mode: "text",
-  systemPrompt: "Answer questions about the docs.",
+  promptContext: "The docs cover the v2 API only.",
 });
 ```
 
@@ -525,7 +529,6 @@ import { agent, assemblyAIS2s } from "@alexkroman1/aai";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   mode: "s2s",
   s2s: assemblyAIS2s({ voice: "jane", languages: ["en"] }),
 });
@@ -2838,8 +2841,8 @@ A fresh value: a FACTORY, called once per session on first
 
 See [SessionSlotOptions](#sessionslotoptions). `view` is the one worth
   knowing about up front: it declares what the BROWSER sees, so
-  [SessionSlot.projected](#projected) is the one object `agent({ syncState })` and
-  `useAgentState` both take; `sync: true` hands it to `agent()` for you.
+  [SessionSlot.projected](#projected) is the one object `AgentDef.syncState` holds
+  and `useAgentState` takes; `sync: true` is what hands it to `agent()`.
 
 #### Returns
 
@@ -4287,6 +4290,10 @@ caller are both cut from those groups, so no field skips either.
 
 - [`PipelineTuning`](#pipelinetuning).[`PipelinePhrases`](#pipelinephrases).[`AgentModelTuning`](#agentmodeltuning).[`AgentGuardrails`](#agentguardrails).[`AgentObservation`](#agentobservation).[`AgentVoicePresets`](#agentvoicepresets).[`AgentSessionLifecycle`](#agentsessionlifecycle).[`AgentRoutes`](#agentroutes).[`AgentClientInbox`](#agentclientinbox).[`AgentInstructions`](#agentinstructions).[`AgentListing`](#agentlisting)
 
+#### Extended by
+
+- [`AgentDef`](#agentdef)
+
 #### Properties
 
 ##### builtinTools?
@@ -4324,26 +4331,6 @@ export default agent({ name: "Speaker", clientInbox: { sampleRate: 16_000 } });
 ###### Inherited from
 
 [`AgentClientInbox`](#agentclientinbox).[`clientInbox`](#clientinbox)
-
-##### ~~description?~~
-
-```ts
-optional description?: string;
-```
-
-The old name of [AgentListing.listing](#listing). Normalized onto `listing` by
-`agent()` and `toAgentConfig`, so a definition never carries both and the
-wire carries `listing` alone; when both are written, `listing` wins.
-
-###### Deprecated
-
-Write `listing` — this is the same one-line text for a list,
-and the name said "description" where every other `description` in the
-SDK is read by the model.
-
-###### Inherited from
-
-[`AgentListing`](#agentlisting).[`description`](#description-2)
 
 ##### dialogs?
 
@@ -4517,8 +4504,8 @@ What this agent IS, in one line, for whoever is reading a LIST of them.
 Its audience is never the model — a registry page, an A2A card, the
 studio's agent picker, the CLI's `aai list`. Write it as the job the agent
 does ("Books and reschedules dental appointments"), not as instructions;
-the instructions are `systemPrompt`, and a line of context for the model
-is `promptContext`.
+the instructions are `system-prompt.md`, and a line of context for the
+model is `promptContext`.
 
 Serializable, unlike most of what an author declares, and that is the whole
 point: `tools`, `events` and `workflows` are host-only because a consumer
@@ -4737,9 +4724,9 @@ optional promptContext?: AgentPromptContext;
 ```
 
 Context appended under the agent's instructions — the discovered
-`system-prompt.md`, or a `systemPrompt` override — separated by a blank
-line. See [AgentPromptContext](#agentpromptcontext) for the two forms and when each is
-resolved. A workflow app refuses it: nothing there reads a prompt.
+`system-prompt.md` — separated by a blank line. See
+[AgentPromptContext](#agentpromptcontext) for the two forms and when each is resolved.
+A workflow app refuses it: nothing there reads a prompt.
 
 ###### Inherited from
 
@@ -4960,28 +4947,27 @@ was ignoring the field without a warning.
 ##### syncState?
 
 ```ts
-optional syncState?: SyncStateDeclaration;
+optional syncState?: Readonly<Record<string, StateProjection<unknown>>>;
 ```
 
-Project per-session state to the browser client, so a custom UI can
-render it without the agent hand-rolling a sync channel.
+The per-session state projected to the browser client, keyed by each
+slot's name — so the `agent_state` frame is `{ [slot]: view }` and a custom
+UI renders it without the agent hand-rolling a sync channel.
 
-**A slot's projection, or a list of them**: `syncState: cartSlot.projected`,
-or `syncState: [cartSlot.projected, prefsSlot.projected]`. Each projection
-names its own slot, so the `agent_state` frame is `{ [slot]: view }` and the
-browser selects by the same name (`useAgentState(cartSlot.projected)` reads
-`state.cart`). Two projections of one slot are refused by name.
+**Not authored.** `agent()` fills it from every slot declared
+`sessionSlot(key, create, { view, sync: true })` in a module `agent.ts`
+imports (`tools/` files included — the build re-collects at the lowering),
+and refuses the key as a parameter. The slot owns its view, and the page
+reads the same object (`useAgentState(cartSlot.projected)` reads
+`state.cart`), so the frame rendered before the first push cannot describe
+a different view from the ones after it. Two slots on one name are
+refused by name.
 
-A slot the agent does not project never leaves the server: session state
+A slot not declared `sync: true` never leaves the server: session state
 routinely holds things a browser should not have, so the author decides
 what leaves, and whatever a projection returns is exactly what the page
 receives under that key. Pushed after every tool call, and only when a
 projection changed (this shares a socket with 384 kbps of PCM).
-
-**Declare the view on the slot** (`sessionSlot(key, create, { view })`) and
-pass [SessionSlot.projected](#projected) at both ends, so the frame rendered
-before the first push cannot describe a different view from the ones after
-it. A page that needs a second shape of a slot derives it from the first.
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
@@ -4989,15 +4975,12 @@ type Item = { sku: string; qty: number };
 // `staffPin` is not in the view, so it stays server-side.
 const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }), {
   view: (s) => ({ items: s.items }),
+  sync: true,
 });
-const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }));
-agent({ name: "Cart", syncState: cartSlot.projected });
+const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }), { sync: true });
 // Two slots, one frame: { cart: { items }, prefs: { units } }.
-agent({ name: "Cart", syncState: [cartSlot.projected, prefsSlot.projected] });
+export default agent({ name: "Cart" });
 ```
-
-`agent()` returns the record keyed by slot name (see
-[AgentDef.syncState](#syncstate-1)).
 
 ###### Inherited from
 
@@ -5012,27 +4995,22 @@ systemPrompt: AgentSystemPrompt;
 System prompt driving the LLM — the text, or a function that computes it
 per request from [AgentSessionContext](#agentsessioncontext).
 
-A resolver is how a prompt reads the session's own state: which phase the
-dialog is in, whether the caller is authenticated, what is in the cart.
-It is called once per model request (so once per STEP of a tool-calling
-reply), synchronously, and its answer lands exactly where a string's does —
-appended under the agent-specific-instructions header, after the
-framework's voice sections. See `agent-instructions.ts`, which owns the
-rest, including what an S2S agent gets (per-CONNECTION, not per-turn).
+**Not authored.** The prompt is the `system-prompt.md` beside `agent.ts`:
+the build discovers the file and `withSystemPrompt`
+(`@alexkroman1/aai/manifest`) sets it on the lowered definition, which is
+also the door a host uses to set a prompt of its own. `agent()` fills the
+framework default and refuses the key as a parameter. Text that has to be
+computed — a menu, or a line over the session's own state (which phase the
+dialog is in, whether the caller is verified) — is
+[AgentInstructions.promptContext](#promptcontext-2), a string or a per-request
+resolver appended under the file.
 
-```ts
-import { agent, sessionSlot } from "@alexkroman1/aai";
-
-const caller = sessionSlot("caller", () => ({ verified: false }));
-
-export default agent({
-  name: "Bank Line",
-  systemPrompt: (ctx) =>
-    caller.get(ctx).verified
-      ? "The caller is verified. You may discuss balances."
-      : "The caller is NOT verified. Verify them before discussing anything.",
-});
-```
+Either half may be a resolver on the lowered def; one is called once per
+model request (so once per STEP of a tool-calling reply), synchronously,
+and its answer lands exactly where a string's does — appended under the
+agent-specific-instructions header, after the framework's voice sections.
+See `agent-instructions.ts`, which owns the rest, including what an S2S
+agent gets (per-CONNECTION, not per-turn).
 
 ###### Default Value
 
@@ -5209,14 +5187,14 @@ The RESOLVED agent definition — what `agent()` returns and what a host runs.
 
 Every [AgentDeclaration](#agentdeclaration) field, with the core ones (`systemPrompt`,
 `greeting`, `maxSteps`, `mode`) resolved to their final values, the author
-conveniences (`llm` as a model-id string, the end-of-turn window, `syncState`
-as a projection or a list) normalized to one canonical spelling, and the two
-tables nobody authors. Optional fields remain optional — `undefined` means
-"not configured". Write an [AgentParams](#agentparams) member; read this.
+conveniences (`llm` as a model-id string, the end-of-turn window)
+normalized to one canonical spelling, the collected `syncState`, and the
+two tables nobody authors. Optional fields remain optional — `undefined`
+means "not configured". Write an [AgentParams](#agentparams) member; read this.
 
 #### Extends
 
-- `Omit`\<[`AgentDeclaration`](#agentdeclaration), `"syncState"`\>
+- [`AgentDeclaration`](#agentdeclaration)
 
 #### Properties
 
@@ -5259,26 +5237,6 @@ export default agent({ name: "Speaker", clientInbox: { sampleRate: 16_000 } });
 ###### Inherited from
 
 [`AgentDeclaration`](#agentdeclaration).[`clientInbox`](#clientinbox-1)
-
-##### ~~description?~~
-
-```ts
-optional description?: string;
-```
-
-The old name of [AgentListing.listing](#listing). Normalized onto `listing` by
-`agent()` and `toAgentConfig`, so a definition never carries both and the
-wire carries `listing` alone; when both are written, `listing` wins.
-
-###### Deprecated
-
-Write `listing` — this is the same one-line text for a list,
-and the name said "description" where every other `description` in the
-SDK is read by the model.
-
-###### Inherited from
-
-[`AgentDeclaration`](#agentdeclaration).[`description`](#description)
 
 ##### dialogs?
 
@@ -5464,8 +5422,8 @@ What this agent IS, in one line, for whoever is reading a LIST of them.
 Its audience is never the model — a registry page, an A2A card, the
 studio's agent picker, the CLI's `aai list`. Write it as the job the agent
 does ("Books and reschedules dental appointments"), not as instructions;
-the instructions are `systemPrompt`, and a line of context for the model
-is `promptContext`.
+the instructions are `system-prompt.md`, and a line of context for the
+model is `promptContext`.
 
 Serializable, unlike most of what an author declares, and that is the whole
 point: `tools`, `events` and `workflows` are host-only because a consumer
@@ -5512,7 +5470,7 @@ provider stops emitting rather than wrapping up.
 
 ###### Inherited from
 
-[`ModelTuning`](#modeltuning).[`maxOutputTokens`](#maxoutputtokens-3)
+[`AgentDeclaration`](#agentdeclaration).[`maxOutputTokens`](#maxoutputtokens)
 
 ##### maxRetries?
 
@@ -5540,7 +5498,7 @@ line do the work.
 
 ###### Inherited from
 
-[`ModelTuning`](#modeltuning).[`maxRetries`](#maxretries-3)
+[`AgentDeclaration`](#agentdeclaration).[`maxRetries`](#maxretries)
 
 ##### maxSteps
 
@@ -5704,9 +5662,9 @@ optional promptContext?: AgentPromptContext;
 ```
 
 Context appended under the agent's instructions — the discovered
-`system-prompt.md`, or a `systemPrompt` override — separated by a blank
-line. See [AgentPromptContext](#agentpromptcontext) for the two forms and when each is
-resolved. A workflow app refuses it: nothing there reads a prompt.
+`system-prompt.md` — separated by a blank line. See
+[AgentPromptContext](#agentpromptcontext) for the two forms and when each is resolved.
+A workflow app refuses it: nothing there reads a prompt.
 
 ###### Inherited from
 
@@ -5950,9 +5908,41 @@ was ignoring the field without a warning.
 optional syncState?: Readonly<Record<string, StateProjection<unknown>>>;
 ```
 
-The `syncState` projections, keyed by each one's slot name — the canonical
-form `agent()` normalizes a projection or a list into. See
-[AgentObservation.syncState](#syncstate) for what to write.
+The per-session state projected to the browser client, keyed by each
+slot's name — so the `agent_state` frame is `{ [slot]: view }` and a custom
+UI renders it without the agent hand-rolling a sync channel.
+
+**Not authored.** `agent()` fills it from every slot declared
+`sessionSlot(key, create, { view, sync: true })` in a module `agent.ts`
+imports (`tools/` files included — the build re-collects at the lowering),
+and refuses the key as a parameter. The slot owns its view, and the page
+reads the same object (`useAgentState(cartSlot.projected)` reads
+`state.cart`), so the frame rendered before the first push cannot describe
+a different view from the ones after it. Two slots on one name are
+refused by name.
+
+A slot not declared `sync: true` never leaves the server: session state
+routinely holds things a browser should not have, so the author decides
+what leaves, and whatever a projection returns is exactly what the page
+receives under that key. Pushed after every tool call, and only when a
+projection changed (this shares a socket with 384 kbps of PCM).
+
+```ts
+import { agent, sessionSlot } from "@alexkroman1/aai";
+type Item = { sku: string; qty: number };
+// `staffPin` is not in the view, so it stays server-side.
+const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }), {
+  view: (s) => ({ items: s.items }),
+  sync: true,
+});
+const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }), { sync: true });
+// Two slots, one frame: { cart: { items }, prefs: { units } }.
+export default agent({ name: "Cart" });
+```
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`syncState`](#syncstate)
 
 ##### systemPrompt
 
@@ -5963,27 +5953,22 @@ systemPrompt: AgentSystemPrompt;
 System prompt driving the LLM — the text, or a function that computes it
 per request from [AgentSessionContext](#agentsessioncontext).
 
-A resolver is how a prompt reads the session's own state: which phase the
-dialog is in, whether the caller is authenticated, what is in the cart.
-It is called once per model request (so once per STEP of a tool-calling
-reply), synchronously, and its answer lands exactly where a string's does —
-appended under the agent-specific-instructions header, after the
-framework's voice sections. See `agent-instructions.ts`, which owns the
-rest, including what an S2S agent gets (per-CONNECTION, not per-turn).
+**Not authored.** The prompt is the `system-prompt.md` beside `agent.ts`:
+the build discovers the file and `withSystemPrompt`
+(`@alexkroman1/aai/manifest`) sets it on the lowered definition, which is
+also the door a host uses to set a prompt of its own. `agent()` fills the
+framework default and refuses the key as a parameter. Text that has to be
+computed — a menu, or a line over the session's own state (which phase the
+dialog is in, whether the caller is verified) — is
+[AgentInstructions.promptContext](#promptcontext-2), a string or a per-request
+resolver appended under the file.
 
-```ts
-import { agent, sessionSlot } from "@alexkroman1/aai";
-
-const caller = sessionSlot("caller", () => ({ verified: false }));
-
-export default agent({
-  name: "Bank Line",
-  systemPrompt: (ctx) =>
-    caller.get(ctx).verified
-      ? "The caller is verified. You may discuss balances."
-      : "The caller is NOT verified. Verify them before discussing anything.",
-});
-```
+Either half may be a resolver on the lowered def; one is called once per
+model request (so once per STEP of a tool-calling reply), synchronously,
+and its answer lands exactly where a string's does — appended under the
+agent-specific-instructions header, after the framework's voice sections.
+See `agent-instructions.ts`, which owns the rest, including what an S2S
+agent gets (per-CONNECTION, not per-turn).
 
 ###### Default Value
 
@@ -6043,7 +6028,7 @@ researcher subagent and the voice that relays what it found.
 
 ###### Inherited from
 
-[`ModelTuning`](#modeltuning).[`temperature`](#temperature-5)
+[`AgentDeclaration`](#agentdeclaration).[`temperature`](#temperature)
 
 ##### toolChoice?
 
@@ -6296,9 +6281,9 @@ optional promptContext?: AgentPromptContext;
 ```
 
 Context appended under the agent's instructions — the discovered
-`system-prompt.md`, or a `systemPrompt` override — separated by a blank
-line. See [AgentPromptContext](#agentpromptcontext) for the two forms and when each is
-resolved. A workflow app refuses it: nothing there reads a prompt.
+`system-prompt.md` — separated by a blank line. See
+[AgentPromptContext](#agentpromptcontext) for the two forms and when each is resolved.
+A workflow app refuses it: nothing there reads a prompt.
 
 ***
 
@@ -6314,22 +6299,6 @@ The listing field group — see this module's header.
 
 #### Properties
 
-##### ~~description?~~
-
-```ts
-optional description?: string;
-```
-
-The old name of [AgentListing.listing](#listing). Normalized onto `listing` by
-`agent()` and `toAgentConfig`, so a definition never carries both and the
-wire carries `listing` alone; when both are written, `listing` wins.
-
-###### Deprecated
-
-Write `listing` — this is the same one-line text for a list,
-and the name said "description" where every other `description` in the
-SDK is read by the model.
-
 ##### listing?
 
 ```ts
@@ -6341,8 +6310,8 @@ What this agent IS, in one line, for whoever is reading a LIST of them.
 Its audience is never the model — a registry page, an A2A card, the
 studio's agent picker, the CLI's `aai list`. Write it as the job the agent
 does ("Books and reschedules dental appointments"), not as instructions;
-the instructions are `systemPrompt`, and a line of context for the model
-is `promptContext`.
+the instructions are `system-prompt.md`, and a line of context for the
+model is `promptContext`.
 
 Serializable, unlike most of what an author declares, and that is the whole
 point: `tools`, `events` and `workflows` are host-only because a consumer
@@ -6551,28 +6520,27 @@ of them was reachable from `agent.ts`.
 ##### syncState?
 
 ```ts
-optional syncState?: SyncStateDeclaration;
+optional syncState?: Readonly<Record<string, StateProjection<unknown>>>;
 ```
 
-Project per-session state to the browser client, so a custom UI can
-render it without the agent hand-rolling a sync channel.
+The per-session state projected to the browser client, keyed by each
+slot's name — so the `agent_state` frame is `{ [slot]: view }` and a custom
+UI renders it without the agent hand-rolling a sync channel.
 
-**A slot's projection, or a list of them**: `syncState: cartSlot.projected`,
-or `syncState: [cartSlot.projected, prefsSlot.projected]`. Each projection
-names its own slot, so the `agent_state` frame is `{ [slot]: view }` and the
-browser selects by the same name (`useAgentState(cartSlot.projected)` reads
-`state.cart`). Two projections of one slot are refused by name.
+**Not authored.** `agent()` fills it from every slot declared
+`sessionSlot(key, create, { view, sync: true })` in a module `agent.ts`
+imports (`tools/` files included — the build re-collects at the lowering),
+and refuses the key as a parameter. The slot owns its view, and the page
+reads the same object (`useAgentState(cartSlot.projected)` reads
+`state.cart`), so the frame rendered before the first push cannot describe
+a different view from the ones after it. Two slots on one name are
+refused by name.
 
-A slot the agent does not project never leaves the server: session state
+A slot not declared `sync: true` never leaves the server: session state
 routinely holds things a browser should not have, so the author decides
 what leaves, and whatever a projection returns is exactly what the page
 receives under that key. Pushed after every tool call, and only when a
 projection changed (this shares a socket with 384 kbps of PCM).
-
-**Declare the view on the slot** (`sessionSlot(key, create, { view })`) and
-pass [SessionSlot.projected](#projected) at both ends, so the frame rendered
-before the first push cannot describe a different view from the ones after
-it. A page that needs a second shape of a slot derives it from the first.
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
@@ -6580,15 +6548,12 @@ type Item = { sku: string; qty: number };
 // `staffPin` is not in the view, so it stays server-side.
 const cartSlot = sessionSlot("cart", () => ({ items: [] as Item[], staffPin: "" }), {
   view: (s) => ({ items: s.items }),
+  sync: true,
 });
-const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }));
-agent({ name: "Cart", syncState: cartSlot.projected });
+const prefsSlot = sessionSlot("prefs", () => ({ units: "metric" }), { sync: true });
 // Two slots, one frame: { cart: { items }, prefs: { units } }.
-agent({ name: "Cart", syncState: [cartSlot.projected, prefsSlot.projected] });
+export default agent({ name: "Cart" });
 ```
-
-`agent()` returns the record keyed by slot name (see
-[AgentDef.syncState](#syncstate-1)).
 
 ***
 
@@ -10554,7 +10519,7 @@ Response headers to send beside the JSON body — a `Location` for a 201, a
 
 **`Sealed`**
 
-What [AgentSessionLifecycle.sessionContext](#sessioncontext) is called with.
+What [AgentSessionLifecycle.sessionContext](#sessioncontext-2) is called with.
 
 #### Properties
 
@@ -10612,7 +10577,7 @@ it fired is dropped.
 
 **`Sealed`**
 
-What [AgentSessionLifecycle.onSessionEnd](#onsessionend) is called with.
+What [AgentSessionLifecycle.onSessionEnd](#onsessionend-2) is called with.
 
 #### Properties
 
@@ -12301,9 +12266,10 @@ import { agent, sessionSlot } from "@alexkroman1/aai";
 
 const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }), {
   view: (cart) => ({ count: cart.items.length }),
+  sync: true, // collected into the agent's `syncState`
 });
 
-export default agent({ name: "Shop", syncState: cartSlot.projected });
+export default agent({ name: "Shop" });
 ```
 
 ***
@@ -12465,14 +12431,12 @@ and `caps` like any stored value.
 optional sync?: boolean;
 ```
 
-Register [SessionSlot.projected](#projected) with `agent()`, so an `agent.ts`
-that declares no `syncState` syncs every slot declared with `sync: true`.
+Register [SessionSlot.projected](#projected) with `agent()`, which collects
+every slot declared with `sync: true` into `AgentDef.syncState` — the
+only way a slot reaches the browser, since `syncState` is not a parameter.
 
 The slot is then declared ONCE, view and all, and the agent names nothing:
 `sessionSlot("cart", create, { view, sync: true })` is the whole wiring.
-An explicit `agent({ syncState })` still wins — registration is the
-default, not an addition — and a registered slot the agent projects by
-hand is one projection, not two.
 
 **It works because `agent.ts` and `shared.ts` share one bundle**: the
 registry is module state in the SDK copy the bundle carries, and
@@ -12498,8 +12462,8 @@ the module.
 **Absent, the WHOLE value is projected.** Declare a view to narrow it — to
 what the page renders, rather than to whatever the slot happens to hold.
 
-`syncState` takes ONE projection per slot; a page that needs a second
-shape of the same slot derives it from this one.
+A slot has ONE projection; a page that needs a second shape of the same
+slot derives it from this one.
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
@@ -12507,9 +12471,10 @@ import { agent, sessionSlot } from "@alexkroman1/aai";
 type Cart = { items: string[]; nextId: number };
 export const cartSlot = sessionSlot("cart", (): Cart => ({ items: [], nextId: 1 }), {
   view: (cart) => ({ count: cart.items.length }),
+  sync: true,
 });
 
-export default agent({ name: "Shop", syncState: cartSlot.projected });
+export default agent({ name: "Shop" });
 ```
 
 ###### Parameters
@@ -13709,7 +13674,7 @@ Human-readable description shown to the LLM.
 
 ###### Inherited from
 
-[`SlotToolDef`](#slottooldef).[`description`](#description-5)
+[`SlotToolDef`](#slottooldef).[`description`](#description-2)
 
 ##### inputSchema?
 
@@ -14572,7 +14537,8 @@ delivery is refused as a replay. Default 300 (five minutes), the spec's.
 **`Sealed`**
 
 One slot's contribution to the `agent_state` frame — what
-[SessionSlot.projected](#projected) is, and what `agent({ syncState })` takes.
+[SessionSlot.projected](#projected) is, and what `AgentDef.syncState` holds for a
+slot declared `sync: true`.
 
 It is a FUNCTION carrying the two facts the runtime needs, rather than a
 plain record, and the callable half is load-bearing at both ends. The server
@@ -14919,7 +14885,7 @@ and reports what it found" — not "calls web_search".
 
 ###### Inherited from
 
-[`SpeakerDef`](#speakerdef).[`description`](#description-7)
+[`SpeakerDef`](#speakerdef).[`description`](#description-4)
 
 ##### expectedOutput?
 
@@ -15547,20 +15513,19 @@ own instructions, or a function that answers it per session.
 
 The field exists because a `system-prompt.md` is the right home for a
 prompt and the wrong home for a value: an author with a file AND a line of
-context to add ("Today's specials: …", "The caller's account tier") had to
-import the file with `?raw` and compose a full [AgentSystemPrompt](#agentsystemprompt)
-resolver — at which point `withSystemPrompt` could no longer check that the
-file was read, and the file was declared twice. `promptContext` is the
-sentence on its own: the file stays undeclared and discovered, the override
-form of `systemPrompt` is reserved for an author taking over the whole
-prompt, and the context lands under whichever of the two is in force,
-separated by a blank line.
+context to add ("Today's specials: …", "The caller's account tier") used to
+import the file and compose a full prompt resolver — at which point
+`withSystemPrompt` could no longer check that the file was read, and the
+file was declared twice. `promptContext` is the sentence on its own: the
+file stays undeclared and discovered, and the context lands under it (or
+under whatever prompt the lowered def carries), separated by a blank line.
+It is the ONE place an `agent.ts` puts prompt text; the prompt itself is
+not a parameter.
 
-A string is serialized into the agent's config like `systemPrompt` is, so a
-listing or a build sees it; a function is resolved per session exactly as a
-`systemPrompt` resolver is — synchronous, from the same
-[AgentSessionContext](#agentsessioncontext), re-asked per model request on the pipeline and
-per connection on S2S.
+A string is serialized into the agent's config like the prompt is, so a
+listing or a build sees it; a function is resolved per session —
+synchronous, from the [AgentSessionContext](#agentsessioncontext), re-asked per model
+request on the pipeline and per connection on S2S.
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
@@ -15584,8 +15549,16 @@ type AgentSystemPrompt =
   | ((ctx: AgentSessionContext) => string);
 ```
 
-What `agent({ systemPrompt })` accepts: the text, or a function that answers
-it per request from the live [AgentSessionContext](#agentsessioncontext).
+What `AgentDef.systemPrompt` holds: the text, or a function that answers it
+per request from the live [AgentSessionContext](#agentsessioncontext).
+
+Nothing in an `agent.ts` writes it. The build sets the discovered
+`system-prompt.md` through `withSystemPrompt` (`@alexkroman1/aai/manifest`),
+which is also how a host sets a prompt of its own on a lowered definition;
+the per-request form an author reaches is [AgentPromptContext](#agentpromptcontext), which
+lands under the file. A resolver here is a HOST's — a runtime that composes
+the whole prompt per session — and is left exactly as written by
+`withSystemPrompt`.
 
 The function is SYNCHRONOUS: the request is being built, and there is no
 point at which a promise could be awaited without putting a round trip in
@@ -15594,37 +15567,6 @@ the next request carries.
 
 A plain string is not called or wrapped; it reaches `buildSystemPrompt`
 as written.
-
-## With a `system-prompt.md`
-
-Almost every real agent keeps its prose in a file beside `agent.ts`, and a
-resolver composes against that file by IMPORTING it — the same
-`?raw` import the composed-string case takes, closed over by the function:
-
-```ts
-// file: shared.ts
-import { sessionSlot } from "@alexkroman1/aai";
-
-export const gameSlot = sessionSlot("game", () => ({ room: "cavern", torches: 2 }));
-export const statusBlock = (game: { room: string; torches: number }): string =>
-  `Room: ${game.room}. Torches left: ${game.torches}.`;
-
-// file: agent.ts
-import { agent } from "@alexkroman1/aai";
-import { gameSlot, statusBlock } from "./shared.ts";
-import prompt from "./system-prompt.md?raw";
-
-export default agent({
-  name: "Cavern Adventure",
-  systemPrompt: (ctx) => `${prompt}\n\n${statusBlock(gameSlot.get(ctx))}`,
-});
-```
-
-The generated bundle entry still discovers the file and hands it to
-`withSystemPrompt` (`sdk/system-prompt-file.ts`), which leaves a resolver
-exactly as written — an author who declared a function has taken over
-composing the prompt. That module's header owns the argument, including why
-the file is not passed to the resolver as a second argument.
 
 ***
 
@@ -17907,7 +17849,7 @@ type SessionContext = {
 
 **`Sealed`**
 
-What [AgentSessionLifecycle.sessionContext](#sessioncontext) may answer.
+What [AgentSessionLifecycle.sessionContext](#sessioncontext-2) may answer.
 
 #### Properties
 
@@ -18287,10 +18229,12 @@ const AUDITED: readonly SessionEventType[] = ["tool.called", "error.reported"];
 ```ts
 type SharedAgentParams = Omit<AgentDeclaration, 
   | DefaultedAgentField
+  | "systemPrompt"
+  | "syncState"
   | "mode"
   | ProviderField
   | PipelineOnlyField
-  | keyof AgentModelTuning> & Partial<Pick<AgentDeclaration, Exclude<DefaultedAgentField, InlineToolsField>>> & {
+  | keyof AgentModelTuning> & Partial<Pick<AgentDeclaration, "greeting" | "maxSteps">> & {
   tools?: InlineToolsMisuse;
 };
 ```
@@ -18777,18 +18721,6 @@ readonly optional __stage?: "stt";
 ```
 
 Compile-time stage tag; never present at runtime.
-
-***
-
-### SyncStateDeclaration
-
-```ts
-type SyncStateDeclaration = 
-  | StateProjection
-  | readonly StateProjection[];
-```
-
-What `agent({ syncState })` accepts: one slot projection, or a list of them.
 
 ***
 
@@ -23155,7 +23087,7 @@ run its body; that was true before this change and is unchanged by it.
 const DEFAULT_SYSTEM_PROMPT: string;
 ```
 
-Default system prompt used when `systemPrompt` is not provided.
+Default system prompt used when the agent keeps no `system-prompt.md`.
 
 A general-purpose base for any kind of voice agent — assistant,
 support, tutor, game, companion. It covers only what every spoken
@@ -23179,21 +23111,13 @@ the last is included only when the session has tools:
 5. `## TOOLS` — never fabricate, act first and ask second, report results
    rather than intentions, and the mis-hearing retry ladder.
 
-**`agent({ systemPrompt })` does NOT replace any of it — it is APPENDED.**
-`buildSystemPrompt` always emits these sections and then adds your
-prompt last, under a header saying it overrides them where they conflict. So
-write only your own domain rules:
+**Your `system-prompt.md` does NOT replace any of it — it is APPENDED.**
+`buildSystemPrompt` always emits these sections and then adds the file's
+text last, under a header saying it overrides them where they conflict. So
+write only your own domain rules — `Only discuss items in the catalog.` is a
+complete file — and nothing in `agent.ts`: the prompt is not a parameter.
 
-```ts
-import { agent } from "@alexkroman1/aai";
-
-export default agent({
-  name: "Cart",
-  systemPrompt: "Only discuss items in the catalog.",
-});
-```
-
-**Do not interpolate this constant into that string.** This doc used to show
+**Do not interpolate this constant into that file.** This doc used to show
 exactly that (`` `${DEFAULT_SYSTEM_PROMPT}\n\nOnly discuss…` ``) on the false
 premise that it was replaced, which sent the ~10,000-character voice core
 twice — the repetition this module's whole section split exists to prevent,

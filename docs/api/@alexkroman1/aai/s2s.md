@@ -19,7 +19,6 @@ import { openAIS2s } from "@alexkroman1/aai/s2s";
 
 export default agent({
   name: "Concierge",
-  systemPrompt: "You are a hotel concierge. Be brief.",
   mode: "s2s",
   s2s: openAIS2s({ model: "gpt-realtime", voice: "marin" }),
 });
@@ -81,7 +80,6 @@ import { openAIS2s } from "@alexkroman1/aai/s2s";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   mode: "s2s",
   s2s: openAIS2s({ model: "gpt-realtime", voice: "marin" }),
 });

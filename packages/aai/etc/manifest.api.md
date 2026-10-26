@@ -19,7 +19,6 @@ export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 export const AgentConfigSchema: z.ZodObject<{
     name: z.ZodString;
     listing: z.ZodOptional<z.ZodString>;
-    description: z.ZodOptional<z.ZodString>;
     promptContext: z.ZodOptional<z.ZodString>;
     systemPrompt: z.ZodDefault<z.ZodString>;
     greeting: z.ZodDefault<z.ZodString>;
@@ -138,8 +137,7 @@ interface AgentDeclaration extends PipelineTuning, PipelinePhrases, AgentModelTu
 }
 
 // @public @sealed
-interface AgentDef extends Omit<AgentDeclaration, "syncState"> {
-    syncState?: Readonly<Record<string, StateProjection>>;
+interface AgentDef extends AgentDeclaration {
     tools: ToolMap;
 }
 
@@ -159,8 +157,6 @@ interface AgentInstructions {
 
 // @public @input
 interface AgentListing {
-    // @deprecated
-    description?: string;
     listing?: string;
 }
 
@@ -176,7 +172,7 @@ interface AgentModelTuning extends ModelTuning {
 // @public @input
 interface AgentObservation {
     events?: SessionEventHandlers;
-    syncState?: SyncStateDeclaration;
+    syncState?: Readonly<Record<string, StateProjection>>;
 }
 
 // @public
@@ -1090,9 +1086,6 @@ type StreamOptions = {
 type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
     readonly __stage?: "stt";
 };
-
-// @public
-type SyncStateDeclaration = StateProjection | readonly StateProjection[];
 
 // @public
 type TelephonyAccess = boolean | readonly TelephonyCarrier[];

@@ -413,9 +413,10 @@ export interface SessionSlot<K extends string, T, V = DeepReadonly<T>> {
    *
    * const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }), {
    *   view: (cart) => ({ count: cart.items.length }),
+   *   sync: true, // collected into the agent's `syncState`
    * });
    *
-   * export default agent({ name: "Shop", syncState: cartSlot.projected });
+   * export default agent({ name: "Shop" });
    * ```
    */
   readonly projected: StateProjection<V>;

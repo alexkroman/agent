@@ -65,7 +65,6 @@ export interface ElevenLabsSttOptions extends ProviderCredentialOptions {
  *
  * export default agent({
  *   name: "Support",
- *   systemPrompt: "You are a support agent. Be brief.",
  *   stt: elevenLabsStt({ model: "scribe_v2_realtime", language: "en" }),
  * });
  * ```

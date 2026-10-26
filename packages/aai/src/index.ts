@@ -18,15 +18,13 @@
  * ```ts
  * import { agent, sessionSlot } from "@alexkroman1/aai";
  *
+ * // `sync: true` is what the browser sees; the prompt is system-prompt.md.
  * export const cart = sessionSlot("cart", () => ({ items: [] as string[] }), {
  *   view: (c) => ({ count: c.items.length }),
+ *   sync: true,
  * });
  *
- * export default agent({
- *   name: "Storefront",
- *   systemPrompt: "You help callers order from the catalog.",
- *   syncState: cart.projected,
- * });
+ * export default agent({ name: "Storefront" });
  * ```
  *
  * With no provider fields that runs the all-AssemblyAI STT → LLM → TTS

@@ -28,21 +28,20 @@ still React, still the same theme tokens.
 
 ### Agent `agent.ts`
 
-The session's state lives in a slot, and `syncState` is what the browser sees —
-pushed after every tool call, so the client never rebuilds it from events:
+The session's state lives in a slot, and a slot declared `sync: true` is what
+the browser sees — pushed after every tool call, so the client never rebuilds it
+from events:
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
 
 const desk = sessionSlot("desk", () => ({ symbols: [] as string[] }), {
   view: (state) => ({ symbols: state.symbols }),
+  sync: true,
 });
 
-export default agent({
-  name: "Market Desk",
-  systemPrompt: "You look up quotes and keep the caller's watchlist.",
-  syncState: desk.projected,
-});
+// The `sync: true` slot is collected; the prompt is the system-prompt.md beside this file.
+export default agent({ name: "Market Desk" });
 ```
 
 ### Tool `tools/get_quote.ts`

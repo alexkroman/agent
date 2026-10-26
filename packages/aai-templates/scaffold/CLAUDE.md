@@ -284,8 +284,8 @@ You are a concise, friendly assistant.
 
 Three rules, each a build error naming the file:
 
-- **A file nothing reads is an error**: `system-prompt.md` beside a DIFFERENT
-  `systemPrompt` in `agent.ts` fails the build rather than being ignored.
+- **The file is the only prompt**: `agent({ systemPrompt })` is a compile error
+  in every mode, and refused at run time.
 - **An empty file is an error**, not a silent fall-through to the framework
   default. Delete the file if that is what you want.
 - **A `system-prompt/` directory is rejected.** One file, no concatenation order
@@ -296,7 +296,7 @@ a function of the session resolved per request — and is appended under the fil
 Never import the file to compose it (`agent-guide/AGENT-API.md`). `greeting`
 stays a field: a document goes in a file, a value stays in the call.
 
-## Voice rules for systemPrompt
+## Voice rules for system-prompt.md
 
 **Don't restate the voice rules — the framework always emits them.** Write only
 what the defaults cannot say: "use run_code for ANY math", "you ARE the game".

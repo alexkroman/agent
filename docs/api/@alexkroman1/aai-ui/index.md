@@ -2439,9 +2439,10 @@ import { sessionSlot } from "@alexkroman1/aai";
 import { useAgentState } from "@alexkroman1/aai-ui";
 
 // In a real project the slot is declared beside the agent and imported here;
-// the agent declares `syncState: cartSlot.projected`.
+// `sync: true` is what puts it in the agent's `syncState`.
 const cartSlot = sessionSlot("cart", () => ({ items: [] as string[] }), {
   view: (cart) => ({ count: cart.items.length }),
+  sync: true,
 });
 
 function CartBadge() {

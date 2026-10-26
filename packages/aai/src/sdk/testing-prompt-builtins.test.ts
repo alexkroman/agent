@@ -9,20 +9,21 @@
  */
 
 import { describe, expect, test } from "vitest";
+import type { AgentSessionContext } from "./agent-session-context.ts";
 import { agent } from "./define.ts";
+import { withSystemPrompt } from "./system-prompt-file.ts";
 import { expectDeployable } from "./testing-deployable.ts";
 import { commandedBuiltins, expectPromptBuiltinsDeclared } from "./testing-prompt-builtins.ts";
 
 describe("commandedBuiltins", () => {
   test("finds the builtins the prompt names and skips the prompt's own snake_case", () => {
     const config = expectDeployable(
-      agent({
-        name: "Penny",
-        systemPrompt:
-          "Use fetch_json for anything that moves (vs_currencies, include_24hr_change). " +
+      withSystemPrompt(
+        agent({ name: "Penny" }),
+        "Use fetch_json for anything that moves (vs_currencies, include_24hr_change). " +
           "Work every figure out with run_code — per_person, annual_rate — never in your head. " +
           "fetch_json again for crypto.",
-      }),
+      ),
     );
     // First-mention order, deduplicated, and nothing that is not a builtin.
     expect(commandedBuiltins(config)).toEqual(["fetch_json", "run_code"]);
@@ -37,11 +38,10 @@ describe("expectPromptBuiltinsDeclared", () => {
   test("passes when every commanded builtin is declared, and answers the list", () => {
     expect(
       expectPromptBuiltinsDeclared(
-        agent({
-          name: "Penny",
-          systemPrompt: "Rates via fetch_json; arithmetic via run_code.",
-          builtinTools: ["run_code", "fetch_json", "web_search"],
-        }),
+        withSystemPrompt(
+          agent({ name: "Penny", builtinTools: ["run_code", "fetch_json", "web_search"] }),
+          "Rates via fetch_json; arithmetic via run_code.",
+        ),
       ),
     ).toEqual(["fetch_json", "run_code"]);
   });
@@ -49,11 +49,10 @@ describe("expectPromptBuiltinsDeclared", () => {
   test("a commanded builtin nothing declares fails naming it and what IS declared", () => {
     expect(() =>
       expectPromptBuiltinsDeclared(
-        agent({
-          name: "Penny",
-          systemPrompt: "Rates via fetch_json; arithmetic via run_code.",
-          builtinTools: ["run_code"],
-        }),
+        withSystemPrompt(
+          agent({ name: "Penny", builtinTools: ["run_code"] }),
+          "Rates via fetch_json; arithmetic via run_code.",
+        ),
       ),
     ).toThrow(/commands "fetch_json" and `builtinTools` declares run_code/);
   });
@@ -61,7 +60,7 @@ describe("expectPromptBuiltinsDeclared", () => {
   test("declaring none reads as 'none', not as an empty join", () => {
     expect(() =>
       expectPromptBuiltinsDeclared(
-        agent({ name: "Coda", systemPrompt: "Call run_code.", builtinTools: [] }),
+        withSystemPrompt(agent({ name: "Coda", builtinTools: [] }), "Call run_code."),
       ),
     ).toThrow(/declares none/);
   });
@@ -70,7 +69,7 @@ describe("expectPromptBuiltinsDeclared", () => {
     // An unset field is what a deploy serves as `["think"]`, and saying
     // "declares none" there would be false.
     expect(() =>
-      expectPromptBuiltinsDeclared(agent({ name: "Coda", systemPrompt: "Call run_code." })),
+      expectPromptBuiltinsDeclared(withSystemPrompt(agent({ name: "Coda" }), "Call run_code.")),
     ).toThrow(/declares think, with no custom tool/);
   });
 
@@ -87,27 +86,22 @@ describe("expectPromptBuiltinsDeclared", () => {
     // drops the field and the schema fills in the framework default — and the
     // scan then reports on a prompt this agent never sends. It named no builtin,
     // so the check failed for the wrong reason today and would have PASSED the
-    // day the default prompt happened to name one.
+    // day the default prompt happened to name one. A resolver on the prompt is
+    // a HOST's (the spread below); an author's is `promptContext`.
     expect(
-      expectPromptBuiltinsDeclared(
-        agent({
-          name: "Cavern",
-          systemPrompt: () => "Roll every check with run_code. Look prices up with fetch_json.",
-          builtinTools: ["run_code", "fetch_json"],
-        }),
-      ),
+      expectPromptBuiltinsDeclared({
+        ...agent({ name: "Cavern", builtinTools: ["run_code", "fetch_json"] }),
+        systemPrompt: () => "Roll every check with run_code. Look prices up with fetch_json.",
+      }),
     ).toEqual(["run_code", "fetch_json"]);
   });
 
   test("a resolver's undeclared builtin fails naming IT, not the unapplied-prompt cause", () => {
     expect(() =>
-      expectPromptBuiltinsDeclared(
-        agent({
-          name: "Cavern",
-          systemPrompt: () => "Roll every check with run_code.",
-          builtinTools: [],
-        }),
-      ),
+      expectPromptBuiltinsDeclared({
+        ...agent({ name: "Cavern", builtinTools: [] }),
+        systemPrompt: () => "Roll every check with run_code.",
+      }),
     ).toThrow(/commands "run_code" and `builtinTools` declares none/);
   });
 
@@ -116,17 +110,14 @@ describe("expectPromptBuiltinsDeclared", () => {
     // value for. Falling back to the framework default here is the outcome that
     // must not exist — a green from a check that inspected nothing.
     expect(() =>
-      expectPromptBuiltinsDeclared(
-        agent({
-          name: "Cavern",
-          systemPrompt: (ctx) => {
-            const url = ctx.env.PROMPT_URL;
-            if (url === undefined) throw new Error("PROMPT_URL is unset");
-            return `Fetch the brief from ${url}, then use run_code.`;
-          },
-          builtinTools: ["run_code"],
-        }),
-      ),
+      expectPromptBuiltinsDeclared({
+        ...agent({ name: "Cavern", builtinTools: ["run_code"] }),
+        systemPrompt: (ctx: AgentSessionContext) => {
+          const url = ctx.env.PROMPT_URL;
+          if (url === undefined) throw new Error("PROMPT_URL is unset");
+          return `Fetch the brief from ${url}, then use run_code.`;
+        },
+      }),
     ).toThrow(/`systemPrompt` is a resolver and calling it threw.*builtinTools/s);
   });
 
@@ -134,24 +125,20 @@ describe("expectPromptBuiltinsDeclared", () => {
     // The other way a resolver can leave nothing to scan. Falling through to
     // the framework default here would be the same green-on-nothing.
     expect(() =>
-      expectPromptBuiltinsDeclared(
-        agent({
-          name: "Cavern",
-          systemPrompt: () => "",
-          builtinTools: ["run_code"],
-        }),
-      ),
+      expectPromptBuiltinsDeclared({
+        ...agent({ name: "Cavern", builtinTools: ["run_code"] }),
+        systemPrompt: () => "",
+      }),
     ).toThrow(/is a resolver and it answered "" rather than a prompt/);
   });
 
   test("the converse is not asserted: an undeclared-in-prose builtin is fine", () => {
     expect(() =>
       expectPromptBuiltinsDeclared(
-        agent({
-          name: "Scout",
-          systemPrompt: "Begin with a web_search call.",
-          builtinTools: ["web_search", "visit_webpage"],
-        }),
+        withSystemPrompt(
+          agent({ name: "Scout", builtinTools: ["web_search", "visit_webpage"] }),
+          "Begin with a web_search call.",
+        ),
       ),
     ).not.toThrow();
   });
@@ -221,7 +208,7 @@ describe("expectPromptBuiltinsDeclared — a custom tool of the same name", () =
   test("a single-word builtin the prompt names is checked like any other", () => {
     expect(() =>
       expectPromptBuiltinsDeclared(
-        agent({ name: "Abacus", systemPrompt: "Use the calculate tool.", builtinTools: [] }),
+        withSystemPrompt(agent({ name: "Abacus", builtinTools: [] }), "Use the calculate tool."),
       ),
     ).toThrow(/commands "calculate"/);
   });

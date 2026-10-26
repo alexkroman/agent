@@ -54,13 +54,5 @@ export default agent({
   name: "Research Desk",
   listing: "Takes research requests over the phone and reports back when the run lands",
   greeting: "Research desk. What would you like me to look into?",
-  systemPrompt: [
-    "You take research requests over the phone and read back results.",
-    "When someone asks you to research something, call request_research and tell them",
-    "you have started it — do NOT wait for it or promise a time. You WILL be told",
-    "when it lands, so it is safe to say you will let them know.",
-    "If they say they need it immediately, call file_it_now.",
-    "Keep replies to one or two sentences; this is a voice call.",
-  ].join(" "),
   builtinTools: ["workflow_status", "workflow_progress", "workflow_cancel"],
 });

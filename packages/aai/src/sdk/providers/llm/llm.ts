@@ -180,7 +180,6 @@ export interface LlmOptions<P extends LlmProviderName = LlmProviderName>
  *
  * export default agent({
  *   name: "Support",
- *   systemPrompt: "You are a support agent. Be brief.",
  *   llm: llm({ provider: "assemblyai", model: "qwen3-next-80b-a3b" }),
  * });
  * ```

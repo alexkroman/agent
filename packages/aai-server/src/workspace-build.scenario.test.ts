@@ -35,7 +35,6 @@ const AGENT_TS = `import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "integration-publish",
-  systemPrompt: "You are a test agent.",
   greeting: "Hello.",
 });
 `;

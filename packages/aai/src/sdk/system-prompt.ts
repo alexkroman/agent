@@ -44,7 +44,7 @@ export {
 } from "./system-prompt-sections.ts";
 
 /**
- * Default system prompt used when `systemPrompt` is not provided.
+ * Default system prompt used when the agent keeps no `system-prompt.md`.
  *
  * A general-purpose base for any kind of voice agent — assistant,
  * support, tutor, game, companion. It covers only what every spoken
@@ -67,21 +67,13 @@ export {
  * 5. `## TOOLS` — never fabricate, act first and ask second, report results
  *    rather than intentions, and the mis-hearing retry ladder.
  *
- * **`agent({ systemPrompt })` does NOT replace any of it — it is APPENDED.**
- * `buildSystemPrompt` always emits these sections and then adds your
- * prompt last, under a header saying it overrides them where they conflict. So
- * write only your own domain rules:
+ * **Your `system-prompt.md` does NOT replace any of it — it is APPENDED.**
+ * `buildSystemPrompt` always emits these sections and then adds the file's
+ * text last, under a header saying it overrides them where they conflict. So
+ * write only your own domain rules — `Only discuss items in the catalog.` is a
+ * complete file — and nothing in `agent.ts`: the prompt is not a parameter.
  *
- * ```ts
- * import { agent } from "@alexkroman1/aai";
- *
- * export default agent({
- *   name: "Cart",
- *   systemPrompt: "Only discuss items in the catalog.",
- * });
- * ```
- *
- * **Do not interpolate this constant into that string.** This doc used to show
+ * **Do not interpolate this constant into that file.** This doc used to show
  * exactly that (`` `${DEFAULT_SYSTEM_PROMPT}\n\nOnly discuss…` ``) on the false
  * premise that it was replaced, which sent the ~10,000-character voice core
  * twice — the repetition this module's whole section split exists to prevent,
@@ -103,7 +95,7 @@ export {
 // in every API report as a TYPE an author's code could come to depend on, and
 // a wording change was a type change nobody could classify. The text is a
 // BEHAVIOUR: reviewed in this module's diff, pinned by `system-prompt.test.ts`,
-// and owed a changeset for every agent that omits `systemPrompt`.
+// and owed a changeset for every agent that keeps no `system-prompt.md`.
 export const DEFAULT_SYSTEM_PROMPT: string =
   `${PROMPT_ROLE}\n\n${PROMPT_PERSONALITY}\n\n${PROMPT_SPEAKING}\n\n${PROMPT_LISTENING}\n\n${PROMPT_TOOLS}` as const;
 

@@ -9,6 +9,7 @@
  * out of the tools it ran.
  */
 
+import type { AgentSystemPrompt } from "@alexkroman1/aai";
 import { type AgentDef, agent, type Message, sessionSlot, tool } from "@alexkroman1/aai";
 import { type ToolRegistry, withTools } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
@@ -34,15 +35,22 @@ async function drain(result: { textStream: AsyncIterable<string> }): Promise<str
  * `import.meta.glob`) in a real project, and a literal here, since these tools
  * exist to be driven rather than to live anywhere.
  */
-function textAgent(def: Parameters<typeof agent>[0], tools: ToolRegistry = {}): AgentDef {
-  return withTools(agent(def), tools);
+function textAgent(
+  def: Parameters<typeof agent>[0],
+  tools: ToolRegistry = {},
+  // A HOST's prompt on the lowered def — `agent()` refuses the key, and the
+  // prompt a project runs is its `system-prompt.md`.
+  systemPrompt?: AgentSystemPrompt,
+): AgentDef {
+  const lowered = agent(def);
+  return withTools(systemPrompt === undefined ? lowered : { ...lowered, systemPrompt }, tools);
 }
 
 describe("createTextAgent", () => {
   test("streams a reply, sending the agent's system prompt", async () => {
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "hello there" }] });
     const chat = createTextAgent({
-      agent: textAgent({ name: "Helper", mode: "text", systemPrompt: "Be brief." }),
+      agent: textAgent({ name: "Helper", mode: "text" }, {}, "Be brief."),
       model,
       logger: silentLogger,
     });
@@ -574,7 +582,7 @@ describe("createTextAgent", () => {
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
     let phase = "intake";
     const chat = createTextAgent({
-      agent: textAgent({ name: "Helper", mode: "text", systemPrompt: () => `Phase: ${phase}.` }),
+      agent: textAgent({ name: "Helper", mode: "text" }, {}, () => `Phase: ${phase}.`),
       model,
       logger: silentLogger,
     });
@@ -595,12 +603,11 @@ describe("createTextAgent", () => {
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
     let tier = "standard";
     const chat = createTextAgent({
-      agent: textAgent({
-        name: "Helper",
-        mode: "text",
-        systemPrompt: "Base.",
-        promptContext: () => `Tier: ${tier}.`,
-      }),
+      agent: textAgent(
+        { name: "Helper", mode: "text", promptContext: () => `Tier: ${tier}.` },
+        {},
+        "Base.",
+      ),
       model,
       logger: silentLogger,
     });
@@ -616,12 +623,7 @@ describe("createTextAgent", () => {
   test("a per-turn system prompt keeps the agent's promptContext under it, as the voice runtime does", async () => {
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
     const chat = createTextAgent({
-      agent: textAgent({
-        name: "Helper",
-        mode: "text",
-        systemPrompt: "Base.",
-        promptContext: "Tier: gold.",
-      }),
+      agent: textAgent({ name: "Helper", mode: "text", promptContext: "Tier: gold." }, {}, "Base."),
       model,
       logger: silentLogger,
     });
@@ -635,7 +637,7 @@ describe("createTextAgent", () => {
   test("a per-turn system prompt overrides the agent's", async () => {
     const model = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
     const chat = createTextAgent({
-      agent: textAgent({ name: "Helper", mode: "text", systemPrompt: "Base." }),
+      agent: textAgent({ name: "Helper", mode: "text" }, {}, "Base."),
       model,
       logger: silentLogger,
     });

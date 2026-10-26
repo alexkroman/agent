@@ -64,8 +64,7 @@ export interface AgentDeclaration extends PipelineTuning, PipelinePhrases, Agent
 }
 
 // @public @sealed
-export interface AgentDef extends Omit<AgentDeclaration, "syncState"> {
-    syncState?: Readonly<Record<string, StateProjection>>;
+export interface AgentDef extends AgentDeclaration {
     tools: ToolMap;
 }
 
@@ -93,8 +92,6 @@ export interface AgentInstructions {
 
 // @public @input
 export interface AgentListing {
-    // @deprecated
-    description?: string;
     listing?: string;
 }
 
@@ -110,7 +107,7 @@ export interface AgentModelTuning extends ModelTuning {
 // @public @input
 export interface AgentObservation {
     events?: SessionEventHandlers;
-    syncState?: SyncStateDeclaration;
+    syncState?: Readonly<Record<string, StateProjection>>;
 }
 
 // @public
@@ -645,9 +642,6 @@ export type InferToolInput<T extends ToolDef> = Parameters<T["execute"]>[0];
 
 // @public
 export type InferToolOutput<T extends ToolDef> = Awaited<ReturnType<T["execute"]>>;
-
-// @public
-type InlineToolsField = "tools";
 
 // @public
 type InlineToolsMisuse = "a tool is declared by its FILE, not here — create `tools/<the name the model calls>.ts` with `export default tool({ … })`, and it is registered by existing";
@@ -1432,7 +1426,7 @@ export interface SessionSpeech {
 }
 
 // @public @input
-export type SharedAgentParams = Omit<AgentDeclaration, DefaultedAgentField | "mode" | ProviderField | PipelineOnlyField | keyof AgentModelTuning> & Partial<Pick<AgentDeclaration, Exclude<DefaultedAgentField, InlineToolsField>>> & {
+export type SharedAgentParams = Omit<AgentDeclaration, DefaultedAgentField | "systemPrompt" | "syncState" | "mode" | ProviderField | PipelineOnlyField | keyof AgentModelTuning> & Partial<Pick<AgentDeclaration, "greeting" | "maxSteps">> & {
     tools?: InlineToolsMisuse;
 };
 
@@ -1686,9 +1680,6 @@ export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & 
 
 // @public
 type SyncMutationMisuse = "a slot mutation window is SYNCHRONOUS — `await` BEFORE the mutation, not inside it: the draft is stored when the body returns, so an await inside one writes to a value that has already been stored";
-
-// @public
-export type SyncStateDeclaration = StateProjection | readonly StateProjection[];
 
 // @public
 export type TelephonyAccess = boolean | readonly TelephonyCarrier[];
@@ -1946,7 +1937,7 @@ export type WorkflowAppAgentParams = Omit<SharedAgentParams, "sttPrompt" | "tele
 };
 
 // @public
-type WorkflowAppOnlyField = "systemPrompt" | "promptContext" | "voicePresets" | "maxSteps" | "toolChoice" | "builtinTools" | "roster" | "syncState" | "events" | "sessionContext" | "onSessionEnd" | "idleTimeoutMs";
+type WorkflowAppOnlyField = "promptContext" | "voicePresets" | "maxSteps" | "toolChoice" | "builtinTools" | "roster" | "events" | "sessionContext" | "onSessionEnd" | "idleTimeoutMs";
 
 // @public
 type WorkflowBody<I = unknown, R = unknown> = (input: I, ctx: WorkflowContext) => Promise<R> | R;

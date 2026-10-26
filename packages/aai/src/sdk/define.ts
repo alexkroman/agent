@@ -10,6 +10,8 @@ import type { AgentMode } from "./agent-mode.ts";
 import type {
   AgentParams,
   DefaultedAgentField,
+  FrameworkOwnedField,
+  InlineToolsField,
   ModeAgentDef,
   PipelineAgentParams,
   S2sAgentParams,
@@ -116,10 +118,14 @@ export function tool<P extends ToolInputSchema | undefined = ToolInputSchema, R 
  * ```
  *
  * **Session state is not declared here either** — a {@link sessionSlot} owns its
- * own default and its own storage, so there is no `state` factory to remember.
- * `syncState` takes that slot's projection, or a list of them — or nothing,
- * when the slots were declared `sync: true`: those are collected here by
- * default, and an explicit `syncState` replaces them.
+ * own default and its own storage, so there is no `state` factory to remember,
+ * and a slot declared `sessionSlot(key, create, { sync: true })` is what the
+ * browser sees: `agent()` collects those projections into
+ * {@link AgentDef.syncState}, which is not a parameter.
+ *
+ * **Nor is the system prompt** — it is the `system-prompt.md` beside
+ * `agent.ts`, discovered by the build; text computed beside it is
+ * {@link AgentDeclaration.promptContext}.
  *
  * @example Default pipeline with another voice and a different LLM
  * ```ts
@@ -165,7 +171,7 @@ export function agent<W extends WorkflowsMap = EmptyWorkflows>(
  * export default agent({
  *   name: "Docs Assistant",
  *   mode: "text",
- *   systemPrompt: "Answer questions about the docs.",
+ *   promptContext: "The docs cover the v2 API only.",
  * });
  * ```
  *
@@ -246,7 +252,7 @@ export type AgentDefWith<M extends AgentMode, W extends WorkflowsMap> = string e
  * The shared body of {@link agent} and {@link workflowApp}.
  */
 function buildAgent(def: object): AgentDef {
-  assertNoInlineTools(def);
+  assertNoFrameworkOwnedFields(def);
   // Mode, field legality, the mode mirrors and the conveniences — in that
   // order; see `_author-conveniences.ts`.
   const normalized = normalizeAgentParams(def) as Record<string, unknown>;
@@ -321,27 +327,56 @@ function checkPins(roster: Roster | undefined, dialogs: AgentDef["dialogs"]): vo
 }
 
 /**
- * Refuse a `tools` key at RUN TIME as well as in the type.
+ * The three {@link AgentDef} fields the FRAMEWORK fills and `agent()` refuses,
+ * each with the sentence naming where the value is declared instead. Total
+ * over {@link InlineToolsField} and {@link FrameworkOwnedField} by
+ * `satisfies`, so a field added to either list is refused here or fails to
+ * compile.
+ */
+const FRAMEWORK_OWNED = {
+  tools:
+    "agent({ tools }) is not how a tool is declared: a tool IS a file. Move each entry to " +
+    "tools/<the name the model calls>.ts as `export default tool({ … })` — the build enumerates " +
+    "that directory, so nothing lists them anywhere. In a spec, reach the same set with " +
+    '`import agentDef from "virtual:aai/agent"` under vitest, or `deployedAgent` from ' +
+    "@alexkroman1/aai/testing under any other runner.",
+  systemPrompt:
+    "agent({ systemPrompt }) is not how the prompt is declared: the prompt IS a file. Write it in " +
+    "system-prompt.md beside agent.ts — the build discovers it — and put text computed beside it " +
+    "(a menu, a line over session state) in `promptContext`, which takes a string or a " +
+    "per-request resolver. A host setting a lowered definition's prompt uses `withSystemPrompt` " +
+    "from @alexkroman1/aai/manifest.",
+  syncState:
+    "agent({ syncState }) is not how a slot reaches the browser: declare the slot " +
+    "`sessionSlot(key, create, { view, sync: true })` in a module agent.ts imports, and agent() " +
+    "collects its projection; the page reads it with `useAgentState(slot.projected)`.",
+} as const satisfies Record<InlineToolsField | FrameworkOwnedField, string>;
+
+/**
+ * Refuse the framework-owned keys at RUN TIME as well as in the type.
  *
- * {@link InlineToolsMisuse} is the compile error, and on its own it leaves the
+ * {@link InlineToolsMisuse} and the absence of `systemPrompt` and `syncState`
+ * from every member are the compile errors, and on their own they leave the
  * rule conventional: neither bundler type-checks user code, so a `tools` map
- * that reached here would work — and "a tool is only ever a file" would be true
- * of the templates and of nothing else. It is also exactly the shape an options
- * bag reaches `agent()` in, where the excess-property check does not fire.
+ * or a `systemPrompt` string that reached here would work — and "a tool is
+ * only ever a file" would be true of the templates and of nothing else. It is
+ * also exactly the shape an options bag reaches `agent()` in, where the
+ * excess-property check does not fire.
  *
  * Thrown rather than dropped, on the rule this whole mechanism exists for: the
  * failure being replaced was a tool that silently never reached the model, and
- * silently ignoring a declared one is that failure with a new cause.
+ * silently ignoring a declared one is that failure with a new cause. Only
+ * `agent()` refuses them: `toAgentConfig` sees the LOWERED def, on which all
+ * three are legitimately set.
  */
-function assertNoInlineTools(def: unknown): void {
-  if (!(isRecord(def) && "tools" in def)) return;
-  throw new Error(
-    "agent({ tools }) is not how a tool is declared: a tool IS a file. Move each entry to " +
-      "tools/<the name the model calls>.ts as `export default tool({ … })` — the build enumerates " +
-      "that directory, so nothing lists them anywhere. In a spec, reach the same set with " +
-      '`import agentDef from "virtual:aai/agent"` under vitest, or `deployedAgent` from ' +
-      "@alexkroman1/aai/testing under any other runner.",
-  );
+function assertNoFrameworkOwnedFields(def: unknown): void {
+  if (!isRecord(def)) return;
+  for (const [field, sentence] of Object.entries(FRAMEWORK_OWNED)) {
+    // Present-and-undefined is absent, the rule `omitUndefined` applies to the
+    // defaults below: an options bag typed `{ systemPrompt?: string }` spreads
+    // the key in with no value.
+    if (def[field] !== undefined) throw new Error(sentence);
+  }
 }
 
 /**

@@ -214,8 +214,8 @@ Five rules, and each is an error rather than advice if you get it wrong:
 
 There is nothing to declare on `agent()` — the slot owns its default, and
 `sync: true` registers its projection (the slot must be declared in a module
-`agent.ts` imports, such as `shared.ts`); an explicit
-`syncState: slot.projected` still wins. **A SEEDED slot declares `empty`** —
+`agent.ts` imports, such as `shared.ts`); `agent({ syncState })` is not a field.
+**A SEEDED slot declares `empty`** —
 `sessionSlot("catalog", loadSeed, { view, empty: () => ({ items: [] }) })` — so
 the frame a page renders before its first push is the empty shape rather than
 the seed shipped to the browser. `SlotValueOf<typeof slot>` and

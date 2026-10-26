@@ -86,7 +86,6 @@ export const narrate = workflow({
 export default agent({
   name: "dev-workflow-fixture",
   greeting: "hi",
-  systemPrompt: "fixture",
   workflows: { research, fanOut, secret, narrate },
   requiredEnv: ["FIXTURE_STEP_TOKEN"],
 });

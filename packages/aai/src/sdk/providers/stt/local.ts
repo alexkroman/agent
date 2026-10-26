@@ -104,7 +104,6 @@ export interface LocalSttOptions extends ProviderCredentialOptions {
  *
  * export default agent({
  *   name: "Support",
- *   systemPrompt: "You are a support agent. Be brief.",
  *   stt: localStt({ url: "ws://127.0.0.1:8765" }),
  * });
  * ```

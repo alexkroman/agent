@@ -63,7 +63,7 @@ const grade = tool({
   execute: async (_args, ctx) => `graded:${(await ctx.generate({ prompt: "grade it" })).text}`,
 });
 
-const desk = agent({ name: "Text Desk", mode: "text", systemPrompt: "Be brief." });
+const desk = agent({ name: "Text Desk", mode: "text" });
 
 describe("openEvalTextAgent refusals", () => {
   test("refuses a voice agent, naming the harness that drives one", async () => {

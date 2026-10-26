@@ -15,7 +15,8 @@
  * import { createTextAgent } from "@alexkroman1/aai-runtime";
  *
  * const chat = createTextAgent({
- *   agent: agent({ name: "Helper", mode: "text", systemPrompt: "Be brief." }),
+ *   // The prompt is the project's `system-prompt.md`, lowered by the build.
+ *   agent: agent({ name: "Helper", mode: "text" }),
  *   env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
  * });
  * const result = chat.stream({ messages: [{ role: "user", content: "hi" }] });

@@ -60,7 +60,7 @@ import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "Quickstart Assistant",
-  description: "Looks up the current weather for any city",
+  listing: "Looks up the current weather for any city",
   greeting: "Hi — I can look up the weather anywhere. Which city?",
   tts: assemblyAITts({ voice: "aai-jane" }),
 });

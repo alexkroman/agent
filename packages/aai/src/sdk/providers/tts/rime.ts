@@ -70,7 +70,6 @@ export interface RimeTtsOptions extends ProviderCredentialOptions {
  *
  * export default agent({
  *   name: "Support",
- *   systemPrompt: "You are a support agent. Be brief.",
  *   tts: rimeTts({ voice: RIME_DEFAULT_VOICE, model: "mistv2" }),
  * });
  * ```

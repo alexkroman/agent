@@ -18,7 +18,6 @@ import { CARTESIA_DEFAULT_VOICE, cartesiaTts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   // `stt` and `llm` keep their AssemblyAI defaults.
   tts: cartesiaTts({ voice: CARTESIA_DEFAULT_VOICE, model: "sonic-3" }),
 });
@@ -93,7 +92,6 @@ import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   tts: assemblyAITts({ voice: "aai-michael" }),
 });
 ```
@@ -132,7 +130,6 @@ import { CARTESIA_DEFAULT_VOICE, cartesiaTts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   tts: cartesiaTts({ voice: CARTESIA_DEFAULT_VOICE, model: "sonic-3" }),
 });
 ```
@@ -166,7 +163,6 @@ import { RIME_DEFAULT_VOICE, rimeTts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "Support",
-  systemPrompt: "You are a support agent. Be brief.",
   tts: rimeTts({ voice: RIME_DEFAULT_VOICE, model: "mistv2" }),
 });
 ```

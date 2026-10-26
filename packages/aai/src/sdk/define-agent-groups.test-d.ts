@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * Type-level tests for the `AgentDef` field GROUPS — the model-tuning knobs,
- * the two guardrail arrays, the `systemPrompt` resolver and the context every
+ * the two guardrail arrays, the prompt resolvers and the context every
  * per-session author function receives.
  *
  * Split out of `define.test-d.ts` when that file reached the 700-line test cap.
@@ -32,7 +32,7 @@ import type { AgentDef, ToolContext } from "./types.ts";
 type Resolver = Exclude<AgentSystemPrompt, string>;
 
 /**
- * The five model-tuning knobs, both guardrails and the `description` are on
+ * The five model-tuning knobs, both guardrails and the `listing` are on
  * every SESSION arm and on none of the workflow app.
  *
  * They are refused at CONFIG time rather than by the type on the s2s and text
@@ -46,7 +46,7 @@ test("the model-tuning knobs and the guardrails are session-arm fields", () => {
   expectTypeOf<
     AgentAccepts<{
       name: string;
-      description: string;
+      listing: string;
       temperature: number;
       maxOutputTokens: number;
       maxRetries: number;
@@ -88,8 +88,8 @@ test("the model-tuning knobs and the guardrails are session-arm fields", () => {
     }>
   >().toEqualTypeOf<false>();
 
-  // `listing` (and its deprecated alias `description`) is deliberately NOT
-  // refused there: a listing wants one whatever the front door is.
+  // `listing` is deliberately NOT refused there: a listing wants one whatever
+  // the front door is. Its old name `description` is gone from every arm.
   expectTypeOf<
     AgentAccepts<{
       name: string;
@@ -98,20 +98,13 @@ test("the model-tuning knobs and the guardrails are session-arm fields", () => {
       listing: string;
     }>
   >().toEqualTypeOf<true>();
-  expectTypeOf<
-    AgentAccepts<{
-      name: string;
-      mode: "workflow-app";
-      workflows: NonNullable<AgentDef["workflows"]>;
-      description: string;
-    }>
-  >().toEqualTypeOf<true>();
+  expectTypeOf<AgentAccepts<{ name: string; description: string }>>().toEqualTypeOf<false>();
 });
 
 /**
  * `promptContext` (`agent-instructions.ts`) is declarable in every session
- * mode, in both forms, and refused by the workflow-app member beside
- * `systemPrompt`: nothing there reads a prompt.
+ * mode, in both forms, and refused by the workflow-app member: nothing there
+ * reads a prompt. It is the ONE prompt field an `agent.ts` writes.
  */
 test("promptContext takes a string or a session resolver on every session arm, and no workflow app", () => {
   expectTypeOf<AgentAccepts<{ name: string; promptContext: string }>>().toEqualTypeOf<true>();
@@ -129,9 +122,14 @@ test("promptContext takes a string or a session resolver on every session arm, a
       promptContext: string;
     }>
   >().toEqualTypeOf<false>();
-  // `agent()` hands the function back unchanged, like a `systemPrompt` resolver.
+  // `agent()` hands the function back unchanged.
   const def = agent({ name: "a", promptContext: (ctx) => ctx.sessionId });
   expectTypeOf(def.promptContext).toEqualTypeOf<AgentPromptContext | undefined>();
+  // An ASYNC resolver is refused: there is nowhere to await while a request is
+  // being assembled that does not put a round trip in front of every turn.
+  expectTypeOf<
+    AgentAccepts<{ name: string; promptContext: (ctx: AgentSessionContext) => Promise<string> }>
+  >().toEqualTypeOf<false>();
 });
 
 /**
@@ -145,41 +143,32 @@ test("ToolContext carries turn and now()", () => {
 });
 
 /**
- * `systemPrompt` takes a RESOLVER as well as a string, in every mode, and it is
- * handed the session rather than nothing — a nullary thunk could vary the
- * prompt by wall clock alone, so it could not read a slot, which is most of the
- * reason to want one. One is still assignable (pinned below), so a builder
- * written against that older shape keeps compiling. The widening is in turn
- * only useful if `agent()` hands the FUNCTION back: narrowed to `string` on the
- * way out it compiles everywhere and freezes every dynamic prompt at its first
- * answer, reported nowhere. The MODE arms are named one by one because
- * `AgentParams` is a union and a field re-declared on one arm is a field the
- * others may not carry — how `sttPrompt` above came to be refused in S2S mode.
+ * `systemPrompt` is on the lowered `AgentDef` — the text, or a RESOLVER handed
+ * the session rather than nothing (a nullary thunk could vary the prompt by
+ * wall clock alone, so it could not read a slot; one is still assignable,
+ * pinned below, so a host builder written against that shape keeps compiling)
+ * — and on NO member of `agent()`'s union: the prompt is `system-prompt.md`,
+ * set on the lowered def by `withSystemPrompt`. The MODE arms are named one by
+ * one because `AgentParams` is a union and a field on one arm is a field the
+ * others may carry — how `sttPrompt` above came to be refused in S2S mode.
  */
-test("systemPrompt accepts a per-request resolver", () => {
+test("systemPrompt is the lowered def's field, and no member of agent() has it", () => {
   type Resolve = (ctx: AgentSessionContext) => string;
-  expectTypeOf(
-    agent({ name: "T", systemPrompt: (ctx: AgentSessionContext) => ctx.sessionId }).systemPrompt,
-  ).toEqualTypeOf<AgentSystemPrompt>();
+  expectTypeOf(agent({ name: "T" }).systemPrompt).toEqualTypeOf<AgentSystemPrompt>();
   expectTypeOf<() => string>().toExtend<Resolver>();
   expectTypeOf<Resolver>().parameter(0).toEqualTypeOf<AgentSessionContext>();
   expectTypeOf<Resolver>().returns.toBeString();
-  expectTypeOf<AgentAccepts<{ name: string; systemPrompt: string }>>().toEqualTypeOf<true>();
-  expectTypeOf<AgentAccepts<{ name: string; systemPrompt: Resolve }>>().toEqualTypeOf<true>();
+  expectTypeOf<AgentAccepts<{ name: string; systemPrompt: string }>>().toEqualTypeOf<false>();
+  expectTypeOf<AgentAccepts<{ name: string; systemPrompt: Resolve }>>().toEqualTypeOf<false>();
   expectTypeOf<
-    AgentAccepts<{ name: string; mode: "s2s"; s2s: S2sProvider; systemPrompt: Resolve }>
-  >().toEqualTypeOf<true>();
-  expectTypeOf<
-    AgentAccepts<{ name: string; mode: "text"; systemPrompt: Resolve }>
-  >().toEqualTypeOf<true>();
-  // An ASYNC resolver is refused: there is nowhere to await while a request is
-  // being assembled that does not put a round trip in front of every turn.
-  expectTypeOf<
-    AgentAccepts<{
-      name: string;
-      systemPrompt: (ctx: AgentSessionContext) => Promise<string>;
-    }>
+    AgentAccepts<{ name: string; mode: "s2s"; s2s: S2sProvider; systemPrompt: string }>
   >().toEqualTypeOf<false>();
+  expectTypeOf<
+    AgentAccepts<{ name: string; mode: "text"; systemPrompt: string }>
+  >().toEqualTypeOf<false>();
+  // A host sets one with a spread over the lowered def, which stays an `AgentDef`.
+  const hosted: AgentDef = { ...agent({ name: "T" }), systemPrompt: (ctx) => ctx.sessionId };
+  expectTypeOf(hosted.systemPrompt).toEqualTypeOf<AgentSystemPrompt>();
 });
 
 /** A guardrail's verdict vocabulary is the subagent's, deliberately. */
