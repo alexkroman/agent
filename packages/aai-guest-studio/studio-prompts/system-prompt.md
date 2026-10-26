@@ -562,7 +562,7 @@ project: `node_modules/@alexkroman1/aai/agent-guide/`).
 | `agent-guide/PIPELINE-TUNING.md` | pipeline vs S2S vs text, turn-taking knobs, phone calls, `ctx.speech`      |
 | `agent-guide/PROVIDERS.md`       | an STT, LLM or TTS vendor or model; the voice catalog                      |
 | `agent-guide/UI.md`              | `client.tsx`: `mountClient()`, hooks, components, styling                  |
-| `agent-guide/TESTING-EVALS.md`   | `agent.test.ts`, `runTool`, `agent.eval.test.ts`                           |
+| `agent-guide/TESTING-EVALS.md`   | `agent.test.ts`, `describeAgent`, `agent.eval.test.ts`                     |
 | `agent-guide/HOSTING.md`         | `npm start`, OpenTelemetry tracing, `aai build --target`                   |
 
 ## Workflow
@@ -572,30 +572,27 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) → `pnpm test` (logic)
 
 1. **Iterate in `pnpm dev`** — browser UI; it restarts on every save at a
    terminal (`AAI_DEV_WATCH=0`/`1` forces it off/on). Speak to the agent to
-   verify behavior end-to-end. This is the primary feedback loop.
+   verify behavior end-to-end.
 2. **Run `pnpm test` after logic changes** — vitest, co-located as
    `agent.test.ts`. **When the project has one, it is yours to maintain**: a
    test asserting the old agent's shape is stale after a rewrite, and updating
    it is a normal fix. Do not delete a test to make it pass.
-   `agent-guide/TESTING-EVALS.md` has `virtual:aai/agent` and `runTool`.
+   `agent-guide/TESTING-EVALS.md` has `virtual:aai/agent` and `describeAgent`.
 3. **Run `pnpm eval` when you change what the agent DOES** — a test asserts the
-   shape; an eval (`agent.eval.test.ts`, harness imported from
-   `@alexkroman1/aai-runtime/testing/vitest`) drives a real session and asserts
-   what it did. With a provider key it uses a LIVE model (spends tokens, noisy);
+   shape; an eval (`agent.eval.test.ts`) drives a real session and asserts what
+   it did. With a provider key it uses a LIVE model (spends tokens, noisy);
    without one a SCRIPTED model, which proves wiring and nothing about what the
    agent says.
 4. **Run `pnpm build` before declaring done** — bundles `agent.ts`, type-checks,
-   validates the manifest, and runs the WHOLE spec suite first. Catches issues
-   `dev` won't.
+   validates the manifest, and runs the WHOLE spec suite first.
 5. **Make small, focused changes** — verify each one before stacking the next.
 6. **Look at templates before writing custom code** — the CLI ships working
    examples inside its own package, at
    `node_modules/@alexkroman1/aai-cli/dist/templates/`. Read them directly;
    `aai init --template <name>` scaffolds a fresh project from one. Closest:
    `quickstart-agent`, `custom-pipeline-agent`, `web-research-agent`,
-   `pizza-ordering-agent`, `retail-orders-agent` (the most complex). Built entry
-   points under `node_modules/@alexkroman1/aai*/dist/` re-export with source
-   specifiers — rewrite `.ts`/`.tsx` to `.d.ts` to find the file.
+   `pizza-ordering-agent`, `retail-orders-agent` (the most complex). A built
+   `dist/` entry re-exports source specifiers: read the `.d.ts` beside it.
 
 ## CLI
 
@@ -633,9 +630,8 @@ aai workflow cancel <id> # Stop a running run
 
 **A bare `aai` in an agent directory PUBLISHES** (it asks first at a terminal).
 **`aai test` runs every non-eval spec**, which `--only` narrows to
-`agent.test.ts`; a narrowed run names the files it skipped and answers
-`complete: false`. `pnpm test` is `aai test`, and so is the gate in front of
-`aai build`.
+`agent.test.ts` (naming what it skipped). `pnpm test` is `aai test`, and so is
+the gate in front of `aai build`.
 
 ## Project structure
 
@@ -645,10 +641,10 @@ my-agent/
   agent.test.ts       # Unit tests (optional)
   agent.eval.test.ts  # Behaviour evals, run by `pnpm eval` (optional)
   client.tsx          # Custom UI (optional, React)
-  shared.ts           # Types shared between agent.ts and client.tsx
+  shared.ts           # Slots and types agent.ts, tools/ and client.tsx share
   system-prompt.md    # The system prompt — discovered, not imported
   tools/              # One file per tool — this is how a tool is declared
-  workflows/          # Durable workflow bodies (optional — see agent-guide/WORKFLOWS.md)
+  workflows/          # One file per workflow, discovered the same way (agent-guide/WORKFLOWS.md)
   package.json
   tsconfig.json
   .env                # Local dev secrets (gitignored)
@@ -683,8 +679,8 @@ Three rules come with it, each a build error naming the file:
   letter, and join words with `_` — `tools/incident_create.ts`, never
   `incident-create.ts`. Renaming the file renames the tool.
 - **The export is the DEFAULT export**, and it must be a `tool()` (or a
-  `slot.tool()` / `slot.updateTool()`). A file exporting something else is named
-  at build time rather than becoming a tool that fails per turn.
+  `slot.tool()` / `slot.updateTool()`). A file exporting something else is a
+  build error, not a tool that fails per turn.
 - **`tools/` is flat.** A nested file — a nested HELPER too — is rejected, so
   put shared helpers beside `agent.ts` rather than under `tools/`.
 
@@ -721,21 +717,21 @@ export default agent({
 });
 ```
 
-The fields almost every agent sets: `name` (required), `greeting` (default: "Hey
-there..."; `""` starts silent), `tts` (voice `aai-jane` unless set), `llm`,
-`builtinTools` (omitted = `["think"]` only; setting it REPLACES the default),
-`maxSteps` (default 10 tool-calling steps per reply) and `requiredEnv` (every
-env var a tool or step reads; **publishing checks it**, so a missing key fails
-at `aai publish` instead of mid-call). `agent-guide/AGENT-API.md` lists every
-field.
+The fields almost every agent sets: `name` (required), `listing` (one line for
+`aai list` and the studio picker — never sent to the model), `greeting`
+(default: "Hey there..."; `""` starts silent), `tts` (voice `aai-jane` unless
+set), `llm`, `builtinTools` (omitted = `["think"]` only; setting it REPLACES the
+default), `maxSteps` (default 10 tool-calling steps per reply) and `requiredEnv`
+(every env var a tool or step reads; **publishing checks it**, so a missing key
+fails at `aai publish` instead of mid-call). `agent-guide/AGENT-API.md` lists
+every field.
 
-**To change the model, set `llm` in `agent.ts`** — templates usually omit it, so
-there is no line to find. The default is `gpt-5.6-luna` on the AssemblyAI LLM
-Gateway, which is **not part of AssemblyAI's free credits**: an account with no
-payment method is refused ("does not have access to this LLM Gateway model").
-Add a card in the dashboard, or bring another provider's key
-(`agent-guide/PROVIDERS.md`). A model must support tool calling if the agent has
-tools — `qwen3.5-4b-32k-fast` does not.
+**To change the model, set `llm` in `agent.ts`** (templates usually omit it).
+The default is `gpt-5.6-luna` on the AssemblyAI LLM Gateway, which is **not part
+of AssemblyAI's free credits**: an account with no payment method is refused
+("does not have access to this LLM Gateway model"). Add a card in the dashboard,
+or bring another provider's key (`agent-guide/PROVIDERS.md`). A model must
+support tool calling if the agent has tools — `qwen3.5-4b-32k-fast` does not.
 
 **Four modes, one field: `mode`.** Omit it for PIPELINE — the default, and the
 mode this guide assumes. `mode: "s2s"` beside an `s2s: assemblyAIS2s()`
@@ -761,8 +757,8 @@ The default pipeline lowers the pair onto its STT stage; beside an explicit
 or dictating callers; only turns that never read as complete pay it);
 `minSilenceMs` taxes every finished turn — the doc comments on
 `DEFAULT_MIN_TURN_SILENCE_MS`/`DEFAULT_MAX_TURN_SILENCE_MS` say why. Min must be
-<= max. S2S has no such knob on purpose: its end-of-turn detection is adaptive
-and entity-aware, and a silence window disables it (`AssemblyAIS2sOptions`).
+<= max. S2S has no such knob: its adaptive end-of-turn detection would be
+disabled by one (`AssemblyAIS2sOptions`).
 
 ## `tool()` basics
 
@@ -794,17 +790,21 @@ export default tool({
   also returns an error shape. Let it infer.
 - **`ctx`** carries `env` (secrets; every read is `string | undefined` —
   `requireEnv(ctx, "KEY")` fails by name), `signal` (pass it to anything slow),
-  `messages`, `sessionId`, `send(event, data)` to the browser, `generate(...)`
-  for a one-shot model call, `delegate(...)` for a speaker, `speech` to say
-  something later and `workflows` to start a durable run.
+  `messages`, `sessionId`, `turn` (committed user turns so far), `now()`,
+  `send(event, data)` to the browser, `generate(...)` for a one-shot model call,
+  `delegate(...)` for a speaker, `speech` to say something later and `workflows`
+  to start a durable run.
 - **State across tool calls lives in a `sessionSlot`** — `slot.tool` reads,
-  `slot.updateTool` writes. Never keep it in a module variable: every session
-  shares the module.
+  `slot.updateTool` writes (`require`/`prepare`/`report`: the precondition, the
+  await before the write, the result off the stored value). Never a module
+  variable: every session shares it.
+- **A per-result instruction to the model** is
+  `withInstruction(value, "Read it back in one breath.")`: the model reads it,
+  nothing else does.
 
-`agent-guide/TOOLS.md` has the rest: `ctx` in full, session state, `dialog()`
-and `procedure()`, speakers and the roster, `clientTool()` (a tool the browser
-runs), the built-in tool table, `/utils`, `/html`, persistence and the speech
-helpers.
+`agent-guide/TOOLS.md` has the rest: `ctx` in full, session state, `dialog()`,
+speakers, `clientTool()`, starting a run, the builtin table, `/utils`, `/html`,
+persistence and the speech helpers.
 
 ## `system-prompt.md` IS the system prompt
 
@@ -828,17 +828,17 @@ You are a concise, friendly assistant.
 
 Three rules, each a build error naming the file:
 
-- **A file nothing reads is an error.** If `system-prompt.md` exists and
-  `agent.ts` declares a DIFFERENT `systemPrompt`, the build fails rather than
-  ignoring the file.
+- **A file nothing reads is an error**: `system-prompt.md` beside a DIFFERENT
+  `systemPrompt` in `agent.ts` fails the build rather than being ignored.
 - **An empty file is an error**, not a silent fall-through to the framework
   default. Delete the file if that is what you want.
 - **A `system-prompt/` directory is rejected.** One file, no concatenation order
   to guess.
 
-Composing a prompt from the file plus computed text, and a per-request prompt
-resolver, are in `agent-guide/AGENT-API.md`. `greeting` stays a field: a
-document goes in a file, a value stays in the call.
+**Computed text goes in `agent({ promptContext })`** — a menu, today's facts, or
+a function of the session resolved per request — and is appended under the file.
+Never import the file to compose it (`agent-guide/AGENT-API.md`). `greeting`
+stays a field: a document goes in a file, a value stays in the call.
 
 ## Voice rules for systemPrompt
 
@@ -920,8 +920,6 @@ eval suites) — `agent-guide/TESTING-EVALS.md`.
 
 ## Gotchas
 
-- **Tool execute must return a value.** A missing return = `undefined` in LLM
-  context = the model thinks the tool failed.
 - **`verbatimModuleSyntax` is on**: `import type { ToolContext }`, or
   `import { agent, type ToolContext }`.
 - **There is no global `JSX` namespace** (React 19): type a component's return
@@ -932,16 +930,17 @@ eval suites) — `agent-guide/TESTING-EVALS.md`.
   `toolCalls`** — the effect re-fires every render and duplicates.
 - **Never await `ctx.speech.say(...).done` inside a tool's `execute`** — the
   line waits behind the reply that tool is part of.
-- **Never call `Math.random()` in a tool** — use `ctx.random`, which a spec can
-  substitute. A workflow body uses its journaled `ctx.random()`.
+- **Never call `Math.random()` or `Date.now()` in a tool** — use `ctx.random`
+  and `ctx.now()`, which a spec can pin. A workflow body uses its journaled
+  `ctx.random()` / `ctx.now()`.
 - **The LLM loop runs one step's tool calls CONCURRENTLY**: serialize a
   read-modify-write over anything outside a slot with `createKeyedLock`
   (`/utils`).
 - **The network builtins refuse private IPs** (SSRF). Use public URLs.
 - **`run_code` refuses under `aai dev`/`aai start`** unless the shell sets
   `AAI_RUN_CODE=deno`: each call then runs in its own Deno 2 with no network,
-  file or env access. Deployed, it runs in the platform's sandbox. Or use the
-  `calculate` builtin for simple arithmetic.
+  file or env access. Deployed, it runs in the platform's sandbox. `calculate`
+  covers simple arithmetic.
 - **There is no `ctx.db`.** A tool that persists brings its own client — see
   "Persisting data" in `agent-guide/TOOLS.md`. A secret is read when the sandbox
   is BUILT, so a newly set `DATABASE_URL` arrives on the next deploy.
@@ -984,12 +983,13 @@ import { agent } from "@alexkroman1/aai";
 export default agent({
   // ── Identity and prompt ────────────────────────────────────────────────
   name: string;                              // required — display name
-  description?: string;                      // one line for humans choosing the agent (a
+  listing?: string;                          // one line for humans choosing the agent (a
                                              // registry, `aai list`) — never sent to the model
-  systemPrompt?: string | ((ctx) => string); // usually ABSENT — write system-prompt.md
-                                             // instead; declare it only to COMPOSE one, or as
-                                             // a per-request resolver over session state.
-                                             // There is no `system` alias — one name.
+  promptContext?: string | ((ctx) => string); // appended UNDER system-prompt.md: a menu, a
+                                             // catalogue, or per-request text over session
+                                             // state (below). Refused on a workflow app.
+  systemPrompt?: string | ((ctx) => string); // usually ABSENT — write system-prompt.md; set
+                                             // only to take over the WHOLE prompt
   greeting?: string;                         // default: "Hey there..."; "" starts silent
   sttPrompt?: string;                        // STT guidance for jargon/acronyms (both voice modes)
   voicePresets?: VoicePresetName[];          // opt-in prompt presets — see below; each one
@@ -1018,7 +1018,9 @@ export default agent({
                                              // (TOOLS.md, "Speakers")
   dialogs?: AnyDialog[];                     // wires a dialog() to the SESSION: @-events, timeouts,
                                              // per-state instruction (TOOLS.md, "dialog()")
-  workflows?: Record<string, WorkflowDef>;   // durable workflows a tool may start (WORKFLOWS.md)
+  workflows?: Record<string, WorkflowDef>;   // durable runs a tool may start; usually ABSENT —
+                                             // a `workflows/<name>.ts` default export is
+                                             // registered as <name> (WORKFLOWS.md)
   mcpServers?: McpServers;                   // remote MCP servers' tools, prefixed mcp_<key>_…;
                                              // a host connects them with `withMcpTools`
   requiredEnv?: string[];                    // env vars this agent reads. Publishing CHECKS them,
@@ -1075,10 +1077,13 @@ export default agent({
                                              // switch with a default); "*" gets AnySessionEvent
   sessionContext?: (args) => SessionContext; // fetched once per connect, before the first model
                                              // call: extra instructions, history cut-off, refusal
-  onSessionEnd?: (ctx) => unknown;           // after every hang-up / disconnect / idle close
+  onSessionEnd?: (ctx) => unknown;           // after every hang-up / disconnect / idle close;
+                                             // ctx.transcript is what was said, oldest first
 
   // ── Surfaces outside a session ─────────────────────────────────────────
-  routes?: Record<string, RouteHandler>;     // JSON endpoints under /api, keyed "GET /path/:id"
+  routes?: Record<string, RouteHandler>;     // JSON endpoints under /api, keyed "GET /path/:id";
+                                             // wrap one in apiKeyRoute({ env }, handler) or
+                                             // webhookRoute(...) to authenticate it
   clientInbox?: { sampleRate?: number };     // what a run pushes to a device over WS /inbox
 });
 ```
@@ -1107,16 +1112,17 @@ export default agent({
 });
 ```
 
-A prompt RESOLVER reads session state once per model request:
+A `promptContext` FUNCTION reads session state once per model request, and is
+appended under `system-prompt.md`, which stays the prompt:
 
 ```ts
 import { agent, sessionSlot } from "@alexkroman1/aai";
 
-const caller = sessionSlot("caller", () => ({ verified: false }));
+const caller = sessionSlot("caller", { verified: false });
 
 export default agent({
   name: "Bank Line",
-  systemPrompt: (ctx) =>
+  promptContext: (ctx) =>
     caller.get(ctx).verified
       ? "The caller is verified. You may discuss balances."
       : "The caller is NOT verified. Verify them before discussing anything.",
@@ -1141,32 +1147,36 @@ export default agent({
 
 `sessionContext` is bounded (1.5 s) and a throw, a timeout or `undefined` starts
 the session without it; `onSessionEnd` is fire-and-forget and at-least-once, so
-key any run it starts. A `routes` handler's return value is the JSON body;
-`routeResponse(status, body, { headers })` picks another status (and any headers
-— a `Location`, a `Retry-After`) and a thrown `routeError(status, message)`
-answers `{ error: message }`.
+key any run it starts, and its `ctx.transcript` is every committed line of the
+session (what an app that places calls records). A `routes` handler's return
+value is the JSON body; `routeResponse(status, body, { headers })` picks another
+status (and any headers — a `Location`, a `Retry-After`) and a thrown
+`routeError(status, message)` answers `{ error: message }`.
+`apiKeyRoute({ env: "CALLS_API_KEY" }, handler)` runs the handler only for a
+request carrying that key (`Authorization: Bearer …` by default; `503` when the
+variable is unset, `401` when the key is wrong).
 
-## Composing a system prompt
+## Text beside the prompt — `promptContext`
 
-**Composing a prompt is still legal, and it is the one case you write the import
-for.** When part of the prompt is computed — a menu, a catalogue, today's date —
-import the file and build the field; the build sees its own text inside your
-prompt and leaves what you built alone:
+**The file is never imported.** When part of the prompt is computed — a menu, a
+catalogue, today's date — put it in `promptContext`; the build appends it under
+`system-prompt.md` after a blank line, and the file stays discovered:
 
-```ts no-check
-// `no-check`: the prompt file and the menu module are the project's, not this
-// guide's — which is the point of the example.
-/// <reference types="vite/client" />
+```ts
 import { agent } from "@alexkroman1/aai";
-import systemPrompt from "./system-prompt.md?raw";
-import { menuText } from "./menu.ts";
 
-export default agent({ name: "Pizza", systemPrompt: `${systemPrompt}\n${menuText()}` });
+const MENU = ["Margherita — 12", "Marinara — 10"];
+
+export default agent({ name: "Pizza", promptContext: `Menu:\n${MENU.join("\n")}` });
 ```
 
-`greeting` stays a field, deliberately: it is one sentence with no structure to
-lose, and it crosses the wire to the browser beside `name` and `page`. **A
-document goes in a file, a value stays in the call.**
+A string is serialized into the config like the prompt is; a function is
+resolved per model request (per connection on S2S) from the same session context
+a `systemPrompt` resolver sees, so per-caller state goes in the function form
+shown above. A workflow app refuses the field. `greeting` stays a field,
+deliberately: it is one sentence with no structure to lose, and it crosses the
+wire to the browser beside `name` and `page`. **A document goes in a file, a
+value stays in the call.**
 
 **JSON imports need no attribute.** `resolveJsonModule` is on, so
 `import data from "./knowledge.json"` is all it takes. Do NOT write
@@ -1208,8 +1218,11 @@ import { z } from "zod";
 
 const myTool = tool({
   description: string;           // shown to LLM — decides when to call
-  inputSchema?: z.ZodObject;     // Zod schema (omit for no-arg tools)
+  inputSchema?: z.ZodObject;     // Zod schema (omit it for a no-argument tool)
   execute(args, ctx): unknown;   // sync or async
+  ui?: { icon?, label? };        // how a page shows this tool's calls — served to the
+                                 // client with the declaration, so no page-side map
+  messages?: ToolMessagesInput;  // what to SAY while it runs (PIPELINE-TUNING.md)
 });
 ```
 
@@ -1229,6 +1242,12 @@ ctx.slots: SlotStore                           // where sessionSlot() keeps this
                                                // reach for the slot, never this (see "Session state")
 ctx.messages: readonly Message[]               // conversation history [{role, content}]
 ctx.sessionId: string                          // unique session ID
+ctx.turn: number                               // user turns committed so far (1 during the first
+                                               // reply) — "ask once, on turn three" is a compare,
+                                               // not a counter kept in a slot
+ctx.now(): number                              // epoch ms; ctx.random: a RandomSource. Both are
+                                               // what Date.now()/Math.random() would answer, and
+                                               // a spec pins them: createToolContext({ now, random })
 ctx.send(event, data): void                    // push custom event to browser client (dropped over 64 KB JSON);
                                                // typed per event by ClientEventMap (below), else `unknown`
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
@@ -1295,7 +1314,9 @@ the next push just reports the next line.
 ### Session state
 
 **A `sessionSlot` is the only way to keep state across a session's tool calls**,
-and it is one declaration in a shared module:
+and it is one declaration in a shared module. The default is a plain value
+(cloned per session) or a factory; `sync: true` shows the slot's `view` to the
+client with nothing declared on `agent()`:
 
 ```ts
 // shared.ts — the one place the shape is written down.
@@ -1303,7 +1324,18 @@ import { sessionSlot } from "@alexkroman1/aai";
 
 export type Incident = { id: string; status: "open" | "closed" };
 
-export const incidentSlot = sessionSlot("incidents", () => ({ items: [] as Incident[] }));
+export const incidentSlot = sessionSlot(
+  "incidents",
+  { items: [] as Incident[], open: 0 },
+  {
+    // Runs on EVERY store, the default included, so a derived field is never stale.
+    after: (s) => {
+      s.open = s.items.filter((i) => i.status === "open").length;
+    },
+    view: (s) => ({ open: s.open }),
+    sync: true,
+  },
+);
 ```
 
 ```ts no-check
@@ -1332,24 +1364,46 @@ export default incidentSlot.updateTool({
 });
 ```
 
-Four rules, and each is an error rather than advice if you get it wrong:
+Five rules, and each is an error rather than advice if you get it wrong:
 
 - **`tool` reads, `updateTool` writes.** What a read is handed is FROZEN, so
   mutating it throws instead of quietly going nowhere.
 - **A write is SYNCHRONOUS.** The value you mutate is stored the moment your
-  body returns, so an `updateTool` body may not `await`. When you need a model
-  call or a fetch first, do it in an ordinary `tool()` and then mutate:
+  body returns, so an `updateTool` body may not `await`. The await goes in
+  `prepare`, which runs on the frozen value first and hands what it produced to
+  `execute` as the THIRD argument, ahead of `ctx`; `require` is the precondition
+  (`ToolFailure | undefined` off the frozen value), checked before `prepare` and
+  again right before the window; `report` completes the result from what was
+  actually STORED, after `after` and `caps`:
 
-  ```ts no-check
-  execute: async (args, ctx) => {
-    const priced = await ctx.generate({ prompt: `price ${args.sku}` });
-    return cartSlot.update(ctx, (cart) => {
-      cart.total = Number(priced.text);
+  ```ts
+  import { sessionSlot, toolFailure } from "@alexkroman1/aai";
+  import { z } from "zod";
+
+  const cartSlot = sessionSlot("cart", { items: [] as string[], total: 0 });
+
+  export default cartSlot.updateTool({
+    description: "Price the cart",
+    inputSchema: z.object({ sku: z.string() }),
+    require: (cart) => (cart.items.length === 0 ? toolFailure("The cart is empty.") : undefined),
+    prepare: async ({ sku }, _cart, ctx) =>
+      Number((await ctx.generate({ prompt: `price ${sku}` })).text),
+    execute: (_args, cart, price) => {
+      cart.total = price;
       return { total: cart.total };
-    });
-  }
+    },
+    report: (stored, partial) => ({ ...partial, items: stored.items.length }),
+  });
   ```
 
+  A `ToolFailure` from `require` or `prepare` is the tool's whole result and
+  opens no window. From inside a plain `tool()` the same shape is
+  `slot.transact(ctx, { require?, prepare, commit })`.
+
+- **Report from the stored value, never the draft.** A count read off the draft
+  is the count before a cap trimmed it, and a field `after` computes is not on
+  the draft when the body returns — `report` is the one reading that cannot
+  disagree with the next `get`.
 - **Hold plain data.** Objects, arrays, strings, numbers, booleans and null. A
   `Map`, a `Set`, a `Date` or a class instance is refused with the field named,
   because none of them survives being stored.
@@ -1359,10 +1413,42 @@ Four rules, and each is an error rather than advice if you get it wrong:
   process unless you set a `DATABASE_URL` in `.env`. You write the same code
   either way; that is the reason for the rules above.
 
-There is nothing to declare on `agent()` — the slot owns its own default. Use
-`syncState: slot.projected` (or a list of them) to show state to a custom
-client. `slot.snapshot(ctx)` returns a mutable deep copy of the value — what a
-spec hands `slot.set`, instead of `structuredClone(slot.get(ctx))` and a cast.
+There is nothing to declare on `agent()` — the slot owns its default, and
+`sync: true` registers its projection (the slot must be declared in a module
+`agent.ts` imports, such as `shared.ts`); an explicit
+`syncState: slot.projected` still wins. **A SEEDED slot declares `empty`** —
+`sessionSlot("catalog", loadSeed, { view, empty: () => ({ items: [] }) })` — so
+the frame a page renders before its first push is the empty shape rather than
+the seed shipped to the browser. `SlotValueOf<typeof slot>` and
+`SlotDraftOf<typeof slot>` type a helper's parameter as the frozen value or the
+draft without restating the shape. `slot.snapshot(ctx)` returns a mutable deep
+copy of the value — what a spec hands `slot.set`, instead of
+`structuredClone(slot.get(ctx))` and a cast.
+
+### A sentence the model should follow THIS time — `withInstruction`
+
+A tool often knows, once it has the answer, how the model should treat it: "read
+the plan back in one breath", "ask which of these two before going on".
+`withInstruction(value, "…")` rides that sentence on the result under a reserved
+key; the model reads it beside the result, and the page, the history and a later
+tool read the value alone. It works on a `toolFailure(...)` too. **Per OUTCOME,
+not per tool**: a sentence that is the same on every call belongs in
+`description`.
+
+```ts
+import { tool, withInstruction } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Draft the day's plan",
+  inputSchema: z.object({ goals: z.array(z.string()) }),
+  execute: ({ goals }) =>
+    withInstruction(
+      { steps: goals.map((goal, i) => `${i + 1}. ${goal}`) },
+      "Read the plan back in one breath, then ask whether to start.",
+    ),
+});
+```
 
 **`verbatimModuleSyntax` applies to every type you import** — `ToolContext`,
 `ToolDef`, `Message`, provider types. A plain `import { ToolContext }` fails;
@@ -1413,12 +1499,59 @@ export const checkout = dialog("checkout", {
 });
 ```
 
-A tool declared with `checkout.tool({...})` is REFUSED unless the dialog is in a
-state that allows it, and the refusal reaches the model as a `ToolFailure` it
-can recover from — the gate is enforced at EXECUTION rather than hoped for in a
-prompt. The states and events are inferred from the spec, so a misspelled `send`
-is a compile error. `emergency-dispatch-agent` and `tabletop-rpg-agent` are the
-worked examples.
+A tool declared with `checkout.tool({ when: "paying", send: … })` is REFUSED
+outside the states `when` names, and the refusal reaches the model as a
+`ToolFailure` it can recover from — the gate is enforced at EXECUTION rather
+than hoped for in a prompt. The states and events are inferred from the spec, so
+a misspelled `send` is a compile error. **A slot tool takes the same gate**:
+`orderSlot.updateTool({ dialog: checkout, when, send, … })` runs the refusal,
+then `require`/`prepare`, the window, `report`, and the transition — nothing is
+sent on a `ToolFailure`.
+
+```ts
+import { dialog, sessionSlot } from "@alexkroman1/aai";
+import { z } from "zod";
+
+const scratch = sessionSlot("scratch", { notes: [] as string[] });
+const orderSlot = sessionSlot("order", { items: [] as string[], paid: false });
+
+const checkout = dialog("checkout", {
+  initial: "collecting",
+  states: {
+    collecting: { instruction: "Take the order.", on: { CONFIRMED: "paying" } },
+    paying: {
+      instruction: "Take payment with pay. Do not add items now.",
+      // Runs inside the move, when the dialog ENTERS the state: may write other
+      // slots, never this dialog. Not on a resume, a fresh session or a reset.
+      onEnter: (ctx) => scratch.reset(ctx),
+      on: { PAID: "done", DECLINED: "collecting" },
+    },
+    done: { instruction: "Read back the order number and say goodbye." },
+  },
+});
+
+export default orderSlot.updateTool({
+  description: "Take payment",
+  dialog: checkout,
+  when: "paying",
+  inputSchema: z.object({ approved: z.boolean() }),
+  execute: ({ approved }, order) => {
+    order.paid = approved;
+    return { paid: approved, next: approved ? ("PAID" as const) : ("DECLINED" as const) };
+  },
+  // A field holding the event type (or undefined to stay put). The function
+  // form `sendFrom: (result) => …` and the second argument
+  // `checkout.tool(def, { sendFrom })` are the same transition; write any of
+  // them in any order.
+  sendFrom: "next",
+});
+```
+
+**`when` is optional**: omitted, the tool is legal in every state, never
+refuses, and still answers the `{ ...position, result }` envelope and honours
+`send`/`sendFrom` — the shape of a tool that reports where the conversation is,
+or restarts it (`reset: true` restarts the dialog before the body runs).
+`emergency-dispatch-agent` and `tabletop-rpg-agent` are the worked examples.
 
 **`procedure()` runs a flow YOU drive, with no model in the loop.** Where a
 dialog constrains a conversation, a procedure is an algorithm with branches,
@@ -1574,9 +1707,9 @@ inputSchema: z.void(),                     // ✗
 inputSchema: z.object({ q: z.string() }).optional(),  // ✗ ZodOptional
 ```
 
-For a tool with no arguments write `tool({ description, execute })`, or
-`inputSchema: z.object({})` if you prefer it explicit. To make an individual
-argument optional, put `.optional()` on the FIELD, never on the object:
+For a tool with no arguments write `tool({ description, execute })` — omit the
+field; `args` is then `Record<string, never>`. To make an individual argument
+optional, put `.optional()` on the FIELD, never on the object:
 `z.object({ notes: z.string().optional() })`.
 
 **Do not annotate `execute`'s return type.** Nothing needs it — the result is
@@ -1651,6 +1784,23 @@ Why discovery rather than a map: the map was 62 lines across the shipped
 templates whose entire content was `snake_case_name: camelCaseImport`, and
 forgetting one line was **silent** — the file compiled, every check passed, and
 the tool simply never reached the model.
+
+### Starting a run from a tool
+
+`ctx.workflows.start(def, input)` starts a durable run and resolves its id as
+soon as the run EXISTS; the turn answers while it works (`WORKFLOWS.md` has the
+body side). Its `key` defaults to `"session"` — the session id — so a later
+turn, or a later CALL from the same session, reads it back with
+`ctx.workflows.latest(def)` (the newest run) or `live(def)` (the newest one
+still in flight) with no key spelled on either side. **Declare the status tools
+rather than writing them**:
+`builtinTools: ["think", "workflow_status", "workflow_progress", "workflow_cancel"]`
+gives the model those three over every declared workflow, keyed the same way;
+`describeRun(run)` and `cancelNote` on the workflow def supply the sentences
+they speak. A run parked on `ctx.waitForSignal("approval")` is answered from a
+tool with `ctx.workflows.signalRun(def, "session", "approval", payload)` — the
+token is derived on both sides, and a signal that lands before the body reaches
+its wait is held for it.
 
 ## Built-in tools
 
@@ -1815,10 +1965,11 @@ before it calls rather than as a refusal after. `isIsoDate` refuses
 `2026-02-30`; `addDays`/`daysBetween` compute in UTC — never turn a `YYYY-MM-DD`
 into a `Date` in local time.
 
-**Never call `Math.random()` in a tool** — use `ctx.random`, which a test can
-substitute, so a dice roll or a minted code is something a spec can assert.
-`randomInt`, `pickOne` and `shuffled` take it last. A WORKFLOW body wants its
-own journaled `ctx.random()` instead.
+**Never call `Math.random()` or `Date.now()` in a tool** — use `ctx.random` and
+`ctx.now()`, which a test can pin, so a dice roll, a minted code or an
+opening-hours check is something a spec can assert. `randomInt`, `pickOne` and
+`shuffled` take the source last. A WORKFLOW body wants its own journaled
+`ctx.random()` / `ctx.now()` instead.
 
 
 <!-- agent-guide/WORKFLOWS.md — inlined; where the guide says to read `agent-guide/WORKFLOWS.md`, this section is that file. -->
@@ -1837,15 +1988,8 @@ submit a job, watch it run, read the result — declare it with `workflowApp()`
 instead of `agent()`:
 
 ```ts no-check
-import { workflow, workflowApp } from "@alexkroman1/aai";
-import { z } from "zod";
-import { digestFlow } from "./workflows/digest.ts";
-
-export const digest = workflow({
-  description: "Summarize a link and file the digest",
-  input: z.object({ url: z.url().describe("The link to digest") }),
-  run: digestFlow,
-});
+import { workflowApp } from "@alexkroman1/aai";
+import digest from "./workflows/digest.ts";
 
 export default workflowApp({
   name: "Link Digest",
@@ -1856,10 +2000,12 @@ export default workflowApp({
 That is the whole declaration, and the fields it does NOT take are the point: a
 workflow app has no session and no LLM loop, so `systemPrompt`, `tools`,
 `maxSteps`, `syncState`, `stt`/`llm`/`tts`/`s2s` and every voice knob are
-**compile errors** here, not fields that quietly do nothing. `greeting` and
-`requiredEnv` stay. `workflowApp()` is `agent({ mode: "workflow-app", … })` with
-the discriminant already set — same definition object out, so `aai build`,
-`aai dev` and `aai publish` treat it like any other agent.
+**compile errors** here, not fields that quietly do nothing. `greeting` stays;
+`requiredEnv` defaults to `["ASSEMBLYAI_API_KEY"]`, the one key every step
+helper reads (`requiredEnv: []` opts out). `workflowApp()` is
+`agent({ mode: "workflow-app", … })` with the discriminant already set — same
+definition object out, so `aai build`, `aai dev` and `aai publish` treat it like
+any other agent.
 
 Reach for it when the user asks for something that outlives a request: an
 overnight job, an upload that takes minutes, anything waiting on a third-party
@@ -1885,18 +2031,34 @@ no database of its own for either half. Under `aai dev` they are as temporary as
 the runs above: the bytes go to a per-process temporary directory that a restart
 abandons. There is no `ctx.db` at all — see "Persisting data" in `TOOLS.md`.
 
-### Workflow bodies live in `workflows/`
+### A file in `workflows/` IS a workflow
 
-A body is an ordinary exported async function of its input and a
-`WorkflowContext`. There is no directive and no compile step of its own — the
-agent bundle compiles `workflows/` like any other source file — and durability
-is a method call:
+**`workflows/<name>.ts` default-exporting a `workflow()` def is registered as
+`<name>`**, the way a `tools/` file is a tool: a voice agent lists nothing on
+`agent()`, a `workflowApp()` imports the def into its `workflows` map (the field
+is required there — the workflows ARE the product), and a tool imports
+`../workflows/digest.ts` directly to start it. A file there with no default def
+— `prompts.ts`, `media.ts` — is a helper and is skipped; an explicit
+`agent({ workflows })` entry wins a clash, with a warning. The declaration
+carries the schema, the body is an ordinary exported async function of its input
+and a `WorkflowContext`, and durability is a method call:
 
 ```ts
-import type { WorkflowContext } from "@alexkroman1/aai";
+import { type WorkflowContext, type WorkflowInputOf, workflow } from "@alexkroman1/aai";
+import { z } from "zod";
 
-export async function digestFlow(input: { url: string }, ctx: WorkflowContext) {
-  const digest = await ctx.step("summarize", () => summarize(input.url));
+// workflows/digest.ts → registered as "digest". Declared in two phases so the
+// body below can name `typeof digest` (see "Type the body's input").
+const digest = workflow({
+  description: "Summarize a link and file the digest",
+  input: z.object({ url: z.url().describe("The link to digest"), limit: z.number().default(5) }),
+  output: z.object({ url: z.string(), headline: z.string(), filedAt: z.string() }),
+}).body(digestFlow);
+export default digest;
+
+export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
+  // `limit` is `number`, not `number | undefined` — the schema's default already ran.
+  const summary = await ctx.step("summarize", () => summarize(input.url, input.limit));
 
   // Suspended, not blocked: the container is free to exit here and the run
   // resumes when it comes due. Six hours works the same as ten seconds.
@@ -1905,14 +2067,14 @@ export async function digestFlow(input: { url: string }, ctx: WorkflowContext) {
   // the same reason: it is the wait's identity in the journal.
   await ctx.sleep("settle", 10_000);
 
-  const filedAt = await ctx.step("file", () => file(digest));
-  return { ...digest, filedAt };
+  const filedAt = await ctx.step("file", () => file(summary));
+  return { ...summary, filedAt };
 }
 
-async function summarize(url: string) {
+async function summarize(url: string, limit: number) {
   // The whole Node runtime is available in a step: fetch, a model call, a
   // database. Not in the body.
-  return { url, headline: `What ${new URL(url).hostname} says`, points: [] };
+  return { url, headline: `What ${new URL(url).hostname} says, in ${limit} points` };
 }
 
 async function file(_digest: { url: string }) {
@@ -1925,61 +2087,28 @@ later replay returns the journaled value without running it again. The step
 functions themselves are ordinary functions — which is also what lets a spec
 call one directly, with no engine in the path.
 
-**Type the body's input from the SCHEMA, not by hand.** The example above writes
-`input: { url: string }`, which is fine only while the workflow declares no
-input schema. Once it does, a hand-written parameter is unchecked: `run` takes
-its input as a function PARAMETER, so it is contravariant, and a body declaring
-a wider shape — or the same shape with one field's optionality or default wrong
-— is assignable and compiles. A `z.number().default(5)` against a body that
-writes `input.limit ?? 3` is the sharp version: the schema guarantees `limit` is
-there, the `??` is dead, and the two numbers disagree with nothing to report it.
-`WorkflowInputOf<typeof theDef>` reads the declaration instead.
+**Type the body's input from the SCHEMA, not by hand.** A hand-written parameter
+is unchecked: `run` takes its input as a function PARAMETER, so it is
+contravariant, and a body declaring a wider shape — or the same shape with one
+field's optionality or default wrong — is assignable and compiles. A
+`z.number().default(5)` against a body that writes `input.limit ?? 3` is the
+sharp version: the schema guarantees `limit` is there, the `??` is dead, and the
+two numbers disagree with nothing to report it. `WorkflowInputOf<…>` reads the
+declaration instead, and in the body's own module it takes one of two spellings,
+because `workflow({ input, run })` infers from the body while the body's
+parameter names the def (`TS7022`):
 
-**Reaching for it needs one thing that is not obvious: ANNOTATE the def.** The
-obvious spelling does not compile —
+- **The two-phase def**, as above:
+  `workflow({ description, input, output }).body(digestFlow)` fixes
+  `typeof digest` from the declaration alone, so the body may name it. Declare
+  `output` — without one the completed run's result is `unknown`.
+- **The schema itself**: `WorkflowInputOf<typeof digestInput>` for a named
+  `z.object(…)` const, with the single-phase
+  `workflow({ input: digestInput, run })` beside it.
 
-```text
-error TS7022: 'digest' implicitly has type 'any' because it does not have a type
-annotation and is referenced directly or indirectly in its own initializer.
-```
-
-— because `workflow()` infers its output from `run`, so `typeof digest` needs
-the body's signature while the body's signature needs `typeof digest`. Naming
-the schema in a `const` and annotating the def breaks the cycle:
-
-```ts
-import {
-  type WorkflowContext,
-  type WorkflowDef,
-  type WorkflowInputOf,
-  workflow,
-} from "@alexkroman1/aai";
-import { z } from "zod";
-
-const digestInput = z.object({ url: z.string(), limit: z.number().default(5) });
-
-// The annotation is what `typeof digest` resolves to, so it no longer depends
-// on the body below it.
-export const digest: WorkflowDef<typeof digestInput, { headline: string }> = workflow({
-  description: "Summarize a page",
-  input: digestInput,
-  run: digestFlow,
-});
-
-export async function digestFlow(input: WorkflowInputOf<typeof digest>, ctx: WorkflowContext) {
-  // `limit` is `number`, not `number | undefined` — the default already ran.
-  return await ctx.step("summarize", () => ({ headline: `${input.url} (${input.limit})` }));
-}
-```
-
-Declaring an `output` schema is what makes the annotation cheap: with one, the
-output type is stated once, in the schema, and checked where the run completes.
-
-Two of that family are on `@alexkroman1/aai` — `WorkflowInputOf` for a body's
-parameter and `WorkflowRunOf` for a `*_status` tool's snapshot. The third,
-`WorkflowOutputOf`, is on `@alexkroman1/aai/workflow-api` only, because its
-reader is a `client.tsx` parameterizing `useWorkflowRun<…>`; a status tool wants
-`WorkflowRunOf`, which composes the output in already.
+`WorkflowRunOf<typeof digest>` types a `*_status` tool's snapshot (output
+included); `WorkflowOutputOf` is on `@alexkroman1/aai/workflow-api`, for a
+`client.tsx` parameterizing `useWorkflowRun<…>`.
 
 Three rules, and all three fail silently if broken — nothing scans a body for
 them:
@@ -2006,11 +2135,15 @@ alias onto one counter and read each other's journaled results. Nothing detects
 it.
 
 **Per-step retries are an argument, not a property.** Pass `{ maxAttempts }`
-where a step deserves more patience than the default three:
+where a step deserves more patience than the default three, and `{ maxWaits }`
+where the expected failure is a RATE LIMIT: a `RetryableError` whose
+`retryAfter` is still ahead (what `orFail(step*)` raises on a 429) is then a
+wait, not an attempt, so the three attempts stay for the step's own failures:
 
 ```ts no-check
 const digest = await ctx.step("summarize", () => summarize(input.url), {
-  maxAttempts: 6,
+  maxAttempts: 3,
+  maxWaits: 6,
 });
 ```
 
@@ -2074,6 +2207,41 @@ Two rules:
   DERIVED from the run's own input, because whoever signals is usually a tool
   and a tool cannot see the body's local variables. See below.
 
+### Checking until it is done: `ctx.poll`
+
+A body that submits a job and checks on it does not write the loop.
+`ctx.poll(name, check, options)` runs each check as `ctx.step(name, check)` and
+each wait as a durable `ctx.sleep(name, everyMs)`, journaled exactly as the
+hand-written loop would be, and resolves `{ value, done, checks }` —
+`done: false` with the latest reading once the budget (`floor(maxMs / everyMs)`
+sleeps, a COUNT so a replay walks the same number) is spent:
+
+```ts
+import type { WorkflowContext } from "@alexkroman1/aai";
+
+declare function checkJob(id: string): Promise<{ status: string; text?: string }>;
+
+export async function awaitJob(id: string, ctx: WorkflowContext) {
+  const job = await ctx.poll("job", () => checkJob(id), {
+    everyMs: 10_000,
+    maxMs: 60 * 60_000,
+    done: (j) => j.status === "completed" || j.status === "error",
+    // Park on the provider's callback FIRST, then poll — see the webhook rules.
+    first: { waitFor: ctx.signalToken("job"), timeoutMs: 20 * 60_000 },
+    // Said once, in its own journaled step, when the poll outlasts a minute.
+    slowAfterMs: 60_000,
+    onSlow: "Still waiting on the provider.",
+  });
+  if (!job.done) await ctx.report("gaveUp", `Gave up on job ${id} after ${job.checks} checks.`);
+  return job.value;
+}
+```
+
+`done` is called on the JOURNALED value, so it must be a pure function of it.
+`ctx.report(name, line)` is one journaled step around `stepReport` — the
+narration a body writes between steps. Transcription has this whole shape
+packaged as `transcribeUploadDurably` (below).
+
 ### Waiting: `ctx.sleep` and `ctx.waitFor`
 
 Both SUSPEND the run — the body stops, the container is free, and the engine
@@ -2087,13 +2255,15 @@ lives only as long as the dev server. The boot line reports which one is in
 play.
 
 ```ts no-check
-// A label, then a duration in milliseconds or an absolute Date.
-await ctx.sleep("review-window", 6 * 60 * 60 * 1000, { correlationId: "review" });
+// A label, then a duration in milliseconds or an absolute Date. The label is
+// also the sleep's correlation id, which is what `wakeUp` names.
+await ctx.sleep("review-window", 6 * 60 * 60 * 1000);
 
-// Until somebody outside the run answers, via `ctx.workflows.signal(token, …)`
-// from a tool, or by a delivery to `publicWebhookUrl` — both hops reach the
-// same waitpoint.
-const approval = await ctx.waitFor<{ approved: boolean }>(approvalToken(input.id), {
+// Until somebody outside the run answers — a tool's
+// `ctx.workflows.signalRun(def, "session", "approval", payload)`, or a delivery
+// to a webhook URL minted from `ctx.signalToken("approval")`. Both hops reach
+// the same waitpoint.
+const approval = await ctx.waitForSignal<{ approved: boolean }>("approval", {
   timeoutMs: 120_000,
 });
 if (approval === undefined) return { published: false, reason: "nobody approved" };
@@ -2108,12 +2278,16 @@ Five things worth knowing:
   occurrence count separates the iterations. This is what makes a wait behind an
   `if` safe: the body can reach a different NUMBER of waits on two walks and
   each one still finds its own record.
-- **A hook's token must be DERIVED, not random.** Whoever signals is usually a
-  tool, and a tool cannot see the body's local variables — so export one
-  function that computes the token from the run's own input and import it in
-  both places. Derive it from something that identifies the RUN rather than the
-  caller: a token is held for the life of its run, so two runs deriving the same
-  one is the second one failing.
+- **Nobody spells the token.** `ctx.waitForSignal(label)` waits on
+  `<workflow>:<key>:<label>`, minted from the run's declared name and its
+  `StartOptions.key` (`ctx.key`); `ctx.signalToken(label)` hands the same token
+  to a step, and `ctx.workflows.signalRun(def, key, label, payload)` answers it
+  from a tool — `"session"` there is the session id, the key a tool's `start`
+  uses by default. A run started with NO key has no token, and both body methods
+  throw rather than mint one from `undefined`. `signalRun` HOLDS a payload that
+  lands before the body reaches its wait (`holdMs`), which is the tool that
+  starts a run and answers its first question in the same turn.
+  `ctx.waitFor(token)` remains for a token you own.
 - **`timeoutMs` resolves `undefined` when the window closes unanswered.** A
   closing window is an outcome to branch on, not a failure, and the engine
   closes the hook as it shuts so a late answer cannot change what already
@@ -2149,11 +2323,13 @@ it hands AssemblyAI a `webhook_url` and parks on the delivery instead of polling
 for twenty minutes. Five things about that shape, every one a trap somebody has
 already paid for:
 
-- **Mint it with `stepWebhookUrl(token)`, from inside the step that hands it
-  over.** That is the step-side half of `ctx.workflows.publicWebhookUrl` — the
-  tool-side one needs a `ToolContext`, which a step is not handed. It THROWS
-  when the deployment cannot mint one, which a step should catch and treat as
-  "no callback": a run must not fail over a missing optimization. And note
+- **Mint it with
+  `stepWebhookUrl(ctx.signalToken("transcript"), { optional: true })`, from
+  inside the step that hands it over.** That is the step-side half of
+  `ctx.workflows.publicWebhookUrl` — the tool-side one needs a `ToolContext`,
+  which a step is not handed. `optional` answers `undefined` when the deployment
+  cannot mint one, so the step passes "no callback" on rather than failing a run
+  over a missing optimization; without it the call THROWS. And note
   `requireStepEnv("AAI_PUBLIC_BASE_URL")` is NOT a substitute — the public base
   URL is a boot parameter of the deployment, not one of the agent's own secrets,
   so that read is `undefined` in production precisely where the value exists.
@@ -2166,8 +2342,9 @@ already paid for:
   party with no delivery guarantee you control: the sender gives up after its
   own retry budget, a deployment may not know its public URL, and a delivery
   that lands before your body reaches its wait is answered `404` and dropped. So
-  read the state before you park and again after, give the wait a `timeoutMs`,
-  and let an unanswered window fall through to the read.
+  give the wait a `timeoutMs` and let an unanswered window fall through to the
+  read — which is `ctx.poll` with `first: { waitFor, timeoutMs }` in one call,
+  and `woken` on its result says which arm answered.
 - **Wait for the EDGE, not the answer.** Treat the payload as "something
   happened, go look" and get the fact from the far side's own API under your own
   credential. That is what makes an unauthenticated callback route safe: a
@@ -2214,12 +2391,11 @@ journal, and really survives a restart.
 
 ```ts no-check
 import { runWorkflow } from "@alexkroman1/aai-runtime/testing";
-import { digest } from "./agent.ts";
+import agentDef from "virtual:aai/agent";
 
 // Parks on the wait instead of blocking, with the work before it journaled.
-const run = await runWorkflow(digest, { url: "https://example.com/a" }, {
-  name: "digest",
-});
+// Named through the AGENT, so the name is checked and the output typed.
+const run = await runWorkflow(agentDef, "digest", { url: "https://example.com/a" });
 expect(run.status).toBe("running");
 expect(run.wakeAt).toBeGreaterThan(Date.now());
 expect(run.steps.map((s) => s.name)).toEqual(["fetchArticle", "summarize"]);
@@ -2242,15 +2418,19 @@ Three more things it can do, each the thing a durable body is written for:
   second run sees.
 
 Stub the steps' collaborators at the seams they really use — a step's HTTP goes
-through the published `stepFetch` slot, so a model call and a page fetch are
-BOTH answered there. `stubGatewayRoute` composes the two:
+through ONE published `stepFetch` slot, so a model call, a page fetch and a
+transcription are all answered there, and `installStubWorld` composes them in
+the one order that works, seeds `ASSEMBLYAI_API_KEY`, and hands back every
+fake's call log:
 
 ```ts no-check
-import { stubGatewayRoute } from "@alexkroman1/aai-runtime/testing";
-import { installStubStepFetch } from "@alexkroman1/aai-runtime/testing/vitest";
+import { installStubWorld } from "@alexkroman1/aai-runtime/testing/vitest";
 
-const model = stubGatewayRoute('{"headline":"H","points":["a"]}');
-installStubStepFetch((request) => model.route(request) ?? { body: PAGE_HTML });
+const world = installStubWorld({
+  model: '{"headline":"H","points":["a"]}',
+  pages: { "https://example.com/a": { body: PAGE_HTML } },
+});
+expect(world.model[0]?.prompt).toContain("example.com");
 ```
 
 ### A step's env, and calling a model from one
@@ -2326,7 +2506,11 @@ that means "already deleted", a `4xx` whose body decides which advice to print.
 Then classify it yourself: `throwStepError(err)`, `throwFatalStepError(err)` to
 stop outright, `toStepError(cause, message)` to build the error without
 throwing, or `throwFfmpegStepError(err)` for a media failure, whose default runs
-the other way (only a `timeout` or an `aborted` is worth another attempt).
+the other way (only a `timeout` or an `aborted` is worth another attempt). **A
+decision that is a pure function of the input is fatal on its first attempt**:
+`orFatal(() => parseWav(head, size), { when: UnsupportedRecordingError })` makes
+that one class terminal and passes everything else through unchanged;
+`fatalOn((err) => …, fn)` is the same with a predicate.
 
 **Why the split exists, since the wrapped call is what you usually want:**
 importing from here is the OPT-IN, and `/step` is not written only for a step:
@@ -2340,20 +2524,32 @@ is one. A step pays nothing for the extra import line.
 Three more subpaths a `workflows/*.ts` module can reach, all with the same
 bundling rule as `/step` — import them there, never through the root barrel:
 
-- **`@alexkroman1/aai/step`** — `stepTranscribeSync(bytes)` for a short
-  recording, or `stepTranscribeUpload` → `stepTranscribeSubmit` →
-  `stepTranscribePoll` for a long one, plus `Transcript`, `TranscribeError` and
-  the `TRANSCRIBE_*` limits. (There is no `/transcribe` subpath; transcription
-  lives on `/step` with the other step primitives.) Wrap each in `orFail` as
-  above: a provider refusal — a container it will not read, a recording with no
-  speech — arrives with `retryable: false`, and unclassified a step re-uploads
-  the same bytes until its attempts run out.
+- **`@alexkroman1/aai/step`** —
+  **`transcribeUploadDurably(ctx, uploadId, { params?, everyMs?, maxMs? })`** is
+  the whole async job from the BODY: upload, submit and poll as three journaled
+  steps under fixed names (`TRANSCRIBE_DURABLY_STEPS`), each call classified,
+  and a budget that runs out throwing a `TranscribeError` naming the transcript
+  id — the job is still finishing on the provider's side, so the sentence says
+  where to read it rather than transcribing twice. It resolves the `Transcript`
+  plus `source`, the upload's name. The primitives stay for another shape:
+  `stepTranscribeSync(bytes)` for a short recording, or `stepTranscribeUpload`
+  (resolving `{ audioUrl, source, size }`) → `stepTranscribeSubmit` →
+  `stepTranscribePoll`, plus `TranscribeError` and the `TRANSCRIBE_*` limits.
+  (There is no `/transcribe` subpath.) Wrap each in `orFail` as above: a
+  provider refusal — a container it will not read, a recording with no speech —
+  arrives with `retryable: false`, and unclassified a step re-uploads the same
+  bytes until its attempts run out.
 - **`@alexkroman1/aai/ffmpeg`** — `transcodeToWav(bytes, { sampleRate })`,
   `runFfmpeg(args)`, `probeMedia(source)` for duration and stream info, and
   `FfmpegError`/`isFfmpegError`. Under `aai dev` it needs ffmpeg on your PATH; a
   `missing-binary` failure says so and carries the install line.
 - **`@alexkroman1/aai/step-files`** — for a recording too big to hold in memory.
-  `readUploadToFile(uploadId, path)` streams an upload to disk,
+  **`transcodeUpload(uploadId, { args, output, probe? })`** — `args` is
+  `(source, out) => string[]`, `output` is `{ name, type }` — is the whole
+  materialize → ffmpeg → store shell as one step result
+  (`{ id, size, bytes, info?, ffmpegMs, stderr }`), with the standing flags
+  (`-nostdin`, the one whose absence hangs a guest) prepended for you.
+  Underneath: `readUploadToFile(uploadId, path)` streams an upload to disk,
   `writeUploadFromFile(path)` streams one back, and `withTempDir(work)` gives
   both a directory that is cleaned up even when the step throws.
 
@@ -2404,6 +2600,28 @@ rendered per platform, so the same message is legal on a channel kind added
 later; `isSlackWebhookUrl` / `isSlackWorkflowTriggerUrl` validate a pasted URL
 before a run depends on it, and `explainChannelFailure` turns a refusal into a
 sentence a person can act on. `podcast-digest-workflow` is the worked example.
+
+### What a voice agent says about a run
+
+Declare `describeRun(run)` and `cancelNote` on the def and the `workflow_status`
+/ `workflow_progress` / `workflow_cancel` builtins speak them (`TOOLS.md`,
+"Starting a run from a tool"): `describeRun` is handed the typed snapshot once
+the run is terminal, and `cancelNote` is what a cancel says on top of the fact —
+on this engine a cancel runs no compensations, so a note that says what stays
+behind is honest. `describeRun(def, run)` (the function) is the same sentence
+for a route handler.
+
+### Placing a call from a run
+
+`stepPlaceCall({ carrier, to, from, brief: { id, prompt } })` dials out through
+this agent's `/phone`; the `brief` rides the call signed with `CALLS_API_KEY`
+(`briefSecretEnv` names another variable), and the answering session reads it
+back with `readCallBrief(call, secret)` — a stream that presents no valid
+signature answers `undefined`, so a tool refuses it. How the call went is on
+`onSessionEnd`'s `ctx.transcript`, keyed by nothing: every committed line of
+that session, oldest first. The route that accepts the brief from the app's own
+callers is `apiKeyRoute({ env: "CALLS_API_KEY" }, handler)` (`AGENT-API.md`).
+`outbound-call-agent` is the worked example.
 
 ### Reaching a device after the call
 
@@ -2492,26 +2710,29 @@ on `@alexkroman1/aai/step`, and `spoken-summary-workflow` shows the whole round
 trip.
 
 ```ts
-import { stepSpeak, stepWriteUpload } from "@alexkroman1/aai/step";
+import { stepSpeakToUpload } from "@alexkroman1/aai/step-files";
 
 export async function narrate(script: string) {
-  const spoken = await stepSpeak(script, { voice: "aai-jane" });
-  const stored = await stepWriteUpload(spoken.audio, { name: "summary.wav", type: "audio/wav" });
-  return { audio: stored.id, durationMs: spoken.durationMs };
+  // Speak, master (wav, or mp3 through ffmpeg) and store, as ONE step result.
+  const spoken = await stepSpeakToUpload(script, { voice: "aai-jane", name: "summary.wav" });
+  return { audio: spoken.id, durationMs: spoken.durationMs };
 }
 ```
 
-**`stepSpeak` is `stepGenerate` for the voice.** A step is handed no
-`ToolContext`, so the provider stack your `agent()` declares is not in scope —
-and the session TTS surface would not help anyway: it is an event stream wired
-into a live pipeline's playback, and a step has no turn to be part of and has to
-return a value. So this is the smaller thing: text in, the whole utterance out
-as a WAV, on the same `ASSEMBLYAI_API_KEY` everything else uses. Voices come
-from `ASSEMBLYAI_TTS_VOICES` (`@alexkroman1/aai`, or `/tts`) — read that list
-rather than typing an id, because a wrong one is refused _after_ the socket
-opens and produces silence rather than an error. The `AssemblyAITtsVoice` type
-gives you autocomplete over it and nothing more: it accepts any string, so that
-a voice the service adds after this release still compiles.
+Underneath are `stepSpeak(text, { voice })` and
+`stepWriteUpload(bytes, { name, type })` on `@alexkroman1/aai/step`, for a step
+that does something with the audio between the two. **`stepSpeak` is
+`stepGenerate` for the voice.** A step is handed no `ToolContext`, so the
+provider stack your `agent()` declares is not in scope — and the session TTS
+surface would not help anyway: it is an event stream wired into a live
+pipeline's playback, and a step has no turn to be part of and has to return a
+value. So this is the smaller thing: text in, the whole utterance out as a WAV,
+on the same `ASSEMBLYAI_API_KEY` everything else uses. Voices come from
+`ASSEMBLYAI_TTS_VOICES` (`@alexkroman1/aai`, or `/tts`) — read that list rather
+than typing an id, because a wrong one is refused _after_ the socket opens and
+produces silence rather than an error. The `AssemblyAITtsVoice` type gives you
+autocomplete over it and nothing more: it accepts any string, so that a voice
+the service adds after this release still compiles.
 
 **`stepWriteUpload` is `stepReadUpload`'s other direction, and you need it.** A
 run's output is read back as JSON, so audio cannot travel in one — the same rule
@@ -2580,30 +2801,24 @@ no microphone request. Everything else is the same file, React and Tailwind
 included.
 
 ```tsx no-check
-import { createWorkflowApi, mountPage, useWorkflowRun } from "@alexkroman1/aai-ui";
+import { mountPage, useWorkflowSubmit, WorkflowPendingNote } from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
-import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
-import { useState } from "react";
-import type { digest } from "./agent.ts";
-
-// Hoisted: a client built in render is a new object every render.
-const api = createWorkflowApi();
+import type agentDef from "./agent.ts";
 
 export function App() {
-  const [runId, setRunId] = useState<string>();
-  // The generic is what makes `run.output` typed rather than `unknown`.
-  const { run, polling } = useWorkflowRun<WorkflowOutputOf<typeof digest>>(runId, { api });
+  // Typed by the APP: "digest" is checked against what agent.ts declares, the
+  // input against its schema, and `run.output` by its output schema.
+  const submission = useWorkflowSubmit<typeof agentDef>("digest");
+  const { run, pending, submit } = submission;
 
   return (
     <main>
-      <button
-        type="button"
-        onClick={async () => setRunId(await api.start("digest", { url: "https://example.com" }))}
-      >
+      <button type="button" onClick={() => submit({ url: "https://example.com" })}>
         Digest
       </button>
-      {polling && <p>Working. You can close this tab — the run continues.</p>}
+      <WorkflowPendingNote submission={submission} />
       {run?.status === "completed" && <h2>{run.output.headline}</h2>}
+      {pending && <p>Working.</p>}
     </main>
   );
 }
@@ -2611,11 +2826,14 @@ export function App() {
 mountPage({ name: "Link Digest", component: App });
 ```
 
-`api.start()` resolves as soon as the RUN EXISTS, not when it finishes — that is
-the whole mechanism. The `runId` is the entire client state, so it survives a
-reload, a different device, or `curl`. Note the workflow is named by the key it
-has in `workflows` above (`"digest"`); nothing else records that string, so a
-rename there is a 400 here rather than a compile error.
+The run starts as soon as the RUN EXISTS, not when it finishes — that is the
+whole mechanism. The run id is the entire client state, so it survives a reload
+(the hook finds it again by a per-tab key; `{ key: { storage: "local" } }`
+outlives the tab), a different device, or `curl`. The same page over raw
+primitives is `createWorkflowApi()` + `api.start("digest", input)` +
+`useWorkflowRun<WorkflowOutputOf<typeof digest>>(runId)`; `link-digest-workflow`
+writes it that way. A run's snapshot carries `startedAt` and `settledAt`, so a
+page needs no clock of its own.
 
 The same routes are scriptable, which is the other half of having an API:
 
@@ -3031,7 +3249,9 @@ import `"@alexkroman1/aai-ui/styles.css"` first.
 import "@alexkroman1/aai-ui/styles.css";
 import { mountClient } from "@alexkroman1/aai-ui";
 
-mountClient({ name: "My Agent" });
+// The title, greeting and each tool's icon come from the server (`agent()` and
+// `tool({ ui })`), so there is nothing to restate here.
+mountClient({ theme: { primary: "#e05a3a", mode: "dark" } });
 ```
 
 ### Tier 1 with sidebar
@@ -3054,7 +3274,7 @@ function Sidebar() {
   );
 }
 
-mountClient({ name: "My Agent", sidebar: Sidebar });
+mountClient({ sidebar: Sidebar });
 ```
 
 ### Tier 2 — full custom component
@@ -3088,18 +3308,19 @@ mountClient({ component: MyApp });
 
 ### `mountClient()` config
 
-| Field          | Type                     | Default   | Description                              |
-| -------------- | ------------------------ | --------- | ---------------------------------------- |
-| `name`         | `string`                 | —         | Header/start screen title (tier 1)       |
-| `component`    | `ComponentType`          | —         | Custom root component (tier 2)           |
-| `sidebar`      | `ComponentType`          | —         | Sidebar alongside default chat (tier 1)  |
-| `sidebarWidth` | `string`                 | `"18rem"` | CSS width of sidebar                     |
-| `theme`        | `ClientTheme`            | —         | `{ bg, primary, text, surface, border }` |
-| `target`       | `string \| HTMLElement`  | `"#app"`  | Mount target                             |
-| `tools`        | `ToolDisplayConfig`      | —         | Icon/label overrides per tool name       |
-| `client`       | `string \| () => string` | —         | `?client=`; `"auto"` = per-browser id    |
+| Field          | Type                     | Default    | Description                                                          |
+| -------------- | ------------------------ | ---------- | -------------------------------------------------------------------- |
+| `name`         | `string`                 | the server | Page title; the agent's `name` unless overridden                     |
+| `component`    | `ComponentType`          | —          | Custom root component (tier 2)                                       |
+| `sidebar`      | `ComponentType`          | —          | Sidebar alongside default chat (tier 1)                              |
+| `sidebarWidth` | `string`                 | `"18rem"`  | CSS width of sidebar                                                 |
+| `theme`        | `ClientTheme`            | —          | `{ primary, mode?: "dark" \| "light" }`, or all five tokens (below)  |
+| `css`          | `string`                 | —          | A page stylesheet (`@keyframes`, a font face) — no `<style>` element |
+| `target`       | `string \| HTMLElement`  | `"#app"`   | Mount target                                                         |
+| `tools`        | `ToolDisplayConfig`      | the server | Icon/label OVERRIDES per tool name; declare them on `tool({ ui })`   |
+| `client`       | `string \| () => string` | —          | `?client=`; `"auto"` = per-browser id                                |
 
-Beside a `component`, `sidebar` still renders; `name` becomes the page title.
+Beside a `component`, `sidebar` still renders.
 
 ### `useSession()` return type
 
@@ -3149,30 +3370,31 @@ want for anything that can be a string, an array, or null.
 **`useAgentState`** — the agent's session state, pushed automatically:
 
 ```ts no-check
-// shared.ts — the slot owns the shape AND its one view; `agent()` has no
-// `state` field. staffPin is not in the view, so it stays server-side, and the
-// agent and the client cannot name different views of it.
-export const cartSlot = sessionSlot("cart", () => ({ cart: [] as Item[], staffPin: "" }), {
+// shared.ts — the slot owns the shape AND its one view; `agent()` names nothing.
+// staffPin is not in the view, so it stays server-side, and the agent and the
+// client cannot name different views of it. `sync: true` registers the
+// projection (agent.ts must import this module).
+export const cartSlot = sessionSlot("cart", { cart: [] as Item[], staffPin: "" }, {
   view: (s) => ({ cart: s.cart }),
+  sync: true,
 });
-export const cartProjection = cartSlot.projected;
-
-// agent.ts — the frame is keyed by the slot's own name
-export default agent({ syncState: cartProjection });
 
 // client.tsx — selects `state.cart`; the projection types it AND supplies the
 // frame rendered before the first push, so no type argument and no `?? EMPTY`.
-const view = useAgentState(cartProjection);
+const view = useAgentState(cartSlot.projected);
 return <Cart items={view.cart} />;
 ```
 
 Passing the projection is the shape to copy. The frame is `{ [slot]: view }`,
-one key per slot. The other overloads: `useAgentState()` is the whole frame or
-`null`; `useAgentState<S>("cart")` is one slot by name, `S | null` (nothing is
-pushed before the first tool call); `useAgentState("cart", fallback)` returns
-`S` for an empty frame you build yourself — reach for it only when the slot's
-factory is expensive to import into the browser. `selectAgentState("cart")` is
-the same slot as a `useSessionSelector` selector.
+one key per slot. A SEEDED slot (a catalogue, demo accounts) declares `empty`
+beside `view`, so the frame before the first push is the empty shape and the
+seed never ships to the browser. The other overloads: `useAgentState()` is the
+whole frame or `null`; `useAgentState<S>("cart")` is one slot by name,
+`S | null` (nothing is pushed before the first tool call);
+`useAgentState("cart", fallback)` returns `S` for an empty frame you build
+yourself — only for a slot whose module cannot be imported into the browser at
+all. `selectAgentState("cart")` is the same slot as a `useSessionSelector`
+selector.
 
 **Reach for this before wiring `useToolResult` into `useState`.** Without it the
 pattern is: return a cart snapshot from every tool, declare a type describing
@@ -3194,7 +3416,13 @@ useEvent<DataType>("event_name", (data) => { ... })
 Server: `ctx.send("order", { total: "$14.99" })` — Client:
 `useEvent("order", (data) => ...)`.
 
-**`useTheme`** — returns `{ bg, primary, text, surface, border }`.
+**`useTheme`** — returns the resolved `{ bg, primary, text, surface, border }`.
+
+**`useRoute` / `routeFetch`** — one of the agent's own `routes`, resolved
+against the page: `routeFetch("api/calls", { method: "POST", headers })` and
+`useRoute("api/calls/1", { pollMs: 2000, until: (call) => call.done, headers })`,
+which re-reads on that interval until `until` says so and stops on unmount. The
+`headers` carry an `authorization` for an `apiKeyRoute`.
 
 **`useToolCallStart`** — fires when a tool call begins (status `"pending"`).
 
@@ -3229,6 +3457,7 @@ Available from `@alexkroman1/aai-ui`:
 | `MessageList`       | —                                                                  | Messages with auto-scroll, tool calls, transcript                                                                         |
 | `Controls`          | —                                                                  | Stop/Resume, New Conversation and End Call buttons                                                                        |
 | `Button`            | —                                                                  | Styled button                                                                                                             |
+| `SessionStateDot`   | `colors?`                                                          | The live state as a dot and a word, coloured from the theme; `colors` overrides a group (`idle`/`live`/`busy`) or a state |
 | `UploadProgressBar` | `upload, onPause?, onResume?`                                      | Bytes in flight, with pause/resume                                                                                        |
 
 **Forms are declared, not written.** `<Form onSubmit>` collects typed values off
@@ -3238,19 +3467,30 @@ components — `TextField`, `TextAreaField`, `NumberField`, `SelectField`,
 `Field`/`FieldShell` are what a custom control wraps itself in to match them.
 For a workflow app there is usually no field markup at all:
 `<WorkflowFields workflow="name" />` fetches that workflow's input schema and
-renders a control per field, so a page written against one workflow serves
-another.
+renders a control per scalar field, plus a `string[]` as
+`<TextAreaField split="lines">` and a `{ name, text }` object as
+`<FileField as="namedText">` (a draft read in the browser); `render` asks for
+either by property name where the schema does not say.
 
 ```tsx no-check
 import { Form, WorkflowFields } from "@alexkroman1/aai-ui";
+import type agentDef from "./agent.ts";
 
+// Typed by the app: a workflow name the agent does not declare is a compile error.
 <Form onSubmit={(values) => submit(values)} error={error}>
-  <WorkflowFields workflow="digest" />
+  <WorkflowFields<typeof agentDef> workflow="redline" render={{ mustCover: "lines" }} />
 </Form>;
 ```
 
-`transcription-workflow` is the all-declared version; `link-digest-workflow`
-writes its form by hand, which is what the two are for.
+**Every workflow hook takes the app type the same way** —
+`useWorkflowSubmit<typeof agentDef>("redline")`, `useWorkflowStream`,
+`useWorkflowRuns` — so the name is checked and the input and output are typed
+from the def. What `useWorkflowSubmit` hands back carries `timing`
+(press-to-settle `performance.now` marks) and `scope` (`"tab"` by default;
+`"browser"` with `{ key: { storage: "local" } }`), which
+`<WorkflowPendingNote submission={…}>` renders along with the upload's `paused`.
+`transcription-workflow` is the all-declared form; `link-digest-workflow` writes
+its form by hand, which is what the two are for.
 
 The usual shape — note `StartScreen` **wraps** the app rather than sitting
 beside it; writing `<StartScreen ... />` self-closing is a
@@ -3277,7 +3517,9 @@ mountClient({ component: PizzaApp });
 - **Tailwind CSS v4** — compiled at bundle time, configured via CSS. Do NOT
   create `tailwind.config.js` — it will be ignored.
 - Use Tailwind classes for layout, `useTheme()` for dynamic colors.
-- Set theme: `mountClient({ theme: { bg, primary, text, surface, border } })`.
+- Set theme: `mountClient({ theme: { primary, mode: "dark" } })` derives the
+  four neutrals; `{ bg, primary, text, surface, border }` sets all five. The
+  tokens are on `:root` as `--aai-*`, so a `css` sheet may use them.
 - Override CSS custom properties for extra tokens: `--color-aai-*`,
   `--radius-aai`, `--font-aai`.
 - Always import `"@alexkroman1/aai-ui/styles.css"` at the top of `client.tsx`.
@@ -3318,10 +3560,10 @@ replay engine, crashes, signals — is "Testing a workflow body" in
 
 **A test file imports testing names from two doors, and only those two:**
 
-| Import from                               | For                                                                                                         |
-| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `@alexkroman1/aai-runtime/testing`        | everything that installs nothing — `runTool`, `createToolContext`, `expectToolOk`, the stubs, `runWorkflow` |
-| `@alexkroman1/aai-runtime/testing/vitest` | everything that installs or restores (`installStubGateway`, `installStubStepFetch`, …) and the eval suites  |
+| Import from                               | For                                                                                                                                 |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `@alexkroman1/aai-runtime/testing`        | everything that installs nothing — `createToolContext`, `expectToolOk`, `expectSlotContract`, `fireEvent`, the stubs, `runWorkflow` |
+| `@alexkroman1/aai-runtime/testing/vitest` | everything that installs or restores (`installStubGateway`, `installStubWorld`, …), `describeAgent` and the eval suites             |
 
 `vitest.config.ts` is the one exception: it imports `defineAgentTestConfig` from
 `@alexkroman1/aai/testing/vite`. (The helpers are declared in
@@ -3352,42 +3594,55 @@ plugin that serves it; a scaffolded project already has it. For a runner that is
 not vitest, `deployedAgent` on `@alexkroman1/aai-runtime/testing` is the same
 thing written out.
 
-**Call a tool with `runTool(tool, args, ctx)`**: passed the tool itself, the
-result is typed by its `execute` — no `as` cast (the `runTool(agent, "name", …)`
-form answers `unknown`). **Unwrap it with `expectToolOk(result)`**, which INFERS
-the type: it subtracts the `ToolFailure` arm of a plain `tool()`'s result (and
-unwraps a gated dialog tool's envelope), throwing with the refusal quoted when
-the tool refused. Do not copy an `ok<T>()` helper into a spec; pass a type
-argument only for a result that arrives as `unknown`.
+**Open the suite with `describeAgent(agentDef, (run) => …)`**: a `describe`
+named after the agent whose first case is "is deployable" (`expectDeployable`; a
+config the platform refuses is a spec measuring nothing), handed the agent's
+typed runner. **`run(toolDef, args, ctx?)` is typed end to end**: handed the
+tool file's default export, the arguments are checked and the result is what
+`execute` returns — no `as` cast — and the def is resolved in the agent's table
+by identity, so a dialog gate or a roster still refuses it as it would the
+model. `run("name", …)` is the model's own form and answers `unknown`. **Unwrap
+a result that may be a refusal with `expectToolOk(result)`**, which subtracts
+the `ToolFailure` arm (and a gated tool's envelope) and throws quoting the
+refusal; `expectDialogRefused(result)` asserts a gate HELD. Do not copy an
+`ok<T>()` helper into a spec.
 
-```ts
-import { tool, toolFailure } from "@alexkroman1/aai";
-import { expectToolOk, runTool } from "@alexkroman1/aai-runtime/testing";
+```ts no-check
+import agentDef from "virtual:aai/agent";
+import { expectToolOk } from "@alexkroman1/aai-runtime/testing";
+import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect, test } from "vitest";
-import { z } from "zod";
+import placeOrder from "./tools/place_order.ts";
 
-// In a spec this is `import placeOrder from "./tools/place_order.ts"`.
-const placeOrder = tool({
-  description: "Place the order",
-  inputSchema: z.object({ item: z.string() }),
-  execute: async ({ item }) => (item ? { id: "ord_1" } : toolFailure("Name an item.")),
-});
-
-test("places the order", async () => {
-  const order = expectToolOk(await runTool(placeOrder, { item: "pizza" }));
-  expect(order.id).toBe("ord_1");
+describeAgent(agentDef, (run) => {
+  test("places the order", async () => {
+    const order = expectToolOk(await run(placeOrder, { item: "pizza" }));
+    expect(order.id).toBe("ord_1");
+  });
 });
 ```
 
-`expectDeployable(agentDef)` runs the build's checks and returns a
-`DeployedConfig` (`name`, `systemPrompt`, `mode`, `builtinTools`, …) to assert
-on.
+`expectDeployable(agentDef)` on its own returns a `DeployedConfig` (`name`,
+`systemPrompt`, `mode`, `builtinTools`, …) to assert on. **A slot's contract is
+one call**: `expectSlotContract(slot, { write, caps })` asserts the projected
+default agrees with the view, that two sessions never share a value (`write`
+proves it through one of them) and that each cap keeps the NEWEST entries.
 
 **A hand-built `ctx` is `createToolContext()`** — every field inert, `send`
-recorded on `ctx.sent`, a real slot store, a fresh `sessionId` per call. Its
-`generate` and `delegate` take a SCRIPT (`{ reply }` for every call,
-`{ routes }` keyed by system prompt or subagent name) and hand the fake back on
-`ctx.model` and `ctx.desk`, whose `calls` a spec asserts on.
+recorded on `ctx.sent`, a real slot store, a fresh `sessionId` per call,
+`turn: 0` and `now: Date.now` unless pinned
+(`createToolContext({ turn: 3, now: () => 1_700_000_000_000 })` makes "on the
+third turn" and an opening-hours check exact). Its `generate` and `delegate`
+take a SCRIPT (`{ reply }` for every call, `{ routes }` keyed by system prompt
+or subagent name) and hand the fake back on `ctx.model` and `ctx.desk`, whose
+`calls` a spec asserts on.
+
+**An `events` handler is driven with `fireEvent`**:
+`await fireEvent(agentDef, sessionEvent("userTranscript.committed", { text }), ctx)`
+dispatches the typed handler then `"*"`, the way the session does — except that
+a throw propagates and an async handler is awaited, since the spec is reading
+the outcome. `sessionEvent(type, fields, meta?)` builds the event with its
+envelope, and a field the event does not have is a compile error.
 
 ```ts
 import { createToolContext } from "@alexkroman1/aai-runtime/testing";
@@ -3412,7 +3667,13 @@ its feature needs. **A fake that fills a process-wide slot is INSTALLED** from
 restores it afterwards: `installStubGateway(replies)` answers a step's model
 calls (`stepGenerate`, `stepGenerateJson`) and returns the calls it saw. Call it
 by its own name — do not alias it to `stubGateway`, which is the non-installing
-builder it wraps.
+builder it wraps. **It also seeds `ASSEMBLYAI_API_KEY`** for the test, so a spec
+never writes `vi.stubEnv` for it; the one spec whose subject is the missing-key
+refusal passes `apiKey: false`. A workflow that calls a model AND fetches a page
+AND transcribes installs them all at once:
+`installStubWorld({ model, pages, transcribe, speech, uploads: { files, writable } })`
+composes the seams in the one order that works and hands back every fake's call
+log (`world.model`, `world.provider`, `world.reported`, …).
 
 ## Evals: `agent.eval.test.ts`
 
@@ -3422,10 +3683,13 @@ an eval's harness needs — `describeEval`, the readers and claims,
 `evalSimulation`, and stubs like `stubGatewayRoute` — is on
 `@alexkroman1/aai-runtime/testing/vitest`:
 
-```ts no-check
+```ts
+import { agent } from "@alexkroman1/aai";
 import { describeEval, expectCalled } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
-import agentDef from "./agent.ts";
+
+// In an eval this is `import agentDef from "virtual:aai/agent"`.
+const agentDef = agent({ name: "Orders" });
 
 describeEval(agentDef, (test) => {
   test(
@@ -3495,6 +3759,21 @@ The `outbound-call-agent` template walks a three-level tree this way.
 `network: evalNetwork({ state, routes })` answers every tool, builtin and step
 `fetch`, refusing the rest: `ctx.network`. `workflows` takes a client or
 per-case factory: `ctx.workflowClient`. A failure prints the conversation.
+
+**Read what a turn did through the DEF, not a schema you restate.**
+`toolResultIn(turn.toolCalls, placeOrder)` is typed by the tool's `execute` and
+throws naming what WAS called when the tool was not (exactly once;
+`toolResultsIn` for several); `lastStateIn(session.events(), slot.projected)` is
+the frame the page saw, typed by the projection and checked against its default
+keys, so a field the view gained or lost fails here instead of being cast past;
+`customEventsIn(events, "order.progress")` is typed by `ClientEventMap`. **An
+agent that hands off to a run** declares its step HTTP on the suite —
+`describeEval(agentDef, define, { steps: { routes, hold: "first" } })` — and the
+harness installs the step fetch per case, parks the first answered request so
+the run is observably in flight (`ctx.steps.held`, `release()`), and releases
+and settles every run when the case ends. `evalRunOf(turn, def)` is the id of
+the one run that turn started, read off the session's record of
+`ctx.workflows.start` rather than parsed out of the tool's answer.
 
 No eval can see anything below the audio boundary — when the agent decides you
 stopped talking, barge-in, two sentences merging into one turn. Those need

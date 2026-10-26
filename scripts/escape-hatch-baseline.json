@@ -1,6 +1,8 @@
 {
-  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN — `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
+  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN \u2014 `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
   "@ts-expect-error": {
+    "packages/aai-runtime/src/testing/run-workflow.test.ts": 1,
+    "packages/aai-ui/src/hooks.test-d.ts": 4,
     "packages/aai-ui/src/types.test.ts": 2,
     "packages/aai/src/sdk/session-slot.test.ts": 2
   },
@@ -21,6 +23,7 @@
     "packages/aai-guest/src/harness/manage.test.ts": 1,
     "packages/aai-runtime/src/_fake-llm.ts": 1,
     "packages/aai-runtime/src/_ws.ts": 1,
+    "packages/aai-runtime/src/eval/_case-steps.test.ts": 1,
     "packages/aai-runtime/src/generate.test.ts": 2,
     "packages/aai-runtime/src/inbox/inbox-property.test.ts": 1,
     "packages/aai-runtime/src/integration/_s2s-fuzz-model.ts": 1,
@@ -40,6 +43,7 @@
     "packages/aai-runtime/src/transports/pipeline/llm/stream.test.ts": 1,
     "packages/aai-runtime/src/transports/pipeline/openai-replay.test.ts": 2,
     "packages/aai-runtime/src/transports/s2s-transport.test.ts": 2,
+    "packages/aai-runtime/src/workflow/_client-wrap.ts": 3,
     "packages/aai-server/src/serve-lifecycle.ts": 2,
     "packages/aai-studio-server/src/_studio-session-test-utils.ts": 1,
     "packages/aai-studio-server/src/studio-session-idle.test.ts": 2,
@@ -51,15 +55,23 @@
     "packages/aai-ui/src/session/reconnect.ts": 1,
     "packages/aai/src/host/_test-utils.ts": 1,
     "packages/aai/src/host/_undici.ts": 2,
+    "packages/aai/src/sdk/_dialog-reader.test.ts": 2,
     "packages/aai/src/sdk/_testing-context.test.ts": 1,
-    "packages/aai/src/sdk/testing-generate.test.ts": 2
+    "packages/aai/src/sdk/testing-generate.test.ts": 2,
+    "packages/aai/src/sdk/testing-session-events.test.ts": 1,
+    "packages/aai/src/sdk/testing-tools.test.ts": 2,
+    "packages/aai/src/sdk/workflow-two-phase.test.ts": 1
   },
   "as never": {
     "packages/aai-cli/src/studio.test.ts": 1,
     "packages/aai-guest/src/_test-utils.ts": 1,
+    "packages/aai-runtime/src/workflow/_client-wrap.test.ts": 1,
     "packages/aai-studio-client/src/chat-queue.test.ts": 1,
     "packages/aai/src/host/agent-tools.ts": 2,
     "packages/aai/src/sdk/define.test.ts": 1,
-    "packages/aai/src/sdk/providers/tts/assemblyai.test.ts": 1
+    "packages/aai/src/sdk/providers/tts/assemblyai.test.ts": 1,
+    "packages/aai/src/sdk/step-uploads.test.ts": 1,
+    "packages/aai/src/sdk/testing-session-events.test.ts": 1,
+    "packages/aai/src/sdk/workflow.ts": 1
   }
 }

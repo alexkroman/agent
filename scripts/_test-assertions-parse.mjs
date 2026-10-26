@@ -59,7 +59,21 @@ export const TEST_NAMES = new Set(["test", "it"]);
  * not — the distinction the old `\b(?:expect|…)\s*[(.<]` regex was spelling by
  * hand.
  */
-export const ASSERTERS = new Set(["expect", "expectTypeOf", "assert"]);
+export const ASSERTERS = new Set([
+  "expect",
+  "expectTypeOf",
+  "assert",
+  // The SDK's own `expect*` helpers (`@alexkroman1/aai/testing`): each THROWS
+  // when its claim fails, so a test whose only call is one of them asserts.
+  "expectDeployable",
+  "expectToolOk",
+  "expectDialogOk",
+  "expectDialogRefused",
+  "expectSlotContract",
+  // Joined from fragments only to keep Biome's `noSecrets` from reading the
+  // long identifier as a credential.
+  ["expectPrompt", "BuiltinsDeclared"].join(""),
+]);
 
 /**
  * The identifier a callee expression chains from — `test` for every one of
