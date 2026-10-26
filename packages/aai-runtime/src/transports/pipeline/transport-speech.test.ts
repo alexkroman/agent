@@ -23,9 +23,9 @@
  */
 
 import {
+  DEAD_AIR_COVER_MS,
   DEAD_AIR_OPENING_PHRASE,
   DEAD_AIR_TOOL_COVER_MS,
-  DEFAULT_DEAD_AIR_COVER_MS,
 } from "@alexkroman1/aai/host-internal";
 import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
@@ -59,7 +59,7 @@ const TOOL_FIRST_STEPS: ScriptedPart[][] = [
 /** A tool that outlasts the cover window, so the turn is genuinely silent. */
 const slowTool = () =>
   vi.fn(async () => {
-    await sleep(DEFAULT_DEAD_AIR_COVER_MS * 2);
+    await sleep(DEAD_AIR_COVER_MS * 2);
     return "sunny";
   });
 
@@ -72,7 +72,7 @@ describe("PipelineTransport speech vs. record", () => {
       // words have to go out when they become audible.
       const { opts, stt, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ steps: TOOL_FIRST_STEPS, delayMs: 20 }),
-        deadAirCoverMs: DEFAULT_DEAD_AIR_COVER_MS,
+        deadAirCoverMs: DEAD_AIR_COVER_MS,
         executeTool: slowTool(),
         toolSchemas: [{ ...noopToolSchema, name: "get_weather" }],
       });
@@ -92,7 +92,7 @@ describe("PipelineTransport speech vs. record", () => {
         text: DEAD_AIR_OPENING_PHRASE,
       });
       // Still cumulative, and still one final transcript for history.
-      await vi.advanceTimersByTimeAsync(DEFAULT_DEAD_AIR_COVER_MS * 2);
+      await vi.advanceTimersByTimeAsync(DEAD_AIR_COVER_MS * 2);
       await vi.waitFor(() => {
         expect(callbacks.reported("agentTranscript.committed")).toHaveBeenCalledWith({
           type: "agentTranscript.committed",
@@ -143,7 +143,7 @@ describe("PipelineTransport speech vs. record", () => {
       // own filler as an example of what its turns look like.
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ steps: TOOL_FIRST_STEPS, delayMs: 20 }),
-        deadAirCoverMs: DEFAULT_DEAD_AIR_COVER_MS,
+        deadAirCoverMs: DEAD_AIR_COVER_MS,
         executeTool: slowTool(),
         toolSchemas: [{ ...noopToolSchema, name: "get_weather" }],
       });
@@ -151,7 +151,7 @@ describe("PipelineTransport speech vs. record", () => {
       await t.start();
       stt.last()?.fireFinal("how's the weather?");
 
-      await vi.advanceTimersByTimeAsync(DEFAULT_DEAD_AIR_COVER_MS * 3);
+      await vi.advanceTimersByTimeAsync(DEAD_AIR_COVER_MS * 3);
       await vi.waitFor(() => {
         expect(callbacks.reported("reply.completed")).toHaveBeenCalled();
       });
@@ -186,7 +186,7 @@ describe("filler never talks over the caller", () => {
     const { opts, stt } = makeOpts(
       {
         llm: createFakeLanguageModel({ steps: TOOL_FIRST_STEPS, delayMs: 20 }),
-        deadAirCoverMs: DEFAULT_DEAD_AIR_COVER_MS,
+        deadAirCoverMs: DEAD_AIR_COVER_MS,
         tts,
         executeTool: slowTool(),
         toolSchemas: [{ ...noopToolSchema, name: "get_weather" }],
@@ -204,7 +204,7 @@ describe("filler never talks over the caller", () => {
     // nothing here is a barge-in: the agent is not audibly speaking.
     stt.last()?.fireFinal("how's the weather?");
     stt.last()?.firePartial("and also");
-    for (let elapsed = 0; elapsed < DEFAULT_DEAD_AIR_COVER_MS * 2; elapsed += 1000) {
+    for (let elapsed = 0; elapsed < DEAD_AIR_COVER_MS * 2; elapsed += 1000) {
       await vi.advanceTimersByTimeAsync(1000);
       stt.last()?.firePartial("and also");
     }

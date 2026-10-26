@@ -9,10 +9,7 @@
 // generation gave it a second consumer.
 
 import type { Message } from "@alexkroman1/aai";
-import {
-  DEFAULT_DEAD_AIR_COVER_MS,
-  PIPELINE_FLUSH_TIMEOUT_MS,
-} from "@alexkroman1/aai/host-internal";
+import { DEAD_AIR_COVER_MS, PIPELINE_FLUSH_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
 import type { ModelMessage } from "ai";
 import pTimeout from "p-timeout";
 import type { Logger } from "../../../logger.ts";
@@ -98,7 +95,7 @@ export type TtsTextCoalescer = {
    * Batching may only defer text that more text is still coming for. Holding a
    * sub-threshold fragment ("let me") across a tool call would strand it for the
    * whole execution window — the caller hears the words before it, then dead
-   * air, with only the dead-air cover (a whole {@link DEFAULT_DEAD_AIR_COVER_MS}
+   * air, with only the dead-air cover (when enabled, a whole {@link DEAD_AIR_COVER_MS}
    * later) to break it. Re-arming also keeps the post-tool reply's first words
    * immediate, since that gap is exactly when time-to-first-audio matters again.
    */

@@ -93,7 +93,7 @@ export default agent({
     resumeFalseInterruption?: boolean;       // resume a reply if no user turn commits (default true)
   };
   silence?: {
-    deadAirCoverMs?: number;                 // filler after this much silence IN a turn (default 2400; 0 off)
+    deadAirCoverMs?: number;                 // filler after this much silence IN a turn (default 0 = off; try 2400)
     nudge?: { afterMs: number; prompt?: string }; // speak up after this much USER silence
   };
   errorPhrase?: string;                      // spoken when a turn's LLM stream fails ("" disables)

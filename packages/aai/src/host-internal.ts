@@ -175,6 +175,7 @@ export {
 export type { AgentEnv, HostCredentialEnv, ProviderEnv } from "./sdk/env-types.ts";
 export {
   DEAD_AIR_COVER_MAX_MS,
+  DEAD_AIR_COVER_MS,
   DEAD_AIR_COVER_PHRASES,
   DEAD_AIR_OPENING_PHRASE,
   DEAD_AIR_TOOL_COVER_MS,

@@ -9,7 +9,7 @@
 // different modules agreeing.
 
 import { dialog, sessionSlot, type ToolDef, type ToolMessages } from "@alexkroman1/aai";
-import { DEAD_AIR_OPENING_PHRASE, DEFAULT_DEAD_AIR_COVER_MS } from "@alexkroman1/aai/host-internal";
+import { DEAD_AIR_COVER_MS, DEAD_AIR_OPENING_PHRASE } from "@alexkroman1/aai/host-internal";
 import { sleep } from "@alexkroman1/aai/internal";
 import { agentToolsToSchemas, type ToolSchema, toolset } from "@alexkroman1/aai/manifest";
 import { describe, expect, test, vi } from "vitest";
@@ -204,17 +204,18 @@ describe("a tool's own filler and the generic dead-air cover", () => {
       onToolCall: () => undefined,
       emitError: () => undefined,
       toolCovering: () => covering.value,
+      deadAirCoverMs: DEAD_AIR_COVER_MS,
       log: silentLogger,
       sid: "s",
     });
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 4);
+    vi.advanceTimersByTime(DEAD_AIR_COVER_MS * 4);
     expect(spoken).toEqual([]);
     // And comes back the moment the predicate clears: the handler's
     // suppression is a re-arm, not a cancellation. (The predicate the turn
     // wires in is `coveredThisTurn`, which stays true for the rest of a turn
     // whose tool covered itself — see the turn-level specs below.)
     covering.value = false;
-    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 4);
+    vi.advanceTimersByTime(DEAD_AIR_COVER_MS * 4);
     expect(spoken.join("")).toContain(DEAD_AIR_OPENING_PHRASE);
   });
 
@@ -250,7 +251,7 @@ describe("a tool's own filler and the generic dead-air cover", () => {
       temperature: undefined,
       repairToolCall: async () => null,
       maxSteps: 3,
-      deadAirCoverMs: DEFAULT_DEAD_AIR_COVER_MS,
+      deadAirCoverMs: DEAD_AIR_COVER_MS,
       toolSpeech: controller,
       sendTtsText: (text) => spoken.push(text),
       callbacks: { report: () => undefined },

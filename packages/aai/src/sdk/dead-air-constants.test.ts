@@ -2,10 +2,10 @@
 import { describe, expect, test } from "vitest";
 import {
   DEAD_AIR_COVER_MAX_MS,
+  DEAD_AIR_COVER_MS,
   DEAD_AIR_COVER_PHRASES,
   DEAD_AIR_OPENING_PHRASE,
   DEAD_AIR_TOOL_COVER_MS,
-  DEFAULT_DEAD_AIR_COVER_MS,
 } from "./dead-air-constants.ts";
 import { DEFAULT_MIN_TURN_SILENCE_MS } from "./endpointing-constants.ts";
 
@@ -16,7 +16,7 @@ describe("dead-air cover windows", () => {
   // arrives early. If the tool window stops being shorter, the branch arming it
   // buys nothing and should go.
   test("the tool window is shorter than the turn-open one", () => {
-    expect(DEAD_AIR_TOOL_COVER_MS).toBeLessThan(DEFAULT_DEAD_AIR_COVER_MS);
+    expect(DEAD_AIR_TOOL_COVER_MS).toBeLessThan(DEAD_AIR_COVER_MS);
   });
 
   // The value was CHOSEN to match: a turn whose first tool call lands at the
@@ -24,7 +24,7 @@ describe("dead-air cover windows", () => {
   // goes silent with no tool call gets its first filler at the same point.
   const TYPICAL_FIRST_TOOL_CALL_MS = 1200;
   test("the turn-open window matches a p50 tool turn's first filler", () => {
-    expect(DEFAULT_DEAD_AIR_COVER_MS).toBe(TYPICAL_FIRST_TOOL_CALL_MS + DEAD_AIR_TOOL_COVER_MS);
+    expect(DEAD_AIR_COVER_MS).toBe(TYPICAL_FIRST_TOOL_CALL_MS + DEAD_AIR_TOOL_COVER_MS);
   });
 
   // The constraint in the caller's frame rather than the agent's. Cover is
@@ -35,16 +35,14 @@ describe("dead-air cover windows", () => {
   const CALLER_GIVES_UP_MS = 5000;
   test("both windows land a filler inside the caller's patience", () => {
     expect(DEFAULT_MIN_TURN_SILENCE_MS + DEAD_AIR_TOOL_COVER_MS).toBeLessThan(CALLER_GIVES_UP_MS);
-    expect(DEFAULT_MIN_TURN_SILENCE_MS + DEFAULT_DEAD_AIR_COVER_MS).toBeLessThan(
-      CALLER_GIVES_UP_MS,
-    );
+    expect(DEFAULT_MIN_TURN_SILENCE_MS + DEAD_AIR_COVER_MS).toBeLessThan(CALLER_GIVES_UP_MS);
   });
 
   // The backoff doubles from whichever base armed it and flattens at the
   // ceiling. A ceiling below the base would clamp the first window BELOW its
   // own base — the trap `DEAD_AIR_COVER_MAX_MS` documents.
   test("the ceiling is above both bases, so neither is clamped below itself", () => {
-    expect(DEAD_AIR_COVER_MAX_MS).toBeGreaterThan(DEFAULT_DEAD_AIR_COVER_MS);
+    expect(DEAD_AIR_COVER_MAX_MS).toBeGreaterThan(DEAD_AIR_COVER_MS);
     expect(DEAD_AIR_COVER_MAX_MS).toBeGreaterThan(DEAD_AIR_TOOL_COVER_MS);
   });
 });

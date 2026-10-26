@@ -157,8 +157,9 @@ been spoken (`{ afterReply: false }` cuts it); a spec reads
   that much user silence ("Are you still there?"); `afterMs` is required inside
   it. It is never a user transcript, and stops after 3 unanswered nudges.
   `silence.deadAirCoverMs` is how long a turn may go silent before a short
-  filler is spoken (default 2400; `0` disables). The wording is fixed:
-  declarative, never a request for patience, or the caller's answer barges in.
+  filler is spoken (off by default; `2400` is a good starting value). The
+  wording is fixed: declarative, never a request for patience, or the caller's
+  answer barges in.
 - `interruption` — `minWords` (default 1) words interrupt a reply, gated by
   `minDurationMs` of sustained speech (default 500 ms; `0` disables; interims
   only — committed turns always land); `backoffMs` holds agent audio after a

@@ -2667,6 +2667,9 @@ export function createLogBuffer(options?: LogBufferOptions): LogBuffer;
 export const DEAD_AIR_COVER_MAX_MS = 8000;
 
 // @internal
+export const DEAD_AIR_COVER_MS = 2400;
+
+// @internal
 export const DEAD_AIR_COVER_PHRASES: readonly string[];
 
 // @internal
@@ -2692,7 +2695,7 @@ interface DeepgramSttOptions extends ProviderCredentialOptions {
 }
 
 // @internal
-export const DEFAULT_DEAD_AIR_COVER_MS = 2400;
+export const DEFAULT_DEAD_AIR_COVER_MS = 0;
 
 // @internal
 export const DEFAULT_FALSE_INTERRUPTION_PROMPT: string;

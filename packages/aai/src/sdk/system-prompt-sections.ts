@@ -80,7 +80,7 @@ export const PROMPT_PERSONALITY = `\
  * carried an exception for a turn that opens with a tool call, which is where
  * the model was told to put a holding line ("One moment."). Both are gone
  * together — see {@link PROMPT_TOOLS} for the measurement that retired the
- * holding line, and `DEFAULT_DEAD_AIR_COVER_MS` for the transport mechanism
+ * holding line, and `DEAD_AIR_COVER_MS` for the transport mechanism
  * that covers the same gap without spending the sentence.
  *
  * What the rule buys is measured: interruption rate climbs with reply length,
@@ -328,7 +328,7 @@ export const PROMPT_LISTENING = `\
  * And it cost the first sentence, which {@link PROMPT_SPEAKING} spends on the
  * answer for a measured reason. The gap it aimed at is now covered by the
  * transport, on MEASURED silence rather than a structural guess, with a phrase
- * that never enters history (`DEFAULT_DEAD_AIR_COVER_MS`).
+ * that never enters history (`DEAD_AIR_COVER_MS`, opt-in).
  *
  * The results-not-intentions rule below is a different rule and stays.
  *

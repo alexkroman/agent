@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 206 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
-- [Framework internals](#framework-internals) — 520 names
+- [Framework internals](#framework-internals) — 521 names
 
 ## Agent authoring
 
@@ -1338,6 +1338,7 @@ trace or a type error can be traced back to something.
 | `ClientTranscriptReader` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `CoalescingRunner` | interface · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `DEAD_AIR_COVER_MAX_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEAD_AIR_COVER_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEAD_AIR_COVER_PHRASES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEAD_AIR_OPENING_PHRASE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEAD_AIR_TOOL_COVER_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |

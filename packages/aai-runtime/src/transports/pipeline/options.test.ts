@@ -47,10 +47,10 @@ describe("pipeline defaults", () => {
     const resolved = resolveBare();
     expect(resolved.interruptionMinDurationMs).toBe(DEFAULT_INTERRUPTION_MIN_DURATION_MS);
     expect(resolved.minBargeInWords).toBe(DEFAULT_MIN_BARGE_IN_WORDS);
-    // The shipped dead-air cover default, pinned at the resolver. It was for a
-    // while unreachable: the cover's enable was `holdPhrase.length > 0` and
-    // `holdPhrase` defaulted to `""`, so no default agent had cover at all.
+    // The shipped dead-air cover default, pinned at the resolver: OFF, so an
+    // agent speaks filler only when it sets `silence.deadAirCoverMs`.
     expect(resolved.deadAirCoverMs).toBe(DEFAULT_DEAD_AIR_COVER_MS);
+    expect(resolved.deadAirCoverMs).toBe(0);
   });
 
   test("both speak-gate windows are OFF in the shipped default", () => {

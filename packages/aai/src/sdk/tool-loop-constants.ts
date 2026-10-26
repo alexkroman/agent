@@ -35,7 +35,7 @@
  * degradation quiet rather than absent. What the one 10-step reply shows is
  * the real failure mode: it made 7 consecutive tool calls with no speech
  * between them, so what the caller experienced was DEAD AIR (see
- * `DEFAULT_DEAD_AIR_COVER_MS`), not a step limit. Tune the silence, not the
+ * `DEAD_AIR_COVER_MS`), not a step limit. Tune the silence, not the
  * cap; the real constraint on a long chain is caller patience.
  *
  * S2S enforces the same cap service-side by refusing tool calls past it, where

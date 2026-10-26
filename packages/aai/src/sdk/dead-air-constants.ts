@@ -11,7 +11,9 @@
  * The mechanism in one sentence: a turn that has gone quiet gets a filler,
  * and which window it waits depends on whether the turn has ANNOUNCED that it
  * is about to go quiet — see {@link DEAD_AIR_TOOL_COVER_MS} versus
- * {@link DEFAULT_DEAD_AIR_COVER_MS}. Filler is deliberately not "speech": it
+ * {@link DEAD_AIR_COVER_MS}. It is OFF by default
+ * ({@link DEFAULT_DEAD_AIR_COVER_MS} is `0`); an agent opts in with
+ * `silence.deadAirCoverMs`. Filler is deliberately not "speech": it
  * is sent `record: false` and does not open the barge-in gate, without which
  * a caller talking over a holding phrase destroys the reply behind it (see
  * `HeardTracker.spokeRecordable`).
@@ -120,17 +122,28 @@ export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
  * `Pipeline dead-air cover` log's fire rate at `waitedMs: 2400` before moving
  * it again.
  *
- * Authors override it with `deadAirCoverMs`; 0 disables cover entirely.
+ * Not the shipped default — see {@link DEFAULT_DEAD_AIR_COVER_MS}. This is the
+ * window an author opting in with `deadAirCoverMs` should start from.
  *
  * @internal
  */
-export const DEFAULT_DEAD_AIR_COVER_MS = 2400;
+export const DEAD_AIR_COVER_MS = 2400;
+
+/**
+ * The shipped `deadAirCoverMs`: `0`, so no agent speaks dead-air filler unless
+ * it opts in. The cover stays fully wired — set `silence.deadAirCoverMs` (start
+ * from {@link DEAD_AIR_COVER_MS}) to turn it back on. `0` disables
+ * {@link DEAD_AIR_TOOL_COVER_MS} with it.
+ *
+ * @internal
+ */
+export const DEFAULT_DEAD_AIR_COVER_MS = 0;
 
 /**
  * Ceiling on the dead-air cover's exponential backoff, so a long tool chain
  * settles into a steady heartbeat instead of drifting into silence.
  *
- * Uncapped doubling from {@link DEFAULT_DEAD_AIR_COVER_MS} put the fillers of a
+ * Uncapped doubling from {@link DEAD_AIR_COVER_MS} put the fillers of a
  * 90s chain at 0, 2, 6, 14, 30 and 62s — gaps of 2, 4, 8, 16 and 32s. Net of
  * each phrase's own ~1.3s of audio that is roughly 0.7s, 2.7s, 6.7s, 14.6s and
  * 30.6s of actual silence: two fillers almost on top of each other at the start,
@@ -152,7 +165,7 @@ export const DEAD_AIR_COVER_MAX_MS = 8000;
  * opening — short, because by the time a tool call is emitted the silence is
  * no longer a guess.
  *
- * {@link DEFAULT_DEAD_AIR_COVER_MS} is armed when the turn's stream opens, a
+ * {@link DEAD_AIR_COVER_MS} is armed when the turn's stream opens, a
  * condition true of EVERY turn, so it can only distinguish the silent ones by
  * waiting long enough to be sure — and at its old 5000 ms that was ~6.7 s in
  * the caller's frame, past the point a caller concludes the line is dead.

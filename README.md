@@ -86,7 +86,8 @@ default, each with a named field on `agent()` when you disagree:
   interruption has to be half a second of sustained speech.
 - An interruption that never becomes a real turn resumes the reply from the last
   words the caller actually heard.
-- A slow tool chain speaks a short filler instead of leaving dead air.
+- A slow tool chain can speak a short filler instead of leaving dead air (opt in
+  with `silence.deadAirCoverMs`).
 - An interrupted reply is recorded as what the caller _heard_, so the model
   doesn't think it delivered information that never arrived.
 - A provider error is handed back out loud rather than dying silently.

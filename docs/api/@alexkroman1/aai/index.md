@@ -12625,12 +12625,13 @@ optional deadAirCoverMs?: number;
 
 How long a turn may send nothing to the caller before the transport speaks
 a short filler, so a long tool chain doesn't sound like a dropped call.
-MEASURED silence, so a prompt reply pays nothing; `0` disables. The
+MEASURED silence, so a prompt reply pays nothing; `0` disables. Off unless
+set; `2400` (`DEAD_AIR_COVER_MS`) is the measured starting point. The
 wording is internal and purely declarative — see `DEAD_AIR_COVER_PHRASES`.
 
 ###### Default Value
 
-`2400` (`DEFAULT_DEAD_AIR_COVER_MS`)
+`0` (`DEFAULT_DEAD_AIR_COVER_MS`) — the cover is off.
 
 ##### nudge?
 

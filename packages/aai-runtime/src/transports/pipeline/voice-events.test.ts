@@ -7,9 +7,9 @@
 // _pipeline-transport-harness.ts.
 
 import {
+  DEAD_AIR_COVER_MS,
   DEAD_AIR_OPENING_PHRASE,
   DEAD_AIR_TOOL_COVER_MS,
-  DEFAULT_DEAD_AIR_COVER_MS,
 } from "@alexkroman1/aai/host-internal";
 import { sleep } from "@alexkroman1/aai/internal";
 import { describe, expect, test, vi } from "vitest";
@@ -641,7 +641,7 @@ describe("PipelineTransport", () => {
         // The SHIPPED window, not a 1ms stand-in for it. On the wall clock this
         // spec could only afford `deadAirCoverMs: 1`, which tests the wiring
         // and says nothing about the default a caller actually waits out.
-        deadAirCoverMs: DEFAULT_DEAD_AIR_COVER_MS,
+        deadAirCoverMs: DEAD_AIR_COVER_MS,
         toolSchemas: [noopToolSchema],
         // A tool that outlasts the cover window — which is the only shape that
         // produces dead air at the shipped 5s. The measured case this exists
@@ -649,7 +649,7 @@ describe("PipelineTransport", () => {
         // neither, so it shrank the WINDOW to 1ms instead and tested the wiring
         // against a turn that was never silent.
         executeTool: async () => {
-          await sleep(DEFAULT_DEAD_AIR_COVER_MS * 2);
+          await sleep(DEAD_AIR_COVER_MS * 2);
           return "{}";
         },
       });
@@ -668,7 +668,7 @@ describe("PipelineTransport", () => {
       expect(tts.last()?.textChunks.join("")).toContain(DEAD_AIR_OPENING_PHRASE);
 
       // The tool lands and the reply follows it.
-      await vi.advanceTimersByTimeAsync(DEFAULT_DEAD_AIR_COVER_MS * 2);
+      await vi.advanceTimersByTimeAsync(DEAD_AIR_COVER_MS * 2);
       await vi.waitFor(() => {
         expect(tts.last()?.textChunks.join("")).toContain("Done.");
       });
