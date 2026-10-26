@@ -49,8 +49,8 @@ export type RouteFetchOptions = {
   baseUrl?: string | undefined;
   /**
    * Extra request headers — an `authorization` for a route behind
-   * `apiKeyRoute`, say. Sent as given; a `content-type` here beats the JSON
-   * one a body would set.
+   * `apiKeyRoute`, say. Names are case-insensitive, so a `content-type` (or
+   * `Content-Type`) here beats the JSON one a body would set.
    */
   headers?: Readonly<Record<string, string>> | undefined;
   /** Abort the request. */
@@ -100,10 +100,16 @@ export async function routeFetch<T = unknown>(
   // Relative to the directory: `api/x` under `https://h/slug/` is `/slug/api/x`.
   const url = new URL(`api${path.startsWith("/") ? path : `/${path}`}`, base);
   if (options.client) url.searchParams.set("client", options.client);
-  // A body is JSON unless the caller's headers say otherwise; the caller's win.
+  // A body is JSON unless the caller's headers say otherwise; the caller's
+  // win. Names are folded to lower case first, so a `Content-Type` REPLACES
+  // the JSON one rather than sitting beside it, which `fetch` would merge
+  // into `application/json, text/plain`.
+  const given = Object.fromEntries(
+    Object.entries(options.headers ?? {}).map(([name, value]) => [name.toLowerCase(), value]),
+  );
   const headers = omitUndefined({
     "content-type": body === undefined ? undefined : "application/json",
-    ...options.headers,
+    ...given,
   });
   const res = await fetch(url, {
     method,

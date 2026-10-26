@@ -44,15 +44,18 @@ import { TRACEPARENT_HEADER } from "../tracing-propagator.ts";
 /**
  * Request headers forwarded on an API hop.
  *
- * `Authorization` is the only one carrying authority — the guest's own gate is
- * `AAI_WORKFLOW_API_TOKEN` — `Content-Type` is what makes the JSON body parse,
- * and `Accept` is what distinguishes an event-stream request. `Range` is what
- * makes `GET /workflows/uploads/:id` mean anything through this hop: dropped, a
- * caller asking for 64 KB of a 200 MB recording is answered with the whole
- * thing, correctly and uselessly.
+ * `Authorization` and `X-Api-Key` are the two carrying authority — the guest's
+ * own gate is `AAI_WORKFLOW_API_TOKEN`, and `X-Api-Key` is the other header
+ * the SDK's `apiKeyRoute({ header })` documents; neither names a platform
+ * credential, so both reach the route that checks them — `Content-Type` is
+ * what makes the JSON body parse, and `Accept` is what distinguishes an
+ * event-stream request. `Range` is what makes `GET /workflows/uploads/:id`
+ * mean anything through this hop: dropped, a caller asking for 64 KB of a
+ * 200 MB recording is answered with the whole thing, correctly and uselessly.
  */
 export const GUEST_API_REQUEST_HEADERS = [
   "authorization",
+  "x-api-key",
   "content-type",
   "accept",
   "range",

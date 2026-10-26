@@ -2124,7 +2124,12 @@ function readCallBrief(call: {
 
 The brief a call's parameters carry, or `undefined` when they were not
 signed by this app — a stranger, a stale secret, a truncated stream, or no
-secret at all (an unset env is a refusal, never an open door).
+secret at all (an unset env is a refusal, never an open door). The secret is
+trimmed, as `stepPlaceCall` trims it before signing, so a value pasted with
+a trailing newline verifies the calls it placed; a blank one is absent. An
+id carrying a newline — the signed text's separator — is refused unread,
+so a signed brief cannot be replayed with part of its prompt moved into
+the id.
 
 The one reader: `call` is the `SessionCall` `sessionContext` and
 `onSessionEnd` receive, or `sessionCall(ctx)` in a tool.
@@ -6851,7 +6856,10 @@ optional header?: string;
 
 The request header the caller sends the key in, lower-case. Default
 `"authorization"`, where a `Bearer ` prefix is optional; a custom header
-(`"x-api-key"`) is compared as sent.
+(`"x-api-key"`) is compared as sent. On the deployed platform only
+`authorization` and `x-api-key` reach the agent — the proxy forwards an
+allow-list of request headers — so any other name works under `aai dev`
+and self-hosted alone.
 
 ***
 

@@ -8116,8 +8116,8 @@ optional headers?: Readonly<Record<string, string>>;
 ```
 
 Extra request headers — an `authorization` for a route behind
-`apiKeyRoute`, say. Sent as given; a `content-type` here beats the JSON
-one a body would set.
+`apiKeyRoute`, say. Names are case-insensitive, so a `content-type` (or
+`Content-Type`) here beats the JSON one a body would set.
 
 ##### signal?
 
@@ -10511,7 +10511,9 @@ re-trigger the read.
 optional pollMs?: number;
 ```
 
-Read again every this many ms, while mounted. Default: never.
+Read again every this many ms, while mounted. `0` or unset: never. A
+negative or `NaN` value throws rather than polling as fast as the route
+answers.
 
 ##### until?
 
@@ -10564,7 +10566,8 @@ What [useRoute](#useroute) returns.
 data: T | undefined;
 ```
 
-The last answer, kept through a failed re-read. `undefined` until the first.
+The last answer for THIS `path`, kept through a failed re-read.
+`undefined` until the first, and again whenever `path` changes.
 
 ##### error
 
@@ -10572,7 +10575,7 @@ The last answer, kept through a failed re-read. `undefined` until the first.
 error: string | undefined;
 ```
 
-Why the LAST read failed — the route's `{ error }` when it said — or `undefined`.
+Why the LAST read of this `path` failed — the route's `{ error }` when it said — or `undefined`.
 
 ##### loading
 

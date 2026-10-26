@@ -1666,7 +1666,7 @@ trace or a type error can be traced back to something.
 | `derivedRequiredEnv` | function · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `describeProvider` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `eligibleToolMessages` | function | `@alexkroman1/aai/host-internal` |  | The eligible subset, in declaration order. |
-| `escapeXml` | function | `@alexkroman1/aai/internal` |  | XML-escape a value going into TwiML — all five specials, as numeric references, so a quote in a parameter cannot close the attribute it is in. |
+| `escapeXml` | function | `@alexkroman1/aai/internal` |  | XML-escape a value going into TwiML — all five specials, as numeric references, so a quote in a parameter cannot close the attribute it is in, and the three … |
 | `estimateMessageTokens` | function | `@alexkroman1/aai-runtime/internal` |  | Estimated tokens for one message, memoized on the message. |
 | `executeToolCall` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `fallbackMembers` | function | `@alexkroman1/aai/host-internal` |  | A fallback descriptor's members, in order — each a `{ kind, options }`. |

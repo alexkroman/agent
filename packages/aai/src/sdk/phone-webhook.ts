@@ -113,10 +113,14 @@ export function callParametersFromQuery(query: URLSearchParams): Record<string, 
 
 /**
  * XML-escape a value going into TwiML — all five specials, as numeric
- * references, so a quote in a parameter cannot close the attribute it is in.
+ * references, so a quote in a parameter cannot close the attribute it is in,
+ * and the three whitespace characters an attribute value does not keep
+ * (`\n`, `\r`, `\t`), which XML's attribute-value normalization would turn
+ * into spaces. A signed brief's prompt rides in a `<Parameter>`, and a
+ * newline silently rewritten is a signature that no longer verifies.
  */
 export function escapeXml(value: string): string {
-  return value.replace(/[<>&"']/g, (c) => `&#${c.charCodeAt(0)};`);
+  return value.replace(/[<>&"'\n\r\t]/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
 /**

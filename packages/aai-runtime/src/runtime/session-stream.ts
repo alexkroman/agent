@@ -145,6 +145,10 @@ export function attachSessionStream(
   };
 
   const stopCore = core.stop.bind(core);
+  // The core's own `stop()` is idempotent, and a session can be stopped twice —
+  // a reconnect that supersedes it AND its old socket closing — so the memory
+  // is told once: `onSessionEnd` fires once per session, not once per stop.
+  let ended = false;
   core.stop = async () => {
     try {
       await stopCore();
@@ -154,15 +158,18 @@ export function attachSessionStream(
       // worth having. `flush` never rejects. `final`, so a throttled client-log
       // touch is written now rather than never (`backends/postgres.ts`).
       await stream.flush(sessionId, { final: true });
-      // `tail` is one past the last index assigned, so an empty log answers -1.
-      // Awaited: the hook is CALLED before the stop resolves, which is the
-      // contract an eval's turn and a page reading "the end was reported" both
-      // hold. The transcript is in hand already: nothing was appended before
-      // `start` read the own log, so the two halves do not overlap.
-      await memory?.ended(stream.tail(sessionId) - 1, [
-        ...transcriptLinesOf(earlier),
-        ...stream.transcript(sessionId),
-      ]);
+      if (!ended) {
+        ended = true;
+        // `tail` is one past the last index assigned, so an empty log answers -1.
+        // Awaited: the hook is CALLED before the stop resolves, which is the
+        // contract an eval's turn and a page reading "the end was reported" both
+        // hold. The transcript is in hand already: nothing was appended before
+        // `start` read the own log, so the two halves do not overlap.
+        await memory?.ended(stream.tail(sessionId) - 1, [
+          ...transcriptLinesOf(earlier),
+          ...stream.transcript(sessionId),
+        ]);
+      }
     }
   };
 }

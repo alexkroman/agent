@@ -8,6 +8,9 @@
  * dropped — `useWorkflowRuns`' rule), a read landing after unmount, and a
  * failure rendered as an empty answer. `data` is KEPT through a failed re-read,
  * so a poll that hiccups does not blank the panel; `error` says it is stale.
+ * It is NOT kept across a change of `path`: the answer is remembered with the
+ * path it came from, so a page switching from one record to the next never
+ * shows the previous one under the new id while the first read is in flight.
  *
  * The poll is `repeatUntil`'s loop (`_repeat-until.ts`), re-armed from the
  * SETTLED read rather than on an interval — a slow route would otherwise
@@ -32,7 +35,11 @@ import { routeFetch } from "./route-fetch.ts";
  * @public
  */
 export type UseRouteOptions<T = unknown> = {
-  /** Read again every this many ms, while mounted. Default: never. */
+  /**
+   * Read again every this many ms, while mounted. `0` or unset: never. A
+   * negative or `NaN` value throws rather than polling as fast as the route
+   * answers.
+   */
   pollMs?: number | undefined;
   /**
    * Stop polling once an answer satisfies this — a call that is over, a job
@@ -61,9 +68,12 @@ export type UseRouteOptions<T = unknown> = {
  * @public
  */
 export type UseRouteResult<T> = {
-  /** The last answer, kept through a failed re-read. `undefined` until the first. */
+  /**
+   * The last answer for THIS `path`, kept through a failed re-read.
+   * `undefined` until the first, and again whenever `path` changes.
+   */
   data: T | undefined;
-  /** Why the LAST read failed — the route's `{ error }` when it said — or `undefined`. */
+  /** Why the LAST read of this `path` failed — the route's `{ error }` when it said — or `undefined`. */
   error: string | undefined;
   /** Whether a read is in flight. */
   loading: boolean;
@@ -131,8 +141,15 @@ export function useRoute<T = unknown>(
 ): UseRouteResult<T> {
   const session = useOptionalSessionCore();
   const { pollMs, client } = options;
-  const [data, setData] = useState<T | undefined>(undefined);
-  const [error, setError] = useState<string | undefined>(undefined);
+  if (pollMs !== undefined && !(Number.isFinite(pollMs) && pollMs >= 0)) {
+    // `repeatUntil` would hand a negative interval to `setTimeout`, which
+    // clamps it to zero: a poll re-armed the instant each read settles.
+    throw new Error(`useRoute: pollMs must be a non-negative number, not ${String(pollMs)}`);
+  }
+  // The answer is remembered WITH the path it answers, and read back only
+  // while that is still the path: a change of `path` therefore reads as no
+  // answer yet, in the same render, with no reset effect and no stale frame.
+  const [answer, setAnswer] = useState<Answer<T> | undefined>(undefined);
   const [loading, setLoading] = useState(path !== null);
 
   // Read per request rather than named as dependencies: an inline `until` or
@@ -167,13 +184,17 @@ export function useRoute<T = unknown>(
           ...omitUndefined({ client: client ?? session?.identity.clientId(), headers, signal }),
         });
         if (!epoch.isCurrent(mine)) return false;
-        setData(answer);
-        setError(undefined);
+        setAnswer({ path, data: answer, error: undefined });
         setLoading(false);
         return until?.(answer) === true;
       } catch (err: unknown) {
         if (!epoch.isCurrent(mine)) return false;
-        setError(errorMessage(err));
+        // The last data is kept only when it is this path's.
+        setAnswer((prior) => ({
+          path,
+          data: prior?.path === path ? prior.data : undefined,
+          error: errorMessage(err),
+        }));
         setLoading(false);
         return false;
       }
@@ -187,14 +208,24 @@ export function useRoute<T = unknown>(
 
   useEffect(() => {
     // The poll's first tick IS the mount read, so a polled route is not read
-    // twice at mount.
-    const stop = pollMs ? repeatUntil(pollMs, read) : undefined;
-    if (!stop) void read();
+    // twice at mount. `0` and unset both mean one read, aborted on unmount
+    // the same way a poll's in-flight read is.
+    const polling = pollMs !== undefined && pollMs > 0;
+    const stop = polling
+      ? repeatUntil(pollMs, read)
+      : ((controller) => {
+          void read(controller.signal);
+          return () => controller.abort();
+        })(new AbortController());
     return () => {
-      stop?.();
+      stop();
       epoch.bump();
     };
   }, [read, pollMs, epoch]);
 
-  return { data, error, loading, reload };
+  const current = answer?.path === path ? answer : undefined;
+  return { data: current?.data, error: current?.error, loading, reload };
 }
+
+/** One read's outcome, tagged with the path it answers. */
+type Answer<T> = { path: string; data: T | undefined; error: string | undefined };

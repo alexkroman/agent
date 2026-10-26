@@ -104,6 +104,27 @@ export async function signCallBrief(
   brief: CallBrief,
   secret: string,
 ): Promise<Record<string, string>> {
+  assertCallBrief(brief);
+  const params: Record<string, string> = {
+    call: brief.id,
+    sig: await hmacHex(secret, signedText(brief)),
+  };
+  chunkPrompt(brief.prompt).forEach((chunk, i) => {
+    params[`p${i}`] = chunk;
+  });
+  return params;
+}
+
+/**
+ * Throw (`RangeError`) unless `brief` is one {@link signCallBrief} would sign:
+ * a non-empty single-line id and a prompt within
+ * {@link MAX_CALL_BRIEF_PROMPT_CHARS}. What `stepPlaceCall` checks before it
+ * looks for the secret, so an oversized prompt is reported as the brief's
+ * problem whatever else is missing.
+ *
+ * @internal
+ */
+export function assertCallBrief(brief: CallBrief): void {
   if (brief.id === "" || brief.id.includes("\n")) {
     throw new RangeError("A call brief's id is a non-empty single line.");
   }
@@ -112,23 +133,38 @@ export async function signCallBrief(
       `A call brief's prompt is at most ${MAX_CALL_BRIEF_PROMPT_CHARS} characters.`,
     );
   }
-  const params: Record<string, string> = {
-    call: brief.id,
-    sig: await hmacHex(secret, signedText(brief)),
-  };
-  for (let i = 0; i * CALL_BRIEF_CHUNK_CHARS < brief.prompt.length; i++) {
-    params[`p${i}`] = brief.prompt.slice(
-      i * CALL_BRIEF_CHUNK_CHARS,
-      (i + 1) * CALL_BRIEF_CHUNK_CHARS,
-    );
+}
+
+/**
+ * The prompt cut into pieces of at most {@link CALL_BRIEF_CHUNK_CHARS} UTF-16
+ * code units — Twilio's limit is on the wire string — along CODE POINT
+ * boundaries, so a surrogate pair never straddles two parameters: the webhook
+ * URL's `URLSearchParams` would encode each lone half as U+FFFD, and the
+ * reassembled prompt would no longer be the one that was signed.
+ */
+function chunkPrompt(prompt: string): string[] {
+  const chunks: string[] = [];
+  let chunk = "";
+  for (const codePoint of prompt) {
+    if (chunk.length + codePoint.length > CALL_BRIEF_CHUNK_CHARS) {
+      chunks.push(chunk);
+      chunk = "";
+    }
+    chunk += codePoint;
   }
-  return params;
+  if (chunk !== "") chunks.push(chunk);
+  return chunks;
 }
 
 /**
  * The brief a call's parameters carry, or `undefined` when they were not
  * signed by this app — a stranger, a stale secret, a truncated stream, or no
- * secret at all (an unset env is a refusal, never an open door).
+ * secret at all (an unset env is a refusal, never an open door). The secret is
+ * trimmed, as `stepPlaceCall` trims it before signing, so a value pasted with
+ * a trailing newline verifies the calls it placed; a blank one is absent. An
+ * id carrying a newline — the signed text's separator — is refused unread,
+ * so a signed brief cannot be replayed with part of its prompt moved into
+ * the id.
  *
  * The one reader: `call` is the `SessionCall` `sessionContext` and
  * `onSessionEnd` receive, or `sessionCall(ctx)` in a tool.
@@ -157,9 +193,10 @@ export async function readCallBrief(
   const params = call.parameters;
   const id = params.call;
   const sig = params.sig;
-  if (!(secret && id && sig)) return undefined;
+  const trimmed = secret?.trim();
+  if (!(trimmed && id && sig) || id.includes("\n")) return undefined;
   let prompt = "";
   for (let i = 0; params[`p${i}`] !== undefined; i++) prompt += params[`p${i}`];
   const brief = { id, prompt };
-  return timingSafeEqual(sig, await hmacHex(secret, signedText(brief))) ? brief : undefined;
+  return timingSafeEqual(sig, await hmacHex(trimmed, signedText(brief))) ? brief : undefined;
 }

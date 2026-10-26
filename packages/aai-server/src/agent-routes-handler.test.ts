@@ -97,6 +97,13 @@ describe("headers", () => {
     expect(guest.calls[0]?.headers.get("origin")).toBeNull();
   });
 
+  test("forwards X-Api-Key — the other header `apiKeyRoute` can be told to read", async () => {
+    const guest = recordingGuest(() => json({}));
+    const harness = await residentHarness(guest.fetchFn);
+    await harness.fetch("/my-agent/api/v1/calls", { headers: { "X-Api-Key": "k-9f2c" } });
+    expect(guest.calls[0]?.headers.get("x-api-key")).toBe("k-9f2c");
+  });
+
   test("never hands tenant code the sandbox's manage bearer", async () => {
     // A route receives its request headers WHOLE, so the proxy proof the
     // workflow forward injects would be readable by the agent's own code here.

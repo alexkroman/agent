@@ -111,6 +111,45 @@ describe("stepPlaceCall", () => {
     expect(twilio.calls).toHaveLength(0);
   });
 
+  test("an empty briefSecretEnv means the default, never an empty name", async () => {
+    installStubStepFetch(() => ({ status: 201, body: { sid: "CA7" } }));
+    publishStepEnv({});
+    const err = await stepPlaceCall({
+      ...dial,
+      brief: { id: "c", prompt: "p" },
+      briefSecretEnv: "",
+    }).catch((e: unknown) => e);
+    expect(String(err)).toMatch(/CALLS_API_KEY is not set/);
+  });
+
+  test("the brief is checked before the credentials, so an oversized prompt is named as such", async () => {
+    installStubStepFetch(() => ({ status: 201, body: { sid: "CA7" } }));
+    publishStepEnv({});
+    const { credentials: _, ...noCredentials } = dial;
+    const err = await stepPlaceCall({
+      ...noCredentials,
+      brief: { id: "c", prompt: "x".repeat(5000) },
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(PlaceCallError);
+    expect(String(err)).toMatch(/prompt is at most 4000/);
+    expect(String(err)).not.toMatch(/Twilio is not set up/);
+  });
+
+  test("a brief that overflows the parameter budget is refused in terms of the brief", async () => {
+    const twilio = installStubStepFetch(() => ({ status: 201, body: { sid: "CA7" } }));
+    publishStepEnv({ CALLS_API_KEY: "s" });
+    const own = Object.fromEntries(Array.from({ length: 22 }, (_, i) => [`k${i}`, "v"]));
+    const err = await stepPlaceCall({
+      ...dial,
+      parameters: own,
+      brief: { id: "c", prompt: "x".repeat(4000) },
+    }).catch((e: unknown) => e);
+    expect(err).toMatchObject({ retryable: false });
+    expect(String(err)).toMatch(/33 parameters/);
+    expect(String(err)).toMatch(/the brief takes up to 11/);
+    expect(twilio.calls).toHaveLength(0);
+  });
+
   test("defaults agentUrl to the published public URL, and refuses with none", async () => {
     const twilio = installStubStepFetch(() => ({ status: 201, body: { sid: "CA1" } }));
     const { agentUrl: _, ...noUrl } = dial;

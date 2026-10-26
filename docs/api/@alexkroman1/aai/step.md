@@ -3663,8 +3663,9 @@ optional briefSecretEnv?: string;
 ```
 
 The step-env variable holding the secret `brief` is signed with. Default
-`CALL_BRIEF_SECRET_ENV` (`"CALLS_API_KEY"`); the answering agent reads the
-same variable from its env. Unset with a `brief` is a non-retryable refusal.
+`CALL_BRIEF_SECRET_ENV` (`"CALLS_API_KEY"`), which an empty string also
+means; the answering agent reads the same variable from its env. Unset
+with a `brief` is a non-retryable refusal.
 
 ##### carrier
 

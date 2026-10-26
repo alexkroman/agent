@@ -51,6 +51,38 @@ describe("useRoute", () => {
     expect(hook.result.current.data).toEqual({ ok: true });
   });
 
+  test("a change of path drops the previous path's data until the new read lands", async () => {
+    fetchMock.mockImplementation(async (url) => json({ ok: String(url).split("/").at(-1) }));
+    const core = createMockSessionCore({}, { clientId: () => undefined });
+    const hook = renderHookWithSession(
+      ({ path }: { path: string }) => useRoute<{ ok: unknown }>(path),
+      core,
+      { initialProps: { path: "/calls/a" } },
+    );
+    await waitFor(() => expect(hook.result.current.data).toEqual({ ok: "a" }));
+    let releaseB: (r: Response) => void = () => undefined;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          releaseB = resolve;
+        }),
+    );
+    hook.rerender({ path: "/calls/b" });
+    expect(hook.result.current.data).toBeUndefined();
+    expect(hook.result.current.error).toBeUndefined();
+    await waitFor(() => expect(hook.result.current.loading).toBe(true));
+    expect(hook.result.current.data).toBeUndefined();
+    await act(async () => {
+      releaseB(json({ ok: "b" }));
+    });
+    expect(hook.result.current.data).toEqual({ ok: "b" });
+    // The same path's data survives a failed reload, as before.
+    fetchMock.mockResolvedValueOnce(json({ error: "down" }, 500));
+    act(() => hook.result.current.reload());
+    await waitFor(() => expect(hook.result.current.error).toBe("down"));
+    expect(hook.result.current.data).toEqual({ ok: "b" });
+  });
+
   test("a slow earlier read cannot overwrite a newer one", async () => {
     let releaseSlow: (r: Response) => void = () => undefined;
     fetchMock.mockImplementationOnce(
@@ -149,6 +181,38 @@ describe("useRoute", () => {
       hook.unmount();
       await vi.advanceTimersByTimeAsync(5000);
       expect(fetchMock).toHaveBeenCalledTimes(4);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("unmounting aborts the one read of a route that is NOT polled", async () => {
+    let seen: AbortSignal | undefined;
+    fetchMock.mockImplementationOnce(
+      (_url, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          seen = init.signal ?? undefined;
+          init.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    );
+    const hook = mount("/slow");
+    expect(seen?.aborted).toBe(false);
+    hook.unmount();
+    expect(seen?.aborted).toBe(true);
+  });
+
+  test("a negative or NaN pollMs is refused, and 0 reads once", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(() => mount("/tasks", -1)).toThrow(/pollMs must be a non-negative number, not -1/);
+    expect(() => mount("/tasks", Number.NaN)).toThrow(/pollMs/);
+    vi.useFakeTimers();
+    try {
+      mount("/tasks", 0);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
     } finally {
       vi.useRealTimers();
     }

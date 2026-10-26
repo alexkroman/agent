@@ -65,6 +65,13 @@ describe("routeFetch", () => {
     });
   });
 
+  test("a `Content-Type` spelled any way replaces the JSON one rather than joining it", async () => {
+    await routeFetch("POST", "/calls", { a: 1 }, { headers: { "Content-Type": "text/plain" } });
+    expect(fetchMock.mock.calls.at(-1)?.[1]?.headers).toEqual({ "content-type": "text/plain" });
+    await routeFetch("GET", "/calls", undefined, { headers: { Authorization: "Bearer k" } });
+    expect(fetchMock.mock.calls.at(-1)?.[1]?.headers).toEqual({ authorization: "Bearer k" });
+  });
+
   test("a 2xx with no JSON body resolves {}", async () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
     await expect(routeFetch("POST", "/ping")).resolves.toEqual({});

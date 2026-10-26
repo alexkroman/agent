@@ -335,6 +335,20 @@ describe("attachSessionStream — a client's prior sessions (`memory`)", () => {
     ]);
   });
 
+  test("a second stop — a superseded reconnect plus its socket closing — tells the memory ONCE", async () => {
+    const { memory, ended } = priorMemory("earlier", []);
+    const core = makeMockCore();
+    attachSessionStream(core, {
+      stream: createSessionEventStream({ backend: createMemoryStateBackend() }),
+      sessionId: SID,
+      resumed: false,
+      memory,
+    });
+    await core.stop();
+    await core.stop();
+    expect(ended).toHaveBeenCalledTimes(1);
+  });
+
   test("a session that recorded nothing ends at -1", async () => {
     const { memory, ended } = priorMemory("earlier", []);
     const core = makeMockCore();

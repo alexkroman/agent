@@ -75,14 +75,18 @@ import {
   twilioAdvice,
 } from "./_twilio-calls.ts";
 import {
+  assertCallBrief,
+  CALL_BRIEF_CHUNK_CHARS,
   CALL_BRIEF_SECRET_ENV,
   type CallBrief,
   isCallBriefParameter,
+  MAX_CALL_BRIEF_PROMPT_CHARS,
   signCallBrief,
 } from "./call-brief.ts";
 import type { PlacedCallStatus } from "./call-status.ts";
 import { redactCredentials } from "./channels/shared/outbox.ts";
 import { isRecord } from "./is-record.ts";
+import { MAX_CALL_PARAMETERS } from "./phone-webhook.ts";
 import { stepEnv } from "./step-env.ts";
 import { stepFetch } from "./step-fetch.ts";
 import { retryAfter } from "./step-retry.ts";
@@ -161,8 +165,9 @@ export type PlaceCallOptions = {
   brief?: CallBrief;
   /**
    * The step-env variable holding the secret `brief` is signed with. Default
-   * `CALL_BRIEF_SECRET_ENV` (`"CALLS_API_KEY"`); the answering agent reads the
-   * same variable from its env. Unset with a `brief` is a non-retryable refusal.
+   * `CALL_BRIEF_SECRET_ENV` (`"CALLS_API_KEY"`), which an empty string also
+   * means; the answering agent reads the same variable from its env. Unset
+   * with a `brief` is a non-retryable refusal.
    */
   briefSecretEnv?: string;
   /** Hard cap on the connected call, in seconds. Default `DEFAULT_CALL_TIME_LIMIT_S`. */
@@ -338,8 +343,10 @@ const CARRIER_REQUEST_TIMEOUT_MS = 30_000;
  * @throws {PlaceCallError} On every failure — see the module doc.
  */
 export async function stepPlaceCall(options: PlaceCallOptions): Promise<PlacedCall> {
-  const credentials = resolveCredentials(options.carrier, options.credentials);
+  // The brief before the credentials: a prompt over the cap is the caller's
+  // problem whether or not Twilio is set up, and is reported as such.
   const parameters = await callParameters(options);
+  const credentials = resolveCredentials(options.carrier, options.credentials);
   const request = (() => {
     try {
       return dialRequest(credentials, {
@@ -396,9 +403,15 @@ export async function stepCallStatus(options: CallStatusOptions): Promise<Placed
   return status;
 }
 
+/** The most `<Parameter>`s a brief takes: `call`, `sig`, and a chunk per `CALL_BRIEF_CHUNK_CHARS`. */
+const MAX_BRIEF_PARAMETERS = 2 + Math.ceil(MAX_CALL_BRIEF_PROMPT_CHARS / CALL_BRIEF_CHUNK_CHARS);
+
 /**
  * The call's parameters: the caller's own, plus the signed brief when one is
- * given. Every refusal here is the caller's to fix, so none is retryable.
+ * given. Every refusal here is the caller's to fix, so none is retryable. The
+ * brief's shape is checked before the secret is looked for, and the count
+ * against Twilio's limit is reported in terms of the brief — the caller sees
+ * `brief`, not the `p0…pN` it becomes.
  */
 async function callParameters(
   options: Pick<PlaceCallOptions, "parameters" | "brief" | "briefSecretEnv">,
@@ -408,18 +421,31 @@ async function callParameters(
   const refuse = (message: string): never => {
     throw new PlaceCallError(message, { carrier: "twilio", retryable: false });
   };
+  try {
+    assertCallBrief(options.brief);
+  } catch (err: unknown) {
+    refuse(errorMessage(err));
+  }
   const taken = Object.keys(own).find(isCallBriefParameter);
   if (taken !== undefined) {
     refuse(`parameters.${taken} collides with the brief, which is carried as call, sig and p0…pN.`);
   }
-  const secretEnv = options.briefSecretEnv ?? CALL_BRIEF_SECRET_ENV;
+  // `""` means the default too: an empty name is never a variable to read.
+  const named = options.briefSecretEnv;
+  const secretEnv = named === undefined || named === "" ? CALL_BRIEF_SECRET_ENV : named;
   const secret = stepEnv(secretEnv)?.trim();
   if (!secret) refuse(`${secretEnv} is not set, and the call's brief is signed with it.`);
-  try {
-    return { ...own, ...(await signCallBrief(options.brief, secret ?? "")) };
-  } catch (err: unknown) {
-    return refuse(errorMessage(err));
+  const signed = await signCallBrief(options.brief, secret ?? "");
+  const ownCount = Object.keys(own).length;
+  const briefCount = Object.keys(signed).length;
+  if (ownCount + briefCount > MAX_CALL_PARAMETERS) {
+    refuse(
+      `The call would carry ${ownCount + briefCount} parameters, over the ${MAX_CALL_PARAMETERS} ` +
+        `Twilio allows: the brief takes up to ${MAX_BRIEF_PARAMETERS} (call, sig and p0…pN; ` +
+        `${briefCount} for this prompt), leaving ${MAX_CALL_PARAMETERS - briefCount} for \`parameters\`.`,
+    );
   }
+  return { ...own, ...signed };
 }
 
 /** The credentials to use: the explicit pair, else the step env, else a refusal naming both keys. */

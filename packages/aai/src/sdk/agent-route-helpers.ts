@@ -195,7 +195,10 @@ export interface ApiKeyRouteOptions {
   /**
    * The request header the caller sends the key in, lower-case. Default
    * `"authorization"`, where a `Bearer ` prefix is optional; a custom header
-   * (`"x-api-key"`) is compared as sent.
+   * (`"x-api-key"`) is compared as sent. On the deployed platform only
+   * `authorization` and `x-api-key` reach the agent — the proxy forwards an
+   * allow-list of request headers — so any other name works under `aai dev`
+   * and self-hosted alone.
    */
   header?: string;
 }
