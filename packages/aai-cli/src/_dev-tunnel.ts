@@ -31,6 +31,7 @@
  */
 
 import { type ChildProcess, spawn as nodeSpawn, type SpawnOptions } from "node:child_process";
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import pTimeout from "p-timeout";
 import { CliError } from "./_output.ts";
 
@@ -70,7 +71,7 @@ export type SpawnFn = {
 /** The part of a `ChildProcess` this module touches — all a fake has to be. */
 export type TunnelChild = Pick<
   ChildProcess,
-  "stdout" | "stderr" | "exitCode" | "signalCode" | "kill"
+  "stdout" | "stderr" | "exitCode" | "signalCode" | "kill" | "pid"
 > & {
   once(event: "exit", listener: (code: number | null) => void): unknown;
   once(event: "error", listener: (err: NodeJS.ErrnoException) => void): unknown;
@@ -170,20 +171,58 @@ export async function startQuickTunnel(opts: {
   }
 }
 
+/** How long the startup run of the hook may take before it is stopped. */
+export const HOOK_STARTUP_TIMEOUT_MS = 60_000;
+
+/** How long a stopped hook gets between SIGTERM and SIGKILL. */
+export const HOOK_KILL_GRACE_MS = 2000;
+
+/** Signal a process GROUP — the seam a spec replaces to watch the signals. */
+export type KillGroupFn = (pgid: number, signal: NodeJS.Signals) => void;
+
+/** `process.kill(-pgid)`; a group already gone (ESRCH) is not an error. */
+const killGroupDefault: KillGroupFn = (pgid, signal) => {
+  try {
+    process.kill(-pgid, signal);
+  } catch {
+    /* the group has exited — nothing left to stop */
+  }
+};
+
+/** Why {@link runPublicUrlHook}'s wait ended without an exit code. */
+const STOPPED = Symbol("stopped");
+
 /**
  * Run the `--on-public-url` hook through the shell with `PUBLIC_URL` (and its
  * alias `AAI_PUBLIC_URL`) set to `url` — empty on the shutdown run. Resolves
- * with the exit code; output is inherited, so the hook speaks for itself.
+ * with the exit code, or `null` when it was stopped — past `timeoutMs`, or on
+ * `signal`; output is inherited, so the hook speaks for itself.
+ *
+ * **The hook is its own process GROUP, and stopping it signals the group**
+ * (SIGTERM, then SIGKILL after `killGraceMs`). `shell: true` is `sh -c`, so
+ * signalling the child signalled only the shell: a hook that ran
+ * `./publish.sh` (or anything not `exec`ed) left its real process running
+ * past the timeout and past `aai dev`'s exit. Detached for the same reason —
+ * the group must not be the terminal's, whose Ctrl-C would reach the hook
+ * before `aai dev` had decided what to do with it.
  */
-export function runPublicUrlHook(
+export async function runPublicUrlHook(
   command: string,
   url: string,
-  opts: { cwd: string; timeoutMs?: number | undefined; spawn?: SpawnFn | undefined },
+  opts: {
+    cwd: string;
+    timeoutMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    spawn?: SpawnFn | undefined;
+    killGroup?: KillGroupFn | undefined;
+    killGraceMs?: number | undefined;
+  },
 ): Promise<number | null> {
   const spawn = opts.spawn ?? nodeSpawn;
   const child = spawn(command, {
     cwd: opts.cwd,
     shell: true,
+    detached: true,
     stdio: ["ignore", "inherit", "inherit"],
     env: { ...process.env, PUBLIC_URL: url, AAI_PUBLIC_URL: url },
   });
@@ -191,12 +230,41 @@ export function runPublicUrlHook(
     child.once("exit", (code) => resolve(code));
     child.once("error", reject);
   });
-  if (opts.timeoutMs === undefined) return done;
-  return pTimeout(done, {
-    milliseconds: opts.timeoutMs,
-    fallback: () => {
-      child.kill("SIGTERM");
-      return null;
-    },
-  });
+  let outcome: number | null | typeof STOPPED;
+  try {
+    outcome = await pTimeout(done, {
+      milliseconds: opts.timeoutMs ?? Number.POSITIVE_INFINITY,
+      fallback: () => STOPPED,
+      ...omitUndefined({ signal: opts.signal }),
+    });
+  } catch (err) {
+    if (!opts.signal?.aborted) throw err;
+    outcome = STOPPED;
+  }
+  if (outcome !== STOPPED) return outcome;
+  await stopGroup(child, done, opts.killGroup ?? killGroupDefault, opts.killGraceMs);
+  return null;
+}
+
+/**
+ * SIGTERM the hook's group, give it `graceMs` to go, then SIGKILL the group
+ * whether or not the shell has exited — a grandchild ignoring SIGTERM outlives
+ * its shell. A child with no pid (it never started) is signalled directly.
+ */
+async function stopGroup(
+  child: TunnelChild,
+  exited: Promise<unknown>,
+  killGroup: KillGroupFn,
+  graceMs = HOOK_KILL_GRACE_MS,
+): Promise<void> {
+  const signal = (sig: NodeJS.Signals): void => {
+    if (child.pid === undefined) child.kill(sig);
+    else killGroup(child.pid, sig);
+  };
+  signal("SIGTERM");
+  await pTimeout(
+    exited.catch(() => undefined),
+    { milliseconds: graceMs, fallback: () => undefined },
+  );
+  signal("SIGKILL");
 }

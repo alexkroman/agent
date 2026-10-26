@@ -2,7 +2,17 @@
 
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
-import { fail, getOutputMode, installStdoutGuard, ok, stripAnsi, writeLine } from "./_output.ts";
+import {
+  fail,
+  getOutputMode,
+  installStdoutGuard,
+  ok,
+  oweExitCode,
+  resultLine,
+  sanitizeTerminalText,
+  stripAnsi,
+  writeLine,
+} from "./_output.ts";
 
 describe("getOutputMode", () => {
   it("returns json when --json flag is true", () => {
@@ -41,17 +51,24 @@ describe("installStdoutGuard", () => {
     });
   }
 
-  it("exits 0 quietly on EPIPE (consumer closed the pipe)", () => {
+  // A flat `exit(0)` on EPIPE turned a failing `aai list | <closed>` into a
+  // success under `pipefail`; the guard exits with what the run OWES.
+  it.each([
+    [0, 0],
+    [1, 1],
+    [undefined, 1],
+  ])("exits quietly on EPIPE with the owed code (owed %s → %s)", (owed, expected) => {
     const exitSpy = stubExit();
     const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
     const stream = new EventEmitter();
     installStdoutGuard(stream);
+    oweExitCode(owed);
 
     const err = new Error("broken pipe") as NodeJS.ErrnoException;
     err.code = "EPIPE";
-    expect(() => stream.emit("error", err)).toThrow("process.exit(0)");
+    expect(() => stream.emit("error", err)).toThrow(`process.exit(${expected})`);
 
-    expect(exitSpy).toHaveBeenCalledWith(0);
+    expect(exitSpy).toHaveBeenCalledWith(expected);
     expect(stderrSpy).not.toHaveBeenCalled();
   });
 
@@ -113,19 +130,76 @@ describe("stripAnsi", () => {
     );
   });
 
-  it("removes the JSON-escaped form, which is what a stringified result carries", () => {
-    // The caller stringifies the whole result and hands the LINE over, by
-    // which point `JSON.stringify` has turned the ESC byte into `\u001b`.
-    const line = JSON.stringify({ ok: false, error: coloured });
-    expect(stripAnsi(line)).not.toMatch(/u001[bB]\[/);
-    expect(JSON.parse(stripAnsi(line))).toEqual({
-      ok: false,
-      error: '[MISSING_EXPORT] "default" is not exported.\n   ╭─[ agent.ts ]\n 1 │ im',
-    });
-  });
-
   it("leaves plain text alone", () => {
     expect(stripAnsi("No value provided for FOO")).toBe("No value provided for FOO");
+  });
+});
+
+/**
+ * Server- and agent-supplied text reached the terminal raw: a project name in
+ * `aai list`, an error body, a log line. Each escape below is one the
+ * adversarial run delivered through such a field.
+ */
+describe("sanitizeTerminalText", () => {
+  const safe = (text: string) => sanitizeTerminalText(text, { keepSgr: true });
+
+  it.each([
+    ["an OSC 52 clipboard write (BEL-terminated)", "a\u001B]52;c;ZXZpbA==\u0007b", "ab"],
+    ["an OSC 0 window title (ST-terminated)", "a\u001B]0;pwned\u001B\\b", "ab"],
+    ["an OSC 8 hyperlink", "\u001B]8;;https://evil.test\u001B\\click\u001B]8;;\u001B\\", "click"],
+    ["a screen clear", "a\u001B[2Jb", "ab"],
+    ["a cursor move", "a\u001B[10;1Hb", "ab"],
+    ["a full terminal reset", "a\u001Bcb", "ab"],
+    ["a charset select", "a\u001B(Bb", "ab"],
+    ["a DCS string", "a\u001BPq#0\u001B\\b", "ab"],
+    ["an unterminated OSC, to the end", "a\u001B]52;c;Zm9v", "a"],
+  ])("removes %s", (_name, input, expected) => {
+    expect(safe(input)).toBe(expected);
+  });
+
+  it("keeps SGR colour when asked, and drops it when not", () => {
+    expect(safe("\u001B[31mred\u001B[0m")).toBe("\u001B[31mred\u001B[0m");
+    expect(sanitizeTerminalText("\u001B[31mred\u001B[0m", { keepSgr: false })).toBe("red");
+  });
+
+  it("renders other control characters visibly, keeping \\n and \\t", () => {
+    expect(safe("bell\u0007 nul\u0000 bs\u0008 csi\u009B del\u007F")).toBe(
+      "bell\\x07 nul\\x00 bs\\x08 csi\\x9b del\\x7f",
+    );
+    expect(safe("a\tb\nc\r\nd\re")).toBe("a\tb\nc\nd\\x0de");
+    // A lone ESC that starts no sequence is a stray byte, not silence.
+    expect(safe("end\u001B")).toBe("end\\x1b");
+  });
+
+  it("returns the same string when there is nothing to do", () => {
+    const plain = "żółć 日本 🎤";
+    expect(safe(plain)).toBe(plain);
+  });
+});
+
+describe("resultLine", () => {
+  it("keeps DATA verbatim, escape bytes included", () => {
+    // `aai init $'\e[31mred'` reported `dir: ".../red"` while creating a
+    // directory whose name holds the ESC byte; a consumer acting on the
+    // reported path acted on a different one.
+    const dir = "/tmp/\u001B[31mred\u001B[0m";
+    const parsed = JSON.parse(resultLine(ok({ dir }))) as { data: { dir: string } };
+    expect(parsed.data.dir).toBe(dir);
+  });
+
+  it("strips every escape from the human-text fields, OSC included", () => {
+    const line = resultLine(
+      fail("x", "\u001B[31mboom\u001B[0m\u001B]52;c;ZXZpbA==\u0007", "\u001B[2Jhint"),
+    );
+    expect(JSON.parse(line)).toEqual({ ok: false, code: "x", error: "boom", hint: "hint" });
+    expect(line.endsWith("}\n")).toBe(true);
+  });
+
+  it("cleans string warnings and nothing else in an ok result", () => {
+    const parsed = JSON.parse(
+      resultLine(ok({ name: "\u001B]0;t\u0007n", warnings: ["\u001B[33mw\u001B[0m"] })),
+    ) as { data: { name: string; warnings: string[] } };
+    expect(parsed.data).toEqual({ name: "\u001B]0;t\u0007n", warnings: ["w"] });
   });
 });
 
@@ -144,15 +218,10 @@ describe("writeLine", () => {
     return written;
   }
 
-  it("writes the line and resolves once flushed", async () => {
+  it("writes the line verbatim and resolves once flushed", async () => {
     const written = captureStdout();
-    await writeLine('{"ok":true}\n');
-    expect(written).toEqual(['{"ok":true}\n']);
-  });
-
-  it("strips ANSI on the way out, so the envelope is machine-readable", async () => {
-    const written = captureStdout();
-    await writeLine(`${JSON.stringify({ ok: false, error: "\u001B[31mboom\u001B[0m" })}\n`);
-    expect(written[0]).toBe('{"ok":false,"error":"boom"}\n');
+    const line = `${JSON.stringify({ ok: true, data: { dir: "\u001B[31m" } })}\n`;
+    await writeLine(line);
+    expect(written).toEqual([line]);
   });
 });

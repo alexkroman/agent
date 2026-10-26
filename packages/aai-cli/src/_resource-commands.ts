@@ -115,6 +115,8 @@ export function createResourceCommands(load: ResourceExecutors = REAL_EXECUTORS)
       ...platformArgs,
     },
     cwd: "any",
+    // `refuseValueInArgv` below, which must not echo the token back.
+    extraPositionals: "own",
     async run({ args, mode, cwd, ui }) {
       refuseValueInArgv(args._);
       const { executeLocalSecretPut, executeSecretPut, resolveSecretValue } = await load.secret();

@@ -12,6 +12,7 @@ import {
   readProjectConfig,
   serverOrigin,
 } from "./_config.ts";
+import { CliError } from "./_output.ts";
 import { stripTrailingSlash } from "./_utils.ts";
 
 export const DEFAULT_SERVER = "https://alexkroman--aai-server-web-server.modal.run";
@@ -74,7 +75,19 @@ export function resolveServerUrl(
   approvedOrigins: readonly string[] = [],
 ): string {
   // An explicit flag is a direct statement of user intent, not repo content.
-  if (explicit) return stripTrailingSlash(explicit);
+  // PROVIDED is the test, not truthy: `--server=` meaning "not given" sent the
+  // key to the default origin. `defineExec` refuses it first (`checkServerFlag`);
+  // this is the backstop for a caller that is not a command.
+  if (explicit !== undefined) {
+    const url = typeof explicit === "string" ? explicit.trim() : "";
+    if (serverOrigin(url) === null) {
+      throw new CliError(
+        "usage",
+        `--server must be an absolute http(s) URL; got ${JSON.stringify(explicit)}.`,
+      );
+    }
+    return stripTrailingSlash(url);
+  }
   if (isDevMode()) return DEFAULT_DEV_SERVER;
   if (!configUrl) return DEFAULT_SERVER;
 
@@ -139,7 +152,7 @@ export async function resolveApprovedServer(
   );
   // Passing --server is the user approving that origin; remember it so later
   // commands in this project don't need the flag again.
-  if (explicitServer) await approveServer(serverUrl);
+  if (explicitServer !== undefined) await approveServer(serverUrl);
   // Before the key is resolved, and before any caller can interpolate it.
   assertValidConfigSlug(config?.slug);
   return { config, globalConfig, serverUrl };

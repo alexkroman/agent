@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { readFile } from "node:fs/promises";
+import { readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
@@ -9,7 +9,7 @@ import { describe, expect } from "vitest";
 import { findUnknownFlags } from "./_cli-common.ts";
 import { HELP_SECTIONS, rootHelp } from "./_help.ts";
 import { test } from "./_test-utils.ts";
-import { mainCommand } from "./cli.ts";
+import { bareAaiPublish, mainCommand } from "./cli.ts";
 
 const BIN = path.join(path.dirname(fileURLToPath(import.meta.url)), "../bin.mjs");
 
@@ -266,5 +266,181 @@ describe("aai test requires an agent project", () => {
       ok: false,
       error: expect.stringContaining("No agent.ts found"),
     });
+  });
+});
+
+/** A directory holding an agent.ts, as an agent-gated command needs. */
+async function withAgent(dir: string): Promise<string> {
+  await writeFile(path.join(dir, "agent.ts"), "export default {};\n");
+  return dir;
+}
+
+describe("--version beside a command answers and runs nothing", () => {
+  // citty answers `--version` only as the SOLE argument; elsewhere the built-in
+  // flag passed the unknown-flag guard and was dropped, so `aai publish -v`
+  // attempted a publish and `aai init --version` scaffolded a project.
+  test.for([
+    ["publish", "-v"],
+    ["init", "--version"],
+    ["dev", "--version"],
+    ["secret", "put", "NAME", "-v"],
+  ])("aai %j prints the version and exits 0", async (args, { tmpDir: dir }) => {
+    const { exitCode, stdout } = await runBin(args, await withAgent(dir));
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(stdout.trim())).toEqual({
+      ok: true,
+      data: { version: expect.stringMatching(/\d+\.\d+/) },
+    });
+    // Nothing was scaffolded, built or linked.
+    expect(await readdir(dir)).toEqual(["agent.ts"]);
+  });
+
+  test("--help with a command still shows that command's usage", async ({ tmpDir: dir }) => {
+    const { exitCode, stdout } = await runBin(["publish", "-h", "-v"], dir);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("USAGE");
+  });
+
+  test("a built-in given a value is refused rather than ignored", async ({ tmpDir: dir }) => {
+    const { exitCode, stdout } = await runBin(["publish", "--help=1"], dir);
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout.trim())).toMatchObject({ ok: false, code: "usage" });
+  });
+});
+
+describe("--server is a URL or a usage error, never a silent fallback", () => {
+  // Each of these used to send the API key to the DEFAULT origin.
+  test.for([
+    ["list", "--server="],
+    ["list", "--server"],
+    ["list", "--no-server"],
+    ["list", "--server", "--json"],
+    ["list", "-s="],
+    ["list", "--server", "not a url"],
+    ["list", "--server=ftp://x.test"],
+  ])("aai %j", async (args, { tmpDir: dir }) => {
+    const { exitCode, stdout } = await runBin(args, dir);
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout.trim())).toMatchObject({
+      ok: false,
+      code: "usage",
+      error: expect.stringMatching(/--server|-s/),
+    });
+  });
+
+  test("--no-X is still fine for a switch", async ({ tmpDir: dir }) => {
+    const { exitCode, stdout } = await runBin(["templates", "--no-json"], dir);
+    expect(exitCode).toBe(0);
+    expect(stdout).toContain("quickstart-agent");
+  });
+});
+
+describe("extra positionals are a usage error naming them", () => {
+  test("aai delete other-project does not act on the linked project", async ({ tmpDir: dir }) => {
+    const { exitCode, stdout } = await runBin(["delete", "other-project"], dir);
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout.trim())).toMatchObject({
+      ok: false,
+      code: "usage",
+      error: expect.stringContaining("other-project"),
+    });
+  });
+
+  test("aai dev x y z does not start", async ({ tmpDir: dir }) => {
+    const { exitCode, stdout } = await runBin(["dev", "x", "y", "z"], await withAgent(dir));
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout.trim())).toMatchObject({
+      code: "usage",
+      error: expect.stringContaining("x y z"),
+    });
+  });
+
+  test("a declared positional plus one more names only the extra", async ({ tmpDir: dir }) => {
+    const { stdout } = await runBin(["workflow", "runs", "digest", "extra"], dir);
+    expect(JSON.parse(stdout.trim())).toMatchObject({
+      code: "usage",
+      error: "Unexpected argument: extra",
+    });
+  });
+});
+
+describe("strict numbers", () => {
+  test.for(["0x10", "1e3", "0", ""])(
+    "aai dev --port=%s is refused",
+    async (port, { tmpDir: dir }) => {
+      const { exitCode, stdout } = await runBin(["dev", `--port=${port}`], await withAgent(dir));
+      expect(exitCode).toBe(1);
+      expect(JSON.parse(stdout.trim())).toMatchObject({
+        ok: false,
+        code: "usage",
+        error: expect.stringContaining("Invalid port"),
+      });
+    },
+  );
+
+  test("--limit -Infinity says the flag needs a value, not 'unknown option'", async ({
+    tmpDir: dir,
+  }) => {
+    const { stdout } = await runBin(["workflow", "runs", "wf", "--limit", "-Infinity"], dir);
+    expect(JSON.parse(stdout.trim())).toMatchObject({
+      code: "usage",
+      error: expect.stringContaining("--limit needs a value"),
+    });
+  });
+});
+
+describe("`--` before a command", () => {
+  test("is a clean usage error, with no stray citty line", async ({ tmpDir: dir }) => {
+    const { exitCode, stdout, stderr } = await runBin(["--", "publish"], dir);
+    expect(exitCode).toBe(1);
+    expect(JSON.parse(stdout.trim())).toMatchObject({ ok: false, code: "usage" });
+    expect(stderr).not.toContain("No command specified");
+  });
+});
+
+describe("a closed stdout keeps the exit code the run owes", () => {
+  /** Run the bin with its stdout pipe closed before it writes anything. */
+  async function runClosed(args: string[], cwd: string) {
+    const child = execa(process.execPath, [BIN, ...args], {
+      cwd,
+      reject: false,
+      extendEnv: false,
+      env: { PATH: process.env.PATH ?? "", HOME: cwd, AAI_CONFIG_DIR: path.join(cwd, ".config") },
+    });
+    child.stdout?.destroy();
+    const result = await child;
+    return { exitCode: result.exitCode, stderr: String(result.stderr) };
+  }
+
+  // EPIPE exited 0 whatever the result, so `aai list | <closed>` hid a failure
+  // under `pipefail`.
+  test("a failing command still exits 1", async ({ tmpDir: dir }) => {
+    const { exitCode, stderr } = await runClosed(["list"], dir);
+    expect(exitCode).toBe(1);
+    expect(stderr).not.toContain("EPIPE");
+  });
+
+  test("--help and a succeeding command exit 0, quietly", async ({ tmpDir: dir }) => {
+    for (const args of [["--help"], ["templates"]]) {
+      const { exitCode, stderr } = await runClosed(args, dir);
+      expect(exitCode, args.join(" ")).toBe(0);
+      expect(stderr, args.join(" ")).not.toContain("Error");
+    }
+  });
+});
+
+describe("bare aai publishes only with a human's say-so", () => {
+  test.each([
+    [{ stdin: true, stdout: true }, "confirm"],
+    // `aai | tee log` at a terminal: a human is there, with nowhere to confirm.
+    [{ stdin: true, stdout: false }, "refuse"],
+    [{ stdin: false, stdout: false }, "publish"],
+    [{ stdin: false, stdout: true }, "publish"],
+  ] as const)("%j → %s", (tty, action) => {
+    expect(bareAaiPublish(tty)).toBe(action);
+  });
+
+  test("the help text says what a piped bare aai does", async () => {
+    expect(normalize(await rootHelp(mainCommand))).toContain("with its output piped it refuses");
   });
 });

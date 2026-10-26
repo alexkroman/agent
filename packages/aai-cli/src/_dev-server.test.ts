@@ -62,6 +62,9 @@ describe("startDevServer", () => {
     expect(fake.lastBuild()?.serverOptions).toMatchObject({
       name: "test-agent",
     });
+    // The SERVER logs through the same logger: left unset it fell back to
+    // `consoleLogger`, which put a line on stdout ahead of `--json`'s result.
+    expect(fake.lastBuild()?.serverOptions.logger).toBe(fake.lastBuild()?.runtimeOptions.logger);
     // Second arg is the bind host: undefined (AAI_DEV_HOST unset), so the
     // server applies its loopback default.
     expect(fake.listen).toHaveBeenCalledWith(3000, undefined);
