@@ -50,12 +50,12 @@ const toolSource = (description: string) =>
 /** Build `dir` and evaluate the worker, returning its default export. */
 async function loadWorker(
   dir: string,
-): Promise<{ tools: Record<string, unknown>; systemPrompt: string }> {
+): Promise<{ tools: Record<string, unknown>; systemPrompt: string; promptContext?: string }> {
   const code = await buildWorker(dir, { runtime: false });
   const out = path.join(dir, "worker.mjs");
   await fs.writeFile(out, code, "utf-8");
   const mod = (await import(pathToFileURL(out).href)) as {
-    default: { tools: Record<string, unknown>; systemPrompt: string };
+    default: { tools: Record<string, unknown>; systemPrompt: string; promptContext?: string };
   };
   return mod.default;
 }
