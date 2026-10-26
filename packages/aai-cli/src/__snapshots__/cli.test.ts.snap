@@ -46,6 +46,7 @@ exports[`cli usage snapshots > aai delete --help 1`] = `
 "Delete the studio project and its deployed agents (delete)
 USAGE delete [OPTIONS]
 OPTIONS
+              -y, --yes    Delete without asking for confirmation
   -s, --server=<server>    Platform server URL
                  --json    Output JSON (auto-detected in non-TTY)"
 `;

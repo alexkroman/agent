@@ -325,6 +325,7 @@ const del = defineExec({
     description: "Delete the studio project and its deployed agents",
   },
   args: {
+    yes: { type: "boolean", alias: "y", description: "Delete without asking for confirmation" },
     ...platformArgs,
   },
   // The link in `.aai/project.json` is what it deletes; a directory that has
@@ -332,7 +333,9 @@ const del = defineExec({
   cwd: "any",
   async run({ args, cwd, ui }) {
     const { executeDelete } = await import("./delete.ts");
-    return executeDelete({ cwd, server: args.server }, ui);
+    // NOT defaulted to `--yes` in JSON mode the way `init` is: init's prompts
+    // pick defaults, this one guards an irreversible delete.
+    return executeDelete({ cwd, server: args.server, yes: args.yes }, ui);
   },
 });
 
