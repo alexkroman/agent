@@ -221,12 +221,15 @@ describe("runCommand", () => {
     // A worker is the slot our fork sets plus the IPC channel `cluster.fork`
     // opens (`isStartWorker`), so both are stood in for here.
     vi.stubEnv(SLOT_ENV, "0");
-    const send = process.send;
-    process.send = () => true;
+    // Restored by descriptor: outside a forked pool `process.send` is ABSENT,
+    // which an assignment of the saved `undefined` cannot reproduce.
+    const send = Object.getOwnPropertyDescriptor(process, "send");
+    Object.defineProperty(process, "send", { value: () => true, configurable: true });
     try {
       await runCommand({ json: true }, async () => fail("command_failed", "port in use"), ui);
     } finally {
-      process.send = send;
+      if (send) Object.defineProperty(process, "send", send);
+      else Reflect.deleteProperty(process, "send");
     }
     expect(ui.stdout).toEqual([]);
     expect(JSON.parse(ui.stderr.join(""))).toMatchObject({ ok: false, error: "port in use" });
