@@ -1,6 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
+
+import { MAX_WORKSPACE_FILE_BYTES, MAX_WORKSPACE_FILES } from "@alexkroman1/aai/workspace-files";
 import { describe, expect, test, vi } from "vitest";
-import { apiRequest, HINT_INVALID_API_KEY } from "./_api-client.ts";
+import { apiRequest, HINT_INVALID_API_KEY, MAX_RESPONSE_BYTES } from "./_api-client.ts";
 
 /** Mock fetch returning a JSON Response with the given status/body. */
 function mockFetch(status: number, body: unknown = {}) {
@@ -270,8 +272,126 @@ describe("server error bodies are surfaced readably", () => {
 });
 
 describe("HINT_INVALID_API_KEY", () => {
-  test("is a string mentioning re-entering the API key", () => {
+  test("points at `aai login`, never bare `aai` (which publishes in a project)", () => {
     expect(HINT_INVALID_API_KEY).toContain("API key");
-    expect(HINT_INVALID_API_KEY).toContain("aai");
+    expect(HINT_INVALID_API_KEY).toContain("`aai login`");
+    expect(HINT_INVALID_API_KEY).not.toContain("`aai`");
+  });
+});
+
+describe("an empty error body", () => {
+  test("falls back to the status text instead of saying nothing", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(
+        new Response("", { status: 431, statusText: "Request Header Fields Too Large" }),
+      );
+    await expect(
+      apiRequest("https://api.example.com/x", { apiKey: "k", action: "pull", fetch, retry: 0 }),
+    ).rejects.toThrow("pull failed (HTTP 431): Request Header Fields Too Large");
+  });
+});
+
+/** A fetch that answers once headers... and then never finishes its body. */
+function stalledBodyFetch(): typeof globalThis.fetch {
+  return async () =>
+    new Response(
+      new ReadableStream({
+        start(c) {
+          c.enqueue(new TextEncoder().encode('{"partial":'));
+        },
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
+}
+
+describe("redirects are refused, never followed", () => {
+  test("a 307 fails naming the target origin, and nothing is re-sent anywhere", async () => {
+    // fetch's default re-sends a 307's body to the Location: `aai secret put`
+    // delivered `{"OPENAI_KEY":"sk_live…"}` to the redirect target.
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(
+        new Response(null, { status: 307, headers: { Location: "https://evil.example/collect" } }),
+      );
+    const err = (await apiRequest("https://api.example.com/p/secret", {
+      apiKey: "k",
+      action: "secret",
+      method: "PUT",
+      body: { OPENAI_KEY: "sk_live_x" },
+      fetch,
+    }).catch((e: unknown) => e)) as Error;
+
+    expect(err.message).toContain("redirect (HTTP 307) to https://evil.example");
+    expect(err.message).toContain("does not follow redirects");
+    expect(fetch).toHaveBeenCalledOnce(); // not retried either
+    expect(fetch.mock.calls[0]?.[1]?.redirect).toBe("manual");
+  });
+});
+
+describe("every attempt has a deadline", () => {
+  test("a server that never answers fails with the timeout, once, not 'check your network'", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+        }),
+    );
+    const err = (await apiRequest("https://api.example.com/studio/projects", {
+      apiKey: "k",
+      action: "list",
+      timeoutMs: 20,
+      retryDelay: 0,
+      fetch,
+    }).catch((e: unknown) => e)) as Error;
+
+    expect(err.message).toMatch(/did not finish responding within \d+s/);
+    expect(err.message).not.toContain("network");
+    expect(fetch).toHaveBeenCalledOnce();
+    // The real request was aborted, not left running behind the rejection.
+    expect(fetch.mock.calls[0]?.[1]?.signal?.aborted).toBe(true);
+  });
+
+  test("the deadline covers the body: headers then a stall still times out", async () => {
+    await expect(
+      apiRequest("https://api.example.com/x", {
+        apiKey: "k",
+        action: "pull",
+        timeoutMs: 20,
+        fetch: stalledBodyFetch(),
+      }),
+    ).rejects.toThrow(/did not finish responding/);
+  });
+});
+
+describe("the decoded response is capped while it streams", () => {
+  test("a body past the cap fails as too large, not as unreachable", async () => {
+    let pulled = 0;
+    const endless = new ReadableStream<Uint8Array>({
+      pull(c) {
+        pulled += 1024;
+        c.enqueue(new Uint8Array(1024).fill(0x20));
+      },
+    });
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockResolvedValue(
+        new Response(endless, { status: 200, headers: { "Content-Type": "application/json" } }),
+      );
+    const err = (await apiRequest("https://api.example.com/x", {
+      apiKey: "k",
+      action: "list",
+      maxResponseBytes: 10_000,
+      fetch,
+    }).catch((e: unknown) => e)) as Error;
+
+    expect(err.message).toMatch(/larger than .* MiB, so the CLI stopped reading it/);
+    expect(err.message).not.toContain("could not reach");
+    // Stopped at the cap — not read to the end of an endless stream.
+    expect(pulled).toBeLessThan(20_000);
+  });
+
+  test("the default cap sits above the largest legitimate pull", () => {
+    expect(MAX_RESPONSE_BYTES).toBeGreaterThan(MAX_WORKSPACE_FILES * MAX_WORKSPACE_FILE_BYTES * 6);
   });
 });

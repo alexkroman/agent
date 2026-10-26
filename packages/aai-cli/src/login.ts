@@ -25,6 +25,12 @@ import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { linkConfirmationCode, sleep } from "@alexkroman1/aai/internal";
 import { resolveApprovedServer } from "./_agent.ts";
+import {
+  guardedFetch,
+  isGuardError,
+  RedirectRefusedError,
+  RequestTimeoutError,
+} from "./_api-client.ts";
 import { updateGlobalConfig } from "./_config.ts";
 import { CliError, type CommandResult, ok } from "./_output.ts";
 import { defaultUi, type Ui } from "./_ui.ts";
@@ -38,12 +44,24 @@ export type LoginDeps = {
   pollIntervalMs?: number;
   /** Test seam — never set outside tests. */
   timeoutMs?: number;
+  /** Test seam — never set outside tests. */
+  requestTimeoutMs?: number;
   /** The terminal; defaults to the process's. */
   ui?: Ui;
 };
 
 const LINK_POLL_INTERVAL_MS = 2000;
 const LINK_TIMEOUT_MS = 300_000;
+
+/**
+ * One login request's deadline. The exchange is a short poll (404 until the
+ * browser approves), so no request legitimately takes long — and a server
+ * that never answers must not hold one attempt open indefinitely.
+ */
+const LOGIN_REQUEST_TIMEOUT_MS = 30_000;
+
+/** Login bodies are a few small JSON fields. */
+const LOGIN_MAX_RESPONSE_BYTES = 1 << 20;
 
 /**
  * Parse a login response, or fail naming the step, the server and what to do.
@@ -94,8 +112,26 @@ async function reachable(
   try {
     return await fetchFn(url);
   } catch (err) {
-    throw unreachableError(serverUrl, err);
+    throw guardFailure(serverUrl, err) ?? unreachableError(serverUrl, err);
   }
+}
+
+/**
+ * The CLI's own refusals (`guardedFetch`) as login failures, or `undefined`
+ * for a plain transport error. A redirect is refused because the exchange's
+ * answer IS the API key: a server that bounces it elsewhere is not the server
+ * the user approved.
+ */
+function guardFailure(serverUrl: string, err: unknown): CliError | undefined {
+  if (!isGuardError(err)) return undefined;
+  return new CliError(
+    "login_failed",
+    `Logging in at ${serverUrl} failed: ${err.message}.`,
+    err instanceof RedirectRefusedError
+      ? "The CLI does not follow redirects. If the platform moved, pass its new URL with `--server <url>`."
+      : "Run `aai login` again in a moment; if it repeats, check that `--server` names an aai platform.",
+    { cause: err },
+  );
 }
 
 /**
@@ -148,6 +184,10 @@ async function pollForGrant(
       });
       lastTransportError = undefined;
     } catch (err) {
+      // A refused redirect or an oversized answer will not change by asking
+      // again; only a plain transport failure (or a timeout) is waited out.
+      const refused = guardFailure(serverUrl, err);
+      if (refused && !(err instanceof RequestTimeoutError)) throw refused;
       lastTransportError = err;
     }
     // 404 is "not approved yet" — anything else settles the login.
@@ -214,7 +254,12 @@ export async function executeLogin(
   opts: { server?: string | undefined },
   deps: LoginDeps = {},
 ): Promise<CommandResult<{ email: string; server: string }>> {
-  const fetchFn = deps.fetchFn ?? globalThis.fetch;
+  // Guarded like every `apiRequest`: no redirects, a per-request deadline, a
+  // bounded body (see `guardedFetch`).
+  const fetchFn = guardedFetch(deps.fetchFn ?? globalThis.fetch, {
+    timeoutMs: deps.requestTimeoutMs ?? LOGIN_REQUEST_TIMEOUT_MS,
+    maxBytes: LOGIN_MAX_RESPONSE_BYTES,
+  });
   const ui = deps.ui ?? defaultUi;
   requireTty();
 

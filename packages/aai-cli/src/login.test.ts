@@ -114,6 +114,35 @@ describe("aai login", () => {
     expect(spawnMock).toHaveBeenCalledOnce();
   });
 
+  test("a redirected exchange is refused, not followed, and saves no key", async () => {
+    // The exchange's answer IS the API key; following a 307 would take it (and
+    // the link code) from wherever the redirect pointed.
+    const fetchFn = vi.fn<typeof fetch>(async (input) =>
+      String(input).endsWith("/studio/auth")
+        ? new Response(JSON.stringify({ mode: "dev" }), { status: 200 })
+        : new Response(null, { status: 307, headers: { Location: "https://evil.example/x" } }),
+    );
+    const err = (await executeLogin(
+      {},
+      { ui: createFakeUi(), fetchFn, openBrowser: vi.fn(), pollIntervalMs: 1 },
+    ).catch((e: unknown) => e)) as CliError;
+
+    expect(err.code).toBe("login_failed");
+    expect(err.message).toContain("redirected (HTTP 307) to https://evil.example");
+    expect(fetchFn.mock.calls.every(([, init]) => init?.redirect === "manual")).toBe(true);
+    expect((await readGlobalConfig()).apiKey).toBeUndefined();
+  });
+
+  test("a server that never answers fails on the deadline, naming it", async () => {
+    const fetchFn = vi.fn<typeof fetch>(() => new Promise<Response>(() => undefined));
+    const err = (await executeLogin(
+      {},
+      { ui: createFakeUi(), fetchFn, openBrowser: vi.fn(), requestTimeoutMs: 10 },
+    ).catch((e: unknown) => e)) as CliError;
+    expect(err.code).toBe("login_failed");
+    expect(err.message).toContain("no complete response within");
+  });
+
   test("an unreachable server names the URL instead of a bare 'fetch failed'", async () => {
     // The realistic case: the dev server isn't running, so `aai login` in the
     // monorepo (where isDevMode pins http://localhost:8080) got undici's bare
