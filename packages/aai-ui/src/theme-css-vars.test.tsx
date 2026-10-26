@@ -93,6 +93,31 @@ describe("the theme as CSS custom properties", () => {
     document.documentElement.style.removeProperty("--aai-primary");
   });
 
+  test("two providers unmounted in MOUNT order leave the page as they found it", () => {
+    // The order Testing Library's `cleanup` uses, and two `mountClient`s
+    // disposed as they were created. A per-provider snapshot restored the page
+    // on the first unmount, then wrote the first provider's tokens back on the
+    // second — and every later spec in the worker saw them.
+    const first = mount({ primary: "#111111" });
+    const second = mount({ primary: "#222222" });
+    expect(varsOnRoot()["--aai-primary"]).toBe("#222222");
+    first.unmount();
+    // The newest live theme still paints while one remains.
+    expect(varsOnRoot()["--aai-primary"]).toBe("#222222");
+    second.unmount();
+    expect(document.documentElement.getAttribute("style") ?? "").toBe("");
+    expect(document.body.style.background).toBe("");
+  });
+
+  test("the survivor repaints when the NEWEST of two providers goes first", () => {
+    const first = mount({ primary: "#111111" });
+    const second = mount({ primary: "#222222" });
+    second.unmount();
+    expect(varsOnRoot()["--aai-primary"]).toBe("#111111");
+    first.unmount();
+    expect(varsOnRoot()["--aai-primary"]).toBe("");
+  });
+
   test("still paints html AND body, so a wide viewport is not letterboxed", () => {
     // The regression this guards is invisible in a unit render and obvious on a
     // 2560px monitor. It has happened once.

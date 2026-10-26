@@ -133,14 +133,16 @@ gate, recall and report coalescing).
   `styles.css`'s `@theme`). Additive: `useTheme()` stays. The page background is
   still painted imperatively on `html` AND `body`; the `styles.css` fallbacks
   must equal `DEFAULT_THEME` (a test compares them); variables are RESTORED on
-  unmount, not removed. `theme-css-vars.test.tsx` holds these. **The short form
-  `{ primary, mode }` is resolved to the five tokens BEFORE `ThemeProvider`**
-  (`resolveClientTheme`, `_theme.ts`), so nothing below the mount knows two
-  shapes exist; the two forms are EXCLUSIVE at the type level (`?: undefined`
-  guards on `ClientTheme`, pinned in `_theme.test-d.ts`), and a token given as
-  `""` is dropped with a `console.warn` rather than written as an empty custom
-  property. `mountClient({ css })` injects a page sheet into `<head>` for the
-  mount's lifetime, after the tokens are on `:root`.
+  unmount, not removed — from ONE page-wide snapshot, when the LAST live
+  provider goes, so providers unmounted in mount order cannot write a stale
+  theme back (`liveThemes` in `context.ts`). `theme-css-vars.test.tsx` holds
+  these. **The short form `{ primary, mode }` is resolved to the five tokens
+  BEFORE `ThemeProvider`** (`resolveClientTheme`, `_theme.ts`), so nothing below
+  the mount knows two shapes exist; the two forms are EXCLUSIVE at the type
+  level (`?: undefined` guards on `ClientTheme`, pinned in `_theme.test-d.ts`),
+  and a token given as `""` is dropped with a `console.warn` rather than written
+  as an empty custom property. `mountClient({ css })` injects a page sheet into
+  `<head>` for the mount's lifetime, after the tokens are on `:root`.
 - **`ClientConfig` display fields** (`icon`, `subtitle`, `buttonText`,
   `sidebarPosition`) must be honoured by BOTH `rootFor` branches; `icon` reaches
   the start card and the header. The forwarding bag is a MAPPED type over `Pick`
