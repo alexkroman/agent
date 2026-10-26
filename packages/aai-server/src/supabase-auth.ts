@@ -73,12 +73,11 @@ export function userApiKeySecretName(userId: string): string {
  * existed is healed by its next `aai login` rather than staying invisibly
  * key-scoped — see the comment there).
  *
- * A rotated key leaves its old mapping behind on purpose: the old key still
- * belongs to the same account, so resolving it to the same user is correct,
- * and deleting it would only matter if an AssemblyAI key could migrate
- * between accounts (it can't). If two users store the SAME key (a shared
- * team key), the last writer wins the mapping — their browser scopes stay
- * separate either way.
+ * Rotation DELETES the old key's mapping when it names the rotating account:
+ * storing a key proves only that AssemblyAI accepts it, not whose it is, so a
+ * mistakenly pasted key would otherwise keep landing its real holder's CLI in
+ * this account's scope. A key another account already maps is refused (409),
+ * never rebound.
  */
 export function apiKeyOwnerSecretName(apiKey: string): string {
   return `key-user:${hash("sha256", apiKey)}`;

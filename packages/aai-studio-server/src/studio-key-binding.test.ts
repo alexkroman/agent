@@ -75,6 +75,29 @@ describe("key ownership", () => {
     ).json()) as { projects: string[] };
     expect(view.projects).toEqual([]);
   });
+
+  test("rotating AWAY from a key releases it — its holder no longer lands in your scope", async () => {
+    // Alice pastes Bob's key by mistake, then corrects it to her own. The
+    // mapping the first save wrote must go with it: left behind, Bob's CLI
+    // reads and writes Alice's projects, and Bob can never claim his own key.
+    const { fetch } = await withDevAuth();
+    const alice = devToken("alice@example.com");
+    const bob = devToken("bob@example.com");
+
+    await onboardKey(fetch, alice, "bobs-key");
+    await onboardKey(fetch, alice, "alices-key");
+    await authFetch(fetch, "/studio/projects/alices-app/source", {
+      method: "PUT",
+      body: { files: {} },
+      key: alice,
+    });
+
+    const bobCli = (await (
+      await authFetch(fetch, "/studio/projects", { method: "GET", key: "bobs-key" })
+    ).json()) as { projects: string[] };
+    expect(bobCli.projects).toEqual([]);
+    expect((await onboardKey(fetch, bob, "bobs-key")).status).toBe(200);
+  });
 });
 
 describe("key verification at onboarding", () => {

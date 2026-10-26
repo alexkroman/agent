@@ -6,11 +6,11 @@
  * `RuntimeOptions.runCode`.
  */
 
-import { Worker } from "node:worker_threads";
 import { errorMessage, isToolFailure } from "@alexkroman1/aai";
+import { runEvalWorker } from "@alexkroman1/aai/host-internal";
 import type { AgentDef, ToolContext } from "aai-guest-core/types";
 import pTimeout from "p-timeout";
-import { RUN_CODE_TIMEOUT_MS, TOOL_TIMEOUT_MS } from "./limits.ts";
+import { RUN_CODE_OUTPUT_MAX_CHARS, RUN_CODE_TIMEOUT_MS, TOOL_TIMEOUT_MS } from "./limits.ts";
 
 // ---- run_code builtin -------------------------------------------------------
 
@@ -29,7 +29,20 @@ import { RUN_CODE_TIMEOUT_MS, TOOL_TIMEOUT_MS } from "./limits.ts";
 const RUN_CODE_WORKER = `
 const { parentPort, workerData } = require("node:worker_threads");
 const output = [];
-const push = (...args) => output.push(args.map(String).join(" "));
+let kept = 0;
+let dropped = false;
+const push = (...args) => {
+  if (dropped) return;
+  const line = args.map(String).join(" ");
+  if (kept + line.length > workerData.maxChars) {
+    output.push(line.slice(0, Math.max(0, workerData.maxChars - kept)));
+    output.push("[output truncated at " + workerData.maxChars + " characters]");
+    dropped = true;
+    return;
+  }
+  kept += line.length + 1;
+  output.push(line);
+};
 const sandboxConsole = { log: push, info: push, warn: push, error: push, debug: push };
 (async () => {
   try {
@@ -75,7 +88,9 @@ type RunCodeMessage = { output?: unknown; error?: unknown };
  *
  * Output is captured through an injected `console` argument rather than a
  * global monkey-patch, so concurrent run_code calls never clobber each other,
- * and it now rides back over `postMessage` from the worker.
+ * and it now rides back over `postMessage` from the worker — capped there at
+ * {@link RUN_CODE_OUTPUT_MAX_CHARS}, so a logging loop cannot balloon either
+ * thread's heap.
  *
  * `timeoutMs` is a test seam. Production always takes {@link RUN_CODE_TIMEOUT_MS}.
  */
@@ -83,39 +98,20 @@ export async function runCode(
   code: string,
   timeoutMs: number = RUN_CODE_TIMEOUT_MS,
 ): Promise<string | { error: string }> {
-  let worker: Worker;
+  let message: RunCodeMessage;
   try {
-    worker = new Worker(RUN_CODE_WORKER, { eval: true, workerData: { code } });
+    message = await runEvalWorker<RunCodeMessage>(
+      RUN_CODE_WORKER,
+      { code, maxChars: RUN_CODE_OUTPUT_MAX_CHARS },
+      { timeoutMs, label: "run_code", timeoutMessage: `run_code timed out after ${timeoutMs}ms` },
+    );
   } catch (err) {
     return { error: errorMessage(err) };
   }
-  const settled = new Promise<RunCodeMessage>((resolve, reject) => {
-    worker.once("message", resolve);
-    worker.once("error", reject);
-    // Only reachable when the worker died without answering — the model's code
-    // called `process.exit`, or an OOM took the isolate. Late `reject` after a
-    // `resolve` is a no-op, so the ordinary exit needs no guard.
-    worker.once("exit", (exitCode) => {
-      reject(new Error(`run_code ended without a result (worker exit ${exitCode})`));
-    });
-  });
-  try {
-    const message = await pTimeout(settled, {
-      milliseconds: timeoutMs,
-      message: `run_code timed out after ${timeoutMs}ms`,
-    });
-    if (typeof message.error === "string") return { error: message.error };
-    const lines = Array.isArray(message.output) ? message.output.map(String) : [];
-    const text = lines.join("\n").trim();
-    return text || "Code ran successfully (no output)";
-  } catch (err) {
-    return { error: errorMessage(err) };
-  } finally {
-    // The whole point on the timeout path; on every other path it also reclaims
-    // an isolate whose event loop the model left work pending in (a dangling
-    // `setInterval`), which used to keep the HARNESS alive instead.
-    void worker.terminate();
-  }
+  if (typeof message.error === "string") return { error: message.error };
+  const lines = Array.isArray(message.output) ? message.output.map(String) : [];
+  const text = lines.join("\n").trim();
+  return text || "Code ran successfully (no output)";
 }
 
 // ---- One-shot tool trials (studio test_agent) -------------------------------
