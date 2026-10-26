@@ -7,7 +7,6 @@ import {
   expectToolOk,
 } from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
-import type { StagedResult } from "./pending.ts";
 import { retailSlot } from "./store.ts";
 import cancelChange from "./tools/cancel_change.ts";
 import cancelPendingOrder from "./tools/cancel_pending_order.ts";
@@ -34,7 +33,7 @@ describe("staging", () => {
     const ctx = await aaravCtx();
     const before = structuredClone(retailSlot.get(ctx).store.orders["#W9300146"]);
 
-    const staged = expectDialogOk<StagedResult>(await stageCancel(ctx));
+    const staged = expectDialogOk(await stageCancel(ctx));
 
     expect(staged.state).toBe("serving.awaitingConfirmation");
     expect(staged.result.staged).toBe("cancel_pending_order");
@@ -48,7 +47,7 @@ describe("staging", () => {
 
   test("the readback names the order, the items, the amount and where the money goes", async () => {
     const ctx = await aaravCtx();
-    const staged = expectToolOk<StagedResult>(await stageCancel(ctx));
+    const staged = expectToolOk(await stageCancel(ctx));
     expect(staged.read_back).toContain("#W9300146");
     expect(staged.read_back).toContain("153.23");
     expect(staged.read_back).toContain("gift_card_7245904");
@@ -57,7 +56,7 @@ describe("staging", () => {
 
   test("the result says out loud that nothing has happened", async () => {
     const ctx = await aaravCtx();
-    const staged = expectToolOk<StagedResult>(await stageCancel(ctx));
+    const staged = expectToolOk(await stageCancel(ctx));
     expect(staged.message).toContain("NOTHING HAS CHANGED YET");
     expect(staged.message).toContain("confirm_change");
   });
@@ -96,9 +95,7 @@ describe("confirming", () => {
     const ctx = await aaravCtx();
     expectToolOk(await stageCancel(ctx));
 
-    const done = expectDialogOk<{ confirmed: string; status: string }>(
-      await confirmChange.execute({}, ctx),
-    );
+    const done = expectDialogOk(await confirmChange.execute({}, ctx));
     expect(done.state).toBe("serving.helping");
     expect(done.result.confirmed).toBe("cancel_pending_order");
     expect(retailSlot.get(ctx).store.orders["#W9300146"]?.status).toBe("cancelled");
@@ -137,9 +134,7 @@ describe("cancelling a staged change", () => {
     const ctx = await aaravCtx();
     expectToolOk(await stageCancel(ctx));
 
-    const dropped = expectDialogOk<{ dropped: string | null; message: string }>(
-      await cancelChange.execute({}, ctx),
-    );
+    const dropped = expectDialogOk(await cancelChange.execute({}, ctx));
     expect(dropped.state).toBe("serving.helping");
     expect(dropped.result.dropped).toBe("cancel_pending_order");
     expect(dropped.result.message).toContain("#W9300146");
@@ -154,7 +149,7 @@ describe("cancelling a staged change", () => {
 
     // The caller changed their mind about which order — the very thing
     // `cancel_change` exists for.
-    const restaged = expectToolOk<StagedResult>(
+    const restaged = expectToolOk(
       await returnDeliveredOrderItems.execute(
         {
           order_id: "#W4316152",
@@ -173,9 +168,7 @@ describe("what stays legal while a change waits", () => {
     const ctx = await aaravCtx();
     expectToolOk(await stageCancel(ctx));
     // `when: "serving"` matches both children, which is what makes this work.
-    const read = expectDialogOk<{ order_id: string }>(
-      await getOrderDetails.execute({ order_id: "#W9300146" }, ctx),
-    );
+    const read = expectDialogOk(await getOrderDetails.execute({ order_id: "#W9300146" }, ctx));
     expect(read.result.order_id).toBe("#W9300146");
     // A read does not settle anything, so the change is still waiting.
     expect(read.state).toBe("serving.awaitingConfirmation");

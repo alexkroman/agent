@@ -43,8 +43,18 @@ import {
 import { PRICING } from "./records.ts";
 import { hotelSlot } from "./session.ts";
 import { verified } from "./shared.ts";
+import bookSpaAppointment from "./tools/book_spa_appointment.ts";
+import chooseRoom from "./tools/choose_room.ts";
+import disputeCharge from "./tools/dispute_charge.ts";
 import lookupInvoice from "./tools/lookup_invoice.ts";
-import type recordCard from "./tools/record_card.ts";
+import lookupRestaurantReservation from "./tools/lookup_restaurant_reservation.ts";
+import orderFlowers from "./tools/order_flowers.ts";
+import recordCard from "./tools/record_card.ts";
+import recordGuestDetails from "./tools/record_guest_details.ts";
+import setExtras from "./tools/set_extras.ts";
+import setStay from "./tools/set_stay.ts";
+import startRoomBooking from "./tools/start_room_booking.ts";
+import verifyBooking from "./tools/verify_booking.ts";
 
 describeAgent(agentDef, (run) => {
   /** The event the runtime delivers when the caller is gone. */
@@ -64,7 +74,7 @@ describeAgent(agentDef, (run) => {
    * The card fixture, typed by the TOOL rather than restated.
    *
    * `InferToolInput` reads `record_card`'s own schema, so a field renamed or
-   * added there fails HERE at compile time — where `run("record_card", …)` takes
+   * added there fails HERE at compile time — where `run(recordCard, …)` takes
    * an untyped record and a stale fixture would only surface as a refusal three
    * assertions later.
    */
@@ -78,21 +88,21 @@ describeAgent(agentDef, (run) => {
 
   /** A booking flow open and carrying a name, a phone and a card. */
   async function bookUpToCard(ctx: ToolContext) {
-    expectDialogOk(await run("start_room_booking", ctx));
+    expectDialogOk(await run(startRoomBooking, ctx));
     expectDialogOk(
-      await run("set_stay", { checkIn: "2026-07-14", checkOut: "2026-07-17", guests: 2 }, ctx),
+      await run(setStay, { checkIn: "2026-07-14", checkOut: "2026-07-17", guests: 2 }, ctx),
     );
-    expectDialogOk(await run("choose_room", { roomType: "queen_2beds", view: "garden" }, ctx));
+    expectDialogOk(await run(chooseRoom, { roomType: "queen_2beds", view: "garden" }, ctx));
     expectDialogOk(
       await run(
-        "set_extras",
+        setExtras,
         { breakfast: true, valet: false, lateCheckout: false, pets: false },
         ctx,
       ),
     );
     expectDialogOk(
       await run(
-        "record_guest_details",
+        recordGuestDetails,
         {
           firstName: "Maria",
           lastName: "Whitfield",
@@ -142,7 +152,7 @@ describeAgent(agentDef, (run) => {
 
     test("a caller who gave no name still leaves a callable ticket", async () => {
       const ctx = createToolContext();
-      expectDialogOk(await run("start_room_booking", ctx));
+      expectDialogOk(await run(startRoomBooking, ctx));
       const ticket = await hangUp(ctx);
       expect(ticket?.details).toMatchObject({
         callerName: "name not given",
@@ -167,7 +177,7 @@ describeAgent(agentDef, (run) => {
       expect(deskFlow.position(ctx).state).toBe("booking.card");
       expect(deskFlow.voiceConfig(ctx)?.toolChoice).toBeUndefined();
 
-      expectDialogOk(await run("record_card", A_CARD, ctx));
+      expectDialogOk(await run(recordCard, A_CARD, ctx));
       expect(deskFlow.position(ctx).state).toBe("booking.readBack");
       expect(deskFlow.voiceConfig(ctx)?.toolChoice).toBe("none");
 
@@ -184,14 +194,14 @@ describeAgent(agentDef, (run) => {
 
     test("a re-dated stay that kills the pick lands on offering, which is also speech-only", async () => {
       const ctx = createToolContext();
-      expectDialogOk(await run("start_room_booking", ctx));
+      expectDialogOk(await run(startRoomBooking, ctx));
       expectDialogOk(
-        await run("set_stay", { checkIn: "2026-06-15", checkOut: "2026-06-16", guests: 2 }, ctx),
+        await run(setStay, { checkIn: "2026-06-15", checkOut: "2026-06-16", guests: 2 }, ctx),
       );
-      expectDialogOk(await run("choose_room", { roomType: "penthouse" }, ctx));
+      expectDialogOk(await run(chooseRoom, { roomType: "penthouse" }, ctx));
       // The penthouse is occupied through June 12, so the pick does not survive.
       expectDialogOk(
-        await run("set_stay", { checkIn: "2026-06-10", checkOut: "2026-06-11", guests: 2 }, ctx),
+        await run(setStay, { checkIn: "2026-06-10", checkOut: "2026-06-11", guests: 2 }, ctx),
       );
       expect(deskFlow.position(ctx).state).toBe("booking.offering");
       // `choose_room`'s `when` already refuses here (`agent.test.ts` pins that).
@@ -240,13 +250,13 @@ describeAgent(agentDef, (run) => {
   describe("a spoken reference is resolved, never guessed", () => {
     test("the disputed line is picked by ordinal off the folio just read out", async () => {
       const ctx = createToolContext();
-      await run("verify_booking", { lastName: "Lee", confirmationCode: "HTL-GH78" }, ctx);
+      await run(verifyBooking, { lastName: "Lee", confirmationCode: "HTL-GH78" }, ctx);
       const lines = await run(lookupInvoice, ctx);
       if (isToolFailure(lines)) throw new Error(`lookup_invoice refused: ${lines.error}`);
       expect(lines.lineItems[1]?.label).toBe("Late checkout");
 
       const byOrdinal = await run(
-        "dispute_charge",
+        disputeCharge,
         {
           category: "late_checkout_fee",
           lineItemLabel: "the second one",
@@ -275,7 +285,7 @@ describeAgent(agentDef, (run) => {
       const ctx = createToolContext();
       for (const spoken of ["RES-JK90", "res jk90", "R E S dash J K 9 0"]) {
         const found = await run(
-          "lookup_restaurant_reservation",
+          lookupRestaurantReservation,
           { lastName: "Bennett", confirmationCode: spoken },
           ctx,
         );
@@ -301,7 +311,7 @@ describeAgent(agentDef, (run) => {
     test("a spa booking at an impossible time is refused before it is priced", async () => {
       const ctx = createToolContext();
       const refused = await run(
-        "book_spa_appointment",
+        bookSpaAppointment,
         {
           service: "deep_tissue_massage",
           date: "2026-06-20",
@@ -321,7 +331,7 @@ describeAgent(agentDef, (run) => {
     test("a catalog with no time of its own is unaffected", async () => {
       const ctx = createToolContext();
       const ordered = await run(
-        "order_flowers",
+        orderFlowers,
         {
           arrangement: "bouquet",
           date: "2026-06-20",

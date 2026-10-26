@@ -191,14 +191,14 @@ describeAgent(agentDef, (run) => {
 
     test("refuses feedback and emails before anything is scored, spending no model", async () => {
       const { ctx, model, desk } = scriptedDesk();
-      for (const [name, args] of [
-        ["rescore_with_feedback", { feedback: "more TypeScript" }],
-        ["proceed_to_emails", {}],
+      for (const [tool, args] of [
+        [rescoreWithFeedback, { feedback: "more TypeScript" }],
+        [proceedToEmails, {}],
       ] as const) {
         // Their router is only reachable after `score_leads`; here that is the
         // gate, and its refusal names the position and quotes the state's own
         // instruction so the model can recover on its turn.
-        const refused = expectDialogRefused(await run(name, args, ctx), "idle");
+        const refused = expectDialogRefused(await run(tool, args, ctx), "idle");
         expect(refused.error).toMatch(/screen_candidates/);
       }
       expect(model.calls).toEqual([]);
@@ -256,7 +256,7 @@ describeAgent(agentDef, (run) => {
     test("carries a role the caller described into every brief", async () => {
       const { ctx, model } = scriptedDesk();
       await run(
-        "screen_candidates",
+        screenCandidates,
         {
           jobTitle: "Design Systems Engineer",
           jobDescription: "Storybook, tokens, accessibility.",

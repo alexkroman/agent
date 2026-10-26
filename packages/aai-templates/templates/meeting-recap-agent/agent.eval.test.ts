@@ -43,6 +43,7 @@ import {
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import { z } from "zod";
+import requestRecap from "./tools/request_recap.ts";
 import recap, { SAMPLE_RECORDING } from "./workflows/recap.ts";
 
 /** The job id the scripted provider mints for every submission. */
@@ -83,12 +84,6 @@ const provider: FetchRouteHandler = (request) => {
     ? { body: { status: "error", error: "that recording could not be decoded" } }
     : { body: { status: "completed", text: TRANSCRIPT_TEXT, audio_duration: 254 } };
 };
-
-/** `request_recap`'s two answers — it started one, or it found the live one. */
-const RecapStart = z.union([
-  z.object({ started: z.literal(true), runId: z.string().min(1) }),
-  z.object({ started: z.literal(false), runId: z.string().min(1), note: z.string() }),
-]);
 
 /** `workflow_cancel`'s answer. */
 const Cancelled = z.object({ cancelled: z.boolean(), note: z.string() });
@@ -135,7 +130,7 @@ describeEval(
         // about the run they already have. WHETHER the model calls the tool a
         // second time is its business — it may simply remember — so each call it
         // did make has to have been refused with the run it found.
-        for (const answer of toolResultsIn(again.toolCalls, "request_recap", RecapStart)) {
+        for (const answer of toolResultsIn(again.toolCalls, requestRecap)) {
           expect(answer.started).toBe(false);
           expect(answer.runId).toBe(runId);
         }

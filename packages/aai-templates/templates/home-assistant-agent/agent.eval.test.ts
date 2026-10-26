@@ -13,6 +13,7 @@ import {
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import cancelReminders from "./tools/cancel_reminders.ts";
+import remindMe from "./tools/remind_me.ts";
 
 // EVALS: does the home assistant hand the after-the-conversation jobs to the right tool,
 // and say what system-prompt.md says it should? Run with `aai eval`.
@@ -69,7 +70,7 @@ describeEval(
         const turn = await session.say("Set a timer for ten minutes.");
 
         expect(names(turn)).toEqual(["remind_me"]);
-        expect(toolArgsIn(turn.toolCalls, "remind_me")[0]).toMatchObject({ in_seconds: 600 });
+        expect(toolArgsIn(turn.toolCalls, remindMe)[0]).toMatchObject({ in_seconds: 600 });
         const run = input(workflowClient.started("remind")[0]);
         expect(run?.clientId).toBe(SPEAKER);
         expect(Number(run?.dueAt) - before).toBeGreaterThanOrEqual(595_000);
@@ -91,7 +92,7 @@ describeEval(
         const turn = await session.say("Remind me to call the plumber at five PM.");
 
         expect(names(turn)).toEqual(["remind_me"]);
-        const args = toolArgsIn(turn.toolCalls, "remind_me")[0];
+        const args = toolArgsIn(turn.toolCalls, remindMe)[0];
         expect(args).toMatchObject({ at: "17:00" });
         expect(String(args?.text)).toMatch(/plumber/i);
         expect(workflowClient.started("remind")).toHaveLength(1);

@@ -6,11 +6,11 @@ import {
   expectDialogRefused,
   expectSlotContract,
   fireEvent,
-  runTool,
   sessionEvent,
   type TestToolContext,
   toolInputIssues,
   toolOf,
+  toolRunner,
 } from "@alexkroman1/aai-runtime/testing";
 import { describe, expect, test } from "vitest";
 /**
@@ -26,6 +26,7 @@ import { describe, expect, test } from "vitest";
 import authoredAgent from "./agent.ts";
 import { callFlow, retailSlot } from "./store.ts";
 import systemPrompt from "./system-prompt.md?raw";
+import getUserDetails from "./tools/get_user_details.ts";
 
 const retailAgent = deployedAgent(authoredAgent, {
   tools: import.meta.glob("./tools/*.ts", { eager: true }),
@@ -33,6 +34,9 @@ const retailAgent = deployedAgent(authoredAgent, {
 });
 
 const registry = Object.entries(retailAgent.tools);
+
+/** The CALL, gated by the toolset exactly as the runtime gates it, reached by the def. */
+const run = toolRunner(retailAgent);
 
 /** The tools this template SHIPS that run before identification — the ones
  *  declaring `when: BEFORE_TRANSFER`. A pin on the shipped set: one of these
@@ -237,7 +241,7 @@ describe("the activity feed", () => {
   test("a call the gate refused shows where the call was", async () => {
     const ctx = createToolContext();
     await called("get_user_details", ctx);
-    await completed(await runTool(retailAgent, "get_user_details", { user_id: "x" }, ctx), ctx);
+    await completed(await run(getUserDetails, { user_id: "x" }, ctx), ctx);
     const line = retailSlot.get(ctx).activity.at(-1);
     expect(line?.summary).toMatch(/^error: /);
     expect(line?.summary).toMatch(dialogRefusalPattern("identifying"));
@@ -259,8 +263,8 @@ describe("the activity feed", () => {
 describe("the authentication gate", () => {
   test.each(registry.filter(([name]) => !isPublic(name)))(
     "%s refuses before the caller is identified",
-    async (name) => {
-      const result = await runTool(retailAgent, name, SAMPLE_ARGS[name] ?? {}, createToolContext());
+    async (name, tool) => {
+      const result = await run(tool, SAMPLE_ARGS[name] ?? {}, createToolContext());
       // `expectDialogRefused` rather than `isToolFailure(result)` + `toBe(true)`
       // + `if (!isToolFailure(result)) return;`. That shape is the one this
       // guide warns about: a tool that ANSWERED failed the first assertion and
@@ -280,8 +284,8 @@ describe("the authentication gate", () => {
 
   test.each(sweepable.filter(([name]) => isPublic(name)))(
     "%s does not require authentication",
-    async (name) => {
-      const result = await runTool(retailAgent, name, SAMPLE_ARGS[name] ?? {}, createToolContext());
+    async (name, tool) => {
+      const result = await run(tool, SAMPLE_ARGS[name] ?? {}, createToolContext());
       // A public tool may still fail on its own (deliberately bogus) arguments;
       // it must not fail on the GATE. Written as one unconditional assertion —
       // an `if (isToolFailure(result))` wrapper would pass vacuously for the tools
@@ -324,7 +328,7 @@ describe("agent config", () => {
 });
 
 describe("the transfer is terminal", () => {
-  test.each(sweepable)("%s refuses once the call is with a human", async (name) => {
+  test.each(sweepable)("%s refuses once the call is with a human", async (name, tool) => {
     const ctx = servingCtx();
     callFlow.send(ctx, { type: "TRANSFERRED" });
 
@@ -334,10 +338,7 @@ describe("the transfer is terminal", () => {
     // One call rather than the two assertions this was: a tool that still RAN
     // fails here saying what it answered and where the flow was, which is the
     // report `expected false to be true` was not.
-    expectDialogRefused(
-      await runTool(retailAgent, name, SAMPLE_ARGS[name] ?? {}, ctx),
-      "transferred",
-    );
+    expectDialogRefused(await run(tool, SAMPLE_ARGS[name] ?? {}, ctx), "transferred");
     // The state is TERMINAL, so the refusal must also have left it there — a
     // tool that refused and then advanced the call would pass the line above.
     expect(callFlow.position(ctx).state).toBe("transferred");

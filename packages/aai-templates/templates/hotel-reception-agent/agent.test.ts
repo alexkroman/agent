@@ -34,25 +34,39 @@ import {
 } from "./records.ts";
 import { hotelSlot } from "./session.ts";
 import { deskView, emptyHotelState } from "./shared.ts";
+import abandonBooking from "./tools/abandon_booking.ts";
 import bookAirportCar from "./tools/book_airport_car.ts";
 import bookBusinessCenter from "./tools/book_business_center.ts";
 import bookSpaAppointment from "./tools/book_spa_appointment.ts";
 import bookTour from "./tools/book_tour.ts";
+import cancelRestaurantReservation from "./tools/cancel_restaurant_reservation.ts";
 import cancelRoomBooking from "./tools/cancel_room_booking.ts";
 import checkRestaurantAvailability from "./tools/check_restaurant_availability.ts";
 import checkRoomAvailability from "./tools/check_room_availability.ts";
+import chooseRoom from "./tools/choose_room.ts";
+import confirmBooking from "./tools/confirm_booking.ts";
 import dispatchEmergency from "./tools/dispatch_emergency.ts";
 import disputeCharge from "./tools/dispute_charge.ts";
+import flagLateArrival from "./tools/flag_late_arrival.ts";
 import lookupBooking from "./tools/lookup_booking.ts";
 import lookupInvoice from "./tools/lookup_invoice.ts";
 import lookupPolicy from "./tools/lookup_policy.ts";
+import lookupRestaurantReservation from "./tools/lookup_restaurant_reservation.ts";
 import modifyRestaurantReservation from "./tools/modify_restaurant_reservation.ts";
+import orderFlowers from "./tools/order_flowers.ts";
+import recordCard from "./tools/record_card.ts";
 import recordFollowup from "./tools/record_followup.ts";
+import recordGuestDetails from "./tools/record_guest_details.ts";
 import reinstateBooking from "./tools/reinstate_booking.ts";
+import requestFlightReconfirmation from "./tools/request_flight_reconfirmation.ts";
 import resendConfirmation from "./tools/resend_confirmation.ts";
 import reserveTable from "./tools/reserve_table.ts";
 import resolveRoomConflict from "./tools/resolve_room_conflict.ts";
 import scheduleWakeupCall from "./tools/schedule_wakeup_call.ts";
+import setExtras from "./tools/set_extras.ts";
+import setStay from "./tools/set_stay.ts";
+import startBookingModification from "./tools/start_booking_modification.ts";
+import startRoomBooking from "./tools/start_room_booking.ts";
 import takeGuestMessage from "./tools/take_guest_message.ts";
 import transferCall from "./tools/transfer_call.ts";
 import updateCard from "./tools/update_card.ts";
@@ -91,21 +105,21 @@ describeAgent(agentDef, (run) => {
 
   /** Walk a fresh call through a whole new booking up to the read-back. */
   async function bookUpToReadBack(ctx: ToolContext) {
-    expectDialogOk(await run("start_room_booking", ctx));
+    expectDialogOk(await run(startRoomBooking, ctx));
     expectDialogOk(
-      await run("set_stay", { checkIn: "2026-07-14", checkOut: "2026-07-17", guests: 2 }, ctx),
+      await run(setStay, { checkIn: "2026-07-14", checkOut: "2026-07-17", guests: 2 }, ctx),
     );
-    expectDialogOk(await run("choose_room", { roomType: "queen_2beds", view: "garden" }, ctx));
+    expectDialogOk(await run(chooseRoom, { roomType: "queen_2beds", view: "garden" }, ctx));
     expectDialogOk(
       await run(
-        "set_extras",
+        setExtras,
         { breakfast: false, valet: false, lateCheckout: false, pets: false },
         ctx,
       ),
     );
     expectDialogOk(
       await run(
-        "record_guest_details",
+        recordGuestDetails,
         {
           firstName: "Maria",
           lastName: "Whitfield",
@@ -115,7 +129,7 @@ describeAgent(agentDef, (run) => {
         ctx,
       ),
     );
-    expectDialogOk(await run("record_card", A_CARD, ctx));
+    expectDialogOk(await run(recordCard, A_CARD, ctx));
   }
 
   // ─── 1. Records: money, dates, codes ─────────────────────────────────────────
@@ -258,18 +272,11 @@ describeAgent(agentDef, (run) => {
   describe("verification", () => {
     test("every booking tool refuses until verify_booking has run, naming it", async () => {
       const ctx = createToolContext();
-      for (const name of [
-        "lookup_booking",
-        "lookup_invoice",
-        "cancel_room_booking",
-        "resolve_room_conflict",
-      ]) {
-        const refused = await run(name, ctx);
+      for (const tool of [lookupBooking, lookupInvoice, cancelRoomBooking, resolveRoomConflict]) {
+        const refused = await run(tool, ctx);
         expect(isToolFailure(refused) && refused.error).toMatch(/verify_booking/);
       }
-      expect(isToolFailure(await run("flag_late_arrival", { note: "around 1 AM" }, ctx))).toBe(
-        true,
-      );
+      expect(isToolFailure(await run(flagLateArrival, { note: "around 1 AM" }, ctx))).toBe(true);
     });
 
     test("last name plus code, or last name plus the card's last four — and nothing else", async () => {
@@ -278,24 +285,24 @@ describeAgent(agentDef, (run) => {
       expect(hotelSlot.get(byCode).verifiedCode).toBe("HTL-AB12");
 
       const byCard = createToolContext();
-      expectToolOk(await run("verify_booking", { lastName: "smith", cardLast4: "4242" }, byCard));
+      expectToolOk(await run(verifyBooking, { lastName: "smith", cardLast4: "4242" }, byCard));
       expect(hotelSlot.get(byCard).verifiedCode).toBe("HTL-AB12");
 
-      const nothing = await run("verify_booking", { lastName: "Smith" });
+      const nothing = await run(verifyBooking, { lastName: "Smith" });
       expect(isToolFailure(nothing) && nothing.error).toMatch(/PLUS/);
     });
 
     test("three strikes, and the refusal routes to a verification_help followup", async () => {
       const ctx = createToolContext();
       const first = await run(
-        "verify_booking",
+        verifyBooking,
         { lastName: "Smith", confirmationCode: "HTL-0000" },
         ctx,
       );
       expect(isToolFailure(first) && first.error).toMatch(/Attempt 1 of 3/);
-      await run("verify_booking", { lastName: "Smith", confirmationCode: "HTL-0000" }, ctx);
+      await run(verifyBooking, { lastName: "Smith", confirmationCode: "HTL-0000" }, ctx);
       const third = await run(
-        "verify_booking",
+        verifyBooking,
         { lastName: "Smith", confirmationCode: "HTL-0000" },
         ctx,
       );
@@ -304,7 +311,7 @@ describeAgent(agentDef, (run) => {
     });
 
     test("a cancelled booking does not verify, and the refusal names the one flow that takes it", async () => {
-      const refused = await run("verify_booking", {
+      const refused = await run(verifyBooking, {
         lastName: "Wagner",
         confirmationCode: "HTL-FW77",
       });
@@ -319,9 +326,9 @@ describeAgent(agentDef, (run) => {
       const ctx = createToolContext();
       expect(at(ctx)).toBe("desk");
       for (const call of [
-        run("set_stay", { checkIn: "2026-07-14", checkOut: "2026-07-17", guests: 2 }, ctx),
-        run("choose_room", { roomType: "king" }, ctx),
-        run("confirm_booking", ctx),
+        run(setStay, { checkIn: "2026-07-14", checkOut: "2026-07-17", guests: 2 }, ctx),
+        run(chooseRoom, { roomType: "king" }, ctx),
+        run(confirmBooking, ctx),
       ]) {
         const refused = expectDialogRefused(await call, "desk");
         expect(refused.error).toMatch(/start_room_booking/);
@@ -331,32 +338,29 @@ describeAgent(agentDef, (run) => {
 
     test("each recording tool lands the flow on the step the draft says is next", async () => {
       const ctx = createToolContext();
-      expectDialogOk(await run("start_room_booking", ctx));
+      expectDialogOk(await run(startRoomBooking, ctx));
       expect(at(ctx)).toBe("booking.stay");
       // The options have not been offered, so a room cannot be picked yet.
-      expectDialogRefused(
-        await run("choose_room", { roomType: "queen_2beds" }, ctx),
-        "booking.stay",
-      );
+      expectDialogRefused(await run(chooseRoom, { roomType: "queen_2beds" }, ctx), "booking.stay");
 
-      const stay = expectDialogOk<{ options: string; next: string }>(
-        await run("set_stay", { checkIn: "2026-07-14", checkOut: "2026-07-17", guests: 2 }, ctx),
+      const stay = expectDialogOk(
+        await run(setStay, { checkIn: "2026-07-14", checkOut: "2026-07-17", guests: 2 }, ctx),
       );
       expect(stay.state).toBe("booking.room");
       expect(stay.result.options).toContain("garden view");
 
-      const room = expectDialogOk<{ extrasToOffer: string }>(
-        await run("choose_room", { roomType: "queen_2beds", view: "garden" }, ctx),
+      const room = expectDialogOk(
+        await run(chooseRoom, { roomType: "queen_2beds", view: "garden" }, ctx),
       );
       expect(room.state).toBe("booking.extras");
       expect(room.result.extrasToOffer).toContain("breakfast: adds 75 dollars");
       // No total exists before the extras are answered.
       expect(hotelSlot.get(ctx).draft?.quotedTotal).toBeNull();
-      expectDialogRefused(await run("confirm_booking", ctx), "booking.extras");
+      expectDialogRefused(await run(confirmBooking, ctx), "booking.extras");
 
-      const extras = expectDialogOk<{ total: string }>(
+      const extras = expectDialogOk(
         await run(
-          "set_extras",
+          setExtras,
           { breakfast: false, valet: false, lateCheckout: false, pets: false },
           ctx,
         ),
@@ -366,12 +370,12 @@ describeAgent(agentDef, (run) => {
 
       // A partial detail is stored the moment it is given, and the flow stays put.
       const named = expectDialogOk(
-        await run("record_guest_details", { firstName: "Maria", lastName: "Whitfield" }, ctx),
+        await run(recordGuestDetails, { firstName: "Maria", lastName: "Whitfield" }, ctx),
       );
       expect(named.state).toBe("booking.details");
       const contact = expectDialogOk(
         await run(
-          "record_guest_details",
+          recordGuestDetails,
           { email: "Maria.Whitfield@gmail.com", phone: "123-555-0170" },
           ctx,
         ),
@@ -382,7 +386,7 @@ describeAgent(agentDef, (run) => {
         phone: "1235550170",
       });
 
-      const card = expectDialogOk(await run("record_card", A_CARD, ctx));
+      const card = expectDialogOk(await run(recordCard, A_CARD, ctx));
       expect(card.state).toBe("booking.readBack");
       // Only the last four ever reached the slot.
       expect(JSON.stringify(hotelSlot.get(ctx))).not.toContain("4532");
@@ -392,14 +396,12 @@ describeAgent(agentDef, (run) => {
       const ctx = createToolContext();
       await bookUpToReadBack(ctx);
       expect(at(ctx)).toBe("booking.readBack");
-      const early = expectDialogRefused(await run("confirm_booking", ctx), "booking.readBack");
+      const early = expectDialogRefused(await run(confirmBooking, ctx), "booking.readBack");
       expect(early.error).toMatch(/WAIT|answered/);
       expect(hotelSlot.get(ctx).bookings.some((b) => b.lastName === "Whitfield")).toBe(false);
 
       expect(callerAnswers(ctx)).toBe("booking.agreeing");
-      const done = expectDialogOk<{ outcome: string; room: string; total: string; code: string }>(
-        await run("confirm_booking", ctx),
-      );
+      const done = expectDialogOk(await run(confirmBooking, ctx));
       expect(done.state).toBe("desk");
       expect(done.result).toMatchObject({
         outcome: "booked",
@@ -426,38 +428,38 @@ describeAgent(agentDef, (run) => {
       // One more night: the garden queen is still free, so the pick survives and
       // the flow goes back to the read-back rather than to the offer.
       const redated = expectDialogOk(
-        await run("set_stay", { checkIn: "2026-07-14", checkOut: "2026-07-18", guests: 2 }, ctx),
+        await run(setStay, { checkIn: "2026-07-14", checkOut: "2026-07-18", guests: 2 }, ctx),
       );
       expect(redated.state).toBe("booking.readBack");
       expect(hotelSlot.get(ctx).draft?.roomType).toBe("queen_2beds");
-      expectDialogRefused(await run("confirm_booking", ctx), "booking.readBack");
+      expectDialogRefused(await run(confirmBooking, ctx), "booking.readBack");
     });
 
     test("a re-dated pick that dies re-opens the OFFER, and the caller's turn closes it", async () => {
       const ctx = createToolContext();
-      expectDialogOk(await run("start_room_booking", ctx));
+      expectDialogOk(await run(startRoomBooking, ctx));
       expectDialogOk(
-        await run("set_stay", { checkIn: "2026-06-15", checkOut: "2026-06-16", guests: 2 }, ctx),
+        await run(setStay, { checkIn: "2026-06-15", checkOut: "2026-06-16", guests: 2 }, ctx),
       );
-      expectDialogOk(await run("choose_room", { roomType: "penthouse" }, ctx));
+      expectDialogOk(await run(chooseRoom, { roomType: "penthouse" }, ctx));
       // The penthouse is occupied through June 12.
-      const moved = expectDialogOk<{ next: string }>(
-        await run("set_stay", { checkIn: "2026-06-10", checkOut: "2026-06-11", guests: 2 }, ctx),
+      const moved = expectDialogOk(
+        await run(setStay, { checkIn: "2026-06-10", checkOut: "2026-06-11", guests: 2 }, ctx),
       );
       expect(moved.result.next).toBe("OFFER");
       expect(moved.state).toBe("booking.offering");
       expect(hotelSlot.get(ctx).draft?.roomType).toBeNull();
       // Closed until the options have been spoken and the caller has answered.
-      expectDialogRefused(await run("choose_room", { roomType: "king" }, ctx), "booking.offering");
+      expectDialogRefused(await run(chooseRoom, { roomType: "king" }, ctx), "booking.offering");
       expect(callerAnswers(ctx)).toBe("booking.room");
-      expectDialogOk(await run("choose_room", { roomType: "king" }, ctx));
+      expectDialogOk(await run(chooseRoom, { roomType: "king" }, ctx));
     });
 
     test("sold-out dates are refused and NOT recorded", async () => {
       const ctx = createToolContext();
-      expectDialogOk(await run("start_room_booking", ctx));
+      expectDialogOk(await run(startRoomBooking, ctx));
       const refused = await run(
-        "set_stay",
+        setStay,
         { checkIn: "2026-07-03", checkOut: "2026-07-04", guests: 2 },
         ctx,
       );
@@ -468,11 +470,11 @@ describeAgent(agentDef, (run) => {
 
     test("a room in a view the type does not have is refused with where the view IS", async () => {
       const ctx = createToolContext();
-      expectDialogOk(await run("start_room_booking", ctx));
+      expectDialogOk(await run(startRoomBooking, ctx));
       expectDialogOk(
-        await run("set_stay", { checkIn: "2026-07-14", checkOut: "2026-07-17", guests: 2 }, ctx),
+        await run(setStay, { checkIn: "2026-07-14", checkOut: "2026-07-17", guests: 2 }, ctx),
       );
-      const refused = await run("choose_room", { roomType: "king", view: "garden" }, ctx);
+      const refused = await run(chooseRoom, { roomType: "king", view: "garden" }, ctx);
       expect(isToolFailure(refused) && refused.error).toMatch(
         /garden view IS open as a queen 2beds/,
       );
@@ -482,11 +484,7 @@ describeAgent(agentDef, (run) => {
       const ctx = createToolContext();
       await bookUpToReadBack(ctx);
       // Re-record with a misheard digit: refused, and the recorded card stays.
-      const refused = await run(
-        "record_card",
-        { ...A_CARD, cardNumber: "4532 0000 0001 4472" },
-        ctx,
-      );
+      const refused = await run(recordCard, { ...A_CARD, cardNumber: "4532 0000 0001 4472" }, ctx);
       expect(isToolFailure(refused) && refused.error).toMatch(/one digit is likely off/);
       expect(hotelSlot.get(ctx).draft?.cardLast4).toBe("4471");
       expect(at(ctx)).toBe("booking.readBack");
@@ -495,9 +493,7 @@ describeAgent(agentDef, (run) => {
     test("abandoning writes nothing and returns to the desk", async () => {
       const ctx = createToolContext();
       await bookUpToReadBack(ctx);
-      const gone = expectDialogOk(
-        await run("abandon_booking", { reason: "changed their mind" }, ctx),
-      );
+      const gone = expectDialogOk(await run(abandonBooking, { reason: "changed their mind" }, ctx));
       expect(gone.state).toBe("desk");
       expect(hotelSlot.get(ctx).draft).toBeNull();
       expect(hotelSlot.get(ctx).bookings.some((b) => b.lastName === "Whitfield")).toBe(false);
@@ -507,15 +503,15 @@ describeAgent(agentDef, (run) => {
       const ctx = withCallerTurns(4);
       await bookUpToReadBack(ctx);
       callerAnswers(ctx);
-      expectDialogOk(await run("confirm_booking", ctx));
+      expectDialogOk(await run(confirmBooking, ctx));
       // Same history, so the model — not the caller — is asking for a second room.
-      const again = await run("start_room_booking", ctx);
+      const again = await run(startRoomBooking, ctx);
       expect(isToolFailure(again) && again.error).toMatch(/already complete/);
       expect(at(ctx)).toBe("desk");
       // One more caller turn and a real second room is legal.
       const later = withCallerTurns(5);
       hotelSlot.set(later, hotelSlot.snapshot(ctx));
-      expectDialogOk(await run("start_room_booking", later));
+      expectDialogOk(await run(startRoomBooking, later));
     });
 
     test("a hang-up ends the call, and nothing books after it", async () => {
@@ -523,8 +519,8 @@ describeAgent(agentDef, (run) => {
       await bookUpToReadBack(ctx);
       await fireEvent(agentDef, CALLER_GONE, ctx);
       expect(deskFlow.position(ctx).state).toBe("hungUp");
-      expect(isToolFailure(await run("confirm_booking", ctx))).toBe(true);
-      expect(isToolFailure(await run("start_room_booking", ctx))).toBe(true);
+      expect(isToolFailure(await run(confirmBooking, ctx))).toBe(true);
+      expect(isToolFailure(await run(startRoomBooking, ctx))).toBe(true);
       // And the lead is on the ledger: `hungUp`'s `onEnter` (desk-seams.test.ts).
       expect(hotelSlot.get(ctx).tickets.at(-1)?.details.kind).toBe("abandoned_booking");
     });
@@ -536,30 +532,23 @@ describeAgent(agentDef, (run) => {
     test("Robert Klein's garden view is a room MOVE, and the refusal is the fix", async () => {
       const ctx = createToolContext();
       await verify(ctx, "Klein", "HTL-RK20");
-      const loaded = expectDialogOk<{ loaded: { room: string; total: string } }>(
-        await run("start_booking_modification", ctx),
-      );
+      const loaded = expectDialogOk(await run(startBookingModification, ctx));
       expect(loaded.state).toBe("booking.editing");
       expect(loaded.result.loaded.room).toBe("king, city view, room 201");
       expect(loaded.result.loaded.total).toBe("537 dollars and 60 cents");
 
       // A garden king has never existed; the garden view IS open as a queen.
-      const refused = await run("choose_room", { roomType: "king", view: "garden" }, ctx);
+      const refused = await run(chooseRoom, { roomType: "king", view: "garden" }, ctx);
       expect(isToolFailure(refused) && refused.error).toMatch(
         /garden view IS open as a queen 2beds/,
       );
 
       const picked = expectDialogOk(
-        await run("choose_room", { roomType: "queen_2beds", view: "garden" }, ctx),
+        await run(chooseRoom, { roomType: "queen_2beds", view: "garden" }, ctx),
       );
       expect(picked.state).toBe("booking.readBack");
       expect(callerAnswers(ctx)).toBe("booking.agreeing");
-      const done = expectDialogOk<{
-        outcome: string;
-        changed: string[];
-        room: string;
-        message: string;
-      }>(await run("confirm_booking", ctx));
+      const done = expectDialogOk(await run(confirmBooking, ctx));
       expect(done.result).toMatchObject({ outcome: "updated", changed: ["room"], room: "205" });
       // 537.60 → 492.80, the difference refunded, and the model is handed the number.
       expect(done.result.message).toContain("44 dollars and 80 cents refunded");
@@ -572,15 +561,13 @@ describeAgent(agentDef, (run) => {
     test("a date-only change keeps the room the guest already has", async () => {
       const ctx = createToolContext();
       await verify(ctx, "Smith", "HTL-AB12");
-      expectDialogOk(await run("start_booking_modification", ctx));
+      expectDialogOk(await run(startBookingModification, ctx));
       const stay = expectDialogOk(
-        await run("set_stay", { checkIn: "2026-06-13", checkOut: "2026-06-16", guests: 2 }, ctx),
+        await run(setStay, { checkIn: "2026-06-13", checkOut: "2026-06-16", guests: 2 }, ctx),
       );
       expect(stay.state).toBe("booking.readBack");
       callerAnswers(ctx);
-      const done = expectDialogOk<{ changed: string[]; room: string }>(
-        await run("confirm_booking", ctx),
-      );
+      const done = expectDialogOk(await run(confirmBooking, ctx));
       expect(done.result.changed).toEqual(["stay"]);
       expect(done.result.room).toBe("203");
       expect(hotelSlot.get(ctx).bookings.find((b) => b.code === "HTL-AB12")).toMatchObject({
@@ -592,10 +579,10 @@ describeAgent(agentDef, (run) => {
     test("a modification that changes nothing is closed as unchanged, and a cancellation is refused mid-flow", async () => {
       const ctx = createToolContext();
       await verify(ctx, "Smith", "HTL-AB12");
-      expectDialogOk(await run("start_booking_modification", ctx));
+      expectDialogOk(await run(startBookingModification, ctx));
       // The caller pivots to cancelling: the desk's tools are still legal, but
       // the model is told to close the flow first — which abandon_booking does.
-      expectDialogOk(await run("abandon_booking", { reason: "wants to cancel instead" }, ctx));
+      expectDialogOk(await run(abandonBooking, { reason: "wants to cancel instead" }, ctx));
       expect(at(ctx)).toBe("desk");
       expect(hotelSlot.get(ctx).bookings.find((b) => b.code === "HTL-AB12")?.status).toBe(
         "confirmed",
@@ -605,7 +592,7 @@ describeAgent(agentDef, (run) => {
     test("the unmodifiable: a cancelled or past booking", async () => {
       const ctx = createToolContext();
       await verify(ctx, "Lee", "HTL-GH78");
-      const past = await run("start_booking_modification", ctx);
+      const past = await run(startBookingModification, ctx);
       expect(isToolFailure(past) && past.error).toMatch(/already ended/);
     });
   });
@@ -638,7 +625,7 @@ describeAgent(agentDef, (run) => {
     test("a cancel re-invoked with no caller turn since re-surfaces the outcome", async () => {
       const ctx = withCallerTurns(2);
       await verify(ctx, "Smith", "HTL-AB12");
-      expectToolOk(await run("cancel_room_booking", ctx));
+      expectToolOk(await run(cancelRoomBooking, ctx));
       const again = expectToolOk(await run(cancelRoomBooking, ctx));
       expect(again.alreadyCancelled).toBe(true);
       expect(again.message).toContain("refund the full 593 dollars and 60 cents");
@@ -712,7 +699,7 @@ describeAgent(agentDef, (run) => {
       const ctx = createToolContext();
       await verify(ctx, "Lee", "HTL-GH78");
       const refused = await run(
-        "dispute_charge",
+        disputeCharge,
         {
           category: "minibar",
           lineItemLabel: "Minibar",
@@ -803,7 +790,7 @@ describeAgent(agentDef, (run) => {
     test("a booking with no conflict has nothing to resolve", async () => {
       const ctx = createToolContext();
       await verify(ctx, "Klein", "HTL-RK20");
-      const refused = await run("resolve_room_conflict", ctx);
+      const refused = await run(resolveRoomConflict, ctx);
       expect(isToolFailure(refused) && refused.error).toMatch(/no room conflict/);
     });
   });
@@ -839,7 +826,7 @@ describeAgent(agentDef, (run) => {
     });
 
     test("a first name alone is refused — a message needs the full name to reach anyone", async () => {
-      const refused = await run("take_guest_message", {
+      const refused = await run(takeGuestMessage, {
         recipient: "Jonathan",
         callerName: "Mark",
         callerPhone: "415 555 0100",
@@ -879,11 +866,11 @@ describeAgent(agentDef, (run) => {
       expect(booked.code).toMatch(/^RES-/);
       expect(booked.time).toBe("7 PM");
 
-      const odd = await run("reserve_table", { ...args, time: "19:15" }, ctx);
+      const odd = await run(reserveTable, { ...args, time: "19:15" }, ctx);
       expect(isToolFailure(odd) && odd.error).toMatch(/5:30 PM/);
-      const big = await run("reserve_table", { ...args, partySize: 8 }, ctx);
+      const big = await run(reserveTable, { ...args, partySize: 8 }, ctx);
       expect(isToolFailure(big) && big.error).toMatch(/transfer_call/);
-      const past = await run("reserve_table", { ...args, date: "2026-06-01" }, ctx);
+      const past = await run(reserveTable, { ...args, date: "2026-06-01" }, ctx);
       expect(isToolFailure(past)).toBe(true);
     });
 
@@ -902,7 +889,7 @@ describeAgent(agentDef, (run) => {
 
       const cancelled = expectToolOk(
         await run(
-          "cancel_restaurant_reservation",
+          cancelRestaurantReservation,
           { lastName: "Bennett", confirmationCode: "res jk90" },
           ctx,
         ),
@@ -911,7 +898,7 @@ describeAgent(agentDef, (run) => {
       expect(
         isToolFailure(
           await run(
-            "lookup_restaurant_reservation",
+            lookupRestaurantReservation,
             { lastName: "Bennett", confirmationCode: "RES-JK90" },
             ctx,
           ),
@@ -936,7 +923,7 @@ describeAgent(agentDef, (run) => {
       expect(sent.next).toMatch(/9-1-1/);
       expect(hotelSlot.get(ctx).tickets[0]?.kind).toBe("emergency");
       const badRoom = await run(
-        "dispatch_emergency",
+        dispatchEmergency,
         { room: "999", kind: "fire", situation: "smoke" },
         ctx,
       );
@@ -1008,7 +995,7 @@ describeAgent(agentDef, (run) => {
       );
       expect(tour.total).toBe("220 dollars");
       expect(tour.reference).toMatch(/^TUR-/);
-      const tooMany = await run("book_tour", {
+      const tooMany = await run(bookTour, {
         tour: "private_city",
         date: addDays(TODAY, 2),
         partySize: 5,
@@ -1016,7 +1003,7 @@ describeAgent(agentDef, (run) => {
         guestPhone: "1",
       });
       expect(isToolFailure(tooMany) && tooMany.error).toMatch(/at most 4/);
-      const past = await run("order_flowers", {
+      const past = await run(orderFlowers, {
         arrangement: "roses",
         date: "2026-06-01",
         deliverTo: "401",
@@ -1102,7 +1089,7 @@ describeAgent(agentDef, (run) => {
       const ctx = createToolContext();
       expectToolOk(
         await run(
-          "request_flight_reconfirmation",
+          requestFlightReconfirmation,
           {
             room: "304",
             airline: "Iberia",
@@ -1123,7 +1110,7 @@ describeAgent(agentDef, (run) => {
     test("the verified guest's extras: a late arrival, a re-sent folio, a new card", async () => {
       const ctx = createToolContext();
       await verify(ctx, "Smith", "HTL-AB12");
-      expectToolOk(await run("flag_late_arrival", { note: "around 1 AM" }, ctx));
+      expectToolOk(await run(flagLateArrival, { note: "around 1 AM" }, ctx));
       expect(hotelSlot.get(ctx).bookings.find((b) => b.code === "HTL-AB12")?.lateArrivalNote).toBe(
         "around 1 AM",
       );
@@ -1140,7 +1127,7 @@ describeAgent(agentDef, (run) => {
       const a = createToolContext();
       const b = createToolContext();
       await verify(a, "Smith", "HTL-AB12");
-      expectToolOk(await run("cancel_room_booking", a));
+      expectToolOk(await run(cancelRoomBooking, a));
       expect(hotelSlot.get(b).bookings.find((x) => x.code === "HTL-AB12")?.status).toBe(
         "confirmed",
       );

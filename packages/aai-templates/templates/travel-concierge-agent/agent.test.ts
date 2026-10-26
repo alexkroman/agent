@@ -23,6 +23,7 @@ import {
   tripSlot,
   tripView,
 } from "./shared.ts";
+import bookCarRental from "./tools/book_car_rental.ts";
 import bookExcursion from "./tools/book_excursion.ts";
 import bookHotel from "./tools/book_hotel.ts";
 import cancelAction from "./tools/cancel_action.ts";
@@ -30,9 +31,13 @@ import cancelTicket from "./tools/cancel_ticket.ts";
 import completeOrEscalate from "./tools/complete_or_escalate.ts";
 import confirmAction from "./tools/confirm_action.ts";
 import lookupBooking from "./tools/lookup_booking.ts";
+import searchCarRentals from "./tools/search_car_rentals.ts";
 import searchExcursions from "./tools/search_excursions.ts";
 import searchFlights from "./tools/search_flights.ts";
 import searchHotels from "./tools/search_hotels.ts";
+import toCarRentalAssistant from "./tools/to_car_rental_assistant.ts";
+import toExcursionAssistant from "./tools/to_excursion_assistant.ts";
+import toFlightAssistant from "./tools/to_flight_assistant.ts";
 import toHotelAssistant from "./tools/to_hotel_assistant.ts";
 import updateTicket from "./tools/update_ticket.ts";
 
@@ -54,8 +59,14 @@ describeAgent(agentDef, (run) => {
    * a tool belongs to is what the block below is about, so it stays visible at the
    * call site.
    */
+  const DESK_ENTRY = {
+    flight: toFlightAssistant,
+    hotel: toHotelAssistant,
+    car_rental: toCarRentalAssistant,
+    excursion: toExcursionAssistant,
+  } as const satisfies Record<SpecialistId, unknown>;
   const atDesk = async (id: SpecialistId, ctx: ToolContext): Promise<void> => {
-    await run(`to_${id}_assistant`, { request: "what the caller asked for" }, ctx);
+    await run(DESK_ENTRY[id], { request: "what the caller asked for" }, ctx);
   };
 
   // ─── 1. The dialog stack ─────────────────────────────────────────────────────
@@ -75,14 +86,14 @@ describeAgent(agentDef, (run) => {
 
     test("re-delegating to the desk already holding the call does not grow the stack", async () => {
       const ctx = createToolContext();
-      await run("to_flight_assistant", { request: "move my flight" }, ctx);
-      await run("to_flight_assistant", { request: "actually a later one" }, ctx);
+      await run(toFlightAssistant, { request: "move my flight" }, ctx);
+      await run(toFlightAssistant, { request: "actually a later one" }, ctx);
       expect(stateOf(ctx).dialogState).toEqual(["primary", "flight"]);
     });
 
     test("complete_or_escalate pops, and never past the concierge", async () => {
       const ctx = createToolContext();
-      await run("to_excursion_assistant", { request: "something to do" }, ctx);
+      await run(toExcursionAssistant, { request: "something to do" }, ctx);
 
       const back = await run(completeOrEscalate, { reason: "booked it" }, ctx);
       expect(back.returnedFrom).toBe("excursions desk");
@@ -91,7 +102,7 @@ describeAgent(agentDef, (run) => {
 
       // Popping again at the bottom is a no-op rather than an empty stack: the
       // slot's `after` hook is what guarantees there is always an assistant.
-      await run("complete_or_escalate", { reason: "nothing else" }, ctx);
+      await run(completeOrEscalate, { reason: "nothing else" }, ctx);
       expect(stateOf(ctx).dialogState).toEqual(["primary"]);
     });
   });
@@ -106,51 +117,55 @@ describeAgent(agentDef, (run) => {
 
   describe("the desk gate (requireDesk)", () => {
     const DESK_TOOLS = [
-      ["search_flights", { route: "Boston" }, "flight"],
-      ["update_ticket", { flightId: "LX52" }, "flight"],
-      ["cancel_ticket", {}, "flight"],
-      ["search_hotels", { city: "Boston" }, "hotel"],
-      ["book_hotel", { hotelId: "H1", nights: 2 }, "hotel"],
-      ["search_car_rentals", { city: "Boston" }, "car_rental"],
-      ["book_car_rental", { carId: "C2", days: 3 }, "car_rental"],
-      ["search_excursions", { city: "Boston" }, "excursion"],
-      ["book_excursion", { excursionId: "E2" }, "excursion"],
+      ["search_flights", searchFlights, { route: "Boston" }, "flight"],
+      ["update_ticket", updateTicket, { flightId: "LX52" }, "flight"],
+      ["cancel_ticket", cancelTicket, {}, "flight"],
+      ["search_hotels", searchHotels, { city: "Boston" }, "hotel"],
+      ["book_hotel", bookHotel, { hotelId: "H1", nights: 2 }, "hotel"],
+      ["search_car_rentals", searchCarRentals, { city: "Boston" }, "car_rental"],
+      ["book_car_rental", bookCarRental, { carId: "C2", days: 3 }, "car_rental"],
+      ["search_excursions", searchExcursions, { city: "Boston" }, "excursion"],
+      ["book_excursion", bookExcursion, { excursionId: "E2" }, "excursion"],
     ] as const;
 
-    test.each(DESK_TOOLS)("%s refuses at the concierge desk", async (name, args, desk) => {
+    test.each(DESK_TOOLS)("%s refuses at the concierge desk", async (_name, tool, args, desk) => {
       const ctx = createToolContext();
-      const refused = (await run(name, args, ctx)) as { error?: string };
+      const refused = await run(tool, args, ctx);
       // The refusal NAMES the way in, which is what the model recovers from
       // inside the same turn — a bare "not allowed" would leave it guessing.
-      expect(refused.error).toContain(`to_${desk}_assistant`);
+      expect(isToolFailure(refused) && refused.error).toContain(`to_${desk}_assistant`);
       // And nothing happened: no search result, no staging, no stack movement.
       expect(stateOf(ctx).pending).toBeNull();
       expect(activeAssistant(stateOf(ctx))).toBe("primary");
       expect(gateFlow.position(ctx).state).toBe("browsing");
     });
 
-    test.each(DESK_TOOLS)("%s refuses from ANOTHER desk", async (name, args, desk) => {
+    test.each(DESK_TOOLS)("%s refuses from ANOTHER desk", async (_name, tool, args, desk) => {
       const ctx = createToolContext();
       // The excursions desk for anything that is not its own, and the flight desk
       // for the excursion tools — so every case really is a wrong desk rather
       // than a coincidence of ordering.
       const wrong = desk === "excursion" ? "flight" : "excursion";
       await atDesk(wrong, ctx);
-      const refused = (await run(name, args, ctx)) as { error?: string };
-      expect(refused.error).toContain(`to_${desk}_assistant`);
-      expect(refused.error).toContain(desk === "excursion" ? "flight desk" : "excursions desk");
+      const refused = await run(tool, args, ctx);
+      const error = isToolFailure(refused) && refused.error;
+      expect(error).toContain(`to_${desk}_assistant`);
+      expect(error).toContain(desk === "excursion" ? "flight desk" : "excursions desk");
       expect(stateOf(ctx).pending).toBeNull();
     });
 
-    test.each(DESK_TOOLS)("%s works once its own desk holds the call", async (name, args, desk) => {
-      // The other half, and the one that makes the block above non-vacuous: a
-      // gate that refused everywhere would pass every assertion up to here.
-      const ctx = createToolContext();
-      await atDesk(desk, ctx);
-      expect(await run(name, args, ctx)).not.toMatchObject({
-        error: expect.stringContaining("belongs to the"),
-      });
-    });
+    test.each(DESK_TOOLS)(
+      "%s works once its own desk holds the call",
+      async (_name, tool, args, desk) => {
+        // The other half, and the one that makes the block above non-vacuous: a
+        // gate that refused everywhere would pass every assertion up to here.
+        const ctx = createToolContext();
+        await atDesk(desk, ctx);
+        expect(await run(tool, args, ctx)).not.toMatchObject({
+          error: expect.stringContaining("belongs to the"),
+        });
+      },
+    );
 
     test("the concierge's own tools are NOT gated", async () => {
       // `lookup_booking` is the concierge's, and the gate must not make the desk
@@ -171,17 +186,17 @@ describeAgent(agentDef, (run) => {
 
   describe("sensitive tools stage rather than act", () => {
     test.each([
-      ["update_ticket", { flightId: "LX52" }, "flight"],
-      ["cancel_ticket", {}, "flight"],
-      ["book_hotel", { hotelId: "H1", nights: 2 }, "hotel"],
-      ["book_car_rental", { carId: "C2", days: 3 }, "car_rental"],
-      ["book_excursion", { excursionId: "E2" }, "excursion"],
-    ] as const)("%s changes nothing on its own", async (name, args, desk) => {
+      ["update_ticket", updateTicket, { flightId: "LX52" }, "flight"],
+      ["cancel_ticket", cancelTicket, {}, "flight"],
+      ["book_hotel", bookHotel, { hotelId: "H1", nights: 2 }, "hotel"],
+      ["book_car_rental", bookCarRental, { carId: "C2", days: 3 }, "car_rental"],
+      ["book_excursion", bookExcursion, { excursionId: "E2" }, "excursion"],
+    ] as const)("%s changes nothing on its own", async (_name, tool, args, desk) => {
       const ctx = createToolContext();
       await atDesk(desk, ctx);
       const before = structuredClone(stateOf(ctx));
 
-      const staged = expectToolOk<{ awaitingConfirmation: boolean }>(await run(name, args, ctx));
+      const staged = expectToolOk(await run(tool, args, ctx));
       expect(staged.awaitingConfirmation).toBe(true);
 
       const after = stateOf(ctx);
@@ -193,7 +208,7 @@ describeAgent(agentDef, (run) => {
     test("confirm_action applies the staged change, and only then", async () => {
       const ctx = createToolContext();
       await atDesk("hotel", ctx);
-      await run("book_hotel", { hotelId: "H1", nights: 3 }, ctx);
+      await run(bookHotel, { hotelId: "H1", nights: 3 }, ctx);
 
       // Staging moved the gate, in the same window it wrote `pending`.
       expect(gateFlow.position(ctx).state).toBe("awaitingConfirmation");
@@ -222,13 +237,13 @@ describeAgent(agentDef, (run) => {
       // `undefined` for `error` and passes nothing worth reading. The state is
       // pinned too, because "refused" and "refused where the spec thinks the
       // conversation is" are two claims.
-      expectDialogRefused(await run("confirm_action", ctx), "browsing");
+      expectDialogRefused(await run(confirmAction, ctx), "browsing");
     });
 
     test("cancel_action drops the staged change and leaves the booking alone", async () => {
       const ctx = createToolContext();
       await atDesk("flight", ctx);
-      await run("update_ticket", { flightId: "LX54" }, ctx);
+      await run(updateTicket, { flightId: "LX54" }, ctx);
       const dropped = await run(cancelAction, ctx);
       if (isToolFailure(dropped)) throw new Error(dropped.error);
       expect(dropped.result.discarded).toContain("LX54");
@@ -237,7 +252,7 @@ describeAgent(agentDef, (run) => {
       const state = stateOf(ctx);
       expect(state.pending).toBeNull();
       expect(state.ticket?.flightId).toBe("LX40");
-      expectDialogRefused(await run("cancel_action", ctx), "browsing");
+      expectDialogRefused(await run(cancelAction, ctx), "browsing");
     });
 
     test("a staged action naming something that does not exist is refused at staging time", async () => {
@@ -245,7 +260,7 @@ describeAgent(agentDef, (run) => {
       // confirm a flight the airline does not fly.
       const ctx = createToolContext();
       await atDesk("flight", ctx);
-      expect(await run("update_ticket", { flightId: "ZZ99" }, ctx)).toEqual({
+      expect(await run(updateTicket, { flightId: "ZZ99" }, ctx)).toEqual({
         error: "No flight ZZ99 in the schedule.",
       });
       expect(stateOf(ctx).pending).toBeNull();
@@ -254,14 +269,14 @@ describeAgent(agentDef, (run) => {
     test("cancelling the ticket makes a later ticket change impossible", async () => {
       const ctx = createToolContext();
       await atDesk("flight", ctx);
-      await run("cancel_ticket", ctx);
-      await run("confirm_action", ctx);
+      await run(cancelTicket, ctx);
+      await run(confirmAction, ctx);
       expect(stateOf(ctx).ticket).toBeNull();
 
-      expect(await run("update_ticket", { flightId: "LX52" }, ctx)).toEqual({
+      expect(await run(updateTicket, { flightId: "LX52" }, ctx)).toEqual({
         error: "This caller has no ticket to move — it was cancelled on this call.",
       });
-      expect(await run("cancel_ticket", ctx)).toEqual({ error: "There is no ticket to cancel." });
+      expect(await run(cancelTicket, ctx)).toEqual({ error: "There is no ticket to cancel." });
     });
 
     test("a second staging is REFUSED rather than overwriting the first", async () => {
@@ -306,8 +321,8 @@ describeAgent(agentDef, (run) => {
     test("cancel_action clears the block, so a declined change does not wedge the desk", async () => {
       const ctx = createToolContext();
       await atDesk("car_rental", ctx);
-      await run("book_car_rental", { carId: "C2", days: 3 }, ctx);
-      await run("cancel_action", ctx);
+      await run(bookCarRental, { carId: "C2", days: 3 }, ctx);
+      await run(cancelAction, ctx);
       await atDesk("excursion", ctx);
       const staged = expectToolOk(await run(bookExcursion, { excursionId: "E2" }, ctx));
       expect(staged.awaitingConfirmation).toBe(true);
@@ -322,15 +337,15 @@ describeAgent(agentDef, (run) => {
       const first = createToolContext();
       const second = createToolContext();
 
-      await run("to_hotel_assistant", { request: "a room" }, first);
-      await run("book_hotel", { hotelId: "H3", nights: 1 }, first);
-      await run("confirm_action", first);
+      await run(toHotelAssistant, { request: "a room" }, first);
+      await run(bookHotel, { hotelId: "H3", nights: 1 }, first);
+      await run(confirmAction, first);
 
       expect(activeAssistant(stateOf(second))).toBe("primary");
       expect(stateOf(second).bookings).toEqual([]);
       // The GATE is per-session too, not just the trip.
       expect(gateFlow.position(second).state).toBe("browsing");
-      expectDialogRefused(await run("confirm_action", second), "browsing");
+      expectDialogRefused(await run(confirmAction, second), "browsing");
       expect(stateOf(first).bookings).toHaveLength(1);
     });
   });
@@ -403,8 +418,8 @@ describeAgent(agentDef, (run) => {
     test("lookup_booking reports the ticket the caller is actually holding", async () => {
       const ctx = createToolContext();
       await atDesk("flight", ctx);
-      await run("update_ticket", { flightId: "LX52" }, ctx);
-      await run("confirm_action", ctx);
+      await run(updateTicket, { flightId: "LX52" }, ctx);
+      await run(confirmAction, ctx);
       const booking = await run(lookupBooking, ctx);
       expect(booking.passenger).toBe("Nadia Rossi");
       expect(booking.ticket?.flight).toBe("LX52");
@@ -439,8 +454,8 @@ describeAgent(agentDef, (run) => {
 
     test("renders the staged action as the prose the concierge just spoke", async () => {
       const ctx = createToolContext();
-      await run("to_car_rental_assistant", { request: "a car for the week" }, ctx);
-      await run("book_car_rental", { carId: "C3", days: 4 }, ctx);
+      await run(toCarRentalAssistant, { request: "a car for the week" }, ctx);
+      await run(bookCarRental, { carId: "C3", days: 4 }, ctx);
 
       const view = tripView(stateOf(ctx));
       expect(view.assistant).toBe("car_rental");
@@ -453,11 +468,11 @@ describeAgent(agentDef, (run) => {
     test("totals every confirmed booking, to the cent", async () => {
       const ctx = createToolContext();
       await atDesk("hotel", ctx);
-      await run("book_hotel", { hotelId: "H3", nights: 3 }, ctx); // 3 × 179.95
-      await run("confirm_action", ctx);
+      await run(bookHotel, { hotelId: "H3", nights: 3 }, ctx); // 3 × 179.95
+      await run(confirmAction, ctx);
       await atDesk("excursion", ctx);
-      await run("book_excursion", { excursionId: "E1" }, ctx); // 35
-      await run("confirm_action", ctx);
+      await run(bookExcursion, { excursionId: "E1" }, ctx); // 35
+      await run(confirmAction, ctx);
 
       const view = tripView(stateOf(ctx));
       // `179.95 * 3` is `539.8499999999999`, so this is the assertion `roundMoney`
@@ -475,7 +490,7 @@ describeAgent(agentDef, (run) => {
     test("is capped by the slot, so a long call cannot grow the frame without bound", async () => {
       const ctx = createToolContext();
       for (let i = 0; i < LOG_CAP + 5; i++) {
-        await run("to_flight_assistant", { request: `ask ${i}` }, ctx);
+        await run(toFlightAssistant, { request: `ask ${i}` }, ctx);
       }
       const log = stateOf(ctx).log;
       expect(log).toHaveLength(LOG_CAP);

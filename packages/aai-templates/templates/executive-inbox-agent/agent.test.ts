@@ -37,6 +37,7 @@ import draftReply from "./tools/draft_reply.ts";
 import edit from "./tools/edit.ts";
 import ignore from "./tools/ignore.ts";
 import meetingAssistant from "./tools/meeting_assistant.ts";
+import newEmail from "./tools/new_email.ts";
 import openEmail from "./tools/open_email.ts";
 import respond from "./tools/respond.ts";
 import sendCalendarInvite from "./tools/send_calendar_invite.ts";
@@ -292,14 +293,22 @@ describeAgent(agentDef, (run) => {
 
   describe("the drafting tools (their drafting model's tool list)", () => {
     test.each([
-      ["draft_reply", { content: "Yes, inference stays inside your VPC." }],
-      ["new_email", { recipients: ["priya@lumenlabs.dev"], content: "Can you take this one?" }],
-      ["ask_question", { content: "Is the audit closed?" }],
-      ["send_calendar_invite", INVITE],
-      ["meeting_assistant", { request: "Tuesday or Wednesday afternoon next week" }],
-    ] as const)("%s refuses when no email is open", async (name, args) => {
+      ["draft_reply", draftReply, { content: "Yes, inference stays inside your VPC." }],
+      [
+        "new_email",
+        newEmail,
+        { recipients: ["priya@lumenlabs.dev"], content: "Can you take this one?" },
+      ],
+      ["ask_question", askQuestion, { content: "Is the audit closed?" }],
+      ["send_calendar_invite", sendCalendarInvite, INVITE],
+      [
+        "meeting_assistant",
+        meetingAssistant,
+        { request: "Tuesday or Wednesday afternoon next week" },
+      ],
+    ] as const)("%s refuses when no email is open", async (_name, tool, args) => {
       const { ctx, model } = scriptedDesk();
-      const refused = await run(name, args, ctx);
+      const refused = await run(tool, args, ctx);
       expect(isToolFailure(refused) && refused.error).toContain(`"${AT_INBOX}"`);
       expect(stateOf(ctx).proposal).toBeNull();
       expect(stateOf(ctx).sent).toEqual([]);
@@ -421,11 +430,11 @@ describeAgent(agentDef, (run) => {
     });
 
     test.each([
-      ["accept", "m7", "ask_question", { content: "Audit closed?" }],
-      ["edit", "m7", "ask_question", { content: "Audit closed?" }],
+      ["accept", accept, "m7", askQuestion, { content: "Audit closed?" }],
+      ["edit", edit, "m7", askQuestion, { content: "Audit closed?" }],
     ] as const)(
       "%s is refused for a question, which takes only ignore or respond",
-      async (answer, id, tool, args) => {
+      async (_name, answer, id, tool, args) => {
         const { ctx } = scriptedDesk();
         await openById(id, ctx);
         await run(tool, args, ctx);

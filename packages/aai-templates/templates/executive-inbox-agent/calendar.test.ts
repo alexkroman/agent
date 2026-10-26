@@ -13,6 +13,7 @@ import { CALENDAR, TODAY } from "./inbox.ts";
 import { calendarTool, clashOn, meetingAssistant, statesAvailability } from "./meeting.ts";
 import { CHOOSE_MEMORY_SYSTEM, TRIAGE_SYSTEM } from "./prompts.ts";
 import edit from "./tools/edit.ts";
+import inboxStatus from "./tools/inbox_status.ts";
 import meetingAssistantTool from "./tools/meeting_assistant.ts";
 import openEmail from "./tools/open_email.ts";
 import sendCalendarInvite from "./tools/send_calendar_invite.ts";
@@ -176,7 +177,7 @@ describe("send_calendar_invite", () => {
     expect(isToolFailure(refused) && refused.error).toContain("10 AM to 11:30 AM");
     // Nothing staged, so nothing to accept: `inbox_status` is a plain read
     // whose value needs no unwrapping, and the thread is still open.
-    expect(await run("inbox_status", ctx)).toMatchObject({ open: "m4", sent: [] });
+    expect(await run(inboxStatus, ctx)).toMatchObject({ open: "m4", sent: [] });
   });
 
   test("edit changes one end of the slot, and is refused when that inverts it", async () => {

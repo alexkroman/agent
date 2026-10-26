@@ -27,6 +27,8 @@ import {
 } from "@alexkroman1/aai-runtime/testing/vitest";
 import { expect } from "vitest";
 import { NO_FIT_CALL, PHARMACY_CALL } from "./phone-trees.ts";
+import endCall from "./tools/end_call.ts";
+import pressKeys from "./tools/press_keys.ts";
 
 const SECRET = "eval-calls-key";
 const PROMPT =
@@ -108,7 +110,7 @@ describeEval(
         const turn = await session.say(
           "Thanks for calling. To leave a message for Maria, press 1. For all other calls, press 0.",
         );
-        expect(toolArgsIn(turn.toolCalls, "press_keys")[0]).toMatchObject({ keys: "1" });
+        expect(toolArgsIn(turn.toolCalls, pressKeys)[0]).toMatchObject({ keys: "1" });
         // What the line heard, and what the tool told the model back.
         expect(turn.dtmf).toEqual(["1"]);
         expect(turn.toolCalls[0]?.result).toContain('"pressed":"1"');
@@ -128,7 +130,7 @@ describeEval(
         // However it is read out: "415-555-0100", "4-1-5…", "four-one-five…".
         expect(spokenDigits(turn.text), turn.text).toContain("4155550100");
         // And it SAID it was voicemail, which is what the run's outcome reads.
-        expect(toolArgsIn(turn.toolCalls, "end_call")[0]).toMatchObject({ voicemail: true });
+        expect(toolArgsIn(turn.toolCalls, endCall)[0]).toMatchObject({ voicemail: true });
         expect(turn.endedSession).toBe(true);
       },
       {

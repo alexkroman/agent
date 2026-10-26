@@ -17,6 +17,7 @@ import { calculateTotal, cartSummary, MENU, orderSlot, type Pizza, pizzaPrice } 
 import addPizza from "./tools/add_pizza.ts";
 import placeOrder from "./tools/place_order.ts";
 import removePizza from "./tools/remove_pizza.ts";
+import setCustomerName from "./tools/set_customer_name.ts";
 import updatePizza from "./tools/update_pizza.ts";
 import viewOrder from "./tools/view_order.ts";
 
@@ -164,7 +165,7 @@ describeAgent(agentDef, (run) => {
       });
 
       // Name + place the order
-      await run("set_customer_name", { name: "Alex" }, ctx);
+      await run(setCustomerName, { name: "Alex" }, ctx);
       const placed = expectToolOk(await run(placeOrder, ctx));
       expect(placed.customerName).toBe("Alex");
       expect(placed.pizzas).toBe(1);

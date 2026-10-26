@@ -903,8 +903,14 @@ describeAgent(agentDef, (run) => {
 
       expectToolOk(
         await run(
-          "action_roll",
-          { move: "face_danger", stat: "iron", position: "desperate", effect: "standard" },
+          actionRoll,
+          {
+            move: "face_danger",
+            stat: "iron",
+            position: "desperate",
+            effect: "standard",
+            purpose: "leap the chasm",
+          },
           createToolContext({ ...ctx, random: dice(1, 1, 10, 10) }),
         ),
       );

@@ -136,8 +136,8 @@ describe("dispatch_truck over the yard", () => {
       dispatchTruck.execute({ destination: "Millfield Auto", towMiles: 31 }, ctx),
     ]);
 
-    const first = expectDialogOk<{ callsign: string; alreadyDispatched: boolean }>(one);
-    const second = expectDialogOk<{ callsign: string; alreadyDispatched: boolean }>(two);
+    const first = expectDialogOk(one);
+    const second = expectDialogOk(two);
     expect(second.result.callsign).toBe(first.result.callsign);
     expect([first.result.alreadyDispatched, second.result.alreadyDispatched]).toEqual([
       false,

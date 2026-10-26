@@ -10,8 +10,6 @@ import {
 } from "@alexkroman1/aai-runtime/testing";
 import { describeAgent } from "@alexkroman1/aai-runtime/testing/vitest";
 import { describe, expect, test } from "vitest";
-import type { StagedResult } from "./pending.ts";
-import type { Address } from "./shared.ts";
 import { callFlow, retailSlot } from "./store.ts";
 import cancelPendingOrder from "./tools/cancel_pending_order.ts";
 import confirmChange from "./tools/confirm_change.ts";
@@ -50,15 +48,26 @@ describeAgent(agentDef, (run) => {
    * because a staged change the agent has no sentence for is the one shape that
    * would let this gate pass while carrying nothing to confirm.
    */
-  async function confirmed<R = unknown>(staged: unknown, ctx: ToolContext): Promise<R> {
-    const stage = expectToolOk<StagedResult>(staged);
+  async function confirmed<R extends Confirmed = Confirmed>(
+    staged: Staged,
+    ctx: ToolContext,
+  ): Promise<R> {
+    const stage = expectToolOk(staged);
     // A throw rather than an `expect`, which biome's `noMisplacedAssertion`
     // rightly refuses outside a test body. A staged change with no sentence to
     // read back is the one shape that would let the gate pass while carrying
     // nothing to confirm, so it stops the spec here rather than downstream.
     if (stage.read_back.length === 0) throw new Error(`${stage.staged} staged with no readback`);
-    return expectToolOk<R>(await run(confirmChange, ctx));
+    // The def answers every arm `applyAction` has; the caller names the one it staged.
+    return (await applied(ctx)) as R;
   }
+
+  /** What any staging tool answers — the same envelope from all seven. */
+  type Staged = Awaited<ReturnType<typeof cancelPendingOrder.execute>>;
+
+  /** `confirm_change`'s answer, unwrapped: the def's own type, every arm of `applyAction`. */
+  const applied = async (ctx: ToolContext) => expectToolOk(await run(confirmChange, ctx));
+  type Confirmed = Awaited<ReturnType<typeof applied>>;
 
   describe("authentication", () => {
     test("find_user_id_by_email is case-insensitive and authenticates the session", async () => {
@@ -222,14 +231,7 @@ describeAgent(agentDef, (run) => {
     });
   });
 
-  interface CancelOrderResult {
-    order_id: string;
-    status: string;
-    cancel_reason: string;
-    refunded: number;
-    refund_immediate: boolean;
-    message: string;
-  }
+  type CancelOrderResult = Extract<Confirmed, { cancel_reason: unknown }>;
 
   describe("cancel_pending_order", () => {
     test("cancels a pending order and credits a gift card immediately", async () => {
@@ -366,10 +368,7 @@ describeAgent(agentDef, (run) => {
     zip: "97477",
   };
 
-  interface AddressToolResult {
-    order_id: string;
-    address: Address;
-  }
+  type AddressToolResult = Extract<Confirmed, { order_id: unknown; address: unknown }>;
 
   describe("modify_pending_order_address", () => {
     test("rewrites a pending order's shipping address", async () => {
@@ -477,13 +476,7 @@ describeAgent(agentDef, (run) => {
     });
   });
 
-  interface ModifyItemsResult {
-    order_id: string;
-    status: string;
-    price_difference: number;
-    items: { name: string; item_id: string; options: Record<string, string>; price: number }[];
-    message: string;
-  }
+  type ModifyItemsResult = Extract<Confirmed, { items: unknown }>;
 
   describe("modify_pending_order_items", () => {
     test("swaps an item, charges the difference to a gift card, and goes terminal", async () => {
@@ -670,14 +663,7 @@ describeAgent(agentDef, (run) => {
     });
   });
 
-  interface ModifyPaymentResult {
-    order_id: string;
-    status: string;
-    amount: number;
-    paid_with: string;
-    refunded_to: string;
-    message: string;
-  }
+  type ModifyPaymentResult = Extract<Confirmed, { paid_with: unknown }>;
 
   describe("modify_pending_order_payment", () => {
     test("moves an order to a different method, refunding the old one", async () => {
@@ -790,21 +776,9 @@ describeAgent(agentDef, (run) => {
     });
   });
 
-  interface ReturnResult {
-    order_id: string;
-    status: string;
-    return_items: string[];
-    refund_to: string;
-    message: string;
-  }
+  type ReturnResult = Extract<Confirmed, { return_items: unknown }>;
 
-  interface ExchangeResult {
-    order_id: string;
-    status: string;
-    price_difference: number;
-    exchanges: { item_id: string; new_item_id: string; price_difference: number }[];
-    message: string;
-  }
+  type ExchangeResult = Extract<Confirmed, { exchanges: unknown }>;
 
   describe("return_delivered_order_items", () => {
     test("requests a return refunded to the original method", async () => {
@@ -1184,15 +1158,9 @@ describeAgent(agentDef, (run) => {
     });
   });
 
-  interface TransferResult {
-    transferred: boolean;
-    summary: string;
-    message: string;
-  }
-
   describe("transfer_to_human_agents", () => {
     test("works without authentication — the escape hatch cannot be gated", async () => {
-      const result = expectToolOk<TransferResult>(
+      const result = expectToolOk(
         await run(
           transferToHumanAgents,
           { summary: "Caller wants to dispute a charge from 2019." },
@@ -1229,7 +1197,7 @@ describeAgent(agentDef, (run) => {
 
   /** Stage a real change on an authed context, and report where the call landed. */
   async function stageFor(ctx: ToolContext): Promise<string> {
-    expectToolOk<StagedResult>(
+    expectToolOk(
       await run(cancelPendingOrder, { order_id: "#W9300146", reason: "no longer needed" }, ctx),
     );
     return callFlow.position(ctx).state;
