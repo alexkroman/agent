@@ -17,6 +17,12 @@
  * epoch, and no TypeDoc page.
  */
 
+// The one object `runFfmpeg`, `probeMedia` and `transcodeUpload` spawn through,
+// so a spec can hand them a fake child instead of a binary. `installStubFfmpeg`
+// on `@alexkroman1/aai-runtime/testing/vitest` is that swap; it is declared on
+// the runtime because the SDK's own `/testing/vitest` is `sdk/`, which may not
+// reach `host/` (`sdk-host-boundary`).
+export { type FfmpegChild, ffmpegProcess } from "./host/_ffmpeg-spawn.ts";
 export { asDispatcher, type PinnedRequestInit, pinnedFetch } from "./host/_undici.ts";
 // Two host-side helpers the guest harness needs BEFORE (or without) a runtime:
 // the harness holds no copy of `aai-runtime` — it drives the agent through the

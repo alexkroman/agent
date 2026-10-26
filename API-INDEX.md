@@ -20,9 +20,9 @@ of it — and want the import.
 
 - [Agent authoring](#agent-authoring) — 616 names
 - [Browser client](#browser-client) — 207 names
-- [Testing and evals](#testing-and-evals) — 263 names
+- [Testing and evals](#testing-and-evals) — 268 names
 - [Hosting and tooling](#hosting-and-tooling) — 248 names
-- [Framework internals](#framework-internals) — 514 names
+- [Framework internals](#framework-internals) — 516 names
 
 ## Agent authoring
 
@@ -868,6 +868,10 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `StubDelegateScript` | type | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | Everything `stubDelegate` and `stubStepDelegate` accept: ONE route answering every delegation, or a table of routes keyed by subagent name — each under a key … |
 | `StubEmitted` | type | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing-steps` | One chunk `stepEmit()` wrote, and the stream it went to. |
 | `StubFetchRoutes` | type | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing-network` | What `stubFetchRoutes` returns. |
+| `StubFfmpeg` | type | `@alexkroman1/aai-runtime/testing/vitest` | `aai-runtime:testing` | The installed fake. |
+| `StubFfmpegCall` | type | `@alexkroman1/aai-runtime/testing/vitest` | `aai-runtime:testing` | One spawn, as the fake saw it. |
+| `StubFfmpegReply` | type | `@alexkroman1/aai-runtime/testing/vitest` | `aai-runtime:testing` | What the scripted child does with one spawn. |
+| `StubFfmpegScript` | type | `@alexkroman1/aai-runtime/testing/vitest` | `aai-runtime:testing` | Called once per spawn, with the argv. |
 | `StubGateway`, `StubGatewayOptions` | interface | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing-network` | A fake gateway: the `fetch` to install, and what it was asked. |
 | `StubGatewayCall` | interface | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing-network` | One request a `StubGateway` answered. |
 | `StubGatewayRoute` | interface | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai:testing-network` | A gateway answer for a `stepFetch`-published slot, plus what it was asked. |
@@ -959,6 +963,7 @@ What an agent's specs and evals import: stubs, harnesses, the eval runner.
 | `expectToolOk` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing` | What a tool answered, minus the refusal — or a throw quoting the refusal. |
 | `fireEvent` | function | `@alexkroman1/aai/testing` (also `@alexkroman1/aai-runtime/testing`) | `aai:testing-events` | Drive the agent's dialogs and `events` handlers with one event, the way the session dispatches it: every declared dialog is offered the event FIRST … |
 | `installStubClientInbox` | function | `@alexkroman1/aai/testing/vitest` (also `@alexkroman1/aai-runtime/testing/vitest`) | `aai:testing-client` | Publish a device inbox for `stepNotifyClient`, restored when this test finishes. |
+| `installStubFfmpeg` | function | `@alexkroman1/aai-runtime/testing/vitest` | `aai-runtime:testing` | Route every ffmpeg-family spawn through `script`, restored when this test finishes. |
 | `installStubGateway`, `InstallStubGatewayOptions` | function | `@alexkroman1/aai/testing/vitest` (also `@alexkroman1/aai-runtime/testing/vitest`) | `aai:testing-network` | Install a fake LLM gateway as the global `fetch`, and return its call log. |
 | `installStubLlm` | function | `@alexkroman1/aai-runtime/eval` (also `@alexkroman1/aai-runtime/eval/vitest`, `@alexkroman1/aai-runtime/testing/vitest`) | `aai-runtime:eval` | Register a model that answers with `replies`, one per model call, repeating the last for as long as it is asked. |
 | `installStubReporter` | function | `@alexkroman1/aai/testing/vitest` (also `@alexkroman1/aai-runtime/testing/vitest`) | `aai:testing-steps` | Capture what a step narrates and emits, restored when this test finishes. |
@@ -1384,6 +1389,7 @@ trace or a type error can be traced back to something.
 | `Epoch` | interface · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `ExecuteTool`, `ExecuteToolOptions` | type | `@alexkroman1/aai/host-internal` |  | Executes a named tool with parsed arguments and returns its string result. |
 | `FALLBACK_KIND` | const | `@alexkroman1/aai/host-internal` |  | The `kind` of a fallback descriptor, reserved at every stage. |
+| `FfmpegChild` | type · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `FullTextTurnResult` | type · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `GLOB_LIMIT` | const | `@alexkroman1/aai/host-internal` |  | Max `glob` results before the list is truncated, newest first. |
 | `GUEST_HOST` | const · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
@@ -1664,6 +1670,7 @@ trace or a type error can be traced back to something.
 | `estimateMessageTokens` | function | `@alexkroman1/aai-runtime/internal` |  | Estimated tokens for one message, memoized on the message. |
 | `executeToolCall` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `fallbackMembers` | function | `@alexkroman1/aai/host-internal` |  | A fallback descriptor's members, in order — each a `{ kind, options }`. |
+| `ffmpegProcess` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `firstWriteWins` | function · `@internal` | `@alexkroman1/aai-runtime/internal` |  |  |
 | `formatLogTime` | function | `@alexkroman1/aai/host-internal` |  | A line's `LogLine.at` as `HH:MM:SS.mmm`, local time — the one shape every reader prints (the CLI's `aai logs`, the studio's `read_logs` tool and its logs … |
 | `formatSchemaIssues` | function | `@alexkroman1/aai/internal` (also `@alexkroman1/aai/host-internal`) |  | Render Standard Schema issues as one human-readable line. |

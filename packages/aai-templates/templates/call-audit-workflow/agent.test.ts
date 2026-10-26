@@ -3,13 +3,15 @@
  * Specs for the audit desk's declaration, its ffmpeg argv, the two analyses it
  * reads back, and where it decides to cut.
  *
- * **The pipeline is not driven end to end here, and that is the tier rather than
- * a gap.** A unit test may not spawn a subprocess or write a file, so the three
- * steps that run ffmpeg cannot be. What CAN be — and what this file therefore
- * spends most of its lines on — is everything those steps decide, because
- * `media.ts` exists precisely to hold it: the argv is a pure function, so it is a
- * value to assert on rather than a string buried in a step; and both analyses are
- * parsed by pure functions, so ffmpeg's real output can be a fixture.
+ * **No ffmpeg runs here, and that is the tier rather than a gap.** A unit test
+ * may not spawn a subprocess, so the binary is the one thing these specs never
+ * reach. What this file spends most of its lines on is everything the steps
+ * DECIDE, because `media.ts` exists precisely to hold it: the argv is a pure
+ * function, so it is a value to assert on rather than a string buried in a step;
+ * and both analyses are parsed by pure functions, so ffmpeg's real output can be
+ * a fixture. The ingest step is then driven end to end over `installStubFfmpeg`
+ * (`@alexkroman1/aai-runtime/testing/vitest`), a scripted child in place of the
+ * binary that answers with those same fixtures.
  *
  * The fixtures below are **captured from ffmpeg 6.1.1**, verbatim, by running the
  * argv these functions build. That matters more than it usually would: every field
@@ -17,10 +19,10 @@
  * so a fixture somebody typed from the documentation would be a spec that passes
  * against a parser no real recording can satisfy.
  *
- * What the ffmpeg steps get instead is the two things a spec can still reach: the
- * argv they will run, and the classification of a failure — which is where a
- * mistake is silent, since a `timeout` called fatal is a run that gives up on work
- * that would have finished.
+ * The other ffmpeg step, `narrate`, gets the two things a spec reaches without a
+ * child: the argv it will run, and the classification of a failure — which is
+ * where a mistake is silent, since a `timeout` called fatal is a run that gives
+ * up on work that would have finished.
  *
  * The last block adds a third: the ENGINE's half of that classification, on a
  * real run. `runWorkflow` starts this desk's declared workflow on the replay
@@ -29,7 +31,7 @@
  * the six attempts this call site asks for on a file that will never convert.
  */
 
-import { readdir } from "node:fs/promises";
+import { readdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { FatalError, RetryableError } from "@alexkroman1/aai/step-errors";
 import {
@@ -37,7 +39,11 @@ import {
   runWorkflow,
   WORKFLOW_CONTEXT_NOW,
 } from "@alexkroman1/aai-runtime/testing";
-import { installStubWorld } from "@alexkroman1/aai-runtime/testing/vitest";
+import {
+  installStubFfmpeg,
+  installStubWorld,
+  type StubFfmpegReply,
+} from "@alexkroman1/aai-runtime/testing/vitest";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import agentDef, { audit } from "./agent.ts";
 import {
@@ -704,6 +710,190 @@ describe("auditing the transcript", () => {
     // would turn a missing field into half a second of audio nobody notices.
     installStubWorld({ model: JSON.stringify({ headline: "A call", risks: [], actions: [] }) });
     await expect(summarize("…", "call.m4a", 60_000)).rejects.toThrow();
+  });
+});
+
+describe("ingesting a recording, end to end on a scripted ffmpeg", () => {
+  /**
+   * The whole step with the BINARY faked and nothing else: `installStubFfmpeg`
+   * swaps the child the SDK spawns, so the materialize, the two `orFatal` reads,
+   * the byte count, the store and the name are the real code. The probe
+   * answers JSON on stdout, the measure pass prints `loudnorm`'s block on
+   * stderr, and the normalize pass writes the PCM and the silence log ITSELF —
+   * which is what a pass that writes to a path looks like from the step's side.
+   */
+
+  /**
+   * What ffprobe prints for the m4a the fixtures above came from, cut to the
+   * fields the step reads: one audio track, its codec, the container's duration.
+   */
+  const PROBE_JSON = JSON.stringify({
+    streams: [{ codec_type: "audio", codec_name: "aac", sample_rate: "44100", channels: "2" }],
+    format: { format_name: "mov,mp4,m4a,3gp,3g2,mj2", duration: "20.000000" },
+  });
+
+  /** `durationSeconds(REAL_PCM_BYTES)` as whole milliseconds — 20015.625 rounded. */
+  const DURATION_MS = Math.round(EXACT_SECONDS * 1000);
+
+  /**
+   * The three invocations, told apart by their argv rather than by their
+   * order: the probe asks for streams, the measure pass writes to `-f null`,
+   * and the normalize pass names its silence log in the filter and its output
+   * last. Each pass can be overridden to stage one failure.
+   */
+  function stubToolchain(
+    overrides: {
+      probe?: string;
+      measure?: StubFfmpegReply;
+      /** `false` leaves no log behind, which is the one file the step will not tolerate missing. */
+      silenceLog?: string | false;
+    } = {},
+  ) {
+    return installStubFfmpeg(async ({ args }) => {
+      if (args.includes("-show_streams")) return { stdout: overrides.probe ?? PROBE_JSON };
+      if (args.includes("null")) return overrides.measure ?? { stderr: LOUDNORM_STDERR };
+      await writeFile(args.at(-1) ?? "", new Uint8Array(REAL_PCM_BYTES));
+      if (overrides.silenceLog !== false) {
+        await writeFile(silenceLogOf(args), overrides.silenceLog ?? SILENCE_LOG);
+      }
+      return {};
+    });
+  }
+
+  /** The path the normalize pass's `ametadata=…:file=` names. */
+  function silenceLogOf(args: readonly string[]): string {
+    const filter = args[args.indexOf("-af") + 1] ?? "";
+    return filter.slice(filter.indexOf("file=") + "file=".length);
+  }
+
+  function stubRecording(name: string) {
+    return installStubWorld({
+      uploads: {
+        writable: true,
+        files: { [UPLOAD_ID]: { bytes: new Uint8Array(2048), name, type: "audio/mp4" } },
+      },
+      reporter: true,
+    });
+  }
+
+  test("levels the recording, maps its pauses, and stores the PCM under the recording's name", async () => {
+    const before = await readdir(tmpdir());
+    const world = stubRecording("call.m4a");
+    const ffmpeg = stubToolchain();
+
+    const result = await ingestRecording(UPLOAD_ID);
+
+    // Pass two's argv is built from pass one's MEASUREMENT, over the one
+    // materialized source — the wiring `media.ts`'s pure specs cannot see.
+    const [probe, measure, normalize] = ffmpeg.calls.map((call) => call.args);
+    const source = probe?.at(-1) ?? "";
+    expect(ffmpeg.calls).toHaveLength(3);
+    expect(measure).toEqual(measureLoudnessArgs(source));
+    expect(normalize).toEqual(
+      normalizeArgs(source, MEASURED, normalize?.at(-1) ?? "", silenceLogOf(normalize ?? [])),
+    );
+
+    expect(result).toEqual({
+      audio: expect.any(String),
+      source: "call.m4a",
+      codec: "aac",
+      // From the BYTE COUNT the normalize pass wrote, not from ffprobe's 20.000000.
+      durationMs: DURATION_MS,
+      bytes: REAL_PCM_BYTES,
+      loudness: MEASURED,
+      ffmpegMs: expect.any(Number),
+      // The unterminated last pause closes at the measured end, not at 20s.
+      silences: [
+        { startSec: 3, endSec: 5.000_05 },
+        { startSec: 7.999_98, endSec: 10 },
+        { startSec: 13, endSec: 15 },
+        { startSec: 18, endSec: DURATION_MS / 1000 },
+      ],
+    });
+    expect(DURATION_MS).toBe(20_016);
+    // The two passes' wall clock, summed and rounded — a scripted child takes
+    // next to none, so what is pinned is the shape rather than a figure.
+    expect(Number.isInteger(result.ffmpegMs) && result.ffmpegMs >= 0).toBe(true);
+
+    // Stored once, named after the recording with the extension it actually has,
+    // and typed as what it is rather than as a container it lacks.
+    expect(world.files?.writes).toHaveLength(1);
+    expect(world.files?.writes[0]).toMatchObject({
+      id: result.audio,
+      name: "call.pcm",
+      type: "application/octet-stream",
+    });
+    expect(world.files?.writes[0]?.bytes.byteLength).toBe(REAL_PCM_BYTES);
+
+    expect(world.reported.lines).toEqual([
+      "Reading call.m4a (2 KB).",
+      "Levelling 0:20 of aac to 16 kHz mono.",
+      "Levelled 0:20 from -16.19 LUFS, 60% speech across 4 pauses.",
+    ]);
+
+    // And the temp directory is gone on the path where it held 640 KB.
+    const after = await readdir(tmpdir());
+    expect(after.filter((name) => name.startsWith("aai-call-audit-"))).toEqual(
+      before.filter((name) => name.startsWith("aai-call-audit-")),
+    );
+  });
+
+  test("a label with no extension keeps its whole name, and a codec ffprobe did not name is `unknown`", async () => {
+    const world = stubRecording("recording");
+    stubToolchain({
+      probe: JSON.stringify({ streams: [{ codec_type: "audio" }], format: {} }),
+    });
+
+    const result = await ingestRecording(UPLOAD_ID);
+
+    expect(result.codec).toBe("unknown");
+    expect(result.source).toBe("recording");
+    expect(world.files?.writes[0]?.name).toBe("recording.pcm");
+  });
+
+  test("a measure pass that prints no loudnorm block fails FATALLY, before the normalize pass", async () => {
+    stubRecording("call.m4a");
+    // What `-loglevel error` would leave: the encode summary and no JSON. Every
+    // retry would run the same argv and read the same nothing.
+    const ffmpeg = stubToolchain({
+      measure: { stderr: "size=N/A time=00:00:20.01 bitrate=N/A speed= 418x" },
+    });
+
+    await expect(ingestRecording(UPLOAD_ID)).rejects.toThrow(FatalError);
+    await expect(ingestRecording(UPLOAD_ID)).rejects.toThrow(/printed no JSON block/);
+    // Two spawns per attempt — the probe and the measure — and never the third.
+    expect(ffmpeg.calls.map((call) => call.args.includes("null"))).toEqual([
+      false,
+      true,
+      false,
+      true,
+    ]);
+  });
+
+  test("a measure pass that exits non-zero is fatal by ffmpeg's own classification", async () => {
+    stubRecording("call.m4a");
+    stubToolchain({ measure: { exitCode: 1, stderr: "Error while decoding stream #0:0" } });
+
+    await expect(ingestRecording(UPLOAD_ID)).rejects.toThrow(FatalError);
+    await expect(ingestRecording(UPLOAD_ID)).rejects.toThrow(/exited with code 1/);
+  });
+
+  test("a normalize pass that leaves no silence log is a plain failure, not a fatal one", async () => {
+    stubRecording("call.m4a");
+    stubToolchain({ silenceLog: false });
+
+    // `ametadata` creates the file at filter-init, so a missing log is not a
+    // recording with no pauses; it is something going wrong on this attempt,
+    // and the step lets Node's own error through unwrapped — not a
+    // `MediaAnalysisError`, so not what `orFatal` makes terminal.
+    const outcome = await ingestRecording(UPLOAD_ID).then(
+      () => undefined,
+      (err: unknown) => err,
+    );
+    expect(outcome).toBeInstanceOf(Error);
+    expect(outcome).not.toBeInstanceOf(FatalError);
+    expect(outcome).not.toBeInstanceOf(MediaAnalysisError);
+    expect(String(outcome)).toMatch(/ENOENT/);
   });
 });
 

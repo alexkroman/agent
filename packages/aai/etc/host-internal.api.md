@@ -814,6 +814,32 @@ type FetchDispatcher = RequestInit extends {
     dispatcher?: infer D;
 } ? NonNullable<D> : never;
 
+// @internal
+export type FfmpegChild = {
+    readonly stdout: {
+        on(event: "data", cb: (chunk: Buffer) => void): unknown;
+    } | null;
+    readonly stderr: {
+        on(event: "data", cb: (chunk: Buffer) => void): unknown;
+    } | null;
+    readonly stdin: {
+        on(event: "error", cb: (err: Error) => void): unknown;
+        end(bytes: Uint8Array): unknown;
+    } | null;
+    on(event: "error", cb: (err: NodeJS.ErrnoException) => void): unknown;
+    on(event: "close", cb: (code: number | null, signal: NodeJS.Signals | null) => void): unknown;
+    kill(signal: NodeJS.Signals): unknown;
+};
+
+// @internal
+export const ffmpegProcess: {
+    spawn: (binary: string, args: string[], options: {
+        cwd?: string;
+        signal: AbortSignal;
+        stdio: ["ignore" | "pipe", "pipe", "pipe"];
+    }) => FfmpegChild;
+};
+
 // @public @input
 type FindByKeyOptions = {
     since?: number | Date;

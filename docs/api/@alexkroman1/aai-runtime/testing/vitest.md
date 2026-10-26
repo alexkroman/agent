@@ -167,6 +167,51 @@ console.log(inbox.calls[0]?.clientId); // "kitchen"
 
 ***
 
+### installStubFfmpeg()
+
+```ts
+function installStubFfmpeg(script?: StubFfmpegScript): StubFfmpeg;
+```
+
+Route every ffmpeg-family spawn through `script`, restored when this test
+finishes.
+
+The fake never times out and never honours the run's abort signal: a child
+that hangs is not something a script can express, and the deadline
+machinery it would exercise is the SDK's own, tested in `ffmpeg.test.ts`.
+
+#### Parameters
+
+##### script?
+
+[`StubFfmpegScript`](#stubffmpegscript)
+
+#### Returns
+
+[`StubFfmpeg`](#stubffmpeg)
+
+#### Example
+
+```ts
+import { installStubFfmpeg, installStubUploads } from "@alexkroman1/aai-runtime/testing/vitest";
+import { writeFile } from "node:fs/promises";
+import { ingestRecording } from "./workflows/ingest.ts";
+
+test("the ingest levels the recording", async () => {
+  installStubUploads({ upl_1: { bytes: new Uint8Array(2048), name: "call.m4a" } }, { writable: true });
+  installStubFfmpeg(async ({ args }) => {
+    if (args.includes("-show_streams")) return { stdout: PROBE_JSON };
+    if (args.includes("null")) return { stderr: LOUDNORM_STDERR };
+    await writeFile(args.at(-1) ?? "", new Uint8Array(32_000));
+    return {};
+  });
+  const result = await ingestRecording("upl_1");
+  expect(result.durationMs).toBe(1000);
+});
+```
+
+***
+
 ### installStubGateway()
 
 ```ts
@@ -368,6 +413,153 @@ The `ASSEMBLYAI_API_KEY` to seed for this test, when the process holds
 none — see [installStubWorld](#installstubworld). Defaults to a recognizable stub
 value; `false` seeds nothing, for the one spec whose subject IS the
 missing-key refusal.
+
+***
+
+### StubFfmpeg
+
+```ts
+type StubFfmpeg = {
+  calls: StubFfmpegCall[];
+};
+```
+
+**`Sealed`**
+
+The installed fake.
+
+#### Properties
+
+##### calls
+
+```ts
+readonly calls: StubFfmpegCall[];
+```
+
+Every spawn so far, in order.
+
+***
+
+### StubFfmpegCall
+
+```ts
+type StubFfmpegCall = {
+  args: readonly string[];
+  binary: string;
+  stdin: Uint8Array | undefined;
+};
+```
+
+**`Sealed`**
+
+One spawn, as the fake saw it.
+
+#### Properties
+
+##### args
+
+```ts
+readonly args: readonly string[];
+```
+
+The argv, exactly as the caller built it (standing flags included).
+
+##### binary
+
+```ts
+readonly binary: string;
+```
+
+The binary the SDK resolved — `ffmpeg`, `ffprobe`, or whatever the env named.
+
+##### stdin
+
+```ts
+readonly stdin: Uint8Array | undefined;
+```
+
+Bytes the run handed to stdin, for an argv that reads `pipe:0`.
+
+***
+
+### StubFfmpegReply
+
+```ts
+type StubFfmpegReply = {
+  exitCode?: number;
+  spawnError?: Error;
+  stderr?: string;
+  stdout?: string | Uint8Array;
+};
+```
+
+**`Input`**
+
+What the scripted child does with one spawn.
+
+Every field is optional: an empty reply is a child that printed nothing and
+exited `0`.
+
+#### Properties
+
+##### exitCode?
+
+```ts
+readonly optional exitCode?: number;
+```
+
+Exit code. Defaults to `0`; anything else is an `exit` failure.
+
+##### spawnError?
+
+```ts
+readonly optional spawnError?: Error;
+```
+
+Fail the SPAWN itself with this error instead of running — `ENOENT`, say.
+
+##### stderr?
+
+```ts
+readonly optional stderr?: string;
+```
+
+What the child wrote to stderr — `loudnorm`'s block, an error line.
+
+##### stdout?
+
+```ts
+readonly optional stdout?: string | Uint8Array;
+```
+
+What the child wrote to stdout — ffprobe's JSON, or a `pipe:1` output.
+
+***
+
+### StubFfmpegScript
+
+```ts
+type StubFfmpegScript = (call: StubFfmpegCall) => 
+  | StubFfmpegReply
+  | undefined
+| Promise<StubFfmpegReply | undefined>;
+```
+
+**`Input`**
+
+Called once per spawn, with the argv. May be async, and may write files.
+
+#### Parameters
+
+##### call
+
+[`StubFfmpegCall`](#stubffmpegcall)
+
+#### Returns
+
+  \| [`StubFfmpegReply`](#stubffmpegreply)
+  \| `undefined`
+  \| `Promise`\<[`StubFfmpegReply`](#stubffmpegreply) \| `undefined`\>
 
 ***
 

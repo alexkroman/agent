@@ -137,17 +137,13 @@ export type Ingested = {
  * normalization writes a file, so journaling the id means a resumed run reads the
  * file that already exists instead of paying to make a second one.
  */
-// This file sits in `scripts/coverage-per-file-baseline.json` at 46.8%, and the
-// reason is worth having in place. What is uncovered is `ingestRecording`'s HAPPY
-// path — three ffmpeg invocations — which needs a real binary and so belongs to
-// the scenario tier, not here; the two failure paths ARE covered, and every
-// decision the step makes lives in `media.ts` as a pure function at 95%.
-//
-// It measured exactly 50.0% before the DevKit removal, and the two statements it
-// lost were `"use step";` and `ingestRecording.maxRetries = 5;` — both of which
-// the two failure tests EXECUTED, so both counted as covered while testing
-// nothing. Removing them is what took the file under the floor: a directive
-// propping a coverage number up is the least useful statement in the tree.
+// The HAPPY path — three ffmpeg invocations — runs in the unit tier against a
+// scripted child (`installStubFfmpeg`, `@alexkroman1/aai-runtime/testing/vitest`)
+// in place of the binary: the probe answers JSON, the measure pass prints
+// `loudnorm`'s block, and the normalize pass writes the PCM and the silence log
+// itself. Every decision the step makes still lives in `media.ts` as a pure
+// function; what the spec reaches HERE is the shell around them — the two
+// `orFatal` reads, the byte count, the store, the name.
 export async function ingestRecording(uploadId: string): Promise<Ingested> {
   // `stepRequireCompleteUpload`, not `stepUploadInfo`: `size` is the readable
   // PREFIX, so an upload still arriving would be copied short and levelled as
