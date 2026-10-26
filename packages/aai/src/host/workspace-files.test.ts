@@ -5,7 +5,7 @@
 // dropped on one path and resurrected on the other — so the rules are pinned
 // here, once, rather than inferred from either caller.
 
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
@@ -148,6 +148,34 @@ describe("snapshotWorkspaceFiles", () => {
 
     expect(snap.files).toEqual({});
     expect(snap.warnings[0]).toContain("not valid UTF-8");
+  });
+
+  test("names a skipped symlink — the walk drops it, the snapshot says so", async () => {
+    // A snapshot REPLACES a workspace row, so a link the author takes for
+    // source must not vanish from it without a word.
+    await put("agent.ts", "x");
+    await symlink(path.join(dir, "agent.ts"), path.join(dir, "link.ts"));
+    await mkdir(path.join(dir, "node_modules"));
+    await symlink(path.join(dir, "agent.ts"), path.join(dir, "node_modules", "ignored.ts"));
+
+    const snap = await snapshotWorkspaceFiles(dir);
+
+    expect(Object.keys(snap.files)).toEqual(["agent.ts"]);
+    expect(snap.warnings).toEqual(["link.ts is a symlink — not synced."]);
+  });
+
+  // Root reads a mode-000 file anyway, so there is nothing to observe there.
+  describe.skipIf(process.getuid?.() === 0)("as a non-root user", () => {
+    test("skips an unreadable file by name instead of failing the whole snapshot", async () => {
+      await put("agent.ts", "x");
+      await put("secret.ts", "y");
+      await chmod(path.join(dir, "secret.ts"), 0o000);
+
+      const snap = await snapshotWorkspaceFiles(dir);
+
+      expect(Object.keys(snap.files)).toEqual(["agent.ts"]);
+      expect(snap.warnings).toEqual(["secret.ts could not be read (EACCES) — not synced."]);
+    });
   });
 
   test("caps the file count, naming the tree the way the caller does", async () => {

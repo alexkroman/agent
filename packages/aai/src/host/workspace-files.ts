@@ -23,6 +23,7 @@
 
 import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { isRecord } from "../sdk/is-record.ts";
 
 /**
  * Max bytes for a single workspace file. Both ends check it before the row
@@ -200,9 +201,25 @@ export async function walkWorkspaceFiles(
   dir: string,
   options: WorkspaceWalkOptions = {},
 ): Promise<string[]> {
-  const out: string[] = [];
+  return (await walkWithSkips(dir, options)).files;
+}
+
+/** What one walk found: the files it lists, and the symlinks it stepped over. */
+type WalkResult = { files: string[]; symlinks: string[] };
+
+/**
+ * The walk, plus the symlinks it stepped over. {@link walkWorkspaceFiles}
+ * answers only the files (its callers list or grep a tree, where a link is
+ * simply not there); {@link snapshotWorkspaceFiles} names each skipped link,
+ * because a snapshot REPLACES a workspace row, and a link the author takes for
+ * source vanishing from it without a word is the silent drop its warnings
+ * exist to prevent.
+ */
+async function walkWithSkips(dir: string, options: WorkspaceWalkOptions): Promise<WalkResult> {
+  const out: WalkResult = { files: [], symlinks: [] };
   await walkInto(dir, dir, options.skipFile, out);
-  return out.sort((a, b) => a.localeCompare(b));
+  const byPath = (a: string, b: string) => a.localeCompare(b);
+  return { files: out.files.sort(byPath), symlinks: out.symlinks.sort(byPath) };
 }
 
 /**
@@ -212,7 +229,7 @@ export async function walkWorkspaceFiles(
  * {@link snapshotWorkspaceFiles} reads its files that way: each `readdir` is
  * independent I/O, and awaiting them one at a time made the walk's cost the SUM
  * of every directory's latency down every branch. Interleaving cannot disturb
- * the result — `walkWorkspaceFiles` sorts, so `out`'s order was never load
+ * the result — `walkWithSkips` sorts, so `out`'s order was never load
  * bearing — and the fan-out is bounded in practice by
  * {@link IGNORED_WORKSPACE_DIRS} keeping `node_modules` and friends out of the
  * tree entirely.
@@ -221,16 +238,21 @@ async function walkInto(
   root: string,
   current: string,
   skipFile: ((name: string) => boolean) | undefined,
-  out: string[],
+  out: WalkResult,
 ): Promise<void> {
   const descend: Promise<void>[] = [];
   for (const entry of await readdir(current, { withFileTypes: true })) {
-    if (entry.isSymbolicLink()) continue;
     const abs = path.join(current, entry.name);
-    if (entry.isDirectory()) {
+    if (entry.isSymbolicLink()) {
+      // The same exclusions as a real entry: a link under an ignored name
+      // (pnpm's `node_modules` is one) or a local-only file earns no warning.
+      if (!(IGNORED_WORKSPACE_DIRS.has(entry.name) || skipFile?.(entry.name))) {
+        out.symlinks.push(path.relative(root, abs));
+      }
+    } else if (entry.isDirectory()) {
       if (!IGNORED_WORKSPACE_DIRS.has(entry.name)) descend.push(walkInto(root, abs, skipFile, out));
     } else if (entry.isFile() && !skipFile?.(entry.name)) {
-      out.push(path.relative(root, abs));
+      out.files.push(path.relative(root, abs));
     }
   }
   await Promise.all(descend);
@@ -244,7 +266,8 @@ export type WorkspaceSnapshot = {
 
 /**
  * Read `dir` into a workspace file map, skipping (and NAMING) what cannot be
- * carried: too many files, an oversized one, or bytes that aren't UTF-8.
+ * carried: too many files, an oversized one, an unreadable one, a symlink, or
+ * bytes that aren't UTF-8.
  *
  * Files are read concurrently — they are independent, and a snapshot reads up
  * to {@link MAX_WORKSPACE_FILES} of them — but results are consumed in path
@@ -258,8 +281,8 @@ export async function snapshotWorkspaceFiles(
   } = {},
 ): Promise<WorkspaceSnapshot> {
   const subject = options.subject ?? "Workspace";
-  const paths = await walkWorkspaceFiles(dir, options);
-  const warnings: string[] = [];
+  const { files: paths, symlinks } = await walkWithSkips(dir, options);
+  const warnings = symlinks.map((rel) => `${rel} is a symlink — not synced.`);
   if (paths.length > MAX_WORKSPACE_FILES) {
     warnings.push(
       `${subject} has ${paths.length} files; only the first ${MAX_WORKSPACE_FILES} sync.`,
@@ -269,14 +292,24 @@ export async function snapshotWorkspaceFiles(
   const read = await Promise.all(
     paths.slice(0, MAX_WORKSPACE_FILES).map(async (rel): Promise<Read> => {
       const abs = path.join(dir, rel);
-      const { size } = await stat(abs);
-      if (size > MAX_WORKSPACE_FILE_BYTES) {
-        return {
-          ok: false,
-          warning: `${rel} is ${size} bytes (max ${MAX_WORKSPACE_FILE_BYTES}) — not synced.`,
-        };
+      // An unreadable file (mode 000, another user's) is a SKIP like a binary
+      // one, not a failure of the whole snapshot: a raw EACCES aborted every
+      // push over one file the author may not even know is there.
+      let bytes: Uint8Array;
+      try {
+        const { size } = await stat(abs);
+        if (size > MAX_WORKSPACE_FILE_BYTES) {
+          return {
+            ok: false,
+            warning: `${rel} is ${size} bytes (max ${MAX_WORKSPACE_FILE_BYTES}) — not synced.`,
+          };
+        }
+        bytes = await readFile(abs);
+      } catch (err) {
+        const code = isRecord(err) && typeof err.code === "string" ? ` (${err.code})` : "";
+        return { ok: false, warning: `${rel} could not be read${code} — not synced.` };
       }
-      const content = decodeWorkspaceText(await readFile(abs));
+      const content = decodeWorkspaceText(bytes);
       return content === null
         ? { ok: false, warning: `${rel} is not valid UTF-8 (binary file?) — not synced.` }
         : { ok: true, rel, content };
