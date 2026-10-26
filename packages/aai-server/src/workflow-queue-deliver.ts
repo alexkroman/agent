@@ -52,6 +52,7 @@
 
 import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 import { createSingleFlight } from "./_memo.ts";
+import { readGuestBody } from "./guest/forward.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest/routes.ts";
 import { guestTokenFor } from "./guest/token.ts";
 import { createLogger } from "./logger.ts";
@@ -194,7 +195,10 @@ export function createQueueDeliverer(opts: QueueDelivererOptions): DeliverMessag
       signal: AbortSignal.timeout(QUEUE_DELIVERY_TIMEOUT_MS),
     });
 
-    const text = await res.text();
+    // Capped: the answer is tenant code's, buffered here on every attempt.
+    const answer = await readGuestBody(res);
+    if (answer === null) throw new Error("guest answer exceeded the size cap");
+    const text = Buffer.from(answer).toString("utf8");
     if (!res.ok) {
       // The BODY is in the error, truncated: a step that threw answers 500 with
       // the tenant's own message, and without it the only record of why a run

@@ -52,6 +52,10 @@ export type TtlCacheSetOptions = {
    * One caller needs it: `verifyAccessToken` expires a VERIFIED token when its
    * own `exp` says to, and keeps the flat TTL for a rejection, which has no
    * `exp` to read.
+   *
+   * **Zero or less stores NOTHING** (and drops any entry under the key).
+   * lru-cache reads a per-entry `ttl: 0` as "no TTL", so a token whose
+   * verification finished just past its `exp` used to be cached FOREVER.
    */
   ttlMs?: number | undefined;
 };
@@ -125,6 +129,12 @@ export class TtlCache<V> {
       // caller can reach this (`V` is never `undefined` at any instantiation);
       // it is here so an untyped one fails loudly instead.
       throw new TypeError("TtlCache cannot store undefined — use null for a cached absence.");
+    }
+    if (options?.ttlMs !== undefined && !(options.ttlMs > 0)) {
+      // Already expired — see TtlCacheSetOptions.ttlMs for why this cannot
+      // reach lru-cache.
+      this.#store.delete(key);
+      return;
     }
     // `omitUndefined` rather than a presence ternary (guard-invariants rule 2),
     // and it is not cosmetic here: `exactOptionalPropertyTypes` makes

@@ -14,6 +14,7 @@ import { describe, expect, test, vi } from "vitest";
 import { createTestOrchestrator, type TestFetch } from "../_orchestrator-test-utils.ts";
 import { bearerFor, deployAgent } from "../_request-test-utils.ts";
 import { fakeAdminDbOver } from "../_sql-test-utils.ts";
+import { MAX_SESSION_EVENT_READ_LIMIT } from "./session-state.ts";
 
 const MINE = "mine-agent";
 const THEIRS = "theirs-agent";
@@ -136,6 +137,23 @@ describe("POST /:slug/session-state", () => {
         { method: "appendEvents", sessionId: "s1", events: [{ index: "x", event: "{}" }] },
       ],
       ["readEvents with no startIndex", { method: "readEvents", sessionId: "s1", limit: 10 }],
+      [
+        "a readEvents page past the client's own",
+        {
+          method: "readEvents",
+          sessionId: "s1",
+          startIndex: 0,
+          limit: MAX_SESSION_EVENT_READ_LIMIT + 1,
+        },
+      ],
+      [
+        "an unbounded readEvents page",
+        { method: "readEvents", sessionId: "s1", startIndex: 0, limit: Number.MAX_SAFE_INTEGER },
+      ],
+      [
+        "a negative readEvents limit",
+        { method: "readEvents", sessionId: "s1", startIndex: 0, limit: -1 },
+      ],
     ])("answers 400 for %s, before any statement", async (_label, body) => {
       const p = await platform();
       const res = await callRoute(p.fetch, MINE, body, await bearerFor(p.store, MINE));

@@ -2,8 +2,10 @@
 import type { LogPage } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { createTestStore } from "./_orchestrator-test-utils.ts";
+import { oversizedGuestBody } from "./_request-test-utils.ts";
 import { fakeSandbox } from "./_sandbox-test-utils.ts";
 import { emptyLogPage, parseLogPage, readAgentLogs, readGuestLogs } from "./agent-logs.ts";
+import { GUEST_RESPONSE_BODY_MAX_BYTES } from "./guest/forward.ts";
 import { GUEST_TOKEN_SECRET_ENV, guestTokenFor } from "./guest/token.ts";
 import { agentSandboxName } from "./sandbox/directory.ts";
 import { attachSandbox, claimSlot, createSlotCache } from "./sandbox/slots.ts";
@@ -53,6 +55,16 @@ describe("readGuestLogs", () => {
     await expect(readGuestLogs({ guestOrigin: ORIGIN, token: "t", fetchFn })).resolves.toEqual(
       emptyLogPage(-1),
     );
+  });
+
+  test("an oversized answer is an empty page, read no further than the cap", async () => {
+    const guest = oversizedGuestBody(8 * GUEST_RESPONSE_BODY_MAX_BYTES);
+    const fetchFn = vi.fn(async () => guest.response());
+
+    await expect(
+      readGuestLogs({ guestOrigin: ORIGIN, token: "t", after: 3, fetchFn }),
+    ).resolves.toEqual(emptyLogPage(3));
+    expect(guest.pulledBytes()).toBeLessThanOrEqual(2 * GUEST_RESPONSE_BODY_MAX_BYTES);
   });
 });
 

@@ -276,6 +276,26 @@ export async function requireOwner(
   return resolved;
 }
 
+/**
+ * Re-check, UNDER the slug lock, that `apiKey` still owns `slug` — the same
+ * 404 {@link requireOwner} answers.
+ *
+ * `existingOwnerMw` decides before the handler queues for the lock, and the
+ * agent can change hands while it waits: deleted by its owner and re-claimed by
+ * another tenant's deploy (on another replica, behind a row cache, the window
+ * is wider). A secret write or delete that trusted the earlier answer landed in
+ * the NEW tenant's agent. The mutation lock drops the row cache on acquisition,
+ * so this read is fresh.
+ */
+export async function assertStillOwner(
+  apiKey: string,
+  opts: { slug: string; store: BundleStore },
+): Promise<void> {
+  if ((await verifySlugOwner(apiKey, opts)).status !== "owned") {
+    throw new HTTPException(404, { message: `Agent ${opts.slug} not found` });
+  }
+}
+
 export const slugMw = createMiddleware<HonoEnv>(async (c, next) => {
   // The route pattern guarantees the param; were it ever absent, the empty
   // string fails validation (400) rather than letting `undefined` through.

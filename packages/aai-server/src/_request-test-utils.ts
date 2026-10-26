@@ -133,3 +133,33 @@ export function recordingGuest(
   };
   return { calls, fetchFn };
 }
+
+/**
+ * A guest answer whose body is `totalBytes` long, produced lazily in 64 KiB
+ * chunks, with a count of the bytes the platform actually PULLED — the
+ * measure of what a hostile guest's oversized response cost the replica.
+ */
+export function oversizedGuestBody(totalBytes: number): {
+  response: () => Response;
+  pulledBytes: () => number;
+} {
+  const CHUNK = 64 * 1024;
+  let pulled = 0;
+  const response = (): Response => {
+    let left = totalBytes;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (left <= 0) {
+          controller.close();
+          return;
+        }
+        const n = Math.min(CHUNK, left);
+        left -= n;
+        pulled += n;
+        controller.enqueue(new Uint8Array(n).fill(0x20));
+      },
+    });
+    return new Response(body, { status: 200, headers: { "content-type": "application/json" } });
+  };
+  return { response, pulledBytes: () => pulled };
+}

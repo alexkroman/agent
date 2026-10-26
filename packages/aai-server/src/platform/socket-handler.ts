@@ -298,6 +298,28 @@ export function createPlatformFrameLoop(
  *
  * @internal
  */
+/**
+ * The origin a socket's frames dispatch under: the caller's `Host` reduced to
+ * a bare `host[:port]`.
+ *
+ * The dispatch URL is `${origin}/${slug}${route}`, and `Host` is written by the
+ * guest that opened the socket — so a raw `h/<other-slug>/session-state?` (or
+ * `h/deploy?`) moved every frame onto a route the socket is not pinned to,
+ * around the `PLATFORM_ROUTES` boundary. Parsing drops everything past the
+ * authority; an unparseable one falls back to loopback.
+ *
+ * @internal
+ */
+export function dispatchOrigin(host: string | undefined): string {
+  try {
+    const parsed = new URL(`http://${host ?? ""}`);
+    if (parsed.host !== "") return `http://${parsed.host}`;
+  } catch {
+    // Falls through to the loopback default below.
+  }
+  return "http://127.0.0.1";
+}
+
 export async function acceptPlatformSocket(
   opts: PlatformSocketOptions,
   wss: WebSocketServer,
@@ -312,11 +334,10 @@ export async function acceptPlatformSocket(
     answerUpgrade(socket, refusal.status, refusal.body);
     return;
   }
-  const host = req.headers.host ?? "127.0.0.1";
   // A dispatch needs an absolute URL and nothing below reads the scheme: these
   // requests never leave the process, and the public origin a route wants is
   // resolved from configuration rather than from this (`public-origin.ts`).
-  const origin = `http://${host}`;
+  const origin = dispatchOrigin(req.headers.host);
   wss.handleUpgrade(req, socket, head, (ws) => {
     let idleTimer: ReturnType<typeof setTimeout> | undefined;
     const touch = (): void => {

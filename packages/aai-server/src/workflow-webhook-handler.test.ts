@@ -15,8 +15,9 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { captureLogs } from "./_logger-test-utils.ts";
 import { createTestOrchestrator, type TestFetch } from "./_orchestrator-test-utils.ts";
-import { deployAgent, recordingGuest } from "./_request-test-utils.ts";
+import { deployAgent, oversizedGuestBody, recordingGuest } from "./_request-test-utils.ts";
 import { fakeSandbox, spawnedAgent } from "./_sandbox-test-utils.ts";
+import { GUEST_RESPONSE_BODY_MAX_BYTES } from "./guest/forward.ts";
 import { GUEST_ROUTE_EXPOSURE } from "./guest/routes.ts";
 import { attachSandbox, claimSlot, createSlotCache, slotSandbox } from "./sandbox/slots.ts";
 import type { SpawnAgentServer } from "./sandbox.ts";
@@ -293,5 +294,16 @@ describe("/:slug/.well-known/workflow/v1/webhook/:token", () => {
 
     expect(res.status).toBe(413);
     expect(guest.calls).toHaveLength(0);
+  });
+  test("refuses a guest answer past the cap without buffering the rest of it", async () => {
+    // The guest is tenant code: a response it streams without end must cost
+    // this shared replica a bounded read, not the whole body in memory.
+    const guest = oversizedGuestBody(8 * GUEST_RESPONSE_BODY_MAX_BYTES);
+    const harness = await residentHarness(async () => guest.response());
+
+    const res = await post(harness.fetch, WEBHOOK_PATH);
+
+    expect(res.status).toBe(502);
+    expect(guest.pulledBytes()).toBeLessThanOrEqual(2 * GUEST_RESPONSE_BODY_MAX_BYTES);
   });
 });

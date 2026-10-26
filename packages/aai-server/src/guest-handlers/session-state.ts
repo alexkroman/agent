@@ -25,7 +25,7 @@
 import { isRecord } from "@alexkroman1/aai/utils";
 import { PLATFORM_ROUTES } from "@alexkroman1/aai-runtime/internal";
 import { HTTPException } from "hono/http-exception";
-import { isOneOf, requiredInt, requiredString } from "../_body-fields.ts";
+import { isOneOf, requiredInt, requiredSize, requiredString } from "../_body-fields.ts";
 import type { AppContext } from "../context.ts";
 import { createLogger } from "../logger.ts";
 import {
@@ -148,6 +148,18 @@ type Ctx = {
 };
 
 /**
+ * The largest `readEvents` page a guest may ask for: the shipped client's own
+ * page (`SESSION_EVENT_READ_LIMIT` in `aai-runtime/session/event-stream.ts`).
+ *
+ * The page is buffered and serialized on a replica every tenant shares, and a
+ * guest controls both how many events a session holds and the limit it asks
+ * with — so an uncapped `limit` was one request for every row. A request over
+ * this is a bypassed client, not a real one; a negative one is a 400 here
+ * rather than a Postgres error answered as a retryable 503.
+ */
+export const MAX_SESSION_EVENT_READ_LIMIT = 500;
+
+/**
  * Read one call's fields and return the work that needs a connection.
  *
  * The slug comes from `ctx`, never from the body. Every `requiredInt`, `slotMap`
@@ -180,7 +192,12 @@ function plan(method: Method, ctx: Ctx, body: Record<string, unknown>): Platform
     }
     case "readEvents": {
       const startIndex = requiredInt(body, "startIndex");
-      const limit = requiredInt(body, "limit");
+      const limit = requiredSize(body, "limit");
+      if (limit > MAX_SESSION_EVENT_READ_LIMIT) {
+        throw new HTTPException(400, {
+          message: `limit must be at most ${MAX_SESSION_EVENT_READ_LIMIT}`,
+        });
+      }
       return (sql) => readEvents(sql, slug, sessionId, startIndex, limit);
     }
     case "countEvents":

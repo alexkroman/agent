@@ -72,6 +72,15 @@ test("a per-entry ttlMs overrides the cache default, in both directions", () => 
   }
 });
 
+test.each([0, -1, Number.NaN])("a per-entry ttlMs of %s stores nothing, never forever", (ttlMs) => {
+  // lru-cache's own reading of `ttl: 0` is "never stale": a session token whose
+  // verification finished just past its `exp` was cached for good.
+  const cache = new TtlCache<string>(60_000);
+  cache.set("k", "stale");
+  cache.set("k", "v", { ttlMs });
+  expect(cache.get("k")).toBeUndefined();
+});
+
 test("delete removes an entry and is a no-op on one that is absent", () => {
   const cache = new TtlCache<string>(60_000);
   cache.set("k", "v");

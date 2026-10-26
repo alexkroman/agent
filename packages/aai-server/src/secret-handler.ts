@@ -21,6 +21,7 @@ import { bodyLimit } from "hono/body-limit";
 import { MAX_ENV_SIZE } from "./constants.ts";
 import type { AppContext, ValidatedAppContext, ValidatedParamContext } from "./context.ts";
 import { createLogger } from "./logger.ts";
+import { assertStillOwner } from "./middleware.ts";
 import type { SlugMutationLock } from "./platform/lock.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -65,6 +66,9 @@ export async function listSlugSecrets(env: SecretEnv, slug: string): Promise<str
 /**
  * Merge `updates` into a slug's stored env. Returns every name it then holds.
  *
+ * `owner` is the caller's API key when ownership was decided before the lock
+ * (the HTTP route): it is checked again under the lock ({@link assertStillOwner}).
+ *
  * @throws {EnvTooLargeError} when the merge is over `MAX_ENV_SIZE` — thrown by
  *   the store before anything is written, and answered 413.
  */
@@ -72,8 +76,10 @@ export function setSlugSecrets(
   env: SecretEnv,
   slug: string,
   updates: Record<string, string>,
+  owner?: string,
 ): Promise<string[]> {
   return env.slugLock(slug, async () => {
+    if (owner !== undefined) await assertStillOwner(owner, { slug, store: env.store });
     const existing = (await env.store.getEnv(slug)) ?? {};
     const merged = { ...existing, ...updates };
     await env.store.putEnv(slug, merged);
@@ -82,9 +88,18 @@ export function setSlugSecrets(
   });
 }
 
-/** Drop one name from a slug's stored env. Absent is a no-op, not an error. */
-export function deleteSlugSecret(env: SecretEnv, slug: string, key: string): Promise<void> {
+/**
+ * Drop one name from a slug's stored env. Absent is a no-op, not an error.
+ * `owner` is as {@link setSlugSecrets} takes it.
+ */
+export function deleteSlugSecret(
+  env: SecretEnv,
+  slug: string,
+  key: string,
+  owner?: string,
+): Promise<void> {
   return env.slugLock(slug, async () => {
+    if (owner !== undefined) await assertStillOwner(owner, { slug, store: env.store });
     const existing = (await env.store.getEnv(slug)) ?? {};
     delete existing[key];
     await env.store.putEnv(slug, existing);
@@ -104,7 +119,7 @@ export async function handleSecretList(c: AppContext): Promise<Response> {
 export async function handleSecretSet(
   c: ValidatedAppContext<Record<string, string>>,
 ): Promise<Response> {
-  const keys = await setSlugSecrets(c.env, c.var.slug, c.req.valid("json"));
+  const keys = await setSlugSecrets(c.env, c.var.slug, c.req.valid("json"), c.var.apiKey);
   return c.json({ ok: true, keys });
 }
 
@@ -113,6 +128,6 @@ export async function handleSecretSet(
 export async function handleSecretDelete(
   c: ValidatedParamContext<{ key: string }>,
 ): Promise<Response> {
-  await deleteSlugSecret(c.env, c.var.slug, c.req.valid("param").key);
+  await deleteSlugSecret(c.env, c.var.slug, c.req.valid("param").key, c.var.apiKey);
   return c.json({ ok: true });
 }

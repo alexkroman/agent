@@ -20,6 +20,7 @@ import { createServer } from "node:net";
 import type { LogPage } from "@alexkroman1/aai/host-internal";
 import { readGuestLogs } from "./agent-logs.ts";
 import { MANAGE_REQUEST_TIMEOUT_MS } from "./constants.ts";
+import { readGuestJson } from "./guest/forward.ts";
 import { GUEST_ROUTES, guestHttpUrl, guestWsUrl } from "./guest/routes.ts";
 import { createLogger } from "./logger.ts";
 import type { GuestRpcSchema } from "./rpc-schemas.ts";
@@ -294,7 +295,7 @@ export function agentServerFromGuest(opts: {
         // Guest-asserted wire data: validate the one field consumed. It may
         // only ever influence this tenant's own reaping and shutdown-drain
         // accounting — a lying guest harms only itself.
-        const body = (await res.json()) as { activeSessions?: unknown };
+        const body = (await readGuestJson(res)) as { activeSessions?: unknown };
         const count = body.activeSessions;
         if (typeof count !== "number" || !Number.isFinite(count) || count < 0) return 0;
         return count;

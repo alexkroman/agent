@@ -58,6 +58,7 @@ import {
   GUEST_WEBHOOK_RESPONSE_HEADERS,
   passThroughHeaders,
   pickHeaders,
+  readGuestBody,
 } from "./guest/forward.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest/routes.ts";
 import { createLogger } from "./logger.ts";
@@ -166,7 +167,10 @@ export function createWorkflowWebhookHandler(
         // The whole response is buffered below, so the deadline covers it.
         timeoutMs: WORKFLOW_WEBHOOK_TIMEOUT_MS,
       });
-      return new Response(await res.arrayBuffer(), {
+      // Capped: the answer is the TENANT's, and is buffered here, not streamed.
+      const answer = await readGuestBody(res);
+      if (answer === null) throw new Error("guest webhook answer exceeded the size cap");
+      return new Response(answer, {
         // An ALLOW-LIST, unlike the request direction above: a webhook sender
         // reads a status code and the body it can interpret from a content type,
         // and everything a tenant guest could otherwise say here is said in the

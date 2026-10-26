@@ -109,6 +109,22 @@ export const AGENT_ROUTES_IP_RATE_LIMIT = {
   windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
 } as const;
 
+/**
+ * FAILED authentications on the owner routes (`DELETE /:slug`, `/:slug/secret*`,
+ * `/:slug/logs`), per client IP.
+ *
+ * Every fresh bearer on those routes costs one AssemblyAI verification
+ * (`api-key-verify.ts`), and the negative cache stops only a REPEATED one: a
+ * caller minting a random key per request drove one upstream call per request,
+ * with nothing in front. Only 401s are counted, so an author polling
+ * `aai logs --follow` (one read a second) is never the one refused; thirty
+ * rejected keys in the window is past any typo.
+ */
+export const OWNER_AUTH_FAILURE_IP_RATE_LIMIT = {
+  limit: 30,
+  windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
+} as const;
+
 type Window = { count: number; resetAt: number };
 
 export type RateLimitVerdict = { ok: true } | { ok: false; retryAfterSeconds: number };

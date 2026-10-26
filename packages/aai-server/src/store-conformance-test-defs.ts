@@ -366,6 +366,21 @@ export function agentRowsConformance(make: () => AgentRows): void {
     expect(await rows.getVersion(slug)).toBeNull();
   });
 
+  test("a slug deployed again after a delete never repeats a version it held", async () => {
+    // A guest's bearer and sandbox name derive from (slug, version), so a
+    // repeated version hands the deleted tenant's credential to the next one.
+    const rows = make();
+    const slug = uid();
+    const row = { slug, credential_hashes: [], worker_hash: "w", client_files: {} };
+    await rows.put(row);
+    await rows.put(row);
+    const held = await rows.getVersion(slug);
+    await rows.delete(slug);
+    await rows.put(row);
+    expect(await rows.getVersion(slug)).toBeGreaterThan(held as number);
+    await rows.delete(slug);
+  });
+
   test("delete of an absent slug is idempotent", async () => {
     await expect(make().delete(uid())).resolves.toBeUndefined();
   });

@@ -190,6 +190,56 @@ export const NEVER_FORWARDED: ReadonlySet<string> = new Set([
  */
 export const GUEST_WEBHOOK_RESPONSE_HEADERS = ["content-type", "retry-after"] as const;
 
+/**
+ * The most bytes of a guest's response the platform will BUFFER — the hops
+ * that read the answer here (`/client-config`, the webhook relay, `/logs`)
+ * rather than streaming it on to the caller.
+ *
+ * The guest is tenant code (it ships its own runtime), so its response size is
+ * the tenant's choice; read whole, one answer streamed without end held the
+ * shared replica's memory for the length of the timeout. 1 MiB is far past any
+ * honest answer on these hops (a config, a webhook ack, a log page of 4 KiB
+ * lines).
+ */
+export const GUEST_RESPONSE_BODY_MAX_BYTES = 1_048_576;
+
+/**
+ * Read a guest's response body, refusing it past `maxBytes`: `null` once the
+ * read crosses the cap, with the rest of the stream cancelled unread. Counted
+ * as it arrives, never trusted from `content-length` (a chunked answer has
+ * none, and the guest writes the header anyway).
+ */
+export async function readGuestBody(
+  res: Response,
+  maxBytes: number = GUEST_RESPONSE_BODY_MAX_BYTES,
+): Promise<Uint8Array | null> {
+  if (!res.body) return new Uint8Array(0);
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}
+
+/** {@link readGuestBody} parsed as JSON; throws on an oversized or malformed body. */
+export async function readGuestJson(
+  res: Response,
+  maxBytes: number = GUEST_RESPONSE_BODY_MAX_BYTES,
+): Promise<unknown> {
+  const bytes = await readGuestBody(res, maxBytes);
+  if (bytes === null) throw new Error(`guest response exceeded ${maxBytes} bytes`);
+  return JSON.parse(Buffer.from(bytes).toString("utf8"));
+}
+
 /** Copy an allow-listed subset of `from` into a fresh `Headers`. */
 export function pickHeaders(from: Headers, names: readonly string[]): Headers {
   const picked = new Headers();
