@@ -119,6 +119,32 @@ describe("load", () => {
     expect(source).not.toContain("tool1");
   });
 
+  test("enumerates exactly what the build ships: every extension, nested files, specs excepted", async () => {
+    // The failure this pins: a `tools/echo.mts` `aai build` deployed was
+    // invisible here (`.ts` only), and a nested `tools/sub/x.ts` the build
+    // refused by name was skipped here (flat read) — `aai test` green, `aai
+    // build` red. Both scans now apply `isRegistryModuleFile` recursively, so
+    // the registries refuse the nested file in the spec as in the build.
+    const dir = await project({
+      "agent.ts": "export default {};",
+      "tools/echo.mts": "export const x = 1;",
+      "tools/page.tsx": "export const x = 1;",
+      "tools/sub/nested.ts": "export const x = 1;",
+      "tools/sub/nested.test.ts": "export const x = 1;",
+      "workflows/digest.ts": "export const x = 1;",
+      "workflows/lib/helper.mjs": "export const x = 1;",
+    });
+    const source = emit(dir);
+    for (const file of ["tools/echo.mts", "tools/page.tsx", "tools/sub/nested.ts"]) {
+      expect(source).toContain(`[${JSON.stringify(join(dir, file))}]: tool`);
+    }
+    expect(source).not.toContain("nested.test.ts");
+    expect(source).toContain(`[${JSON.stringify(join(dir, "workflows/digest.ts"))}]: workflow`);
+    expect(source).toContain(
+      `[${JSON.stringify(join(dir, "workflows/lib/helper.mjs"))}]: workflow`,
+    );
+  });
+
   test("imports every workflows/ file and passes the map, helpers included", async () => {
     // `workflowRegistry` is what keeps the files that default-export a def; the
     // plugin's job is only to hand it the whole directory, specs excepted.

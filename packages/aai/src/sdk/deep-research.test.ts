@@ -15,6 +15,7 @@ import {
   resolveSettings,
 } from "./deep-research.ts";
 import { DEFAULT_DEEP_RESEARCH_PROMPTS } from "./deep-research-prompts.ts";
+import { workflowRegistry } from "./manifest-workflows.ts";
 import { FatalError } from "./step-error-classes.ts";
 import { installStubGateway } from "./testing-vitest.ts";
 import { createWorkflowContext } from "./testing-workflow-ctx.ts";
@@ -41,6 +42,15 @@ describe("the def it builds", () => {
     const bare = deepResearchWorkflow({ input: z.object({ topic: z.string() }) });
     expect("describeRun" in bare).toBe(false);
     expect("cancelNote" in bare).toBe(false);
+  });
+
+  test("is a def the registry recognizes, so workflows/research.ts is discovered", () => {
+    // The failure this pins: built as a bare literal, the def carried no
+    // `workflow()` brand and `research-handoff-agent`'s file registered nothing.
+    const def = deepResearchWorkflow({ input: z.object({ topic: z.string() }) });
+    expect(workflowRegistry({ "workflows/research.ts": { default: def } })).toEqual({
+      research: def,
+    });
   });
 });
 

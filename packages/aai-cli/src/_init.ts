@@ -2,6 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
+import { CLIENT_ONLY_DEPENDENCIES } from "./_client-plugins.ts";
 import { downloadAndMergeTemplate, REPO_URL } from "./_templates.ts";
 import { compareCodeUnits, fileExists, isEexist, readJson, writeJson } from "./_utils.ts";
 
@@ -58,9 +59,10 @@ const PM_COMMANDS: Record<PackageManager, { install: string; run: string; exec: 
  * The README every scaffolded project gets, and the first thing a new author
  * reads. Four things in it are corrections rather than prose:
  *
- * - **`<pm> run dev`, never a bare `aai dev`.** The CLI is a devDependency, so
- *   after the install the binary is in `node_modules/.bin` and NOT on
- *   `PATH`. The old quickstart said `aai dev`, which fails with
+ * - **`<pm> run dev`, never a bare `aai dev`.** The CLI is a dependency of the
+ *   project (the scaffold's `package.json` lists it under `dependencies`,
+ *   since `npm start` self-hosts through it), so after the install the binary
+ *   is in `node_modules/.bin` and NOT on `PATH`. The old quickstart said `aai dev`, which fails with
  *   `command not found` for everyone who has not installed the CLI globally.
  * - **Every command names the manager the install actually used.** It said
  *   `npm install` unconditionally, directly beside the pnpm lockfile `init`
@@ -86,7 +88,7 @@ ${install.padEnd(18)}# Install dependencies
 ${`${run} dev`.padEnd(18)}# Run locally on http://localhost:3000 (opens browser)
 \`\`\`
 
-The \`aai\` CLI is a devDependency of this project, so it lives in
+The \`aai\` CLI is a dependency of this project, so it lives in
 \`node_modules/.bin\` rather than on your \`PATH\`. Run it through ${pm}
 (\`${run} dev\`, \`${run} test\`, \`${run} build\`) or with \`${exec} aai <command>\`.
 Installing it globally (\`npm i -g @alexkroman1/aai-cli\`) also works, and is
@@ -319,24 +321,14 @@ async function stampPackageManager(targetDir: string, pm: PackageManagerInfo): P
 }
 
 /**
- * The scaffold's dependencies that exist only to build a `client.tsx`: the UI
- * kit, React, and the two Vite plugins the CLI loads from the project when it
- * has no `vite.config.*` (`_client-plugins.ts`).
- *
- * `vite` itself is NOT here: it is the test runner's base and the source of the
- * `vite/client` types `@alexkroman1/aai/tsconfig` names, so a headless project
- * needs it too.
+ * Every name in {@link CLIENT_ONLY_DEPENDENCIES}, whichever field it is
+ * declared under: the strip below removes a name from BOTH fields, so a
+ * template that declares one differently from the scaffold is still headless.
  */
-export const CLIENT_ONLY_DEPENDENCIES = [
-  "@alexkroman1/aai-ui",
-  "@tailwindcss/vite",
-  "@types/react",
-  "@types/react-dom",
-  "@vitejs/plugin-react",
-  "react",
-  "react-dom",
-  "tailwindcss",
-] as const;
+const CLIENT_ONLY_DEPENDENCY_NAMES: readonly string[] = [
+  ...CLIENT_ONLY_DEPENDENCIES.dependencies,
+  ...CLIENT_ONLY_DEPENDENCIES.devDependencies,
+];
 
 /**
  * Drop {@link CLIENT_ONLY_DEPENDENCIES} from a project with no `client.tsx`.
@@ -345,7 +337,8 @@ export const CLIENT_ONLY_DEPENDENCIES = [
  * served the prebuilt default UI by the CLI and bundles no React of its own,
  * so installing a UI toolchain it never builds only costs install time and
  * `node_modules`. Adding a `client.tsx` later means adding these back; the
- * CLI's `client_plugins_missing` failure names the two it needs.
+ * CLI's `client_plugins_missing` failure names them all (the list is declared
+ * beside that hint, in `_client-plugins.ts`, so the two cannot drift).
  */
 export async function stripClientDependencies(targetDir: string): Promise<void> {
   if (await fileExists(path.join(targetDir, "client.tsx"))) return;
@@ -356,7 +349,7 @@ export async function stripClientDependencies(targetDir: string): Promise<void> 
   for (const field of ["dependencies", "devDependencies"] as const) {
     const deps = pkgJson[field] as Record<string, string> | undefined;
     if (!deps) continue;
-    for (const name of CLIENT_ONLY_DEPENDENCIES) {
+    for (const name of CLIENT_ONLY_DEPENDENCY_NAMES) {
       if (name in deps) {
         delete deps[name];
         changed = true;

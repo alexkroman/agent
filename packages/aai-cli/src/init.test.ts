@@ -342,6 +342,23 @@ describe("executeInit", () => {
     ).rejects.toThrow("agent.ts already exists");
   });
 
+  test("refuses a `*-preview` directory at init, with the publish-time reason", async ({
+    tmpDir: dir,
+  }) => {
+    // The failure this pins: `aai init my-agent-preview` scaffolded happily
+    // and only `aai publish` refused the name, days later. The studio's
+    // orphan-preview sweep reaps that slug hourly (`projectNameFromDir`).
+    await useFakeTemplates(dir);
+    const target = path.join(dir, "my-agent-preview");
+    await expect(
+      executeInit(
+        { dir: target, template: "quickstart-agent" },
+        { silent: true, ui, exec: execaMock },
+      ),
+    ).rejects.toThrow(/Can't derive a project name from my-agent-preview.*-preview/);
+    expect(await fileExists(path.join(target, "agent.ts"))).toBe(false);
+  });
+
   test("--force overwrites an existing project", async ({ tmpDir: dir }) => {
     await useFakeTemplates(dir);
     const target = path.join(dir, "existing");

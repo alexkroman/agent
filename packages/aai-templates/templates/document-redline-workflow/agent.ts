@@ -97,7 +97,6 @@ export const redline = workflow({
 
 export default workflowApp({
   name: "Redline",
-  description:
-    "Takes a brief or a draft and returns a piece that has been through rounds of critique",
+  listing: "Takes a brief or a draft and returns a piece that has been through rounds of critique",
   workflows: { redline },
 });

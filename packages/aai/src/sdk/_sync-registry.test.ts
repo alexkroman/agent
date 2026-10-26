@@ -8,7 +8,7 @@
  * under test and the reason it must not leak into a suite that asserts an
  * agent syncs nothing.
  */
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { normalizeAgentParams } from "./_author-conveniences.ts";
 import { syncedProjections } from "./_sync-registry.ts";
 import { agent, workflowApp } from "./define.ts";
@@ -72,31 +72,63 @@ describe("sync: true", () => {
     // A def that had no synced slot when it was built collects at the lowering too.
     const later = sessionSlot("later", () => ({ n: 0 }), { sync: true });
     expect(syncStateOf(withTools({ tools: {} }, {}))).toEqual({ later: later.projected });
-    // A DECLARED syncState is never re-collected, at either step.
-    const declared = agent({ name: "p", syncState: prefs.projected });
-    sessionSlot("stray", () => ({ n: 0 }), { sync: true });
-    expect(withTools(declared, {}).syncState).toEqual({ prefs: prefs.projected });
-    expect(syncStateOf(normalizeAgentParams(declared))).toEqual({ prefs: prefs.projected });
-    expect(agent({ name: "t" }).syncState).toHaveProperty("stray");
+    // A DECLARED syncState is never re-collected, at either step — and a
+    // `sync: true` slot registered after it (a tools file's) is CLAIMED and
+    // named, once, rather than dropped silently or handed to the next def.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const declared = agent({ name: "p", syncState: prefs.projected });
+      expect(warn).not.toHaveBeenCalled();
+      sessionSlot("stray", () => ({ n: 0 }), { sync: true });
+      expect(withTools(declared, {}).syncState).toEqual({ prefs: prefs.projected });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0]?.[0]).toMatch(
+        /The slot "stray" declared `sync: true` but sits in an agent whose explicit `syncState`/,
+      );
+      expect(syncStateOf(normalizeAgentParams(declared))).toEqual({ prefs: prefs.projected });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(agent({ name: "t" }).syncState).toBeUndefined();
+      // A declared projection that is ALSO `sync: true` is not "left out".
+      const both = sessionSlot("both", () => ({ n: 0 }), { sync: true });
+      expect(agent({ name: "u", syncState: both.projected }).syncState).toEqual({
+        both: both.projected,
+      });
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      warn.mockRestore();
+    }
 
     // Two synced slots on one key are refused where the collision is named.
     sessionSlot("twice", () => ({ open: 1 }), { sync: true });
     sessionSlot("twice", () => ({ open: 2 }), { sync: true });
     expect(() => agent({ name: "p" })).toThrow(/projects the "twice" slot twice/);
 
-    // A workflow app never collects — and so never meets its own refusal. The
+    // A workflow app never syncs — and so never meets its own refusal. The
     // failure this pins: `templates.test.ts` declares every template's
     // agent in one process, and a `workflowApp()` declared after a voice
     // agent's `sync: true` slot used to inherit that projection, then throw
-    // "`syncState` … has no effect on a \"workflow-app\" agent".
-    const voiceSlot = sessionSlot("voice-only", () => ({ n: 0 }), { sync: true });
+    // "`syncState` … has no effect on a \"workflow-app\" agent". It CLAIMS the
+    // slot all the same, warning once that it sits in a sessionless app: left
+    // unclaimed, it leaked into the next agent declared (`app-c` then
+    // `agent-d`, and `d.syncState` had `c`).
+    const appSlot = sessionSlot("app-only", () => ({ n: 0 }), { sync: true });
     const digest = workflow({ run: async () => ({}) });
-    const app = workflowApp({ name: "App", workflows: { digest } });
-    expect(app.syncState).toBeUndefined();
-    expect(withTools(app, {}).syncState).toBeUndefined();
-    expect(syncStateOf(normalizeAgentParams(app))).toBeUndefined();
-    // The slot is still there for the next voice agent — the app claimed nothing.
-    expect(agent({ name: "voice" }).syncState).toEqual({ "voice-only": voiceSlot.projected });
-    expect(agent({ name: "another" }).syncState).toBeUndefined();
+    const appWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const app = workflowApp({ name: "App", workflows: { digest } });
+      expect(app.syncState).toBeUndefined();
+      expect(appWarn).toHaveBeenCalledTimes(1);
+      expect(appWarn.mock.calls[0]?.[0]).toMatch(
+        /The slot "app-only" declared `sync: true` but sits in a workflow app/,
+      );
+      expect(withTools(app, {}).syncState).toBeUndefined();
+      expect(syncStateOf(normalizeAgentParams(app))).toBeUndefined();
+      expect(appWarn).toHaveBeenCalledTimes(1);
+      // Claimed: the next voice agent does not inherit the app's slot.
+      expect(agent({ name: "voice" }).syncState).toBeUndefined();
+      expect(appSlot.key).toBe("app-only");
+    } finally {
+      appWarn.mockRestore();
+    }
   });
 });

@@ -216,8 +216,10 @@ export type WorkflowAppOnlyField =
  * product, and nothing from the session half of the agent shape.
  * `workflowApp()` is this member with `mode` already set.
  *
- * `workflows` is REQUIRED here, unlike on {@link AgentDeclaration}: a workflow
- * app that declares none serves a form whose every submit is a 400.
+ * `workflows` is optional here as on {@link AgentDeclaration}: a workflow app
+ * whose every workflow is a `workflows/<name>.ts` default export declares
+ * none in `agent.ts` — discovery registers them, so the form it serves is
+ * not empty.
  *
  * @input
  * @public
@@ -232,7 +234,7 @@ export type WorkflowAppAgentParams = Omit<
   /** See {@link AgentDeclaration.mode}. */
   mode: "workflow-app";
   /** See {@link AgentDeclaration.workflows} — the whole product. */
-  workflows: NonNullable<AgentDeclaration["workflows"]>;
+  workflows?: AgentDeclaration["workflows"];
 };
 
 /**

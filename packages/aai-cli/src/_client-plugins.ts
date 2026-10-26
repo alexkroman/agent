@@ -62,6 +62,28 @@ export const CLIENT_PLUGIN_PACKAGES = {
   tailwind: "@tailwindcss/vite",
 } as const;
 
+/**
+ * Everything a `client.tsx` needs that a headless project does not, by the
+ * manifest field the scaffold declares it under: `aai init` removes all of
+ * these from a project with no `client.tsx` (`stripClientDependencies`,
+ * `_init.ts`), and the `client_plugins_missing` hint names them all — it used
+ * to name the two plugins only, and an author who installed exactly those then
+ * met a raw "failed to resolve `@alexkroman1/aai-ui/styles.css`".
+ *
+ * `vite` itself is NOT here: it is the test runner's base and the source of the
+ * `vite/client` types `@alexkroman1/aai/tsconfig` names, so a headless project
+ * needs it too.
+ */
+export const CLIENT_ONLY_DEPENDENCIES = {
+  dependencies: ["@alexkroman1/aai-ui", "react", "react-dom", "tailwindcss"],
+  devDependencies: [
+    CLIENT_PLUGIN_PACKAGES.tailwind,
+    "@types/react",
+    "@types/react-dom",
+    CLIENT_PLUGIN_PACKAGES.react,
+  ],
+} as const;
+
 /** Whether the project declares its own Vite config (which then wins). */
 export function hasViteConfig(cwd: string): boolean {
   return VITE_CONFIG_FILES.some((name) => existsSync(path.join(cwd, name)));
@@ -124,7 +146,10 @@ export async function defaultClientPlugins(cwd: string): Promise<PluginOption[] 
       "client_plugins_missing",
       `client.tsx needs ${missing.join(" and ")} to build, and ${cwd} does not have ${missing.length === 1 ? "it" : "them"}.`,
       `Install ${missing.length === 1 ? "it" : "them"} as a devDependency (\`npm i -D ${missing.join(" ")}\`), ` +
-        "or add a vite.config.ts that declares the plugins you want.",
+        "or add a vite.config.ts that declares the plugins you want. " +
+        "A project scaffolded without a client.tsx had every client-only package removed, and a client.tsx needs them all: " +
+        `\`npm i ${CLIENT_ONLY_DEPENDENCIES.dependencies.join(" ")}\` and ` +
+        `\`npm i -D ${CLIENT_ONLY_DEPENDENCIES.devDependencies.join(" ")}\`.`,
     );
   }
   return [react({ exclude: REACT_REFRESH_EXCLUDE }), tailwind()];

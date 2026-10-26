@@ -693,6 +693,10 @@ default-exports it, which is the same object under the same name. That case
 is silent. A DIFFERENT def under a declared name keeps the declared one and
 warns, naming the file, so the file's author learns it is not the one
 running rather than discovering it from a run that behaves like the other.
+The same def declared under ANOTHER name (`workflows: { nightly: digest }`
+beside `workflows/digest.ts`) registers ONCE, under the declared name, with
+a warning naming the file: a def under two names was listed twice by
+`GET /workflows` and could be started as either.
 
 Structural rather than `AgentDef`, and it hands back what it was given, as
 `withTools` does.

@@ -72,7 +72,7 @@
 
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { MODULE_EXT_RE, type RegistryDir, SPEC_RE } from "../sdk/_module-registry.ts";
+import { isRegistryModuleFile, type RegistryDir } from "../sdk/_module-registry.ts";
 
 /** The module specifier a spec imports. */
 export const AAI_AGENT_MODULE = "virtual:aai/agent";
@@ -184,14 +184,18 @@ function generate(dir: string): string {
 }
 
 /**
- * Every `<sub>/*.ts` file that is a module of its kind — a spec or type test
- * is not, by the one suffix rule the registries apply (`_module-registry.ts`).
+ * Every file under `<sub>/` that is a module of its kind, by the one rule the
+ * CLI's generated worker entry applies (`isRegistryModuleFile`,
+ * `_module-registry.ts`), read RECURSIVELY as that entry reads it — so a spec
+ * sees exactly what a build ships: a `tools/echo.mts` the build deployed, and
+ * a nested `tools/sub/x.ts` or `workflows/sub/x.ts` the registry then refuses
+ * by name, rather than a set this door narrowed to flat `.ts` on its own.
  */
 function moduleFiles(dir: string, sub: RegistryDir): string[] {
   const root = join(dir, sub);
   if (!existsSync(root)) return [];
-  return readdirSync(root)
-    .filter((name) => name.endsWith(".ts") && !SPEC_RE.test(name.replace(MODULE_EXT_RE, "")))
-    .sort()
-    .map((name) => join(root, name));
+  return readdirSync(root, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && isRegistryModuleFile(entry.name))
+    .map((entry) => join(entry.parentPath, entry.name))
+    .sort();
 }

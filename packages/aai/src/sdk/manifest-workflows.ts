@@ -147,6 +147,10 @@ export type WithWorkflowsOptions = {
  * is silent. A DIFFERENT def under a declared name keeps the declared one and
  * warns, naming the file, so the file's author learns it is not the one
  * running rather than discovering it from a run that behaves like the other.
+ * The same def declared under ANOTHER name (`workflows: { nightly: digest }`
+ * beside `workflows/digest.ts`) registers ONCE, under the declared name, with
+ * a warning naming the file: a def under two names was listed twice by
+ * `GET /workflows` and could be started as either.
  *
  * Structural rather than `AgentDef`, and it hands back what it was given, as
  * `withTools` does.
@@ -164,10 +168,18 @@ export function withWorkflows<D extends object>(
   const declared = (def as { readonly workflows?: WorkflowRegistry | undefined }).workflows ?? {};
   const warn = options.warn ?? ((message: string) => console.warn(message));
   const merged: Record<string, WorkflowDef> = { ...declared };
+  const declaredNames = new Map(Object.entries(declared).map(([name, def]) => [def, name]));
   for (const [name, discovered] of Object.entries(registry)) {
     const explicit = declared[name];
     if (explicit === undefined) {
-      merged[name] = discovered;
+      const declaredAs = declaredNames.get(discovered);
+      if (declaredAs === undefined) {
+        merged[name] = discovered;
+      } else {
+        warn(
+          `workflows/${name}.ts default-exports the workflow agent({ workflows }) declares as "${declaredAs}", so it is registered once, as "${declaredAs}". Rename the file to workflows/${declaredAs}.ts, or drop the explicit entry, to run it under one name without this line.`,
+        );
+      }
     } else if (explicit !== discovered) {
       warn(
         `workflows/${name}.ts default-exports a workflow, but agent({ workflows }) declares a different "${name}". The declared one runs; the file's default export is ignored. Remove one of them.`,

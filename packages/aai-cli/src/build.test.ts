@@ -4,6 +4,7 @@
 import { rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
 import { describe, expect } from "vitest";
 import { linkSdkNodeModules, test } from "./_test-utils.ts";
 // `missingDeployEnv` imports this lazily (it pulls the SDK runtime barrel).
@@ -14,6 +15,7 @@ import {
   executeBuild,
   missingDeployEnv,
   missingEnvWarnings,
+  systemPromptSource,
   WORKER_ARTIFACT_REL,
 } from "./build.ts";
 
@@ -57,6 +59,26 @@ describe("executeBuild", () => {
     // attached by the generated entry.
     const mod = await import(pathToFileURL(written).href);
     expect((mod.default as { name: string }).name).toBe("on-disk");
+  });
+});
+
+describe("systemPromptSource", () => {
+  test("a workflow app has no prompt to source, and the report says so", async ({
+    tmpDir: dir,
+  }) => {
+    // The failure this pins: `aai build` on a workflow app reported "the
+    // framework default (DEFAULT_SYSTEM_PROMPT)" — a prompt no model ever
+    // receives, read as one that shipped.
+    expect(await systemPromptSource(dir, DEFAULT_SYSTEM_PROMPT, "workflow-app")).toBe(
+      "none (workflow app)",
+    );
+    // Every session mode still reports the default as the default.
+    expect(await systemPromptSource(dir, DEFAULT_SYSTEM_PROMPT, "pipeline")).toContain(
+      "framework default",
+    );
+    expect(await systemPromptSource(dir, DEFAULT_SYSTEM_PROMPT, "text")).toContain(
+      "framework default",
+    );
   });
 });
 

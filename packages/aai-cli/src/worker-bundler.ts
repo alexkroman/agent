@@ -47,7 +47,7 @@
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { invariant } from "@alexkroman1/aai/internal";
+import { invariant, isRegistryModuleFile } from "@alexkroman1/aai/internal";
 import { build, mergeConfig, type PluginOption, type Rollup } from "vite";
 import { devSourceViteConfig } from "./_dev-source.ts";
 import { errorCode } from "./_utils.ts";
@@ -96,12 +96,6 @@ export type BuildWorkerOptions = {
  */
 const WRAPPER_ENTRY_REL = path.join(".aai", "worker-entry.ts");
 
-/** Extensions a tool or workflow module may be authored in (mirrors the SDK's registries). */
-const MODULE_EXT_RE = /\.(?:m?ts|tsx)$/;
-
-/** A co-located spec or type test is neither a tool nor a workflow. */
-const SPEC_RE = /\.(?:test|spec|test-d)\.[^.]+$/;
-
 /**
  * A project directory beside `agent.ts` whose files BE the thing — `tools/`
  * or `workflows/` — as file names relative to it.
@@ -112,26 +106,29 @@ const SPEC_RE = /\.(?:test|spec|test-d)\.[^.]+$/;
  * same lowering eve does (`readdir` → static import list, which the bundler then
  * follows). The names are validated by the registry (`toolRegistry`,
  * `workflowRegistry` in `@alexkroman1/aai/manifest`) at bundle-evaluation
- * time rather than here, so one implementation owns the rules.
+ * time rather than here, so one implementation owns the rules — and what
+ * counts as a module FILE is the SDK's `isRegistryModuleFile`, the rule
+ * `virtual:aai/agent` applies too, so a spec sees exactly the set a build
+ * ships (a `tools/echo.mts` once shipped here and was invisible there).
  *
- * `recursive` is the one axis the two directories differ on. `tools/` is read
- * RECURSIVELY, so a nested file is DISCOVERED and then rejected by
- * `toolRegistry` naming it: a one-level read silently skipped a subdirectory,
- * which made "`tools/` is flat" a documented rule that nothing enforced —
- * `tools/billing/refund.ts` produced an agent with no tools and no error
- * anywhere, the exact silent absence discovery exists to kill. `workflows/` is
- * read FLAT, and the registry carries that argument too: a file there that
- * does not default-export a def is a body's helper, not an error, so every
- * file is imported and the registry keeps the ones that are workflows — and a
- * nested helper module (`workflows/lib/x.ts`) is common and nobody's workflow.
+ * Both directories are read RECURSIVELY, so a nested file is DISCOVERED and
+ * then judged by the registry naming it. A one-level read silently skipped a
+ * subdirectory, which made "`tools/` is flat" a documented rule that nothing
+ * enforced — `tools/billing/refund.ts` produced an agent with no tools and no
+ * error anywhere, the exact silent absence discovery exists to kill; and a
+ * `workflows/sub/x.ts` default-exporting a def was skipped the same way while
+ * the registry's "nested" refusal never ran. A nested helper module
+ * (`workflows/lib/x.ts`) is common and nobody's workflow: it is imported, is
+ * no def, and the registry skips it as it skips a flat helper.
  *
  * Sorted, so the emitted entry is byte-stable for a given directory: an entry
  * that reordered per readdir would change the bundle hash for no reason.
+ *
+ * @internal — exported for its reader-level spec; `buildWorker` is the caller.
  */
-async function discoverModuleFiles(
+export async function discoverModuleFiles(
   cwd: string,
   dir: "tools" | "workflows",
-  options: { recursive: boolean },
 ): Promise<string[]> {
   const root = path.join(cwd, dir);
   // `Dirent[]` explicitly: inferring from `fs.readdir` picks its Buffer
@@ -139,19 +136,31 @@ async function discoverModuleFiles(
   // on the looser config does not.
   let entries: Dirent[];
   try {
-    entries = await fs.readdir(root, { withFileTypes: true, recursive: options.recursive });
+    entries = await fs.readdir(root, { withFileTypes: true, recursive: true });
   } catch (err) {
     // A missing directory is normal — a workflow app has no `tools/`, a voice
-    // agent no `workflows/`. Anything else is worth surfacing.
+    // agent no `workflows/`. A FILE of that name is an author's mistake worth a
+    // sentence (the raw ENOTDIR named a scandir). Anything else is worth
+    // surfacing as it is.
     if (errorCode(err) === "ENOENT") return [];
+    if (errorCode(err) === "ENOTDIR") {
+      throw new Error(
+        `${root} is a file, but \`${dir}/\` must be a DIRECTORY: one file per ${dir === "tools" ? "tool" : "workflow"}, named for it (${dir}/<name>.ts). Move the file into it, or rename it.`,
+        { cause: err },
+      );
+    }
     throw err;
   }
   return (
     entries
-      .filter((e) => e.isFile() && MODULE_EXT_RE.test(e.name) && !SPEC_RE.test(e.name))
       // POSIX separators: these become import specifiers and a registry key, and
       // a backslash on Windows would be neither.
-      .map((e) => path.relative(root, path.join(e.parentPath, e.name)).split(path.sep).join("/"))
+      .map((e) => ({
+        file: path.relative(root, path.join(e.parentPath, e.name)).split(path.sep).join("/"),
+        isFile: e.isFile(),
+      }))
+      .filter((e) => e.isFile && isRegistryModuleFile(e.file))
+      .map((e) => e.file)
       .sort()
   );
 }
@@ -283,8 +292,8 @@ export async function buildWorker(cwd: string, options: BuildWorkerOptions = {})
   // overlap with each other and with creating the scratch dir.
   const [, toolFiles, workflowFiles, systemPromptFile] = await Promise.all([
     fs.mkdir(path.dirname(wrapperPath), { recursive: true }),
-    discoverModuleFiles(cwd, "tools", { recursive: true }),
-    discoverModuleFiles(cwd, "workflows", { recursive: false }),
+    discoverModuleFiles(cwd, "tools"),
+    discoverModuleFiles(cwd, "workflows"),
     hasSystemPromptFile(cwd),
   ]);
   await fs.writeFile(

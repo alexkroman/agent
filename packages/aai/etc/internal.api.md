@@ -54,6 +54,7 @@ export const BOUNDARY_KEYS: {
         readonly routeError: "@alexkroman1/aai.routeError";
         readonly stepError: "@alexkroman1/aai.stepError";
         readonly keylessSynthesizer: "@alexkroman1/aai.speechSynthesizer.keyless";
+        readonly workflowDef: "@alexkroman1/aai.workflowDef";
     };
     readonly slots: {
         readonly channelOutbox: "@alexkroman1/aai.channelOutbox";
@@ -394,6 +395,9 @@ export class InvariantViolation extends Error {
 
 // @public
 export function isInvariantViolation(value: unknown): value is InvariantViolation;
+
+// @public
+export function isRegistryModuleFile(name: string): boolean;
 
 // @internal
 export function isTextAssetPath(assetPath: string): boolean;

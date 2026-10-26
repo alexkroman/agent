@@ -18,6 +18,9 @@ export type BuildWorkerOptions = {
     omitVendors?: readonly string[];
 };
 
+// @internal
+export function discoverModuleFiles(cwd: string, dir: "tools" | "workflows"): Promise<string[]>;
+
 // (No @packageDocumentation comment for this package)
 
 ```

@@ -8,6 +8,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { withWorkflows, workflowRegistry } from "./manifest-workflows.ts";
 import { workflow } from "./workflow.ts";
+import { workflowNameOf } from "./workflow-names.ts";
 
 const digest = workflow({ description: "digest", run: async () => ({ ok: true }) });
 const recap = workflow({ description: "recap", run: async () => "done" });
@@ -29,6 +30,9 @@ describe("workflowRegistry", () => {
       "workflows/tokens.ts": { default: (id: string) => id },
       "workflows/digest.test.ts": { default: digest },
       "workflows/digest.test-d.ts": { default: digest },
+      // A plain object with a `run` is a helper too: only `workflow()` makes a
+      // def, and this one would register with no input schema and no validation.
+      "workflows/runner.ts": { default: { description: "x", run: async () => ({}) } },
     });
     expect(Object.keys(registry)).toEqual(["digest"]);
   });
@@ -87,6 +91,20 @@ describe("withWorkflows", () => {
     const lowered = withWorkflows({ workflows: { digest } }, { digest }, { warn });
     expect(lowered.workflows).toEqual({ digest });
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  test("the SAME def declared under ANOTHER name registers once, as declared, and says so", () => {
+    const warn = vi.fn<(message: string) => void>();
+    const lowered = withWorkflows({ workflows: { nightly: digest } }, { digest, recap }, { warn });
+    // One entry for the def, under the declared key; the file's name is not a
+    // second door to the same run.
+    expect(lowered.workflows).toEqual({ nightly: digest, recap });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]?.[0]).toMatch(
+      /workflows\/digest\.ts default-exports the workflow .* declares as "nightly"/,
+    );
+    // And the def's recorded name is the declared one only.
+    expect(workflowNameOf(digest)).toBe("nightly");
   });
 
   test("a def with nothing declared and nothing discovered is handed back as it was", () => {

@@ -8,12 +8,17 @@ import { expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import type { AgentAccepts } from "./_test-utils.ts";
 import type { ModeAgentDef } from "./agent-params.ts";
-import { type AgentParams, agent, workflowApp } from "./define.ts";
+import { type AgentParams, agent, type EmptyWorkflows, workflowApp } from "./define.ts";
 import type { LlmProvider, S2sProvider } from "./providers.ts";
 import type { StateProjection } from "./session-state.ts";
 import type { AgentDef } from "./types.ts";
 import { type WorkflowDeclaration, workflow } from "./workflow.ts";
-import type { WorkflowOutputOf } from "./workflow-readings.ts";
+import type {
+  WorkflowDefOf,
+  WorkflowNameOf,
+  WorkflowOutputOf,
+  WorkflowsOf,
+} from "./workflow-readings.ts";
 
 /**
  * The workflow-app arm — the fourth, and the only one keyed on the FRONT DOOR
@@ -42,9 +47,11 @@ test("a workflow app accepts only the fields a workflow app has", () => {
     }>
   >().toEqualTypeOf<true>();
 
-  // `workflows` is the product, so an app declaring none is refused — the page
-  // would serve a form whose every submit is a 400.
-  expectTypeOf<AgentAccepts<{ name: string; mode: "workflow-app" }>>().toEqualTypeOf<false>();
+  // `workflows` is the product, and an app may declare all of it as
+  // `workflows/<name>.ts` files the build discovers — so an app naming none
+  // in `agent.ts` is accepted rather than failing `aai build`'s typecheck
+  // while running fine.
+  expectTypeOf<AgentAccepts<{ name: string; mode: "workflow-app" }>>().toEqualTypeOf<true>();
 
   // And nothing answers a phone: a carrier's media stream needs the session a
   // workflow app does not have.
@@ -201,13 +208,53 @@ test("agent() and workflowApp() keep the declared workflows map as declared", ()
   expectTypeOf(voice).toExtend<ModeAgentDef<"pipeline">>();
   const text = agent({ name: "T", mode: "text", workflows: { other } });
   expectTypeOf<keyof (typeof text)["workflows"]>().toEqualTypeOf<"other">();
-  // And a def declaring none is exactly the mode def — nothing widened.
-  expectTypeOf(agent({ name: "P" })).toEqualTypeOf<ModeAgentDef<"pipeline">>();
-  expectTypeOf(agent({ name: "T", mode: "text" })).toEqualTypeOf<ModeAgentDef<"text">>();
+  // And a def declaring none still reads as the mode def, carrying the EMPTY
+  // map rather than the open one: it declares no names (next test).
+  expectTypeOf(agent({ name: "P" })).toExtend<ModeAgentDef<"pipeline">>();
+  expectTypeOf(agent({ name: "T", mode: "text" })).toExtend<ModeAgentDef<"text">>();
+  expectTypeOf<(typeof none)["workflows"]>().toEqualTypeOf<EmptyWorkflows | undefined>();
+  const none = agent({ name: "P" });
   // The open map stays assignable where a reader takes the definition.
   const open: AgentDef = app;
   expectTypeOf(open.workflows).toEqualTypeOf<Workflows | undefined>();
   type Workflows = NonNullable<AgentDef["workflows"]>;
+});
+
+/**
+ * A def that declares no `workflows` declares NO names — the typed readings
+ * the hooks and `runWorkflow` are spelled in answer `never` for it, so
+ * `useWorkflowSubmit<typeof agentDef>("typo")` is refused rather than typed
+ * `string` with an `unknown` output. The failure this pins: `W` defaulted to
+ * the OPEN map, under which `WorkflowNameOf<typeof agentDef>` was `string`.
+ * A `workflows/<name>.ts` the build discovers is not on the def's type and is
+ * reached by the untyped string form (the guide says so).
+ */
+test("a def declaring no workflows declares no names, in every mode", () => {
+  const voice = agent({ name: "V" });
+  const text = agent({ name: "T", mode: "text" });
+  const app = workflowApp({ name: "A" });
+  const explicitApp = agent({ name: "A", mode: "workflow-app" });
+  expectTypeOf<WorkflowsOf<typeof voice>>().toEqualTypeOf<EmptyWorkflows>();
+  expectTypeOf<WorkflowNameOf<typeof voice>>().toEqualTypeOf<never>();
+  expectTypeOf<WorkflowNameOf<typeof text>>().toEqualTypeOf<never>();
+  expectTypeOf<WorkflowNameOf<typeof app>>().toEqualTypeOf<never>();
+  expectTypeOf<WorkflowNameOf<typeof explicitApp>>().toEqualTypeOf<never>();
+  expectTypeOf<WorkflowDefOf<typeof app, "typo">>().toEqualTypeOf<never>();
+  // Told apart from a type that is not an app at all (an output, a def): the
+  // readings answer `never` for the MAP there, which is what lets an untyped
+  // output form (`useWorkflowRuns<R>`) keep taking any string.
+  expectTypeOf<WorkflowsOf<{ title: string }>>().toEqualTypeOf<never>();
+  expectTypeOf<WorkflowsOf<unknown>>().toEqualTypeOf<never>();
+  // An app typed as the OPEN definition keeps every name — a reader holding an
+  // `AgentDef` knows nothing about its keys, and that stays the loose form.
+  const open: AgentDef = app;
+  expectTypeOf<WorkflowNameOf<typeof open>>().toEqualTypeOf<string>();
+  // The runtime value of an undeclared map is absent, which the type says.
+  expectTypeOf(app.workflows).toEqualTypeOf<EmptyWorkflows | undefined>();
+  // And `workflows` stays optional on `workflowApp()` — a discovery-only app.
+  expectTypeOf<
+    undefined extends Parameters<typeof workflowApp>[0]["workflows"] ? true : false
+  >().toEqualTypeOf<true>();
 });
 
 test("a two-phase declaration's def is a workflow an app may declare", () => {

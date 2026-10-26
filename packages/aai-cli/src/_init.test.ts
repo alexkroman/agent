@@ -3,12 +3,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, vi } from "vitest";
-import {
-  CLIENT_ONLY_DEPENDENCIES,
-  patchPackageJsonForWorkspace,
-  runInit,
-  stripClientDependencies,
-} from "./_init.ts";
+import { CLIENT_ONLY_DEPENDENCIES } from "./_client-plugins.ts";
+import { patchPackageJsonForWorkspace, runInit, stripClientDependencies } from "./_init.ts";
 import { test, writeFiles } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 
@@ -297,7 +293,10 @@ describe("stripClientDependencies", () => {
     expect(Object.keys(after.dependencies)).toEqual(["@alexkroman1/aai", "zod"]);
     // `vite` stays: vitest's base, and where the preset's `vite/client` types come from.
     expect(Object.keys(after.devDependencies)).toEqual(["vite", "vitest"]);
-    for (const name of CLIENT_ONLY_DEPENDENCIES) {
+    for (const name of [
+      ...CLIENT_ONLY_DEPENDENCIES.dependencies,
+      ...CLIENT_ONLY_DEPENDENCIES.devDependencies,
+    ]) {
       expect({ ...after.dependencies, ...after.devDependencies }).not.toHaveProperty(name);
     }
   });

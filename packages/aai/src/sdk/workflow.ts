@@ -72,6 +72,7 @@
  * plus an occurrence count — and that nothing checks the replay rule for you.
  */
 
+import { setBrand } from "./_boundary.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 // The zod-free half of schema acceptance, and the only half this module may
 // name: `sdk/schema.ts` imports zod for JSON Schema conversion, and everything
@@ -572,7 +573,19 @@ export function workflow<P extends ToolInputSchema = ToolInputSchema>(
 export function workflow(def: Partial<WorkflowDef>): WorkflowDef | WorkflowDeclaration {
   // `Partial` is the one shape every overload's parameter is assignable to;
   // which overload applied was decided by the presence of `run`.
-  if (def.run !== undefined) return def as WorkflowDef;
+  if (def.run !== undefined) return brandWorkflowDef(def as WorkflowDef);
   const declared = def as Omit<WorkflowDef, "run">;
-  return { ...declared, body: (run) => ({ ...declared, run }) };
+  return { ...declared, body: (run) => brandWorkflowDef({ ...declared, run }) };
+}
+
+/**
+ * Mark `def` as one this factory made. The object is still the author's (an
+ * identity function, as documented), and the mark is non-enumerable so a
+ * spread, a snapshot or `toEqual` never sees it; `isWorkflowDef` in
+ * `_module-registry.ts` reads it across the bundle/runtime boundary, which is
+ * why it is a registered brand and not a `WeakSet` (see `_boundary.ts`).
+ */
+function brandWorkflowDef<D extends WorkflowDef>(def: D): D {
+  setBrand(def, "workflowDef", true);
+  return def;
 }

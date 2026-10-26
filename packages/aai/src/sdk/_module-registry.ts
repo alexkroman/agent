@@ -8,15 +8,20 @@
  * directory scan knew `.test`/`.test-d` and not `.spec`. A spec that one
  * reader skipped and another registered is a tool named `echo.test` in front
  * of the model, or a workflow a build lists and a spec cannot find. The
- * extension set, the spec suffixes, the name a path declares, and the
- * structural "is a workflow def" test are therefore declared ONCE here.
+ * extension set, the spec suffixes, the name a path declares, and the "is a
+ * workflow def" test are therefore declared ONCE here — and the two directory
+ * SCANS (the CLI's generated worker entry, `virtual:aai/agent`) share
+ * {@link isRegistryModuleFile}, so a spec sees exactly the files a build ships:
+ * a `tools/echo.mts` the build deployed was invisible to `virtual:aai/agent`,
+ * which read `.ts` only.
  *
  * Internal (`_`-prefixed): the registries and `host/testing-vite.ts` read it;
- * nothing outside this package may.
+ * the CLI reaches {@link isRegistryModuleFile} through `/internal`.
  *
  * @module _module-registry
  */
 
+import { readBrand } from "./_boundary.ts";
 import { isRecord } from "./is-record.ts";
 import type { WorkflowDef } from "./workflow.ts";
 
@@ -30,6 +35,19 @@ export const MODULE_EXT_RE: RegExp = /\.(?:m?[jt]s|tsx)$/;
  * of the three. Tested against the name with {@link MODULE_EXT_RE} stripped.
  */
 export const SPEC_RE: RegExp = /\.(?:test|spec|test-d)$/;
+
+/**
+ * Whether a file of a registry directory is a MODULE of it — one of the
+ * extensions, and not a co-located spec or type test. The one rule both
+ * directory scans apply, to a path or a bare file name, so the CLI's build and
+ * `virtual:aai/agent` enumerate the same set; both read the directory
+ * recursively, and a nested file is then refused by the registry that owns
+ * the name rule (a tool by its name, a workflow DEF by its nesting) rather
+ * than skipped by one reader and shipped by the other.
+ */
+export function isRegistryModuleFile(name: string): boolean {
+  return MODULE_EXT_RE.test(name) && !SPEC_RE.test(name.replace(MODULE_EXT_RE, ""));
+}
 
 /** The directories that are registries. */
 export type RegistryDir = "tools" | "workflows";
@@ -49,10 +67,16 @@ export function moduleNameOf(path: string, dir: RegistryDir): { name: string; ne
 }
 
 /**
- * A workflow def as recognized at RUNTIME — structural, because `workflow()`
- * returns its argument and there is no brand to read. `run` is the one member
- * every def has, and no overrides bag or helper module has one.
+ * A workflow def as recognized at RUNTIME: one `workflow()` (or a
+ * declaration's `.body()`) answered, read by the brand it set (`_boundary.ts`,
+ * so a def the bundle's SDK copy made is recognized by the host's), and
+ * carrying the `run` every def has. Structural acceptance was dropped on
+ * purpose: a plain `{ description, run }` helper default-exported from
+ * `workflows/` registered as a workflow with no input schema and no
+ * validation, and ran.
  */
 export function isWorkflowDef(value: unknown): value is WorkflowDef {
-  return isRecord(value) && typeof value.run === "function";
+  return (
+    isRecord(value) && typeof value.run === "function" && readBrand(value, "workflowDef") === true
+  );
 }

@@ -79,7 +79,7 @@ import { mapConcurrent } from "./map-concurrent.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import type { InferSchemaOutput } from "./schema.ts";
 import type { StepGenerateOptions } from "./step-generate.ts";
-import type { WorkflowDef } from "./workflow.ts";
+import { type WorkflowDef, workflow } from "./workflow.ts";
 import type { WorkflowContext } from "./workflow-ctx.ts";
 import type { WorkflowFailureHook } from "./workflow-failure.ts";
 import type { WorkflowRunSnapshot } from "./workflow-run.ts";
@@ -199,7 +199,10 @@ export function deepResearchWorkflow<P extends DeepResearchInputSchema, R = Deep
     }
   }
 
-  return {
+  // Through `workflow()`, not a bare literal: the registry recognizes a def by
+  // the brand that factory sets, so a `workflows/research.ts` default-exporting
+  // this is discovered like any other def.
+  return workflow<P, R>({
     ...omitUndefined({
       description: options.description,
       onFailure: engineFailure,
@@ -208,7 +211,7 @@ export function deepResearchWorkflow<P extends DeepResearchInputSchema, R = Deep
     }),
     input: options.input,
     run,
-  };
+  });
 }
 
 /** The options a stage reads, with every default filled. Exported for this module's spec. */

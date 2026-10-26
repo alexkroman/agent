@@ -12,7 +12,7 @@
  * the fixture silently stops resembling what a tool will actually be handed.
  */
 
-import { isWorkflowDef } from "./_module-registry.ts";
+import { isRecord } from "./is-record.ts";
 import { omitUndefined } from "./omit-undefined.ts";
 import type { AnyWorkflowDef, WorkflowClient } from "./workflow.ts";
 import { workflowNameOf } from "./workflow-names.ts";
@@ -118,8 +118,13 @@ export function createRunSnapshot<R = unknown>(
   second?: RunSnapshotOverrides<R>,
 ): WorkflowRunSnapshot<R> {
   // A def is told from an overrides bag by its `run`: no snapshot field is a
-  // function, and every workflow def has one.
-  const def = isWorkflowDef(first) ? (first as AnyWorkflowDef<R>) : undefined;
+  // function, and every workflow def has one. Structural on purpose, unlike
+  // the registry's `isWorkflowDef`: a fixture def typed `WorkflowDef` by hand
+  // is a def here, where the question is only "which argument is which".
+  const def =
+    isRecord(first) && typeof (first as { run?: unknown }).run === "function"
+      ? (first as AnyWorkflowDef<R>)
+      : undefined;
   const overrides: RunSnapshotOverrides<R> =
     def !== undefined ? (second ?? {}) : ((first ?? {}) as RunSnapshotOverrides<R>);
   const base: WorkflowRunBase = {

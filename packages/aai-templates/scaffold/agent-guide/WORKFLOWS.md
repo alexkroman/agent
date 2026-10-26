@@ -59,13 +59,16 @@ abandons. There is no `ctx.db` at all — see "Persisting data" in `TOOLS.md`.
 
 **`workflows/<name>.ts` default-exporting a `workflow()` def is registered as
 `<name>`**, the way a `tools/` file is a tool: a voice agent lists nothing on
-`agent()`, a `workflowApp()` imports the def into its `workflows` map (the field
-is required there — the workflows ARE the product), and a tool imports
-`../workflows/digest.ts` directly to start it. A file there with no default def
-— `prompts.ts`, `media.ts` — is a helper and is skipped; an explicit
-`agent({ workflows })` entry wins a clash, with a warning. The declaration
-carries the schema, the body is an ordinary exported async function of its input
-and a `WorkflowContext`, and durability is a method call:
+`agent()`, a `workflowApp()` may list nothing either (`workflows` is optional —
+the files ARE the product) or import the def into its `workflows` map to give
+the page a typed name (below), and a tool imports `../workflows/digest.ts`
+directly to start it. A file there with no default def — `prompts.ts`,
+`media.ts` — is a helper and is skipped (a plain `{ description, run }` object
+is a helper too: only `workflow()` makes a def); an explicit
+`agent({ workflows })` entry wins a clash, with a warning, and the same def
+declared under another name registers once, as declared. The declaration carries
+the schema, the body is an ordinary exported async function of its input and a
+`WorkflowContext`, and durability is a method call:
 
 ```ts
 import { type WorkflowContext, type WorkflowInputOf, workflow } from "@alexkroman1/aai";
@@ -830,8 +833,12 @@ import "@alexkroman1/aai-ui/styles.css";
 import type agentDef from "./agent.ts";
 
 export function App() {
-  // Typed by the APP: "digest" is checked against what agent.ts declares, the
-  // input against its schema, and `run.output` by its output schema.
+  // Typed by the APP: "digest" is checked against what agent.ts DECLARES in
+  // `workflows`, the input against its schema, and `run.output` by its output
+  // schema. A def that declares none refuses every name here; a workflow the
+  // build discovered from `workflows/<name>.ts` is not on the def's type, so
+  // reach it by the untyped form — `useWorkflowSubmit("digest")` — or declare
+  // it in `workflows` to type the page.
   const submission = useWorkflowSubmit<typeof agentDef>("digest");
   const { run, pending, submit } = submission;
 

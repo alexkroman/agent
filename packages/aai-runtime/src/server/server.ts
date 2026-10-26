@@ -227,7 +227,10 @@ export function createServerForRuntimeWithSeams(
       200,
       buildClientConfig({
         name,
-        greeting: options.greeting,
+        // A greeting is the first thing a VOICE session says; a static page
+        // opens no session, so one would only mislead the shell that reads it
+        // (a workflow app carried the framework's "I'm an AI voice assistant").
+        greeting: isStatic ? undefined : options.greeting,
         page: isStatic ? "static" : "voice",
         tools: options.tools,
       }),

@@ -28,7 +28,12 @@ import type { WorkflowOutputOf } from "@alexkroman1/aai/workflow-api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useWorkflowApiRef } from "./_workflow-api-ref.ts";
 import type { WorkflowApi, WorkflowRun } from "./workflow-client.ts";
-import type { WorkflowAppLike, WorkflowDefOf, WorkflowNameOf } from "./workflow-def-types.ts";
+import type {
+  WorkflowAppLike,
+  WorkflowDefOf,
+  WorkflowNameOf,
+  WorkflowsOf,
+} from "./workflow-def-types.ts";
 
 /**
  * Options for {@link useWorkflowRuns}.
@@ -110,8 +115,10 @@ export function useWorkflowRuns<R = unknown>(
   // it does not declare is refused there rather than accepted here as a
   // string. The submit hooks get the same refusal from `D extends
   // AnyWorkflowDef`; `R` is an open output type, so it is read off the type
-  // argument instead: an app has names, an output has none.
-  workflow: [WorkflowNameOf<R>] extends [never] ? string | undefined : never,
+  // argument instead: an app has a workflows MAP, an output has none. The
+  // map, not the names: an app declaring no workflows has an empty map and
+  // no names, and must still be refused here rather than typed `string`.
+  workflow: [WorkflowsOf<R>] extends [never] ? string | undefined : never,
   options?: UseWorkflowRunsOptions,
 ): UseWorkflowRunsResult<R>;
 export function useWorkflowRuns<R = unknown>(
