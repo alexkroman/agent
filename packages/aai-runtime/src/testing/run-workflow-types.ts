@@ -340,6 +340,13 @@ export type RunWorkflowOptions = {
    *
    * Pass a previous run's `journal` (or a
    * `createMemoryJournal()` of your own) to start two runs in the same world.
+   *
+   * **Two LIVE runs of one workflow in one world need distinct `key`s.** A
+   * signal token is derived from the workflow, the key and the label, so two
+   * parked runs under one key hold the same tokens and a `signalRun()` meant
+   * for one reaches the other. Both default to `"test"`, so the driver REFUSES
+   * a second run under a key that still has a live run of the same workflow in
+   * the journal handed in — pass `key` on the second, or let the first settle.
    */
   journal?: WorkflowJournal;
   /** Where the engine logs. Defaults to silence. */

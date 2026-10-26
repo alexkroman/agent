@@ -99,6 +99,12 @@ const STUB_API_KEY = "sk-aai-stub";
  * `beforeEach` exists for this line alone. Seeded only when ABSENT, so a spec
  * that set its own value (to assert the `Bearer` header, say) keeps it.
  *
+ * `false` ENSURES there is none: it is passed by the one spec whose subject is
+ * the missing-key refusal, and "seed nothing" left that spec green on CI and
+ * red on any machine whose shell exports the key — the normal state of someone
+ * running `aai dev`. So the shell's value is stubbed away for the test, and put
+ * back with the rest.
+ *
  * Restored explicitly, not only by `unstubEnvs`: a project on
  * `defineAgentTestConfig` has that set, but a hand-written config may not, and
  * a key left seeded would outlive the test that asked for it. `vi.stubEnv` with
@@ -106,12 +112,16 @@ const STUB_API_KEY = "sk-aai-stub";
  * `delete process.env.X`.
  */
 function seedApiKey(apiKey: string | false | undefined): void {
-  if (apiKey === false) return;
   const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process
     ?.env;
   const previous = env?.[API_KEY_ENV];
-  if (apiKey === undefined && previous !== undefined && previous !== "") return;
-  vi.stubEnv(API_KEY_ENV, apiKey ?? STUB_API_KEY);
+  if (apiKey === false) {
+    if (previous === undefined) return;
+    vi.stubEnv(API_KEY_ENV, undefined);
+  } else {
+    if (apiKey === undefined && previous !== undefined && previous !== "") return;
+    vi.stubEnv(API_KEY_ENV, apiKey ?? STUB_API_KEY);
+  }
   onTestFinished(() => {
     vi.stubEnv(API_KEY_ENV, previous);
   });
@@ -127,8 +137,9 @@ export type InstallStubGatewayOptions = StubGatewayOptions & {
   /**
    * The `ASSEMBLYAI_API_KEY` to seed for this test, when the process holds
    * none — see {@link installStubWorld}. Defaults to a recognizable stub
-   * value; `false` seeds nothing, for the one spec whose subject IS the
-   * missing-key refusal.
+   * value; `false` ENSURES there is none for the test (a key the shell exports
+   * is stubbed away and put back afterwards), for the one spec whose subject
+   * IS the missing-key refusal.
    */
   apiKey?: string | false | undefined;
 };
@@ -153,8 +164,8 @@ export type InstallStubGatewayOptions = StubGatewayOptions & {
  *
  * **It also seeds `ASSEMBLYAI_API_KEY`** for the test when the process holds
  * none, since `stepGenerate` refuses by name without one and the fake never
- * reads it — `apiKey: false` opts out. The seed is put back when the test
- * finishes.
+ * reads it — `apiKey: false` ensures there is NONE, whatever the shell exports.
+ * Either way the previous value is put back when the test finishes.
  *
  * @param replies - Completion contents, in order; the last repeats — see
  *   `stubGateway` in `@alexkroman1/aai/testing`, which this installs.
@@ -506,15 +517,18 @@ export type StubWorldOptions = {
     | undefined;
   /**
    * The `ASSEMBLYAI_API_KEY` to seed for this test, when the process holds
-   * none. Defaults to a recognizable stub value; `false` seeds nothing.
+   * none. Defaults to a recognizable stub value; `false` ensures there is
+   * none for the test, whatever the shell exports.
    */
   readonly apiKey?: string | false | undefined;
   /**
    * Publish the recording reporter (`installStubReporter`). Defaults to
    * publishing one only when NO reporter is published yet — inside
    * `describeEval` the harness's reporter is what `run.reported` reads, and a
-   * stub published over it emptied that log. `false` never publishes one;
-   * `true` always does.
+   * stub published over it emptied that log — or when the one published is an
+   * EARLIER world's, which this one replaces like every other leg (its
+   * `reported` then records; the earlier world's stops). `false` never
+   * publishes one; `true` always does.
    */
   readonly reporter?: boolean | undefined;
 };
@@ -561,15 +575,17 @@ export type StubWorld = {
  * template carries a paragraph warning about exactly this. Here the order is
  * fixed, and a spec names only the legs it has.
  *
- * It also seeds `ASSEMBLYAI_API_KEY` (unless `apiKey: false`), because
- * `stepGenerate` refuses by name without one and the fake never reads it; the
- * previous value is put back when the test finishes. `stubGatewayRoute` itself
+ * It also seeds `ASSEMBLYAI_API_KEY` (`apiKey: false` ensures there is none
+ * instead), because `stepGenerate` refuses by name without one and the fake
+ * never reads it; the previous value is put back when the test finishes. `stubGatewayRoute` itself
  * cannot seed anything — it installs nothing and owns no lifetime — so the
  * seeding lives with the installers.
  *
  * `installStubReporter` is installed too, so what the steps narrated is on
  * `reported` without a second call — unless a reporter is already published
- * (an eval's), which is left in place: `reporter` decides.
+ * (an eval's), which is left in place: `reporter` decides. A SECOND world in
+ * one test replaces the first's reporter along with its other legs, so the
+ * world a spec holds last is the one whose `reported` records.
  *
  * @example
  * ```ts
@@ -639,11 +655,30 @@ export function installStubWorld(options: StubWorldOptions = {}): StubWorld {
     provider: provider?.calls ?? [],
     speech: speech?.calls ?? [],
     files,
-    reported:
-      (options.reporter ?? !hasStepReporter())
-        ? installStubReporter()
-        : { lines: [], emitted: [], restore: () => undefined },
+    reported: worldReporter(options.reporter),
   };
+}
+
+/**
+ * Whether the reporter now published is a stub world's — set by the world that
+ * published it, cleared when that test finishes (every world's restore runs
+ * then). `hasStepReporter()` alone could not tell a harness's reporter, which a
+ * second world must leave alone, from a first world's, which it must REPLACE:
+ * two worlds in one test left the second's `reported` inert, recording into the
+ * first's, while every other leg of the second world took over as documented.
+ */
+let worldReporterPublished = false;
+
+/** The world's `reported` leg: a recorder, or an inert log when one is not wanted. */
+function worldReporter(reporter: boolean | undefined): StubReporter {
+  const publish = reporter ?? (!hasStepReporter() || worldReporterPublished);
+  if (!publish) return { lines: [], emitted: [], restore: () => undefined };
+  const reported = installStubReporter();
+  worldReporterPublished = true;
+  onTestFinished(() => {
+    worldReporterPublished = false;
+  });
+  return reported;
 }
 
 /**
@@ -732,11 +767,21 @@ export function describeAgent<
  * throws at BIND for that shape, and here the bind is the suite's, where a
  * throw would also take the deployable case with it; a tool-less agent still
  * has a config worth checking.
+ *
+ * The refusal is re-addressed to THIS helper: the author called
+ * `describeAgent`, never `toolRunner`, and a sentence naming a function that
+ * appears nowhere in their file sends them looking for it.
  */
 function runnerFor(agent: ToolBearingAgent): ToolRunner {
   try {
     return toolRunner(agent);
   } catch (err) {
-    return (() => Promise.reject(err)) as ToolRunner;
+    const addressed =
+      err instanceof Error
+        ? new Error(err.message.replace(/^toolRunner\(agent\)/, "describeAgent(agent, …)"), {
+            cause: err,
+          })
+        : err;
+    return (() => Promise.reject(addressed)) as ToolRunner;
   }
 }

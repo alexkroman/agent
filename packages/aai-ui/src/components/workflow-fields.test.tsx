@@ -118,6 +118,81 @@ describe("WorkflowFields", () => {
     expect(document.querySelector("input[name=note]")).toHaveAttribute("type", "text");
   });
 
+  test("renders a REQUIRED nullable enum as a dropdown, so the form can submit at all", () => {
+    // `z.enum([…]).nullable()` converts to an `anyOf` (pinned against zod in
+    // `aai-runtime`'s `client.test.ts`), and nullable is not optional: the
+    // property is REQUIRED, so a form that skipped it was refused on every
+    // submission.
+    renderFields({
+      type: "object",
+      properties: {
+        tone: { anyOf: [{ type: "string", enum: ["formal", "casual"] }, { type: "null" }] },
+        mood: {
+          anyOf: [
+            { type: "string", const: "p" },
+            { type: "string", const: "q" },
+          ],
+        },
+      },
+      required: ["tone", "mood"],
+    });
+    const tone = document.querySelector("select[name=tone]");
+    expect(tone).toBeRequired();
+    expect(Array.from(tone?.querySelectorAll("option") ?? [], (o) => o.value)).toEqual([
+      "formal",
+      "casual",
+    ]);
+    // A union of literals is the same closed set under another spelling.
+    expect(
+      Array.from(
+        document.querySelectorAll<HTMLOptionElement>("select[name=mood] option"),
+        (o) => o.value,
+      ),
+    ).toEqual(["p", "q"]);
+  });
+
+  test("a numeric choice set submits a NUMBER, which is what the schema declared", async () => {
+    // `z.literal([1, 2])` is `{ type: "number", enum: [1, 2] }`; a `<select>` can
+    // only hold strings, and `"1"` against it was a refused submission.
+    const onSubmit = vi.fn();
+    render(
+      <ThemeProvider>
+        <Form onSubmit={onSubmit}>
+          <WorkflowFields
+            workflow={{
+              name: "rank",
+              inputSchema: {
+                type: "object",
+                properties: {
+                  stars: { type: "number", enum: [1, 2], default: 2 },
+                  lang: { type: "string", enum: ["en", "fr"] },
+                },
+              },
+            }}
+          />
+          <SubmitButton>Rank</SubmitButton>
+        </Form>
+      </ThemeProvider>,
+    );
+    expect(document.querySelector("select[name=stars]")).toHaveAttribute(
+      "data-aai-value",
+      "number",
+    );
+    expect(document.querySelector("select[name=lang]")).not.toHaveAttribute("data-aai-value");
+    fireEvent.click(screen.getByRole("button", { name: "Rank" }));
+    await vi.waitFor(() => expect(onSubmit).toHaveBeenCalledWith({ stars: 2, lang: "en" }));
+  });
+
+  test("skips a boolean or null property schema rather than crashing on it", () => {
+    // Legal JSON Schema from a library other than zod (`true` is "anything");
+    // reading `.description` off `null` used to throw and take the page down.
+    renderFields({
+      type: "object",
+      properties: { a: true, b: null, c: 5, requestedBy: { type: "string" } },
+    });
+    expect(fieldNames()).toEqual(["requestedBy"]);
+  });
+
   test("skips a property with no honest default control", () => {
     // An object or an array has no obvious control, and a guess that submits a
     // value the schema rejects is worse than no field — the page writes that
@@ -312,10 +387,13 @@ describe("WorkflowFields resolving by name", () => {
     expect(document.querySelector("[name=recording]")?.hasAttribute("required")).toBe(true);
   });
 
-  test("renders nothing for a name the agent does not declare", async () => {
+  test("renders nothing for a name the agent does not declare, and SAYS so once", async () => {
     // A typo'd name is a form with no fields rather than a crash — and the
     // submit it sits beside answers with the agent's own 400 naming the
-    // workflows that do exist.
+    // workflows that do exist. But the empty form submits `{}` with nothing
+    // naming the typo, and the string form is the one the compiler cannot
+    // check, so the console names it and lists what IS declared.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     stubListing([{ name: "transcribe", inputSchema: { type: "object", properties: {} } }]);
     render(
       <ThemeProvider>
@@ -324,6 +402,29 @@ describe("WorkflowFields resolving by name", () => {
         </form>
       </ThemeProvider>,
     );
-    await vi.waitFor(() => expect(fieldNames()).toEqual([]));
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledTimes(1));
+    expect(fieldNames()).toEqual([]);
+    expect(warn.mock.calls[0]?.[0]).toMatch(/workflow="transcirbe".*no workflow.*\(transcribe\)/);
+    warn.mockRestore();
+  });
+
+  test("a name the listing DOES hold is not warned about", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    stubListing([
+      {
+        name: "transcribe",
+        inputSchema: { type: "object", properties: { a: { type: "string" } } },
+      },
+    ]);
+    render(
+      <ThemeProvider>
+        <form>
+          <WorkflowFields workflow="transcribe" />
+        </form>
+      </ThemeProvider>,
+    );
+    await vi.waitFor(() => expect(fieldNames()).toEqual(["a"]));
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

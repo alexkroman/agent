@@ -78,10 +78,23 @@ function valueShape(raw: string | undefined): FileValueShape {
  * for a list. `selectedOptions` is the whole of what the user picked; nothing
  * selected contributes `[]`, which is the honest answer for a control that is
  * present and empty rather than one that was left blank.
+ *
+ * `data-aai-value="number"` (set by `<WorkflowFields>` for a numeric choice
+ * set) reads each chosen option back as a NUMBER: an `<option>` can only hold a
+ * string, and `"1"` against `z.literal([1, 2])` is a refused submission. An
+ * option that is not numeric stays a string, as a number input's does.
  */
-function readSelect(select: HTMLSelectElement): string | string[] {
-  if (!select.multiple) return select.value;
-  return Array.from(select.selectedOptions, (option) => option.value);
+function readSelect(select: HTMLSelectElement): unknown {
+  const read = select.dataset.aaiValue === "number" ? asNumber : (value: string) => value;
+  if (!select.multiple) return read(select.value);
+  return Array.from(select.selectedOptions, (option) => read(option.value));
+}
+
+/** The option's value as a number where it is one — `""` and prose stay strings. */
+function asNumber(value: string): number | string {
+  if (value.trim() === "") return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : value;
 }
 
 /** One `<input>`, by type. */

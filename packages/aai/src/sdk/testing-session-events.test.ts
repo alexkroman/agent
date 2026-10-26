@@ -174,4 +174,25 @@ describe("fireEvent", () => {
       'the agent "Mute" declares no `events` and no `dialogs`',
     );
   });
+
+  test("an EMPTY `events: {}` is refused in the same words — a deleted last handler is not a green spec", async () => {
+    // `events: {}` used to answer `{ typed: false, wildcard: false, dialogs: [] }`
+    // and pass, which is the exact case the refusal exists for.
+    const event: SessionEvent = sessionEvent("reply.completed");
+    await expect(fireEvent(agent({ name: "Mute", events: {} }), event)).rejects.toThrow(
+      'the agent "Mute" declares no `events` and no `dialogs`',
+    );
+  });
+
+  test("an event that is not a session event is a TypeError naming the argument and `sessionEvent`", async () => {
+    const def = agent({ name: "E", events: { "*": () => undefined } });
+    const bad = (value: unknown) => fireEvent(def, value as SessionEvent);
+    // A raw "cannot read 'type' of null" was the answer before.
+    await expect(bad(null)).rejects.toThrow(TypeError);
+    await expect(bad(null)).rejects.toThrow(
+      /fireEvent\(agent, event\): `event` must be a session event; got null.*sessionEvent\("<type>", fields\)/,
+    );
+    await expect(bad({})).rejects.toThrow(/got an object with no type/);
+    await expect(bad({ type: 42 })).rejects.toThrow(/got an object whose type is number/);
+  });
 });

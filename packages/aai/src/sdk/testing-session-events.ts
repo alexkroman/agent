@@ -23,6 +23,7 @@
 
 import { createToolContext } from "./_testing-context.ts";
 import type { AnyDialog } from "./dialog-handle.ts";
+import { isRecord } from "./is-record.ts";
 import type { SessionEventMeta } from "./protocol-event-meta.ts";
 import type { SessionEvent, SessionEventMap, SessionEventType } from "./session-event-map.ts";
 import type {
@@ -149,9 +150,11 @@ export type FiredEvent = {
  * `ctx.said`. Defaults to a fresh one, i.e. a DISTINCT session; pass one
  * explicitly wherever a second event is meant to see the first's writes.
  *
- * @throws When the agent declares neither `events` nor `dialogs` — there is
- *   nothing to drive, and a spec that fired into nothing would pass against
- *   nothing.
+ * @throws When the agent declares no `events` handler and no `dialogs` — an
+ *   absent `events` or an empty `{}` alike — since there is nothing to drive,
+ *   and a spec that fired into nothing would pass against nothing. A
+ *   `TypeError` when `event` is not a session event (built by
+ *   {@link sessionEvent}).
  *
  * @example
  * ```ts
@@ -186,9 +189,21 @@ export async function fireEvent(
   event: SessionEvent,
   ctx: SessionEventContext = createToolContext(),
 ): Promise<FiredEvent> {
+  // Shape before dispatch: a `null` here used to surface as a raw TypeError on
+  // `.type`, and `{}` reached the `"*"` handler as an event of type undefined.
+  if (!isRecord(event) || typeof event.type !== "string") {
+    throw new TypeError(
+      "fireEvent(agent, event): `event` must be a session event; got " +
+        `${describeEventArg(event)}. Build one with sessionEvent("<type>", fields) ` +
+        "from @alexkroman1/aai/testing.",
+    );
+  }
   const handlers = agent.events;
   const declared = agent.dialogs ?? [];
-  if (handlers === undefined && declared.length === 0) {
+  // An EMPTY `events: {}` is as much "nothing to drive" as an absent one: an
+  // author who deletes their last handler must not keep a green spec.
+  const handlerCount = handlers === undefined ? 0 : Object.keys(handlers).length;
+  if (handlerCount === 0 && declared.length === 0) {
     throw new Error(
       `fireEvent: the agent${agent.name ? ` "${agent.name}"` : ""} declares no \`events\` and no ` +
         `\`dialogs\`, so there is nothing to drive with "${event.type}". Declare a handler with ` +
@@ -212,4 +227,13 @@ export async function fireEvent(
   if (typed) await typed(event, ctx);
   if (wildcard) await wildcard(event, ctx);
   return { typed: typed !== undefined, wildcard: wildcard !== undefined, dialogs };
+}
+
+/** What was passed as the event, for the refusal — its kind, never its contents. */
+function describeEventArg(value: unknown): string {
+  if (value === null) return "null";
+  if (!isRecord(value)) return typeof value;
+  return "type" in value
+    ? `an object whose type is ${typeof value.type}`
+    : "an object with no type";
 }

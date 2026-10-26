@@ -46,7 +46,9 @@ export function recordToolNames(tools: Readonly<Record<string, ToolDef<ToolInput
  * Only a def a DEPLOYED agent registered has one: import the agent as
  * `virtual:aai/agent` under vitest, or lower it with `deployedAgent`, before
  * reading a tool by its def. A def built inline in a spec has never been a
- * file, so it has no name, and the throw says so.
+ * file, so it has no name, and the throw says so — as it does for a ROSTER
+ * tool (one declared on a persona's `tools`), which is minted under the
+ * speaker rather than discovered from a file and is read by its name string.
  *
  * @throws When `def` was never registered by a deployed agent.
  *
@@ -89,10 +91,13 @@ export function toolNameOf(def: ToolDef<ToolInputSchema>): string {
   if (name === undefined) {
     throw new Error(
       `toolNameOf(def) was handed a tool no deployed agent registered${describeDef(def)}. ` +
-        "A tool's name is its FILE name, recorded when the agent is imported as DEPLOYED — " +
+        "A FILE tool's name is its file name, recorded when the agent is imported as DEPLOYED — " +
         "import it as `virtual:aai/agent` under vitest, or lower it with `deployedAgent` from " +
-        "@alexkroman1/aai/testing, before reading a tool by its def. A def built inline in a " +
-        "spec has no name; call its `execute` directly, or name the tool by its string.",
+        "@alexkroman1/aai/testing, before reading it by its def. A tool declared on a " +
+        "persona's `tools` (a roster) is minted under the speaker, not from a file, and has " +
+        "no recorded name: read it by its NAME string instead, e.g. " +
+        'toolResultIn(calls, "lookup_invoice"). A def built inline in a spec has no name ' +
+        "either; call its `execute` directly, or name the tool by its string.",
     );
   }
   return name;

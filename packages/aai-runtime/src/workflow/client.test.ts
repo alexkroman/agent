@@ -600,6 +600,40 @@ describe("listing declared workflows", () => {
     });
   });
 
+  test("serves the three shapes `<WorkflowFields>` reads for a nullable enum, a literal union and a numeric set", () => {
+    // Pinned against the real converter, because `aai-ui` has no zod to call:
+    // its `workflow-field-kind.test.ts` reads these three literals back. A
+    // REQUIRED nullable enum is an `anyOf` (where a bare nullable string is the
+    // type LIST), a union of literals is an `anyOf` of `const`s, and a numeric
+    // literal set is a numeric `enum` — each used to reach the form as no
+    // control, or as a `"1"` the schema then refused.
+    const choosy = workflow({
+      input: z.object({
+        tone: z.enum(["x", "y"]).nullable(),
+        mood: z.union([z.literal("p"), z.literal("q")]),
+        stars: z.literal([1, 2]),
+        note: z.string().nullable(),
+      }),
+      run: body(),
+    });
+    const { client } = makeClient({ workflows: { choosy } });
+    const [summary] = client.listing();
+    expect(summary?.inputSchema).toMatchObject({
+      properties: {
+        tone: { anyOf: [{ type: "string", enum: ["x", "y"] }, { type: "null" }] },
+        mood: {
+          anyOf: [
+            { type: "string", const: "p" },
+            { type: "string", const: "q" },
+          ],
+        },
+        stars: { type: "number", enum: [1, 2] },
+        note: { type: ["string", "null"] },
+      },
+      required: ["tone", "mood", "stars", "note"],
+    });
+  });
+
   test("omits the schema for a workflow that declares none", () => {
     const { client } = makeClient();
     const bareSummary = client.listing().find((w) => w.name === "bare");

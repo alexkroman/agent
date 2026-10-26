@@ -497,6 +497,32 @@ describe("the driver's own limits", () => {
     ).rejects.toThrow(/took 3 deliveries without settling/);
   });
 
+  test("REFUSES a second LIVE run of one workflow under one key in a shared world, naming the key", async () => {
+    // Signal tokens are (workflow, key, label): two parked runs under the
+    // default key held the same ones, so the second's body failed at its first
+    // wait and its `signalRun` woke the FIRST run. The driver refuses at the
+    // call that would start the twin.
+    const approve = workflow({
+      description: "approve",
+      run: async (_input: Record<string, unknown>, ctx: WorkflowContext) =>
+        ctx.waitForSignal("first"),
+    });
+    const a = await runWorkflow(approve, {}, { name: "approve" });
+    expect(a.status).not.toBe("completed");
+    await expect(runWorkflow(approve, {}, { name: "approve", journal: a.journal })).rejects.toThrow(
+      /run \S+ of "approve" is still live in this journal under the key "test".*key: "<another>"/,
+    );
+    // Its own key is the fix, and each run's signal then reaches its own body.
+    const b = await runWorkflow(approve, {}, { name: "approve", journal: a.journal, key: "b" });
+    await b.signalRun("first", "for-b");
+    expect(b.status).toBe("completed");
+    expect(a.status).not.toBe("completed");
+    await a.signalRun("first", "for-a");
+    expect(a.output).toBe("for-a");
+    await a.close();
+    await b.close();
+  });
+
   test("shares a journal, so a second run reads the world the first left", async () => {
     const journal = createMemoryJournal();
     const counter = workflow({

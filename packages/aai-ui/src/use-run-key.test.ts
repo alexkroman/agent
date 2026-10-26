@@ -23,7 +23,7 @@
 
 import { renderHook } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
-import { useRunKey } from "./use-run-key.ts";
+import { useDefaultRunKey, useRunKey } from "./use-run-key.ts";
 
 /** The bound `POST /workflows/runs` puts on a correlation key. */
 const MAX_KEY_LENGTH = 256;
@@ -162,5 +162,39 @@ describe("useRunKey", () => {
         "tab-scoped",
       );
     });
+  });
+});
+
+/**
+ * The hook's own default — what `useWorkflowSubmit` reads when the page named
+ * no key, and the one place a page-supplied key passes through.
+ */
+describe("useDefaultRunKey", () => {
+  test("answers a page's own key unchanged, and mints nothing for it", () => {
+    const store = fakeStorage("session");
+    const { result } = renderHook(() => useDefaultRunKey("acct_7"));
+    expect(result.current).toBe("acct_7");
+    expect(store.size).toBe(0);
+  });
+
+  test("mints a key when the page named none, and keeps it across re-renders", () => {
+    fakeStorage("session");
+    const { result, rerender } = renderHook(() => useDefaultRunKey(undefined));
+    const first = result.current;
+    expect(first).toMatch(UUID);
+    rerender();
+    expect(result.current).toBe(first);
+  });
+
+  test("REFUSES an empty or whitespace key, naming the line that computes one", () => {
+    // `""` is not "no key": it is one key shared by every visitor whose key
+    // computed to it — `user?.id ?? ""` before the login resolves — and they
+    // would then record and recover each other's runs.
+    fakeStorage("session");
+    for (const empty of ["", "   "]) {
+      expect(() => renderHook(() => useDefaultRunKey(empty))).toThrow(
+        /useWorkflowSubmit\(\{ key \}\) was given .* an empty key[\s\S]*user\?\.id \?\? ""/,
+      );
+    }
   });
 });

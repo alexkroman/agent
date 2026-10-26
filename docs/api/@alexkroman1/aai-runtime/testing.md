@@ -1240,9 +1240,11 @@ readonly [`AnyDialog`](../aai/index.md#anydialog)[]
 
 #### Throws
 
-When the agent declares neither `events` nor `dialogs` — there is
-  nothing to drive, and a spec that fired into nothing would pass against
-  nothing.
+When the agent declares no `events` handler and no `dialogs` — an
+  absent `events` or an empty `{}` alike — since there is nothing to drive,
+  and a spec that fired into nothing would pass against nothing. A
+  `TypeError` when `event` is not a session event (built by
+  [sessionEvent](#sessionevent)).
 
 #### Example
 
@@ -2918,7 +2920,9 @@ discovered from.
 Only a def a DEPLOYED agent registered has one: import the agent as
 `virtual:aai/agent` under vitest, or lower it with `deployedAgent`, before
 reading a tool by its def. A def built inline in a spec has never been a
-file, so it has no name, and the throw says so.
+file, so it has no name, and the throw says so — as it does for a ROSTER
+tool (one declared on a persona's `tools`), which is minted under the
+speaker rather than discovered from a file and is read by its name string.
 
 #### Parameters
 
@@ -4815,6 +4819,13 @@ The journal the run lives in. Defaults to a fresh in-memory one.
 
 Pass a previous run's `journal` (or a
 `createMemoryJournal()` of your own) to start two runs in the same world.
+
+**Two LIVE runs of one workflow in one world need distinct `key`s.** A
+signal token is derived from the workflow, the key and the label, so two
+parked runs under one key hold the same tokens and a `signalRun()` meant
+for one reaches the other. Both default to `"test"`, so the driver REFUSES
+a second run under a key that still has a live run of the same workflow in
+the journal handed in — pass `key` on the second, or let the first settle.
 
 ##### key?
 
