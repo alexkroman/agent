@@ -1,4 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { sleep } from "@alexkroman1/aai/internal";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { HOOK_STARTUP_TIMEOUT_MS, type QuickTunnel } from "./_dev-tunnel.ts";
@@ -224,7 +225,7 @@ describe("executeDev --tunnel / --on-public-url", () => {
         // Hangs until stopped, as a stuck publish script would.
         await new Promise((resolve) => startupSignal?.addEventListener("abort", resolve));
         // Its process group takes a moment to go after the abort (SIGTERM grace).
-        await new Promise((resolve) => setTimeout(resolve, 20));
+        await sleep(20);
         f.events.push("startup-hook.stopped");
         return null;
       });
