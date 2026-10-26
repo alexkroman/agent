@@ -15,6 +15,8 @@
     "packages/aai/src/sdk/metrics-collector.ts": 21,
     "packages/aai/src/sdk/session-event-map.ts": 15,
     "packages/aai/src/sdk/testing-barrel.ts": 122,
+    "packages/aai/src/sdk/testing-tools.ts": 65,
+    "packages/aai/src/sdk/tool-schema.ts": 147,
     "packages/aai/tsdown.config.ts": 21,
     "scripts/_api-contracts.mjs": 6,
     "scripts/_ast-scan.mjs": 7,
@@ -26,7 +28,6 @@
     "scripts/check-untyped-imports.mjs": 6,
     "scripts/dev-server.mjs": 9,
     "scripts/loadtest-stub-agent/stubs.ts": 10,
-    "scripts/with-test-pg.mjs": 9,
-    "packages/aai/src/sdk/testing-tools.ts": 65
+    "scripts/with-test-pg.mjs": 9
   }
 }

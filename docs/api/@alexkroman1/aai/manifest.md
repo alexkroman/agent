@@ -1288,34 +1288,6 @@ that went stale: `state` sat here after `AgentDef.state` was deleted with the
 `ctx.state` bag, denying a key nothing produces and telling every reader the
 bag still exists. An entry here is a claim that `AgentDef` has that field.
 
-***
-
-### ToolSchemaSchema
-
-```ts
-const ToolSchemaSchema: z.ZodObject<{
-  description: z.ZodString;
-  messages: z.ZodOptional<z.ZodObject<{
-     complete: ZodMessageLines<{
-        role: ZodMessageRole;
-     }>;
-     delayed: ZodMessageLines<{
-        afterMs: z.ZodNumber;
-     }>;
-     failed: ZodMessageLines<{
-        role: ZodMessageRole;
-     }>;
-     start: ZodMessageLines<{
-        blocking: z.ZodOptional<z.ZodBoolean>;
-     }>;
-  }, z.core.$strip>>;
-  name: z.ZodString;
-  parameters: z.ZodRecord<z.ZodString, z.ZodUnknown>;
-  type: z.ZodLiteral<"function">;
-  ui: z.ZodOptional<z.ZodType<ToolUi>>;
-}, z.core.$strip>;
-```
-
 ## References
 
 ### ToolCompletionMessage

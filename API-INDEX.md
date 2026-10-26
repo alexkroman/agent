@@ -21,7 +21,7 @@ of it — and want the import.
 - [Agent authoring](#agent-authoring) — 616 names
 - [Browser client](#browser-client) — 207 names
 - [Testing and evals](#testing-and-evals) — 263 names
-- [Hosting and tooling](#hosting-and-tooling) — 251 names
+- [Hosting and tooling](#hosting-and-tooling) — 248 names
 - [Framework internals](#framework-internals) — 514 names
 
 ## Agent authoring
@@ -1169,7 +1169,7 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `ToolModules` | type | `@alexkroman1/aai/manifest` |  | `path → module namespace`, which is what both sources produce: Vite's `import.meta.glob` (eager) and the static import list the CLI generates. |
 | `ToolRegistry` | type | `@alexkroman1/aai/manifest` |  | A checked set of tools, keyed by the name the model calls. |
 | `ToolSchema` | type | `@alexkroman1/aai/manifest` |  | A tool declaration in wire form: name, description, and JSON Schema parameters — the serializable counterpart of `ToolDef`. |
-| `ToolSchemaSchema` | const | `@alexkroman1/aai/manifest` |  |  |
+| `ToolSchemaSchema` | const · `@internal` | `@alexkroman1/aai/manifest` |  |  |
 | `ToolSource` | type | `@alexkroman1/aai/manifest` |  | Where a `Toolset`'s tools come from — for a log line, a collision message, and a spec. |
 | `ToolStartMessage` | type | `@alexkroman1/aai/manifest` (also `@alexkroman1/aai`) |  | Spoken as the tool call BEGINS. |
 | `ToolTable` | interface | `@alexkroman1/aai/manifest` |  | Several toolsets composed into one name → tool lookup. |
@@ -1196,9 +1196,6 @@ What runs an agent rather than what one is written in: the host runtime, the CLI
 | `WorkflowRegistry` | type | `@alexkroman1/aai/manifest` |  | A checked set of workflows, keyed by the name they are started under. |
 | `WorkspaceSnapshot` | type | `@alexkroman1/aai/workspace-files` |  |  |
 | `WorkspaceWalkOptions` | type | `@alexkroman1/aai/workspace-files` |  | Options shared by the walk and the snapshot. |
-| `ZodMessageLines` | type · `@internal` | `@alexkroman1/aai/manifest` |  |  |
-| `ZodMessageRole` | type · `@internal` | `@alexkroman1/aai/manifest` |  |  |
-| `ZodWhenClause` | type · `@internal` | `@alexkroman1/aai/manifest` |  |  |
 | `agentConfigWarnings` | function · `@internal` | `@alexkroman1/aai/manifest` |  |  |
 | `agentToolsToSchemas` | function | `@alexkroman1/aai/manifest` |  |  |
 | `agentToolsets` | function | `@alexkroman1/aai/manifest` |  | Every toolset an agent definition carries, in precedence order: its `tools/` files, then what `agent()` and a host step attached (`toolsets` — the roster, MCP). |

@@ -403,10 +403,10 @@ const HostConfigMessageSchema: z.ZodObject<{
      tools: z.ZodArray<z.ZodObject<{
         description: z.ZodString;
         messages: z.ZodOptional<z.ZodObject<{
-           complete: ZodMessageLines;
-           delayed: ZodMessageLines;
-           failed: ZodMessageLines;
-           start: ZodMessageLines;
+           complete: z.ZodOptional<...>;
+           delayed: z.ZodOptional<...>;
+           failed: z.ZodOptional<...>;
+           start: z.ZodOptional<...>;
         }, z.core.$strip>>;
         name: z.ZodString;
         parameters: z.ZodRecord<z.ZodString, z.ZodUnknown>;
@@ -443,10 +443,10 @@ const HostConfigSchema: z.ZodObject<{
   tools: z.ZodArray<z.ZodObject<{
      description: z.ZodString;
      messages: z.ZodOptional<z.ZodObject<{
-        complete: ZodMessageLines;
-        delayed: ZodMessageLines;
-        failed: ZodMessageLines;
-        start: ZodMessageLines;
+        complete: z.ZodOptional<z.ZodArray<z.ZodObject<..., ...>>>;
+        delayed: z.ZodOptional<z.ZodArray<z.ZodObject<..., ...>>>;
+        failed: z.ZodOptional<z.ZodArray<z.ZodObject<..., ...>>>;
+        start: z.ZodOptional<z.ZodArray<z.ZodObject<..., ...>>>;
      }, z.core.$strip>>;
      name: z.ZodString;
      parameters: z.ZodRecord<z.ZodString, z.ZodUnknown>;

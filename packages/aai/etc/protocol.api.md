@@ -70,18 +70,76 @@ export const HostConfigMessageSchema: z.ZodObject<{
             description: z.ZodString;
             parameters: z.ZodRecord<z.ZodString, z.ZodUnknown>;
             messages: z.ZodOptional<z.ZodObject<{
-                start: ZodMessageLines<    {
-                blocking: z.ZodOptional<z.ZodBoolean>;
-                }>;
-                delayed: ZodMessageLines<    {
-                afterMs: z.ZodNumber;
-                }>;
-                complete: ZodMessageLines<    {
-                role: ZodMessageRole;
-                }>;
-                failed: ZodMessageLines<    {
-                role: ZodMessageRole;
-                }>;
+                start: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    content: z.ZodString;
+                    when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                        arg: z.ZodString;
+                        op: z.ZodOptional<z.ZodEnum<{
+                            eq: "eq";
+                            gt: "gt";
+                            gte: "gte";
+                            lt: "lt";
+                            lte: "lte";
+                            neq: "neq";
+                        }>>;
+                        value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                    }, z.core.$strip>>>;
+                    blocking: z.ZodOptional<z.ZodBoolean>;
+                }, z.core.$strip>>>;
+                delayed: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    content: z.ZodString;
+                    when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                        arg: z.ZodString;
+                        op: z.ZodOptional<z.ZodEnum<{
+                            eq: "eq";
+                            gt: "gt";
+                            gte: "gte";
+                            lt: "lt";
+                            lte: "lte";
+                            neq: "neq";
+                        }>>;
+                        value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                    }, z.core.$strip>>>;
+                    afterMs: z.ZodNumber;
+                }, z.core.$strip>>>;
+                complete: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    content: z.ZodString;
+                    when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                        arg: z.ZodString;
+                        op: z.ZodOptional<z.ZodEnum<{
+                            eq: "eq";
+                            gt: "gt";
+                            gte: "gte";
+                            lt: "lt";
+                            lte: "lte";
+                            neq: "neq";
+                        }>>;
+                        value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                    }, z.core.$strip>>>;
+                    role: z.ZodOptional<z.ZodEnum<{
+                        assistant: "assistant";
+                        system: "system";
+                    }>>;
+                }, z.core.$strip>>>;
+                failed: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    content: z.ZodString;
+                    when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                        arg: z.ZodString;
+                        op: z.ZodOptional<z.ZodEnum<{
+                            eq: "eq";
+                            gt: "gt";
+                            gte: "gte";
+                            lt: "lt";
+                            lte: "lte";
+                            neq: "neq";
+                        }>>;
+                        value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                    }, z.core.$strip>>>;
+                    role: z.ZodOptional<z.ZodEnum<{
+                        assistant: "assistant";
+                        system: "system";
+                    }>>;
+                }, z.core.$strip>>>;
             }, z.core.$strip>>;
             ui: z.ZodOptional<z.ZodType<ToolUi>>;
         }, z.core.$strip>>;
@@ -106,18 +164,76 @@ export const HostConfigSchema: z.ZodObject<{
         description: z.ZodString;
         parameters: z.ZodRecord<z.ZodString, z.ZodUnknown>;
         messages: z.ZodOptional<z.ZodObject<{
-            start: ZodMessageLines<    {
-            blocking: z.ZodOptional<z.ZodBoolean>;
-            }>;
-            delayed: ZodMessageLines<    {
-            afterMs: z.ZodNumber;
-            }>;
-            complete: ZodMessageLines<    {
-            role: ZodMessageRole;
-            }>;
-            failed: ZodMessageLines<    {
-            role: ZodMessageRole;
-            }>;
+            start: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                content: z.ZodString;
+                when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    arg: z.ZodString;
+                    op: z.ZodOptional<z.ZodEnum<{
+                        eq: "eq";
+                        gt: "gt";
+                        gte: "gte";
+                        lt: "lt";
+                        lte: "lte";
+                        neq: "neq";
+                    }>>;
+                    value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                }, z.core.$strip>>>;
+                blocking: z.ZodOptional<z.ZodBoolean>;
+            }, z.core.$strip>>>;
+            delayed: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                content: z.ZodString;
+                when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    arg: z.ZodString;
+                    op: z.ZodOptional<z.ZodEnum<{
+                        eq: "eq";
+                        gt: "gt";
+                        gte: "gte";
+                        lt: "lt";
+                        lte: "lte";
+                        neq: "neq";
+                    }>>;
+                    value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                }, z.core.$strip>>>;
+                afterMs: z.ZodNumber;
+            }, z.core.$strip>>>;
+            complete: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                content: z.ZodString;
+                when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    arg: z.ZodString;
+                    op: z.ZodOptional<z.ZodEnum<{
+                        eq: "eq";
+                        gt: "gt";
+                        gte: "gte";
+                        lt: "lt";
+                        lte: "lte";
+                        neq: "neq";
+                    }>>;
+                    value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                }, z.core.$strip>>>;
+                role: z.ZodOptional<z.ZodEnum<{
+                    assistant: "assistant";
+                    system: "system";
+                }>>;
+            }, z.core.$strip>>>;
+            failed: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                content: z.ZodString;
+                when: z.ZodOptional<z.ZodArray<z.ZodObject<{
+                    arg: z.ZodString;
+                    op: z.ZodOptional<z.ZodEnum<{
+                        eq: "eq";
+                        gt: "gt";
+                        gte: "gte";
+                        lt: "lt";
+                        lte: "lte";
+                        neq: "neq";
+                    }>>;
+                    value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
+                }, z.core.$strip>>>;
+                role: z.ZodOptional<z.ZodEnum<{
+                    assistant: "assistant";
+                    system: "system";
+                }>>;
+            }, z.core.$strip>>>;
         }, z.core.$strip>>;
         ui: z.ZodOptional<z.ZodType<ToolUi>>;
     }, z.core.$strip>>;
@@ -446,32 +562,6 @@ type ToolUi = {
     icon?: string | undefined;
     label?: string | undefined;
 };
-
-// @internal (undocumented)
-type ZodMessageLines<Extra extends z.core.$ZodShape> = z.ZodOptional<z.ZodArray<z.ZodObject<{
-    content: z.ZodString;
-    when: ZodWhenClause;
-} & Extra, z.core.$strip>>>;
-
-// @internal (undocumented)
-type ZodMessageRole = z.ZodOptional<z.ZodEnum<{
-    assistant: "assistant";
-    system: "system";
-}>>;
-
-// @internal (undocumented)
-type ZodWhenClause = z.ZodOptional<z.ZodArray<z.ZodObject<{
-    arg: z.ZodString;
-    op: z.ZodOptional<z.ZodEnum<{
-        eq: "eq";
-        gt: "gt";
-        gte: "gte";
-        lt: "lt";
-        lte: "lte";
-        neq: "neq";
-    }>>;
-    value: z.ZodUnion<readonly [z.ZodString, z.ZodNumber, z.ZodBoolean, z.ZodNull]>;
-}, z.core.$strip>>>;
 
 // (No @packageDocumentation comment for this package)
 
