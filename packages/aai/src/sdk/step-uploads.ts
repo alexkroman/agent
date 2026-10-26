@@ -101,6 +101,7 @@
  */
 
 import { globalSlot } from "./_boundary.ts";
+import { FatalError } from "./step-error-classes.ts";
 import { UPLOAD_TOKEN_RE } from "./upload-constants.ts";
 
 /**
@@ -410,12 +411,22 @@ export function labelUpload(record: UploadRecord): UploadInfo {
   return { ...record, label: record.name.trim() === "" ? record.id : record.name };
 }
 
-/** The refusal for an id naming no upload — the runtime store's sentence, plus the fix. */
-function noUploadMessage(id: string): string {
-  return (
+/**
+ * The refusal for an id naming no upload — the runtime store's sentence, plus
+ * the fix.
+ *
+ * A `FatalError`, because no attempt answers differently: the id is invented,
+ * stale or another agent's, and the engine retrying it three times turned an
+ * immediate failure into the same sentence a few seconds later. Classified
+ * HERE rather than by a `.catch(throwStepError)` at each call site, so
+ * `transcodeUpload` and every other reader that reaches the store without one
+ * stop on the first attempt too.
+ */
+function noUploadError(id: string): FatalError {
+  return new FatalError(
     `No upload with id ${id} in this agent's upload store. Pass the \`id\` an upload ` +
-    "returned — `api.upload(file)` in the page, `POST`/`PUT /workflows/uploads`, or `stepWriteUpload` — " +
-    "to a workflow of the same deployment; an invented, stale or other agent's id names nothing here."
+      "returned — `api.upload(file)` in the page, `POST`/`PUT /workflows/uploads`, or `stepWriteUpload` — " +
+      "to a workflow of the same deployment; an invented, stale or other agent's id names nothing here.",
   );
 }
 
@@ -431,15 +442,16 @@ function noUploadMessage(id: string): string {
  * treated a stalled size as the end would return a transcript of most of a
  * recording and report success.
  *
- * @throws when the id names no upload — a step that reaches for one and finds
- *   nothing has been handed a stale or invented id, which no retry fixes. Note a
- *   streamed upload EXISTS from its first byte, so this answers for one that is
- *   still arriving.
+ * @throws {FatalError} when the id names no upload — a step that reaches for
+ *   one and finds nothing has been handed a stale or invented id, which no
+ *   retry fixes, so the engine stops on the first attempt. Note a streamed
+ *   upload EXISTS from its first byte, so this answers for one that is still
+ *   arriving.
  * @public
  */
 export async function stepUploadInfo(id: string): Promise<UploadInfo> {
   const info = await requireUploadAccess().info(id);
-  if (!info) throw new Error(noUploadMessage(id));
+  if (!info) throw noUploadError(id);
   return labelUpload(info);
 }
 
@@ -484,7 +496,7 @@ export async function stepReadUpload(
   // is unchanged and still runs HERE rather than in the store: it is the reader's
   // contract (a plan may end one byte past the file) and there is one copy of it.
   const held = await openUpload(id);
-  if (!held) throw new Error(noUploadMessage(id));
+  if (!held) throw noUploadError(id);
   const { info } = held;
   const ceiling = readableEnd(info, options.start ?? 0);
   const start = clamp(options.start ?? 0, 0, ceiling);

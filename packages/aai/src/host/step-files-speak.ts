@@ -142,6 +142,17 @@ export async function stepSpeakToUpload(
 ): Promise<SpokenUpload> {
   const { master = "wav", name, timeoutMs, ...speak } = options;
   const { format, args = [] } = typeof master === "string" ? { format: master } : master;
+  // The type refuses this; a JS author or a cast does not, and the two things
+  // an unknown format reached were a stored `type: ""` (a file no browser
+  // plays, the exact failure `name` is required to prevent) and
+  // `ENCODER_ARGS[format] is not iterable`. Refused by name, before anything
+  // is spoken.
+  if (!Object.hasOwn(MASTER_TYPES, format)) {
+    throw new RangeError(
+      `stepSpeakToUpload: unknown master format ${JSON.stringify(format)}; ` +
+        `known formats: ${Object.keys(MASTER_TYPES).join(", ")}`,
+    );
+  }
   const spoken = await stepSpeak(text, speak);
   const output = { name, type: MASTER_TYPES[format] };
   const needsFfmpeg = format === "mp3" || args.length > 0;

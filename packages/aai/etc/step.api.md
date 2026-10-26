@@ -366,6 +366,7 @@ type PollOptions<T> = {
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
     first?: PollFirstWait | undefined;
     slowAfterMs?: number | undefined;
     onSlow?: string | undefined;
@@ -404,6 +405,7 @@ class RetryableError extends Error {
     constructor(message: string, options?: RetryableErrorOptions);
     static is(value: unknown): value is RetryableError;
     readonly retryAfter: Date;
+    readonly retryAfterNamed?: boolean;
 }
 
 // @public @input
@@ -948,6 +950,7 @@ export type TranscribeDurablyOptions = {
     models?: readonly string[] | undefined;
     apiKeyEnv?: string | undefined;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
 };
 
 // @public

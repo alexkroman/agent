@@ -51,8 +51,20 @@ export type PollHost = {
   waitFor(token: string, options: WaitForOptions): Promise<unknown>;
 };
 
-/** Refuse a budget no loop can honour — deterministically, so the run fails at the call. */
-function assertPollOptions<T>(name: string, options: PollOptions<T>): void {
+/**
+ * Refuse a budget no loop can honour — deterministically, so the run fails at
+ * the call.
+ *
+ * Exported so a composition that journals steps AHEAD of its poll
+ * (`transcribeUploadDurably`) can refuse the same options before any of them
+ * runs, rather than after an upload has been paid for.
+ *
+ * @internal
+ */
+export function assertPollOptions(
+  name: string,
+  options: Pick<PollOptions<unknown>, "everyMs" | "maxMs" | "slowAfterMs">,
+): void {
   if (!(Number.isFinite(options.everyMs) && options.everyMs >= 1)) {
     throw new RangeError(`ctx.poll("${name}"): everyMs must be a finite number of at least 1`);
   }
@@ -77,6 +89,15 @@ function slowAfterSleeps<T>(options: PollOptions<T>): number | undefined {
 }
 
 /**
+ * The line `slowAfterMs` writes: the author's, or the default sentence. An
+ * EMPTY line is no line — a step whose whole report is "" says less than the
+ * default would — so it is treated as unset.
+ */
+function slowLine(name: string, onSlow: string | undefined): string {
+  return onSlow === undefined || onSlow === "" ? `Still waiting on ${name}.` : onSlow;
+}
+
+/**
  * Run one poll over `host`.
  *
  * @internal
@@ -90,7 +111,10 @@ export async function pollWorkflow<T>(
   assertPollOptions(name, options);
   const maxSleeps = Math.floor(options.maxMs / options.everyMs);
   const slowAt = slowAfterSleeps(options);
-  const stepOptions: StepOptions = omitUndefined({ maxAttempts: options.maxAttempts });
+  const stepOptions: StepOptions = omitUndefined({
+    maxAttempts: options.maxAttempts,
+    maxWaits: options.maxWaits,
+  });
   // Journaled as the one `waitFor` the hand-written body made ahead of its
   // loop — the poll adds no key of its own. `woken` is the answer a body used
   // to derive by branching, which is why it is REPORTED here instead.
@@ -118,7 +142,7 @@ export async function pollWorkflow<T>(
     // once, on the walk that first gets here, and answered from the journal on
     // every later one.
     if (slowAt !== undefined && checks === slowAt) {
-      await reportWorkflow(host, `${name}:slow`, options.onSlow ?? `Still waiting on ${name}.`);
+      await reportWorkflow(host, `${name}:slow`, slowLine(name, options.onSlow));
     }
   }
 }

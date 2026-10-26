@@ -574,6 +574,7 @@ type PollOptions<T> = {
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
     first?: PollFirstWait | undefined;
     slowAfterMs?: number | undefined;
     onSlow?: string | undefined;

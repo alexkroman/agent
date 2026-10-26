@@ -130,17 +130,39 @@ function retryDelay(err: unknown): number {
 
 /**
  * Is this failure the far side asking the step to COME BACK LATER — a
- * `RetryableError` whose `retryAfter` is still ahead of the clock?
+ * `RetryableError` that NAMED a `retryAfter`, still ahead of the clock?
  *
  * That is the one failure `StepOptions.maxWaits` counts separately: `orFail`
  * mints it from a `Retry-After` on a 429/503, and a rate limit met by a
  * fan-out is the case that spent a whole attempt budget on nobody's fault. A
  * retryable error whose delay has already passed is a plain failure, as is
- * one that named none — the class fills a one-second default, so the test is
- * against the clock rather than against presence.
+ * one that named none. The second half is read off `retryAfterNamed`, not the
+ * clock: the class fills a one-second default, which is "still in the
+ * future" on every catch, and testing the clock alone made every unclassified
+ * transient failure — a bare `RetryableError`, a 503 with no header — a free
+ * retry under `maxWaits`. An error from an older copy of the class carries no
+ * such field and reads as unnamed, which is the direction that spends.
  */
 function isRetryAfterWait(err: unknown): boolean {
-  return RetryableError.is(err) && err.retryAfter.getTime() > Date.now();
+  return (
+    RetryableError.is(err) && err.retryAfterNamed === true && err.retryAfter.getTime() > Date.now()
+  );
+}
+
+/**
+ * Refuse a `maxWaits` no loop can count: a non-negative integer, or unset.
+ *
+ * At the step's declaration, as `ctx.poll` refuses its budget — a `1.5` read
+ * as "wait 2 of 1.5" and a negative or `NaN` silently acted as unset, which is
+ * a budget the author did not write.
+ */
+function assertMaxWaits(name: string, maxWaits: number | undefined): void {
+  if (maxWaits === undefined) return;
+  if (!(Number.isInteger(maxWaits) && maxWaits >= 0)) {
+    throw new RangeError(
+      `ctx.step(${JSON.stringify(name)}): maxWaits must be a non-negative integer, got ${String(maxWaits)}`,
+    );
+  }
 }
 
 /**
@@ -378,6 +400,9 @@ export type StepAttemptOptions = {
  * the throw cannot come apart.
  */
 export async function runStepAttempts(options: StepAttemptOptions): Promise<StepEntry> {
+  // Before the gate and before any claim: a refused option is a verdict about
+  // the call, not an attempt, and must journal nothing.
+  assertMaxWaits(options.name, options.maxWaits);
   const gate = options.gate;
   return gate ? gate(() => attemptLoop(options)) : attemptLoop(options);
 }

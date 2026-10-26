@@ -65,6 +65,41 @@ describe("StepOptions.maxWaits", () => {
     ]);
   });
 
+  test("a RetryableError that NAMED no delay spends an attempt — the default fill is not a wait", async () => {
+    reportedLines();
+    const journal = await seedRun();
+    // `orFail` mints exactly this for a 503 with no `Retry-After`, and the
+    // class fills a one-second default that is "in the future" on every catch.
+    const call = vi.fn<() => string>().mockImplementation(() => {
+      throw new RetryableError("flaky");
+    });
+    const outcome = await replayOn(journal, async (_input, ctx) =>
+      ctx.step("call", call, { maxAttempts: 1, maxWaits: 5 }),
+    );
+    // One try, spent: were the unnamed delay a wait, the body would have run
+    // again out of the five.
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(outcome).toMatchObject({ kind: "failed", error: { message: "flaky" } });
+    expect((await journal.readSteps("wrun_1"))[0]).toMatchObject({ attempts: 1 });
+  });
+
+  test.each([1.5, -1, Number.NaN, Number.POSITIVE_INFINITY])(
+    "refuses maxWaits %s at the step's declaration, before any attempt",
+    async (maxWaits) => {
+      const journal = await seedRun();
+      const call = vi.fn<() => string>().mockReturnValue("ok");
+      const outcome = await replayOn(journal, async (_input, ctx) =>
+        ctx.step("call", call, { maxAttempts: 1, maxWaits }),
+      );
+      expect(call).not.toHaveBeenCalled();
+      expect(outcome).toMatchObject({
+        kind: "failed",
+        error: { message: expect.stringContaining('ctx.step("call"): maxWaits must be') },
+      });
+      expect(await journal.readSteps("wrun_1")).toEqual([]);
+    },
+  );
+
   test("once the waits are spent, the next delay is a failure like any other", async () => {
     reportedLines();
     const journal = await seedRun();

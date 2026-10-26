@@ -106,8 +106,15 @@ describe("latest / live", () => {
 });
 
 describe("signalRun / signal", () => {
-  test("signalRun derives the token and holds by default", async () => {
-    const { client, wdk } = makeClient();
+  /** A client whose key index holds `runs` for `(digest, sess-1)`. */
+  async function withRuns(runs: WdkRunRecord[]) {
+    const made = makeClient(runs);
+    for (const r of runs) await made.keys.record("digest", "sess-1", r.runId);
+    return made;
+  }
+
+  test("signalRun derives the token and holds by default — for a run still going", async () => {
+    const { client, wdk } = await withRuns([record({ runId: "wrun_1", status: "running" })]);
     await client.signalRun(digest, "sess-1", "approval", { approved: true });
     expect(wdk.signal).toHaveBeenCalledWith(
       "digest:sess-1:approval",
@@ -116,8 +123,41 @@ describe("signalRun / signal", () => {
     );
   });
 
+  test("signalRun holds NOTHING when no run under the key is live, and answers false", async () => {
+    // A hold is keyed by the token alone and the token carries no run id, so a
+    // hold for a run that finished or was cancelled was taken by the NEXT run
+    // under the key as its own answer.
+    const finished = await withRuns([
+      record({ runId: "wrun_1", status: "cancelled" }),
+      record({ runId: "wrun_2", status: "completed", output: 1 }),
+    ]);
+    finished.wdk.signal = vi.fn(async (_t, _p, o) => (o?.holdMs ?? 0) > 0);
+    expect(await finished.client.signalRun(digest, "sess-1", "approval", { late: true })).toBe(
+      false,
+    );
+    expect(finished.wdk.signal).toHaveBeenCalledWith(
+      "digest:sess-1:approval",
+      { late: true },
+      { holdMs: 0 },
+    );
+    const never = makeClient();
+    never.wdk.signal = vi.fn(async (_t, _p, o) => (o?.holdMs ?? 0) > 0);
+    expect(await never.client.signalRun(digest, "sess-1", "approval")).toBe(false);
+    expect(never.wdk.signal).toHaveBeenCalledWith("digest:sess-1:approval", {}, { holdMs: 0 });
+  });
+
+  test("a pending run counts as live: the ordinary caller signals a run it just started", async () => {
+    const { client, wdk } = await withRuns([record({ runId: "wrun_1", status: "pending" })]);
+    await client.signalRun(digest, "sess-1", "approval");
+    expect(wdk.signal).toHaveBeenCalledWith(
+      "digest:sess-1:approval",
+      {},
+      { holdMs: DEFAULT_SIGNAL_HOLD_MS },
+    );
+  });
+
   test("signalRun takes an explicit hold, and an empty payload for none", async () => {
-    const { client, wdk } = makeClient();
+    const { client, wdk } = await withRuns([record({ runId: "wrun_1", status: "running" })]);
     await client.signalRun("digest", "sess-1", "approval", undefined, { holdMs: 0 });
     expect(wdk.signal).toHaveBeenCalledWith("digest:sess-1:approval", {}, { holdMs: 0 });
   });

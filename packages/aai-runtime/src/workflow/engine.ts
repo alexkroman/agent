@@ -38,6 +38,7 @@
 import type { WorkflowDef } from "@alexkroman1/aai";
 import { resolveFailureHandler } from "@alexkroman1/aai/host-internal";
 import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
+import { DEFAULT_SIGNAL_HOLD_MS } from "@alexkroman1/aai/workflow-api";
 import type { Logger } from "../logger.ts";
 import { guestCodeVersion } from "./code-version.ts";
 import { dedupedRunId } from "./dedupe-run-id.ts";
@@ -494,8 +495,12 @@ export function createWorkflowEngine(options: WorkflowEngineOptions): WorkflowEn
       // claimed (`workflow/held-signals.ts`). `true` for having been taken —
       // the hold is the taking, as the caller's doc says.
       if (!runId) {
-        const holdMs = options?.holdMs ?? 0;
-        if (!(holdMs > 0)) return false;
+        const asked = options?.holdMs ?? 0;
+        if (!(asked > 0)) return false;
+        // `Infinity` is a hold nothing purges: clamped to the default window
+        // rather than refused, because the caller asked to hold and a bounded
+        // hold is what a hold is (`workflow/held-signals.ts`).
+        const holdMs = Number.isFinite(asked) ? asked : DEFAULT_SIGNAL_HOLD_MS;
         holdSignal(token, payload, holdMs);
         // The wait can be CLAIMED between the miss above and the hold: the wait
         // side reads the hold exactly once, right after its claim (`answerHeld`

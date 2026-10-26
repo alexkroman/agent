@@ -71,6 +71,7 @@ export {
   type WorkflowTestHandle,
   type WorkflowTestRead,
   type WorkflowTestRun,
+  type WorkflowTestSignalOptions,
   type WorkflowTestStep,
   type WorkflowTestWait,
 } from "../../testing-barrel.ts";

@@ -17233,6 +17233,7 @@ type PollOptions<T> = {
   first?: PollFirstWait;
   maxAttempts?: number;
   maxMs: number;
+  maxWaits?: number;
   onSlow?: string;
   slowAfterMs?: number;
 };
@@ -17343,6 +17344,15 @@ The waiting budget, in milliseconds: the poll sleeps at most
 `floor(maxMs / everyMs)` times, so it makes at most one more check than
 that. A COUNT rather than a clock, so a replay walks the same number of
 checks however long each one took.
+
+##### maxWaits?
+
+```ts
+optional maxWaits?: number;
+```
+
+Each check's `StepOptions.maxWaits` — a far side's dated `Retry-After` on
+a check is waited out of this budget rather than spending an attempt.
 
 ##### onSlow?
 
@@ -21046,6 +21056,18 @@ for `DEFAULT_SIGNAL_HOLD_MS` by default — the tool that signals a run it
 just started is the ordinary caller — and `options.holdMs` overrides it
 (`0` to hold nothing).
 
+**A hold stands only for a run of `workflow` under `key` that is still
+going** (`pending` or `running`). The token carries no run id, so a hold
+for a run that finished, timed out or was cancelled would be taken by the
+NEXT run under the key as its own answer; with no live run nothing is held
+and the call answers `false`, as [signal](#signal-6) does for a token nobody
+waits on.
+
+The same token is what makes ONE live run per `(workflow, key)` the rule
+for a body that waits on a signal: a second concurrent run under the same
+key fails at its first `ctx.waitForSignal` (the refusal names the label
+and key). Start it under a distinct key.
+
 ###### Type Parameters
 
 ###### P
@@ -22010,6 +22032,11 @@ exactly `waitFor`'s options and overloads: a `schema` checks the payload
 and decides the type, a `timeoutMs` adds the `undefined` arm.
 
 THROWS when the run has no key, as [WorkflowContext.signalToken](#signaltoken) does.
+
+The token carries no run id, so one live wait holds it at a time: a second
+concurrent run of this workflow under the SAME key fails here, with a
+refusal naming the label and key — start it under a distinct
+`StartOptions.key`.
 
 ###### Type Parameters
 

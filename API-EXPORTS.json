@@ -2031,6 +2031,7 @@
     "WorkflowTestHandle",
     "WorkflowTestRead",
     "WorkflowTestRun",
+    "WorkflowTestSignalOptions",
     "WorkflowTestStep",
     "WorkflowTestWait",
     "createMemoryJournal",

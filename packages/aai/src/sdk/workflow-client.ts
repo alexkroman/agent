@@ -233,6 +233,18 @@ export type WorkflowClient = {
    * for `DEFAULT_SIGNAL_HOLD_MS` by default — the tool that signals a run it
    * just started is the ordinary caller — and `options.holdMs` overrides it
    * (`0` to hold nothing).
+   *
+   * **A hold stands only for a run of `workflow` under `key` that is still
+   * going** (`pending` or `running`). The token carries no run id, so a hold
+   * for a run that finished, timed out or was cancelled would be taken by the
+   * NEXT run under the key as its own answer; with no live run nothing is held
+   * and the call answers `false`, as {@link signal} does for a token nobody
+   * waits on.
+   *
+   * The same token is what makes ONE live run per `(workflow, key)` the rule
+   * for a body that waits on a signal: a second concurrent run under the same
+   * key fails at its first `ctx.waitForSignal` (the refusal names the label
+   * and key). Start it under a distinct key.
    */
   signalRun<P extends ToolInputSchema, R>(
     workflow: WorkflowDef<P, R>,

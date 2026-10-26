@@ -41,6 +41,7 @@ export class RetryableError extends Error {
     constructor(message: string, options?: RetryableErrorOptions);
     static is(value: unknown): value is RetryableError;
     readonly retryAfter: Date;
+    readonly retryAfterNamed?: boolean;
 }
 
 // @public @input

@@ -254,6 +254,27 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
   /** `find` for one declared name — shared with `findByKey` and `cancelAll`. */
   const findOne = keyedFind({ keys, wdk, toSnapshot, concurrency: RUN_READ_CONCURRENCY });
 
+  /**
+   * `signalRun`'s delivery: the hold stands ONLY for a run still going.
+   *
+   * A token carries no run id, so a hold outlives the run it was meant for and
+   * the next run under the key took a stale answer as its own — a cancelled
+   * approval re-approving the one started after it. With no `pending` or
+   * `running` run under the key there is nothing the hold could be for, so
+   * nothing is held and `false` ("nobody is waiting") is the honest answer. The
+   * read is skipped when no hold was asked for.
+   */
+  async function signalLive(
+    name: string,
+    key: string,
+    token: string,
+    payload: unknown,
+    holdMs: number,
+  ): Promise<boolean> {
+    const live = holdMs > 0 && (await liveByKey(name, findOne, key)) !== undefined;
+    return await wdk.signal(token, payload, { holdMs: live ? holdMs : 0 });
+  }
+
   return {
     async start(
       workflow: AnyWorkflowDef | string,
@@ -378,11 +399,14 @@ export function createWorkflowClient(opts: WorkflowClientOptions): WorkflowClien
     ): Promise<boolean> {
       // The token the body derived — `ctx.waitForSignal(label)` — from the
       // same three parts, so neither side spells it (`sdk/workflow-signals.ts`).
-      const token = workflowSignalToken(resolve(workflow).name, key, label);
+      // Resolved SYNCHRONOUSLY, so an undeclared workflow is refused at the
+      // call as `find`'s is.
+      const { name } = resolve(workflow);
+      const token = workflowSignalToken(name, key, label);
       // Held by default: the ordinary caller is a tool answering a run it has
       // just started, which has not reached its wait yet.
       const holdMs = options?.holdMs ?? DEFAULT_SIGNAL_HOLD_MS;
-      return wdk.signal(token, payload ?? {}, { holdMs });
+      return signalLive(name, key, token, payload ?? {}, holdMs);
     },
 
     streamTail(runId: string, options?: StreamOptions): Promise<number> {

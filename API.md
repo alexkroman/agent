@@ -413,6 +413,7 @@ type PollOptions<T> = {
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
     first?: PollFirstWait | undefined;
     slowAfterMs?: number | undefined;
     onSlow?: string | undefined;
@@ -1377,6 +1378,7 @@ type PollOptions<T> = {
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
     first?: PollFirstWait | undefined;
     slowAfterMs?: number | undefined;
     onSlow?: string | undefined;
@@ -3245,6 +3247,7 @@ type PollOptions<T> = {
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
     first?: PollFirstWait | undefined;
     slowAfterMs?: number | undefined;
     onSlow?: string | undefined;
@@ -3682,7 +3685,7 @@ type SignalOptions = {
 };
 
 // @internal
-export function signalTokenFor(host: SignalHost, label: string): string;
+export function signalTokenFor(host: SignalHost, label: string, method?: string): string;
 
 // @internal
 export type SignalWaitHost = SignalHost & {
@@ -5307,6 +5310,7 @@ export type PollOptions<T> = {
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
     first?: PollFirstWait | undefined;
     slowAfterMs?: number | undefined;
     onSlow?: string | undefined;
@@ -7062,6 +7066,7 @@ type PollOptions<T> = {
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
     first?: PollFirstWait | undefined;
     slowAfterMs?: number | undefined;
     onSlow?: string | undefined;
@@ -8279,6 +8284,7 @@ type PollOptions<T> = {
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
     first?: PollFirstWait | undefined;
     slowAfterMs?: number | undefined;
     onSlow?: string | undefined;
@@ -10264,6 +10270,7 @@ type PollOptions<T> = {
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
     first?: PollFirstWait | undefined;
     slowAfterMs?: number | undefined;
     onSlow?: string | undefined;
@@ -10302,6 +10309,7 @@ class RetryableError extends Error {
     constructor(message: string, options?: RetryableErrorOptions);
     static is(value: unknown): value is RetryableError;
     readonly retryAfter: Date;
+    readonly retryAfterNamed?: boolean;
 }
 
 // @public @input
@@ -10846,6 +10854,7 @@ export type TranscribeDurablyOptions = {
     models?: readonly string[] | undefined;
     apiKeyEnv?: string | undefined;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
 };
 
 // @public
@@ -11184,6 +11193,7 @@ export class RetryableError extends Error {
     constructor(message: string, options?: RetryableErrorOptions);
     static is(value: unknown): value is RetryableError;
     readonly retryAfter: Date;
+    readonly retryAfterNamed?: boolean;
 }
 
 // @public @input
@@ -11966,6 +11976,7 @@ type PollOptions<T> = {
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
     first?: PollFirstWait | undefined;
     slowAfterMs?: number | undefined;
     onSlow?: string | undefined;
@@ -13645,6 +13656,7 @@ type PollOptions<T> = {
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
     first?: PollFirstWait | undefined;
     slowAfterMs?: number | undefined;
     onSlow?: string | undefined;
@@ -14943,6 +14955,7 @@ export type PollOptions<T> = {
     maxMs: number;
     done: (value: T) => boolean;
     maxAttempts?: number | undefined;
+    maxWaits?: number | undefined;
     first?: PollFirstWait | undefined;
     slowAfterMs?: number | undefined;
     onSlow?: string | undefined;
@@ -19777,8 +19790,8 @@ export const workflowJournalBrand: unique symbol;
 export type WorkflowTestHandle<R> = WorkflowTestRun<R> & {
     readonly key: string;
     advanceSleep(correlationIds?: readonly string[]): Promise<WorkflowTestHandle<R>>;
-    signal(token: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
-    signalRun(label: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
+    signal(token: string, payload?: unknown, options?: WorkflowTestSignalOptions): Promise<WorkflowTestHandle<R>>;
+    signalRun(label: string, payload?: unknown, options?: WorkflowTestSignalOptions): Promise<WorkflowTestHandle<R>>;
     readonly signalled: boolean;
     expireWaits(): Promise<WorkflowTestHandle<R>>;
     restart(): Promise<WorkflowTestHandle<R>>;
@@ -19806,6 +19819,11 @@ export type WorkflowTestRun<R> = {
     readonly crashed: boolean;
     readonly waits: readonly WorkflowTestWait[];
     readonly resumable: boolean;
+};
+
+// @public @input
+export type WorkflowTestSignalOptions = {
+    holdMs?: number | undefined;
 };
 
 // @public @sealed

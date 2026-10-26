@@ -529,6 +529,27 @@ When the next attempt may run. Always a `Date` — a number passed to the
 constructor is resolved against the clock AT CONSTRUCTION, which is the
 moment the caller meant.
 
+##### retryAfterNamed?
+
+```ts
+readonly optional retryAfterNamed?: boolean;
+```
+
+Whether the thrower NAMED the delay, or [retryAfter](step.md#retryafter) is the
+[DEFAULT\_RETRY\_DELAY\_MS](#default_retry_delay_ms) fill.
+
+The field `StepOptions.maxWaits` reads: only a delay the far side named
+(a `Retry-After` on a 429, a rate-limited gateway's own "come back at")
+is a WAIT out of that budget. The default is a second ahead of the clock
+at construction and so would read as "still in the future" on every
+catch, which made every unclassified transient failure a free retry under
+`maxWaits`. A clock test cannot tell the two apart; this can.
+
+Optional in the TYPE, because of the two-copies case the brand exists for
+(the module doc): an instance from an older copy of this class carries no
+such field, and a reader treats its absence as "not named" — the direction
+that spends an attempt. Every instance this constructor makes sets it.
+
 ## Type Aliases
 
 ### ErrorClass

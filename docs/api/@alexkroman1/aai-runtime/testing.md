@@ -7236,15 +7236,25 @@ package and is not what a template spec is asserting.
 ##### signal()
 
 ```ts
-signal(token: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
+signal(
+   token: string, 
+   payload?: unknown, 
+   options?: WorkflowTestSignalOptions
+): Promise<WorkflowTestHandle<R>>;
 ```
 
 Answer a `ctx.waitFor` token, and deliver.
 
+Exactly `ctx.workflows.signal`'s call: an absent `payload` is sent as
+`{}`, so a body reading a field off the answer — or a `ctx.poll({ first })`
+reporting `woken` — sees what a tool's bare signal gives it; and the
+payload is held for a wait the run has not reached yet only when
+`options.holdMs` asks (`SignalOptions.holdMs`).
+
 Resolves this handle. `signalled` says whether
 anything was holding the token — `false` for a token nobody waits on, one
 already answered, or one whose window has closed, which are the same refusal
-a deployed `ctx.workflows.signal` gives.
+a deployed `ctx.workflows.signal` gives — or `true` for a payload HELD.
 
 ###### Parameters
 
@@ -7256,6 +7266,10 @@ a deployed `ctx.workflows.signal` gives.
 
 `unknown`
 
+###### options?
+
+[`WorkflowTestSignalOptions`](#workflowtestsignaloptions)
+
 ###### Returns
 
 `Promise`\<[`WorkflowTestHandle`](#workflowtesthandle)\<`R`\>\>
@@ -7263,7 +7277,11 @@ a deployed `ctx.workflows.signal` gives.
 ##### signalRun()
 
 ```ts
-signalRun(label: string, payload?: unknown): Promise<WorkflowTestHandle<R>>;
+signalRun(
+   label: string, 
+   payload?: unknown, 
+   options?: WorkflowTestSignalOptions
+): Promise<WorkflowTestHandle<R>>;
 ```
 
 Answer the body's `ctx.waitForSignal(label)`, and deliver — `signal`
@@ -7271,6 +7289,16 @@ for the token the body DERIVED from the run's name, its `key` and
 `label` (`ctx.signalToken`), so a spec names the label it reads in the
 body rather than re-spelling the token grammar. `signalled` reads the
 same answer.
+
+Held by default, as `ctx.workflows.signalRun` holds (for
+`DEFAULT_SIGNAL_HOLD_MS`): a spec that signals while the body is still
+parked on a `ctx.sleep` ahead of the wait, then `advanceSleep`s, reads the
+answered branch exactly as the tool it mirrors would. `options.holdMs: 0`
+holds nothing.
+
+A run started by this driver always has a key, so the keyless refusal
+`ctx.waitForSignal` documents is not expressible here; the engine harness
+reaches it.
 
 ###### Parameters
 
@@ -7281,6 +7309,10 @@ same answer.
 ###### payload?
 
 `unknown`
+
+###### options?
+
+[`WorkflowTestSignalOptions`](#workflowtestsignaloptions)
 
 ###### Returns
 
@@ -7519,6 +7551,34 @@ The deadline the run is parked on, when it is parked on one.
 Read off what the body's suspension handed the dispatcher, which is the
 journaled wake time — so a spec asserting "it slept for a day" compares this
 against the instant the run started rather than waiting one.
+
+***
+
+### WorkflowTestSignalOptions
+
+```ts
+type WorkflowTestSignalOptions = {
+  holdMs?: number;
+};
+```
+
+**`Input`**
+
+What `WorkflowTestHandle.signal` and `WorkflowTestHandle.signalRun` take
+beside the payload: `SignalOptions.holdMs`, as `ctx.workflows` takes it.
+
+#### Properties
+
+##### holdMs?
+
+```ts
+optional holdMs?: number;
+```
+
+How long to HOLD the payload for a wait the run has not reached yet, in
+milliseconds — `SignalOptions.holdMs`. `signal` holds only when asked;
+`signalRun` holds for `DEFAULT_SIGNAL_HOLD_MS` unless told otherwise, and
+`0` holds nothing.
 
 ***
 

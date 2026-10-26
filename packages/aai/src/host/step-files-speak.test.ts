@@ -54,6 +54,24 @@ function installFakeFfmpeg(
 }
 
 describe("stepSpeakToUpload", () => {
+  test("refuses an unknown master format by name, before speaking — as a string or in the object form", async () => {
+    const speech = installStubSpeech();
+    const uploads = installStubUploads({}, { writable: true });
+    const spawn = vi.spyOn(ffmpegProcess, "spawn");
+    // The type refuses these; a JS author or a cast reaches them, and what they
+    // reached was a stored `type: ""` and `… is not iterable`.
+    const bad = "ogg" as never;
+    await expect(stepSpeakToUpload("hi", { master: bad, name: "x.ogg" })).rejects.toThrow(
+      /unknown master format "ogg"; known formats: wav, mp3/,
+    );
+    await expect(
+      stepSpeakToUpload("hi", { master: { format: bad, args: ["-ac", "1"] }, name: "x.ogg" }),
+    ).rejects.toBeInstanceOf(RangeError);
+    expect(speech.calls).toEqual([]);
+    expect(uploads.writes).toEqual([]);
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
   test("stores the spoken WAV under the name given, with no subprocess", async () => {
     const speech = installStubSpeech();
     const uploads = installStubUploads({}, { writable: true });

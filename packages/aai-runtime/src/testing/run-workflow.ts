@@ -71,6 +71,7 @@ import type { ToolInputSchema, WorkflowDef } from "@alexkroman1/aai";
 import { workflowSignalToken } from "@alexkroman1/aai/host-internal";
 import { parseSchemaInput } from "@alexkroman1/aai/testing";
 import {
+  DEFAULT_SIGNAL_HOLD_MS,
   type WorkflowAppLike,
   type WorkflowDefOf,
   type WorkflowNameOf,
@@ -79,6 +80,7 @@ import {
 } from "@alexkroman1/aai/workflow-api";
 import { type Logger, silentLogger } from "../logger.ts";
 import { unknownWorkflowMessage } from "../workflow/client.ts";
+import { takeHeldSignal } from "../workflow/held-signals.ts";
 import {
   createInProcessWorkflowEngine,
   type InProcessWorkflowEngine,
@@ -308,6 +310,21 @@ async function runDef<P extends ToolInputSchema, R>(
 
   const runId = await state.engine.start(name, [validated], { key });
 
+  /**
+   * Tokens this handle asked the engine to HOLD a payload for.
+   *
+   * A hold lives in process memory keyed by the token alone
+   * (`workflow/held-signals.ts`), so one this run never takes would be taken
+   * by the next spec's run under the same name, key and label. Dropped the
+   * moment the run is terminal (nothing of this run can take it any more) and
+   * on `close`.
+   */
+  const held = new Set<string>();
+  const dropHolds = (): void => {
+    for (const token of held) takeHeldSignal(token);
+    held.clear();
+  };
+
   const handle: WorkflowTestHandle<R> = {
     runId,
     key,
@@ -352,15 +369,28 @@ async function runDef<P extends ToolInputSchema, R>(
       await drain();
       return handle;
     },
-    async signal(token, payload) {
-      state.signalled = await state.engine.signal(token, payload);
+    async signal(token, payload, options) {
+      // `{}` for an absent payload and a hold only when asked — exactly what
+      // `ctx.workflows.signal` sends (`workflow/client.ts`), so a spec written
+      // against this handle reads the branch a tool's call would reach.
+      const holdMs = options?.holdMs ?? 0;
+      if (holdMs > 0) held.add(token);
+      state.signalled = await state.engine.signal(token, payload ?? {}, { holdMs });
       await drain();
       return handle;
     },
-    signalRun(label, payload) {
+    signalRun(label, payload, options) {
       // The token the body derived (`sdk/workflow-signals.ts`), from the same
-      // three parts, so neither side spells it.
-      return handle.signal(workflowSignalToken(name, key, label), payload);
+      // three parts, so neither side spells it. Held by default, as
+      // `ctx.workflows.signalRun` holds: a signal sent while the body is still
+      // ahead of its wait (parked on a `ctx.sleep`, say) is kept for the wait
+      // rather than dropped with `signalled: false` — and, as there, only for a
+      // run still GOING: a finished run has no wait left to take it, and the
+      // payload would sit for the next run under the key.
+      const live = !isTerminalStatus(state.status);
+      return handle.signal(workflowSignalToken(name, key, label), payload, {
+        holdMs: live ? (options?.holdMs ?? DEFAULT_SIGNAL_HOLD_MS) : 0,
+      });
     },
     async expireWaits() {
       // The windows open NOW — and only those: see the set's own comment.
@@ -382,6 +412,7 @@ async function runDef<P extends ToolInputSchema, R>(
     },
     async close() {
       state.engine.stop();
+      dropHolds();
     },
   };
 
@@ -449,7 +480,10 @@ async function runDef<P extends ToolInputSchema, R>(
       .filter((entry) => isDeterminismKey(entry.key))
       .map(toRead)
       .sort(byCallSite);
-    if (record && isTerminalStatus(record.status)) state.wakeAt = undefined;
+    if (record && isTerminalStatus(record.status)) {
+      state.wakeAt = undefined;
+      dropHolds();
+    }
     state.waits = (await store.readSleeps(runId)).map(toWait).sort(byKey);
     const owed = (await store.resumableRuns?.(RESUMABLE_SCAN_LIMIT)) ?? [];
     state.resumable = owed.some((one) => one.runId === runId);

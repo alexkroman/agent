@@ -9,6 +9,7 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { FatalError } from "./step-error-classes.ts";
 import {
   publishUploadReader,
   stepReadUpload,
@@ -75,9 +76,11 @@ describe("stepReadUpload", () => {
     expect(reads).toEqual([{ start: 0, end: 3 }]);
   });
 
-  test("fails by NAME on an id that names no upload", async () => {
+  test("fails by NAME on an id that names no upload, FATALLY — no attempt answers differently", async () => {
     publish(new Uint8Array(1));
-    await expect(stepReadUpload("upl_gone")).rejects.toThrow(/No upload with id upl_gone/);
+    const err = await stepReadUpload("upl_gone").catch((e: unknown) => e);
+    expect(err).toSatisfy(FatalError.is);
+    expect((err as Error).message).toMatch(/No upload with id upl_gone/);
   });
 
   test("fails with the fix when no store was published", async () => {
@@ -166,9 +169,11 @@ describe("stepUploadInfo", () => {
     });
   });
 
-  test("fails by name on a missing upload", async () => {
+  test("fails by name on a missing upload, fatally", async () => {
     publish(new Uint8Array(1));
-    await expect(stepUploadInfo("upl_gone")).rejects.toThrow(/No upload with id/);
+    const err = await stepUploadInfo("upl_gone").catch((e: unknown) => e);
+    expect(err).toSatisfy(FatalError.is);
+    expect((err as Error).message).toMatch(/No upload with id/);
   });
 });
 

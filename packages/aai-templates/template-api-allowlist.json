@@ -230,6 +230,7 @@
     "WorkflowJournal",
     "WorkflowTestHandle",
     "WorkflowTestRead",
+    "WorkflowTestSignalOptions",
     "createMemoryJournal",
     "createRecordingWorkflows",
     "createSlotStore",

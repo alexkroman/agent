@@ -2084,10 +2084,11 @@ recording and report success.
 
 #### Throws
 
-when the id names no upload — a step that reaches for one and finds
-  nothing has been handed a stale or invented id, which no retry fixes. Note a
-  streamed upload EXISTS from its first byte, so this answers for one that is
-  still arriving.
+when the id names no upload — a step that reaches for
+  one and finds nothing has been handed a stale or invented id, which no
+  retry fixes, so the engine stops on the first attempt. Note a streamed
+  upload EXISTS from its first byte, so this answers for one that is still
+  arriving.
 
 ***
 
@@ -2559,6 +2560,31 @@ moment the caller meant.
 ###### Inherited from
 
 [`RetryableError`](step-errors.md#retryableerror).[`retryAfter`](step-errors.md#retryafter)
+
+##### retryAfterNamed?
+
+```ts
+readonly optional retryAfterNamed?: boolean;
+```
+
+Whether the thrower NAMED the delay, or [retryAfter](#retryafter) is the
+[DEFAULT\_RETRY\_DELAY\_MS](step-errors.md#default_retry_delay_ms) fill.
+
+The field `StepOptions.maxWaits` reads: only a delay the far side named
+(a `Retry-After` on a 429, a rate-limited gateway's own "come back at")
+is a WAIT out of that budget. The default is a second ahead of the clock
+at construction and so would read as "still in the future" on every
+catch, which made every unclassified transient failure a free retry under
+`maxWaits`. A clock test cannot tell the two apart; this can.
+
+Optional in the TYPE, because of the two-copies case the brand exists for
+(the module doc): an instance from an older copy of this class carries no
+such field, and a reader treats its absence as "not named" — the direction
+that spends an attempt. Every instance this constructor makes sets it.
+
+###### Inherited from
+
+[`RetryableError`](step-errors.md#retryableerror).[`retryAfterNamed`](step-errors.md#retryafternamed)
 
 ***
 
@@ -4775,6 +4801,7 @@ type TranscribeDurablyOptions = {
   everyMs?: number;
   maxAttempts?: number;
   maxMs?: number;
+  maxWaits?: number;
   models?: readonly string[];
   params?: Record<string, unknown>;
 };
@@ -4822,6 +4849,17 @@ The polling budget, in milliseconds. Defaults to [TRANSCRIBE\_POLL\_MAX\_MS](#tr
 
 Spending it is a refusal naming the job, not a silent `undefined` — see the
 module doc.
+
+##### maxWaits?
+
+```ts
+optional maxWaits?: number;
+```
+
+Every step's `StepOptions.maxWaits`: how many dated `Retry-After`s the
+provider may ask for — a 429 on the submit, a 503 on a poll — before one
+spends an attempt. Passed to the upload, the submit and each poll check,
+because a rate limit met by a fan-out lands on whichever leg is in flight.
 
 ##### models?
 

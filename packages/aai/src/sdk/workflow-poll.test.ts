@@ -56,6 +56,12 @@ describe("ctx.poll", () => {
     expect(ctx.steps.map((s) => s.maxAttempts)).toEqual([7, 7]);
   });
 
+  test("passes maxWaits to every check, so a check's dated Retry-After is a wait", async () => {
+    const ctx = createWorkflowContext();
+    await ctx.poll("check", () => 1, { everyMs: 5, maxMs: 5, done: () => false, maxWaits: 4 });
+    expect(ctx.steps.map((s) => s.maxWaits)).toEqual([4, 4]);
+  });
+
   test("a `results` entry answers every check, as it does for a hand-written loop", async () => {
     const ctx = createWorkflowContext({ results: { check: "done" } });
     const polled = await ctx.poll("check", () => "never run", {
@@ -189,6 +195,26 @@ describe("ctx.poll({ slowAfterMs })", () => {
       // after the first wait, never before any has been taken.
       await ctx.poll("check", () => 1, { everyMs: 5, maxMs: 5, slowAfterMs: 1, done: () => false });
       expect(ctx.steps.map((s) => s.name)).toEqual(["check", "check:slow", "check"]);
+      expect(lines).toEqual(["Still waiting on check."]);
+    } finally {
+      publishStepReporter(undefined);
+    }
+  });
+
+  test("an EMPTY onSlow is no line: the default sentence is written instead", async () => {
+    const lines: string[] = [];
+    publishStepReporter(async (line) => {
+      lines.push(String(line));
+    });
+    try {
+      const ctx = createWorkflowContext();
+      await ctx.poll("check", () => 1, {
+        everyMs: 5,
+        maxMs: 5,
+        slowAfterMs: 1,
+        onSlow: "",
+        done: () => false,
+      });
       expect(lines).toEqual(["Still waiting on check."]);
     } finally {
       publishStepReporter(undefined);
