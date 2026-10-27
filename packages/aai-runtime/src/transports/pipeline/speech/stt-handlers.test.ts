@@ -424,6 +424,29 @@ describe("continuation: the caller resumes right after a commit", () => {
     vi.useRealTimers();
   });
 
+  test("speech that opened over the reply is a barge-in, gates included", () => {
+    // A backchannel inside the window. As a continuation, its first one-word
+    // interim cut the reply at once; through the barge-in policy it has to
+    // clear the sustained-speech gate first.
+    // The agent starts answering only once the question has committed.
+    let speaking = false;
+    const { handlers, abort, at } = resumable({
+      agentIsSpeaking: () => speaking,
+      utteranceOpenedOverSpeech: () => speaking,
+      minBargeInWords: () => 1,
+      interruptionMinDurationMs: () => 500,
+    });
+    handlers.onSttFinal("summarize black holes");
+    speaking = true;
+    at(101_000);
+    handlers.onSttPartial("Um,");
+    expect(abort).not.toHaveBeenCalled();
+    at(101_600);
+    handlers.onSttPartial("Mm-hmm, yeah");
+    expect(abort).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
   test("fires once per utterance, however many interims it produces", () => {
     const { handlers, abort, at } = resumable();
     handlers.onSttFinal("my zip is");
