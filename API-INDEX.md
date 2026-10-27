@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 212 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
-- [Framework internals](#framework-internals) — 524 names
+- [Framework internals](#framework-internals) — 525 names
 
 ## Agent authoring
 
@@ -1355,6 +1355,7 @@ trace or a type error can be traced back to something.
 | `DEAD_AIR_COVER_MAX_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEAD_AIR_COVER_PHRASES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEAD_AIR_OPENING_PHRASE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEAD_AIR_OPENING_TARGET_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEAD_AIR_TOOL_COVER_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEEPGRAM_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the Deepgram API key. |
 | `DEEPGRAM_DEFAULT_ENDPOINTING_MS` | const | `@alexkroman1/aai/internal` |  | Default Deepgram `endpointing` (ms) — **the same knob as `DEFAULT_MIN_TURN_SILENCE_MS`, seen from a different vendor.** The transport commits a turn on every … |

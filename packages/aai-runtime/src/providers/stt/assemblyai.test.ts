@@ -454,6 +454,16 @@ describe("assemblyAIStt — inputPeakDbfs", () => {
     expect(meta?.spokenMs).toBe(320);
   });
 
+  test("reports how long ago the last word ended as trailingSilenceMs", async () => {
+    const session = await openSessionWith(openAssemblyAI, { model: "universal-3-5-pro" });
+    session.sendAudio(tone(500, 2000)); // 2000 ms sent
+    const meta = await metaFor(session, [
+      { start: 900, end: 1200 },
+      { start: 1200, end: 1500 },
+    ]);
+    expect(meta?.trailingSilenceMs).toBe(500);
+  });
+
   test("omits it when the turn carries no word timings", async () => {
     const session = await openSessionWith(openAssemblyAI, { model: "universal-3-5-pro" });
     session.sendAudio(tone(6000, 1000));

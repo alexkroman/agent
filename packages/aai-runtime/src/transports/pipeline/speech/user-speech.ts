@@ -9,9 +9,11 @@ import type { TurnDetectionMode, UserTurnLimit } from "@alexkroman1/aai";
 import { MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/internal";
 import { type Logger, transcriptField } from "../../../logger.ts";
+import type { SttTurnMeta } from "../../../providers/openers.ts";
 import type { TransportCallbacks } from "../../types.ts";
 import { createFalseInterruptionRecovery, type FalseInterruptionRecovery } from "../heard/index.ts";
 import { createAgentSpeakingPredicate, createAudioOnLinePredicate } from "./barge-in-policy.ts";
+import { createCallerStop } from "./caller-stop.ts";
 import type { SpeechEdgeTracker } from "./edges.ts";
 import { createGatedSpeechEdges, createSpeechEdgeTracker } from "./edges.ts";
 import { createManualTurn, type ManualTurn } from "./manual-turn.ts";
@@ -40,6 +42,8 @@ export interface UserActivity {
    * `Transport.sendUserText`, which is the only caller.
    */
   commitTypedTurn(text: string): void;
+  /** When the caller stopped, for a turn opening now — see `caller-stop.ts`. */
+  callerStoppedAt(): number | undefined;
 }
 
 /**
@@ -128,7 +132,10 @@ export function createUserActivity(deps: {
   // Answer one committed user turn: the record, then the reply. Hoisted so the
   // STT handlers (a final, under "auto") and push-to-talk (a commit, under
   // "manual") answer a turn the same way.
-  const commitUserTurn = (text: string, note?: string): void => {
+  const callerStop = createCallerStop();
+  const commitUserTurn = (text: string, note?: string, meta?: SttTurnMeta): void => {
+    // Before the chained turn starts: its dead-air cover reads this as it opens.
+    callerStop.onCommit(meta?.trailingSilenceMs);
     // Debug trace (AAI_DEBUG=1): verbatim what the turn prompts the LLM with
     // — outside production; there `transcriptField` leaves a character count.
     log.debug("Pipeline turn committed", { sid, ...transcriptField("text", text) });
@@ -316,5 +323,13 @@ export function createUserActivity(deps: {
     commitUserTurn(text);
   };
 
-  return { nudger, recovery, speechEdges, sttEvents, manualTurn, commitTypedTurn };
+  return {
+    nudger,
+    recovery,
+    speechEdges,
+    sttEvents,
+    manualTurn,
+    commitTypedTurn,
+    callerStoppedAt: callerStop.stoppedAt,
+  };
 }

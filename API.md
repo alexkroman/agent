@@ -2747,6 +2747,9 @@ export const DEAD_AIR_COVER_PHRASES: readonly string[];
 export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
 
 // @internal
+export const DEAD_AIR_OPENING_TARGET_MS = 4600;
+
+// @internal
 export const DEAD_AIR_TOOL_COVER_MS = 1200;
 
 // @internal
@@ -16942,6 +16945,7 @@ export type SttTurnMeta = {
     endOfTurnConfidence?: number;
     inputPeakDbfs?: number;
     spokenMs?: number;
+    trailingSilenceMs?: number;
 };
 
 // @public
@@ -17811,6 +17815,7 @@ export type SttTurnMeta = {
     endOfTurnConfidence?: number;
     inputPeakDbfs?: number;
     spokenMs?: number;
+    trailingSilenceMs?: number;
 };
 
 // @public
@@ -18542,6 +18547,7 @@ export type SttTurnMeta = {
     endOfTurnConfidence?: number;
     inputPeakDbfs?: number;
     spokenMs?: number;
+    trailingSilenceMs?: number;
 };
 
 // @public
@@ -21291,6 +21297,7 @@ export type SttTurnMeta = {
     endOfTurnConfidence?: number;
     inputPeakDbfs?: number;
     spokenMs?: number;
+    trailingSilenceMs?: number;
 };
 
 // @public

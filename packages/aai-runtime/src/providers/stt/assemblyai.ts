@@ -296,8 +296,9 @@ export function openAssemblyAI(
         const span = turnWordSpanMs(event);
         const inputPeakDbfs = span && levels.peakDbfs(span.startMs, span.endMs);
         const spokenMs = span && span.endMs - span.startMs;
+        const trailingSilenceMs = span && Math.max(0, levels.sentMs() - span.endMs);
         shell.emit(isCommittingTurn(event, awaitingFormatted) ? "final" : "partial", text, {
-          ...omitUndefined({ endOfTurnConfidence, inputPeakDbfs, spokenMs }),
+          ...omitUndefined({ endOfTurnConfidence, inputPeakDbfs, spokenMs, trailingSilenceMs }),
         });
       });
 

@@ -22,7 +22,9 @@ import {
   DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_COVER_PHRASES,
   DEAD_AIR_OPENING_PHRASE,
+  DEAD_AIR_OPENING_TARGET_MS,
   DEAD_AIR_TOOL_COVER_MS,
+  DEFAULT_DEAD_AIR_COVER_MS,
 } from "@alexkroman1/aai/host-internal";
 import { createRestartableTimer } from "../../../_timer.ts";
 import type { Logger } from "../../../logger.ts";
@@ -31,6 +33,11 @@ import type { Logger } from "../../../logger.ts";
 export type DeadAirCoverDeps = {
   /** The author's window; `0` disables the cover outright. */
   coverMs: number;
+  /**
+   * The turn's FIRST window, when it differs from `coverMs` — see
+   * {@link openingCoverMs}. Later windows back off from `coverMs` as before.
+   */
+  openingMs?: number | undefined;
   /** The turn's signal — the cover dies with the turn, not at `dispose()`. */
   signal?: AbortSignal | undefined;
   /** The caller is talking, so the gap is already filled. */
@@ -56,6 +63,27 @@ export type DeadAirCover = {
   /** Drop the abort listener and the pending cover. */
   dispose: () => void;
 };
+
+/**
+ * The turn's opening window, anchored on when the caller stopped talking.
+ *
+ * `coverMs` counts from the commit, and the commit lands anywhere from under a
+ * second to several seconds after the caller's last word — so the same window
+ * put the filler at a different point in the caller's wait on every turn. This
+ * puts it at `DEAD_AIR_OPENING_TARGET_MS` from the last word (shifted by the
+ * author's `coverMs` the same as it differs from the default), never before
+ * the turn opens. Without a stop time it is `coverMs`, unchanged; `0` stays
+ * disabled. The derivation of the target is on the constant.
+ */
+export function openingCoverMs(
+  coverMs: number,
+  callerStoppedAt: number | undefined,
+  now: number,
+): number {
+  if (coverMs <= 0 || callerStoppedAt === undefined) return coverMs;
+  const target = DEAD_AIR_OPENING_TARGET_MS + (coverMs - DEFAULT_DEAD_AIR_COVER_MS);
+  return Math.max(0, target - Math.max(0, now - callerStoppedAt));
+}
 
 /**
  * Arm the cover for one turn.
@@ -214,7 +242,7 @@ export function createDeadAirCover(deps: DeadAirCoverDeps): DeadAirCover {
   // which a tool execution that ignores its abort signal defers for seconds.
   const onAbort = (): void => clear();
   signal?.addEventListener("abort", onAbort, { once: true });
-  arm();
+  arm(deps.openingMs ?? base);
 
   return {
     arm,

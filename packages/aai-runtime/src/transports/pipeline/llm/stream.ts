@@ -260,6 +260,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
   const {
     sendTtsText,
     deadAirCoverMs,
+    callerStoppedAt,
     callerSpeaking,
     callbacks,
     emitError,
@@ -321,6 +322,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
         sendTtsText: ttsText.send,
         onTtsBoundary: ttsText.boundary,
         deadAirCoverMs,
+        callerStoppedAt: callerStoppedAt?.(),
         // Lets the dead-air cover die with the turn: a barge-in during a tool
         // execution parks the fullStream read, deferring dispose() below.
         signal,

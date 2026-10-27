@@ -120,6 +120,11 @@ export const DEAD_AIR_OPENING_PHRASE = "I'm checking on this.";
  * `Pipeline dead-air cover` log's fire rate at `waitedMs: 2400` before moving
  * it again.
  *
+ * **The turn's OPENING window is now anchored on the caller's last word when
+ * the STT times it** — see {@link DEAD_AIR_OPENING_TARGET_MS}. This value is
+ * then the fallback (no word timings, a typed or chained turn) and the base
+ * the backoff doubles from.
+ *
  * Authors override it with `deadAirCoverMs`; 0 disables cover entirely.
  *
  * @internal
@@ -181,3 +186,40 @@ export const DEAD_AIR_COVER_MAX_MS = 8000;
  * @internal
  */
 export const DEAD_AIR_TOOL_COVER_MS = 1200;
+
+/**
+ * When the turn's OPENING filler should become audible, measured from the
+ * caller's last WORD rather than from the commit — for the default
+ * {@link DEFAULT_DEAD_AIR_COVER_MS}; an author's `deadAirCoverMs` shifts it by
+ * the same amount it differs from the default.
+ *
+ * A fixed window armed at the commit lands wherever the commit happened to.
+ * Caller's last word -> commit varies far more than anything after it (tau2
+ * retail, `aai-latest-10-26-all-changes-tools-6`, 62 turns paired exactly by
+ * transcript text: p50 1.4s, p90 3.4s, max 10.4s), so the same 2400 ms filler
+ * reached the caller anywhere from ~3.8s to past the point it re-prompts, and
+ * on fast-commit turns it fired while the answer was about to arrive. When the
+ * STT reports how long ago the last word ended (`SttTurnMeta.trailingSilenceMs`),
+ * the opening window is this minus that, floored at 0.
+ *
+ * **Derived, not chosen.** The constraint: the filler must be audible before
+ * the caller re-prompts, which tau2's simulated caller does after 5.0s of
+ * silence following its own speech (`DEFAULT_WAIT_TO_RESPOND_THRESHOLD_SELF_
+ * SECONDS`). Host caption -> audible audio measured p95 0.19s, and the harness
+ * quantizes to 0.2s ticks, so the latest safe target is 5.0 - 0.19 - 0.2 =
+ * 4.6s. The objective: a later filler only drops fillers the answer would have
+ * made redundant, so take the latest safe target. Replayed over 58 of those
+ * turns (fillers fired / wasted, i.e. the answer audible within 1s after /
+ * caller re-prompted first): the fixed 2400 ms window 25 / 11 / 7; anchored at
+ * 4.0s 27 / 11 / 3; anchored at 4.6s 22 / 9 / 3. The 3 left are turns whose
+ * commit itself landed past the target, which no cover can reach. No floor:
+ * once the caller has waited the target, nothing is gained by waiting longer.
+ *
+ * The 5.0s is the benchmark caller's patience; re-derive this if the caller
+ * model, the transport's playout latency, or the tick changes. Without the
+ * timing (another STT provider, a typed or chained turn) the window is
+ * `coverMs` from the commit, as before.
+ *
+ * @internal
+ */
+export const DEAD_AIR_OPENING_TARGET_MS = 4600;

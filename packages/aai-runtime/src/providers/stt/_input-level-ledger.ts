@@ -52,6 +52,11 @@ export interface InputLevelLedger {
    * rather than a quiet one.
    */
   peakDbfs(startMs: number, endMs: number): number | undefined;
+  /**
+   * How much audio has been sent, in ms on the same axis — the service's clock
+   * as of now. Against a word's `end` it says how long ago that word finished.
+   */
+  sentMs(): number;
 }
 
 /** Create an {@link InputLevelLedger} for audio at `sampleRate`. @internal */
@@ -89,6 +94,10 @@ export function createInputLevelLedger(sampleRate: number): InputLevelLedger {
           pendingSamples = 0;
         }
       }
+    },
+
+    sentMs(): number {
+      return ((completed * blockSamples + pendingSamples) * 1000) / sampleRate;
     },
 
     peakDbfs(startMs: number, endMs: number): number | undefined {

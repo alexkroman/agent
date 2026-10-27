@@ -96,6 +96,8 @@ export interface ConsumeLlmStreamParams {
   sendTtsText: SendTtsText;
   /** Dead-air cover window (ms); 0 disables — see {@link StreamPartHandlerDeps}. */
   deadAirCoverMs?: number | undefined;
+  /** When the caller stopped, for a turn opening now — see {@link StreamPartHandlerDeps}. */
+  callerStoppedAt?: (() => number | undefined) | undefined;
   /** Is the caller speaking right now? Suppresses filler — see StreamPartHandlerDeps. */
   callerSpeaking?: (() => boolean) | undefined;
   /**
