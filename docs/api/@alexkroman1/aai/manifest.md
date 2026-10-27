@@ -1137,7 +1137,9 @@ A checked set of tools, keyed by the name the model calls.
 
 ```ts
 type ToolSchema = {
-  annotations?: ToolAnnotations;
+  annotations?: {
+     readOnlyHint?: boolean;
+  };
   description: string;
   messages?: ToolMessages;
   name: string;
@@ -1155,10 +1157,19 @@ parameters — the serializable counterpart of `ToolDef`.
 ##### annotations?
 
 ```ts
-optional annotations?: ToolAnnotations;
+optional annotations?: {
+  readOnlyHint?: boolean;
+};
 ```
 
-What the tool does to the world — see [ToolAnnotations](index.md#toolannotations). Never sent to the model.
+What the tool does to the world — see `ToolDef.annotations`; `readOnlyHint:
+false` is a write the pipeline gates. Never sent to the model.
+
+###### readOnlyHint?
+
+```ts
+optional readOnlyHint?: boolean;
+```
 
 ##### description
 

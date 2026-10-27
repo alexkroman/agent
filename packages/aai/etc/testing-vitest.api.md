@@ -925,11 +925,6 @@ export type StubWorldOptions = {
     readonly reporter?: boolean | undefined;
 };
 
-// @public
-type ToolAnnotations = {
-    readOnlyHint?: boolean | undefined;
-};
-
 // @public @input
 type ToolBearingAgent = {
     readonly tools: Readonly<Record<string, ToolDef>>;
@@ -978,7 +973,9 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: ToolAnnotations;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    };
 };
 
 // @public @input

@@ -32,7 +32,6 @@ import {
   isToolFailure,
   spokenDate,
   spokenTime,
-  type ToolAnnotations,
   type ToolFailure,
   toolFailure,
   withInstruction,
@@ -219,8 +218,8 @@ function requireAnswer(response: HumanResponse) {
 
 // ─── The four answers ────────────────────────────────────────────────────────
 
-/** Accepting or editing SENDS the staged email or invite: a write (`ToolAnnotations`). */
-const WRITE: ToolAnnotations = { readOnlyHint: false };
+/** Accepting or editing SENDS the staged email or invite: a write (`readOnlyHint: false`). */
+const WRITE = { readOnlyHint: false } as const;
 
 /** `accept` — their `accept`: send it as proposed. */
 export function acceptTool() {

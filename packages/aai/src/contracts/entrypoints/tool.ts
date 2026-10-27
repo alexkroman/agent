@@ -42,8 +42,6 @@ export {
   type Message,
   orFail,
   requireEnv,
-  // `tool({ annotations })`: `readOnlyHint: false` marks a write the pipeline gates.
-  type ToolAnnotations,
   type ToolCompletionMessage,
   type ToolConditionOperator,
   type ToolContext,

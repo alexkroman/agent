@@ -587,7 +587,6 @@
     "TelephonyAccess",
     "TelephonyCarrier",
     "TextAgentParams",
-    "ToolAnnotations",
     "ToolChoice",
     "ToolCompletionMessage",
     "ToolConditionOperator",

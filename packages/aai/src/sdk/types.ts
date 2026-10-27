@@ -125,7 +125,6 @@ export type {
   DefaultToolResult,
   InferToolInput,
   InferToolOutput,
-  ToolAnnotations,
   ToolChoice,
   ToolCompletionMessage,
   ToolConditionOperator,

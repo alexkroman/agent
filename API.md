@@ -588,11 +588,6 @@ type StreamOptions = {
 };
 
 // @public
-type ToolAnnotations = {
-    readOnlyHint?: boolean | undefined;
-};
-
-// @public
 type ToolChoice = "auto" | "required" | "none" | {
     type: "tool";
     toolName: string;
@@ -634,7 +629,9 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: ToolAnnotations;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    };
 };
 
 // @public @input
@@ -1652,11 +1649,6 @@ export function stubStepMcp(tools?: ToolMap): {
 };
 
 // @public
-type ToolAnnotations = {
-    readOnlyHint?: boolean | undefined;
-};
-
-// @public
 type ToolChoice = "auto" | "required" | "none" | {
     type: "tool";
     toolName: string;
@@ -1698,7 +1690,9 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: ToolAnnotations;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    };
 };
 
 // @public @input
@@ -4020,11 +4014,6 @@ export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 export const TOOL_START_BLOCKING_MAX_MS = 8000;
 
 // @public
-type ToolAnnotations = {
-    readOnlyHint?: boolean | undefined;
-};
-
-// @public
 type ToolChoice = "auto" | "required" | "none" | {
     type: "tool";
     toolName: string;
@@ -4066,7 +4055,9 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: ToolAnnotations;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    };
 };
 
 // @public
@@ -4133,7 +4124,9 @@ type ToolSchema = {
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
     ui?: ToolUi | undefined;
-    annotations?: ToolAnnotations | undefined;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    } | undefined;
 };
 
 // @public @input
@@ -6155,11 +6148,6 @@ export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony">
 export function tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: ToolDef<P, R>): ToolDef<P, R>;
 
 // @public
-export type ToolAnnotations = {
-    readOnlyHint?: boolean | undefined;
-};
-
-// @public
 export type ToolChoice = "auto" | "required" | "none" | {
     type: "tool";
     toolName: string;
@@ -6201,7 +6189,9 @@ export type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | un
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: ToolAnnotations;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    };
 };
 
 // @public @input
@@ -7370,11 +7360,6 @@ export const TOOL_EXECUTION_TIMEOUT_MS = 30000;
 export const TOOL_RESULT_TRUNCATION_MARKER = "\n[truncated]";
 
 // @public
-type ToolAnnotations = {
-    readOnlyHint?: boolean | undefined;
-};
-
-// @public
 type ToolChoice = "auto" | "required" | "none" | {
     type: "tool";
     toolName: string;
@@ -7416,7 +7401,9 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: ToolAnnotations;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    };
 };
 
 // @public @input
@@ -8890,11 +8877,6 @@ type TelephonyCarrier = "twilio" | "telnyx" | (string & {});
 // @public
 export function toAgentConfig(source: AgentConfigSource): AgentConfig;
 
-// @public
-type ToolAnnotations = {
-    readOnlyHint?: boolean | undefined;
-};
-
 // @public (undocumented)
 export interface ToolBearingDef {
     // (undocumented)
@@ -8945,7 +8927,9 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: ToolAnnotations;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    };
 };
 
 // @public @input
@@ -9026,7 +9010,9 @@ export type ToolSchema = {
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
     ui?: ToolUi | undefined;
-    annotations?: ToolAnnotations | undefined;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    } | undefined;
 };
 
 // @internal
@@ -10825,11 +10811,6 @@ type StreamOptions = {
 export function stripJsonFence(reply: string): string;
 
 // @public
-type ToolAnnotations = {
-    readOnlyHint?: boolean | undefined;
-};
-
-// @public
 type ToolChoice = "auto" | "required" | "none" | {
     type: "tool";
     toolName: string;
@@ -10871,7 +10852,9 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: ToolAnnotations;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    };
 };
 
 // @public @input
@@ -13050,11 +13033,6 @@ export type TestToolContext = ToolContext & {
     readonly desk: StubDelegate;
 };
 
-// @public
-type ToolAnnotations = {
-    readOnlyHint?: boolean | undefined;
-};
-
 // @public @input
 export type ToolBearingAgent = {
     readonly tools: Readonly<Record<string, ToolDef>>;
@@ -13127,7 +13105,9 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: ToolAnnotations;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    };
 };
 
 // @public @input
@@ -14365,11 +14345,6 @@ export type StubWorldOptions = {
     readonly reporter?: boolean | undefined;
 };
 
-// @public
-type ToolAnnotations = {
-    readOnlyHint?: boolean | undefined;
-};
-
 // @public @input
 type ToolBearingAgent = {
     readonly tools: Readonly<Record<string, ToolDef>>;
@@ -14418,7 +14393,9 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: ToolAnnotations;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    };
 };
 
 // @public @input
@@ -15025,11 +15002,6 @@ type StreamOptions = {
 };
 
 // @public
-type ToolAnnotations = {
-    readOnlyHint?: boolean | undefined;
-};
-
-// @public
 type ToolChoice = "auto" | "required" | "none" | {
     type: "tool";
     toolName: string;
@@ -15071,7 +15043,9 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: ToolAnnotations;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    };
 };
 
 // @public @input

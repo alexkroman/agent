@@ -8423,13 +8423,25 @@ narrow a value it is never handed: the failure check returns before it runs.
 ##### annotations?
 
 ```ts
-optional annotations?: ToolAnnotations;
+optional annotations?: {
+  readOnlyHint?: boolean;
+};
 ```
 
-What the tool does to the world — see [ToolAnnotations](#toolannotations). Mark a tool
-that books, orders, cancels, sends or deletes `{ readOnlyHint: false }`:
-a caller's "uh-huh" spoken over the agent's confirmation question will then
-not run it.
+What the tool does to the world, in MCP's vocabulary. `readOnlyHint:
+false` declares a WRITE — something that changes state the caller cannot
+take back by asking (a booking, an order, a cancellation, a message sent).
+The pipeline transport then runs it only on a caller turn that did not
+start over the agent's own audio: an "uh-huh" spoken over its "Shall I
+cancel it?" is the caller listening, not agreeing, and the model is told
+to ask again instead. `true`, or no annotation, runs as it always has.
+Carried on the wire `ToolSchema.annotations`.
+
+###### readOnlyHint?
+
+```ts
+optional readOnlyHint?: boolean;
+```
 
 ###### Example
 
@@ -12980,13 +12992,25 @@ answering it.
 ##### annotations?
 
 ```ts
-optional annotations?: ToolAnnotations;
+optional annotations?: {
+  readOnlyHint?: boolean;
+};
 ```
 
-What the tool does to the world — see [ToolAnnotations](#toolannotations). Mark a tool
-that books, orders, cancels, sends or deletes `{ readOnlyHint: false }`:
-a caller's "uh-huh" spoken over the agent's confirmation question will then
-not run it.
+What the tool does to the world, in MCP's vocabulary. `readOnlyHint:
+false` declares a WRITE — something that changes state the caller cannot
+take back by asking (a booking, an order, a cancellation, a message sent).
+The pipeline transport then runs it only on a caller turn that did not
+start over the agent's own audio: an "uh-huh" spoken over its "Shall I
+cancel it?" is the caller listening, not agreeing, and the model is told
+to ask again instead. `true`, or no annotation, runs as it always has.
+Carried on the wire `ToolSchema.annotations`.
+
+###### readOnlyHint?
+
+```ts
+optional readOnlyHint?: boolean;
+```
 
 ###### Example
 
@@ -13358,13 +13382,25 @@ The tool body, handed this session's slot value alongside the usual args.
 ##### annotations?
 
 ```ts
-optional annotations?: ToolAnnotations;
+optional annotations?: {
+  readOnlyHint?: boolean;
+};
 ```
 
-What the tool does to the world — see [ToolAnnotations](#toolannotations). Mark a tool
-that books, orders, cancels, sends or deletes `{ readOnlyHint: false }`:
-a caller's "uh-huh" spoken over the agent's confirmation question will then
-not run it.
+What the tool does to the world, in MCP's vocabulary. `readOnlyHint:
+false` declares a WRITE — something that changes state the caller cannot
+take back by asking (a booking, an order, a cancellation, a message sent).
+The pipeline transport then runs it only on a caller turn that did not
+start over the agent's own audio: an "uh-huh" spoken over its "Shall I
+cancel it?" is the caller listening, not agreeing, and the model is told
+to ask again instead. `true`, or no annotation, runs as it always has.
+Carried on the wire `ToolSchema.annotations`.
+
+###### readOnlyHint?
+
+```ts
+optional readOnlyHint?: boolean;
+```
 
 ###### Example
 
@@ -13773,13 +13809,25 @@ declined, not half-succeeded.
 ##### annotations?
 
 ```ts
-optional annotations?: ToolAnnotations;
+optional annotations?: {
+  readOnlyHint?: boolean;
+};
 ```
 
-What the tool does to the world — see [ToolAnnotations](#toolannotations). Mark a tool
-that books, orders, cancels, sends or deletes `{ readOnlyHint: false }`:
-a caller's "uh-huh" spoken over the agent's confirmation question will then
-not run it.
+What the tool does to the world, in MCP's vocabulary. `readOnlyHint:
+false` declares a WRITE — something that changes state the caller cannot
+take back by asking (a booking, an order, a cancellation, a message sent).
+The pipeline transport then runs it only on a caller turn that did not
+start over the agent's own audio: an "uh-huh" spoken over its "Shall I
+cancel it?" is the caller listening, not agreeing, and the model is told
+to ask again instead. `true`, or no annotation, runs as it always has.
+Carried on the wire `ToolSchema.annotations`.
+
+###### readOnlyHint?
+
+```ts
+optional readOnlyHint?: boolean;
+```
 
 ###### Example
 
@@ -18939,39 +18987,6 @@ See [AgentDeclaration.mode](#mode).
 
 ***
 
-### ToolAnnotations
-
-```ts
-type ToolAnnotations = {
-  readOnlyHint?: boolean;
-};
-```
-
-What a tool does to the world, in MCP's vocabulary.
-
-`readOnlyHint: false` declares a WRITE — something that changes state the
-caller cannot take back by asking (a booking, an order, a cancellation, a
-message sent). The pipeline transport then runs it only on a caller turn
-that did not start over the agent's own audio: a turn spoken over the agent
-("uh-huh" over its "Shall I cancel it?") cannot be the caller confirming
-what it was asking, and the model is told to ask again instead. `true`, or no
-annotation, runs as it always has.
-
-Declared on an authored `ToolDef` or on a host-mode client's tool
-declaration; carried on the wire `ToolSchema` either way.
-
-#### Properties
-
-##### readOnlyHint?
-
-```ts
-optional readOnlyHint?: boolean;
-```
-
-`false` marks a write; `true` a read. Absent means undeclared (runs ungated).
-
-***
-
 ### ToolChoice
 
 ```ts
@@ -19546,7 +19561,9 @@ backend configured, naming which.
 
 ```ts
 type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined, R = unknown> = {
-  annotations?: ToolAnnotations;
+  annotations?: {
+     readOnlyHint?: boolean;
+  };
   description: string;
   inputSchema?: P;
   messages?: ToolMessagesInput;
@@ -19647,13 +19664,25 @@ once per tool (see `warnOversizedResult` in `aai-runtime`'s
 ##### annotations?
 
 ```ts
-optional annotations?: ToolAnnotations;
+optional annotations?: {
+  readOnlyHint?: boolean;
+};
 ```
 
-What the tool does to the world — see [ToolAnnotations](#toolannotations). Mark a tool
-that books, orders, cancels, sends or deletes `{ readOnlyHint: false }`:
-a caller's "uh-huh" spoken over the agent's confirmation question will then
-not run it.
+What the tool does to the world, in MCP's vocabulary. `readOnlyHint:
+false` declares a WRITE — something that changes state the caller cannot
+take back by asking (a booking, an order, a cancellation, a message sent).
+The pipeline transport then runs it only on a caller turn that did not
+start over the agent's own audio: an "uh-huh" spoken over its "Shall I
+cancel it?" is the caller listening, not agreeing, and the model is told
+to ask again instead. `true`, or no annotation, runs as it always has.
+Carried on the wire `ToolSchema.annotations`.
+
+###### readOnlyHint?
+
+```ts
+optional readOnlyHint?: boolean;
+```
 
 ###### Example
 

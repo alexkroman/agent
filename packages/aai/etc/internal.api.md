@@ -808,11 +808,6 @@ export const TOOL_EXECUTION_TIMEOUT_MS = 30000;
 export const TOOL_RESULT_TRUNCATION_MARKER = "\n[truncated]";
 
 // @public
-type ToolAnnotations = {
-    readOnlyHint?: boolean | undefined;
-};
-
-// @public
 type ToolChoice = "auto" | "required" | "none" | {
     type: "tool";
     toolName: string;
@@ -854,7 +849,9 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: ToolAnnotations;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    };
 };
 
 // @public @input
