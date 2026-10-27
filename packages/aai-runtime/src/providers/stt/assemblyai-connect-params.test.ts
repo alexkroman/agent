@@ -161,6 +161,28 @@ describe("assemblyAIStt STT adapter — voice focus", () => {
     expect("voiceFocusThreshold" in fake.params).toBe(false);
     await off.close();
   });
+
+  test("sends no vadThreshold by default — the service's own gate applies", async () => {
+    const session = await openSession({ model: "universal-3-5-pro" });
+    expect("vadThreshold" in fakeOf(session).params).toBe(false);
+    await session.close();
+  });
+
+  test("sends an explicit vadThreshold", async () => {
+    const session = await openSession({ model: "universal-3-5-pro", vadThreshold: 0.02 });
+    expect(fakeOf(session).params.vadThreshold).toBe(0.02);
+    await session.close();
+  });
+
+  test("sends vadThreshold with voice focus off — the VAD gates frames either way", async () => {
+    const session = await openSession({
+      model: "universal-3-5-pro",
+      voiceFocus: "off",
+      vadThreshold: 0.02,
+    });
+    expect(fakeOf(session).params.vadThreshold).toBe(0.02);
+    await session.close();
+  });
 });
 
 describe("assemblyAIStt STT adapter — endpointing (min/max_turn_silence)", () => {

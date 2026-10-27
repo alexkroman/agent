@@ -41,6 +41,11 @@ describe("resolveAssemblyAISttSettings", () => {
     });
   });
 
+  test("carries an explicit vadThreshold, and no default for it", () => {
+    expect(resolveAssemblyAISttSettings({ vadThreshold: 0.02 }).vadThreshold).toBe(0.02);
+    expect("vadThreshold" in resolveAssemblyAISttSettings({})).toBe(false);
+  });
+
   test('`voiceFocus: "off"` sends no focus at all', () => {
     expect(resolveAssemblyAISttSettings({ voiceFocus: "off" }).voiceFocus).toBe("");
   });
