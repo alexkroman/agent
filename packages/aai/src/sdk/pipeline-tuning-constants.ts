@@ -204,6 +204,20 @@ export const DEFAULT_VOICE_FOCUS = "near-field";
 export const TTS_RECONNECT_TIMEOUT_MS = 8000;
 
 /**
+ * How long the AssemblyAI TTS socket may send nothing before the adapter sends
+ * a `KeepAlive` frame. The service closes a socket after **120 s** with no
+ * client message (`3006`, "No message received for 120 seconds"), and the
+ * pipeline treats any provider error as fatal, so an idle close ends the call:
+ * measured on tau2-bench retail, a 2-minute stretch with no agent speech closed
+ * TTS, the session tore down, and the host answered none of the caller's next
+ * four utterances. A quarter of the service's window, so one late or dropped
+ * timer tick cannot reach it.
+ *
+ * @internal
+ */
+export const TTS_KEEPALIVE_INTERVAL_MS = 30_000;
+
+/**
  * How long a `Cancel` frame's `Cancelled` acknowledgement may take before the
  * AssemblyAI TTS adapter falls back to dropping the socket.
  *
