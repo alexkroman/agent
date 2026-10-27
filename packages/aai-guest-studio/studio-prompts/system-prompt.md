@@ -262,7 +262,7 @@ placeholders or guess missing parameters.
     export default agent({ name: "…" });
   An agent() with no stt/llm/tts runs the default AssemblyAI pipeline with
   real defaults for all three stages (universal-3-5-pro,
-  gpt-5.6-luna, aai-jane), so
+  gpt-6-luna, aai-jane), so
   there is no gateway model id to invent — an invented one is a 400 at the
   first session, with no compile-time or deploy-time check to catch it.
   To change a stage, declare just that field — every stage you leave unset
@@ -291,8 +291,8 @@ placeholders or guess missing parameters.
   and there is no way to reach S2S by omission.
 - **Never invent a gateway model id.** The LLM Gateway rejects unknown
   models with a 400 "model not found" that only shows up at runtime. Use one
-  of exactly these: gpt-5.5, gpt-5-mini, claude-sonnet-4-6, claude-haiku-4-5-20251001, claude-opus-4-5-20251101, claude-opus-4-6, claude-opus-4-7, claude-opus-4-8, claude-opus-5, claude-sonnet-4-5-20250929, claude-sonnet-5, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-pro, gemini-3.1-flash-lite, gemini-3.5-flash, gemini-3.5-flash-lite, gemini-3.6-flash, gemini-3.7-flash, gemini-3.8-flash, gemma-4-31b, gpt-4.1, gpt-5, gpt-5-nano, gpt-5.1, gpt-5.2, gpt-5.6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-6-astra, qwen3-32B, qwen3-next-80b-a3b. Prefer
-  "gpt-5.6-luna" unless the user asks for a different model.
+  of exactly these: gpt-5.5, gpt-5-mini, claude-sonnet-4-6, claude-haiku-4-5-20251001, claude-opus-4-5-20251101, claude-opus-4-6, claude-opus-4-7, claude-opus-4-8, claude-opus-5, claude-opus-5-5, claude-sonnet-4-5-20250929, claude-sonnet-5, gemini-2.5-flash, gemini-2.5-flash-lite, gemini-2.5-pro, gemini-3.1-flash-lite, gemini-3.5-flash, gemini-3.5-flash-lite, gemini-3.6-flash, gemini-3.7-flash, gemini-3.8-flash, gemma-4-31b, gpt-4.1, gpt-5, gpt-5-nano, gpt-5.1, gpt-5.2, gpt-5.6-luna, gpt-5.6-sol, gpt-5.6-terra, gpt-6-astra, gpt-6-luna, qwen3-32B, qwen3-next-80b-a3b. Prefer
+  "gpt-6-luna" unless the user asks for a different model.
 - For a one-shot LLM call inside a tool (summarize, classify, extract),
   use ctx.generate — see the reference below. Its `schema` option is
   a zod schema (typed structured output) or plain JSON Schema.
@@ -727,7 +727,7 @@ fails at `aai publish` instead of mid-call). `agent-guide/AGENT-API.md` lists
 every field.
 
 **To change the model, set `llm` in `agent.ts`** (templates usually omit it).
-The default is `gpt-5.6-luna` on the AssemblyAI LLM Gateway, which is **not part
+The default is `gpt-6-luna` on the AssemblyAI LLM Gateway, which is **not part
 of AssemblyAI's free credits**: an account with no payment method is refused
 ("does not have access to this LLM Gateway model"). Add a card in the dashboard,
 or bring another provider's key (`agent-guide/PROVIDERS.md`). A model must

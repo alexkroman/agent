@@ -41,7 +41,7 @@ describe("assemblyAIPipeline", () => {
     // to a tool-carrying request on it unless the effort is off, so the pair
     // below is what stands between the default pipeline and a call that
     // connects and cannot answer.
-    expect(stage.options.model).toBe("gpt-5.6-luna");
+    expect(stage.options.model).toBe("gpt-6-luna");
 
     // An agent with no providers at all gets the same treatment. Asserted
     // through toAgentConfig, not agent(): the default fill runs at the

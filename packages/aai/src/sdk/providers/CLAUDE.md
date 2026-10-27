@@ -103,7 +103,7 @@ Claude streams are repaired in bytes by `repairOpenAiStream`
 ### The gateway default model
 
 **`ASSEMBLYAI_LLM_DEFAULT_MODEL` in `llm/assemblyai.ts` is the answer** — don't
-trust a prose default (currently `gpt-5.6-luna`).
+trust a prose default (currently `gpt-6-luna`).
 
 - **Two things are keyed to the id and fail SILENTLY if wrong** (the constant's
   doc has the matrix): `TOOLS_REQUIRE_NO_REASONING` decides whether

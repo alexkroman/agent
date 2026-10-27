@@ -68,6 +68,7 @@ export type AssemblyAIGatewayModel =
   | "claude-opus-4-7"
   | "claude-opus-4-8"
   | "claude-opus-5"
+  | "claude-opus-5-5"
   | "claude-sonnet-4-5-20250929"
   | "claude-sonnet-4-6"
   | "claude-sonnet-5"
@@ -92,6 +93,7 @@ export type AssemblyAIGatewayModel =
   | "gpt-5.6-sol"
   | "gpt-5.6-terra"
   | "gpt-6-astra"
+  | "gpt-6-luna"
   | "gpt-oss-120b"
   | "gpt-oss-20b"
   | "qwen3-32B"
@@ -126,6 +128,7 @@ export const ASSEMBLYAI_GATEWAY_MODELS = {
   "claude-opus-4-7": { tools: true, stream: true, eu: false, live: true, context: 1_000_000 },
   "claude-opus-4-8": { tools: true, stream: true, eu: false, live: true, context: 1_000_000 },
   "claude-opus-5": { tools: true, stream: true, eu: false, live: true, context: 200_000 },
+  "claude-opus-5-5": { tools: true, stream: true, eu: true, live: true, context: 1_000_000 },
   "claude-sonnet-4-5-20250929": {
     tools: true,
     stream: true,
@@ -156,6 +159,7 @@ export const ASSEMBLYAI_GATEWAY_MODELS = {
   "gpt-5.6-sol": { tools: true, stream: true, eu: false, live: true, context: 270_000 },
   "gpt-5.6-terra": { tools: true, stream: true, eu: false, live: true, context: 270_000 },
   "gpt-6-astra": { tools: true, stream: true, eu: false, live: true, context: 270_000 },
+  "gpt-6-luna": { tools: true, stream: true, eu: false, live: true, context: 922_000 },
   "gpt-oss-120b": { tools: true, stream: false, eu: false, live: true, context: 131_072 },
   "gpt-oss-20b": { tools: true, stream: false, eu: false, live: true, context: 131_072 },
   "qwen3-32B": { tools: true, stream: true, eu: false, live: true, context: 200_000 },
