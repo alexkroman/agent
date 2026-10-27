@@ -7,7 +7,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { makeAgent } from "../_agent-test-utils.ts";
-import { silentLogger } from "../_logger-test-utils.ts";
+import { makeLogger, silentLogger } from "../_logger-test-utils.ts";
 import {
   createFakeLanguageModel,
   createFakeSttProvider,
@@ -151,5 +151,30 @@ describe("createRuntime — the relay pair must be whole", () => {
         logger: silentLogger,
       }),
     ).toThrow(/executeTool/);
+  });
+});
+
+describe("createRuntime — host builtins in relay mode", () => {
+  // The client is sent a `tool.called` only for a tool it must run, so a host
+  // builtin (think) left no trace a relay harness could read. The log line is
+  // the record, and the call must still not be relayed.
+  test("a think call runs on the host and is logged, not relayed", async () => {
+    const relay = vi.fn(async () => "relayed");
+    const logger = makeLogger();
+    const exec = createRuntimeWithSeams({
+      agent: makeAgent(),
+      env: {},
+      executeTool: relay,
+      onToolResult: vi.fn(),
+      toolSchemas: [],
+      logger,
+    });
+    expect(await exec.executeTool("think", { thought: "Policy: confirm first." }, "s1", [])).toBe(
+      "ok",
+    );
+    expect(relay).not.toHaveBeenCalled();
+    const lines = logger.info.mock.calls.filter(([m]) => m === "Host builtin tool");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.[1]).toMatchObject({ sid: "s1", tool: "think" });
   });
 });
