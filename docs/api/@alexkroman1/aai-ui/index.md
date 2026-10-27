@@ -2871,14 +2871,27 @@ for a text box.
 #### Example
 
 ```tsx
-const dictation = useDictation({
-  transcribe: async (audio, { signal }) => {
-    const res = await fetch("/api/dictation", { method: "POST", body: audio, signal });
-    return ((await res.json()) as { text: string }).text;
-  },
-  onText: (text) => setDraft((d) => (d ? `${d} ${text}` : text)),
-});
-return <button onClick={dictation.toggle}>{dictation.phase === "recording" ? "Stop" : "Speak"}</button>;
+import { useDictation } from "@alexkroman1/aai-ui";
+import { useState } from "react";
+
+export function SpokenNote() {
+  const [draft, setDraft] = useState("");
+  const dictation = useDictation({
+    transcribe: async (audio, { signal }) => {
+      const res = await fetch("api/dictation", { method: "POST", body: audio, signal });
+      return ((await res.json()) as { text: string }).text;
+    },
+    onText: (text) => setDraft((d) => (d ? `${d} ${text}` : text)),
+  });
+  return (
+    <div>
+      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} />
+      <button type="button" onClick={dictation.toggle}>
+        {dictation.phase === "recording" ? "Stop" : "Speak"}
+      </button>
+    </div>
+  );
+}
 ```
 
 ***

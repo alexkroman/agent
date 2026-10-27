@@ -229,18 +229,31 @@ works on any page. The callback posts the clip to your own server, which calls
 (AssemblyAI's dictation API) — never call that from the browser, it would ship
 your key in the page:
 
-```tsx no-check
+```tsx
 import { useDictation } from "@alexkroman1/aai-ui";
+import { useState } from "react";
 
-const dictation = useDictation({
-  transcribe: async (audio, { signal }) => {
-    const res = await fetch("api/dictation", { method: "POST", body: audio, signal });
-    return ((await res.json()) as { text: string }).text;
-  },
-  onText: (text) => setDraft((d) => (d ? `${d} ${text}` : text)),
-});
-// dictation.phase: "idle" | "starting" | "recording" | "transcribing"
-return dictation.supported && <button onClick={dictation.toggle}>Speak</button>;
+export function SpokenNote() {
+  const [draft, setDraft] = useState("");
+  const dictation = useDictation({
+    transcribe: async (audio, { signal }) => {
+      const res = await fetch("api/dictation", { method: "POST", body: audio, signal });
+      return ((await res.json()) as { text: string }).text;
+    },
+    onText: (text) => setDraft((d) => (d ? `${d} ${text}` : text)),
+  });
+  return (
+    <div>
+      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} />
+      {dictation.supported && (
+        <button type="button" onClick={dictation.toggle}>
+          {dictation.phase === "recording" ? "Stop" : "Speak"}
+        </button>
+      )}
+      {dictation.error && <p>{dictation.error}</p>}
+    </div>
+  );
+}
 ```
 
 It releases the microphone on every way out, drops an answer that arrives after

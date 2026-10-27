@@ -20,11 +20,12 @@
  * ```ts
  * import { transcribeDictation } from "@alexkroman1/aai/experimental";
  *
- * app.post("/dictation", async (c) => {
- *   const audio = new Uint8Array(await c.req.arrayBuffer());
- *   const { text } = await transcribeDictation(audio, { apiKey: userKey });
- *   return c.json({ text });
- * });
+ * // A route handler: `apiKey` is the key of whoever this request bills.
+ * export async function dictation(req: Request, apiKey: string): Promise<Response> {
+ *   const audio = new Uint8Array(await req.arrayBuffer());
+ *   const { text } = await transcribeDictation(audio, { apiKey });
+ *   return Response.json({ text });
+ * }
  * ```
  *
  * @module dictation
