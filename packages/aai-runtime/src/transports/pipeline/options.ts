@@ -81,9 +81,11 @@ export interface PipelineTransportOptions {
   /**
    * Minimum sustained speech (ms since the utterance's first interim
    * transcript) before an interim-triggered barge-in aborts the reply — a
-   * duration gate alongside `minBargeInWords`. Committed turns (STT finals)
-   * are never gated. Defaults to DEFAULT_INTERRUPTION_MIN_DURATION_MS; 0
-   * disables the gate.
+   * duration gate alongside `minBargeInWords`. A committed turn (STT final)
+   * begun over agent speech is gated on its words' span instead
+   * (`SttTurnMeta.spokenMs`): shorter than this, it is an acknowledgement and
+   * is dropped rather than committed. Defaults to
+   * DEFAULT_INTERRUPTION_MIN_DURATION_MS; 0 disables both.
    */
   interruptionMinDurationMs?: number | undefined;
   /**

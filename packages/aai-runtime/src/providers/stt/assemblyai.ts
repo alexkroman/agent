@@ -295,8 +295,9 @@ export function openAssemblyAI(
         // distinguishes the two, and "the provider said nothing" is the absent case.
         const span = turnWordSpanMs(event);
         const inputPeakDbfs = span && levels.peakDbfs(span.startMs, span.endMs);
+        const spokenMs = span && span.endMs - span.startMs;
         shell.emit(isCommittingTurn(event, awaitingFormatted) ? "final" : "partial", text, {
-          ...omitUndefined({ endOfTurnConfidence, inputPeakDbfs }),
+          ...omitUndefined({ endOfTurnConfidence, inputPeakDbfs, spokenMs }),
         });
       });
 

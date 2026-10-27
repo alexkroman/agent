@@ -41,9 +41,11 @@
  *    has. It is a VETO: it can only turn a yes into a no, and it fails open
  *    (no measurement is never quiet). `caller-level.ts` owns the rule.
  *
- * A committed FINAL skips step 3's second half, as it always has: a final is
- * demonstrably real speech, so there is nothing for a sustained-speech gate to
- * establish.
+ * A committed FINAL skips step 3's second half HERE: the time since its first
+ * interim includes the endpointing silence, so it cannot measure sustained
+ * speech. The gate still applies to finals, upstream and on the words' own
+ * span — a final shorter than it, begun over agent speech, is dropped before
+ * this policy is asked (`dropsBriefFinal` in `stt-handlers.ts`).
  *
  * **Empty lists make this byte-identical to the pre-phrase behaviour**, which
  */

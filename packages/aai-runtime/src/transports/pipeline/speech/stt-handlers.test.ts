@@ -281,6 +281,69 @@ describe("the relative-level veto", () => {
   });
 });
 
+describe("a brief final over agent speech is an acknowledgement, not a turn", () => {
+  const GATE = 500;
+
+  function makeBriefHandlers(overrides: Partial<Deps> = {}) {
+    const state = { speaking: true };
+    const log = makeLogger();
+    const abortInFlightTurn = vi.fn();
+    const made = makeHandlers({
+      isTurnInFlight: () => state.speaking,
+      hasTurnSpoken: () => state.speaking,
+      agentIsSpeaking: () => state.speaking,
+      audioOnLine: () => state.speaking,
+      utteranceOpenedOverSpeech: () => state.speaking,
+      minBargeInWords: () => 1,
+      interruptionMinDurationMs: () => GATE,
+      abortInFlightTurn,
+      log,
+      ...overrides,
+    });
+    return { ...made, state, log, abortInFlightTurn };
+  }
+
+  test("an 'uh-huh' over the agent neither cuts the reply nor commits", () => {
+    const h = makeBriefHandlers();
+    h.handlers.onSttFinal("Uh-huh.", { spokenMs: 320 });
+    expect(h.committed).toEqual([]);
+    expect(h.abortInFlightTurn).not.toHaveBeenCalled();
+    expect(h.reported).not.toContain("reply.cancelled");
+    // The edge is left to the idle watchdog, as for any utterance with no turn.
+    expect(h.edges.ended).toBe(0);
+    expect(
+      h.log.info.mock.calls.filter(([m]) => m === "Pipeline brief final dropped"),
+    ).toHaveLength(1);
+  });
+
+  test("an utterance as long as the gate still takes the floor", () => {
+    const h = makeBriefHandlers();
+    h.handlers.onSttFinal("no wait", { spokenMs: GATE });
+    expect(h.committed).toEqual([{ text: "no wait" }]);
+    expect(h.abortInFlightTurn).toHaveBeenCalledOnce();
+    expect(h.reported).toContain("reply.cancelled");
+  });
+
+  test("a short answer given after the agent stopped still commits", () => {
+    const h = makeBriefHandlers();
+    h.state.speaking = false;
+    h.handlers.onSttFinal("Yes.", { spokenMs: 250 });
+    expect(h.committed).toEqual([{ text: "Yes." }]);
+  });
+
+  test("fails open without word timings", () => {
+    const h = makeBriefHandlers();
+    h.handlers.onSttFinal("Uh-huh.");
+    expect(h.committed).toEqual([{ text: "Uh-huh." }]);
+  });
+
+  test("a gate of 0 disables it", () => {
+    const h = makeBriefHandlers({ interruptionMinDurationMs: () => 0 });
+    h.handlers.onSttFinal("Uh-huh.", { spokenMs: 320 });
+    expect(h.committed).toEqual([{ text: "Uh-huh." }]);
+  });
+});
+
 describe("continuation: the caller resumes right after a commit", () => {
   /**
    * Handlers whose speaking edge opens on the first partial and reports the
