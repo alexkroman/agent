@@ -6,6 +6,7 @@ import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { withInstruction } from "@alexkroman1/aai/utils";
 import type { Tool, ToolExecutionOptions } from "ai";
 import { describe, expect, test, vi } from "vitest";
+import { FailedCallMemo } from "./failed-call-memo.ts";
 import { TOOL_INSTRUCTION_LABEL } from "./result-instruction.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
 
@@ -277,5 +278,42 @@ describe("toVercelTools — message snapshot isolation", () => {
       type: "text",
       value: `{"ok":true}\n\n${TOOL_INSTRUCTION_LABEL} Say so in one word.`,
     });
+  });
+});
+
+describe("toVercelTools with a FailedCallMemo", () => {
+  test("the model's copy of a failure keeps the tried-list; a repeat is refused unrun", async () => {
+    const executeTool = vi.fn(async () => "Error: no forecast");
+    const tools = toVercelTools(schemas, {
+      executeTool,
+      sessionId: "s1",
+      messages: () => [],
+      failedCalls: new FailedCallMemo(),
+    });
+    const first = await runTool(
+      tools.get_weather,
+      { city: "SF" },
+      { toolCallId: "t1", messages: [] },
+    );
+    // The tool's own string goes to the stream (and so to `tool.completed`)...
+    expect(first).toBe("Error: no forecast");
+    // ...while the provider's copy — recomputed from that string unless kept —
+    // carries the note, which is why the note travels as an instruction.
+    const forModel = await tools.get_weather?.toModelOutput?.({
+      toolCallId: "t1",
+      input: { city: "SF" },
+      output: first,
+    });
+    expect(forModel).toEqual({
+      type: "text",
+      value: `Error: no forecast\n\n${TOOL_INSTRUCTION_LABEL} Already tried, all failed: get_weather({"city":"SF"})`,
+    });
+    const again = await runTool(
+      tools.get_weather,
+      { city: "SF" },
+      { toolCallId: "t2", messages: [] },
+    );
+    expect(executeTool).toHaveBeenCalledTimes(1);
+    expect(String(again)).toContain('"reason":"repeated_failure"');
   });
 });
