@@ -196,7 +196,7 @@ export function decideClientEvent(event: string, data: unknown): ClientEventDeci
 export const DEEPGRAM_DEFAULT_ENDPOINTING_MS: number;
 
 // @public
-export const DEFAULT_BUILTIN_TOOLS: readonly ["think"];
+export const DEFAULT_BUILTIN_TOOLS: readonly [];
 
 // @public
 export const DEFAULT_CALL_RING_TIMEOUT_S: number;

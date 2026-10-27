@@ -2873,6 +2873,29 @@ Today only AssemblyAI has it (`UpdateConfiguration.min_turn_silence`).
 
 `void`
 
+##### updateKeyterms()?
+
+```ts
+optional updateKeyterms(terms: readonly string[]): void;
+```
+
+Replace the terms the transcriber is biased toward, mid-stream — what the
+pipeline feeds the proper nouns of tool results through
+(`transports/pipeline/speech/keyterms.ts`). The WHOLE set each call: the
+service replaces rather than merges. Optional for the reason
+[updateEndpointing](#updateendpointing) is. Today only AssemblyAI has it
+(`UpdateConfiguration.keyterms_prompt`).
+
+###### Parameters
+
+###### terms
+
+readonly `string`[]
+
+###### Returns
+
+`void`
+
 ***
 
 ### TtsError

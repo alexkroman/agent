@@ -2081,6 +2081,9 @@ type ToolSchema = {
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
     ui?: ToolUi | undefined;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    } | undefined;
 };
 
 // @public @input

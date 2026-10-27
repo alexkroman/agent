@@ -1137,6 +1137,9 @@ A checked set of tools, keyed by the name the model calls.
 
 ```ts
 type ToolSchema = {
+  annotations?: {
+     readOnlyHint?: boolean;
+  };
   description: string;
   messages?: ToolMessages;
   name: string;
@@ -1150,6 +1153,27 @@ A tool declaration in wire form: name, description, and JSON Schema
 parameters — the serializable counterpart of `ToolDef`.
 
 #### Properties
+
+##### annotations?
+
+```ts
+optional annotations?: {
+  readOnlyHint?: boolean;
+};
+```
+
+What the tool does to the world, in MCP's vocabulary. `readOnlyHint:
+false` declares a WRITE: the pipeline transport then runs it only on a
+caller turn that did not start over the agent's own audio — a turn spoken
+over the agent cannot be the caller confirming what it was asking (see
+`confirmation-gate.ts` in the runtime). `true`, or no annotation, runs as
+it always has. Never sent to the model.
+
+###### readOnlyHint?
+
+```ts
+optional readOnlyHint?: boolean;
+```
 
 ##### description
 

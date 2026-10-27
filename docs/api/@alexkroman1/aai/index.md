@@ -4302,15 +4302,13 @@ caller are both cut from those groups, so no field skips either.
 optional builtinTools?: readonly BuiltinTool[];
 ```
 
-Built-in server-side tools enabled for this agent. Unset enables only
-`think` (`DEFAULT_BUILTIN_TOOLS`), a silent reasoning scratchpad the model
-uses between tool calls; every other built-in is opt-in by name. Setting
-the field REPLACES the default — include `"think"` to keep it, and pass
-`[]` for no built-ins at all. See [BuiltinTool](#builtintool) for the catalog.
+Built-in server-side tools enabled for this agent. Unset enables none
+(`DEFAULT_BUILTIN_TOOLS` is empty): every built-in, `think` included, is
+opt-in by name. See [BuiltinTool](#builtintool) for the catalog.
 
 ###### Default Value
 
-`["think"]` (`DEFAULT_BUILTIN_TOOLS`)
+`[]` (`DEFAULT_BUILTIN_TOOLS`)
 
 ##### clientInbox?
 
@@ -5204,15 +5202,13 @@ means "not configured". Write an [AgentParams](#agentparams) member; read this.
 optional builtinTools?: readonly BuiltinTool[];
 ```
 
-Built-in server-side tools enabled for this agent. Unset enables only
-`think` (`DEFAULT_BUILTIN_TOOLS`), a silent reasoning scratchpad the model
-uses between tool calls; every other built-in is opt-in by name. Setting
-the field REPLACES the default — include `"think"` to keep it, and pass
-`[]` for no built-ins at all. See [BuiltinTool](#builtintool) for the catalog.
+Built-in server-side tools enabled for this agent. Unset enables none
+(`DEFAULT_BUILTIN_TOOLS` is empty): every built-in, `think` included, is
+opt-in by name. See [BuiltinTool](#builtintool) for the catalog.
 
 ###### Default Value
 
-`["think"]` (`DEFAULT_BUILTIN_TOOLS`)
+`[]` (`DEFAULT_BUILTIN_TOOLS`)
 
 ###### Inherited from
 
@@ -15745,10 +15741,9 @@ call and answer the model with an error naming the variable when it is
 unset. A deploy checks the key without it being listed in `requiredEnv`
 (`BUILTIN_TOOL_ENV`), the same rule an MCP server's `tokenEnv` follows.
 
-When `builtinTools` is not set, only `think` is enabled
-(`DEFAULT_BUILTIN_TOOLS`); every other built-in is something an agent asks
-for by name. Setting the field replaces the default rather than extending
-it — include `"think"` to keep it, and pass `[]` for no built-ins at all.
+When `builtinTools` is not set, no built-in is enabled
+(`DEFAULT_BUILTIN_TOOLS` is empty): every built-in, `think` included, is
+something an agent asks for by name.
 
 OPEN, like `VoicePresetName`: the names above are written inline as the
 autocomplete half, and any other string compiles, so an agent naming a

@@ -1360,7 +1360,7 @@ trace or a type error can be traced back to something.
 | `DEEPGRAM_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the Deepgram API key. |
 | `DEEPGRAM_DEFAULT_ENDPOINTING_MS` | const | `@alexkroman1/aai/internal` |  | Default Deepgram `endpointing` (ms) — **the same knob as `DEFAULT_MIN_TURN_SILENCE_MS`, seen from a different vendor.** The transport commits a turn on every … |
 | `DEEPGRAM_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
-| `DEFAULT_BUILTIN_TOOLS` | const | `@alexkroman1/aai/internal` |  | Built-in tools enabled when an agent does not set `builtinTools` at all — **`think`**, and only `think`. |
+| `DEFAULT_BUILTIN_TOOLS` | const | `@alexkroman1/aai/internal` |  | Built-in tools enabled when an agent does not set `builtinTools` at all — **none**. |
 | `DEFAULT_CALL_RING_TIMEOUT_S` | const | `@alexkroman1/aai/internal` |  | Default `PlaceCallOptions.ringTimeoutS`: thirty seconds of ringing, then `no-answer` — about five rings, short of most voicemail pickups. |
 | `DEFAULT_CALL_TIME_LIMIT_S` | const | `@alexkroman1/aai/internal` |  | Default `PlaceCallOptions.timeLimitS`: Twilio hangs up after ten minutes whatever the agent is doing, so a stuck conversation cannot run up hours of minutes … |
 | `DEFAULT_CLIENT_ACK_TIMEOUT_MS` | const | `@alexkroman1/aai/internal` |  | Default `StepNotifyClientOptions.ackTimeoutMs`. |

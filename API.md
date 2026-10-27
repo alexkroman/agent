@@ -4171,6 +4171,9 @@ type ToolSchema = {
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
     ui?: ToolUi | undefined;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    } | undefined;
 };
 
 // @public @input
@@ -6789,7 +6792,7 @@ export function decideClientEvent(event: string, data: unknown): ClientEventDeci
 export const DEEPGRAM_DEFAULT_ENDPOINTING_MS: number;
 
 // @public
-export const DEFAULT_BUILTIN_TOOLS: readonly ["think"];
+export const DEFAULT_BUILTIN_TOOLS: readonly [];
 
 // @public
 export const DEFAULT_CALL_RING_TIMEOUT_S: number;
@@ -9045,6 +9048,9 @@ export type ToolSchema = {
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
     ui?: ToolUi | undefined;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    } | undefined;
 };
 
 // @internal
@@ -9126,6 +9132,9 @@ export const ToolSchemaSchema: z.ZodObject<{
         }, z.core.$strip>>>;
     }, z.core.$strip>>;
     ui: z.ZodOptional<z.ZodType<ToolUi>>;
+    annotations: z.ZodOptional<z.ZodObject<{
+        readOnlyHint: z.ZodOptional<z.ZodBoolean>;
+    }, z.core.$strip>>;
 }, z.core.$strip>;
 
 // @public
@@ -9538,6 +9547,9 @@ export const HostConfigMessageSchema: z.ZodObject<{
                 }, z.core.$strip>>>;
             }, z.core.$strip>>;
             ui: z.ZodOptional<z.ZodType<ToolUi>>;
+            annotations: z.ZodOptional<z.ZodObject<{
+                readOnlyHint: z.ZodOptional<z.ZodBoolean>;
+            }, z.core.$strip>>;
         }, z.core.$strip>>;
         sttPrompt: z.ZodOptional<z.ZodString>;
         credentials: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
@@ -9632,6 +9644,9 @@ export const HostConfigSchema: z.ZodObject<{
             }, z.core.$strip>>>;
         }, z.core.$strip>>;
         ui: z.ZodOptional<z.ZodType<ToolUi>>;
+        annotations: z.ZodOptional<z.ZodObject<{
+            readOnlyHint: z.ZodOptional<z.ZodBoolean>;
+        }, z.core.$strip>>;
     }, z.core.$strip>>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     credentials: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
@@ -16938,6 +16953,7 @@ export interface SttSession {
     on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
     sendAudio(pcm: Int16Array): void;
     updateEndpointing?(minTurnSilenceMs: number): void;
+    updateKeyterms?(terms: readonly string[]): void;
 }
 
 // @public
@@ -17808,6 +17824,7 @@ export interface SttSession {
     on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
     sendAudio(pcm: Int16Array): void;
     updateEndpointing?(minTurnSilenceMs: number): void;
+    updateKeyterms?(terms: readonly string[]): void;
 }
 
 // @public
@@ -18540,6 +18557,7 @@ export interface SttSession {
     on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
     sendAudio(pcm: Int16Array): void;
     updateEndpointing?(minTurnSilenceMs: number): void;
+    updateKeyterms?(terms: readonly string[]): void;
 }
 
 // @public
@@ -21290,6 +21308,7 @@ export interface SttSession {
     on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
     sendAudio(pcm: Int16Array): void;
     updateEndpointing?(minTurnSilenceMs: number): void;
+    updateKeyterms?(terms: readonly string[]): void;
 }
 
 // @public

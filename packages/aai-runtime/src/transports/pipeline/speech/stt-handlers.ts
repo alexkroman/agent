@@ -111,6 +111,8 @@ export function createSttEventHandlers(deps: {
    * an utterance can barge in — see `createBargeInPolicy`, step 1.
    */
   utteranceOpenedOverSpeech: () => boolean;
+  /** The same, against any agent audio (filler included) — the write gate's input. */
+  utteranceOpenedOverAudio: () => boolean;
   /** Has this reply sent real speech, as opposed to dead-air filler? */
   hasSpokenRecordable: () => boolean;
   /** Abort the in-flight turn and cancel TTS playback. */
@@ -140,7 +142,7 @@ export function createSttEventHandlers(deps: {
    * Commit a user turn: emit the transcript and run the chained reply. `note`
    * rides on the MODEL's copy only — see {@link createUserActivity}.
    */
-  commitUserTurn: (text: string, note?: string, meta?: SttTurnMeta) => void;
+  commitUserTurn: (text: string, note?: string, meta?: SttTurnMeta, overlapped?: boolean) => void;
   /** Preemptive generation, or a no-op controller when the flag is off. */
   speculation: SpeculationHooks;
   /**
@@ -497,6 +499,8 @@ export function createSttEventHandlers(deps: {
       // A final can arrive without any preceding partial (short utterances on
       // some STT providers) — make sure the speaking edge still fires.
       speechEdges.speechStarted();
+      // Sampled before `speechEnded()` below clears it.
+      const overlapped = deps.utteranceOpenedOverAudio();
       // The turn that follows re-arms the nudge on completion.
       nudger.onUserTurn();
       // Push-to-talk: the final is one piece of a turn the CLIENT ends, so it
@@ -529,7 +533,7 @@ export function createSttEventHandlers(deps: {
       // AssemblyAI opener sets `min_turn_silence` for exactly this.
       speechEdges.speechEnded();
       recordCommittedLevel(level);
-      deps.commitUserTurn(trimmed, cutNote, meta);
+      deps.commitUserTurn(trimmed, cutNote, meta, overlapped);
       continuation.onCommit();
     },
   };
