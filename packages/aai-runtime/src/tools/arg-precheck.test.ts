@@ -14,9 +14,19 @@ const FIND_BY_NAME_ZIP: JSONSchema7 = {
   required: ["first_name", "last_name", "zip"],
 };
 
+// tau2 retail's address, descriptions as the host sends them.
 const ADDRESS: JSONSchema7 = {
   type: "object",
-  properties: { address1: { type: "string" }, address2: { type: "string" } },
+  properties: {
+    address1: {
+      type: "string",
+      description: "The first line of the address, such as '123 Main St'.",
+    },
+    address2: {
+      type: "string",
+      description: "The second line of the address, such as 'Apt 1' or ''.",
+    },
+  },
   required: ["address1", "address2"],
 };
 
@@ -84,11 +94,42 @@ describe("precheckToolArgs", () => {
     expect(precheckToolArgs("t", { status: "unknown" }, schema)).toBeUndefined();
   });
 
-  test("an EMPTY required string is not refused — it can be a real answer", () => {
+  test("an EMPTY required string the parameter says can be empty is not refused", () => {
     // tau2's address2: "" is "no second line", and the call succeeds.
     expect(
       precheckToolArgs("modify_address", { address1: "1 Main St", address2: "" }, ADDRESS),
     ).toBeUndefined();
+    const listed: JSONSchema7 = {
+      type: "object",
+      properties: { suite: { type: "string", enum: ["", "A", "B"] } },
+      required: ["suite"],
+    };
+    expect(precheckToolArgs("t", { suite: "" }, listed)).toBeUndefined();
+  });
+
+  // tau2 retail: `find_user_id_by_email({ email: " " })` and `last_name: ""`
+  // went to the client and came back "User not found".
+  test("an empty or whitespace required string is otherwise refused as not given", () => {
+    const blank = refusalOf(
+      precheckToolArgs(
+        "find_user_id_by_name_zip",
+        { first_name: "Yusuf", last_name: "", zip: "19122" },
+        FIND_BY_NAME_ZIP,
+      ),
+    );
+    expect(blank.error).toContain('"last_name" required, not given');
+    expect(blank.reason).toBe("invalid_arguments");
+    const spaces = refusalOf(
+      precheckToolArgs(
+        "find_user_id_by_name_zip",
+        { first_name: " ", last_name: "Rossi", zip: "19122" },
+        FIND_BY_NAME_ZIP,
+      ),
+    );
+    expect(spaces.error).toContain('"first_name" required, not given');
+    expect(
+      precheckToolArgs("modify_address", { address1: "", address2: "" }, ADDRESS),
+    ).toBeDefined();
   });
 });
 

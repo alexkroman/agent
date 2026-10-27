@@ -24,14 +24,21 @@
  * ## What is refused, and what is only explained
  *
  * - **Refused before it runs** ({@link precheckToolArgs}): a required parameter
- *   absent (or `null`); a parameter the tool does not declare, but only where
+ *   absent (or `null`), or sent as an empty or whitespace string where the
+ *   parameter gives no sign empty is an answer (see below); a parameter the
+ *   tool does not declare, but only where
  *   the schema says `additionalProperties: false` (elsewhere a stray key is
  *   named as a hint in a refusal for something else); or a placeholder token as
  *   a string value — unless the parameter's own `enum`/`const` names it.
  * - **Explained after it fails** ({@link emptyArgsNote}): a required string
- *   sent EMPTY. Not refused, because an empty required string can be a real
- *   answer — tau2's `address2: ""` is "no second address line" — and the
- *   declaration cannot say which. A call that fails with one is told why.
+ *   sent EMPTY where the parameter DOES say empty is an answer. An empty
+ *   required string can be real — tau2's `address2: ""` is "no second address
+ *   line" — and this used to be the rule for every empty string, on the view
+ *   that the declaration cannot say which. It usually can: `address2` is
+ *   described "such as 'Apt 1' or ''", while `email`, `last_name` and
+ *   `order_id` name no empty value. So an empty value is refused unless the
+ *   parameter's `enum` holds `""` or its description names an empty value
+ *   (`''`, `""`, "empty"); a call that still fails with one is told why.
  */
 
 import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
@@ -54,6 +61,23 @@ const PLACEHOLDERS: ReadonlySet<string> = new Set([
   "null",
   "undefined",
 ]);
+
+/**
+ * A required string sent EMPTY (or whitespace) is a value the model did not
+ * have, the same as one left out: recorded on tau2-bench retail as
+ * `find_user_id_by_email({ email: " " })` and `last_name: ""`, each a lookup
+ * that could only fail, costing a round trip and reading to the model as "no
+ * such caller". Unless the parameter says empty is a real answer — its `enum`
+ * holds `""`, or its description names an empty value (tau2's `address2`:
+ * "such as 'Apt 1' or ''") — where refusing would block a correct call.
+ */
+function isBlankWhereValueNeeded(def: JSONSchema7Definition | undefined, value: unknown): boolean {
+  if (typeof value !== "string" || value.trim() !== "") return false;
+  if (!isRecord(def)) return true;
+  if (Array.isArray(def.enum) && def.enum.includes("")) return false;
+  const description = typeof def.description === "string" ? def.description : "";
+  return !/''|""|\bempty\b/i.test(description);
+}
 
 /** The refusal's `reason` — the one schema refusals already use. */
 const INVALID_ARGUMENTS = "invalid_arguments";
@@ -84,7 +108,10 @@ export function precheckToolArgs(
     undeclared.length > 0 ? " If a value belongs to another tool, call that tool." : "";
 
   const missing = (schema.required ?? []).filter(
-    (key) => args[key] === undefined || args[key] === null,
+    (key) =>
+      args[key] === undefined ||
+      args[key] === null ||
+      isBlankWhereValueNeeded(properties[key], args[key]),
   );
   if (missing.length > 0) {
     return refuse(
