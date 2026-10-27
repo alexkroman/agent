@@ -17,7 +17,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { debugPartialsEnabled, type Logger, transcriptField } from "../../../logger.ts";
 import type { SttTurnMeta } from "../../../providers/openers.ts";
 import type { TransportCallbacks } from "../../types.ts";
-import type { FalseInterruptionRecovery } from "../heard/index.ts";
+import { buildCutNote, type FalseInterruptionRecovery } from "../heard/index.ts";
 import { createBargeInPolicy } from "./barge-in-policy.ts";
 import { type CallerLevelReading, createCallerLevel } from "./caller-level.ts";
 import { createContinuationGate } from "./continuation.ts";
@@ -124,6 +124,12 @@ export function createSttEventHandlers(deps: {
    * reads the same answer either side of it.
    */
   tailResumePrompt: () => string | undefined;
+  /**
+   * The heard text of the reply a barge-in is cutting, for the note the turn
+   * it commits carries — `HeardTracker.cutAnchor`. Read before the abort, like
+   * {@link tailResumePrompt}.
+   */
+  cutAnchor: () => string | undefined;
   speechEdges: SpeechEdgeTracker;
   /** Outward speaking-edge gate — see {@link createGatedSpeechEdges}. */
   edgeGate: GatedSpeechEdges;
@@ -203,7 +209,22 @@ export function createSttEventHandlers(deps: {
    * pipeline-recovery.ts for the repetition measurement behind that), and a
    * fully-heard tail arms nothing: there is nothing left to resume.
    */
+  /**
+   * The note for a turn whose final is itself cutting the reply: one a partial
+   * barge-in already recorded wins, else the cut this final makes. Read before
+   * the abort, like the `tailResumePrompt` it pairs with.
+   */
+  function cutNoteFor(recorded: string | undefined): string | undefined {
+    if (recorded !== undefined) return recorded;
+    const anchor = deps.cutAnchor();
+    return anchor === undefined ? undefined : buildCutNote(anchor);
+  }
+
   function armBargeInRecovery(): void {
+    // Whichever way the utterance resolves: a resume if it never commits, a
+    // note on the turn if it does (`buildCutNote`).
+    const anchor = deps.cutAnchor();
+    if (anchor !== undefined) recovery.noteCut(anchor);
     const cutPrompt = deps.tailResumePrompt();
     if (deps.isTurnInFlight() && !deps.isTurnDraining()) {
       recovery.arm(cutPrompt ?? DEFAULT_FALSE_INTERRUPTION_PROMPT);
@@ -406,7 +427,9 @@ export function createSttEventHandlers(deps: {
       // Real speech reached a final — whatever barge-in preceded it was not a
       // false interruption; a genuine turn commits below. Restores the
       // consecutive-resume budget too: the user is demonstrably present.
-      recovery.onUserTurn();
+      // The note this turn carries if the utterance cut a reply on its way in
+      // — a partial barge-in recorded it; a final that interrupts, below, does.
+      let cutNote = recovery.onUserTurn();
       // The resume may have already fired: the speaking edge went idle before
       // this final landed, which happens whenever the STT's endpointing plus
       // final-emission latency exceeds `speechIdleTimeoutMs` — the transport
@@ -447,6 +470,7 @@ export function createSttEventHandlers(deps: {
           peakDb: level.peakDb,
           refDb: level.refDb,
         });
+        cutNote = cutNoteFor(cutNote);
         deps.onInterrupted();
         deps.abortInFlightTurn();
         deps.edgeGate.release();
@@ -457,7 +481,7 @@ export function createSttEventHandlers(deps: {
       // AssemblyAI opener sets `min_turn_silence` for exactly this.
       speechEdges.speechEnded();
       recordCommittedLevel(level);
-      deps.commitUserTurn(trimmed);
+      deps.commitUserTurn(trimmed, cutNote);
       continuation.onCommit();
     },
   };

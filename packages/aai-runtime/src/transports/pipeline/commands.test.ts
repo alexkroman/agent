@@ -79,6 +79,7 @@ function harness(overrides: { terminated?: boolean } = {}) {
     markPersisted: note("heard.markPersisted"),
     heard: () => ({ chars: 0, recordableChars: 0, text: "" }),
     resumePrompt: () => undefined,
+    cutAnchor: () => undefined,
   };
 
   const gate: TurnGate = {

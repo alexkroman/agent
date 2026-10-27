@@ -12,6 +12,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger, silentLogger } from "../../../_logger-test-utils.ts";
+import { buildCutNote, createFalseInterruptionRecovery } from "../heard/index.ts";
 import { AUTO_TURN_DETECTION } from "./manual-turn.ts";
 import { createSttEventHandlers } from "./stt-handlers.ts";
 import { NO_USER_TURN_LIMIT } from "./user-turn-limit.ts";
@@ -50,6 +51,7 @@ function makeHandlers(overrides: Partial<Deps> = {}): {
     hasSpokenRecordable: () => false,
     abortInFlightTurn: vi.fn(),
     tailResumePrompt: () => undefined,
+    cutAnchor: () => undefined,
     speechEdges,
     edgeGate: {
       release: vi.fn(),
@@ -57,7 +59,13 @@ function makeHandlers(overrides: Partial<Deps> = {}): {
       onSpeechStopped: vi.fn(),
       reset: vi.fn(),
     },
-    recovery: { arm: vi.fn(), clear: vi.fn(), onUtteranceEnded: vi.fn(), onUserTurn: vi.fn() },
+    recovery: {
+      arm: vi.fn(),
+      noteCut: vi.fn(),
+      clear: vi.fn(),
+      onUtteranceEnded: vi.fn(),
+      onUserTurn: vi.fn(),
+    },
     nudger: { arm: vi.fn(), clear: vi.fn(), onUserSpeech: vi.fn(), onUserTurn: vi.fn() },
     callbacks: { report: (event) => reported.push(event.type) },
     commitUserTurn: (text, note) => committed.push(note === undefined ? { text } : { text, note }),
@@ -290,7 +298,13 @@ describe("continuation: the caller resumes right after a commit", () => {
       continuationWindowMs: () => 2500,
       isTurnInFlight: () => true,
       abortInFlightTurn: abort,
-      recovery: { arm, clear: vi.fn(), onUtteranceEnded: vi.fn(), onUserTurn: vi.fn() },
+      recovery: {
+        arm,
+        noteCut: vi.fn(),
+        clear: vi.fn(),
+        onUtteranceEnded: vi.fn(),
+        onUserTurn: vi.fn(),
+      },
       speechEdges: {
         speechStarted: () => {
           openedAt ??= Date.now();
@@ -385,5 +399,77 @@ describe("continuation respects a floor the agent must keep", () => {
     handlers.onSttPartial("eight zero two");
     expect(abort).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+});
+
+// Recorded on tau2-bench retail: a caller's "Okay, just let me k—" cut "I have
+// May Kovacs, ZIP 2-8-2-3-6, but couldn't locate the account. Please spell your
+// first or last name…" at "ZIP 2", committed as "Okay, no problem.", and the
+// model — holding only "… [interrupted]" — asked "What would you like to try
+// next?". The spelling request never reached the caller. 17% of barge-ins on
+// that run committed nothing but an acknowledgement.
+describe("a cut whose utterance commits a turn hands that turn a note", () => {
+  const HEARD = "I have May Kovacs, ZIP 2";
+
+  function makeCutHandlers(anchor: string | null = HEARD) {
+    const state = { speaking: true };
+    const recovery = createFalseInterruptionRecovery({
+      enabled: () => true,
+      maxConsecutive: 3,
+      isActive: () => true,
+      isBusy: () => false,
+      onResume: vi.fn(),
+    });
+    const made = makeHandlers({
+      isTurnInFlight: () => state.speaking,
+      hasTurnSpoken: () => state.speaking,
+      agentIsSpeaking: () => state.speaking,
+      audioOnLine: () => state.speaking,
+      utteranceOpenedOverSpeech: () => state.speaking,
+      hasSpokenRecordable: () => state.speaking,
+      cutAnchor: () => (state.speaking && anchor !== null ? anchor : undefined),
+      abortInFlightTurn: () => {
+        state.speaking = false;
+      },
+      recovery,
+    });
+    return { ...made, state, recovery };
+  }
+
+  test("a partial barge-in records the cut, and the final it commits carries it", () => {
+    const h = makeCutHandlers();
+    h.handlers.onSttPartial("okay just let me");
+    expect(h.state.speaking).toBe(false);
+    h.handlers.onSttFinal("Okay, no problem.");
+    expect(h.committed).toEqual([{ text: "Okay, no problem.", note: buildCutNote(HEARD) }]);
+    expect(h.committed[0]?.note).toContain(`"…${HEARD}"`);
+  });
+
+  test("a final that itself interrupts carries the note too", () => {
+    const h = makeCutHandlers();
+    h.handlers.onSttFinal("uh-huh sure thing");
+    expect(h.committed).toEqual([{ text: "uh-huh sure thing", note: buildCutNote(HEARD) }]);
+  });
+
+  test("only the turn the cut belongs to carries it", () => {
+    const h = makeCutHandlers();
+    h.handlers.onSttPartial("okay just let me");
+    h.handlers.onSttFinal("Okay, no problem.");
+    h.handlers.onSttFinal("My name is Mei.");
+    expect(h.committed[1]).toEqual({ text: "My name is Mei." });
+  });
+
+  test("a reply heard essentially whole leaves nothing to note", () => {
+    const h = makeCutHandlers(null);
+    h.handlers.onSttPartial("okay just let me");
+    h.handlers.onSttFinal("Okay, no problem.");
+    expect(h.committed).toEqual([{ text: "Okay, no problem." }]);
+  });
+
+  test("speech into silence cut nothing", () => {
+    const h = makeCutHandlers();
+    h.state.speaking = false;
+    h.handlers.onSttFinal("Hello?");
+    expect(h.committed).toEqual([{ text: "Hello?" }]);
   });
 });

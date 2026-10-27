@@ -110,6 +110,8 @@ export function createUserActivity(deps: {
   abortInFlightTurn(): void;
   /** Cut-point resume prompt for a playback-tail barge-in — see {@link SttEventHandlers}. */
   tailResumePrompt(): string | undefined;
+  /** Heard text of the reply a barge-in is cutting — see {@link SttEventHandlers}. */
+  cutAnchor(): string | undefined;
   /**
    * Chain `runTurn(text)` behind the active turn, logging crashes as
    * `crashLabel`. `synthetic` marks `text` as an injected instruction rather
@@ -119,19 +121,22 @@ export function createUserActivity(deps: {
   runChainedTurn(
     text: string,
     crashLabel: string,
-    kind?: { isResume?: boolean; synthetic?: boolean },
+    kind?: { isResume?: boolean; synthetic?: boolean; note?: string },
   ): void;
 }): UserActivity {
   const { log, sid, callbacks } = deps;
   // Answer one committed user turn: the record, then the reply. Hoisted so the
   // STT handlers (a final, under "auto") and push-to-talk (a commit, under
   // "manual") answer a turn the same way.
-  const commitUserTurn = (text: string): void => {
+  const commitUserTurn = (text: string, note?: string): void => {
     // Debug trace (AAI_DEBUG=1): verbatim what the turn prompts the LLM with
     // — outside production; there `transcriptField` leaves a character count.
     log.debug("Pipeline turn committed", { sid, ...transcriptField("text", text) });
     callbacks.report({ type: "userTranscript.committed", text });
-    deps.runChainedTurn(text, "Pipeline turn crashed");
+    // `note` is for the MODEL (a reply this utterance cut — `buildCutNote`):
+    // the transcript the client sees, and the conversation record, are only
+    // what the caller said.
+    deps.runChainedTurn(text, "Pipeline turn crashed", note === undefined ? undefined : { note });
   };
   const manualTurn = createManualTurn(deps.turnDetection, {
     forceEndOfTurn: deps.forceEndOfTurn,
@@ -268,6 +273,7 @@ export function createUserActivity(deps: {
     hasSpokenRecordable: deps.hasSpokenRecordable,
     abortInFlightTurn: deps.abortInFlightTurn,
     tailResumePrompt: deps.tailResumePrompt,
+    cutAnchor: deps.cutAnchor,
     speechEdges,
     edgeGate,
     recovery,

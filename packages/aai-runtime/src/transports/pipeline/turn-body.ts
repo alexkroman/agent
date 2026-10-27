@@ -21,7 +21,18 @@ import type { TurnGate, TurnMetrics } from "./turn/index.ts";
 import type { TurnOutcome } from "./turn-outcome.ts";
 
 /** Run one ordinary (non-greeting) turn for `userText`. */
-export type TurnBody = (userText: string, kind?: { synthetic?: boolean }) => Promise<void>;
+export type TurnBody = (
+  userText: string,
+  kind?: {
+    synthetic?: boolean;
+    /**
+     * Appended to the MODEL's copy of the user message only — the conversation
+     * record and the client transcript stay what the caller said. Set for a
+     * turn whose utterance cut a reply (`buildCutNote` in `heard/recovery.ts`).
+     */
+    note?: string;
+  },
+) => Promise<void>;
 
 /** Compose the turn body from the transport's already-built collaborators. */
 export function createTurnBody(deps: {
@@ -177,7 +188,9 @@ export function createTurnBody(deps: {
     // preemption is on AND a speculation for exactly this text is adoptable —
     // in which case the reply is already generating and the turn below drains
     // it through the ordinary handler instead of launching a second request.
-    const claimed = speculation.take(userText);
+    // A speculation ran without the note, so it is a different request from
+    // this one and cannot be adopted.
+    const claimed = kind?.note === undefined ? speculation.take(userText) : null;
     return runReply("pipeline", async (signal) => {
       deps.metrics?.claimTurn(userText);
       // A fresh signal for this turn's tools to abort, and no error carried
@@ -188,7 +201,10 @@ export function createTurnBody(deps: {
       // interrupted tail into (or emit a transcript over) a fresh conversation.
       const historyEpoch = gate.historyEpoch();
       history.pushConversation({ role: "user", content: userText });
-      history.pushLlm({ role: "user", content: userText });
+      history.pushLlm({
+        role: "user",
+        content: kind?.note === undefined ? userText : `${userText}\n\n${kind.note}`,
+      });
 
       const stopped = await beforeModel(userText, signal, historyEpoch);
       if (stopped !== undefined) return stopped;

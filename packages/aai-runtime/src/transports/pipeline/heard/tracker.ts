@@ -192,6 +192,14 @@ export interface HeardTracker {
    * append a fragment to a reply that already landed).
    */
   resumePrompt(): string | undefined;
+  /**
+   * The RECORDABLE text the caller heard of the reply being cut — the anchor
+   * {@link resumePrompt} quotes — or `undefined` when they heard essentially
+   * all of it. `""` means they heard none of it. For a cut whose utterance
+   * DOES commit a turn: that turn is told where the reply stopped
+   * (`buildCutNote`), which no resume will now cover.
+   */
+  cutAnchor(): string | undefined;
 }
 
 /**
@@ -351,6 +359,16 @@ export function createHeardTracker(opts: {
     return targets;
   }
 
+  /** See {@link HeardTracker.cutAnchor}. */
+  function cutAnchor(): string | undefined {
+    const at = latched ?? position(current);
+    if (!tailResumeWorthRunning(current.audioMs, at.unheardMs)) return;
+    // The anchor is the RECORDABLE heard text, which is character-identical
+    // to what history records for this reply — so a prompt can never quote
+    // words the record denies, and never quotes filler.
+    return at.text;
+  }
+
   return {
     onText(text: string, record: boolean): string {
       current.spans.push({ len: text.length, record });
@@ -407,12 +425,9 @@ export function createHeardTracker(opts: {
       return publicPosition(latched ?? position(current));
     },
     resumePrompt(): string | undefined {
-      const at = latched ?? position(current);
-      if (!tailResumeWorthRunning(current.audioMs, at.unheardMs)) return;
-      // The anchor is the RECORDABLE heard text, which is character-identical
-      // to what history records for this reply — so the prompt can never quote
-      // words the record denies, and never quotes filler.
-      return buildTailResumePrompt(at.text);
+      const anchor = cutAnchor();
+      return anchor === undefined ? undefined : buildTailResumePrompt(anchor);
     },
+    cutAnchor,
   };
 }

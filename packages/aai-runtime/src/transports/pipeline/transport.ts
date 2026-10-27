@@ -7,6 +7,7 @@
 // which is S2S-only). `sendToolResult` is a no-op because results are
 // already handled by streamText.
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import {
   createFatalToolLatch,
   createToolSpeechController,
@@ -254,6 +255,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       hasSpokenRecordable: () => heard.spokeRecordable(),
       abortInFlightTurn: () => abortInFlightTurn(),
       tailResumePrompt: () => heard.resumePrompt(),
+      cutAnchor: () => heard.cutAnchor(),
       runChainedTurn,
     });
 
@@ -314,14 +316,15 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   function runChainedTurn(
     text: string,
     crashLabel: string,
-    kind?: { isResume?: boolean; synthetic?: boolean },
+    kind?: { isResume?: boolean; synthetic?: boolean; note?: string },
   ): void {
     turnChain.chain(async () => {
       turns.setResumeScope(kind?.isResume === true);
       try {
-        await runTurn(text, { synthetic: kind?.synthetic === true }).catch(
-          logTurnCrash(crashLabel),
-        );
+        await runTurn(text, {
+          synthetic: kind?.synthetic === true,
+          ...omitUndefined({ note: kind?.note }),
+        }).catch(logTurnCrash(crashLabel));
       } finally {
         turns.setResumeScope(false);
       }
