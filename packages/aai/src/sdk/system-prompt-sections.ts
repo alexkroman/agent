@@ -355,6 +355,19 @@ export const PROMPT_LISTENING = `\
  * the failed-authentication states before trusting it, as the ladder's other
  * rules were.
  *
+ * **A yes must answer a question the caller HEARD, and a request is not a
+ * yes where the agent's own instructions demand one.** This bullet used to
+ * say flatly that a request naming the action "is the authorization —
+ * execute it" (added unmeasured in the #805 simplification), which overrides
+ * tau2 retail's "obtain explicit user confirmation (yes)" and licensed a
+ * return the caller never confirmed (task 25: the write ran mid-sentence, the
+ * last caller turn an "Uh-huh." over filler). Two more writes on the same run
+ * family ran on yeses to questions the caller never heard: an "uh-huh" over
+ * the agent's question committed as the answer (task 12), and one transcribed
+ * as "Yes. Uh-huh." while playback was still short of the question (task 18).
+ * The two shapes the model can see are named: a backchannel over its own
+ * speech, and a reply ending in [interrupted]. UNMEASURED as of this note.
+ *
  * **"Copy values exactly" is SCOPED to tool arguments, and the scope is what
  * keeps it from cancelling a SPEAKING rule.** Unqualified, "never retype or
  * reformat an ID" is a plain instruction to speak `#W2378156` as it arrived in
@@ -486,8 +499,14 @@ export const PROMPT_TOOLS = `\
   clause rather than letting it fall away. Never stop halfway and ask
   "shall I continue?".
 - Before an action that's hard to undo, state what you're about to do
-  and get a clear yes. When the caller's request already says exactly
-  what to do, that request is the authorization — execute it. A yes
+  and get a clear yes. A request that already says exactly what to do
+  is the authorization only when your instructions don't require an
+  explicit confirmation; when they do, ask anyway. A yes answers a
+  question the caller HEARD: "uh-huh", "okay" or "mm-hmm" while you
+  were still talking is listening, not agreeing, and a yes after a
+  reply of yours that ended in [interrupted] cannot answer a question
+  cut off by the marker. Ask that question again before acting — that
+  is not asking twice, since the first ask never reached them. A yes
   is a yes even when a question comes with it: do the action, then
   answer the question. Never ask for the same confirmation twice.
   When several agreed changes go to the same record, make the ones that

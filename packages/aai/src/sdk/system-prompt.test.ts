@@ -246,6 +246,20 @@ describe("buildSystemPrompt", () => {
     expect(result.search(/A yes\s+is a yes/)).toBeGreaterThan(hardToUndo);
   });
 
+  // Three writes on tau2 retail ran without a heard yes: one licensed by the
+  // old "the request is the authorization" line over a policy demanding an
+  // explicit yes, two on a backchannel or a yes to a question cut off unheard.
+  test("a yes must answer a heard question, and a request yields to a required yes", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    expect(result).not.toContain("that request is the authorization — execute it");
+    expect(result).toContain(
+      "only when your instructions don't require an\n  explicit confirmation",
+    );
+    expect(result).toContain("is listening, not agreeing");
+    expect(result).toContain("cannot answer a question\n  cut off by the marker");
+    expect(result).toContain("that\n  is not asking twice");
+  });
+
   // Step 4 used to ask only for "something DIFFERENT", and on a tau2-bench
   // retail run no failed spelled lookup ever reached it: the agent asked for
   // other identifiers or handed off. STT repeats the same letter error (V->B,
