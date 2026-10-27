@@ -536,7 +536,9 @@ Silence (ms) before the service runs its end-of-turn check, sent as the
 whether the turn reads as COMPLETE — if it does the turn ends, if not a
 partial is emitted and the turn stays open. So this is the latency floor on
 utterances that really did finish. Defaults to
-`DEFAULT_MIN_TURN_SILENCE_MS` (1600).
+`DEFAULT_MIN_TURN_SILENCE_MS` (800), which relies on continuation
+(`interruption.continuationWindowMs`) to re-join a turn split mid-entity —
+set 1600 here if you turn continuation off.
 
 To tolerate longer mid-utterance pauses, raise [maxTurnSilenceMs](#maxturnsilencems)
 instead — and never above it. This is a minimum and that is a maximum, so a
@@ -591,8 +593,8 @@ optional vadThreshold?: number;
 ```
 
 Confidence (0-1) the service's voice-activity detector needs before a frame
-counts as speech, sent as the `vad_threshold` connection parameter. Unset,
-nothing is sent and the service default applies (0.2 on the U3 Pro models).
+counts as speech, sent as the `vad_threshold` connection parameter. Defaults
+to `DEFAULT_VAD_THRESHOLD` (0.02), well under the service's own 0.2.
 
 Lower it when a caller's speech is going UNHEARD — no `speech.started`, no
 transcript, not even a wrong one — rather than mis-heard. The gate sits in

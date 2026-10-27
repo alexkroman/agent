@@ -31,7 +31,7 @@ describe("describeResolvedProviders", () => {
       // glance", and which languages a session pins is a glance.
       languages: ["en", "es"],
       // And the settings a reader came for are untouched by the squash.
-      minTurnSilenceMs: 1600,
+      minTurnSilenceMs: 800,
     });
   });
 
@@ -43,7 +43,7 @@ describe("describeResolvedProviders", () => {
     expect(described.stt).toMatchObject({
       kind: "fallback",
       providers: [
-        { kind: "assemblyai", minTurnSilenceMs: 1600 },
+        { kind: "assemblyai", minTurnSilenceMs: 800 },
         { kind: "deepgram", model: "nova-3", language: "en" },
       ],
     });

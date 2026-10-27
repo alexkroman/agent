@@ -31,13 +31,22 @@
  * words. The second fragment's FINAL lands too late to use (median 5.0s), which
  * is why this keys on resumed speech rather than on the next commit.
  *
+ * **3500, from the live run (2026-10-27).** At 2500 on a 114-task retail run
+ * (800 / 3500 endpointing — see `DEFAULT_MIN_TURN_SILENCE_MS`, whose 800 floor
+ * depends on this), continuation absorbed 117 of 146 split turns; of every
+ * reply it cancelled inside the window, 219 were the same sentence resuming and
+ * none were a new one. The 29 it missed resumed later than 2.5 s, toward the
+ * replay's 4.84 s p90, so the window was widened to catch more of them. That
+ * step is extrapolated from those numbers, not yet confirmed on reward; the
+ * false-merge count is the thing to watch if it is moved again.
+ *
  * **What it costs.** A caller who answers a very fast reply within the window
  * cuts that reply off, as any barge-in would. And it aborts a reply mid tool
  * chain exactly as a barge-in does — no new risk, but not a free one.
  *
- * @defaultValue `2500`
+ * @defaultValue `3500`
  */
-export const DEFAULT_CONTINUATION_WINDOW_MS = 2500;
+export const DEFAULT_CONTINUATION_WINDOW_MS = 3500;
 
 /**
  * Longest continuation window an agent may declare, in ms. Past this the

@@ -701,6 +701,9 @@ export const DEFAULT_TOOL_START_PHRASES: readonly ["Hold on a sec.", "One moment
 export const DEFAULT_TTS_SAMPLE_RATE = 24000;
 
 // @internal
+export const DEFAULT_VAD_THRESHOLD = 0.02;
+
+// @internal
 export const DEFAULT_VOICE_FOCUS = "near-field";
 
 // @internal
@@ -1394,7 +1397,7 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
     maxTurnSilenceMs: number;
     voiceFocus: string;
     voiceFocusThreshold: number;
-    vadThreshold?: number;
+    vadThreshold: number;
     connectTimeoutMs: number;
     maxConnectRetries: number;
     languages?: readonly string[];
