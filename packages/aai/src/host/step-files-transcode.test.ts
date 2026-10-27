@@ -180,7 +180,10 @@ describe("transcodeUpload", () => {
     const bare: unknown[] = [];
     await transcodeUpload("rec", {
       ...toWav,
-      args: (s, o, info) => (bare.push(info), ["-i", s, o]),
+      args: (s, o, info) => {
+        bare.push(info);
+        return ["-i", s, o];
+      },
     });
     expect(bare).toEqual([undefined]);
   });
