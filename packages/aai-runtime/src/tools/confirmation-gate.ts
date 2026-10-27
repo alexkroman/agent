@@ -11,13 +11,23 @@
  * caller never confirmed (task 25). In each, the turn that authorized the
  * write began while agent audio was on the line.
  *
- * So the check is made here, in code, on a fact the model cannot see: did the
- * turn that started this reply open over the agent's audio, filler included?
- * If it did, a tool declared `annotations.readOnlyHint: false` is not run, and
- * the model is told to ask and wait. A barge-in can only start over agent
- * audio, so a turn that CUT a reply is refused by the same test. Content-blind:
- * nothing reads what was said, so a genuine "yes" spoken after the question
- * passes, and one spoken over it costs one re-ask.
+ * So the check is made here, in code, on facts the model cannot see: did the
+ * turn that started this reply open over the agent's audio, filler included,
+ * AND was it brief — a backchannel's length, under the sustained-speech gate?
+ * Then a tool declared `annotations.readOnlyHint: false` is not run, and the
+ * model is told to ask once more and wait. Content-blind: nothing reads what
+ * was said.
+ *
+ * **Overlap alone was the first rule, and it refused real answers.** Callers
+ * start answering over the tail of a question: "Yeah, cancel that charger
+ * order" began ~1.4s before the question finished, twice (tau2 task 32), and
+ * the agent took the refusal as final and transferred; task 6 lost ~60s to
+ * re-asks the same way. By how much of the question it talked over, that is
+ * indistinguishable from task 12's "uh-huh" (~1.2s before the end). By length
+ * it is not: an acknowledgement is ~0.3s of speech. The cost accepted: a
+ * longer non-answer over the question (task 18's "Yes. Uh-huh.", ~1s, with an
+ * STT-inserted "Yes.") now passes, and only the prompt's heard-yes rule covers
+ * it. Classified where the turn commits (`isBackchannel` in `stt-handlers.ts`).
  *
  * The refusal is worded as an ordinary result, not an `Error…`, so the failed
  * call memo does not refuse the identical call once the caller has confirmed.
@@ -29,9 +39,11 @@ import type { Logger } from "../logger.ts";
 
 /** @internal */
 export const UNCONFIRMED_WRITE_RESULT: string =
-  "Not done. The caller's last turn was spoken while you were still talking, so it " +
-  "cannot be their answer to anything you asked. Nothing was changed. Ask them to " +
-  "confirm this action now, and wait for their reply before calling the tool again.";
+  "Not done yet, and nothing was changed: the caller's last turn was a short " +
+  "acknowledgement spoken while you were still talking, not an answer to your question. " +
+  "Ask them once more whether to go ahead, then stop talking and wait — they may well " +
+  "agree, and once they answer, call the tool again. This is not a failure of the " +
+  "action itself.";
 
 /** Names of the tools a declaration marks as writes. @internal */
 export function writeToolNames(schemas: readonly ToolSchema[]): ReadonlySet<string> {
@@ -39,8 +51,8 @@ export function writeToolNames(schemas: readonly ToolSchema[]): ReadonlySet<stri
 }
 
 /**
- * Wrap `executeTool` so a declared write runs only when `turnOverlapped()` is
- * false. With no declared writes it returns `executeTool` itself.
+ * Wrap `executeTool` so a declared write runs only when `turnWasBackchannel()`
+ * is false. With no declared writes it returns `executeTool` itself.
  *
  * @internal
  */
@@ -48,8 +60,8 @@ export function withConfirmationGate(
   executeTool: ExecuteTool,
   deps: {
     schemas: readonly ToolSchema[];
-    /** Did the caller turn that started this reply open over agent audio? */
-    turnOverlapped: () => boolean;
+    /** Was the caller turn that started this reply a backchannel over the agent? */
+    turnWasBackchannel: () => boolean;
     log: Logger;
     sid: string;
   },
@@ -57,8 +69,8 @@ export function withConfirmationGate(
   const writes = writeToolNames(deps.schemas);
   if (writes.size === 0) return executeTool;
   return (name, args, sessionId, messages, options) => {
-    if (writes.has(name) && deps.turnOverlapped()) {
-      deps.log.info("Pipeline write refused: turn spoke over the agent", {
+    if (writes.has(name) && deps.turnWasBackchannel()) {
+      deps.log.info("Pipeline write refused: turn was a backchannel over the agent", {
         sid: deps.sid,
         tool: name,
       });

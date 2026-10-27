@@ -561,7 +561,7 @@ describe("a cut whose utterance commits a turn hands that turn a note", () => {
   });
 });
 
-describe("the turn tells the write gate whether it opened over agent audio", () => {
+describe("the turn tells the write gate whether it was a backchannel", () => {
   // tools/confirmation-gate.ts refuses a declared write on a turn that began
   // while agent audio was on the line, filler included. The flag is sampled
   // before the final closes the speaking edge, which clears it.
@@ -575,6 +575,24 @@ describe("the turn tells the write gate whether it opened over agent audio", () 
     handlers.onSttFinal("Uh-huh.");
     onAir = false;
     handlers.onSttFinal("Yes, go ahead.");
+    // No word timings: overlap alone decides, as the first rule did.
     expect(overlapped).toEqual([true, false]);
+  });
+
+  // tau2 retail: an "uh-huh" over the question (task 12) must not confirm;
+  // "Yeah, cancel that charger order" begun over its last ~1.4s (task 32) must.
+  test("over agent audio, only a turn shorter than the gate is a backchannel", () => {
+    const flags: (boolean | undefined)[] = [];
+    let onAir = true;
+    const { handlers } = makeHandlers({
+      utteranceOpenedOverAudio: () => onAir,
+      interruptionMinDurationMs: () => 500,
+      commitUserTurn: (_text, _note, _meta, b) => void flags.push(b),
+    });
+    handlers.onSttFinal("Uh-huh.", { spokenMs: 320 });
+    handlers.onSttFinal("Yeah, cancel that charger order.", { spokenMs: 1400 });
+    onAir = false;
+    handlers.onSttFinal("Yes.", { spokenMs: 250 });
+    expect(flags).toEqual([true, false, false]);
   });
 });

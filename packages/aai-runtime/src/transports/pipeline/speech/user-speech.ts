@@ -44,8 +44,8 @@ export interface UserActivity {
   commitTypedTurn(text: string): void;
   /** When the caller stopped, for a turn opening now — see `caller-stop.ts`. */
   callerStoppedAt(): number | undefined;
-  /** Did the latest committed turn open over agent audio? See `tools/confirmation-gate.ts`. */
-  turnOverlapped(): boolean;
+  /** Was the latest committed turn a backchannel over the agent? See `tools/confirmation-gate.ts`. */
+  turnWasBackchannel(): boolean;
 }
 
 /**
@@ -135,18 +135,19 @@ export function createUserActivity(deps: {
   // STT handlers (a final, under "auto") and push-to-talk (a commit, under
   // "manual") answer a turn the same way.
   const callerStop = createCallerStop();
-  // Did the latest committed turn open over agent audio? Read by the write
-  // gate for every tool call of the reply that turn starts.
-  let lastTurnOverlapped = false;
+  // Was the latest committed turn a backchannel over the agent (brief, and
+  // begun over its audio)? Read by the write gate for every tool call of the
+  // reply that turn starts.
+  let lastTurnWasBackchannel = false;
   const commitUserTurn = (
     text: string,
     note?: string,
     meta?: SttTurnMeta,
-    overlapped = false,
+    backchannel = false,
   ): void => {
     // Before the chained turn starts: its dead-air cover reads this as it opens.
     callerStop.onCommit(meta?.trailingSilenceMs);
-    lastTurnOverlapped = overlapped;
+    lastTurnWasBackchannel = backchannel;
     // Debug trace (AAI_DEBUG=1): verbatim what the turn prompts the LLM with
     // — outside production; there `transcriptField` leaves a character count.
     log.debug("Pipeline turn committed", { sid, ...transcriptField("text", text) });
@@ -349,6 +350,6 @@ export function createUserActivity(deps: {
     manualTurn,
     commitTypedTurn,
     callerStoppedAt: callerStop.stoppedAt,
-    turnOverlapped: () => lastTurnOverlapped,
+    turnWasBackchannel: () => lastTurnWasBackchannel,
   };
 }

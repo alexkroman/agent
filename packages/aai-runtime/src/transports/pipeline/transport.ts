@@ -232,7 +232,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     manualTurn,
     commitTypedTurn,
     callerStoppedAt,
-    turnOverlapped,
+    turnWasBackchannel,
   } = createUserActivity({
     log,
     sid: opts.sid,
@@ -314,7 +314,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const keyterms = createKeytermHarvester((terms) => providers.stt?.updateKeyterms?.(terms));
   const gatedExecuteTool = withConfirmationGate(executeTool, {
     schemas: toolSchemas,
-    turnOverlapped,
+    turnWasBackchannel,
     log,
     sid: opts.sid,
   });

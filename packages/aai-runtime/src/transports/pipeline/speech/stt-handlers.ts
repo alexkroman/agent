@@ -142,7 +142,7 @@ export function createSttEventHandlers(deps: {
    * Commit a user turn: emit the transcript and run the chained reply. `note`
    * rides on the MODEL's copy only — see {@link createUserActivity}.
    */
-  commitUserTurn: (text: string, note?: string, meta?: SttTurnMeta, overlapped?: boolean) => void;
+  commitUserTurn: (text: string, note?: string, meta?: SttTurnMeta, backchannel?: boolean) => void;
   /** Preemptive generation, or a no-op controller when the flag is off. */
   speculation: SpeculationHooks;
   /**
@@ -372,6 +372,23 @@ export function createSttEventHandlers(deps: {
     return true;
   }
 
+  /**
+   * Could this turn only be the caller LISTENING — so it cannot confirm a write
+   * (`tools/confirmation-gate.ts`)? It opened over agent audio, filler included,
+   * AND its words span less than the sustained-speech gate. Overlap alone was
+   * the first rule and refused real answers: callers start "Yeah, cancel that
+   * charger order" over the last ~1.4s of the question (tau2 retail task 32,
+   * twice, and the agent gave up), which by how much of the question it talked
+   * over is indistinguishable from an "uh-huh" (task 12, ~1.2s). Length is what
+   * separates them — an acknowledgement is ~0.3s of speech, an answer longer.
+   * Without word timings the old rule stands: overlap refuses.
+   */
+  function isBackchannel(openedOverAudio: boolean, meta?: SttTurnMeta): boolean {
+    if (!openedOverAudio) return false;
+    const spokenMs = meta?.spokenMs;
+    return spokenMs === undefined || spokenMs < deps.interruptionMinDurationMs();
+  }
+
   /** A final over the agent that is not the caller answering it: quiet, or brief. */
   function isNotATurn(text: string, level: CallerLevelReading, meta?: SttTurnMeta): boolean {
     return dropsQuietFinal(text, level) || dropsBriefFinal(text, meta);
@@ -518,7 +535,7 @@ export function createSttEventHandlers(deps: {
       // some STT providers) — make sure the speaking edge still fires.
       speechEdges.speechStarted();
       // Sampled before `speechEnded()` below clears it.
-      const overlapped = deps.utteranceOpenedOverAudio();
+      const backchannel = isBackchannel(deps.utteranceOpenedOverAudio(), meta);
       // The turn that follows re-arms the nudge on completion.
       nudger.onUserTurn();
       // Push-to-talk: the final is one piece of a turn the CLIENT ends, so it
@@ -551,7 +568,7 @@ export function createSttEventHandlers(deps: {
       // AssemblyAI opener sets `min_turn_silence` for exactly this.
       speechEdges.speechEnded();
       recordCommittedLevel(level);
-      deps.commitUserTurn(trimmed, cutNote, meta, overlapped);
+      deps.commitUserTurn(trimmed, cutNote, meta, backchannel);
       continuation.onCommit();
     },
   };
