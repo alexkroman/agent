@@ -2,9 +2,9 @@
 /**
  * PREEMPTIVE GENERATION — the policy and the store.
  *
- * A speculation is a `streamText` call started from a high-confidence STT
- * INTERIM (`SttTurnMeta.endOfTurnConfidence` at or above
- * {@link PREEMPTIVE_CONFIDENCE_THRESHOLD}) and drained into memory. When the
+ * A speculation is a `streamText` call started from an STT INTERIM whose text
+ * has held still for `PREEMPTIVE_QUIET_MS` (the caller has paused) and
+ * drained into memory. When the
  * committed final arrives, the real turn asks for it BY TEXT; on a match it
  * adopts the same live stream, so the head start is real generation rather than
  * a cache lookup. On any mismatch the stream is aborted and the turn proceeds
@@ -37,14 +37,21 @@
  * merely EXTENDS the partial is a mismatch like any other. The speculation is
  * discarded; nothing it produced is ever spoken or recorded.
  *
- * **Surviving the confidence sawtooth.** The signal is not a ramp — the trace
- * lives on `SttTurnMeta.endOfTurnConfidence` in `sdk/providers.ts` — so "fire
- * above the threshold" is not a policy. Three rules are:
+ * **Why a quiet window and not end-of-turn confidence.** It used to fire on an
+ * interim at 0.9 confidence. The default STT (`universal-3-5-pro`) reports 0 on
+ * every interim, so the feature never fired; `PREEMPTIVE_QUIET_MS` has the
+ * measurement. A pause is the one signal every provider gives: the interim
+ * stream stops changing.
+ *
+ * **Surviving mid-utterance pauses.** A caller pauses mid-sentence, and between
+ * the digits of a dictated identifier, so "fire on a pause" alone is not a
+ * policy. Three rules make it one:
  * 1. a partial whose NORMALIZED TEXT differs from the live speculation's prompt
- *    aborts it immediately, so a mid-identifier peak dies on the next digit
- *    rather than being billed in full;
- * 2. an identical text at rising confidence never re-fires (the recorded
- *    terminal `0.95 → 1` re-emission);
+ *    aborts it immediately, so a speculation built on a prefix dies on the next
+ *    word rather than being billed in full;
+ * 2. the window restarts only when the normalized text CHANGES, so a provider
+ *    re-sending the same interim (or re-punctuating it) neither postpones the
+ *    fire nor fires again;
  * 3. at most {@link MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE} per utterance.
  *
  * **Two things beyond the text can move under a speculation**, and both are
@@ -56,11 +63,9 @@
  * {@link SpeculationController.take}.
  */
 
-import {
-  MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE,
-  PREEMPTIVE_CONFIDENCE_THRESHOLD,
-} from "@alexkroman1/aai/host-internal";
+import { MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE } from "@alexkroman1/aai/host-internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
+import { createRestartableTimer } from "../../../_timer.ts";
 import type { Logger } from "../../../logger.ts";
 import { createToolCallRepair, toDeclaredTools } from "../../../tools/index.ts";
 import { resolveSystemPrompt, type SystemPromptOption } from "../../types.ts";
@@ -87,8 +92,11 @@ export type SpeculationDiscardReason =
 
 /** The transport-facing surface of preemptive generation. */
 export interface SpeculationController {
-  /** An interim transcript arrived, with the provider's end-of-turn confidence. */
-  onPartial(text: string, eotConfidence?: number): void;
+  /**
+   * An interim transcript arrived. Arms the quiet window when its text is new;
+   * a speculation starts if no different text arrives before the window closes.
+   */
+  onPartial(text: string): void;
   /** A final committed. Aborts a speculation this text cannot possibly match. */
   onFinal(text: string): void;
   /** The utterance went quiet with no final — nothing will ever adopt this. */
@@ -117,6 +125,12 @@ export interface SpeculationControllerDeps {
    * defaults off" spec asserts.
    */
   enabled: boolean;
+  /**
+   * How long an interim's text must hold still before it fires
+   * (`PREEMPTIVE_QUIET_MS` in production). `0` fires on the partial
+   * itself, for the fuzz, whose clock runs in single milliseconds.
+   */
+  quietMs: number;
   /**
    * May a speculation start right now? The transport passes "no turn in flight
    * and no audio still playing". Speculating while the agent speaks is excluded
@@ -165,8 +179,18 @@ export function createSpeculationController(
   } | null = null;
   /** Speculations started for the CURRENT utterance; reset when one ends. */
   let spentThisUtterance = 0;
+  /** The latest interim, waiting out the quiet window. */
+  let pending: { text: string; key: string } | null = null;
+  const quiet = createRestartableTimer(() => fire());
+
+  /** No interim is waiting any more: the utterance committed, idled or was reset. */
+  function cancelPending(): void {
+    quiet.clear();
+    pending = null;
+  }
 
   function discard(reason: SpeculationDiscardReason): void {
+    cancelPending();
     if (!held) return;
     const { stream } = held;
     held = null;
@@ -180,22 +204,41 @@ export function createSpeculationController(
   }
 
   /**
-   * The three sawtooth rules plus the idle gate, hoisted out of `onPartial` to
-   * keep that handler under biome's cognitive-complexity cap. Rule 2 (never
-   * re-fire on identical text at rising confidence) is the `held` check, and it
-   * comes FIRST so it holds however the confidence moves.
+   * Checked when the quiet window CLOSES, not when the partial arrives: the
+   * transport may have started speaking, or the budget run out, in between.
+   * The `held` check comes first, so text that already has a live speculation
+   * never gets a second one.
    */
-  function mayFire(eotConfidence: number | undefined): boolean {
+  function mayFire(): boolean {
     if (held) return false;
-    if ((eotConfidence ?? 0) < PREEMPTIVE_CONFIDENCE_THRESHOLD) return false;
-    // Rule 3: bounded per utterance, whatever the sawtooth does.
+    // Rule 3: bounded per utterance, however many pauses it has.
     if (spentThisUtterance >= MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE) return false;
     // Speculating over a live reply is out of scope (see `isIdle`).
     return deps.isIdle();
   }
 
+  /** The quiet window closed on `pending`: the caller has paused. */
+  function fire(): void {
+    const next = pending;
+    pending = null;
+    if (!(next && mayFire())) return;
+    spentThisUtterance += 1;
+    const prompt = deps.systemPrompt();
+    held = {
+      stream: deps.start(next.text, prompt),
+      key: next.key,
+      revision: deps.historyRevision(),
+      prompt,
+    };
+    deps.log.debug("Pipeline speculation started", {
+      sid: deps.sid,
+      quietMs: deps.quietMs,
+      spent: spentThisUtterance,
+    });
+  }
+
   return {
-    onPartial(text: string, eotConfidence?: number): void {
+    onPartial(text: string): void {
       if (!deps.enabled) return;
       const key = normalizeUtterance(text);
       if (key.length === 0) return;
@@ -203,19 +246,19 @@ export function createSpeculationController(
       // started from a prefix that is no longer the utterance, so it can never
       // be adopted — kill it now rather than paying for the whole generation.
       if (held && held.key !== key) discard("superseded");
-      if (!mayFire(eotConfidence)) return;
-      spentThisUtterance += 1;
-      const prompt = deps.systemPrompt();
-      held = { stream: deps.start(text, prompt), key, revision: deps.historyRevision(), prompt };
-      deps.log.debug("Pipeline speculation started", {
-        sid: deps.sid,
-        eot: eotConfidence,
-        spent: spentThisUtterance,
-      });
+      // Rule 2: the same text again is not new speech. Re-arming on it would let
+      // a provider that re-sends its last interim hold the window open forever.
+      if (held?.key === key || pending?.key === key) return;
+      pending = { text, key };
+      // `arm` treats a non-positive window as "disabled", so 0 fires here.
+      if (deps.quietMs <= 0) fire();
+      else quiet.arm(deps.quietMs);
     },
 
     onFinal(text: string): void {
       if (!deps.enabled) return;
+      // The final arrived inside the quiet window: nothing left to speculate on.
+      cancelPending();
       // Called before the turn is committed, so a doomed speculation is aborted
       // at the earliest possible instant rather than when the turn chain drains
       // — the request is billed for as long as it runs.
@@ -234,6 +277,7 @@ export function createSpeculationController(
 
     take(userText: string): SpeculativeStream | null {
       if (!deps.enabled) return null;
+      cancelPending();
       const current = held;
       // Taken unconditionally: a speculation left standing here would be
       // adopted by some later turn that never spoke the words it was built on.
@@ -299,6 +343,8 @@ export function createSpeculationController(
 export function createPipelineSpeculation(deps: {
   /** The author's `preemptiveGeneration`. */
   enabled: boolean;
+  /** See {@link SpeculationControllerDeps.quietMs}. */
+  quietMs: number;
   /**
    * Everything the speculative request shares with the real one, as ONE object
    * the transport also spreads into `createTurnLlmRunner` — see
@@ -341,6 +387,7 @@ export function createPipelineSpeculation(deps: {
   const { log, sid, toolChoice, llm } = request;
   return createSpeculationController({
     enabled: deps.enabled && (toolChoice === "auto" || toolChoice === "none"),
+    quietMs: deps.quietMs,
     isIdle: deps.isIdle,
     historyRevision: deps.history.revision.current,
     historyIsCurrent: deps.history.revision.isCurrent,

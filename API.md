@@ -3302,7 +3302,7 @@ type PollResult<T> = {
 export function pollWorkflow<T>(host: PollHost, name: string, check: () => Promise<T> | T, options: PollOptions<T>): Promise<PollResult<T>>;
 
 // @internal
-export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
+export const PREEMPTIVE_QUIET_MS = 300;
 
 // @internal
 export const PROVIDER_CATALOG: readonly ProviderDefinition[];
