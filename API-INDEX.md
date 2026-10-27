@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 212 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
-- [Framework internals](#framework-internals) — 522 names
+- [Framework internals](#framework-internals) — 523 names
 
 ## Agent authoring
 
@@ -1393,6 +1393,7 @@ trace or a type error can be traced back to something.
 | `DEFAULT_TOOL_CHOICE` | const | `@alexkroman1/aai/internal` |  | Default `toolChoice`: the LLM decides when to call tools vs respond directly. |
 | `DEFAULT_TOOL_START_PHRASES` | const | `@alexkroman1/aai/host-internal` |  | The pool a `start: true` draws from — Vapi's own default filler set, which they publish nowhere but the schema. |
 | `DEFAULT_TTS_SAMPLE_RATE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEFAULT_VAD_THRESHOLD` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEFAULT_VOICE_FOCUS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEFAULT_VOICE_FOCUS_THRESHOLD` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEFAULT_WORKFLOW_POLL_MS` | const | `@alexkroman1/aai-ui/internal` |  | How often `useWorkflowRun` re-reads a live run when it has to poll. |

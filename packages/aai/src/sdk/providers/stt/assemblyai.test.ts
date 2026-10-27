@@ -5,6 +5,7 @@ import {
   DEFAULT_MIN_TURN_SILENCE_MS,
 } from "../../endpointing-constants.ts";
 import {
+  DEFAULT_VAD_THRESHOLD,
   DEFAULT_VOICE_FOCUS,
   DEFAULT_VOICE_FOCUS_THRESHOLD,
   STT_CONNECT_MAX_RETRIES,
@@ -36,14 +37,15 @@ describe("resolveAssemblyAISttSettings", () => {
       maxTurnSilenceMs: DEFAULT_MAX_TURN_SILENCE_MS,
       voiceFocus: DEFAULT_VOICE_FOCUS,
       voiceFocusThreshold: DEFAULT_VOICE_FOCUS_THRESHOLD,
+      vadThreshold: DEFAULT_VAD_THRESHOLD,
       connectTimeoutMs: STT_CONNECT_TIMEOUT_MS,
       maxConnectRetries: STT_CONNECT_MAX_RETRIES,
     });
   });
 
-  test("carries an explicit vadThreshold, and no default for it", () => {
-    expect(resolveAssemblyAISttSettings({ vadThreshold: 0.02 }).vadThreshold).toBe(0.02);
-    expect("vadThreshold" in resolveAssemblyAISttSettings({})).toBe(false);
+  test("carries an explicit vadThreshold, and defaults it to DEFAULT_VAD_THRESHOLD", () => {
+    expect(resolveAssemblyAISttSettings({ vadThreshold: 0.2 }).vadThreshold).toBe(0.2);
+    expect(resolveAssemblyAISttSettings({}).vadThreshold).toBe(DEFAULT_VAD_THRESHOLD);
   });
 
   test('`voiceFocus: "off"` sends no focus at all', () => {

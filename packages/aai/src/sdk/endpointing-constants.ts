@@ -54,6 +54,23 @@
  * is still being spoken, then that same breath barging in and cancelling the
  * reply.
  *
+ * **800 (2026-10-27), and ONLY because continuation is on.** Everything below
+ * argues for 1600 and was right without continuation: at 800 a spelled name or
+ * a dictated ZIP is split mid-entity and the agent acts on the fragment (the
+ * 0.12-vs-0.68 run recorded further down). `interruption.continuationWindowMs`
+ * (`DEFAULT_CONTINUATION_WINDOW_MS`) now repairs exactly that split — speech
+ * that resumes right after a commit cancels the reply and merges the two
+ * fragments into one turn — so the floor can come down and stop billing every
+ * finished utterance 800 ms. On a 114-task tau2-bench retail run at 800 / 3500
+ * with continuation (2500 ms) and VAD 0.02, reward was 0.474 against 0.500 at
+ * 1600 (47 tasks flipped either way; McNemar p = 0.77, i.e. noise), while
+ * caller speech left unanswered fell 14% -> 5%, turns waiting over 5 s fell
+ * 20.6% -> 14.9%, and first-word p90 fell 8.0 -> 6.2 s. Continuation absorbed
+ * 117 of 146 split turns with no false merges. **An agent that sets
+ * `continuationWindowMs: 0` should also set `minTurnSilenceMs: 1600`**, or it
+ * is back in the measured failure. The 800 / 3500 pair keeps the ceiling where
+ * it was; it was 800 / 1600 that failed.
+ *
  * **This is not the pause-tolerance knob — `DEFAULT_MAX_TURN_SILENCE_MS`
  * is.** On Universal-3.5 Pro the two are different mechanisms. At
  * `min_turn_silence` the model transcribes and asks whether the turn READS as
@@ -144,7 +161,8 @@
  *
  * ---
  *
- * **800 WAS TRIED AND FAILED — measured, on reward.** It was set deliberately
+ * **800 WAS TRIED AND FAILED — measured, on reward, WITHOUT continuation and
+ * with the ceiling cut to 1600.** It was set deliberately
  * against everything above, as a product decision to buy latency at the cost of
  * splits, and the validation run it asked for disproved it. tau2-bench retail,
  * the same 25 tasks at the same seed, differing only in this pair:
@@ -199,7 +217,7 @@
  * endpoints in its own recognizer rather than through these two, so a pipeline
  * fronted by Deepgram is tuned there instead.
  */
-export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
+export const DEFAULT_MIN_TURN_SILENCE_MS = 800;
 
 /**
  * Maximum silence (ms) before AssemblyAI force-ends a turn regardless of

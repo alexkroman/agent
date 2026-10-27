@@ -111,7 +111,7 @@ export interface TurnTakingTuning {
    * moving it. An explicit `stt` descriptor owns its own window, so this is
    * refused beside one.
    *
-   * @defaultValue `1600` (`DEFAULT_MIN_TURN_SILENCE_MS`)
+   * @defaultValue `800` (`DEFAULT_MIN_TURN_SILENCE_MS`)
    */
   minSilenceMs?: number;
   /**
@@ -213,7 +213,7 @@ export interface InterruptionTuning {
    * email — and gets split into two turns; without it the agent replies to
    * half the sentence first. `0` disables.
    *
-   * @defaultValue `2500` (`DEFAULT_CONTINUATION_WINDOW_MS`)
+   * @defaultValue `3500` (`DEFAULT_CONTINUATION_WINDOW_MS`)
    */
   continuationWindowMs?: number;
   /**

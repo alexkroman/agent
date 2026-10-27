@@ -8969,7 +8969,7 @@ half the sentence first. `0` disables.
 
 ###### Default Value
 
-`2500` (`DEFAULT_CONTINUATION_WINDOW_MS`)
+`3500` (`DEFAULT_CONTINUATION_WINDOW_MS`)
 
 ##### minDurationMs?
 
@@ -14665,7 +14665,7 @@ refused beside one.
 
 ###### Default Value
 
-`1600` (`DEFAULT_MIN_TURN_SILENCE_MS`)
+`800` (`DEFAULT_MIN_TURN_SILENCE_MS`)
 
 ##### preemptiveGeneration?
 

@@ -16,6 +16,7 @@ import {
   ASSEMBLYAI_STT_DEFAULT_MODEL,
   DEFAULT_SESSION_START_TIMEOUT_MS,
   DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
+  DEFAULT_VAD_THRESHOLD,
   DEFAULT_VOICE_FOCUS_THRESHOLD,
   STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_RETRY_DELAY_MS,
@@ -162,9 +163,12 @@ describe("assemblyAIStt STT adapter — voice focus", () => {
     await off.close();
   });
 
-  test("sends no vadThreshold by default — the service's own gate applies", async () => {
+  test("sends DEFAULT_VAD_THRESHOLD by default, well under the service's own 0.2", async () => {
+    // A caller voice the service gate dropped entirely produced no event at all
+    // at the service default — see DEFAULT_VAD_THRESHOLD.
     const session = await openSession({ model: "universal-3-5-pro" });
-    expect("vadThreshold" in fakeOf(session).params).toBe(false);
+    expect(fakeOf(session).params.vadThreshold).toBe(DEFAULT_VAD_THRESHOLD);
+    expect(DEFAULT_VAD_THRESHOLD).toBe(0.02);
     await session.close();
   });
 
@@ -194,7 +198,9 @@ describe("assemblyAIStt STT adapter — endpointing (min/max_turn_silence)", () 
     const session = await openSession({ model: "universal-3-5-pro" });
     const fake = fakeOf(session);
     expect(fake.params.minTurnSilence).toBe(DEFAULT_MIN_TURN_SILENCE_MS);
-    expect(fake.params.minTurnSilence).toBe(1600);
+    // 800 only beside continuation, which re-joins a mid-entity split — see
+    // DEFAULT_MIN_TURN_SILENCE_MS.
+    expect(fake.params.minTurnSilence).toBe(800);
     expect(fake.params.maxTurnSilence).toBe(DEFAULT_MAX_TURN_SILENCE_MS);
     // 3500 is the measured half of the pair (tau2-bench retail reward 0.68,
     // twice); the 3000 trim was reverted when the asymmetry its own doc named

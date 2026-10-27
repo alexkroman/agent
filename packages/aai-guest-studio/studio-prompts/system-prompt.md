@@ -752,13 +752,13 @@ agent({ name: "My Agent", turnTaking: { minSilenceMs: 1600, maxSilenceMs: 3500 }
 
 The default pipeline lowers the pair onto its STT stage; beside an explicit
 `stt` the shorthand is refused — set
-`assemblyAIStt({ minTurnSilenceMs, maxTurnSilenceMs })` instead. Defaults 1600 /
-3500 ms. **`maxSilenceMs` is the pause-tolerance knob** (raise it for hesitant
-or dictating callers; only turns that never read as complete pay it);
-`minSilenceMs` taxes every finished turn — the doc comments on
-`DEFAULT_MIN_TURN_SILENCE_MS`/`DEFAULT_MAX_TURN_SILENCE_MS` say why. Min must be
-<= max. S2S has no such knob: its adaptive end-of-turn detection would be
-disabled by one (`AssemblyAIS2sOptions`).
+`assemblyAIStt({ minTurnSilenceMs, maxTurnSilenceMs })` instead. Defaults 800 /
+3500 ms (800 needs continuation; 1600 without). **`maxSilenceMs` is the
+pause-tolerance knob** (raise it for hesitant or dictating callers; only turns
+that never read as complete pay it); `minSilenceMs` taxes every finished turn —
+the doc comments on `DEFAULT_MIN_TURN_SILENCE_MS`/`DEFAULT_MAX_TURN_SILENCE_MS`
+say why. Min must be <= max. S2S has no such knob: its adaptive end-of-turn
+detection would be disabled by one (`AssemblyAIS2sOptions`).
 
 ## `tool()` basics
 
@@ -1041,7 +1041,7 @@ export default agent({
   // ── pipeline only: three groups (`PipelineTuning`), refused on s2s / text ──
   turnTaking?: {
     minSilenceMs?: number;                   // pause (ms) that ENDS a turn once the text reads
-                                             // complete (default 1600) — lowered onto the default
+                                             // complete (default 800) — lowered onto the default
     maxSilenceMs?: number;                   // assemblyAIStt(); pause that ends it REGARDLESS of
                                              // content (default 3500). Invalid beside an explicit `stt`.
     detection?: "auto" | "manual";           // "manual" is push-to-talk: the CLIENT ends each turn

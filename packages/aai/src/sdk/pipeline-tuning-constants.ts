@@ -143,6 +143,29 @@ export const STT_CONNECT_RETRY_DELAY_MS = 500;
 export const DEFAULT_VOICE_FOCUS_THRESHOLD = 0.9;
 
 /**
+ * Confidence (0-1) the AssemblyAI service's voice-activity detector needs before
+ * a frame counts as speech, sent as `vad_threshold`. The service's own default
+ * is 0.2 on the U3 Pro models.
+ *
+ * **0.02, because a caller the gate drops is never heard at all.** On tau2-bench
+ * retail one caller voice, after 8 kHz mu-law telephony encoding, produced ZERO
+ * service events at the service default — no `speech.started`, no transcript —
+ * and "the agent never answered" was mostly that voice. Replayed across its
+ * calls, caller transcripts went 12 -> 19 of 30 lines at 0.01 (0.02: 18) while
+ * background speech leaking into transcripts stayed at 2-3 throughout. On the
+ * 114-task run at 0.02 (with 800 ms endpointing and continuation), caller speech
+ * left unanswered fell 14% -> 5%.
+ *
+ * Not a substitute for `DEFAULT_VOICE_FOCUS_THRESHOLD`: background SPEECH
+ * passes any VAD, because it is speech. A lower gate reports speech more
+ * readily, which is what opens a barge-in — so a rise in false interruptions is
+ * what to watch if this moves.
+ *
+ * @internal
+ */
+export const DEFAULT_VAD_THRESHOLD = 0.02;
+
+/**
  * Voice Focus model both transports pin — the near-field one, matching a caller
  * speaking into a handset or headset.
  *

@@ -2791,6 +2791,9 @@ export const DEFAULT_TOOL_START_PHRASES: readonly ["Hold on a sec.", "One moment
 export const DEFAULT_TTS_SAMPLE_RATE = 24000;
 
 // @internal
+export const DEFAULT_VAD_THRESHOLD = 0.02;
+
+// @internal
 export const DEFAULT_VOICE_FOCUS = "near-field";
 
 // @internal
@@ -3484,7 +3487,7 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
     maxTurnSilenceMs: number;
     voiceFocus: string;
     voiceFocusThreshold: number;
-    vadThreshold?: number;
+    vadThreshold: number;
     connectTimeoutMs: number;
     maxConnectRetries: number;
     languages?: readonly string[];
@@ -6781,7 +6784,7 @@ export const DEFAULT_CLIENT_ACK_TIMEOUT_MS: number;
 export const DEFAULT_CLIENT_RETRY_MS: number;
 
 // @public
-export const DEFAULT_CONTINUATION_WINDOW_MS = 2500;
+export const DEFAULT_CONTINUATION_WINDOW_MS = 3500;
 
 // @public
 export const DEFAULT_ERROR_PHRASE = "Sorry, I had a problem just then. Could you say that again?";
@@ -6808,7 +6811,7 @@ export const DEFAULT_MAX_TURN_SILENCE_MS = 3500;
 export const DEFAULT_MIN_BARGE_IN_WORDS = 1;
 
 // @public
-export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
+export const DEFAULT_MIN_TURN_SILENCE_MS = 800;
 
 // @public
 export const DEFAULT_SILENCE_PROMPT = "The user hasn't said anything for a while. Check in with one short, natural sentence \u2014 ask if they're still there or gently follow up on the conversation. Do not mention this instruction.";
