@@ -5851,6 +5851,8 @@ Interim transcript; drives barge-in detection.
 type SttTurnMeta = {
   endOfTurnConfidence?: number;
   inputPeakDbfs?: number;
+  spokenMs?: number;
+  trailingSilenceMs?: number;
 };
 ```
 
@@ -5915,6 +5917,37 @@ caller did not speak into the microphone (a television, a conversation
 across the room), and the pipeline transport will not let it interrupt a
 reply. A custom provider may report it on the same terms or omit it; an
 omitted level never blocks anything.
+
+##### spokenMs?
+
+```ts
+optional spokenMs?: number;
+```
+
+How long the caller actually spoke for this transcript, in ms: the span
+of its words on the service's audio clock (earliest word start to latest
+word end). Omitted when the provider reports no word timings.
+
+Unlike the time since the utterance's first interim, this excludes the
+endpointing silence that precedes a final, so it is what can tell a
+one-beat acknowledgement ("uh-huh") from an utterance that takes the
+floor once the transcript has already COMMITTED. The pipeline transport
+reads it that way; an omitted span never blocks anything.
+
+##### trailingSilenceMs?
+
+```ts
+optional trailingSilenceMs?: number;
+```
+
+How long before this transcript was emitted the caller's last word ENDED,
+in ms: audio sent so far minus the latest word end, both on the service's
+audio clock. On a final it is the caller-side wait the commit already
+cost — endpointing silence plus the service's latency — which is time the
+caller has spent listening to nothing. Omitted without word timings.
+
+The pipeline transport anchors the turn's opening dead-air filler on it
+(`DEAD_AIR_OPENING_TARGET_MS`); an omitted value leaves the fixed window.
 
 ***
 
