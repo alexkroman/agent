@@ -93,6 +93,21 @@ describe("step 3: the two thresholds", () => {
     expect(policy.finalInterrupts("let me ask")).toBe(true);
   });
 
+  test("an interim's own word span satisfies the duration gate", () => {
+    // Sparse multi-word interims: the first arrives with the edge just opened
+    // (duration 0) but already carries a second of speech.
+    const policy = makePolicy({
+      minBargeInWords: 1,
+      interruptionMinDurationMs: 500,
+      utteranceDurationMs: 0,
+    });
+    expect(policy.partialInterrupts(5, false, 1200)).toBe(true);
+    // A one-beat "uh-huh" spans less than the gate and still waits.
+    expect(policy.partialInterrupts(1, false, 300)).toBe(false);
+    // No word timings: the gate falls back to the edge's own clock.
+    expect(policy.partialInterrupts(5)).toBe(false);
+  });
+
   test("0 disables the duration gate", () => {
     const policy = makePolicy({
       minBargeInWords: 1,

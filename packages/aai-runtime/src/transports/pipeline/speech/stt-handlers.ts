@@ -258,11 +258,24 @@ export function createSttEventHandlers(deps: {
    * reply to it is still in flight or playing? Then this utterance is the rest
    * of that turn — see `continuation.ts`. A quiet utterance is not: the level
    * veto that keeps background speech from barging in keeps it from this too.
+   *
+   * Neither is one that OPENED OVER the agent's speech. Continuation exists for
+   * speech that began before the reply was audible, which the barge-in rules
+   * cannot see (`utteranceOpenedOverSpeech` is false). Speech that began over
+   * the reply is exactly what those rules are for, and this path skips all of
+   * them: one interim word cuts at once, with no sustained-speech gate and no
+   * brief-final drop. On Full-Duplex-Bench v1.5 (run `v15-full-3`) it decided
+   * 350 of 352 overlaps that opened over a reply, because each opened within
+   * the 3.5s window of the question's commit. A backchannel cut the answer
+   * ~0.3s in, on an interim the STT heard as "Um,", and committed "Mm-hmm,
+   * yeah." onto the question, so the answer restarted from the top.
    */
   function continuesLastTurn(meta?: SttTurnMeta): boolean {
     // `interruption: "off"` and a held floor both read as an unreachable word
     // threshold: a disclosure must FINISH, and a continuation is still a cut.
     if (!Number.isFinite(deps.minBargeInWords())) return false;
+    // Opened over the reply: the barge-in policy decides, gates included.
+    if (deps.utteranceOpenedOverSpeech()) return false;
     if (!(deps.isTurnInFlight() || deps.audioOnLine())) return false;
     if (callerLevel.read(meta?.inputPeakDbfs).quiet) return false;
     return continuation.continues(Date.now() - speechEdges.durationMs());
@@ -280,9 +293,14 @@ export function createSttEventHandlers(deps: {
    * Would this interim barge in, and does the level veto stop it? The veto is
    * logged only when it is what said no.
    */
-  function partialBargesIn(text: string, words: number, reading: CallerLevelReading): boolean {
-    if (bargeIn.partialInterrupts(words, reading.quiet)) return true;
-    if (reading.quiet && bargeIn.partialInterrupts(words)) {
+  function partialBargesIn(
+    text: string,
+    words: number,
+    reading: CallerLevelReading,
+    spokenMs: number | undefined,
+  ): boolean {
+    if (bargeIn.partialInterrupts(words, reading.quiet, spokenMs)) return true;
+    if (reading.quiet && bargeIn.partialInterrupts(words, false, spokenMs)) {
       if (!vetoLogged) log.info("Pipeline barge-in vetoed (quiet)", levelFields(reading, text));
       vetoLogged = true;
     } else {
@@ -429,7 +447,7 @@ export function createSttEventHandlers(deps: {
         emitPartial();
         return;
       }
-      if (!partialBargesIn(text, words, callerLevel.read(meta?.inputPeakDbfs))) {
+      if (!partialBargesIn(text, words, callerLevel.read(meta?.inputPeakDbfs), meta?.spokenMs)) {
         // The agent may have finished its reply while this utterance ran; a
         // held edge then has no floor left to protect and is released here
         // rather than on a timer. Cheap, and partials keep arriving for as

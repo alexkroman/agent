@@ -33,7 +33,8 @@
  *    by the author. The phrase lists below override a THRESHOLD; they must not
  *    override a declaration that there is no threshold.
  * 3. **The two thresholds.** `minBargeInWords`, and then — for an interim
- *    only — `interruptionMinDurationMs`.
+ *    only — `interruptionMinDurationMs`, met by the time since the first
+ *    interim OR the interim's own word span, whichever is longer.
  *
  * 4. **The relative-level veto.** An utterance whose loudest audio is far
  *    below the caller's own speech level is not the caller — a television, an
@@ -121,8 +122,16 @@ export interface BargeInPolicy {
    * already-counted word total (the scan is bounded, so it is not recomputed
    * here). It takes no TEXT: nothing left in this policy reads the caller's
    * wording. `quiet` is the level veto — see the module doc, step 4.
+   *
+   * `spokenMs` is the span of the interim's own words (`SttTurnMeta.spokenMs`),
+   * when the provider reports word timings. It satisfies the sustained-speech
+   * gate as well as the time since the first interim does. A provider that
+   * sends sparse, multi-word interims (`universal-3-5-pro`: the first one about
+   * 1.3s into an interruption, already five words long) otherwise has its
+   * barge-in held back to the SECOND interim. On Full-Duplex-Bench v1.5
+   * interruptions that held the cut back to ~1.8s after the caller started.
    */
-  partialInterrupts(words: number, quiet?: boolean): boolean;
+  partialInterrupts(words: number, quiet?: boolean, spokenMs?: number): boolean;
   /** Should this committed FINAL replace the in-flight reply? `quiet` as above. */
   finalInterrupts(text: string, quiet?: boolean): boolean;
 }
@@ -143,11 +152,12 @@ export function createBargeInPolicy(deps: {
   utteranceDurationMs: () => number;
 }): BargeInPolicy {
   return {
-    partialInterrupts(words: number, quiet = false): boolean {
+    partialInterrupts(words: number, quiet = false, spokenMs?: number): boolean {
       if (!(deps.agentIsSpeaking() && deps.utteranceOpenedOverSpeech())) return false;
       if (words < deps.minBargeInWords()) return false;
       const gate = deps.interruptionMinDurationMs();
-      if (gate > 0 && deps.utteranceDurationMs() < gate) return false;
+      const sustainedMs = Math.max(deps.utteranceDurationMs(), spokenMs ?? 0);
+      if (gate > 0 && sustainedMs < gate) return false;
       return !quiet;
     },
 
