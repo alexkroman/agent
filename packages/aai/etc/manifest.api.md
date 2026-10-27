@@ -1098,6 +1098,11 @@ type TelephonyCarrier = "twilio" | "telnyx" | (string & {});
 // @public
 export function toAgentConfig(source: AgentConfigSource): AgentConfig;
 
+// @public
+type ToolAnnotations = {
+    readOnlyHint?: boolean | undefined;
+};
+
 // @public (undocumented)
 export interface ToolBearingDef {
     // (undocumented)
@@ -1148,6 +1153,7 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
+    annotations?: ToolAnnotations;
 };
 
 // @public @input
@@ -1228,9 +1234,7 @@ export type ToolSchema = {
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
     ui?: ToolUi | undefined;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    } | undefined;
+    annotations?: ToolAnnotations | undefined;
 };
 
 // @internal

@@ -19,6 +19,27 @@ import type { ToolMessagesInput } from "./tool-messages.ts";
 import type { ToolFailure } from "./utils.ts";
 
 /**
+ * What a tool does to the world, in MCP's vocabulary.
+ *
+ * `readOnlyHint: false` declares a WRITE — something that changes state the
+ * caller cannot take back by asking (a booking, an order, a cancellation, a
+ * message sent). The pipeline transport then runs it only on a caller turn
+ * that did not start over the agent's own audio: a turn spoken over the agent
+ * ("uh-huh" over its "Shall I cancel it?") cannot be the caller confirming
+ * what it was asking, and the model is told to ask again instead. `true`, or no
+ * annotation, runs as it always has.
+ *
+ * Declared on an authored `ToolDef` or on a host-mode client's tool
+ * declaration; carried on the wire `ToolSchema` either way.
+ *
+ * @public
+ */
+export type ToolAnnotations = {
+  /** `false` marks a write; `true` a read. Absent means undeclared (runs ungated). */
+  readOnlyHint?: boolean | undefined;
+};
+
+/**
  * How a tool call is DISPLAYED by a page — the icon and the label a client
  * shows while the call runs and once it lands. Nothing here reaches the model.
  *
@@ -240,6 +261,26 @@ export type ToolDef<
    * and on the platform.
    */
   ui?: ToolUi;
+  /**
+   * What the tool does to the world — see {@link ToolAnnotations}. Mark a tool
+   * that books, orders, cancels, sends or deletes `{ readOnlyHint: false }`:
+   * a caller's "uh-huh" spoken over the agent's confirmation question will then
+   * not run it.
+   *
+   * @example
+   * ```ts
+   * import { tool } from "@alexkroman1/aai";
+   * import { z } from "zod";
+   *
+   * export default tool({
+   *   description: "Cancel a pending order.",
+   *   inputSchema: z.object({ orderId: z.string() }),
+   *   annotations: { readOnlyHint: false },
+   *   execute: ({ orderId }) => ({ cancelled: orderId }),
+   * });
+   * ```
+   */
+  annotations?: ToolAnnotations;
 };
 
 /**

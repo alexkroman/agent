@@ -18,7 +18,7 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 619 names
+- [Agent authoring](#agent-authoring) — 620 names
 - [Browser client](#browser-client) — 206 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
@@ -325,6 +325,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `TerminalWorkflowRun` | type | `@alexkroman1/aai/workflow-api` |  | A run in a status nothing will change again. |
 | `TextAgentParams` | type | `@alexkroman1/aai` |  | The TEXT member — `mode: "text"`, optionally an `llm`, and nothing from the audio half of the agent shape. |
 | `TextbeltChannel`, `TextbeltChannelOptions` | type | `@alexkroman1/aai/channels` | `aai:channels` | A Textbelt channel descriptor, as returned by `textbeltChannel`. |
+| `ToolAnnotations` | type | `@alexkroman1/aai` |  | What a tool does to the world, in MCP's vocabulary. |
 | `ToolChoice` | type | `@alexkroman1/aai` |  | How the LLM should select tools. |
 | `ToolConditionOperator` | type | `@alexkroman1/aai` |  | Comparison a `ToolMessageCondition` applies. |
 | `ToolContext` | type | `@alexkroman1/aai` |  | Context passed to tool `execute` functions. |

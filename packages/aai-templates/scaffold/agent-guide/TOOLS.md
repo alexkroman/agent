@@ -19,11 +19,19 @@ const myTool = tool({
   ui?: { icon?, label? };        // how a page shows this tool's calls — served to the
                                  // client with the declaration, so no page-side map
   messages?: ToolMessagesInput;  // what to SAY while it runs (PIPELINE-TUNING.md)
+  annotations?: { readOnlyHint?: boolean };  // false = a WRITE (see below)
 });
 ```
 
 `execute` may call `fetch` directly — tool code reaches external APIs the same
 way in `aai dev` and deployed.
+
+**Mark every write `annotations: { readOnlyHint: false }`** — a tool that books,
+orders, cancels, sends, dispatches, deletes or changes an account. The voice
+pipeline then runs it only on a caller turn that did not start while the agent
+was talking: an "uh-huh" spoken over "Shall I cancel it?" is the caller
+listening, not agreeing, and the model is told to ask again instead. Lookups,
+calculations and cart or draft steps that a later tool confirms stay unmarked.
 
 ### `ctx` (ToolContext)
 
