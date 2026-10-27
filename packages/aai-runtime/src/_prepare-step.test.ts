@@ -391,7 +391,7 @@ describe("toolErrorBudget", () => {
     );
     const options = step({ stepNumber: 1 });
     expect(await composed({ ...options, steps: [] })).toEqual({ toolChoice: "required" });
-    const spent = { ...options, stepNumber: 2, steps: failed as unknown as typeof options.steps };
+    const spent = { ...options, stepNumber: 2, steps: failed as typeof options.steps };
     expect(await composed(spent)).toEqual({ toolChoice: "none" });
   });
 });
