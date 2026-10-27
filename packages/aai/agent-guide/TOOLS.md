@@ -617,9 +617,8 @@ its wait is held for it.
 
 ## Built-in tools
 
-Enable via `builtinTools` in `agent()`. **Omitted, only `think` is on**; the
-rest are opt-in. Setting the field REPLACES the default: list `"think"` to keep
-it, `[]` for none.
+Enable via `builtinTools` in `agent()`. **Omitted, none is on**: every built-in,
+`think` included, is opt-in by name.
 
 | Tool              | Description                                                                                                                 | Params                                |
 | ----------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |

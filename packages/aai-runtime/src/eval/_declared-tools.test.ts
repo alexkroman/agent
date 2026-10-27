@@ -47,7 +47,7 @@ describe("checkStubReplyTools", () => {
         { tool: "look_up_order", args: { orderId: "W1234" } },
         "It shipped.",
       ]),
-    ).toThrow(/look_up_order.*does not declare.*It declares: think\./s);
+    ).toThrow(/look_up_order.*does not declare.*It declares: \(none\)\./s);
   });
 
   test("and the refusal carries the authored-def hint, which is the actual fix", () => {
@@ -65,7 +65,7 @@ describe("checkStubReplyTools", () => {
     const check = () =>
       checkStubReplyTools(deployed, "looks an order up", [{ tool: "look_up_ordr" }]);
     expect(check).toThrow("look_up_ordr");
-    expect(check).toThrow("It declares: look_up_order, think.");
+    expect(check).toThrow("It declares: look_up_order.");
     expect(check).toThrow("tools/look_up_ordr.ts");
     expect(check).toThrow(
       expect.objectContaining({ message: expect.not.stringContaining(AUTHORED_DEF_HINT) }),

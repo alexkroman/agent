@@ -544,8 +544,8 @@ describe("createTextAgent", () => {
       model: createFakeLanguageModel({ script: [] }),
       logger: silentLogger,
     });
-    // `think` is the default builtin, served beside the agent's own tool.
-    expect(Object.keys(chat.tools)).toEqual(["peek", "think"]);
+    // No builtin rides along by default (DEFAULT_BUILTIN_TOOLS is empty).
+    expect(Object.keys(chat.tools)).toEqual(["peek"]);
   });
 
   test("an abort signal ends the turn", async () => {

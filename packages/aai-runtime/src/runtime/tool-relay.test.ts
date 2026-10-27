@@ -162,7 +162,8 @@ describe("createRuntime — host builtins in relay mode", () => {
     const relay = vi.fn(async () => "relayed");
     const logger = makeLogger();
     const exec = createRuntimeWithSeams({
-      agent: makeAgent(),
+      // `think` is opt-in (DEFAULT_BUILTIN_TOOLS is empty), so it is named.
+      agent: { ...makeAgent(), builtinTools: ["think"] },
       env: {},
       executeTool: relay,
       onToolResult: vi.fn(),
