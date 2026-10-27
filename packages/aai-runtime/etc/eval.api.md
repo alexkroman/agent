@@ -569,6 +569,7 @@ export interface SttSession {
 export type SttTurnMeta = {
     endOfTurnConfidence?: number;
     inputPeakDbfs?: number;
+    spokenMs?: number;
 };
 
 // @public

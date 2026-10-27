@@ -1,5 +1,5 @@
 ---
-"@alexkroman1/aai-runtime": patch
+"@alexkroman1/aai-runtime": minor
 ---
 
 A committed transcript that began over agent speech and whose words span less
