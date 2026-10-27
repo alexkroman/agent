@@ -126,6 +126,8 @@ export function completeOrEscalateTool() {
  */
 export function confirmActionTool() {
   return tripSlot.updateTool({
+    // Applies the staged booking, cancel or ticket change: a write.
+    annotations: { readOnlyHint: false },
     description:
       "Apply the change the caller has just confirmed out loud. Only call this " +
       "after you have read the change back and heard a clear yes.",

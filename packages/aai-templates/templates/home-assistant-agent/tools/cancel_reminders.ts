@@ -5,6 +5,7 @@ import { remind } from "../shared.ts";
 // reminders" is cancelling every run under that key that has not fired yet.
 
 export default tool({
+  annotations: { readOnlyHint: false },
   description:
     "Cancel every reminder that has not gone off yet on this speaker, e.g. 'cancel my " +
     "reminders' or 'never mind the plumber reminder'.",

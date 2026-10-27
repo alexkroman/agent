@@ -3,6 +3,7 @@ import { toolFailure } from "@alexkroman1/aai/utils";
 import { cartSummary, orderSlot, resetOrder } from "../shared.ts";
 
 export default orderSlot.updateTool({
+  annotations: { readOnlyHint: false },
   description:
     "Place the final order. Use when the customer confirms they are done and ready to order.",
   ui: { icon: "\u{2705}", label: "Placing order" },

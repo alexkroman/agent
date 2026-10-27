@@ -16,6 +16,7 @@ import {
  */
 export default dispatchSlot.updateTool(
   {
+    annotations: { readOnlyHint: false },
     description:
       "Dispatch units to an incident. Can auto-dispatch recommended resources or manually specify callsigns.",
     dialog: callFlow,
