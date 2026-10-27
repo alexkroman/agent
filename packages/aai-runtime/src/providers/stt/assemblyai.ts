@@ -365,6 +365,11 @@ export function openAssemblyAI(
           // wire names, unlike the camelCase connect params.
           transcriber.updateConfiguration({ min_turn_silence: bounded });
         },
+        updateKeyterms(terms) {
+          if (shell.isClosed()) return;
+          // Replaces the session's set — the caller sends all of it every time.
+          transcriber.updateConfiguration({ keyterms_prompt: [...terms] });
+        },
         forceEndOfTurn() {
           if (shell.isClosed()) return;
           // The service's `ForceEndpoint` frame: it ends the turn it is

@@ -8,6 +8,7 @@
  * assembly beside `../index.ts` does.
  */
 
+export { createKeytermHarvester } from "./keyterms.ts";
 export type { ManualTurn } from "./manual-turn.ts";
 export { AUTO_TURN_DETECTION } from "./manual-turn.ts";
 export type { SpeculationController } from "./speculation.ts";

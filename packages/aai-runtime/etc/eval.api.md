@@ -563,6 +563,7 @@ export interface SttSession {
     on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
     sendAudio(pcm: Int16Array): void;
     updateEndpointing?(minTurnSilenceMs: number): void;
+    updateKeyterms?(terms: readonly string[]): void;
 }
 
 // @public

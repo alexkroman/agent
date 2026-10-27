@@ -1228,6 +1228,9 @@ export type ToolSchema = {
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
     ui?: ToolUi | undefined;
+    annotations?: {
+        readOnlyHint?: boolean | undefined;
+    } | undefined;
 };
 
 // @internal
@@ -1309,6 +1312,9 @@ export const ToolSchemaSchema: z.ZodObject<{
         }, z.core.$strip>>>;
     }, z.core.$strip>>;
     ui: z.ZodOptional<z.ZodType<ToolUi>>;
+    annotations: z.ZodOptional<z.ZodObject<{
+        readOnlyHint: z.ZodOptional<z.ZodBoolean>;
+    }, z.core.$strip>>;
 }, z.core.$strip>;
 
 // @public

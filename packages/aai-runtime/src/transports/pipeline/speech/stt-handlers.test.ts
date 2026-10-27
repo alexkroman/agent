@@ -48,6 +48,7 @@ function makeHandlers(overrides: Partial<Deps> = {}): {
     agentIsSpeaking: () => false,
     audioOnLine: () => false,
     utteranceOpenedOverSpeech: () => false,
+    utteranceOpenedOverAudio: () => false,
     hasSpokenRecordable: () => false,
     abortInFlightTurn: vi.fn(),
     tailResumePrompt: () => undefined,
@@ -534,5 +535,23 @@ describe("a cut whose utterance commits a turn hands that turn a note", () => {
     h.state.speaking = false;
     h.handlers.onSttFinal("Hello?");
     expect(h.committed).toEqual([{ text: "Hello?" }]);
+  });
+});
+
+describe("the turn tells the write gate whether it opened over agent audio", () => {
+  // tools/confirmation-gate.ts refuses a declared write on a turn that began
+  // while agent audio was on the line, filler included. The flag is sampled
+  // before the final closes the speaking edge, which clears it.
+  test("a final opened over agent audio commits as overlapped", () => {
+    const overlapped: (boolean | undefined)[] = [];
+    let onAir = true;
+    const { handlers } = makeHandlers({
+      utteranceOpenedOverAudio: () => onAir,
+      commitUserTurn: (_text, _note, _meta, o) => void overlapped.push(o),
+    });
+    handlers.onSttFinal("Uh-huh.");
+    onAir = false;
+    handlers.onSttFinal("Yes, go ahead.");
+    expect(overlapped).toEqual([true, false]);
   });
 });

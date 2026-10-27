@@ -166,6 +166,15 @@ export interface SttSession {
    * the cap is inert. Today only AssemblyAI has it (`ForceEndpoint`).
    */
   forceEndOfTurn?(): void;
+  /**
+   * Replace the terms the transcriber is biased toward, mid-stream — what the
+   * pipeline feeds the proper nouns of tool results through
+   * (`transports/pipeline/speech/keyterms.ts`). The WHOLE set each call: the
+   * service replaces rather than merges. Optional for the reason
+   * {@link updateEndpointing} is. Today only AssemblyAI has it
+   * (`UpdateConfiguration.keyterms_prompt`).
+   */
+  updateKeyterms?(terms: readonly string[]): void;
 }
 
 /** Options the host passes when opening an STT stream. */

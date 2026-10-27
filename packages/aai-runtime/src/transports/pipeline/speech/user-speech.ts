@@ -44,6 +44,8 @@ export interface UserActivity {
   commitTypedTurn(text: string): void;
   /** When the caller stopped, for a turn opening now — see `caller-stop.ts`. */
   callerStoppedAt(): number | undefined;
+  /** Did the latest committed turn open over agent audio? See `tools/confirmation-gate.ts`. */
+  turnOverlapped(): boolean;
 }
 
 /**
@@ -133,9 +135,18 @@ export function createUserActivity(deps: {
   // STT handlers (a final, under "auto") and push-to-talk (a commit, under
   // "manual") answer a turn the same way.
   const callerStop = createCallerStop();
-  const commitUserTurn = (text: string, note?: string, meta?: SttTurnMeta): void => {
+  // Did the latest committed turn open over agent audio? Read by the write
+  // gate for every tool call of the reply that turn starts.
+  let lastTurnOverlapped = false;
+  const commitUserTurn = (
+    text: string,
+    note?: string,
+    meta?: SttTurnMeta,
+    overlapped = false,
+  ): void => {
     // Before the chained turn starts: its dead-air cover reads this as it opens.
     callerStop.onCommit(meta?.trailingSilenceMs);
+    lastTurnOverlapped = overlapped;
     // Debug trace (AAI_DEBUG=1): verbatim what the turn prompts the LLM with
     // — outside production; there `transcriptField` leaves a character count.
     log.debug("Pipeline turn committed", { sid, ...transcriptField("text", text) });
@@ -196,20 +207,26 @@ export function createUserActivity(deps: {
   // the edge's opening and never after: only an utterance that started over
   // the agent's speech can barge in (see createBargeInPolicy, step 1).
   let utteranceOpenedOverSpeech = false;
+  // The same sample against ANY agent audio, filler included — what decides
+  // whether the turn can authorize a write (`tools/confirmation-gate.ts`).
+  let utteranceOpenedOverAudio = false;
   const edgesWithLimit = {
     onSpeechStarted(): void {
       utteranceOpenedOverSpeech = agentIsSpeaking();
+      utteranceOpenedOverAudio = audioOnLine();
       edgeGate.onSpeechStarted();
       turnLimit.onUtteranceStarted();
     },
     onSpeechStopped(): void {
       utteranceOpenedOverSpeech = false;
+      utteranceOpenedOverAudio = false;
       edgeGate.onSpeechStopped();
       turnLimit.onUtteranceEnded();
       deps.onUtteranceEnded?.();
     },
     reset(): void {
       utteranceOpenedOverSpeech = false;
+      utteranceOpenedOverAudio = false;
       edgeGate.reset();
       turnLimit.onUtteranceEnded();
       deps.onUtteranceEnded?.();
@@ -277,6 +294,7 @@ export function createUserActivity(deps: {
     agentIsSpeaking,
     audioOnLine,
     utteranceOpenedOverSpeech: () => utteranceOpenedOverSpeech,
+    utteranceOpenedOverAudio: () => utteranceOpenedOverAudio,
     hasSpokenRecordable: deps.hasSpokenRecordable,
     abortInFlightTurn: deps.abortInFlightTurn,
     tailResumePrompt: deps.tailResumePrompt,
@@ -331,5 +349,6 @@ export function createUserActivity(deps: {
     manualTurn,
     commitTypedTurn,
     callerStoppedAt: callerStop.stoppedAt,
+    turnOverlapped: () => lastTurnOverlapped,
   };
 }
