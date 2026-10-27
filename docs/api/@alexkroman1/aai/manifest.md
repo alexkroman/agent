@@ -138,6 +138,7 @@ function toAgentConfig(source: AgentConfigSource): {
   interruption?:   | "off"
      | {
      backoffMs?: number;
+     continuationWindowMs?: number;
      minDurationMs?: number;
      minWords?: number;
      resumeFalseInterruption?: boolean;
@@ -223,6 +224,7 @@ the runtime.
   interruption?:   | "off"
      | {
      backoffMs?: number;
+     continuationWindowMs?: number;
      minDurationMs?: number;
      minWords?: number;
      resumeFalseInterruption?: boolean;
@@ -322,6 +324,7 @@ optional interruption?:
   | "off"
   | {
   backoffMs?: number;
+  continuationWindowMs?: number;
   minDurationMs?: number;
   minWords?: number;
   resumeFalseInterruption?: boolean;

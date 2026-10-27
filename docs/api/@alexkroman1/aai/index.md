@@ -8954,6 +8954,23 @@ are one deadline, `max(floor, backoff)`.
 
 `0` (`DEFAULT_INTERRUPTION_BACKOFF_MS`)
 
+##### continuationWindowMs?
+
+```ts
+optional continuationWindowMs?: number;
+```
+
+When the caller starts speaking again within this many ms of a committed
+turn, treat it as the REST of that turn: the reply already answering the
+first fragment is cut, and the agent answers once the caller finishes.
+Covers a caller who pauses mid-sentence — reading out a ZIP, recalling an
+email — and gets split into two turns; without it the agent replies to
+half the sentence first. `0` disables.
+
+###### Default Value
+
+`2500` (`DEFAULT_CONTINUATION_WINDOW_MS`)
+
 ##### minDurationMs?
 
 ```ts
