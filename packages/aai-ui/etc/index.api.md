@@ -858,6 +858,29 @@ export type UseCopyResult = {
 };
 
 // @public
+export function useDictation(options: UseDictationOptions): UseDictationResult;
+
+// @public @input
+export type UseDictationOptions = {
+    transcribe: (audio: Blob, options: {
+        signal: AbortSignal;
+    }) => Promise<string>;
+    onText: (text: string) => void;
+    maxSeconds?: number;
+};
+
+// @public @sealed
+export type UseDictationResult = {
+    phase: "idle" | "starting" | "recording" | "transcribing" | (string & {});
+    error: string | null;
+    supported: boolean;
+    start: () => void;
+    stop: () => void;
+    cancel: () => void;
+    toggle: () => void;
+};
+
+// @public
 export function useDownloadUrl(uploadId: string | undefined, options?: UseDownloadUrlOptions): UseDownloadUrlResult;
 
 // @public @input

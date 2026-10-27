@@ -1185,6 +1185,32 @@ interface DelegateToolCall {
 }
 
 // @public
+export const DICTATION_ENDPOINT: string;
+
+// @public
+export const DICTATION_MAX_BYTES: number;
+
+// @public
+export const DICTATION_MAX_SECONDS: number;
+
+// @public
+export const DICTATION_MODEL: string;
+
+// @public
+export const DICTATION_SAMPLE_RATE: number;
+
+// @public
+export const DICTATION_TIMEOUT_MS: number;
+
+// @public
+export type DictationFetch = (url: string, init: {
+    method: string;
+    headers: Record<string, string>;
+    body: Uint8Array<ArrayBuffer>;
+    signal: AbortSignal;
+}) => Promise<Response>;
+
+// @public
 export const DTMF_KEYS: string;
 
 // @public
@@ -1734,6 +1760,23 @@ type ToolStartMessage = {
 type ToolUi = {
     icon?: string | undefined;
     label?: string | undefined;
+};
+
+// @public
+export function transcribeDictation(audio: Uint8Array | readonly Uint8Array[], options: TranscribeDictationOptions): Promise<{
+    text: string;
+}>;
+
+// @public @input
+export type TranscribeDictationOptions = {
+    apiKey: string;
+    model?: string | undefined;
+    type?: string | undefined;
+    filename?: string | undefined;
+    label?: string | undefined;
+    timeoutMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    fetch?: DictationFetch | undefined;
 };
 
 // @public
@@ -22269,6 +22312,29 @@ export type UseCopyResult = {
     copy: (text: string) => void;
     label: (text: string, idle?: string) => string;
     didCopy: (text: string) => boolean;
+};
+
+// @public
+export function useDictation(options: UseDictationOptions): UseDictationResult;
+
+// @public @input
+export type UseDictationOptions = {
+    transcribe: (audio: Blob, options: {
+        signal: AbortSignal;
+    }) => Promise<string>;
+    onText: (text: string) => void;
+    maxSeconds?: number;
+};
+
+// @public @sealed
+export type UseDictationResult = {
+    phase: "idle" | "starting" | "recording" | "transcribing" | (string & {});
+    error: string | null;
+    supported: boolean;
+    start: () => void;
+    stop: () => void;
+    cancel: () => void;
+    toggle: () => void;
 };
 
 // @public

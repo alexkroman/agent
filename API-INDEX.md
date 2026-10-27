@@ -18,8 +18,8 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 619 names
-- [Browser client](#browser-client) — 206 names
+- [Agent authoring](#agent-authoring) — 628 names
+- [Browser client](#browser-client) — 209 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
 - [Framework internals](#framework-internals) — 520 names
@@ -113,6 +113,12 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `DEFAULT_STEP_MAX_ATTEMPTS` | const | `@alexkroman1/aai` |  | Attempts a step gets when `StepOptions.maxAttempts` says nothing. |
 | `DEFAULT_SYSTEM_PROMPT` | const | `@alexkroman1/aai` | `aai:defaults` | Default system prompt used when the agent keeps no `system-prompt.md`. |
 | `DELEGATE_TOOL_NAME` | const | `@alexkroman1/aai` | `aai:persona` | The name the model hands a TASK off by. |
+| `DICTATION_ENDPOINT` | const | `@alexkroman1/aai/experimental` |  | The dictation (synchronous) endpoint. |
+| `DICTATION_MAX_BYTES` | const | `@alexkroman1/aai/experimental` |  | The largest body a server route should accept for one clip: a mono 16-bit WAV of `DICTATION_MAX_SECONDS` at `DICTATION_SAMPLE_RATE`, header included. |
+| `DICTATION_MAX_SECONDS` | const | `@alexkroman1/aai/experimental` |  | The longest clip the endpoint accepts, in seconds. |
+| `DICTATION_MODEL` | const | `@alexkroman1/aai/experimental` |  | Model sent when a caller names none; the endpoint routes on it. |
+| `DICTATION_SAMPLE_RATE` | const | `@alexkroman1/aai/experimental` |  | The rate a dictation clip is recorded at, in Hz. |
+| `DICTATION_TIMEOUT_MS` | const | `@alexkroman1/aai/experimental` |  | The endpoint's deadline plus room to upload: the audio and the transcription share one request. |
 | `DTMF_KEYS` | const | `@alexkroman1/aai/experimental` |  | The keys `sendDtmf` accepts: the twelve on a phone pad, the four `A`–`D` column keys, and `w`, a half-second pause between keys (Twilio's `sendDigits` … |
 | `DeepReadonly` | type | `@alexkroman1/aai` | `aai:state` | `Readonly<T>`, all the way down. |
 | `DeepResearchBrief` | interface | `@alexkroman1/aai/experimental` |  | The request as a researcher is held to it. |
@@ -150,6 +156,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `DialogToolDef` | interface | `@alexkroman1/aai` |  | The authoring shape of a gated tool — `ToolDef` plus the `DialogGate` that makes it part of a dialog. |
 | `DialogToolResult` | interface | `@alexkroman1/aai` |  | What a `Dialog.tool` answers on success. |
 | `DialogVoiceConfig` | interface | `@alexkroman1/aai` |  | The per-state voice settings a dialog declares — what `Dialog.voiceConfig` answers with, from the deepest active state that declares any of them. |
+| `DictationFetch` | type | `@alexkroman1/aai/experimental` |  | The `fetch` shape `transcribeDictation` calls. |
 | `DurableTranscript` | type | `@alexkroman1/aai/step` | `aai:transcribe` | What `transcribeUploadDurably` resolves with: the transcript, plus what the recording was CALLED. |
 | `EmptyWorkflows` | type | `@alexkroman1/aai` |  | What `W` is when a declaration names no `workflows`: the map with NO keys, not the open one. |
 | `EnvContext` | type | `@alexkroman1/aai/step` | `aai:step` | The part of a context a helper needs to reach an outside service: the agent's env, and a signal to stop on. |
@@ -585,6 +592,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `toolRefusal` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) |  | Build a `ToolRefusal`. |
 | `transcodeToWav`, `TranscodeToWavOptions` | function | `@alexkroman1/aai/ffmpeg` | `aai:ffmpeg` | Re-encode anything ffmpeg can read into linear-PCM WAV bytes. |
 | `transcodeUpload`, `TranscodeUploadOptions` | function | `@alexkroman1/aai/step-files` | `aai:step-files` | Read an upload to a temp file, run ffmpeg over it, and store what it wrote. |
+| `transcribeDictation`, `TranscribeDictationOptions` | function | `@alexkroman1/aai/experimental` |  | Transcribe one complete spoken clip. |
 | `transcribeUploadDurably` | function | `@alexkroman1/aai/step` | `aai:transcribe` | Transcribe a stored upload through the async API, durably: upload it, create the job, and poll until the transcript is in, each phase a journaled step of `ctx`. |
 | `verifyStandardWebhook` | function | `@alexkroman1/aai` |  | Whether a route request is a genuine Standard Webhooks delivery signed with `secret`: its `webhook-signature` carries a `v1` HMAC-SHA256 of … |
 | `visitWebpage` | function | `@alexkroman1/aai/tools` | `aai:builtins` | Fetch a page and return its content as clean text. |
@@ -691,6 +699,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `UseConversationLogResult` | type | `@alexkroman1/aai-ui` | `aai-ui:conversation-log` | What `useConversationLog` returns. |
 | `UseConversationResult` | type | `@alexkroman1/aai-ui` | `aai-ui:session` | What `useConversation` returns. |
 | `UseCopyResult` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | What `useCopy` hands back — the click handler and the two readings a button needs off one shared flash. |
+| `UseDictationResult` | type | `@alexkroman1/aai-ui` | `aai-ui:dictation` | What `useDictation` returns. |
 | `UseDownloadUrlResult` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow-files` | What `useDownloadUrl` reports. |
 | `UseFlashResult` | type | `@alexkroman1/aai-ui` | `aai-ui:components` | What `useFlash` hands back. |
 | `UseInboxResult` | type | `@alexkroman1/aai-ui` | `aai-ui:inbox` | What `useInbox` returns. |
@@ -750,6 +759,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `useConversation` | hook | `@alexkroman1/aai-ui` | `aai-ui:session` | Subscribe to the conversation: the interleaved exchange, the streaming utterance, the live transcript and the thinking rule — with no markup. |
 | `useConversationLog`, `UseConversationLogOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:conversation-log` | A transcript that outlives the session — see this module's doc. |
 | `useCopy` | hook | `@alexkroman1/aai-ui` | `aai-ui:components` | One copier for a group of copy buttons. |
+| `useDictation`, `UseDictationOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:dictation` | Record what the user says and hand it back as text — a microphone button for a text box. |
 | `useDownloadUrl`, `UseDownloadUrlOptions` | hook | `@alexkroman1/aai-ui` | `aai-ui:workflow-files` | Read an upload's bytes and hand back a URL a DOM element can use. |
 | `useEvent` | hook | `@alexkroman1/aai-ui` | `aai-ui:hooks` | Subscribe to custom events emitted by agent tools via `ctx.send(event, data)`; the callback receives each event's `data`. |
 | `useFlash` | hook | `@alexkroman1/aai-ui` | `aai-ui:components` | A transient value: set it, and it clears itself after `ms`. |

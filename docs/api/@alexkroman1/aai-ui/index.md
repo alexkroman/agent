@@ -2849,6 +2849,40 @@ function UrlList({ urls }: { urls: readonly string[] }) {
 
 ***
 
+### useDictation()
+
+```ts
+function useDictation(options: UseDictationOptions): UseDictationResult;
+```
+
+Record what the user says and hand it back as text — a microphone button
+for a text box.
+
+#### Parameters
+
+##### options
+
+[`UseDictationOptions`](#usedictationoptions)
+
+#### Returns
+
+[`UseDictationResult`](#usedictationresult)
+
+#### Example
+
+```tsx
+const dictation = useDictation({
+  transcribe: async (audio, { signal }) => {
+    const res = await fetch("/api/dictation", { method: "POST", body: audio, signal });
+    return ((await res.json()) as { text: string }).text;
+  },
+  onText: (text) => setDraft((d) => (d ? `${d} ${text}` : text)),
+});
+return <button onClick={dictation.toggle}>{dictation.phase === "recording" ? "Stop" : "Speak"}</button>;
+```
+
+***
+
 ### useDownloadUrl()
 
 ```ts
@@ -9843,6 +9877,190 @@ reads [UseCopyResult.didCopy](#didcopy) and writes its own.
 
 ***
 
+### UseDictationOptions
+
+```ts
+type UseDictationOptions = {
+  maxSeconds?: number;
+  onText: (text: string) => void;
+  transcribe: (audio: Blob, options: {
+     signal: AbortSignal;
+  }) => Promise<string>;
+};
+```
+
+**`Input`**
+
+Options for [useDictation](#usedictation).
+
+#### Properties
+
+##### maxSeconds?
+
+```ts
+optional maxSeconds?: number;
+```
+
+The longest recording, in seconds: it stops and is transcribed by itself
+then. Defaults to the dictation API's own ceiling, 120.
+
+##### onText
+
+```ts
+onText: (text: string) => void;
+```
+
+The words, once a recording is transcribed. Not called for an empty
+transcript (the user said nothing) or for a recording that was cancelled.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### Returns
+
+`void`
+
+##### transcribe
+
+```ts
+transcribe: (audio: Blob, options: {
+  signal: AbortSignal;
+}) => Promise<string>;
+```
+
+Turn one clip — a mono 16-bit WAV — into text. Called once per recording,
+with a signal that aborts when the result would no longer be used. Usually
+a `POST` to the page's own server, which forwards the clip to the
+dictation API under its key. A rejection is shown as `error`.
+
+###### Parameters
+
+###### audio
+
+`Blob`
+
+###### options
+
+###### signal
+
+`AbortSignal`
+
+###### Returns
+
+`Promise`\<`string`\>
+
+***
+
+### UseDictationResult
+
+```ts
+type UseDictationResult = {
+  cancel: () => void;
+  error: string | null;
+  phase:   | "idle"
+     | "starting"
+     | "recording"
+     | "transcribing"
+     | string & {
+   };
+  start: () => void;
+  stop: () => void;
+  supported: boolean;
+  toggle: () => void;
+};
+```
+
+**`Sealed`**
+
+What [useDictation](#usedictation) returns.
+
+#### Properties
+
+##### cancel
+
+```ts
+cancel: () => void;
+```
+
+Throw the recording (or the transcription in flight) away.
+
+###### Returns
+
+`void`
+
+##### error
+
+```ts
+error: string | null;
+```
+
+Why the last recording produced no text, or `null`. Cleared by `start`.
+
+##### phase
+
+```ts
+phase: 
+  | "idle"
+  | "starting"
+  | "recording"
+  | "transcribing"
+  | string & {
+};
+```
+
+Where the hook is: `"idle"`, `"starting"` (asking for the microphone),
+`"recording"` or `"transcribing"`.
+
+##### start
+
+```ts
+start: () => void;
+```
+
+Ask for the microphone and start recording. Ignored unless idle.
+
+###### Returns
+
+`void`
+
+##### stop
+
+```ts
+stop: () => void;
+```
+
+Stop recording and transcribe what was said. Ignored unless recording.
+
+###### Returns
+
+`void`
+
+##### supported
+
+```ts
+supported: boolean;
+```
+
+Whether this browser can record at all — a microphone API, an
+`AudioContext` and audio worklets. A button should not render without it.
+
+##### toggle
+
+```ts
+toggle: () => void;
+```
+
+`start` when idle, `stop` when recording — one button.
+
+###### Returns
+
+`void`
+
+***
+
 ### UseDownloadUrlOptions
 
 ```ts
@@ -12042,7 +12260,7 @@ startAndWait(
 
 Start a run and resolve the FINISHED one — the synchronous call.
 
-What a form or a shell script wants, and what [WorkflowApi.start](#start-5)
+What a form or a shell script wants, and what [WorkflowApi.start](#start-6)
 deliberately is not: one request in, one result out, with no watch to wire
 up. The agent holds the request open until the run settles or its own budget
 expires, so a run that is still going when the wait runs out resolves
@@ -12218,7 +12436,7 @@ End a run's `sleep()` early, resolving how many pending sleeps were
 interrupted.
 
 `0` is an answer, not a failure — the run finished, was never sleeping, or is
-gone. Same shape as [WorkflowApi.cancel](#cancel-4) answering false, and for the
+gone. Same shape as [WorkflowApi.cancel](#cancel-5) answering false, and for the
 same reason: two tabs pressing "send it now" is ordinary.
 
 [WakeUpOptions.correlationIds](../aai/workflow-api.md#correlationids) narrows it to the waits declared with

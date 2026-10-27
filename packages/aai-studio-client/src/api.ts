@@ -171,6 +171,20 @@ export const api = {
   getAccount: (key: string) =>
     request<Account>(key, "/account", { timeoutMs: ACCOUNT_ATTEMPT_TIMEOUT_MS }),
 
+  /**
+   * One spoken clip (the WAV `useDictation` records) to its text, on the
+   * caller's own AssemblyAI key — the server forwards it to the dictation API
+   * so the key never reaches this page. The default deadline is ample: the
+   * endpoint answers a two-minute clip in well under a second of compute.
+   */
+  transcribeDictation: (key: string, audio: Blob, opts: { signal: AbortSignal }) =>
+    request<{ text: string }>(key, "/dictation", {
+      method: "POST",
+      body: audio,
+      headers: { "Content-Type": audio.type || "audio/wav" },
+      signal: opts.signal,
+    }).then((r) => r.text),
+
   /** Store the user's AssemblyAI API key — the one-time onboarding step. */
   putAccountKey: (key: string, apiKey: string) =>
     request<{ ok: true }>(key, "/account/key", {

@@ -1,8 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * The browser audio layer's import surface for the rest of the package: the
- * {@link VoiceIO} a live call plays and captures through, and the pre-connect
- * capture that buffers the mic before the server names its rates.
+ * {@link VoiceIO} a live call plays and captures through, the pre-connect
+ * capture that buffers the mic before the server names its rates, and the
+ * dictation recorder `useDictation` turns into one clip.
  *
  * `capture.ts` (the grant checks and the capture node both halves share) is
  * private to this directory — guard-invariants rule 37 fails an import from
@@ -16,5 +17,6 @@
  * @module
  */
 
+export { type DictationRecorder, openDictationRecorder } from "./dictation.ts";
 export { openPreConnectCapture, type PreConnectCapture } from "./preconnect.ts";
 export { createVoiceIO, type VoiceIO, type VoiceIOOptions } from "./voice-io.ts";

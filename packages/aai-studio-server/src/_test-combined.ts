@@ -37,6 +37,8 @@ type CombinedOverrides = Partial<OrchestratorOpts> & {
   deployProject?: StudioAppOpts["deployProject"];
   studioSessionBroker?: StudioAppOpts["studioSessionBroker"];
   wakePreview?: StudioAppOpts["wakePreview"];
+  /** A fake dictation call for `POST /studio/dictation`. */
+  transcribe?: StudioAppOpts["transcribe"];
 };
 
 export async function createTestCombined(overrides: CombinedOverrides = {}) {
@@ -59,6 +61,7 @@ export async function createTestCombined(overrides: CombinedOverrides = {}) {
       deployProject: overrides.deployProject,
       studioSessionBroker: overrides.studioSessionBroker,
       wakePreview: overrides.wakePreview,
+      transcribe: overrides.transcribe,
     }),
     ...omitUndefined({
       studioSessionRegistry: overrides.studioSessionRegistry,

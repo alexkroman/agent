@@ -338,6 +338,14 @@ export {
   useConversationLog,
 } from "./use-conversation-log.ts";
 export { type UseCopyResult, useCopy } from "./use-copy.ts";
+// Speak into a text box: a recorded clip sent through the page's own
+// `transcribe` callback to the dictation API — the key stays on a server, the
+// microphone is released on every way out, and a late answer lands nowhere.
+export {
+  type UseDictationOptions,
+  type UseDictationResult,
+  useDictation,
+} from "./use-dictation.ts";
 // An upload id a run PRODUCED, as a URL a DOM element accepts — with the
 // object-URL revoke and the stale-run guard that two templates had each
 // re-derived.

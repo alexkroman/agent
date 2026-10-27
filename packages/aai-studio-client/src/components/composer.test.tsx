@@ -177,3 +177,60 @@ describe("Composer interaction", () => {
     expect(onRemoveQueued).toHaveBeenCalledExactlyOnceWith("q1");
   });
 });
+
+// The microphone. Recording itself is aai-ui's `useDictation` (and its specs);
+// what the composer owns is whether the button is offered and what the hint
+// line says about it.
+describe("Composer dictation", () => {
+  const props = {
+    disabled: false,
+    placeholder: "p",
+    value: "",
+    onValueChange: noop,
+    onSend: noop,
+  };
+  const transcribe = vi.fn(async () => "hello");
+
+  /** A browser with a microphone API and Web Audio, whose mic is refused. */
+  function stubRecordingBrowser(): void {
+    vi.stubGlobal("AudioWorkletNode", class {});
+    vi.stubGlobal(
+      "AudioContext",
+      class {
+        sampleRate = 16_000;
+        audioWorklet = { addModule: () => Promise.resolve() };
+        resume = () => Promise.resolve();
+        close = () => Promise.resolve();
+      },
+    );
+    vi.stubGlobal("navigator", {
+      ...navigator,
+      mediaDevices: {
+        getUserMedia: () => Promise.reject(new Error("Permission denied")),
+      },
+    });
+  }
+
+  test("no transcribe, no microphone button", () => {
+    stubRecordingBrowser();
+    render(<Composer {...props} />);
+    expect(screen.queryByRole("button", { name: "Dictate" })).toBeNull();
+  });
+
+  test("a browser that cannot record is never offered the button", () => {
+    render(<Composer {...props} transcribe={transcribe} />);
+    expect(screen.queryByRole("button", { name: "Dictate" })).toBeNull();
+  });
+
+  test("a refused microphone says so on the hint line and types nothing", async () => {
+    stubRecordingBrowser();
+    const onValueChange = vi.fn();
+    render(<Composer {...props} onValueChange={onValueChange} transcribe={transcribe} />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Dictate" }));
+
+    expect(await screen.findByText("Permission denied")).toBeTruthy();
+    expect(transcribe).not.toHaveBeenCalled();
+    expect(onValueChange).not.toHaveBeenCalled();
+  });
+});
