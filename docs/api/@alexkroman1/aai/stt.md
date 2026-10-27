@@ -584,6 +584,30 @@ endpoint is a deliberate choice and must not be silently overwritten by
 the residency shorthand. Intended for pre-release/staging clusters and
 A/B measurement against the default host; leave unset in production.
 
+##### vadThreshold?
+
+```ts
+optional vadThreshold?: number;
+```
+
+Confidence (0-1) the service's voice-activity detector needs before a frame
+counts as speech, sent as the `vad_threshold` connection parameter. Unset,
+nothing is sent and the service default applies (0.2 on the U3 Pro models).
+
+Lower it when a caller's speech is going UNHEARD — no `speech.started`, no
+transcript, not even a wrong one — rather than mis-heard. The gate sits in
+front of the model, so a voice that scores just under it never reaches the
+model at all. Measured on tau2-bench retail: one caller voice, after 8 kHz
+mu-law telephony encoding, produced zero service events at the default;
+replayed across that voice's calls, caller transcripts went 12 -> 19 of 30
+lines at 0.01 (0.02: 18) while background speech leaking into the
+transcript stayed at 2-3 throughout.
+
+Not a substitute for [voiceFocusThreshold](#voicefocusthreshold): background SPEECH passes
+any VAD, because it is speech. And a lower gate means the service reports
+speech more readily, which is what opens a barge-in — check interruptions
+on a live run before shipping a low value.
+
 ##### voiceFocus?
 
 ```ts
