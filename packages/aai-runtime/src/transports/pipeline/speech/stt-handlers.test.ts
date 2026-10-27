@@ -64,6 +64,7 @@ function makeHandlers(overrides: Partial<Deps> = {}): {
     speculation: { onPartial: vi.fn(), onFinal: vi.fn(), onUtteranceIdle: vi.fn() },
     minBargeInWords: () => 2,
     interruptionMinDurationMs: () => 0,
+    continuationWindowMs: () => 0,
     // Both phrase lists EMPTY, which leaves the two thresholds in sole charge —
     // the behaviour these specs were written against, before the lists existed.
     // The lists' own cases live in `user-speech.test.ts`, which drives
@@ -269,5 +270,120 @@ describe("the relative-level veto", () => {
     expect(h.infoLines("Pipeline barge-in vetoed (quiet)").at(-1)).toMatchObject({
       refDb: CALLER,
     });
+  });
+});
+
+describe("continuation: the caller resumes right after a commit", () => {
+  /**
+   * Handlers whose speaking edge opens on the first partial and reports the
+   * real time since then, on a fixed clock — the gate reads the utterance's
+   * OPENING, so the stub's usual constant 0 cannot express "opened 1s after
+   * the commit".
+   */
+  function resumable(overrides: Partial<Deps> = {}) {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    let openedAt: number | undefined;
+    const abort = vi.fn();
+    const arm = vi.fn();
+    const made = makeHandlers({
+      continuationWindowMs: () => 2500,
+      isTurnInFlight: () => true,
+      abortInFlightTurn: abort,
+      recovery: { arm, clear: vi.fn(), onUtteranceEnded: vi.fn(), onUserTurn: vi.fn() },
+      speechEdges: {
+        speechStarted: () => {
+          openedAt ??= Date.now();
+        },
+        speechEnded: () => {
+          openedAt = undefined;
+        },
+        durationMs: () => (openedAt === undefined ? 0 : Date.now() - openedAt),
+        reset: vi.fn(),
+      },
+      ...overrides,
+    });
+    const at = (ms: number) => vi.setSystemTime(ms);
+    return { ...made, abort, arm, at };
+  }
+
+  test("cuts the reply to the first fragment, through the barge-in path", () => {
+    const { handlers, abort, arm, reported, at } = resumable();
+    handlers.onSttFinal("my name is Mei Davis and my zip is");
+    at(101_000);
+    handlers.onSttPartial("eight zero");
+    expect(abort).toHaveBeenCalledTimes(1);
+    // Recovery armed, so speech that never commits resumes the reply.
+    expect(arm).toHaveBeenCalledTimes(1);
+    expect(reported).toContain("reply.cancelled");
+    vi.useRealTimers();
+  });
+
+  test("speech after the window is a reply to the agent, not a continuation", () => {
+    const { handlers, abort, at } = resumable();
+    handlers.onSttFinal("my name is Mei Davis");
+    at(103_000);
+    handlers.onSttPartial("yes that is right");
+    expect(abort).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  test("a window of 0 leaves the old behaviour: the fragment is answered first", () => {
+    const { handlers, abort, at } = resumable({ continuationWindowMs: () => 0 });
+    handlers.onSttFinal("my name is Mei Davis and my zip is");
+    at(101_000);
+    handlers.onSttPartial("eight zero");
+    expect(abort).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  test("nothing to cut when no reply is in flight or playing", () => {
+    const { handlers, abort, at } = resumable({ isTurnInFlight: () => false });
+    handlers.onSttFinal("my name is Mei Davis");
+    at(101_000);
+    handlers.onSttPartial("and my zip");
+    expect(abort).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  test("fires once per utterance, however many interims it produces", () => {
+    const { handlers, abort, at } = resumable();
+    handlers.onSttFinal("my zip is");
+    at(101_000);
+    handlers.onSttPartial("eight");
+    at(101_300);
+    handlers.onSttPartial("eight zero two");
+    expect(abort).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+});
+
+describe("continuation respects a floor the agent must keep", () => {
+  test('`interruption: "off"` (an infinite threshold) is never cut by a continuation', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(100_000);
+    let openedAt: number | undefined;
+    const abort = vi.fn();
+    const { handlers } = makeHandlers({
+      continuationWindowMs: () => 2500,
+      minBargeInWords: () => Number.POSITIVE_INFINITY,
+      isTurnInFlight: () => true,
+      abortInFlightTurn: abort,
+      speechEdges: {
+        speechStarted: () => {
+          openedAt ??= Date.now();
+        },
+        speechEnded: () => {
+          openedAt = undefined;
+        },
+        durationMs: () => (openedAt === undefined ? 0 : Date.now() - openedAt),
+        reset: vi.fn(),
+      },
+    });
+    handlers.onSttFinal("my zip is");
+    vi.setSystemTime(101_000);
+    handlers.onSttPartial("eight zero two");
+    expect(abort).not.toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });

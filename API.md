@@ -354,6 +354,7 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S
 // @public @input
 interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;
@@ -1257,6 +1258,7 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S
 // @public @input
 interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;
@@ -2088,6 +2090,7 @@ const AgentConfigSchema: z.ZodObject<{
         minWords: z.ZodOptional<z.ZodNumber>;
         minDurationMs: z.ZodOptional<z.ZodNumber>;
         backoffMs: z.ZodOptional<z.ZodNumber>;
+        continuationWindowMs: z.ZodOptional<z.ZodNumber>;
         resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
     }, z.core.$strict>]>>;
     silence: z.ZodOptional<z.ZodObject<{
@@ -2970,6 +2973,7 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S
 // @public @input
 interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;
@@ -5066,6 +5070,7 @@ export function instructionOf(result: unknown): string | undefined;
 // @public @input
 export interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;
@@ -6720,6 +6725,9 @@ export const DEFAULT_CLIENT_ACK_TIMEOUT_MS: number;
 export const DEFAULT_CLIENT_RETRY_MS: number;
 
 // @public
+export const DEFAULT_CONTINUATION_WINDOW_MS = 2500;
+
+// @public
 export const DEFAULT_ERROR_PHRASE = "Sorry, I had a problem just then. Could you say that again?";
 
 // @public
@@ -6885,6 +6893,7 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S
 // @public @input
 interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;
@@ -6950,6 +6959,9 @@ export const MAX_CLIENT_EVENT_PAYLOAD_BYTES = 65536;
 
 // @internal
 export const MAX_CLIENT_MESSAGES = 200;
+
+// @internal
+export const MAX_CONTINUATION_WINDOW_MS = 6000;
 
 // @public
 export const MAX_DB_RESULT_ROWS = 1000;
@@ -7783,6 +7795,7 @@ export const AgentConfigSchema: z.ZodObject<{
         minWords: z.ZodOptional<z.ZodNumber>;
         minDurationMs: z.ZodOptional<z.ZodNumber>;
         backoffMs: z.ZodOptional<z.ZodNumber>;
+        continuationWindowMs: z.ZodOptional<z.ZodNumber>;
         resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
     }, z.core.$strict>]>>;
     silence: z.ZodOptional<z.ZodObject<{
@@ -8211,6 +8224,7 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S
 // @public @input
 interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;
@@ -10120,6 +10134,7 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S
 // @public @input
 interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;
@@ -11915,6 +11930,7 @@ type InferToolInput<T extends ToolDef> = Parameters<T["execute"]>[0];
 // @public @input
 interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;
@@ -13620,6 +13636,7 @@ export function installStubWorld(options?: StubWorldOptions): StubWorld;
 // @public @input
 interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;
@@ -14686,6 +14703,7 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S
 // @public @input
 interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;

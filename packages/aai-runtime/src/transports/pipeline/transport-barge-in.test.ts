@@ -70,6 +70,30 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
+    test("with continuation on, speech resumed right after the commit cuts the unspoken reply", async () => {
+      // The other side of the test above: same reply, same silence — but the
+      // caller resumes within the continuation window, so this is the rest of
+      // their sentence and the reply to its first half is cut. Off in the
+      // harness by default; on here, at the shipped window.
+      const script = inFlightReplyScript();
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script, delayMs: 20 }),
+        continuationWindowMs: 2500,
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("my name is Mei Davis and my zip is");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+
+      stt.last()?.firePartial("eight zero two");
+      expect(callbacks.reported("reply.cancelled")).toHaveBeenCalled();
+      expect(tts.last()?.cancel).toHaveBeenCalled();
+      await t.stop();
+    });
+
     test("final STT before the turn has emitted audio defers instead of aborting", async () => {
       // The re-prompt is still answered — it commits a transcript and chains a
       // turn behind the running one (the same deferral path a below-threshold

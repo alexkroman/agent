@@ -278,6 +278,7 @@ export function installStubWorld(options?: StubWorldOptions): StubWorld;
 // @public @input
 interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;

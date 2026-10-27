@@ -192,11 +192,14 @@ export function toTimeout(meta: Record<string, unknown>): DialogTimeout | undefi
 function toInterruption(value: unknown): PipelineTuning["interruption"] | undefined {
   if (value === "off") return value;
   if (!isRecord(value)) return undefined;
-  const { minWords, minDurationMs, backoffMs, resumeFalseInterruption } = value;
+  const { minWords, minDurationMs, backoffMs, continuationWindowMs, resumeFalseInterruption } =
+    value;
   return omitUndefined({
     minWords: typeof minWords === "number" ? minWords : undefined,
     minDurationMs: typeof minDurationMs === "number" ? minDurationMs : undefined,
     backoffMs: typeof backoffMs === "number" ? backoffMs : undefined,
+    continuationWindowMs:
+      typeof continuationWindowMs === "number" ? continuationWindowMs : undefined,
     resumeFalseInterruption:
       typeof resumeFalseInterruption === "boolean" ? resumeFalseInterruption : undefined,
   });

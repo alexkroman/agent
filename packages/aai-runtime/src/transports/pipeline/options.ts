@@ -14,6 +14,7 @@ import {
   DEFAULT_TTS_SAMPLE_RATE,
 } from "@alexkroman1/aai/host-internal";
 import {
+  DEFAULT_CONTINUATION_WINDOW_MS,
   DEFAULT_ERROR_PHRASE,
   DEFAULT_INTERRUPTION_BACKOFF_MS,
   DEFAULT_INTERRUPTION_MIN_DURATION_MS,
@@ -97,6 +98,13 @@ export interface PipelineTransportOptions {
    * above, never cumulative — see `output/speak-gate.ts`.
    */
   interruptionBackoffMs?: number | undefined;
+  /**
+   * Ms after a committed turn within which resumed caller speech continues
+   * that turn — the reply in flight is cut and the agent answers once the
+   * caller finishes. Defaults to {@link DEFAULT_CONTINUATION_WINDOW_MS};
+   * `0` disables. See `speech/continuation.ts`.
+   */
+  continuationWindowMs?: number | undefined;
   /**
    * How long a turn may send nothing to TTS before the transport speaks a short
    * filler. Defaults to {@link DEFAULT_DEAD_AIR_COVER_MS}; `0` disables the
@@ -310,6 +318,7 @@ export interface ResolvedPipelineOptions {
   interruptionMinDurationMs: number;
   startSpeakingFloorMs: number;
   interruptionBackoffMs: number;
+  continuationWindowMs: number;
   deadAirCoverMs: number;
   heardLagMs: number;
   errorPhrase: string;
@@ -362,6 +371,7 @@ export function resolvePipelineOptions(options: PipelineTransportOptions): Resol
     ),
     startSpeakingFloorMs: or(options.startSpeakingFloorMs, DEFAULT_START_SPEAKING_FLOOR_MS),
     interruptionBackoffMs: or(options.interruptionBackoffMs, DEFAULT_INTERRUPTION_BACKOFF_MS),
+    continuationWindowMs: or(options.continuationWindowMs, DEFAULT_CONTINUATION_WINDOW_MS),
     deadAirCoverMs: or(options.deadAirCoverMs, DEFAULT_DEAD_AIR_COVER_MS),
     heardLagMs: or(options.heardLagMs, HEARD_AUDIO_LAG_MS),
     errorPhrase: or(options.errorPhrase, DEFAULT_ERROR_PHRASE),

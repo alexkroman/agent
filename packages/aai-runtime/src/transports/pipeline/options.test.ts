@@ -11,6 +11,7 @@
 
 import { DEFAULT_DEAD_AIR_COVER_MS } from "@alexkroman1/aai/host-internal";
 import {
+  DEFAULT_CONTINUATION_WINDOW_MS,
   DEFAULT_INTERRUPTION_BACKOFF_MS,
   DEFAULT_INTERRUPTION_MIN_DURATION_MS,
   DEFAULT_MIN_BARGE_IN_WORDS,
@@ -63,6 +64,13 @@ describe("pipeline defaults", () => {
     expect(resolved.interruptionBackoffMs).toBe(0);
     expect(resolved.startSpeakingFloorMs).toBe(DEFAULT_START_SPEAKING_FLOOR_MS);
     expect(resolved.interruptionBackoffMs).toBe(DEFAULT_INTERRUPTION_BACKOFF_MS);
+  });
+
+  test("continuation is ON in the shipped default, and 0 turns it off", () => {
+    // Pinned because the transport harness turns it OFF for the barge-in specs:
+    // without this, a bad default would hide behind that override.
+    expect(resolveBare().continuationWindowMs).toBe(DEFAULT_CONTINUATION_WINDOW_MS);
+    expect(DEFAULT_CONTINUATION_WINDOW_MS).toBe(2500);
   });
 
   test("preemptive generation is OFF in the shipped default", () => {

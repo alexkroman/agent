@@ -57,6 +57,7 @@ export const AgentConfigSchema: z.ZodObject<{
         minWords: z.ZodOptional<z.ZodNumber>;
         minDurationMs: z.ZodOptional<z.ZodNumber>;
         backoffMs: z.ZodOptional<z.ZodNumber>;
+        continuationWindowMs: z.ZodOptional<z.ZodNumber>;
         resumeFalseInterruption: z.ZodOptional<z.ZodBoolean>;
     }, z.core.$strict>]>>;
     silence: z.ZodOptional<z.ZodObject<{
@@ -485,6 +486,7 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S
 // @public @input
 interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;

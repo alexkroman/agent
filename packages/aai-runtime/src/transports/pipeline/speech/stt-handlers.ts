@@ -20,6 +20,7 @@ import type { TransportCallbacks } from "../../types.ts";
 import type { FalseInterruptionRecovery } from "../heard/index.ts";
 import { createBargeInPolicy } from "./barge-in-policy.ts";
 import { type CallerLevelReading, createCallerLevel } from "./caller-level.ts";
+import { createContinuationGate } from "./continuation.ts";
 import type { GatedSpeechEdges, SpeechEdgeTracker } from "./edges.ts";
 import type { ManualTurn } from "./manual-turn.ts";
 import type { SilenceNudger } from "./silence.ts";
@@ -146,6 +147,8 @@ export function createSttEventHandlers(deps: {
   minBargeInWords: () => number;
   /** Sustained-speech gate for interim-triggered barge-in; 0 disables. Per state too. */
   interruptionMinDurationMs: () => number;
+  /** Resumed speech this soon after a commit continues that turn; 0 disables. Per state. */
+  continuationWindowMs: () => number;
   /** A real interruption fired: arm the post-interruption audio block. */
   onInterrupted: () => void;
   /**
@@ -225,6 +228,22 @@ export function createSttEventHandlers(deps: {
   // interims it produces. See pipeline-caller-level.ts.
   const callerLevel = createCallerLevel();
   let vetoLogged = false;
+  const continuation = createContinuationGate({ windowMs: deps.continuationWindowMs });
+
+  /**
+   * Did the caller resume speaking right after the last commit, while the
+   * reply to it is still in flight or playing? Then this utterance is the rest
+   * of that turn — see `continuation.ts`. A quiet utterance is not: the level
+   * veto that keeps background speech from barging in keeps it from this too.
+   */
+  function continuesLastTurn(meta?: SttTurnMeta): boolean {
+    // `interruption: "off"` and a held floor both read as an unreachable word
+    // threshold: a disclosure must FINISH, and a continuation is still a cut.
+    if (!Number.isFinite(deps.minBargeInWords())) return false;
+    if (!(deps.isTurnInFlight() || deps.audioOnLine())) return false;
+    if (callerLevel.read(meta?.inputPeakDbfs).quiet) return false;
+    return continuation.continues(Date.now() - speechEdges.durationMs());
+  }
   function levelFields(reading: CallerLevelReading, text: string): Record<string, unknown> {
     return {
       sid: deps.sid,
@@ -324,6 +343,19 @@ export function createSttEventHandlers(deps: {
       }
       if (manualTurn.enabled) {
         onManualPartial(text, words, meta);
+        return;
+      }
+      if (words >= 1 && continuesLastTurn(meta)) {
+        // The barge-in path, deliberately: the abort, the cancelled report and
+        // false-interruption recovery are the same, so speech that never
+        // commits (noise) resumes the reply instead of losing it.
+        log.info("Pipeline continuation", { sid: deps.sid, spoke: deps.hasTurnSpoken() });
+        armBargeInRecovery();
+        deps.onInterrupted();
+        deps.abortInFlightTurn();
+        deps.edgeGate.release();
+        callbacks.report({ type: "reply.cancelled" });
+        emitPartial();
         return;
       }
       if (!partialBargesIn(text, words, callerLevel.read(meta?.inputPeakDbfs))) {
@@ -426,6 +458,7 @@ export function createSttEventHandlers(deps: {
       speechEdges.speechEnded();
       recordCommittedLevel(level);
       deps.commitUserTurn(trimmed);
+      continuation.onCommit();
     },
   };
 }

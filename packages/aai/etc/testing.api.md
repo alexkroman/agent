@@ -434,6 +434,7 @@ type InferToolInput<T extends ToolDef> = Parameters<T["execute"]>[0];
 // @public @input
 interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;

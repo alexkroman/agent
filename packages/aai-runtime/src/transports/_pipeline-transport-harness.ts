@@ -83,6 +83,11 @@ export function makeOpts(
     // it explicitly, and `pipeline/options.test.ts` pins the shipped
     // default so this override cannot hide a bad one.
     interruptionMinDurationMs: 0,
+    // Continuation off by default, for the same reason: the barge-in specs
+    // commit a turn and fire a partial straight after, which is exactly the
+    // window it acts in, and those specs are about the barge-in rules. Its own
+    // cases set it explicitly; `pipeline/options.test.ts` pins the default.
+    continuationWindowMs: 0,
     ...overrides,
   };
   return { opts, stt, tts, callbacks };

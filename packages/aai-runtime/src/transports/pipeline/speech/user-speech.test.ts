@@ -49,6 +49,7 @@ function makeActivity(overrides: Partial<ActivityDeps> = {}): {
     speechIdleTimeoutMs: 40,
     minBargeInWords: () => 2,
     interruptionMinDurationMs: () => 0,
+    continuationWindowMs: () => 0,
     // The phrase lists are OFF in these specs so each one reads as a
     // statement about the thresholds alone; `phrase-policy` below is where
     // the lists themselves are exercised, against the shipped defaults.
