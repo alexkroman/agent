@@ -2550,6 +2550,7 @@ interface AssemblyAISttOptions extends ProviderCredentialOptions {
     model?: "universal-3-5-pro" | (string & {});
     region?: "us" | "eu";
     streamingUrl?: string;
+    vadThreshold?: number;
     voiceFocus?: "near-field" | "far-field" | "off" | (string & {});
     voiceFocusThreshold?: number;
 }
@@ -3479,6 +3480,7 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
     maxTurnSilenceMs: number;
     voiceFocus: string;
     voiceFocusThreshold: number;
+    vadThreshold?: number;
     connectTimeoutMs: number;
     maxConnectRetries: number;
     languages?: readonly string[];
@@ -11457,6 +11459,7 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
     model?: "universal-3-5-pro" | (string & {});
     region?: "us" | "eu";
     streamingUrl?: string;
+    vadThreshold?: number;
     voiceFocus?: "near-field" | "far-field" | "off" | (string & {});
     voiceFocusThreshold?: number;
 }

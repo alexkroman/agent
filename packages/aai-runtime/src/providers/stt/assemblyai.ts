@@ -204,6 +204,9 @@ function buildTranscriberParams(
     params.voiceFocus = settings.voiceFocus;
     params.voiceFocusThreshold = settings.voiceFocusThreshold;
   }
+  // Independent of voice focus: the VAD gates frames whether or not the
+  // isolation filter ran in front of it.
+  if (settings.vadThreshold !== undefined) params.vadThreshold = settings.vadThreshold;
   return { params, awaitingFormatted, settings };
 }
 

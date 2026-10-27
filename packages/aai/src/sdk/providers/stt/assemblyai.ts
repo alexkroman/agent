@@ -128,6 +128,26 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
    */
   voiceFocusThreshold?: number;
   /**
+   * Confidence (0-1) the service's voice-activity detector needs before a frame
+   * counts as speech, sent as the `vad_threshold` connection parameter. Unset,
+   * nothing is sent and the service default applies (0.2 on the U3 Pro models).
+   *
+   * Lower it when a caller's speech is going UNHEARD — no `speech.started`, no
+   * transcript, not even a wrong one — rather than mis-heard. The gate sits in
+   * front of the model, so a voice that scores just under it never reaches the
+   * model at all. Measured on tau2-bench retail: one caller voice, after 8 kHz
+   * mu-law telephony encoding, produced zero service events at the default;
+   * replayed across that voice's calls, caller transcripts went 12 -> 19 of 30
+   * lines at 0.01 (0.02: 18) while background speech leaking into the
+   * transcript stayed at 2-3 throughout.
+   *
+   * Not a substitute for {@link voiceFocusThreshold}: background SPEECH passes
+   * any VAD, because it is speech. And a lower gate means the service reports
+   * speech more readily, which is what opens a barge-in — check interruptions
+   * on a live run before shipping a low value.
+   */
+  vadThreshold?: number;
+  /**
    * Silence (ms) before the service runs its end-of-turn check, sent as the
    * `min_turn_silence` connection parameter. At this point the model asks
    * whether the turn reads as COMPLETE — if it does the turn ends, if not a
@@ -243,6 +263,7 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
   maxTurnSilenceMs: number;
   voiceFocus: string;
   voiceFocusThreshold: number;
+  vadThreshold?: number;
   connectTimeoutMs: number;
   maxConnectRetries: number;
   languages?: readonly string[];
@@ -272,6 +293,8 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
       : {}),
     ...omitUndefined({ region: options.region }),
     ...omitUndefined({ formatTurns: options.formatTurns }),
+    // No default: unset sends nothing, so the service's own gate applies.
+    ...omitUndefined({ vadThreshold: options.vadThreshold }),
   };
 }
 
