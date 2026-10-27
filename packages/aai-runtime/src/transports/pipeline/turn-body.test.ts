@@ -152,6 +152,18 @@ describe("createTurnBody", () => {
     expect(t.spoke).toEqual([true]);
   });
 
+  test("a turn's note reaches the MODEL's copy only, and is never adopted from a speculation", async () => {
+    // The note a turn carries when its utterance cut a reply (`buildCutNote`):
+    // the conversation record — what the client and a resume see — is only
+    // what the caller said.
+    const t = setup({ reply: "Could you spell your first name?" });
+    await t.body("Okay, no problem.", { note: "[cut note]" });
+    expect(t.history.conversation[0]).toEqual({ role: "user", content: "Okay, no problem." });
+    expect(t.history.llm[0]).toEqual({ role: "user", content: "Okay, no problem.\n\n[cut note]" });
+    // A speculation ran without the note: a different request, not adoptable.
+    expect(t.speculation.take).not.toHaveBeenCalled();
+  });
+
   test("a barge-in hands what was generated to persistBargeIn and speaks nothing", async () => {
     const t = setup({ reply: "It ships", abort: true });
     await t.body("where is my order", { synthetic: true });

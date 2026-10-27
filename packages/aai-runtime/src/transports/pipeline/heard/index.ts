@@ -6,6 +6,6 @@
  */
 
 export type { FalseInterruptionRecovery } from "./recovery.ts";
-export { createFalseInterruptionRecovery } from "./recovery.ts";
+export { buildCutNote, createFalseInterruptionRecovery } from "./recovery.ts";
 export type { HeardPosition, HeardTracker } from "./tracker.ts";
 export { createHeardTracker } from "./tracker.ts";

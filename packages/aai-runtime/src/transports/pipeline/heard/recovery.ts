@@ -60,10 +60,18 @@ export interface FalseInterruptionRecovery {
    */
   onUtteranceEnded(): void;
   /**
-   * A real user turn committed (STT final) — the barge-in that preceded it was
-   * genuine. Drop the latch and restore the budget.
+   * Remember where the reply a barge-in is cutting stopped being heard, for a
+   * turn that utterance may commit — see {@link buildCutNote}. Kept apart from
+   * {@link arm}: recorded even when resumes are disabled or the budget is
+   * spent, because the note costs no turn.
    */
-  onUserTurn(): void;
+  noteCut(heardText: string): void;
+  /**
+   * A real user turn committed (STT final) — the barge-in that preceded it was
+   * genuine. Drop the latch and restore the budget, and answer the note for
+   * that turn when a cut was recorded ({@link buildCutNote}).
+   */
+  onUserTurn(): string | undefined;
 }
 
 /** Create a {@link FalseInterruptionRecovery}. */
@@ -89,6 +97,10 @@ export function createFalseInterruptionRecovery(opts: {
   // The prompt a resume owed to a barge-in will run with, or null for "nothing
   // is owed". There is no deadline alongside it — see the interface doc.
   let armed: string | null = null;
+  // The heard text of the reply the pending barge-in cut, for the turn it may
+  // commit. Same lifetime as `armed`: consumed by a turn, dropped by the
+  // watchdog (a resume covers the cut instead) and by clear().
+  let cut: string | null = null;
 
   /** Budget guard, shared by arming and releasing. */
   const spent = (): boolean => consecutive >= opts.maxConsecutive;
@@ -101,10 +113,15 @@ export function createFalseInterruptionRecovery(opts: {
       if (!opts.enabled() || spent()) return;
       armed = resumePrompt;
     },
+    noteCut(heardText: string): void {
+      cut = heardText;
+    },
     clear(): void {
       armed = null;
+      cut = null;
     },
     onUtteranceEnded(): void {
+      cut = null;
       const resumePrompt = armed;
       if (resumePrompt === null) return;
       // Consumed whether or not it runs: a latch the transport declined to
@@ -114,9 +131,12 @@ export function createFalseInterruptionRecovery(opts: {
       consecutive++;
       opts.onResume(resumePrompt);
     },
-    onUserTurn(): void {
+    onUserTurn(): string | undefined {
       consecutive = 0;
       armed = null;
+      const heardText = cut;
+      cut = null;
+      return heardText === null ? undefined : buildCutNote(heardText);
     },
   };
 }
@@ -183,4 +203,36 @@ export function buildTailResumePrompt(heardText: string): string {
  */
 export function tailResumeWorthRunning(audioMs: number, unheardMs: number): boolean {
   return audioMs > 0 && unheardMs >= TAIL_RESUME_MIN_UNHEARD_MS;
+}
+
+/**
+ * The note a turn carries when the caller's utterance cut the agent's reply
+ * and then committed — on the MODEL's copy of that turn only.
+ *
+ * **Why.** A resume ({@link buildTailResumePrompt}) covers a cut whose
+ * utterance never commits. One that does commit used to start an ordinary turn
+ * holding only `… [interrupted]`, and on tau2-bench retail 146 of 858 barge-ins
+ * (17%) committed nothing but an acknowledgement — 126 of them "uh-huh". The
+ * model answered the "uh-huh" and the unheard rest of its reply was lost: one
+ * call lost "Please spell your first or last name" that way and transferred.
+ *
+ * **The model decides, not a phrase list.** Reading the transcript in code to
+ * tell a backchannel from a "No" or a "Hello?" is what #1491 removed, for
+ * cause; this hands the model the cut point and the rule, and the caller's
+ * words stay theirs. `heardText` is the cursor history was truncated with, so
+ * the anchor cannot name words the record denies.
+ */
+export function buildCutNote(heardText: string): string {
+  const anchor = heardText.slice(Math.max(0, heardText.length - TAIL_RESUME_ANCHOR_CHARS)).trim();
+  const where =
+    anchor.length === 0
+      ? "before they heard any of it"
+      : `— they stopped hearing it around: "…${anchor}"`;
+  return (
+    `[Your previous reply was cut off when the caller spoke ${where}. If what ` +
+    "they said answers it, changes course, or asks you to stop, respond to that. " +
+    'If it was only an acknowledgement ("uh-huh", "okay", "yeah, no problem"), ' +
+    "first finish that reply from where they stopped hearing — above all any " +
+    "question it was asking — without repeating what they already heard.]"
+  );
 }
