@@ -148,7 +148,13 @@ describe("runToolCall with a FailedCallMemo", () => {
 describe("runToolCall argument prechecks", () => {
   const FIND: JSONSchema7 = {
     type: "object",
-    properties: { first_name: { type: "string" }, zip: { type: "string" } },
+    // `zip` says empty is an answer, so an empty one runs and a failure is
+    // explained; a parameter that says nothing is refused before it runs
+    // (`arg-precheck.test.ts`).
+    properties: {
+      first_name: { type: "string" },
+      zip: { type: "string", description: "The ZIP code, or an empty string when unknown." },
+    },
     required: ["first_name", "zip"],
   };
   function withSchema(executeTool: ExecuteTool) {
