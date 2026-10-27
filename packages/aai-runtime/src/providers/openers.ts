@@ -92,6 +92,18 @@ export type SttTurnMeta = {
    * omitted level never blocks anything.
    */
   inputPeakDbfs?: number;
+  /**
+   * How long the caller actually spoke for this transcript, in ms: the span
+   * of its words on the service's audio clock (earliest word start to latest
+   * word end). Omitted when the provider reports no word timings.
+   *
+   * Unlike the time since the utterance's first interim, this excludes the
+   * endpointing silence that precedes a final, so it is what can tell a
+   * one-beat acknowledgement ("uh-huh") from an utterance that takes the
+   * floor once the transcript has already COMMITTED. The pipeline transport
+   * reads it that way; an omitted span never blocks anything.
+   */
+  spokenMs?: number;
 };
 
 export type SttEvents = {

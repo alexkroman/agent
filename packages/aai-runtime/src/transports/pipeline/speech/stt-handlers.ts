@@ -310,6 +310,54 @@ export function createSttEventHandlers(deps: {
   }
 
   /**
+   * A BRIEF final spoken over the agent is an acknowledgement, not a turn:
+   * dropped as if the STT had never sent it, exactly like a quiet one — the
+   * reply is not cut, and nothing reaches the model.
+   *
+   * This is the sustained-speech gate (`interruptionMinDurationMs`) applied to
+   * the one path that skipped it. An interim must last that long to barge in,
+   * but a final did not, on the grounds that a final is real speech. Real is
+   * not floor-taking: a one-beat "uh-huh" commits as a final with no qualifying
+   * interim before it, so with `minBargeInWords` at 1 every backchannel cut the
+   * reply — 334 of 367 on six tau2-bench retail runs.
+   *
+   * Cutting was the lesser harm. Committed, the acknowledgement became the
+   * caller's ANSWER to whatever the agent was asking: "Shall I request the
+   * return for all four items?" / "Uh-huh." ran `return_delivered_order_items`
+   * on 11 occasions in those runs, the caller having consented to nothing. So
+   * deferring it as a chained turn is no fix either — it would land right
+   * after the question it never answered.
+   *
+   * Measured on the WORDS' span (`SttTurnMeta.spokenMs`), not on the time since
+   * the first interim, which includes the endpointing silence before the
+   * final. Content-blind: nothing here reads what was said. Only for an
+   * utterance that BEGAN over agent speech, so a short answer given after the
+   * agent stopped still commits; the edge is left to its idle watchdog, which
+   * fires a false-interruption resume should a partial barge-in have armed
+   * one. Fails open on a provider that reports no word timings.
+   *
+   * The cost: a genuine "yes" spoken over the agent's own question is dropped.
+   * The agent finishes the question, and the caller answers it again.
+   */
+  function dropsBriefFinal(text: string, meta?: SttTurnMeta): boolean {
+    if (!deps.utteranceOpenedOverSpeech()) return false;
+    const gate = deps.interruptionMinDurationMs();
+    const spokenMs = meta?.spokenMs;
+    if (!(gate > 0 && spokenMs !== undefined && spokenMs < gate)) return false;
+    log.info("Pipeline brief final dropped", {
+      sid: deps.sid,
+      spokenMs,
+      ...transcriptField("text", text),
+    });
+    return true;
+  }
+
+  /** A final over the agent that is not the caller answering it: quiet, or brief. */
+  function isNotATurn(text: string, level: CallerLevelReading, meta?: SttTurnMeta): boolean {
+    return dropsQuietFinal(text, level) || dropsBriefFinal(text, meta);
+  }
+
+  /**
    * Log the level a committed turn carried, against the reference it was read
    * with — the record the veto's threshold is validated from — and let it
    * feed that reference.
@@ -419,7 +467,7 @@ export function createSttEventHandlers(deps: {
       log.debug("Pipeline STT final", { sid: deps.sid, ...transcriptField("text", trimmed) });
       vetoLogged = false;
       const level = callerLevel.read(meta?.inputPeakDbfs);
-      if (!manualTurn.enabled && dropsQuietFinal(trimmed, level)) return;
+      if (!manualTurn.enabled && isNotATurn(trimmed, level, meta)) return;
       // Before anything else this handler does: a speculation this final cannot
       // match is billed for as long as it runs, so it is aborted at the
       // earliest possible instant rather than when the turn chain drains.

@@ -445,6 +445,15 @@ describe("assemblyAIStt — inputPeakDbfs", () => {
     expect(quiet?.inputPeakDbfs).toBeCloseTo(dbfs(500), 6);
   });
 
+  test("reports how long the words span as spokenMs", async () => {
+    const session = await openSessionWith(openAssemblyAI, { model: "universal-3-5-pro" });
+    const meta = await metaFor(session, [
+      { start: 1100, end: 1300 },
+      { start: 1300, end: 1420 },
+    ]);
+    expect(meta?.spokenMs).toBe(320);
+  });
+
   test("omits it when the turn carries no word timings", async () => {
     const session = await openSessionWith(openAssemblyAI, { model: "universal-3-5-pro" });
     session.sendAudio(tone(6000, 1000));
