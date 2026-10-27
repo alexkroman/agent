@@ -10,6 +10,7 @@ import { addTicket, verified, verifiedBooking } from "../shared.ts";
  * being mailed to whoever knows a guest's last name and code.
  */
 export default hotelSlot.updateTool({
+  annotations: { readOnlyHint: false },
   description:
     "Re-send the booking confirmation or the itemized folio to the email already on file for the " +
     "verified booking. It cannot go to a different address the caller reads out. Only say it's " +

@@ -6,6 +6,7 @@ import { callFlow, dispatchSlot, logEvent, requireIncident } from "../shared.ts"
  * the call — closing one incident says nothing about the others on the board.
  */
 export default dispatchSlot.updateTool({
+  annotations: { readOnlyHint: false },
   description: "Update an incident's status (en_route, on_scene, resolved, escalated).",
   dialog: callFlow,
   when: "working",

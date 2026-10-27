@@ -15,6 +15,7 @@ import { addTicket } from "../shared.ts";
  * asserts the result for an in-house guest and a stranger are indistinguishable.
  */
 export default hotelSlot.updateTool({
+  annotations: { readOnlyHint: false },
   description:
     "Take a message for someone the caller says is staying here. Delivered only if they are in fact a " +
     "guest - the result never tells you whether they are, and you never tell the caller: no confirming or " +

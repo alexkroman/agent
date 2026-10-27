@@ -7,6 +7,7 @@ import { addTicket } from "../shared.ts";
 
 /** Their `schedule_wakeup_call`: it actually sets the call — never a followup note instead. */
 export default hotelSlot.updateTool({
+  annotations: { readOnlyHint: false },
   description:
     "Schedule a wake-up call to a guest's room. This actually sets the call - never log a wake-up " +
     "as a followup. Collect room, name, date and time, read them back, then call once agreed. No " +
