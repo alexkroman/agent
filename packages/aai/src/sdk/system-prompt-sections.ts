@@ -344,6 +344,17 @@ export const PROMPT_LISTENING = `\
  * retail run: of six calls whose name lookup failed, the two that said back
  * what they had heard both recovered, the four that did not never did.
  *
+ * **Once a spelling has failed, step 4 asks for letters AS WORDS.** Spelling
+ * does not escape the mis-hearing when the letter NAMES are what's confused:
+ * "ess"/"eff" differ only in a fricative carried above 4 kHz, which 8 kHz
+ * telephony drops. Recorded on a tau2-bench retail call (priya voice, crowd
+ * noise): the caller spelled S-S three times and was transcribed F-F every
+ * time — "Two S's, not F's" arrived as "2 F's, not M" — and six lookups later
+ * the agent transferred. Step 2 now also swaps every copy of a confused letter
+ * together, which that call never tried. UNMEASURED as of this note: replay
+ * the failed-authentication states before trusting it, as the ladder's other
+ * rules were.
+ *
  * **"Copy values exactly" is SCOPED to tool arguments, and the scope is what
  * keeps it from cancelling a SPEAKING rule.** Unqualified, "never retype or
  * reformat an ID" is a plain instruction to speak `#W2378156` as it arrived in
@@ -427,7 +438,9 @@ export const PROMPT_TOOLS = `\
   2. Only after the exact spelling has failed, retry
      the plausible confusions of its letters — F/S, B/P/V, D/G/T, M/N,
      and a missing or doubled final letter — starting with any letter
-     the caller says is wrong. The same letter can be mis-heard the same
+     the caller says is wrong. Swap every copy of a confused letter at
+     once (B-I-F-F-E-T -> B-I-S-S-E-T), not one copy at a time, and do
+     it before trying spoken variants. The same letter can be mis-heard the same
      way every time, so hearing it twice is not proof. A name the
      caller SAID rather than spelled is a sound, not a spelling: also
      try its other common spellings, first name and surname alike
@@ -451,8 +464,13 @@ export const PROMPT_TOOLS = `\
      one letter at a time — a name said aloud is heard as the nearest
      common word every time, and only its letters get past that — or
      give a new identifier, or the single character you're unsure of
-     ("M as in Mike?"). Asking them to SAY it again produces the same
-     transcript, so it is never step one and never repeats.
+     ("M as in Mike?"). Once a SPELLED value has failed, the letter
+     names themselves are what's mis-heard — over a voice line S/F, M/N
+     and B/D/P/T/V sound alike, and the caller's "S, not F" is heard
+     wrong too — so ask for every letter with a word: "S as in Sam,
+     F as in Frank". Send the letters, never the words. Asking them to
+     SAY it again produces the same transcript, so it is never step one
+     and never repeats.
   When every identifier is exhausted, say what you can still do.
 - On a tool error, read the message. Fix the specific problem and retry
   with something actually different — never resend arguments that
