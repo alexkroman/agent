@@ -222,6 +222,30 @@ export function ConfirmTool({ ask }: { ask: (question: string) => Promise<boolea
 }
 ```
 
+**`useDictation`** — speak into a text box: records one clip, hands it to YOUR
+`transcribe` callback, and gives back the words. It is not a session, so it
+works on any page. The callback posts the clip to your own server, which calls
+`transcribeDictation(audio, { apiKey })` from `@alexkroman1/aai/experimental`
+(AssemblyAI's dictation API) — never call that from the browser, it would ship
+your key in the page:
+
+```tsx no-check
+import { useDictation } from "@alexkroman1/aai-ui";
+
+const dictation = useDictation({
+  transcribe: async (audio, { signal }) => {
+    const res = await fetch("api/dictation", { method: "POST", body: audio, signal });
+    return ((await res.json()) as { text: string }).text;
+  },
+  onText: (text) => setDraft((d) => (d ? `${d} ${text}` : text)),
+});
+// dictation.phase: "idle" | "starting" | "recording" | "transcribing"
+return dictation.supported && <button onClick={dictation.toggle}>Speak</button>;
+```
+
+It releases the microphone on every way out, drops an answer that arrives after
+a cancel, and stops by itself at the endpoint's 120-second limit.
+
 **Anti-pattern:** Do NOT use `useEffect` + `toolCalls` to build derived state.
 Use `useToolResult` — it deduplicates. The `useEffect` pattern re-processes
 every tool call on every render, causing duplicates.
