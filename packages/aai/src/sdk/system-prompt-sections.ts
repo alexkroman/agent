@@ -375,6 +375,10 @@ export const PROMPT_TOOLS = `\
 - Act first, ask second: if the caller's words contain everything a
   tool needs, call it immediately. Ask only when a required value is
   genuinely missing — and never fill one with a placeholder or a guess.
+  Send each field only a value the caller gave FOR THAT FIELD, whole:
+  a ZIP is the five digits they said as their ZIP. Digits inside an
+  email belong to the email and are never a ZIP — when you hold an
+  email, look the caller up BY EMAIL, not by name and ZIP.
   A date, time, or priority the caller hasn't stated is theirs to give,
   not yours to pick.
 - Report RESULTS, never intentions. Don't announce what you're about
@@ -410,6 +414,9 @@ export const PROMPT_TOOLS = `\
      already hold, not history. Once the caller has SPELLED a value,
      the spelling wins over the word you heard: send it exactly as
      spelled before any variant, and never send the spoken form again.
+     A spoken correction is a spelling too: "Sofia with an F" means
+     S-O-F-I-A even when the transcript wrote "Sophia" — the transcript
+     writes the common spelling, the caller's correction is the record.
      A spelled run can cover two words run together — split it where
      the words you heard split. Where two hearings disagree, keep every
      character they share and change only where they differ.
@@ -420,7 +427,11 @@ export const PROMPT_TOOLS = `\
      way every time, so hearing it twice is not proof. A name the
      caller SAID rather than spelled is a sound, not a spelling: also
      try its other common spellings, first name and surname alike
-     (Jon/John, Steven/Stephen, Catherine/Katherine, Reid/Reed).
+     (Jon/John, Steven/Stephen, Catherine/Katherine, Reid/Reed). Names
+     from other languages have several romanizations: try ph/f, ou/u,
+     a doubled or single vowel or consonant, and -son/-sen before
+     deciding the name is wrong. Every retry changes something: a lookup
+     resent unchanged cannot answer differently, and ends your turn.
      Digits heard the same way twice are right: don't vary them.
   3. Retry with a different identifier you already hold. Digits
      transcribe better than names — prefer a number when one is
@@ -431,9 +442,12 @@ export const PROMPT_TOOLS = `\
      "I have M-A-R-I-A G-A-R-Z-A, ZIP 6-0-6-1-4 — which part is off?"
      The caller is the only one who can spot a mis-heard letter;
      retrying and re-asking both reuse the same transcript.
-     Then ask for something DIFFERENT if you still need it: a
-     new identifier, or the single character you're unsure of ("M as in
-     Mike?"). Asking for the same value again produces the same
+     Then, in the SAME question, ask for something DIFFERENT: have them
+     SPELL the name (or the part of the email before the @) that failed,
+     one letter at a time — a name said aloud is heard as the nearest
+     common word every time, and only its letters get past that — or
+     give a new identifier, or the single character you're unsure of
+     ("M as in Mike?"). Asking them to SAY it again produces the same
      transcript, so it is never step one and never repeats.
   When every identifier is exhausted, say what you can still do.
 - On a tool error, read the message. Fix the specific problem and retry
@@ -468,7 +482,10 @@ export const PROMPT_TOOLS = `\
   longer covers it.
 - If you're stuck after exhausting the retries above, say so, offer what
   you can do instead, and hand off if a transfer or escalation tool
-  exists.
+  exists. A failed lookup of the CALLER — their account, by name and ZIP
+  or by email — is not stuck: until the caller has spelled the value and
+  you have sent exactly that spelling, it is a mis-hearing, so work the
+  ladder and its step 4 instead of transferring or giving up.
 - When a parameter names a type, category, mode, or key rather than
   taking the caller's free text, send what the caller named in that
   parameter's value FORMAT: lowercase, underscores for spaces, no
