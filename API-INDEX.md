@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 212 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
-- [Framework internals](#framework-internals) — 523 names
+- [Framework internals](#framework-internals) — 524 names
 
 ## Agent authoring
 
@@ -1598,6 +1598,7 @@ trace or a type error can be traced back to something.
 | `TRANSCRIBE_WINDOW_BYTES` | const | `@alexkroman1/aai/internal` |  | How much of a stored upload one outbound window carries. |
 | `TRANSCRIBING_PLACEHOLDER` | const · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `TTS_CANCEL_ACK_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `TTS_KEEPALIVE_INTERVAL_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `TTS_PROVIDERS` | const | `@alexkroman1/aai/host-internal` |  | The TTS vendors, in the order the docs table lists them. |
 | `TTS_RECONNECT_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `ThemeProvider` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |

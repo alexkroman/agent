@@ -4175,6 +4175,9 @@ export function toToolJsonSchema(schema: StandardSchemaV1, io?: "input" | "outpu
 // @internal
 export const TTS_CANCEL_ACK_TIMEOUT_MS = 2000;
 
+// @internal
+export const TTS_KEEPALIVE_INTERVAL_MS = 30000;
+
 // @public
 export const TTS_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "tts">, ProviderDefinition<"cartesia", "tts">, ProviderDefinition<"rime", "tts">];
 

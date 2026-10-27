@@ -195,6 +195,7 @@ export {
   STT_FRAME_TARGET_MS,
   TAIL_RESUME_MIN_UNHEARD_MS,
   TTS_CANCEL_ACK_TIMEOUT_MS,
+  TTS_KEEPALIVE_INTERVAL_MS,
   TTS_RECONNECT_TIMEOUT_MS,
 } from "./sdk/pipeline-tuning-constants.ts";
 export { MAX_FAILOVER_REASON_CHARS } from "./sdk/protocol-events-accounting.ts";

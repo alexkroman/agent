@@ -92,6 +92,7 @@
 import {
   ASSEMBLYAI_TTS_API_KEY_ENV,
   resolveAssemblyAITtsSettings,
+  TTS_KEEPALIVE_INTERVAL_MS,
   TTS_RECONNECT_TIMEOUT_MS,
 } from "@alexkroman1/aai/host-internal";
 import type { AssemblyAITtsOptions } from "@alexkroman1/aai/tts";
@@ -188,6 +189,10 @@ export function openAssemblyAITts(
       // Accepted text not yet sent: `Generate` goes out only paired with a
       // `Flush`, so the server never holds unsynthesized text.
       let buffered = "";
+      // When this session last put a frame on the wire, and the timer that
+      // sends a `KeepAlive` once it has been quiet too long — see `send`.
+      let lastSentAt = Date.now();
+      let keepAlive: ReturnType<typeof setInterval> | undefined;
 
       /** Detach + politely close a socket without emitting anything for it. */
       const dropSocket = (socket: ProviderSocket): void =>
@@ -199,6 +204,7 @@ export function openAssemblyAITts(
         // releases the replacement socket, not the one already dropped.
         // Closing the lifecycle first stops the ack deadline and any reconnect.
         teardown: () => {
+          clearInterval(keepAlive);
           lifecycle.send({ type: "CLOSE" });
           dropSocket(ws);
         },
@@ -291,7 +297,10 @@ export function openAssemblyAITts(
       // does not answer it in time, is replaced.
       const lifecycle = createAssemblyAITtsLifecycle({
         socketOpen: () => ws.readyState === WebSocket.OPEN,
-        sendCancel: () => ws.send(JSON.stringify({ type: "Cancel" })),
+        sendCancel: () => {
+          ws.send(JSON.stringify({ type: "Cancel" }));
+          lastSentAt = Date.now();
+        },
         replaceSocket: (signal) => {
           // The abandoned turn's frames die with the socket, so nothing is left
           // to filter or to send.
@@ -343,8 +352,22 @@ export function openAssemblyAITts(
         }
         if (ws.readyState !== WebSocket.OPEN) return false;
         ws.send(JSON.stringify(payload));
+        lastSentAt = Date.now();
         return true;
       };
+
+      // The service closes a socket that has received nothing for 120 s, and an
+      // idle close is fatal to the session (see `attach`'s close handler) — so
+      // a caller who talks for two minutes, or a harness that stalls, used to
+      // end the call. A `KeepAlive` whenever the socket has been quiet for a
+      // whole interval keeps the longest gap under two intervals, well inside
+      // the window. Not while a replacement socket is still connecting: it has
+      // nothing to keep alive yet, and `send` would only queue the frame.
+      keepAlive = setInterval(() => {
+        if (shell.isClosed() || lifecycle.queueing()) return;
+        if (Date.now() - lastSentAt >= TTS_KEEPALIVE_INTERVAL_MS) send({ type: "KeepAlive" });
+      }, TTS_KEEPALIVE_INTERVAL_MS);
+      keepAlive.unref?.();
 
       closeOnAbort(openOpts.signal, shell.close);
 
