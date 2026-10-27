@@ -386,17 +386,23 @@ each id:
 | id | in the set? | `"none"` | lowest accepted | reasoning tokens there |
 | --- | --- | --- | --- | --- |
 | `qwen3-next-80b-a3b` | no | **accepted** | `"none"` | **0** |
+| `gpt-6-luna` | **yes** | REQUIRED for tools | `"none"` | 0 |
 | `gpt-5.6-luna` / `-sol` / `-terra` | **yes** | REQUIRED for tools | `"none"` | 0 |
 | `gemini-3.7-flash` | no | **400** | `"low"` | ~80 |
 | `gemini-3.5-flash-lite` | no | **400** | `"minimal"` | 0 |
 
-`gpt-5.6-luna` is INSIDE the set, so the bare factory fills `"none"` and
+`gpt-6-luna` is INSIDE the set, so the bare factory fills `"none"` and
 that fill is what makes a tool-carrying request work at all on it —
 measured: `"none"` answers 200, omitting the parameter answers 400
 non-streaming and a bare 500 streaming. `assemblyAIPipeline()`'s explicit
 `"none"` therefore merely AGREES with the factory here, and it stays anyway,
 because it is the only thing turning reasoning off under a default that sits
 outside the set. **Keep it under every id.**
+
+`gpt-6-luna` (measured 2026-10-27: `"none"` answers 200 with tools; no
+effort, `"low"` and `"minimal"` answer 400; `temperature` is refused) replaced
+`gpt-5.6-luna` WITHOUT a tau2 run — the table below is luna 5.6's, and
+the rule under it still stands for the next move.
 
 ## This default is the only one MEASURED on answer quality
 

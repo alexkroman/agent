@@ -180,6 +180,13 @@ export const ASSEMBLYAI_GATEWAY_MODELS: {
         readonly live: true;
         readonly context: 200000;
     };
+    readonly "claude-opus-5-5": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: true;
+        readonly live: true;
+        readonly context: 1000000;
+    };
     readonly "claude-sonnet-4-5-20250929": {
         readonly tools: true;
         readonly stream: true;
@@ -348,6 +355,13 @@ export const ASSEMBLYAI_GATEWAY_MODELS: {
         readonly live: true;
         readonly context: 270000;
     };
+    readonly "gpt-6-luna": {
+        readonly tools: true;
+        readonly stream: true;
+        readonly eu: false;
+        readonly live: true;
+        readonly context: 922000;
+    };
     readonly "gpt-oss-120b": {
         readonly tools: true;
         readonly stream: false;
@@ -441,7 +455,7 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 export const ASSEMBLYAI_TTS_MAX_GENERATE_CHARS = 2000;
 
 // @public
-type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
+type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-opus-5-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-6-luna" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public @input
 type AssemblyAILlmProviderOptions = {

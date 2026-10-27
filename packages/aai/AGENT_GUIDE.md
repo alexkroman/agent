@@ -195,7 +195,7 @@ fails at `aai publish` instead of mid-call). `agent-guide/AGENT-API.md` lists
 every field.
 
 **To change the model, set `llm` in `agent.ts`** (templates usually omit it).
-The default is `gpt-5.6-luna` on the AssemblyAI LLM Gateway, which is **not part
+The default is `gpt-6-luna` on the AssemblyAI LLM Gateway, which is **not part
 of AssemblyAI's free credits**: an account with no payment method is refused
 ("does not have access to this LLM Gateway model"). Add a card in the dashboard,
 or bring another provider's key (`agent-guide/PROVIDERS.md`). A model must

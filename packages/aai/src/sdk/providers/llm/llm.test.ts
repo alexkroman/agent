@@ -8,7 +8,12 @@ import { KNOWN_LLM_PROVIDERS, type KnownLlmProvider, llm } from "./llm.ts";
 // Mirrors the module-private TOOLS_REQUIRE_NO_REASONING. Duplicated rather
 // than exported: the set is an implementation detail of the factory, and the
 // spec only needs to know which side of it the default falls on.
-const TOOLS_REQUIRE_NO_REASONING_IDS = ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"];
+const TOOLS_REQUIRE_NO_REASONING_IDS = [
+  "gpt-6-luna",
+  "gpt-5.6-luna",
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+];
 
 const effortOf = (d: ReturnType<typeof llm>): unknown => d.options.providerOptions?.reasoningEffort;
 
