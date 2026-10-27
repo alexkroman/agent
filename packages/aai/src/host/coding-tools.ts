@@ -55,7 +55,7 @@ import path from "node:path";
 import { z } from "zod";
 import { tool } from "../sdk/define.ts";
 import { omitUndefined } from "../sdk/omit-undefined.ts";
-import type { ToolAnnotations, ToolDef } from "../sdk/tool-def.ts";
+import type { ToolDef } from "../sdk/tool-def.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { applyEdit, CodingEditError, clearEditMisses, rewriteHint } from "./coding-edit.ts";
 import { CodingGrepError, globMatcher, grepWorkspaceBounded } from "./coding-grep.ts";
@@ -183,11 +183,11 @@ function renderTodos(todos: z.infer<typeof TodoItemSchema>[]): string {
 }
 
 /**
- * The three coding tools that change files are writes — see `ToolAnnotations`.
+ * The three coding tools that change files are writes — see `ToolDef.annotations`.
  * A voice agent then cannot overwrite or delete a file on a caller's "uh-huh"
  * spoken over its own question.
  */
-const WRITE: ToolAnnotations = { readOnlyHint: false };
+const WRITE = { readOnlyHint: false } as const;
 
 /**
  * Build a coding agent's tool set over one directory.

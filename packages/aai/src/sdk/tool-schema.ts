@@ -17,7 +17,7 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
-import type { ToolAnnotations, ToolUi } from "./tool-def.ts";
+import type { ToolUi } from "./tool-def.ts";
 import { type ToolMessages, ToolMessagesSchema } from "./tool-messages.ts";
 
 /**
@@ -249,6 +249,9 @@ export type ToolSchema = {
    * renders the same thing everywhere. Absent for a tool that declares none.
    */
   ui?: ToolUi | undefined;
-  /** What the tool does to the world — see {@link ToolAnnotations}. Never sent to the model. */
-  annotations?: ToolAnnotations | undefined;
+  /**
+   * What the tool does to the world — see `ToolDef.annotations`; `readOnlyHint:
+   * false` is a write the pipeline gates. Never sent to the model.
+   */
+  annotations?: { readOnlyHint?: boolean | undefined } | undefined;
 };
