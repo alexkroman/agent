@@ -12,6 +12,7 @@ import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";
 import { compactRecordsForModel } from "../_compact-records.ts";
 import { type FatalToolError, isFatalToolError } from "./error-policy.ts";
+import type { FailedCallMemo } from "./failed-call-memo.ts";
 import type { ToolSpeechController } from "./messages-runner.ts";
 import { runToolCall, type SettledToolCall, type ToolCallContext } from "./run-tool-call.ts";
 
@@ -58,6 +59,11 @@ interface ToVercelToolsContext {
    * speculation have nobody to speak to.
    */
   toolSpeech?: ToolSpeechController;
+  /**
+   * The session's failed calls (`failed-call-memo.ts`). Optional: a subagent
+   * run and `TextAgent.tools` are not a conversation.
+   */
+  failedCalls?: FailedCallMemo;
   signal?: AbortSignal;
 }
 
@@ -83,6 +89,7 @@ export function toVercelTools(
     messages: ctx.messages,
     parameters: (name) => parameters.get(name),
     recordToolResult: ctx.recordToolResult,
+    failedCalls: ctx.failedCalls,
   };
   for (const schema of schemas) {
     out[schema.name] = tool({

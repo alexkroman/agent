@@ -51,6 +51,22 @@ re-implement a step in a caller.
 - **`executeTool` starts synchronously when there is no hook.** An `await` on
   nothing yields a microtask, and a barge-in in that gap would abort a signal
   the tool never saw.
+- **Arguments the declaration settles are checked before the call runs**
+  (`arg-precheck.ts`): a missing required parameter, a placeholder (`"unknown"`,
+  `"?"`) for a value, or — only under `additionalProperties: false` — an
+  undeclared one, answered as `Invalid arguments for tool "…" (not sent)`. A
+  host or MCP schema reaches the AI SDK unvalidated, and `repairToolCall` would
+  invent the value instead. An EMPTY required string is not refused (tau2's
+  `address2: ""` is a real answer); a failed call that sent one is told so in
+  its model copy.
+- **A call that already failed with the same arguments never runs again.** The
+  session's `FailedCallMemo` (`failed-call-memo.ts`, one per pipeline session
+  and one per S2S session) refuses it BEFORE the hook and `executeTool` — so no
+  tool speech, and in host mode no relayed call — with a
+  `reason: "repeated_failure"` result; a failure's MODEL copy lists every failed
+  call so far, carried as an instruction so `toModelOutput` keeps it. Any
+  success, or a history that shrank (a reset), forgets them all. This replaced
+  the budget's identical-repeat rule in `../_prepare-step.ts`.
 
 ### Tool discovery off the platform
 

@@ -10,6 +10,7 @@
 import {
   createFatalToolLatch,
   createToolSpeechController,
+  FailedCallMemo,
   toVercelTools,
 } from "../../tools/index.ts";
 import { createEmitError } from "../emit-error.ts";
@@ -305,6 +306,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // answered: the step's own messages only reach `llm` when the step ends,
     // and this view is the one `ctx.messages` reads.
     recordToolResult: (message) => history.pushToolResult(message),
+    // Session-scoped like the tool set: an identical failed call is refused
+    // before it runs, and a failure lists what was already tried.
+    failedCalls: new FailedCallMemo(),
   });
 
   function runChainedTurn(

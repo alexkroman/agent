@@ -27,7 +27,7 @@ import type { Message } from "@alexkroman1/aai";
 import { DEFAULT_IDLE_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { consoleLogger } from "../logger.ts";
-import type { ClientToolAnswer } from "../tools/index.ts";
+import { type ClientToolAnswer, FailedCallMemo } from "../tools/index.ts";
 import {
   createRetainedView,
   estimateConversationTokens,
@@ -158,6 +158,9 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
         // an earlier tool's result on the next call of the reply — see
         // `ToolStepDeps.toolCall`.
         recordToolResult: (message: Message) => pushMessages(message),
+        // The same memory the pipeline's tools run with — see
+        // `../tools/failed-call-memo.ts`.
+        failedCalls: new FailedCallMemo(),
       },
       conversation: () => conversation,
       emit,

@@ -10,6 +10,7 @@ import { z } from "zod";
 import type { FakeLanguageModel, ScriptedPart } from "../../../_fake-llm.ts";
 import { makeLogger, silentLogger } from "../../../_logger-test-utils.ts";
 import { createFakeLanguageModel } from "../../../_pipeline-test-fakes.ts";
+import { TOOL_ERROR_BUDGET } from "../../../_prepare-step.ts";
 import { createContextBudget } from "../history/index.ts";
 import type { StreamPart } from "../reply/index.ts";
 import { type AdoptedLlmStream, consumeLlmStream, type TapeEntry } from "./stream.ts";
@@ -428,21 +429,24 @@ describe("the tool-error budget forces an answer mid-turn", () => {
       execute: () => "Error: no match",
     }),
   };
-  const lookup = (id: string): ScriptedPart => ({
+  const lookup = (id: string, q: string): ScriptedPart => ({
     type: "tool-call",
     toolCallId: id,
     toolName: "lookup",
-    input: '{"q":"a"}',
+    input: JSON.stringify({ q }),
   });
 
-  test("an identical retry of a failed call makes the next step tool-free", async () => {
+  test("the budget's worth of failed calls makes the next step tool-free", async () => {
+    // Distinct arguments: an identical repeat is refused before it runs by the
+    // failed-call memo, not ended here (see `../../../_prepare-step.ts`).
+    const calls = Array.from({ length: TOOL_ERROR_BUDGET }, (_, i) => [lookup(`c${i}`, `q${i}`)]);
     const llm = createFakeLanguageModel({
-      steps: [[lookup("c1")], [lookup("c2")], [{ type: "text", text: "Sorry, no match." }]],
+      steps: [...calls, [{ type: "text", text: "Sorry, no match." }]],
     });
-    await consume({ llm, sid: "budget-4", maxSteps: 8, tools: failing });
-    expect(llm.calls).toHaveLength(3);
-    expect(llm.calls[1]?.toolChoice).toMatchObject({ type: "auto" });
-    expect(llm.calls[2]?.toolChoice).toMatchObject({ type: "none" });
+    await consume({ llm, sid: "budget-4", maxSteps: 10, tools: failing });
+    expect(llm.calls).toHaveLength(TOOL_ERROR_BUDGET + 1);
+    expect(llm.calls[TOOL_ERROR_BUDGET - 1]?.toolChoice).toMatchObject({ type: "auto" });
+    expect(llm.calls[TOOL_ERROR_BUDGET]?.toolChoice).toMatchObject({ type: "none" });
   });
 });
 
