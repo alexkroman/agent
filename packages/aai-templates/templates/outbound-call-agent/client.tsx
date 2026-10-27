@@ -10,16 +10,32 @@
  * call, `useRoute` to follow one until it is over and to keep the list fresh,
  * each carrying the `Authorization` every route checks (`api.ts`).
  *
- * The key is kept in `localStorage` so a reload does not ask again; a browser
- * that refuses storage just asks each time.
+ * The key is a `createStoredValue`, so a reload does not ask again; a browser
+ * that refuses storage just asks each time. The fields are the SDK's
+ * `TextField`/`TextAreaField`, styled by the theme, and the number goes
+ * through `phoneE164` first: a caller can type `(415) 555-0132`, and the API
+ * still receives the E.164 form it requires.
  */
 
-import { mountPage, routeFetch, useRoute } from "@alexkroman1/aai-ui";
+import {
+  createStoredValue,
+  mountPage,
+  phoneE164,
+  routeFetch,
+  TextAreaField,
+  TextField,
+  useRoute,
+  useStoredValue,
+} from "@alexkroman1/aai-ui";
 import "@alexkroman1/aai-ui/styles.css";
-import { type ReactNode, type SyntheticEvent, useCallback, useState } from "react";
+import { type ReactNode, type SyntheticEvent, useState } from "react";
 import type { CallList, CallRecord } from "./api-types.ts";
 
-const KEY_STORAGE = "outbound-caller.api-key";
+/** The API key, remembered in this browser. */
+const storedKey = createStoredValue("outbound-caller.api-key");
+
+/** A number typed without a country code is a North American one. */
+const COUNTRY_CODE = "1";
 
 /** How often the open call is re-read while it is still going. */
 const LIVE_POLL_MS = 1500;
@@ -31,22 +47,6 @@ const EXAMPLE_PROMPT =
   "Call Maria for Mission Dental to confirm her cleaning tomorrow at 2:30pm. " +
   "If she needs to reschedule, offer Thursday at 10am or Friday at 4pm. " +
   "If you get voicemail, ask her to call 415-555-0100.";
-
-function readStoredKey(): string {
-  try {
-    return localStorage.getItem(KEY_STORAGE) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-function storeKey(key: string): void {
-  try {
-    localStorage.setItem(KEY_STORAGE, key);
-  } catch {
-    // Storage refused (a private window): the key lives for this page only.
-  }
-}
 
 function isFinished(call: CallRecord): boolean {
   return call.status === "completed" || call.status === "failed";
@@ -158,6 +158,11 @@ function NewCall({
 
   async function submit(event: SyntheticEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
+    const number = phoneE164(phone, { countryCode: COUNTRY_CODE });
+    if (number === undefined) {
+      setError("That isn't a phone number. Include the country code, e.g. +44 20 7946 0958.");
+      return;
+    }
     setBusy(true);
     setError(undefined);
     try {
@@ -165,7 +170,7 @@ function NewCall({
         "POST",
         "/v1/calls",
         {
-          phone_number: phone.trim(),
+          phone_number: number,
           prompt,
           ...(webhook.trim() === "" ? {} : { webhook_url: webhook.trim() }),
         },
@@ -179,41 +184,36 @@ function NewCall({
     }
   }
 
-  const input = "rounded-md border border-aai-border bg-aai-bg px-3 py-2 text-sm text-aai-text";
   return (
     <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-3">
-      <label className="flex flex-col gap-1 text-sm">
-        Phone number
-        <input
-          className={`${input} font-mono`}
-          type="tel"
-          required
-          placeholder="+14155550132"
-          pattern="\+[1-9][0-9]{6,14}"
-          value={phone}
-          onChange={(event) => setPhone(event.target.value)}
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        What should the agent do on this call?
-        <textarea
-          className={`${input} min-h-32 leading-relaxed`}
-          required
-          maxLength={4000}
-          value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
-        />
-      </label>
-      <label className="flex flex-col gap-1 text-sm">
-        Webhook URL (optional)
-        <input
-          className={input}
-          type="url"
-          placeholder="https://example.com/hooks/calls"
-          value={webhook}
-          onChange={(event) => setWebhook(event.target.value)}
-        />
-      </label>
+      <TextField
+        name="phone"
+        label="Phone number"
+        hint="With its country code; a number without one is taken as +1."
+        className="font-mono"
+        type="tel"
+        required
+        placeholder="+1 415 555 0132"
+        value={phone}
+        onChange={(event) => setPhone(event.target.value)}
+      />
+      <TextAreaField
+        name="prompt"
+        label="What should the agent do on this call?"
+        rows={6}
+        required
+        maxLength={4000}
+        value={prompt}
+        onChange={(event) => setPrompt(event.target.value)}
+      />
+      <TextField
+        name="webhook"
+        label="Webhook URL (optional)"
+        type="url"
+        placeholder="https://example.com/hooks/calls"
+        value={webhook}
+        onChange={(event) => setWebhook(event.target.value)}
+      />
       {error !== undefined && (
         <p role="alert" className="text-sm text-red-500">
           {error}
@@ -268,18 +268,13 @@ function CallsList({
 }
 
 export function App(): ReactNode {
-  const [apiKey, setApiKey] = useState(readStoredKey);
+  const [apiKey, setApiKey] = useStoredValue(storedKey);
   const [selected, setSelected] = useState<string | undefined>(undefined);
   // `null` while there is no key: the list is not read until there is one.
   const list = useRoute<CallList>(apiKey === "" ? null : "/v1/calls", {
     pollMs: LIST_POLL_MS,
     headers: { authorization: apiKey },
   });
-
-  const saveKey = useCallback((key: string) => {
-    setApiKey(key);
-    storeKey(key);
-  }, []);
 
   return (
     <main className="mx-auto flex max-w-6xl flex-col gap-6 bg-aai-bg p-4 text-aai-text md:p-8">
@@ -291,18 +286,15 @@ export function App(): ReactNode {
         </p>
       </header>
 
-      <label className="flex flex-col gap-1 text-sm md:max-w-md">
-        <span>
-          API key (the agent's <code>CALLS_API_KEY</code>)
-        </span>
-        <input
-          className="rounded-md border border-aai-border bg-aai-bg px-3 py-2 font-mono text-sm text-aai-text"
-          type="password"
-          autoComplete="off"
-          value={apiKey}
-          onChange={(event) => saveKey(event.target.value)}
-        />
-      </label>
+      <TextField
+        name="apiKey"
+        label="API key (the agent's CALLS_API_KEY)"
+        className="md:max-w-md font-mono"
+        type="password"
+        autoComplete="off"
+        value={apiKey}
+        onChange={(event) => setApiKey(event.target.value)}
+      />
 
       <div className="grid gap-6 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
         <section className="flex flex-col gap-6">

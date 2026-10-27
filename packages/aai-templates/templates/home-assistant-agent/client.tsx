@@ -2,17 +2,21 @@
 import "@alexkroman1/aai-ui/styles.css";
 import {
   type ChatMessage,
+  type ClientRun,
   ConversationView,
   mountClient,
   SessionErrorBanner,
   ToolCallRow,
+  useClientRuns,
 } from "@alexkroman1/aai-ui";
 import { type SubmitEvent, useState } from "react";
 import { Ring } from "./ring.tsx";
 import { type Led, useSpeaker } from "./use-speaker.ts";
 
 // The speaker, on a page: its ring as a button that starts and ends a live conversation
-// on one side, and on the other everything said to it, plus a box to type to it.
+// on one side, and on the other everything said to it, plus a box to type to it. Under the
+// ring, what is coming up: the reminders and research this speaker started, read from the
+// agent's own GET /api/tasks (clientRunsRoutes in agent.ts), each with a Cancel.
 
 const STATUS: Record<Led, string> = {
   off: "Tap the ring or press space to talk, or type",
@@ -49,6 +53,7 @@ function App() {
         <p className="text-xs opacity-60" title="Reminders and research results are said here">
           Inbox {speaker.inboxUp ? "connected" : "offline"}
         </p>
+        <ComingUp />
       </section>
 
       <section className="flex flex-col flex-1 min-h-0">
@@ -100,6 +105,47 @@ function App() {
         <Composer onSend={speaker.tap.send} />
       </section>
     </main>
+  );
+}
+
+/** A run is still going until it completes, fails or is cancelled. */
+const live = (run: ClientRun) => run.status === "waiting" || run.status === "running";
+
+/**
+ * The runs this speaker started, newest last. useClientRuns sends the page's ?client= id
+ * (mountClient's `client: "auto"`) and re-reads the list every few seconds, so a reminder
+ * that just went off flips to done here without a reload.
+ */
+function ComingUp() {
+  const { runs, error, cancel, cancelling } = useClientRuns();
+  if (!runs?.length) return error ? <p className="text-xs text-red-400">{error}</p> : null;
+  return (
+    <section className="w-full max-w-xs flex flex-col gap-2" aria-label="Coming up">
+      <h2 className="text-xs uppercase tracking-wide opacity-60">Coming up</h2>
+      <ul className="flex flex-col gap-2">
+        {runs.map((run) => (
+          <li
+            key={run.runId}
+            className="flex items-start gap-2 px-3 py-2 rounded-lg bg-aai-surface border border-aai-border text-sm"
+          >
+            <span className="flex-1 min-w-0">
+              <span className="block truncate">{run.title}</span>
+              <span className="block text-xs opacity-60">{run.detail ?? run.status}</span>
+            </span>
+            {live(run) && (
+              <button
+                type="button"
+                disabled={cancelling === run.runId}
+                onClick={() => void cancel(run.runId)}
+                className="text-xs opacity-60 hover:opacity-100 disabled:opacity-30"
+              >
+                Cancel
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
