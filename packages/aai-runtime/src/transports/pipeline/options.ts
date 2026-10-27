@@ -12,6 +12,7 @@ import {
   DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
+  PREEMPTIVE_QUIET_MS,
 } from "@alexkroman1/aai/host-internal";
 import {
   DEFAULT_CONTINUATION_WINDOW_MS,
@@ -191,6 +192,13 @@ export interface PipelineTransportOptions {
    */
   preemptiveGeneration?: boolean | undefined;
   /**
+   * How long an interim's text must hold still before a speculation starts
+   * from it. See {@link PREEMPTIVE_QUIET_MS}, which it defaults to. Exposed for
+   * tests whose clock runs in single milliseconds (the fuzz), not as an author
+   * knob. `0` starts the speculation on the partial itself.
+   */
+  preemptiveQuietMs?: number | undefined;
+  /**
    * How long after the last STT partial to force `speech_stopped` when no
    * non-empty final ever arrives — and, because that is the signal a false
    * interruption is recognised by, the false-interruption resume deadline
@@ -327,6 +335,7 @@ export interface ResolvedPipelineOptions {
   startFailurePhrase: string;
   resumeFalseInterruption: boolean;
   preemptiveGeneration: boolean;
+  preemptiveQuietMs: number;
   /**
    * Resolved once, and `undefined` for the agents that declare no policy —
    * which is the state the transport reads as "commit every final". A resolved
@@ -380,6 +389,7 @@ export function resolvePipelineOptions(options: PipelineTransportOptions): Resol
     startFailurePhrase: or(options.startFailurePhrase, DEFAULT_START_FAILURE_PHRASE),
     resumeFalseInterruption: or(options.resumeFalseInterruption, true),
     preemptiveGeneration: or(options.preemptiveGeneration, false),
+    preemptiveQuietMs: or(options.preemptiveQuietMs, PREEMPTIVE_QUIET_MS),
     speechIdleTimeoutMs: or(options.speechIdleTimeoutMs, DEFAULT_SPEECH_IDLE_TIMEOUT_MS),
     toolChoice: or(options.toolChoice, DEFAULT_TOOL_CHOICE),
     toolSchemas: or(options.toolSchemas, []),

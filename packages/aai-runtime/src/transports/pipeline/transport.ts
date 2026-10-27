@@ -90,6 +90,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     errorPhrase,
     startFailurePhrase,
     preemptiveGeneration,
+    preemptiveQuietMs,
     speechIdleTimeoutMs,
     toolSchemas,
     executeTool,
@@ -193,6 +194,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       opts.turnDetection !== "manual" &&
       knobs.dialogStep === undefined &&
       personaStep === undefined,
+    quietMs: preemptiveQuietMs,
     request: llmRequest,
     toolSchemas,
     systemPrompt,

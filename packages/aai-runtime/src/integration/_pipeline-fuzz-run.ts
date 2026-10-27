@@ -247,7 +247,7 @@ export async function runOne(
           // long before a third could fire. So the concurrency bound above does
           // not enforce the budget and neither does this. The rule is pinned
           // deterministically in `../transports/pipeline/speech/speculation.test.ts`
-          // ("bounded per utterance however the confidence sawtooths"); this
+          // ("bounded per utterance however often the caller pauses"); this
           // stays as a cheap net for an interleaving that does reach it.
           const spent = (meta as { spent?: number } | undefined)?.spent ?? 0;
           if (spent > MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE) {
@@ -261,6 +261,11 @@ export async function runOne(
       },
     },
     preemptiveGeneration: input.preemptiveGeneration,
+    // Zero: speculate on the partial itself. The shipped quiet window (300 ms)
+    // is longer than this harness's 1 ms `speechIdleTimeoutMs`, so at the
+    // default the watchdog would reap every utterance first and the
+    // speculation counters would floor at zero.
+    preemptiveQuietMs: 0,
     // Zero: a run lasts ~250 ms of wall clock, so at the shipped lag every
     // reply is the heard-nothing case. PARTIAL truncation is deliberately NOT
     // covered here for the same reason (the heard position is always near

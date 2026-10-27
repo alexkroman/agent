@@ -458,7 +458,7 @@ export function createSttEventHandlers(deps: {
         // nowhere else — the non-barge-in branch IS the idle-ish case it is
         // allowed to fire in, and one call site keeps this handler under the
         // cognitive-complexity cap it already sits near.
-        deps.speculation.onPartial(text, meta?.endOfTurnConfidence);
+        deps.speculation.onPartial(text);
         return;
       }
       const { peakDb, refDb } = callerLevel.read(meta?.inputPeakDbfs);

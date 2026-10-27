@@ -5,6 +5,7 @@
 // are read fresh is `knobs/dialog.test.ts`. These are the specs that
 // say the transport actually behaves differently.
 
+import { PREEMPTIVE_QUIET_MS } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../../_pipeline-test-fakes.ts";
 import {
@@ -177,9 +178,9 @@ describe("preemptive generation", () => {
     const t = createPipelineTransport(opts);
     await t.start();
 
-    // A high-confidence interim is what launches one when the feature is live.
-    stt.last()?.firePartial("book me a table", { endOfTurnConfidence: 0.99 });
-    await vi.advanceTimersByTimeAsync(50);
+    // An interim the caller pauses on is what launches one when the feature is live.
+    stt.last()?.firePartial("book me a table");
+    await vi.advanceTimersByTimeAsync(PREEMPTIVE_QUIET_MS + 50);
 
     expect(llmCalls(opts).calls).toHaveLength(0);
     await t.stop();

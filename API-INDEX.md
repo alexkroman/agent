@@ -1472,7 +1472,7 @@ trace or a type error can be traced back to something.
 | `PLAYBACK_DONE_POLL_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `PLAYBACK_FILL_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `PLAYBACK_PROGRESS_INTERVAL_MS` | const | `@alexkroman1/aai/internal` |  | How often a client reports its unplayed agent-audio backlog to the host (`playback_progress`), while it holds any. |
-| `PREEMPTIVE_CONFIDENCE_THRESHOLD` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `PREEMPTIVE_QUIET_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `PREVIEW_SLUG_SUFFIX` | const | `@alexkroman1/aai/internal` |  | Suffix the studio's auto-preview deploys own (`<project>-preview`). |
 | `PROVIDER_CATALOG` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `PUBLIC_URL_UNCONFIGURED_MESSAGE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
