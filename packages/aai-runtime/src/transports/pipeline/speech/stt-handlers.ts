@@ -140,7 +140,7 @@ export function createSttEventHandlers(deps: {
    * Commit a user turn: emit the transcript and run the chained reply. `note`
    * rides on the MODEL's copy only — see {@link createUserActivity}.
    */
-  commitUserTurn: (text: string, note?: string) => void;
+  commitUserTurn: (text: string, note?: string, meta?: SttTurnMeta) => void;
   /** Preemptive generation, or a no-op controller when the flag is off. */
   speculation: SpeculationHooks;
   /**
@@ -529,7 +529,7 @@ export function createSttEventHandlers(deps: {
       // AssemblyAI opener sets `min_turn_silence` for exactly this.
       speechEdges.speechEnded();
       recordCommittedLevel(level);
-      deps.commitUserTurn(trimmed, cutNote);
+      deps.commitUserTurn(trimmed, cutNote, meta);
       continuation.onCommit();
     },
   };

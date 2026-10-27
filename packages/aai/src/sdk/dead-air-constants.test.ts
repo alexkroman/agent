@@ -4,6 +4,7 @@ import {
   DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_COVER_PHRASES,
   DEAD_AIR_OPENING_PHRASE,
+  DEAD_AIR_OPENING_TARGET_MS,
   DEAD_AIR_TOOL_COVER_MS,
   DEFAULT_DEAD_AIR_COVER_MS,
 } from "./dead-air-constants.ts";
@@ -38,6 +39,19 @@ describe("dead-air cover windows", () => {
     expect(DEFAULT_MIN_TURN_SILENCE_MS + DEFAULT_DEAD_AIR_COVER_MS).toBeLessThan(
       CALLER_GIVES_UP_MS,
     );
+  });
+
+  // The opening target is DERIVED: the latest point, from the caller's last
+  // word, at which a filler is still audible before the caller re-prompts —
+  // its patience, less the measured caption -> audible latency (p95) and one
+  // harness tick. Later than that loses to the probe; earlier only adds
+  // fillers the answer would have made redundant.
+  const MEASURED_CAPTION_TO_AUDIBLE_P95_MS = 190;
+  const HARNESS_TICK_MS = 200;
+  test("the opening target is the latest filler the caller still hears in time", () => {
+    const latestSafe = CALLER_GIVES_UP_MS - MEASURED_CAPTION_TO_AUDIBLE_P95_MS - HARNESS_TICK_MS;
+    expect(DEAD_AIR_OPENING_TARGET_MS).toBeLessThanOrEqual(latestSafe);
+    expect(latestSafe - DEAD_AIR_OPENING_TARGET_MS).toBeLessThan(HARNESS_TICK_MS);
   });
 
   // The backoff doubles from whichever base armed it and flattens at the

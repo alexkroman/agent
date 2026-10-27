@@ -220,7 +220,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const sendTtsText = audioOut.sendTtsText;
 
   // Nudger, recovery, speaking edges and STT handlers — see createUserActivity.
-  const { nudger, recovery, speechEdges, sttEvents, manualTurn, commitTypedTurn } =
+  const { nudger, recovery, speechEdges, sttEvents, manualTurn, commitTypedTurn, callerStoppedAt } =
     createUserActivity({
       log,
       sid: opts.sid,
@@ -365,6 +365,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     tools,
     fatalTool,
     deadAirCoverMs,
+    callerStoppedAt,
     // An open speech edge means an utterance is in progress (0 when not).
     callerSpeaking: () => speechEdges.durationMs() > 0,
     toolSpeech,

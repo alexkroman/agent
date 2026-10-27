@@ -104,6 +104,17 @@ export type SttTurnMeta = {
    * reads it that way; an omitted span never blocks anything.
    */
   spokenMs?: number;
+  /**
+   * How long before this transcript was emitted the caller's last word ENDED,
+   * in ms: audio sent so far minus the latest word end, both on the service's
+   * audio clock. On a final it is the caller-side wait the commit already
+   * cost — endpointing silence plus the service's latency — which is time the
+   * caller has spent listening to nothing. Omitted without word timings.
+   *
+   * The pipeline transport anchors the turn's opening dead-air filler on it
+   * (`DEAD_AIR_OPENING_TARGET_MS`); an omitted value leaves the fixed window.
+   */
+  trailingSilenceMs?: number;
 };
 
 export type SttEvents = {

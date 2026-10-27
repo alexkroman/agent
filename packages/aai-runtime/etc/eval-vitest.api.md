@@ -729,6 +729,7 @@ export type SttTurnMeta = {
     endOfTurnConfidence?: number;
     inputPeakDbfs?: number;
     spokenMs?: number;
+    trailingSilenceMs?: number;
 };
 
 // @public
