@@ -24,7 +24,7 @@ function gate(overlapped: boolean) {
   const log = makeLogger();
   const exec = withConfirmationGate(inner, {
     schemas: SCHEMAS,
-    turnOverlapped: () => overlapped,
+    turnWasBackchannel: () => overlapped,
     log,
     sid: "s1",
   });
@@ -41,7 +41,7 @@ describe("withConfirmationGate", () => {
     expect(await exec("return_items", { id: 1 })).toBe(UNCONFIRMED_WRITE_RESULT);
     expect(inner).not.toHaveBeenCalled();
     expect(log.info.mock.calls.map(([m]) => m)).toContain(
-      "Pipeline write refused: turn spoke over the agent",
+      "Pipeline write refused: turn was a backchannel over the agent",
     );
   });
 
@@ -68,7 +68,7 @@ describe("withConfirmationGate", () => {
     const inner = vi.fn(async () => "x");
     const exec = withConfirmationGate(inner, {
       schemas: [tool("a"), tool("b", true)],
-      turnOverlapped: () => true,
+      turnWasBackchannel: () => true,
       log: makeLogger(),
       sid: "s1",
     });
