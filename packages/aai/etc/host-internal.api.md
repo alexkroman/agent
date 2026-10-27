@@ -1974,6 +1974,11 @@ export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
 export const TOOL_START_BLOCKING_MAX_MS = 8000;
 
 // @public
+type ToolAnnotations = {
+    readOnlyHint?: boolean | undefined;
+};
+
+// @public
 type ToolChoice = "auto" | "required" | "none" | {
     type: "tool";
     toolName: string;
@@ -2015,6 +2020,7 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
+    annotations?: ToolAnnotations;
 };
 
 // @public
@@ -2081,9 +2087,7 @@ type ToolSchema = {
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
     ui?: ToolUi | undefined;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    } | undefined;
+    annotations?: ToolAnnotations | undefined;
 };
 
 // @public @input

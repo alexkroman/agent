@@ -51,11 +51,13 @@ export function agentToolsToSchemas(toolsets: readonly Toolset[]): ToolSchema[] 
     // The display hint rides the same way, for the same reason — see
     // `ToolSchema.ui`.
     const ui = normalizeToolUi(def.ui);
+    // What the tool does to the world — the confirmation gate reads it.
+    const annotations = def.annotations;
     return {
       type: "function",
       name,
       description: def.description,
-      ...omitUndefined({ messages, ui }),
+      ...omitUndefined({ messages, ui, annotations }),
       // `"input"`, not the conversion default: this document is part of the
       // prompt a model is given, describing what it SENDS. A `.default()` field
       // is one the executor fills in when the call omits it (see

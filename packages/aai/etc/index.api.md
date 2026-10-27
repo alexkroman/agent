@@ -1698,6 +1698,11 @@ export type TextAgentParams = Omit<SharedAgentParams, "sttPrompt" | "telephony">
 export function tool<P extends ToolInputSchema | undefined = ToolInputSchema, R = unknown>(def: ToolDef<P, R>): ToolDef<P, R>;
 
 // @public
+export type ToolAnnotations = {
+    readOnlyHint?: boolean | undefined;
+};
+
+// @public
 export type ToolChoice = "auto" | "required" | "none" | {
     type: "tool";
     toolName: string;
@@ -1739,6 +1744,7 @@ export type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | un
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
+    annotations?: ToolAnnotations;
 };
 
 // @public @input

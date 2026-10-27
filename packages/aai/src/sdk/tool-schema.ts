@@ -17,7 +17,7 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
-import type { ToolUi } from "./tool-def.ts";
+import type { ToolAnnotations, ToolUi } from "./tool-def.ts";
 import { type ToolMessages, ToolMessagesSchema } from "./tool-messages.ts";
 
 /**
@@ -249,13 +249,6 @@ export type ToolSchema = {
    * renders the same thing everywhere. Absent for a tool that declares none.
    */
   ui?: ToolUi | undefined;
-  /**
-   * What the tool does to the world, in MCP's vocabulary. `readOnlyHint:
-   * false` declares a WRITE: the pipeline transport then runs it only on a
-   * caller turn that did not start over the agent's own audio — a turn spoken
-   * over the agent cannot be the caller confirming what it was asking (see
-   * `confirmation-gate.ts` in the runtime). `true`, or no annotation, runs as
-   * it always has. Never sent to the model.
-   */
-  annotations?: { readOnlyHint?: boolean | undefined } | undefined;
+  /** What the tool does to the world — see {@link ToolAnnotations}. Never sent to the model. */
+  annotations?: ToolAnnotations | undefined;
 };

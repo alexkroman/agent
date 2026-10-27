@@ -831,6 +831,11 @@ export function stubStepMcp(tools?: ToolMap): {
 };
 
 // @public
+type ToolAnnotations = {
+    readOnlyHint?: boolean | undefined;
+};
+
+// @public
 type ToolChoice = "auto" | "required" | "none" | {
     type: "tool";
     toolName: string;
@@ -872,6 +877,7 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
+    annotations?: ToolAnnotations;
 };
 
 // @public @input
