@@ -655,6 +655,7 @@ export function instructionOf(result: unknown): string | undefined;
 // @public @input
 export interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;

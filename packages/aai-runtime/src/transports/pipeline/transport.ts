@@ -230,6 +230,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       speechIdleTimeoutMs,
       minBargeInWords: knobs.minBargeInWords,
       interruptionMinDurationMs: knobs.interruptionMinDurationMs,
+      continuationWindowMs: knobs.continuationWindowMs,
       onInterrupted: audioOut.onInterrupted,
       userTurnLimit: opts.userTurnLimit,
       turnDetection: opts.turnDetection,

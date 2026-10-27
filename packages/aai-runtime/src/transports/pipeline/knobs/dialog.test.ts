@@ -12,6 +12,7 @@ const BASE = {
   minBargeInWords: 2,
   interruptionMinDurationMs: 120,
   interruptionBackoffMs: 0,
+  continuationWindowMs: 0,
   resumeFalseInterruption: true,
 };
 

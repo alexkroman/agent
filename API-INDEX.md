@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 212 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
-- [Framework internals](#framework-internals) — 520 names
+- [Framework internals](#framework-internals) — 522 names
 
 ## Agent authoring
 
@@ -1364,6 +1364,7 @@ trace or a type error can be traced back to something.
 | `DEFAULT_CALL_TIME_LIMIT_S` | const | `@alexkroman1/aai/internal` |  | Default `PlaceCallOptions.timeLimitS`: Twilio hangs up after ten minutes whatever the agent is doing, so a stuck conversation cannot run up hours of minutes … |
 | `DEFAULT_CLIENT_ACK_TIMEOUT_MS` | const | `@alexkroman1/aai/internal` |  | Default `StepNotifyClientOptions.ackTimeoutMs`. |
 | `DEFAULT_CLIENT_RETRY_MS` | const | `@alexkroman1/aai/internal` |  | Default `StepNotifyClientOptions.retryAfterMs`. |
+| `DEFAULT_CONTINUATION_WINDOW_MS` | const | `@alexkroman1/aai/internal` |  | How soon after a committed user turn the caller may resume speaking and have it treated as a continuation of that turn, in ms. |
 | `DEFAULT_DEAD_AIR_COVER_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEFAULT_ERROR_PHRASE` | const | `@alexkroman1/aai/internal` |  | Spoken when a pipeline turn's LLM stream fails, so a provider outage is a recoverable moment in the conversation instead of a dead line. |
 | `DEFAULT_FALSE_INTERRUPTION_PROMPT` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
@@ -1444,6 +1445,7 @@ trace or a type error can be traced back to something.
 | `MAX_CLIENT_WS_BUFFERED_BYTES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `MAX_CONSECUTIVE_SILENCE_NUDGES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `MAX_CONTINUATION_WINDOW_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `MAX_DB_RESULT_ROWS` | const | `@alexkroman1/aai/internal` |  | Max rows one `Db` query may return; queries that could exceed it should paginate with LIMIT/OFFSET. |
 | `MAX_FAILOVER_REASON_CHARS` | const | `@alexkroman1/aai/host-internal` |  | The longest `reason` a `provider.failedOver` carries — an error body can be a page of HTML. |
 | `MAX_INTERRUPTION_BACKOFF_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |

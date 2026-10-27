@@ -165,7 +165,7 @@
     "packages/aai/src/sdk/_internal-types.ts": 1,
     "packages/aai/src/sdk/_session-identity-store.ts": 4,
     "packages/aai/src/sdk/_testing-tool-results.ts": 1,
-    "packages/aai/src/sdk/_tuning-schema.ts": 19,
+    "packages/aai/src/sdk/_tuning-schema.ts": 18,
     "packages/aai/src/sdk/_upload-retry.ts": 1,
     "packages/aai/src/sdk/agent-config.ts": 37,
     "packages/aai/src/sdk/agent-guardrails.ts": 1,

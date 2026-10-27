@@ -206,6 +206,17 @@ export interface InterruptionTuning {
    */
   backoffMs?: number;
   /**
+   * When the caller starts speaking again within this many ms of a committed
+   * turn, treat it as the REST of that turn: the reply already answering the
+   * first fragment is cut, and the agent answers once the caller finishes.
+   * Covers a caller who pauses mid-sentence — reading out a ZIP, recalling an
+   * email — and gets split into two turns; without it the agent replies to
+   * half the sentence first. `0` disables.
+   *
+   * @defaultValue `2500` (`DEFAULT_CONTINUATION_WINDOW_MS`)
+   */
+  continuationWindowMs?: number;
+  /**
    * Resume the agent's reply when a barge-in aborts it and no user turn ever
    * commits (STT noise, a hallucinated partial) — the interruption was a false
    * alarm and the agent would otherwise fall silent mid-thought. The resume

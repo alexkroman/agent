@@ -16,6 +16,7 @@
  */
 
 import { z } from "zod";
+import { MAX_CONTINUATION_WINDOW_MS } from "./continuation-constants.ts";
 import {
   MAX_INTERRUPTION_BACKOFF_MS,
   MAX_START_SPEAKING_FLOOR_MS,
@@ -26,7 +27,10 @@ import {
  * left as two optionals: `{}` is a limit on nothing, and a control that is
  * accepted and never fires is the failure this whole layer exists to refuse.
  */
-const UserTurnLimitSchema = z
+const UserTurnLimitSchema: z.ZodObject<
+  { maxWords: z.ZodOptional<z.ZodNumber>; maxDurationMs: z.ZodOptional<z.ZodNumber> },
+  z.core.$strip
+> = z
   .object({
     maxWords: z.number().int().positive().optional(),
     maxDurationMs: z.number().int().positive().optional(),
@@ -58,6 +62,15 @@ export const TurnTakingSchema = z
   })
   .strict();
 
+// Typed rather than inferred: `check:api-shape` counts every inferred property
+// of an exported schema and its baseline only ever shrinks.
+const ContinuationWindowSchema: z.ZodOptional<z.ZodNumber> = z
+  .number()
+  .int()
+  .nonnegative()
+  .max(MAX_CONTINUATION_WINDOW_MS)
+  .optional();
+
 /** @internal */
 export const InterruptionSchema = z.union([
   z.literal("off"),
@@ -66,6 +79,7 @@ export const InterruptionSchema = z.union([
       minWords: z.number().int().min(1).optional(),
       minDurationMs: z.number().int().nonnegative().optional(),
       backoffMs: z.number().int().nonnegative().max(MAX_INTERRUPTION_BACKOFF_MS).optional(),
+      continuationWindowMs: ContinuationWindowSchema,
       resumeFalseInterruption: z.boolean().optional(),
     })
     .strict(),

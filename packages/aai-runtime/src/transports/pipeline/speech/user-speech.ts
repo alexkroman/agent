@@ -75,6 +75,8 @@ export function createUserActivity(deps: {
   minBargeInWords: () => number;
   /** Sustained-speech gate for interim-triggered barge-in; 0 disables. Per state too. */
   interruptionMinDurationMs: () => number;
+  /** Resumed speech this soon after a commit continues that turn; 0 disables. Per state. */
+  continuationWindowMs: () => number;
   /** A real interruption fired: arm the post-interruption audio block. */
   onInterrupted(): void;
   /** Cap one user turn by words and/or time; unset is no cap. See `UserTurnLimit`. */
@@ -276,6 +278,7 @@ export function createUserActivity(deps: {
     manualTurn,
     minBargeInWords: deps.minBargeInWords,
     interruptionMinDurationMs: deps.interruptionMinDurationMs,
+    continuationWindowMs: deps.continuationWindowMs,
     onInterrupted: deps.onInterrupted,
     turnLimit,
     log,

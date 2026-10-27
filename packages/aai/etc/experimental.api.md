@@ -443,6 +443,7 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S
 // @public @input
 interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;
