@@ -21,6 +21,12 @@
  *   model heard the objection and kept its choice.
  * - A timeout, an unparseable verdict, or any error passes: an unavailable
  *   checker must never be what stops a write.
+ *
+ * **The check opens a window the write did not have, so the turn is re-read
+ * after it.** It is bound to the CALL's abort signal (the turn's), and a turn
+ * aborted while the check ran — the caller barging in with "wait, no" — does
+ * not get its write afterwards. Anything that reads turn state (the
+ * confirmation gate) must wrap this from OUTSIDE, so it reads before the await.
  */
 
 import type { Message } from "@alexkroman1/aai";
@@ -129,6 +135,11 @@ export async function verifyWrite(deps: {
   }
 }
 
+/** What the model is told when the turn was interrupted during the check. @internal */
+export const INTERRUPTED_RESULT: string =
+  "Not done, and nothing was changed: the caller spoke before this action ran. " +
+  "Respond to what they said; if they still want it, confirm and call again.";
+
 /** What the model is told when a check finds a mismatch. @internal */
 export function mismatchResult(mismatch: string): string {
   return (
@@ -148,7 +159,11 @@ export function withWriteVerification(
   executeTool: ExecuteTool,
   deps: {
     schemas: readonly ToolSchema[];
-    check: (tool: ToolSchema, args: Readonly<Record<string, unknown>>) => Promise<WriteVerdict>;
+    check: (
+      tool: ToolSchema,
+      args: Readonly<Record<string, unknown>>,
+      signal: AbortSignal | undefined,
+    ) => Promise<WriteVerdict>;
     log: Logger;
     sid: string;
   },
@@ -163,13 +178,15 @@ export function withWriteVerification(
     if (tool !== undefined && writes.has(name)) {
       const key = `${name}:${JSON.stringify(args)}`;
       if (!refused.has(key)) {
-        const verdict = await deps.check(tool, args).catch((err: unknown) => {
+        const verdict = await deps.check(tool, args, options?.signal).catch((err: unknown) => {
           deps.log.warn("Write check failed; running the write", {
             sid: deps.sid,
             error: errorMessage(err),
           });
           return { ok: true } as const;
         });
+        // The turn ended while the check ran: its write must not land on the next.
+        if (options?.signal?.aborted) return INTERRUPTED_RESULT;
         if (!verdict.ok) {
           refused.add(key);
           deps.log.info("Pipeline write held by check", {

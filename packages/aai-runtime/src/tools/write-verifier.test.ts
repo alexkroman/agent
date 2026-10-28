@@ -6,6 +6,7 @@ import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "../_logger-test-utils.ts";
 import { isFailedToolResult } from "../_prepare-step.ts";
 import {
+  INTERRUPTED_RESULT,
   mismatchResult,
   transcriptOf,
   verifierPrompt,
@@ -140,6 +141,29 @@ describe("withWriteVerification", () => {
     // …but the model insisting on the first one gets it run, unchecked.
     expect(await exec("return_items", { id: 1 })).toBe("done");
     expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  // The check opens a window the write did not have. A barge-in during it
+  // aborts the turn, and the write must not land afterwards.
+  test("a turn aborted while the check runs does not get its write", async () => {
+    const inner = vi.fn(async () => "done");
+    const turn = new AbortController();
+    const seen: (AbortSignal | undefined)[] = [];
+    const exec = withWriteVerification(inner, {
+      schemas: [RETURN],
+      check: async (_tool, _args, signal) => {
+        seen.push(signal);
+        turn.abort(); // the caller speaks while the check is out
+        return { ok: true };
+      },
+      log: makeLogger(),
+      sid: "s1",
+    });
+    expect(await exec("return_items", { id: 1 }, "s1", [], { signal: turn.signal })).toBe(
+      INTERRUPTED_RESULT,
+    );
+    expect(inner).not.toHaveBeenCalled();
+    expect(seen).toEqual([turn.signal]);
   });
 
   // The failed-call memo must not refuse the confirmed retry.
