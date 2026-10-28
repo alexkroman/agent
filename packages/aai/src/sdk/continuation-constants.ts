@@ -32,7 +32,7 @@
  * is why this keys on resumed speech rather than on the next commit.
  *
  * **3500, from the live run (2026-10-27).** At 2500 on a 114-task retail run
- * (800 / 3500 endpointing — see `DEFAULT_MIN_TURN_SILENCE_MS`, whose 800 floor
+ * (800 / 3500 endpointing — see `DEFAULT_MIN_TURN_SILENCE_MS`, whose floor (now 250)
  * depends on this), continuation absorbed 117 of 146 split turns; of every
  * reply it cancelled inside the window, 219 were the same sentence resuming and
  * none were a new one. The 29 it missed resumed later than 2.5 s, toward the

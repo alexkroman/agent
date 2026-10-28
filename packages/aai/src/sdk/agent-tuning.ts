@@ -111,7 +111,7 @@ export interface TurnTakingTuning {
    * moving it. An explicit `stt` descriptor owns its own window, so this is
    * refused beside one.
    *
-   * @defaultValue `800` (`DEFAULT_MIN_TURN_SILENCE_MS`)
+   * @defaultValue `250` (`DEFAULT_MIN_TURN_SILENCE_MS`)
    */
   minSilenceMs?: number;
   /**

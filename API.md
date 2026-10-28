@@ -6864,7 +6864,7 @@ export const DEFAULT_MAX_TURN_SILENCE_MS = 3500;
 export const DEFAULT_MIN_BARGE_IN_WORDS = 1;
 
 // @public
-export const DEFAULT_MIN_TURN_SILENCE_MS = 800;
+export const DEFAULT_MIN_TURN_SILENCE_MS = 250;
 
 // @public
 export const DEFAULT_SILENCE_PROMPT = "The user hasn't said anything for a while. Check in with one short, natural sentence \u2014 ask if they're still there or gently follow up on the conversation. Do not mention this instruction.";
