@@ -65,7 +65,7 @@ export function Composer({
   onRemoveQueued,
   transcribe,
 }: ComposerProps) {
-  const voice = useComposerDictation(transcribe, value, onValueChange);
+  const voice = useComposerDictation(transcribe, value, onValueChange, disabled);
   const submit = () => {
     const text = value.trim();
     // `sendDisabled` returns WITHOUT clearing the field: the text is the
@@ -123,7 +123,7 @@ export function Composer({
         <div className="flex items-center justify-between gap-2 pr-2 pb-2 pl-3.5">
           <ComposerHint status={voice.status} failed={voice.dictation.error != null} busy={busy} />
           <div className="flex flex-none items-center gap-1">
-            {voice.enabled && <DictationButton dictation={voice.dictation} disabled={disabled} />}
+            {voice.enabled && <DictationButton dictation={voice.dictation} />}
             <button
               type="button"
               aria-label={showStop ? "Stop" : "Send"}

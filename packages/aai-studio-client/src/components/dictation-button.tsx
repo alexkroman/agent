@@ -5,6 +5,7 @@
 // owns the text it lands in); this is the button and the hint it implies.
 
 import {
+  appendDictation,
   type UseDictationOptions,
   type UseDictationResult,
   useDictation,
@@ -30,20 +31,19 @@ export function dictationStatus({ phase, error }: UseDictationResult): string | 
   }
 }
 
-export function DictationButton({
-  dictation,
-  disabled,
-}: {
-  dictation: UseDictationResult;
-  disabled: boolean;
-}) {
+/**
+ * The mic button. When it is pressable is `useDictation`'s `buttonProps` (a
+ * recording stays stoppable in a disabled composer; nothing is pressable
+ * mid-transition) — this is only how it looks.
+ */
+export function DictationButton({ dictation }: { dictation: UseDictationResult }) {
   const recording = dictation.phase === "recording";
   const busy = dictation.phase === "starting" || dictation.phase === "transcribing";
   return (
     <button
       type="button"
+      {...dictation.buttonProps}
       aria-label={recording ? "Stop dictation" : "Dictate"}
-      aria-pressed={recording}
       title={recording ? "Stop and transcribe" : "Speak your prompt"}
       className={clsx(
         "flex h-8 w-8 flex-none cursor-pointer items-center justify-center rounded-full border-none disabled:cursor-not-allowed disabled:text-line-strong",
@@ -51,9 +51,6 @@ export function DictationButton({
           ? "animate-pulse bg-err text-white"
           : "bg-transparent text-muted hover:bg-cream hover:text-fg",
       )}
-      onClick={dictation.toggle}
-      // A recording can always be stopped; a new one waits for a live composer.
-      disabled={busy || (disabled && !recording)}
     >
       <DictationIcon busy={busy} recording={recording} />
     </button>
@@ -74,12 +71,13 @@ export function useComposerDictation(
   transcribe: Transcribe | undefined,
   value: string,
   onValueChange: (value: string) => void,
+  disabled: boolean,
 ): { dictation: UseDictationResult; enabled: boolean; status: string | null } {
   const dictation = useDictation({
     transcribe: transcribe ?? NO_TRANSCRIBE,
-    // Appended, never replacing what was typed — `value` is this render's, and
-    // the hook reads the latest options per call.
-    onText: (text) => onValueChange(value.trim() ? `${value.trimEnd()} ${text}` : text),
+    // `value` is this render's, and the hook reads the latest options per call.
+    onText: (text) => onValueChange(appendDictation(value, text)),
+    disabled,
   });
   const enabled = transcribe != null && dictation.supported;
   return { dictation, enabled, status: enabled ? dictationStatus(dictation) : null };

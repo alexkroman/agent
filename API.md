@@ -1210,6 +1210,16 @@ export type DictationFetch = (url: string, init: {
     signal: AbortSignal;
 }) => Promise<Response>;
 
+// @public @input
+export type DictationRequestOptions = Omit<TranscribeDictationOptions, "type" | "signal">;
+
+// @public @sealed
+export type DictationResponseBody = {
+    text: string;
+} | {
+    error: string;
+};
+
 // @public
 export const DTMF_KEYS: string;
 
@@ -1276,6 +1286,9 @@ type GenerateResult = {
 
 // @public
 type GuardrailVerdict = true | string;
+
+// @public
+export function handleDictationRequest(request: Request, options: DictationRequestOptions): Promise<Response>;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S extends undefined ? Record<string, never> : never;
@@ -21515,6 +21528,9 @@ export type AgentState = "disconnected" | "connecting" | "ready" | "listening" |
 export type AgentStateFrame = Readonly<Record<string, unknown>>;
 
 // @public
+export function appendDictation(draft: string, text: string): string;
+
+// @public
 export function AudioResult(input: AudioResultProps): ReactNode;
 
 // @public @input
@@ -21781,6 +21797,15 @@ export function createStoredValue(key: string, options?: StoredValueOptions): St
 
 // @public
 export function createWorkflowApi(options?: WorkflowApiOptions): AgentClient;
+
+// @public
+export function dictationTranscriber(url: string, options?: DictationTranscriberOptions): UseDictationOptions["transcribe"];
+
+// @public @input
+export type DictationTranscriberOptions = {
+    headers?: Record<string, string> | (() => Record<string, string>);
+    fetch?: typeof fetch;
+};
 
 export { errorMessage }
 
@@ -22324,6 +22349,7 @@ export type UseDictationOptions = {
     }) => Promise<string>;
     onText: (text: string) => void;
     maxSeconds?: number;
+    disabled?: boolean;
 };
 
 // @public @sealed
@@ -22335,6 +22361,11 @@ export type UseDictationResult = {
     stop: () => void;
     cancel: () => void;
     toggle: () => void;
+    buttonProps: {
+        onClick: () => void;
+        disabled: boolean;
+        "aria-pressed": boolean;
+    };
 };
 
 // @public

@@ -357,6 +357,16 @@ export type DictationFetch = (url: string, init: {
     signal: AbortSignal;
 }) => Promise<Response>;
 
+// @public @input
+export type DictationRequestOptions = Omit<TranscribeDictationOptions, "type" | "signal">;
+
+// @public @sealed
+export type DictationResponseBody = {
+    text: string;
+} | {
+    error: string;
+};
+
 // @public
 export const DTMF_KEYS: string;
 
@@ -423,6 +433,9 @@ type GenerateResult = {
 
 // @public
 type GuardrailVerdict = true | string;
+
+// @public
+export function handleDictationRequest(request: Request, options: DictationRequestOptions): Promise<Response>;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S extends undefined ? Record<string, never> : never;

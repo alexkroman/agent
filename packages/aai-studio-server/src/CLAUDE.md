@@ -427,7 +427,9 @@ window the platform runs is declared in `studio-rate-limit.ts`.
 
 ## Dictation (`studio-dictation-routes.ts`)
 
-`POST /studio/dictation` turns the composer's recorded clip into text: the SDK's
-`transcribeDictation` on the CALLER's key (never a platform key), the body
-capped at `DICTATION_MAX_BYTES` before it is read, a service 429 passed through
-with `Retry-After`, any other refusal a 502 naming it. Nothing is stored.
+`POST /studio/dictation` turns the composer's recorded clip into text. The
+request handling is the SDK's `handleDictationRequest` (body cap, empty-body
+refusal, the `{ text } | { error }` reply and its 413/429/502 mapping) — never
+re-implement it here. The studio adds only policy: the CALLER's key (never a
+platform key) and `DICTATION_RATE_LIMIT`. Specs inject `dictationFetch`, so the
+SDK's real error mapping runs under them. Nothing is stored.

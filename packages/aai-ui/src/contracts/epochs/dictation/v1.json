@@ -3,7 +3,14 @@
   "capability": "dictation",
   "epoch": 1,
   "rule": 3,
-  "sha256": "463fef499373512a665c51af456fa14cf7a9ac6e544d2ead3b277acf08857f06",
-  "exports": ["UseDictationOptions", "UseDictationResult", "useDictation"],
-  "rollup": "dd7428b254d5b883dab5fe8f187511618ca2bd032a87dfbdff4f3c0e7beab80e"
+  "sha256": "f346c6031d270c10578bd82c3f22e5706d6ec57340e9723e3791f278aad6a448",
+  "exports": [
+    "DictationTranscriberOptions",
+    "UseDictationOptions",
+    "UseDictationResult",
+    "appendDictation",
+    "dictationTranscriber",
+    "useDictation"
+  ],
+  "rollup": "16fae22c6902161e7691f0634f677d2ff035ad4b7a2063288107f712226a1cf1"
 }

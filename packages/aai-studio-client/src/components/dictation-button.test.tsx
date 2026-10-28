@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 // The composer's mic button and the hint it implies: what each dictation phase
-// says, which glyph and label the button wears, and that a recording can
-// always be stopped while a new one waits for a live composer.
+// says, and that the button wears the hook's `buttonProps` under the studio's
+// labels. WHEN it is pressable is aai-ui's rule (`use-dictation.test.ts`).
 
 import type { UseDictationResult } from "@alexkroman1/aai-ui";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -13,7 +13,13 @@ const noop = (): void => undefined;
 const DISABLED = /<button[^>]*\sdisabled=/;
 
 function dictation(over: Partial<UseDictationResult> = {}): UseDictationResult {
+  const phase = over.phase ?? "idle";
   return {
+    buttonProps: {
+      onClick: noop,
+      disabled: phase === "starting" || phase === "transcribing",
+      "aria-pressed": phase === "recording",
+    },
     phase: "idle",
     error: null,
     supported: true,
@@ -39,8 +45,7 @@ describe("dictationStatus", () => {
 });
 
 describe("DictationButton", () => {
-  const render = (d: UseDictationResult, disabled = false) =>
-    renderToStaticMarkup(<DictationButton dictation={d} disabled={disabled} />);
+  const render = (d: UseDictationResult) => renderToStaticMarkup(<DictationButton dictation={d} />);
 
   test("idle: an enabled Dictate button", () => {
     const html = render(dictation());
@@ -49,16 +54,17 @@ describe("DictationButton", () => {
     expect(html).not.toMatch(DISABLED);
   });
 
-  test("recording: a pressed Stop dictation button, live even in a disabled composer", () => {
-    const html = render(dictation({ phase: "recording" }), true);
+  test("recording: a pressed Stop dictation button", () => {
+    const html = render(dictation({ phase: "recording" }));
     expect(html).toContain('aria-label="Stop dictation"');
     expect(html).toContain('aria-pressed="true"');
-    expect(html).not.toMatch(DISABLED);
   });
 
-  test("a disabled composer starts no new recording, and a busy one takes no press", () => {
-    expect(render(dictation(), true)).toMatch(DISABLED);
+  test("the hook's buttonProps decide whether it is pressable", () => {
     expect(render(dictation({ phase: "transcribing" }))).toMatch(DISABLED);
-    expect(render(dictation({ phase: "starting" }))).toMatch(DISABLED);
+    const refused = dictation();
+    expect(render({ ...refused, buttonProps: { ...refused.buttonProps, disabled: true } })).toMatch(
+      DISABLED,
+    );
   });
 });

@@ -10,6 +10,10 @@
  * The key never reaches the browser, which is why this hook takes a callback
  * rather than a credential.
  *
+ * The two ends that are not this hook are published too: `dictationTranscriber`
+ * is the `transcribe` for a server answering `handleDictationRequest`'s
+ * `{ text } | { error }`, and `appendDictation` adds the words to a draft.
+ *
  * What it owns, because each is a way a hand-written mic button goes wrong:
  *
  * - **The recording indicator goes out.** Every way out — stop, cancel, the
@@ -17,6 +21,8 @@
  * - **A late answer lands nowhere.** A transcription that settles after a
  *   cancel, a newer recording or an unmount is dropped, never typed into the
  *   box the user has moved on from.
+ * - **The button cannot be pressed into a bad state.** `buttonProps` keeps a
+ *   recording stoppable while `disabled`, and takes no press mid-transition.
  * - **The clip fits the endpoint.** Recording stops by itself at `maxSeconds`
  *   and is transcribed, rather than growing into a clip the service refuses
  *   whole.
@@ -51,6 +57,12 @@ export type UseDictationOptions = {
    * then. Defaults to the dictation API's own ceiling, 120.
    */
   maxSeconds?: number;
+  /**
+   * Refuse to START a recording — the text box is not accepting input right
+   * now. A recording already running can still be stopped and transcribed, so
+   * the words said before the box went dead are not lost. Default `false`.
+   */
+  disabled?: boolean;
 };
 
 /**
@@ -72,7 +84,7 @@ export type UseDictationResult = {
    * `AudioContext` and audio worklets. A button should not render without it.
    */
   supported: boolean;
-  /** Ask for the microphone and start recording. Ignored unless idle. */
+  /** Ask for the microphone and start recording. Ignored unless idle, and while `disabled`. */
   start: () => void;
   /** Stop recording and transcribe what was said. Ignored unless recording. */
   stop: () => void;
@@ -80,6 +92,17 @@ export type UseDictationResult = {
   cancel: () => void;
   /** `start` when idle, `stop` when recording — one button. */
   toggle: () => void;
+  /**
+   * Spread onto a `<button>`: `toggle`, and the two rules a hand-written one
+   * gets wrong — a recording can ALWAYS be stopped (even with `disabled` set),
+   * and nothing can be pressed while the microphone opens or the clip is
+   * transcribing. Label and style it however you like.
+   */
+  buttonProps: {
+    onClick: () => void;
+    disabled: boolean;
+    "aria-pressed": boolean;
+  };
 };
 
 /** How a recorder is opened; the real one loads the audio chunk on first use. */
@@ -122,24 +145,27 @@ function browserCanRecord(): boolean {
  *
  * @example
  * ```tsx
- * import { useDictation } from "@alexkroman1/aai-ui";
+ * import { appendDictation, dictationTranscriber, useDictation } from "@alexkroman1/aai-ui";
  * import { useState } from "react";
+ *
+ * // `POST /dictation` on your own server is `handleDictationRequest`
+ * // (`@alexkroman1/aai/experimental`), which holds the API key.
+ * const transcribe = dictationTranscriber("/dictation");
  *
  * export function SpokenNote() {
  *   const [draft, setDraft] = useState("");
  *   const dictation = useDictation({
- *     transcribe: async (audio, { signal }) => {
- *       const res = await fetch("api/dictation", { method: "POST", body: audio, signal });
- *       return ((await res.json()) as { text: string }).text;
- *     },
- *     onText: (text) => setDraft((d) => (d ? `${d} ${text}` : text)),
+ *     transcribe,
+ *     onText: (text) => setDraft((d) => appendDictation(d, text)),
  *   });
  *   return (
  *     <div>
  *       <textarea value={draft} onChange={(e) => setDraft(e.target.value)} />
- *       <button type="button" onClick={dictation.toggle}>
- *         {dictation.phase === "recording" ? "Stop" : "Speak"}
- *       </button>
+ *       {dictation.supported && (
+ *         <button type="button" {...dictation.buttonProps}>
+ *           {dictation.phase === "recording" ? "Stop" : "Speak"}
+ *         </button>
+ *       )}
  *     </div>
  *   );
  * }
@@ -227,7 +253,7 @@ export function useDictationWith(
   }, [epoch, clearCap, move]);
 
   const start = useCallback(() => {
-    if (phaseRef.current !== "idle") return;
+    if (phaseRef.current !== "idle" || latest.current.disabled === true) return;
     setError(null);
     move("starting");
     const gen = epoch.current();
@@ -264,5 +290,13 @@ export function useDictationWith(
   // An unmount mid-recording releases the microphone.
   useEffect(() => abandon, [abandon]);
 
-  return { phase, error, supported, start, stop, cancel, toggle };
+  const recording = phase === "recording";
+  const busy = phase === "starting" || phase === "transcribing";
+  const blocked = busy || (options.disabled === true && !recording);
+  const buttonProps = useMemo(
+    () => ({ onClick: toggle, disabled: blocked, "aria-pressed": recording }),
+    [toggle, blocked, recording],
+  );
+
+  return { phase, error, supported, start, stop, cancel, toggle, buttonProps };
 }

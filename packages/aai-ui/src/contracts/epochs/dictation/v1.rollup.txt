@@ -1,4 +1,16 @@
 // @public
+export function appendDictation(draft: string, text: string): string;
+
+// @public
+export function dictationTranscriber(url: string, options?: DictationTranscriberOptions): UseDictationOptions["transcribe"];
+
+// @public @input
+export type DictationTranscriberOptions = {
+    headers?: Record<string, string> | (() => Record<string, string>);
+    fetch?: typeof fetch;
+};
+
+// @public
 export function useDictation(options: UseDictationOptions): UseDictationResult;
 
 // @public @input
@@ -8,6 +20,7 @@ export type UseDictationOptions = {
     }) => Promise<string>;
     onText: (text: string) => void;
     maxSeconds?: number;
+    disabled?: boolean;
 };
 
 // @public @sealed
@@ -19,4 +32,9 @@ export type UseDictationResult = {
     stop: () => void;
     cancel: () => void;
     toggle: () => void;
+    buttonProps: {
+        onClick: () => void;
+        disabled: boolean;
+        "aria-pressed": boolean;
+    };
 };

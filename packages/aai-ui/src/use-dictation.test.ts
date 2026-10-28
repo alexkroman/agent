@@ -158,4 +158,55 @@ describe("useDictation", () => {
     hook.unmount();
     expect(rec.cancel).toHaveBeenCalledOnce();
   });
+
+  test("buttonProps: toggles, says pressed while recording, and takes no press mid-transition", async () => {
+    const { open } = fakeRecorder();
+    const { hook } = mount(open);
+    expect(hook.result.current.buttonProps).toMatchObject({
+      disabled: false,
+      "aria-pressed": false,
+    });
+
+    act(() => hook.result.current.buttonProps.onClick());
+    expect(hook.result.current.buttonProps.disabled).toBe(true); // starting
+    await settle();
+    expect(hook.result.current.buttonProps).toMatchObject({
+      disabled: false,
+      "aria-pressed": true,
+    });
+
+    act(() => hook.result.current.buttonProps.onClick());
+    expect(hook.result.current.buttonProps.disabled).toBe(true); // transcribing
+    await settle();
+    expect(hook.result.current.buttonProps).toMatchObject({
+      disabled: false,
+      "aria-pressed": false,
+    });
+  });
+
+  test("disabled refuses a new recording but keeps a running one stoppable", async () => {
+    const { rec, open } = fakeRecorder();
+    let disabled = false;
+    const onText = vi.fn<(text: string) => void>();
+    const hook = renderHook(() =>
+      useDictationWith({ transcribe: async () => "kept", onText, disabled }, open),
+    );
+
+    act(() => hook.result.current.start());
+    await settle();
+    disabled = true;
+    hook.rerender();
+    // Recording: still stoppable, and what was said is not lost.
+    expect(hook.result.current.buttonProps.disabled).toBe(false);
+    act(() => hook.result.current.buttonProps.onClick());
+    await settle();
+    expect(rec.stop).toHaveBeenCalledOnce();
+    expect(onText).toHaveBeenCalledWith("kept");
+
+    // Idle and disabled: no new recording.
+    expect(hook.result.current.buttonProps.disabled).toBe(true);
+    act(() => hook.result.current.start());
+    expect(hook.result.current.phase).toBe("idle");
+    expect(open).toHaveBeenCalledOnce();
+  });
 });

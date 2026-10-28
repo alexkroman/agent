@@ -88,6 +88,11 @@ export {
   type TranscribeDictationOptions,
   transcribeDictation,
 } from "./sdk/dictation.ts";
+export {
+  type DictationRequestOptions,
+  type DictationResponseBody,
+  handleDictationRequest,
+} from "./sdk/dictation-request.ts";
 export { type LocalSttOptions, localStt } from "./sdk/providers/stt/local.ts";
 export { DTMF_KEYS, MAX_DTMF_KEYS, sendDtmf } from "./sdk/session-dtmf.ts";
 export {

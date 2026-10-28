@@ -62,6 +62,44 @@ second client for one read.)
 
 ## Functions
 
+### appendDictation()
+
+```ts
+function appendDictation(draft: string, text: string): string;
+```
+
+`draft` with `text` added after it, joined by exactly one space: a draft
+ending in whitespace or a newline does not grow a double space, and an empty
+or blank draft is replaced rather than given a leading one.
+
+Never REPLACES what was typed — the words someone said are an addition to
+the box, which is what makes speaking into a half-written prompt safe.
+
+#### Parameters
+
+##### draft
+
+`string`
+
+##### text
+
+`string`
+
+#### Returns
+
+`string`
+
+#### Example
+
+```ts
+import { appendDictation } from "@alexkroman1/aai-ui";
+
+appendDictation("Build me an agent", "that books tables."); // "Build me an agent that books tables."
+appendDictation("", "Hello"); // "Hello"
+```
+
+***
+
 ### AudioResult()
 
 ```ts
@@ -863,6 +901,51 @@ function StartDigest() {
     </button>
   );
 }
+```
+
+***
+
+### dictationTranscriber()
+
+```ts
+function dictationTranscriber(url: string, options?: DictationTranscriberOptions): (audio: Blob, options: {
+  signal: AbortSignal;
+}) => Promise<string>;
+```
+
+A `transcribe` for [useDictation](#usedictation) that POSTs each clip to `url` and
+reads the `{ text } | { error }` reply `handleDictationRequest` answers with.
+
+Rejects with the server's own `error` sentence on a refusal, and with a
+status-naming message when the reply is not that shape (a proxy's HTML error
+page) — `useDictation` shows either as its `error`.
+
+#### Parameters
+
+##### url
+
+`string`
+
+The route, resolved like any `fetch` URL (relative to the page).
+
+##### options?
+
+[`DictationTranscriberOptions`](#dictationtranscriberoptions)
+
+#### Returns
+
+(`audio`: `Blob`, `options`: \{
+  `signal`: `AbortSignal`;
+\}) => `Promise`\<`string`\>
+
+#### Example
+
+```ts
+import { dictationTranscriber } from "@alexkroman1/aai-ui";
+
+export const transcribe = dictationTranscriber("/api/dictation", {
+  headers: () => ({ authorization: `Bearer ${localStorage.getItem("token") ?? ""}` }),
+});
 ```
 
 ***
@@ -2871,24 +2954,27 @@ for a text box.
 #### Example
 
 ```tsx
-import { useDictation } from "@alexkroman1/aai-ui";
+import { appendDictation, dictationTranscriber, useDictation } from "@alexkroman1/aai-ui";
 import { useState } from "react";
+
+// `POST /dictation` on your own server is `handleDictationRequest`
+// (`@alexkroman1/aai/experimental`), which holds the API key.
+const transcribe = dictationTranscriber("/dictation");
 
 export function SpokenNote() {
   const [draft, setDraft] = useState("");
   const dictation = useDictation({
-    transcribe: async (audio, { signal }) => {
-      const res = await fetch("api/dictation", { method: "POST", body: audio, signal });
-      return ((await res.json()) as { text: string }).text;
-    },
-    onText: (text) => setDraft((d) => (d ? `${d} ${text}` : text)),
+    transcribe,
+    onText: (text) => setDraft((d) => appendDictation(d, text)),
   });
   return (
     <div>
       <textarea value={draft} onChange={(e) => setDraft(e.target.value)} />
-      <button type="button" onClick={dictation.toggle}>
-        {dictation.phase === "recording" ? "Stop" : "Speak"}
-      </button>
+      {dictation.supported && (
+        <button type="button" {...dictation.buttonProps}>
+          {dictation.phase === "recording" ? "Stop" : "Speak"}
+        </button>
+      )}
     </div>
   );
 }
@@ -7130,6 +7216,41 @@ WebSocket constructor override, for tests. Default: the page's `WebSocket`.
 
 ***
 
+### DictationTranscriberOptions
+
+```ts
+type DictationTranscriberOptions = {
+  fetch?: typeof fetch;
+  headers?: Record<string, string> | (() => Record<string, string>);
+};
+```
+
+**`Input`**
+
+Options for [dictationTranscriber](#dictationtranscriber).
+
+#### Properties
+
+##### fetch?
+
+```ts
+optional fetch?: typeof fetch;
+```
+
+The transport. Defaults to the global `fetch`.
+
+##### headers?
+
+```ts
+optional headers?: Record<string, string> | (() => Record<string, string>);
+```
+
+Headers sent with each clip — an `authorization` for a route behind a
+bearer. A FUNCTION is read per request, so a token that rotates is never
+sent stale.
+
+***
+
 ### FactsProps
 
 ```ts
@@ -9894,6 +10015,7 @@ reads [UseCopyResult.didCopy](#didcopy) and writes its own.
 
 ```ts
 type UseDictationOptions = {
+  disabled?: boolean;
   maxSeconds?: number;
   onText: (text: string) => void;
   transcribe: (audio: Blob, options: {
@@ -9907,6 +10029,16 @@ type UseDictationOptions = {
 Options for [useDictation](#usedictation).
 
 #### Properties
+
+##### disabled?
+
+```ts
+optional disabled?: boolean;
+```
+
+Refuse to START a recording — the text box is not accepting input right
+now. A recording already running can still be stopped and transcribed, so
+the words said before the box went dead are not lost. Default `false`.
 
 ##### maxSeconds?
 
@@ -9971,6 +10103,11 @@ dictation API under its key. A rejection is shown as `error`.
 
 ```ts
 type UseDictationResult = {
+  buttonProps: {
+     aria-pressed: boolean;
+     disabled: boolean;
+     onClick: () => void;
+  };
   cancel: () => void;
   error: string | null;
   phase:   | "idle"
@@ -9991,6 +10128,39 @@ type UseDictationResult = {
 What [useDictation](#usedictation) returns.
 
 #### Properties
+
+##### buttonProps
+
+```ts
+buttonProps: {
+  aria-pressed: boolean;
+  disabled: boolean;
+  onClick: () => void;
+};
+```
+
+Spread onto a `<button>`: `toggle`, and the two rules a hand-written one
+gets wrong — a recording can ALWAYS be stopped (even with `disabled` set),
+and nothing can be pressed while the microphone opens or the clip is
+transcribing. Label and style it however you like.
+
+###### aria-pressed
+
+```ts
+aria-pressed: boolean;
+```
+
+###### disabled
+
+```ts
+disabled: boolean;
+```
+
+###### onClick
+
+```ts
+() => void
+```
 
 ##### cancel
 
@@ -10033,7 +10203,7 @@ Where the hook is: `"idle"`, `"starting"` (asking for the microphone),
 start: () => void;
 ```
 
-Ask for the microphone and start recording. Ignored unless idle.
+Ask for the microphone and start recording. Ignored unless idle, and while `disabled`.
 
 ###### Returns
 

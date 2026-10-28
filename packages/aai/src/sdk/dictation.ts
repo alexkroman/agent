@@ -14,8 +14,10 @@
  * The browser half is `useDictation` in `@alexkroman1/aai-ui`: it records the
  * microphone at {@link DICTATION_SAMPLE_RATE}, stops by
  * {@link DICTATION_MAX_SECONDS}, and hands a WAV to a `transcribe` callback —
- * which on the far side of a server is this function. **Never call this from
- * a browser with an account key**: the key would ship in the page.
+ * which on the far side of a server is this function, usually through
+ * `handleDictationRequest` (`dictation-request.ts`), the whole route built on
+ * it. **Never call this from a browser with an account key**: the key would
+ * ship in the page.
  *
  * ```ts
  * import { transcribeDictation } from "@alexkroman1/aai/experimental";

@@ -3,8 +3,9 @@
  * Capability contract: `dictation`.
  *
  * Speak into a text box: the `useDictation` hook records one clip and hands it
- * to a page-supplied `transcribe` callback (a server calling the dictation API
- * under its key), then hands the words back.
+ * to a `transcribe` callback — `dictationTranscriber` for a server answering
+ * the SDK's `handleDictationRequest`, which calls the dictation API under its
+ * key — then hands the words back for `appendDictation` to add to a draft.
  *
  * Its own capability for the reason `push-to-talk` is: it is not a session at
  * all, so a change to it is not an epoch of every session.
@@ -15,4 +16,11 @@
  * `scripts/api-contracts.mjs`.
  */
 
-export { type UseDictationOptions, type UseDictationResult, useDictation } from "../../index.ts";
+export {
+  appendDictation,
+  type DictationTranscriberOptions,
+  dictationTranscriber,
+  type UseDictationOptions,
+  type UseDictationResult,
+  useDictation,
+} from "../../index.ts";

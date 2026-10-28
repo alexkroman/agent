@@ -63,7 +63,7 @@
  * for raw callers — either way a caller only ever sees their own projects.
  */
 
-import type { transcribeDictation } from "@alexkroman1/aai/experimental";
+import type { DictationFetch } from "@alexkroman1/aai/experimental";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { zValidator } from "@hono/zod-validator";
 import { authMw, userApiKeySecretName } from "aai-server/http";
@@ -116,8 +116,8 @@ export type StudioRouteOptions = {
   broker?: typeof createStudioSessionBroker;
   /** Test seam: swap the project-preview wake (studio-preview-wake.ts). */
   wakePreview?: typeof wakeProjectPreview;
-  /** Test seam: swap the dictation call (studio-dictation-routes.ts). */
-  transcribe?: typeof transcribeDictation | undefined;
+  /** Test seam: the transport to the dictation API (studio-dictation-routes.ts). */
+  dictationFetch?: DictationFetch | undefined;
   /**
    * Cross-replica studio session registry + this replica's identity. Both or
    * neither: the registry's `owner` checks are meaningless without a distinct
@@ -236,7 +236,7 @@ export function createStudioRoutes(options: StudioRouteOptions): {
   registerDictationRoutes(studio, {
     requestScope,
     dictation: limits.dictation,
-    ...omitUndefined({ transcribe: options.transcribe }),
+    ...omitUndefined({ dictationFetch: options.dictationFetch }),
   });
 
   /** See studio-settled-edit.ts — what an out-of-turn workspace write owes. */

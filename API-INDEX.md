@@ -18,8 +18,8 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 628 names
-- [Browser client](#browser-client) — 209 names
+- [Agent authoring](#agent-authoring) — 631 names
+- [Browser client](#browser-client) — 212 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
 - [Framework internals](#framework-internals) — 520 names
@@ -157,6 +157,8 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `DialogToolResult` | interface | `@alexkroman1/aai` |  | What a `Dialog.tool` answers on success. |
 | `DialogVoiceConfig` | interface | `@alexkroman1/aai` |  | The per-state voice settings a dialog declares — what `Dialog.voiceConfig` answers with, from the deepest active state that declares any of them. |
 | `DictationFetch` | type | `@alexkroman1/aai/experimental` |  | The `fetch` shape `transcribeDictation` calls. |
+| `DictationRequestOptions` | type | `@alexkroman1/aai/experimental` |  | What `handleDictationRequest` accepts: the call's own options, minus the two it reads off the request. |
+| `DictationResponseBody` | type | `@alexkroman1/aai/experimental` |  | The JSON body `handleDictationRequest` answers with. |
 | `DurableTranscript` | type | `@alexkroman1/aai/step` | `aai:transcribe` | What `transcribeUploadDurably` resolves with: the transcript, plus what the recording was CALLED. |
 | `EmptyWorkflows` | type | `@alexkroman1/aai` |  | What `W` is when a declaration names no `workflows`: the map with NO keys, not the open one. |
 | `EnvContext` | type | `@alexkroman1/aai/step` | `aai:step` | The part of a context a helper needs to reach an outside service: the agent's env, and a signal to stop on. |
@@ -466,6 +468,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `formatBytes` | function | `@alexkroman1/aai/utils` | `aai:utils` | A byte count at the scale a person reads it: `"17.7 MB"`, `"110 KB"`, `"512 B"`. |
 | `formatDuration` | function | `@alexkroman1/aai/utils` | `aai:utils` | A duration as a clock reading: `"4:09"` under an hour, `"1:04:09"` over one. |
 | `formatMoney` | function | `@alexkroman1/aai/utils` | `aai:utils` | `$1,234.00` — an amount of money, grouped in threes and always to the cent. |
+| `handleDictationRequest` | function | `@alexkroman1/aai/experimental` |  | Answer one dictation request: the clip in the body, the text in the reply. |
 | `hashCode` | function | `@alexkroman1/aai` | `aai:spoken` | The SHA-256 of `code`, as lower-case hex — what to STORE for a one-time code instead of the code itself. |
 | `htmlToText` | function | `@alexkroman1/aai/html` | `aai:html` | Markup as the prose inside it. |
 | `instructionOf` | function | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) | `aai:utils` | The instruction a tool result carries, or `undefined` when it carries none. |
@@ -734,6 +737,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `WorkflowSubmissionScope` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Who can find the run again — the lifetime of the key it was recorded under. |
 | `WorkflowSubmissionTiming` | type | `@alexkroman1/aai-ui` | `aai-ui:workflow` | The two marks a submission's wall clock is read from — press to settle, across the upload, the run, and the gap between them, which no server-side number can … |
 | `WorkflowSummary` | type | `@alexkroman1/aai-ui` (also `@alexkroman1/aai/workflow-api`) | `aai-ui:workflow` | One declared workflow, as `GET /workflows` lists it. |
+| `appendDictation` | function | `@alexkroman1/aai-ui` | `aai-ui:dictation` | `draft` with `text` added after it, joined by exactly one space: a draft ending in whitespace or a newline does not grow a double space, and an empty or blank … |
 | `browserClientId` | function | `@alexkroman1/aai-ui` | `aai-ui:session` | This browser's stable client id for the agent at `platformUrl` — `browser-<32 hex>`, minted once and kept in `localStorage`. |
 | `browserSessionBrand` | const | `@alexkroman1/aai-ui` | `aai-ui:session` | The seal on a `BrowserSession`. |
 | `createBrowserSession` | function | `@alexkroman1/aai-ui` | `aai-ui:session` | Create a framework-agnostic voice session core that connects to an AAI server via WebSocket. |
@@ -742,6 +746,7 @@ The React client an agent's page is built from (`@alexkroman1/aai-ui`).
 | `createStoredValue` | function | `@alexkroman1/aai-ui` | `aai-ui:client-storage` | A string remembered in this browser under `key` — see this module's doc. |
 | `createWorkflowApi` | function | `@alexkroman1/aai-ui` | `aai-ui:workflow` | Create a client for the agent serving this page. |
 | `defaultClientDir` | function | `@alexkroman1/aai-ui/client-dir` | `aai-ui:client-dir` | Absolute path to the prebuilt browser client's static files — pass it to `createServerForRuntime`/`createAgentServer` as `clientDir`. |
+| `dictationTranscriber`, `DictationTranscriberOptions` | function | `@alexkroman1/aai-ui` | `aai-ui:dictation` | A `transcribe` for `useDictation` that POSTs each clip to `url` and reads the `{ text } \| { error }` reply `handleDictationRequest` answers with. |
 | `fetchClientConfig`, `FetchClientConfigOptions` | function | `@alexkroman1/aai-ui` | `aai-ui:page` | Fetch the agent's declared `name`, `greeting` and front door; any failure yields the agent default (`{}`). |
 | `fieldKindFor` | function | `@alexkroman1/aai-ui` | `aai-ui:forms` | Which control `<WorkflowFields>` renders for one property of an input schema. |
 | `inboxEventToItem` | function | `@alexkroman1/aai-ui` | `aai-ui:conversation-log` | The log item for one frame of a client's live conversation — what `useInbox({ onEvent })` delivers for another session of the same client (a device's, when the … |

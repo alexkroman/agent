@@ -210,31 +210,36 @@ export function ConfirmTool({ ask }: { ask: (question: string) => Promise<boolea
 }
 ```
 
-**`useDictation`** — speak into a text box: records one clip, hands it to YOUR
+**`useDictation`** — speak into a text box: records one clip, hands it to a
 `transcribe` callback, and gives back the words. It is not a session, so it
-works on any page. The callback posts the clip to your own server, which calls
-`transcribeDictation(audio, { apiKey })` from `@alexkroman1/aai/experimental`
-(AssemblyAI's dictation API) — never call that from the browser, it would ship
-your key in the page:
+works on any page. The clip goes to your own server, never straight to
+AssemblyAI (that would ship your key in the page): mount
+`handleDictationRequest(request, { apiKey })` from
+`@alexkroman1/aai/experimental` on any server that takes a web `Request`
+(Next.js, Hono, Deno, Workers) — it caps the body, calls the dictation API and
+answers `{ text }` or `{ error }`. Not on `agent({ routes })`, whose 64 KB JSON
+bodies hold about a second of audio. On the page, `dictationTranscriber(url)` is
+the matching `transcribe`, `appendDictation` adds the words to a draft, and
+`buttonProps` keeps a recording stoppable while `disabled`:
 
 ```tsx
-import { useDictation } from "@alexkroman1/aai-ui";
+import { appendDictation, dictationTranscriber, useDictation } from "@alexkroman1/aai-ui";
 import { useState } from "react";
 
-export function SpokenNote() {
+const transcribe = dictationTranscriber("/api/dictation");
+
+export function SpokenNote({ busy }: { busy: boolean }) {
   const [draft, setDraft] = useState("");
   const dictation = useDictation({
-    transcribe: async (audio, { signal }) => {
-      const res = await fetch("api/dictation", { method: "POST", body: audio, signal });
-      return ((await res.json()) as { text: string }).text;
-    },
-    onText: (text) => setDraft((d) => (d ? `${d} ${text}` : text)),
+    transcribe,
+    onText: (text) => setDraft((d) => appendDictation(d, text)),
+    disabled: busy,
   });
   return (
     <div>
       <textarea value={draft} onChange={(e) => setDraft(e.target.value)} />
       {dictation.supported && (
-        <button type="button" onClick={dictation.toggle}>
+        <button type="button" {...dictation.buttonProps}>
           {dictation.phase === "recording" ? "Stop" : "Speak"}
         </button>
       )}
