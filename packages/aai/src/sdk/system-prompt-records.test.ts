@@ -33,6 +33,15 @@ describe("buildSystemPrompt — records and lookups", () => {
     expect(ladder.indexOf("Send the letters, never the words")).toBeGreaterThan(asWords);
   });
 
+  // tau2 retail tasks 20, 36, 37: "cheapest"/"most expensive" was taken among
+  // variants matching the current item's options, or an unavailable one.
+  test("a best-of choice spans every available variant, holding only what the caller fixed", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    expect(result).toContain("across EVERY variant the record lists that is available");
+    expect(result).toContain("Hold fixed only what the caller said\n  must stay");
+    expect(result).toContain("marks unavailable");
+  });
+
   // The agent told the caller a value "isn't on file" because the record they
   // named lacked it — while another result it had already fetched held it —
   // and elsewhere wrote an address built from two records' fields.
