@@ -17,51 +17,46 @@
  * SDK's clocks use, so `isStallTimeout` reads both alike. The FIRST-chunk clock
  * stays the SDK's: it is cleared by the first output chunk, so it is never armed
  * while a tool runs.
+ *
+ * A model given by ID cannot be wrapped (`wrapLanguageModel` takes an object;
+ * the SDK resolves an id itself), so it keeps the SDK's `chunkMs`: tool time
+ * counts against it, which still beats no mid-stream deadline at all.
  */
 
 import { type LanguageModel, type LanguageModelMiddleware, wrapLanguageModel } from "ai";
-
-/** The request's model and signal, with the chunk clock folded into both. */
-export type ChunkWatchdog = { model: LanguageModel; signal: AbortSignal };
+import { createCoalescingTimer } from "../../../_timer.ts";
 
 /**
  * Wrap `model` so a gap of `ms` between two of its stream chunks aborts the
- * request. A model given by id (a string) has no stream to wrap and is
- * returned as-is: the first-chunk clock still covers it.
- *
- * @internal
+ * request. Answers the request's model and signal, and the SDK `chunkMs` to
+ * set — present only for a model given by id, which cannot be wrapped.
  */
 export function withChunkWatchdog(
   model: LanguageModel,
   ms: number,
   signal: AbortSignal,
-): ChunkWatchdog {
-  if (typeof model === "string") return { model, signal };
+): { model: LanguageModel; signal: AbortSignal; chunkMs?: number } {
+  if (typeof model === "string") return { model, signal, chunkMs: ms };
   const stall = new AbortController();
   const middleware: LanguageModelMiddleware = {
     wrapStream: async ({ doStream }) => {
       const { stream, ...rest } = await doStream();
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const disarm = () => clearTimeout(timer);
-      const arm = () => {
-        disarm();
-        timer = setTimeout(
-          () => stall.abort(new DOMException(`Chunk timeout of ${ms}ms exceeded`, "TimeoutError")),
-          ms,
-        );
-      };
-      signal.addEventListener("abort", disarm, { once: true });
+      // Re-armed on every chunk: the coalescing timer keeps ONE pending timeout.
+      const clock = createCoalescingTimer(() =>
+        stall.abort(new DOMException(`Chunk timeout of ${ms}ms exceeded`, "TimeoutError")),
+      );
+      signal.addEventListener("abort", clock.clear, { once: true });
       return {
         ...rest,
         stream: stream.pipeThrough(
           new TransformStream({
             transform(chunk, controller) {
-              arm();
+              clock.arm(ms);
               controller.enqueue(chunk);
             },
             flush() {
-              disarm();
-              signal.removeEventListener("abort", disarm);
+              clock.clear();
+              signal.removeEventListener("abort", clock.clear);
             },
           }),
         ),

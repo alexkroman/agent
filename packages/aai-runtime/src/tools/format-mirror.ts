@@ -61,7 +61,7 @@ import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 export const FORMAT_MISMATCH_REASON = "format_mismatch";
 
 type Shape = {
-  id: string;
+  /** Unique per shape, so it is also the shape's identity. */
   describe: string;
   /** Is `value` this kind of value, written in another form? See the module doc. */
   misshapen: (value: string) => boolean;
@@ -73,20 +73,18 @@ const CAPITALIZED_NAME = /^[A-Z][a-z]+(?:[ .'-]+[A-Za-z][a-z]*)*$/;
 function shapeOf(value: string): Shape | undefined {
   if (/^[A-Z]{2,3}$/.test(value)) {
     return {
-      id: `caps${value.length}`,
       describe: `${value.length} capital letters`,
       misshapen: (arg) => CAPITALIZED_NAME.test(arg),
     };
   }
   if (/^\d+$/.test(value)) {
     return {
-      id: `digits${value.length}`,
       describe: `${value.length} digits`,
       misshapen: (arg) => /^\d+$/.test(arg),
     };
   }
   if (/^#W\d+$/.test(value)) {
-    return { id: "hash-w", describe: '"#W" and digits', misshapen: (arg) => /^#?W?\d+$/.test(arg) };
+    return { describe: '"#W" and digits', misshapen: (arg) => /^#?W?\d+$/.test(arg) };
   }
   return undefined;
 }
@@ -108,7 +106,7 @@ function observe(value: unknown, seen: Seen): void {
     const shape = shapeOf(field);
     const prior = seen.get(key);
     if (prior === null) continue;
-    if (shape === undefined || (prior !== undefined && prior.shape.id !== shape.id)) {
+    if (shape === undefined || (prior !== undefined && prior.shape.describe !== shape.describe)) {
       seen.set(key, null);
     } else if (prior === undefined) {
       seen.set(key, { shape, example: field });
@@ -120,8 +118,10 @@ type HistoryMessage = { role: string; content?: unknown };
 
 /**
  * See this module's doc. One per conversation; not safe to share across
- * sessions. Scoped like `FailedCallMemo`: a history that SHRANK is a new
- * conversation, and everything observed is dropped.
+ * sessions. A snapshot sharing NO message with what was read before is a new
+ * conversation (a reset), and everything observed is dropped. Not a shorter
+ * one: retention trims a long session's history from the front, and treating
+ * that as a reset re-parsed the whole window and forgot every refusal.
  *
  * @internal
  */
@@ -129,9 +129,9 @@ export class FormatMirror {
   #seen: Seen = new Map();
   /** Refusals already answered — by this mirror, or found in the history. */
   readonly #refused = new Set<string>();
-  /** History messages already read, so each is parsed once. */
+  /** History messages already read, so each is parsed once — and a reset is recognized. */
   #read = new WeakSet<object>();
-  #historyLength = 0;
+  #readAny = false;
 
   /**
    * The refusal for `args`, or `undefined` to let the call run. `history` is
@@ -147,7 +147,8 @@ export class FormatMirror {
       if (typeof value !== "string") continue;
       const field = this.#seen.get(key);
       if (field === undefined || field === null) continue;
-      if (shapeOf(value)?.id === field.shape.id || !field.shape.misshapen(value)) continue;
+      if (shapeOf(value)?.describe === field.shape.describe || !field.shape.misshapen(value))
+        continue;
       const refusal = serializeToolFailure(
         `Not sent: ${name} had "${key}" as ${JSON.stringify(value)}, but every record so far ` +
           `writes "${key}" like ${JSON.stringify(field.example)} (${field.shape.describe}). ` +
@@ -162,22 +163,34 @@ export class FormatMirror {
     return undefined;
   }
 
-  /** A settled call's own result, whole — before the history's copy is capped. */
-  observeResult(result: string): void {
+  /**
+   * A settled call's own result, whole — before `recorded`, the history's
+   * copy, is capped. That copy is marked read, so it is not parsed again.
+   */
+  observeResult(result: string, recorded: object): void {
+    this.#markRead(recorded);
     observe(safeJsonParse(result), this.#seen);
   }
 
+  #markRead(message: object): void {
+    this.#read.add(message);
+    this.#readAny = true;
+  }
+
   #readHistory(history: readonly HistoryMessage[]): void {
-    if (history.length < this.#historyLength) {
+    // Empty is not a reset: a subagent's and `TextAgent.tools`' views always
+    // are, and their own results (`observeResult`) are all they have.
+    const fresh = !history.some((message) => this.#read.has(message));
+    if (this.#readAny && history.length > 0 && fresh) {
       this.#seen = new Map();
       this.#refused.clear();
       this.#read = new WeakSet();
+      this.#readAny = false;
     }
-    this.#historyLength = history.length;
     for (const message of history) {
-      if (message.role !== "tool" || this.#read.has(message)) continue;
-      this.#read.add(message);
-      if (typeof message.content !== "string") continue;
+      if (this.#read.has(message)) continue;
+      this.#markRead(message);
+      if (message.role !== "tool" || typeof message.content !== "string") continue;
       // Only refusals are kept — every result would hold the whole history.
       if (message.content.includes(FORMAT_MISMATCH_REASON)) this.#refused.add(message.content);
       observe(safeJsonParse(message.content), this.#seen);

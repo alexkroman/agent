@@ -6,6 +6,7 @@ import type { JSONSchema7 } from "json-schema";
 import { describe, expect, test, vi } from "vitest";
 import { FatalToolError } from "./error-policy.ts";
 import { FailedCallMemo } from "./failed-call-memo.ts";
+import { FormatMirror } from "./format-mirror.ts";
 import { TOOL_INSTRUCTION_LABEL } from "./result-instruction.ts";
 import { runToolCall, type ToolCallContext } from "./run-tool-call.ts";
 
@@ -22,6 +23,7 @@ function context(executeTool: ExecuteTool, history: Message[] = []) {
     messages: () => history,
     parameters: (name) => (name === "count" ? PARAMS : undefined),
     recordToolResult: (m) => recorded.push(m),
+    formatMirror: new FormatMirror(),
   };
   return { ctx, recorded };
 }

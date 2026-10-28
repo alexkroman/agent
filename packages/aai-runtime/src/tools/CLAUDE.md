@@ -66,9 +66,11 @@ re-implement a step in a caller.
   names match across tools — is answered with the records' form (`"New York"`
   where they say `"CO"`, never `"delivered"` where one says `"OK"`). The
   identical value re-sent after that refusal runs — the records are evidence,
-  not the schema. One `FormatMirror` per session (per turn in text mode) reads
-  each history message once and observes each settled result WHOLE, before
-  `toolResultMessage` caps it (a capped record is not JSON).
+  not the schema. One `FormatMirror` per session (otherwise per tool set, which
+  `toVercelTools` makes) reads each history message once and observes each
+  settled result WHOLE, before `toolResultMessage` caps it (a capped record is
+  not JSON). A snapshot sharing no message with the last is a reset; one merely
+  SHORTER is retention trimming the front, and keeps everything.
 - **A call that already failed with the same arguments never runs again.** The
   session's `FailedCallMemo` (`failed-call-memo.ts`, one per pipeline session
   and one per S2S session) refuses it BEFORE the hook and `executeTool` — so no

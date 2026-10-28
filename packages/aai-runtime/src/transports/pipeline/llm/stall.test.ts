@@ -96,11 +96,14 @@ describe("withChunkWatchdog", () => {
     expect(watched.signal.aborted).toBe(true);
   });
 
-  test("a model given by id is passed through untouched", () => {
+  // An id cannot be wrapped, so it keeps the SDK's own between-chunks clock
+  // rather than losing a mid-stream deadline altogether.
+  test("a model given by id is passed through, with the SDK's chunk clock", () => {
     const signal = new AbortController().signal;
     expect(withChunkWatchdog("openai/gpt-5", 100, signal)).toEqual({
       model: "openai/gpt-5",
       signal,
+      chunkMs: 100,
     });
   });
 });

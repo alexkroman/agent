@@ -80,7 +80,6 @@ import {
   createToolDispatcher,
   executeToolCall,
   type FatalToolLatch,
-  FormatMirror,
   mergeBuiltinSurface,
   pairToolCallsLogged,
   toVercelTools,
@@ -337,8 +336,6 @@ export function createHostTextAgent(options: TextAgentOptions): HostTextAgent {
       recordToolResult: (message) => {
         view.push(message);
       },
-      // Per turn, like the view it reads.
-      formatMirror: new FormatMirror(),
     });
   };
 

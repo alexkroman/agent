@@ -107,15 +107,29 @@ describe("FormatMirror, held by a session", () => {
   test("a record too large for the history's capped copy is still observed", () => {
     const mirror = new FormatMirror();
     const whole = JSON.stringify({ ...user, orders: "x".repeat(20_000) });
-    mirror.observeResult(whole);
     // The history holds a truncated, unparseable copy.
-    const history = [{ role: "tool", content: whole.slice(0, 16_000) }];
+    const recorded = { role: "tool", content: whole.slice(0, 16_000) };
+    mirror.observeResult(whole, recorded);
+    const history = [recorded];
     expect(mirror.refuse("modify_user_address", { state: "New York" }, history)).toBeDefined();
   });
 
-  test("a history that shrank is a new conversation: what was observed is dropped", () => {
+  test("a history sharing no message with the last is a new conversation", () => {
     const mirror = new FormatMirror();
-    expect(mirror.refuse("x", { state: "New York" }, [tool(user), tool({})])).toBeDefined();
-    expect(mirror.refuse("x", { state: "New York" }, [])).toBeUndefined();
+    expect(mirror.refuse("x", { state: "New York" }, [tool(user)])).toBeDefined();
+    // A reset: nothing observed before carries over, so nothing qualifies.
+    expect(mirror.refuse("x", { state: "Texas" }, [tool({ note: "hi" })])).toBeUndefined();
+  });
+
+  // Retention trims a long session from the front. That is the same
+  // conversation: its records and refusals still count.
+  test("a history trimmed from the front keeps what was observed", () => {
+    const mirror = new FormatMirror();
+    const record = tool(user);
+    const later = tool({ note: "hi" });
+    expect(mirror.refuse("x", { state: "New York" }, [record, later])).toBeDefined();
+    const trimmed = [later];
+    expect(mirror.refuse("x", { state: "New York" }, trimmed)).toBeUndefined();
+    expect(mirror.refuse("x", { state: "Texas" }, trimmed)).toBeDefined();
   });
 });

@@ -167,7 +167,7 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     // LLM_STALL_TIMEOUT_MS. Only the FIRST-chunk clock is the SDK's: its
     // `chunkMs` stays armed while a step's tools run and aborts them, so the
     // between-chunks clock is `withChunkWatchdog`'s, which never counts tool time.
-    timeout: { firstChunkMs: stallMs },
+    timeout: { firstChunkMs: stallMs, ...omitUndefined({ chunkMs: watched.chunkMs }) },
     onStepFinish: (step) => {
       // The provider's own counts, folded in before the messages: a step that
       // completes has been billed whether or not the turn survives to use it.
@@ -365,8 +365,7 @@ function isQuietStall(
     retried: boolean;
   },
 ): boolean {
-  if (pass.retried || pass.signal.aborted || pass.progress.output) return false;
-  if (pass.errored) return false;
+  if (pass.retried || pass.signal.aborted || pass.progress.output || pass.errored) return false;
   if (pass.collected.length > 0) return false;
   return isStallTimeout(err);
 }
@@ -382,14 +381,6 @@ function isStallTimeout(err: unknown): boolean {
   let text = typeof err === "string" ? err : "";
   if (err instanceof Error) text = `${err.name}: ${err.message}`;
   return /^TimeoutError: .*chunk timeout/i.test(text);
-}
-
-/** The pass's trace: a stall retry's carried one, else a fresh one. */
-function passTrace(
-  carried: TurnTrace | undefined,
-  deps: Parameters<typeof createTurnTrace>[0],
-): TurnTrace {
-  return carried ?? createTurnTrace(deps);
 }
 
 /**
@@ -450,7 +441,9 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
   // the copy, since the speculation's own `collected` is behind the tape.
   const collected: ModelMessage[] = [];
   // The current pass's trace, reported in `finally` on every path that does
-  // not report it first (idempotent).
+  // not report it first (idempotent). A stall retry is the SAME turn, so it
+  // keeps the stalled pass's trace and reports one timing, from the first send;
+  // a poisoned-adoption restart reports its own and starts a fresh one.
   let trace: TurnTrace | undefined;
   try {
     // At most two passes: the adopted tape, then — if that tape turns out to
@@ -458,9 +451,6 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     let useAdopted = adopted;
     // At most one stall retry per turn — see `settleOrRetry`.
     let stallRetried = false;
-    // A stall retry is the SAME turn, so it keeps the stalled pass's trace and
-    // reports one timing (from the first send) rather than one per pass.
-    let stalledTrace: TurnTrace | undefined;
     for (;;) {
       const { entries, steps } = openPass(useAdopted, () =>
         startLlmStream({
@@ -511,13 +501,12 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       // only repair: the preamble cannot be spliced onto a fresh request (that
       // is the same request-parity argument that makes adoption legitimate in
       // the first place), so the run is abandoned whole.
-      trace = passTrace(stalledTrace, {
+      trace ??= createTurnTrace({
         log,
         sid,
         adopted: useAdopted !== undefined,
         onDone: params.onLlmTiming,
       });
-      stalledTrace = undefined;
       const progress: { output: boolean; abort?: unknown } = { output: false };
       const { lateToolCall, spokeBeforeRestart } = await drainEntries(entries, handler, {
         adopted: useAdopted !== undefined,
@@ -529,6 +518,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       });
       if (lateToolCall && useAdopted && !signal.aborted) {
         trace.done({ steps: collected.length, aborted: false });
+        trace = undefined;
         handler.dispose();
         useAdopted.abandon();
         useAdopted = undefined;
@@ -573,7 +563,6 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       );
       if (settled === RETRY) {
         stallRetried = true;
-        stalledTrace = trace;
         useAdopted?.abandon();
         useAdopted = undefined;
         ttsText = createTtsTextCoalescer(sendTtsText);
