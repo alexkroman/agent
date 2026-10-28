@@ -23,34 +23,71 @@
  * unambiguous: 2-3 capital letters (`NY`, `USA`), a fixed-length digit string,
  * and `#W` + digits. A field qualifies only when EVERY value seen for it in a
  * tool result has the same one of these shapes — one free-text value anywhere
- * and the field is left alone. Simulated over 6,799 tool calls in every tau2
- * run, it fired 18 times, every one on a malformed argument (a full state name,
- * `"United States"` for a `USA` field, a truncated item id `"984"`, `"?"`), and
- * never on a call that was right.
+ * and the field is left alone.
+ *
+ * **And the argument must be the SAME KIND of value written another way**,
+ * because field names are matched across every tool and nesting level, and one
+ * `{"status": "OK"}` is enough to qualify `status`: a capitals field refuses
+ * only a capitalized name (`"New York"`, `"United States"` — never
+ * `"delivered"`), a digits field only a digit string of another length
+ * (`"984"` — never `"99.50"`), a `#W` field only its digits with a part
+ * missing (`"W123"`, `"123"`). Simulated over 6,799 tool calls in every tau2
+ * run, the shape rule alone fired 18 times, every one on a malformed argument
+ * (a full state name, `"United States"` for a `USA` field, a truncated item id
+ * `"984"`, `"?"`), and never on a call that was right; this narrowing keeps
+ * all of them but the `"?"`, which `arg-precheck.ts` answers first.
  *
  * ## Once, not always
  *
  * A model that re-sends the identical value after this refusal gets it through:
  * the records' form is evidence about the field, not the author's schema, and a
- * tool may well accept both. The earlier refusal is in the history the call
- * already carries, so this needs no state of its own.
+ * tool may well accept both. The refusal is remembered by the session's
+ * {@link FormatMirror} (so a sibling call in the same step, or a later turn's
+ * view that dropped it, is not refused twice) and recognized in the history too
+ * (so a mirror built per turn still honours one an earlier turn made).
+ *
+ * ## Observed incrementally, and from the WHOLE result
+ *
+ * A history message is parsed once per mirror, not on every call. And a result
+ * the call core settles is observed in full, before `toolResultMessage` caps it
+ * at `MAX_TOOL_RESULT_CHARS`: a capped record is no longer JSON, and the largest
+ * records (a profile, an order list) are exactly the ones this exists for.
  */
 
 import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
-import { isRecord } from "@alexkroman1/aai/utils";
+import { isRecord, safeJsonParse } from "@alexkroman1/aai/utils";
 
 /** The refusal's `reason` — open-ended in `ToolRefusalReason`, so no type change. */
 export const FORMAT_MISMATCH_REASON = "format_mismatch";
 
-type Shape = { id: string; describe: string };
+type Shape = {
+  id: string;
+  describe: string;
+  /** Is `value` this kind of value, written in another form? See the module doc. */
+  misshapen: (value: string) => boolean;
+};
+
+/** A capitalized name — "New York", "United States", "Colorado". */
+const CAPITALIZED_NAME = /^[A-Z][a-z]+(?:[ .'-]+[A-Za-z][a-z]*)*$/;
 
 function shapeOf(value: string): Shape | undefined {
   if (/^[A-Z]{2,3}$/.test(value)) {
-    return { id: `caps${value.length}`, describe: `${value.length} capital letters` };
+    return {
+      id: `caps${value.length}`,
+      describe: `${value.length} capital letters`,
+      misshapen: (arg) => CAPITALIZED_NAME.test(arg),
+    };
   }
-  if (/^\d+$/.test(value))
-    return { id: `digits${value.length}`, describe: `${value.length} digits` };
-  if (/^#W\d+$/.test(value)) return { id: "hash-w", describe: '"#W" and digits' };
+  if (/^\d+$/.test(value)) {
+    return {
+      id: `digits${value.length}`,
+      describe: `${value.length} digits`,
+      misshapen: (arg) => /^\d+$/.test(arg),
+    };
+  }
+  if (/^#W\d+$/.test(value)) {
+    return { id: "hash-w", describe: '"#W" and digits', misshapen: (arg) => /^#?W?\d+$/.test(arg) };
+  }
   return undefined;
 }
 
@@ -79,47 +116,71 @@ function observe(value: unknown, seen: Seen): void {
   }
 }
 
-function parsed(content: unknown): unknown {
-  if (typeof content !== "string") return undefined;
-  try {
-    return JSON.parse(content);
-  } catch {
-    return undefined;
-  }
-}
+type HistoryMessage = { role: string; content?: unknown };
 
 /**
- * The refusal for `args`, or `undefined` to let the call run — see this
- * module's doc. `history` is the call's history snapshot.
+ * See this module's doc. One per conversation; not safe to share across
+ * sessions. Scoped like `FailedCallMemo`: a history that SHRANK is a new
+ * conversation, and everything observed is dropped.
  *
  * @internal
  */
-export function formatMismatchRefusal(
-  name: string,
-  args: Readonly<Record<string, unknown>>,
-  history: readonly { role: string; content?: unknown }[],
-): string | undefined {
-  const seen: Seen = new Map();
-  const toolContents: string[] = [];
-  for (const message of history) {
-    if (message.role !== "tool") continue;
-    if (typeof message.content === "string") toolContents.push(message.content);
-    observe(parsed(message.content), seen);
+export class FormatMirror {
+  #seen: Seen = new Map();
+  /** Refusals already answered — by this mirror, or found in the history. */
+  readonly #refused = new Set<string>();
+  /** History messages already read, so each is parsed once. */
+  #read = new WeakSet<object>();
+  #historyLength = 0;
+
+  /**
+   * The refusal for `args`, or `undefined` to let the call run. `history` is
+   * the call's history snapshot.
+   */
+  refuse(
+    name: string,
+    args: Readonly<Record<string, unknown>>,
+    history: readonly HistoryMessage[],
+  ): string | undefined {
+    this.#readHistory(history);
+    for (const [key, value] of Object.entries(args)) {
+      if (typeof value !== "string") continue;
+      const field = this.#seen.get(key);
+      if (field === undefined || field === null) continue;
+      if (shapeOf(value)?.id === field.shape.id || !field.shape.misshapen(value)) continue;
+      const refusal = serializeToolFailure(
+        `Not sent: ${name} had "${key}" as ${JSON.stringify(value)}, but every record so far ` +
+          `writes "${key}" like ${JSON.stringify(field.example)} (${field.shape.describe}). ` +
+          "Send it in that form.",
+        FORMAT_MISMATCH_REASON,
+      );
+      // Refused once: the same refusal already answered an earlier call.
+      if (this.#refused.has(refusal)) continue;
+      this.#refused.add(refusal);
+      return refusal;
+    }
+    return undefined;
   }
-  for (const [key, value] of Object.entries(args)) {
-    if (typeof value !== "string") continue;
-    const field = seen.get(key);
-    if (field === undefined || field === null) continue;
-    if (shapeOf(value)?.id === field.shape.id) continue;
-    const refusal = serializeToolFailure(
-      `Not sent: ${name} had "${key}" as ${JSON.stringify(value)}, but every record so far ` +
-        `writes "${key}" like ${JSON.stringify(field.example)} (${field.shape.describe}). ` +
-        "Send it in that form.",
-      FORMAT_MISMATCH_REASON,
-    );
-    // Refused once: the same refusal already answered an earlier call.
-    if (toolContents.includes(refusal)) continue;
-    return refusal;
+
+  /** A settled call's own result, whole — before the history's copy is capped. */
+  observeResult(result: string): void {
+    observe(safeJsonParse(result), this.#seen);
   }
-  return undefined;
+
+  #readHistory(history: readonly HistoryMessage[]): void {
+    if (history.length < this.#historyLength) {
+      this.#seen = new Map();
+      this.#refused.clear();
+      this.#read = new WeakSet();
+    }
+    this.#historyLength = history.length;
+    for (const message of history) {
+      if (message.role !== "tool" || this.#read.has(message)) continue;
+      this.#read.add(message);
+      if (typeof message.content !== "string") continue;
+      // Only refusals are kept — every result would hold the whole history.
+      if (message.content.includes(FORMAT_MISMATCH_REASON)) this.#refused.add(message.content);
+      observe(safeJsonParse(message.content), this.#seen);
+    }
+  }
 }

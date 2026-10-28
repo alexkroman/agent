@@ -12,6 +12,7 @@ import {
   createFatalToolLatch,
   createToolSpeechController,
   FailedCallMemo,
+  FormatMirror,
   toVercelTools,
   withConfirmationGate,
 } from "../../tools/index.ts";
@@ -338,6 +339,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // Session-scoped like the tool set: an identical failed call is refused
     // before it runs, and a failure lists what was already tried.
     failedCalls: new FailedCallMemo(),
+    formatMirror: new FormatMirror(),
   });
 
   function runChainedTurn(

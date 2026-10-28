@@ -66,7 +66,7 @@ import { isFailedToolResult } from "../_prepare-step.ts";
 import { coerceToolArgs } from "./arg-coercion.ts";
 import { emptyArgsNote, precheckToolArgs } from "./arg-precheck.ts";
 import type { FailedCallMemo } from "./failed-call-memo.ts";
-import { formatMismatchRefusal } from "./format-mirror.ts";
+import { FormatMirror } from "./format-mirror.ts";
 import { splitInstruction, withInstructionForModel } from "./result-instruction.ts";
 import { toolResultMessage } from "./result-message.ts";
 
@@ -101,6 +101,11 @@ export type ToolCallContext = {
    * `TextAgent.tools` set and a subagent run are not a conversation.
    */
   failedCalls?: FailedCallMemo | undefined;
+  /**
+   * The conversation's record formats — see `format-mirror.ts`. Absent, each
+   * call reads its history afresh (a `TextAgent.tools` set has none).
+   */
+  formatMirror?: FormatMirror | undefined;
 };
 
 /** A call that settled with a result the model reads. */
@@ -155,7 +160,7 @@ export async function runToolCall(
   const parameters = ctx.parameters?.(call.name);
   const refusal =
     precheckToolArgs(call.name, input, parameters) ??
-    formatMismatchRefusal(call.name, input, history) ??
+    (ctx.formatMirror ?? new FormatMirror()).refuse(call.name, input, history) ??
     ctx.failedCalls?.refuse(call.name, input, history.length);
   if (refusal !== undefined) {
     // Recorded like any result: the call was made, and this is its answer.
@@ -177,6 +182,8 @@ export async function runToolCall(
   // sees the string — see `result-instruction.ts`.
   const split = splitInstruction(raw);
   const { result } = split;
+  // Whole, before the history's copy is capped — see `format-mirror.ts`.
+  ctx.formatMirror?.observeResult(result);
   // The memo's note rides as an instruction: model copy only, and kept by the
   // pipeline's `toModelOutput`, which recomputes any copy that carries none.
   const memoNote = ctx.failedCalls?.settle(call.name, input, result, history.length);
