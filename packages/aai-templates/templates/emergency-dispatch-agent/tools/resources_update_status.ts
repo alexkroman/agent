@@ -5,6 +5,7 @@ import { callFlow, dispatchSlot, logEvent, RESOURCE_STATUSES } from "../shared.t
 /** Gated on `working`: a unit radios in about an incident, so there has to be
  *  one. Sends nothing — a unit changing status does not move the call. */
 export default dispatchSlot.updateTool({
+  annotations: { readOnlyHint: false },
   description: "Update a resource unit's status when it radios in.",
   dialog: callFlow,
   when: "working",
