@@ -17,7 +17,7 @@ export { pairToolCalls, pairToolCallsInPlace, pairToolCallsLogged } from "./call
 export { createToolCallRepair, salvageJson, type ToolCallRepairOptions } from "./call-repair.ts";
 export type { ClientToolAnswer, ClientToolBroker } from "./client-tool-broker.ts";
 export { createClientToolBroker } from "./client-tool-broker.ts";
-export { withConfirmationGate, writeToolNames } from "./confirmation-gate.ts";
+export { withConfirmationGate } from "./confirmation-gate.ts";
 export type { FatalToolLatch } from "./error-policy.ts";
 export { createFatalToolLatch, FatalToolError, withFatalSignal } from "./error-policy.ts";
 export type {
@@ -29,7 +29,6 @@ export type {
 export { createToolDispatcher, executeToolCall } from "./executor.ts";
 export type { ToolSpeechController } from "./messages-runner.ts";
 export { awaitSpokenEstimate, createToolSpeechController } from "./messages-runner.ts";
-export { TOOL_INSTRUCTION_LABEL } from "./result-instruction.ts";
 export { toolResultMessage } from "./result-message.ts";
 export { stringifyResult } from "./result-text.ts";
 export type { SettledToolCall, ToolCallContext, ToolCallRequest } from "./run-tool-call.ts";

@@ -252,15 +252,10 @@ export type ToolDef<
    * What the tool does to the world. `"write"` declares something that changes
    * state the caller cannot take back by asking — a booking, an order, a
    * cancellation, a message sent, a ticket filed for someone to act on. In a
-   * voice pipeline a declared write:
-   *
-   * - runs only on a caller turn that did not start over the agent's own
-   *   audio: an "uh-huh" spoken over "Shall I cancel it?" is the caller
-   *   listening, not agreeing, and the model is told to ask again instead;
-   * - turns on the session's LEDGER, the latest result of every lookup, sent to
-   *   the model before each step;
-   * - has its identifier arguments (`order_id`, `item_ids`) checked against
-   *   what earlier results contained, refused once when none did.
+   * voice pipeline a declared write runs only on a caller turn that did not
+   * start over the agent's own audio: an "uh-huh" spoken over "Shall I cancel
+   * it?" is the caller listening, not agreeing, and the model is told to ask
+   * again instead.
    *
    * `"read"` or no `effect` runs as an ordinary call. A cart or draft step that
    * a later tool confirms is not a write; the confirming tool is. An MCP tool's

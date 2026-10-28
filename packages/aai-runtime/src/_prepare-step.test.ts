@@ -10,7 +10,6 @@ import {
   createPinRelease,
   forceFinalAnswer,
   isFailedToolResult,
-  markEphemeral,
   PREPARER_ORDER,
   type PreparerStage,
   resetToolChoiceAfterFirstStep,
@@ -100,52 +99,12 @@ describe("composePreparers", () => {
     expect(PREPARER_ORDER).toEqual([
       "caller",
       "context-budget",
-      "ledger",
       "agent-tool-choice",
       "persona",
       "dialog",
       "tool-error-budget",
       "force-final-answer",
     ]);
-  });
-
-  test("a later stage sees the messages an earlier one returned", async () => {
-    // The ledger appends to the list the budget TRIMMED; without chaining, the
-    // two would each start from the input and the later one would erase the trim.
-    const appended: ModelMessage = { role: "system", content: "records" };
-    const ledger = ({ messages }: { messages: ModelMessage[] }) => ({
-      messages: [...messages, appended],
-    });
-    const result = await composePreparers([
-      { stage: "ledger", prepare: ledger },
-      { stage: "context-budget", prepare: budget },
-    ])(step());
-    expect(result?.messages).toEqual([...trimmed, appended]);
-  });
-
-  test("an ephemeral message is stripped before any stage sees the list", async () => {
-    // The SDK carries a step's messages override into the next step, so last
-    // step's ledger arrives here — and must not pile up under this step's.
-    const user: ModelMessage = { role: "user", content: "hi" };
-    const stale = markEphemeral<ModelMessage>({ role: "system", content: "old records" });
-    const seen: ModelMessage[][] = [];
-    const result = await composePreparers([
-      {
-        stage: "dialog",
-        prepare: ({ messages }) => {
-          seen.push(messages);
-        },
-      },
-    ])(step({ messages: [user, stale] }));
-    expect(seen).toEqual([[user]]);
-    // Sent stripped even though no stage overrode the list.
-    expect(result?.messages).toEqual([user]);
-  });
-
-  test("with nothing ephemeral and no override, the list is left alone", async () => {
-    expect(
-      await composePreparers([{ stage: "force-final-answer", prepare: forceFinal }])(step()),
-    ).toEqual({ toolChoice: "none" });
   });
 
   test("a stage registered twice is refused at construction", () => {

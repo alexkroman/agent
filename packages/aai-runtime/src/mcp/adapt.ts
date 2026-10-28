@@ -50,9 +50,9 @@ export type DiscoveredTool = {
 /**
  * An MCP tool's {@link ToolEffect}, by MCP's own rule: `readOnlyHint` DEFAULTS
  * to false — a tool may modify its environment unless its server says it does
- * not — so only `readOnlyHint: true` is a read. An unannotated tool is a write:
- * the confirmation gate, the ledger and the grounding check treat it as one,
- * which is the safe direction for a third party's tool. The hint is the
+ * not — so only `readOnlyHint: true` is a read. An unannotated tool is a write,
+ * and the confirmation gate treats it as one, which is the safe direction for
+ * a third party's tool. The hint is the
  * server's word, not a guarantee, and the AI SDK's MCP client carries it on
  * `tool.metadata.annotations`.
  */

@@ -14,18 +14,12 @@ import {
   ToolCallGuards,
   toVercelTools,
   withConfirmationGate,
-  writeToolNames,
 } from "../../tools/index.ts";
 import { createEmitError } from "../emit-error.ts";
 import { resolveSystemPrompt, type Transport } from "../types.ts";
 import { createPipelineCommands } from "./commands.ts";
 import { createHeardTracker } from "./heard/index.ts";
-import {
-  createContextBudget,
-  createHeardHistory,
-  createLedgerStep,
-  createPipelineHistory,
-} from "./history/index.ts";
+import { createContextBudget, createHeardHistory, createPipelineHistory } from "./history/index.ts";
 import { createDialogKnobs, createPersonaStep } from "./knobs/index.ts";
 import { createPipelineLifecycle } from "./lifecycle.ts";
 import { createTurnLlmRunner, type SharedLlmRequest } from "./llm/index.ts";
@@ -63,7 +57,7 @@ export type { PipelineTransportOptions } from "./options.ts";
 function buildSharedLlmRequest(
   opts: PipelineTransportOptions,
   resolved: ReturnType<typeof resolvePipelineOptions>,
-  step: Pick<SharedLlmRequest, "dialogStep" | "personaStep" | "contextBudget" | "ledgerStep">,
+  step: Pick<SharedLlmRequest, "dialogStep" | "personaStep" | "contextBudget">,
 ): SharedLlmRequest {
   const usage = opts.usage;
   return {
@@ -78,7 +72,6 @@ function buildSharedLlmRequest(
     personaStep: step.personaStep,
     maxSteps: resolved.maxSteps,
     contextBudget: step.contextBudget,
-    ledgerStep: step.ledgerStep,
     log: resolved.log,
     sid: opts.sid,
   };
@@ -178,15 +171,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     now: opts.heardNow,
   });
 
-  // A ledger only for a tool set that DECLARES a write — see `history/ledger.ts`.
-  const writeTools = writeToolNames(toolSchemas);
   const llmRequest = buildSharedLlmRequest(opts, resolved, {
     dialogStep: knobs.dialogStep,
     personaStep,
     contextBudget,
-    // The records the model's own lookups returned, rebuilt from history
-    // before every step — see `history/ledger.ts`.
-    ledgerStep: writeTools.size > 0 ? createLedgerStep(writeTools, log, opts.sid) : undefined,
   });
 
   // PREEMPTIVE GENERATION (OFF by default). Constructed before the speech

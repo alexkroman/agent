@@ -12,7 +12,6 @@ import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";
 import { compactRecordsForModel } from "../_compact-records.ts";
 import { ToolCallGuards } from "./call-guards.ts";
-import { writeToolNames } from "./confirmation-gate.ts";
 import { type FatalToolError, isFatalToolError } from "./error-policy.ts";
 import type { ToolSpeechController } from "./messages-runner.ts";
 import { runToolCall, type SettledToolCall, type ToolCallContext } from "./run-tool-call.ts";
@@ -93,7 +92,6 @@ export function toVercelTools(
     parameters: (name) => parameters.get(name),
     recordToolResult: ctx.recordToolResult,
     guards: ctx.guards ?? new ToolCallGuards({ rememberFailures: false }),
-    writeTools: writeToolNames(schemas),
   };
   for (const schema of schemas) {
     out[schema.name] = tool({
