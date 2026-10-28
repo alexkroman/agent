@@ -35,3 +35,4 @@ export type { SettledToolCall, ToolCallContext, ToolCallRequest } from "./run-to
 export { runToolCall } from "./run-tool-call.ts";
 export { toDeclaredTools, toVercelTools } from "./to-vercel-tools.ts";
 export { withToolsDir } from "./tools-dir.ts";
+export { verifyWrite, withWriteVerification } from "./write-verifier.ts";

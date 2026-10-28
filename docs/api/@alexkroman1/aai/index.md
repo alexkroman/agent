@@ -227,6 +227,7 @@ function agent<W extends Readonly<Record<string, WorkflowDef>> = EmptyWorkflows>
   | "turnTaking"
   | "interruption"
   | "silence"
+  | "writes"
   | "errorPhrase"
   | "startFailurePhrase"
   | "inputGuardrails"
@@ -272,6 +273,7 @@ Define a speech-to-speech agent: `mode: "s2s"` and its `s2s` descriptor. See
   \| `"turnTaking"`
   \| `"interruption"`
   \| `"silence"`
+  \| `"writes"`
   \| `"errorPhrase"`
   \| `"startFailurePhrase"`
   \| `"inputGuardrails"`
@@ -5177,6 +5179,36 @@ therefore never reads this record: a page's `GET /workflows` listing is
 served by the GUEST from its own live agent definition, the same way
 `name`/`greeting` are proxied rather than read from the stored config.
 
+##### writes?
+
+```ts
+optional writes?: {
+  verify?: boolean;
+};
+```
+
+Safeguards on tools declared as writes (`annotations: { readOnlyHint:
+false }`). `verify: true` checks each one before it runs with a separate
+model call: does it do exactly what the caller asked for and agreed to, on
+the records as fetched? A specific mismatch (quoting the caller or citing a
+tool result) is handed back to the model instead of running the write; the
+same call made again runs. Costs one model call per write, under a timeout
+that passes the write when exceeded. Off by default while it is measured.
+
+###### verify?
+
+```ts
+optional verify?: boolean;
+```
+
+###### Default Value
+
+`{ verify: false }`
+
+###### Inherited from
+
+[`PipelineTuning`](#pipelinetuning).[`writes`](#writes-2)
+
 ***
 
 ### AgentDef
@@ -6173,6 +6205,36 @@ served by the GUEST from its own live agent definition, the same way
 ###### Inherited from
 
 [`AgentDeclaration`](#agentdeclaration).[`workflows`](#workflows)
+
+##### writes?
+
+```ts
+optional writes?: {
+  verify?: boolean;
+};
+```
+
+Safeguards on tools declared as writes (`annotations: { readOnlyHint:
+false }`). `verify: true` checks each one before it runs with a separate
+model call: does it do exactly what the caller asked for and agreed to, on
+the records as fetched? A specific mismatch (quoting the caller or citing a
+tool result) is handed back to the model instead of running the write; the
+same call made again runs. Costs one model call per write, under a timeout
+that passes the write when exceeded. Off by default while it is measured.
+
+###### verify?
+
+```ts
+optional verify?: boolean;
+```
+
+###### Default Value
+
+`{ verify: false }`
+
+###### Inherited from
+
+[`AgentDeclaration`](#agentdeclaration).[`writes`](#writes)
 
 ***
 
@@ -9749,6 +9811,32 @@ optional turnTaking?: TurnTakingTuning;
 ```
 
 When the caller's turn ends — see [TurnTakingTuning](#turntakingtuning).
+
+##### writes?
+
+```ts
+optional writes?: {
+  verify?: boolean;
+};
+```
+
+Safeguards on tools declared as writes (`annotations: { readOnlyHint:
+false }`). `verify: true` checks each one before it runs with a separate
+model call: does it do exactly what the caller asked for and agreed to, on
+the records as fetched? A specific mismatch (quoting the caller or citing a
+tool result) is handed back to the model instead of running the write; the
+same call made again runs. Costs one model call per write, under a timeout
+that passes the write when exceeded. Off by default while it is measured.
+
+###### verify?
+
+```ts
+optional verify?: boolean;
+```
+
+###### Default Value
+
+`{ verify: false }`
 
 ***
 

@@ -96,6 +96,7 @@ export default agent({
     deadAirCoverMs?: number;                 // filler after this much silence IN a turn (default 2400; 0 off)
     nudge?: { afterMs: number; prompt?: string }; // speak up after this much USER silence
   };
+  writes?: { verify?: boolean };             // check each declared write against the call first (default off)
   errorPhrase?: string;                      // spoken when a turn's LLM stream fails ("" disables)
   startFailurePhrase?: string;               // spoken when a provider fails to open ("" disables)
   inputGuardrails?: AgentGuardrail[];        // judge each committed caller utterance; a returned

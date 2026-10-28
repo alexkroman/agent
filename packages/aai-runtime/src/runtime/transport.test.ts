@@ -236,6 +236,7 @@ describe("createTransportFactory (pipeline)", () => {
     ["turnDetection", { turnTaking: { detection: "manual" } }, "manual"],
     ["startSpeakingFloorMs", { turnTaking: { startSpeakingFloorMs: 400 } }, 400],
     ["deadAirCoverMs", { silence: { deadAirCoverMs: 2500 } }, 2500],
+    ["verifyWrites", { writes: { verify: true } }, true],
     ["silenceTimeoutMs", { silence: { nudge: { afterMs: 8000 } } }, 8000],
     [
       "silencePrompt",

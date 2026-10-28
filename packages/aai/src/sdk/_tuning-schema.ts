@@ -86,6 +86,14 @@ export const InterruptionSchema = z.union([
 ]);
 
 /** @internal */
+export const WritesSchema: z.ZodObject<{ verify: z.ZodOptional<z.ZodBoolean> }, z.core.$strict> = z
+  .object({ verify: z.boolean().optional() })
+  .strict();
+
+/** `AgentConfigSchema.writes`, already optional and explicitly typed. @internal */
+export const WritesFieldSchema: z.ZodOptional<typeof WritesSchema> = WritesSchema.optional();
+
+/** @internal */
 export const SilenceSchema = z
   .object({
     deadAirCoverMs: z.number().int().nonnegative().optional(),
