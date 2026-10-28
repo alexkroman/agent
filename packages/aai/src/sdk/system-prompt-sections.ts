@@ -267,15 +267,34 @@ export const PROMPT_SPEAKING = `\
  * PROMPT_TOOLS owns the whole procedure now; this section owns only how to
  * READ what arrived.
  *
- * The re-collection bullet is the other half. Nothing anywhere said when to
- * ASK for a spelling — only how to normalize one and how to read one back — so
- * a "have them spell everything" instruction met no default at all. And the
- * round trip does not pay for itself: across five tau2-bench retail tasks,
- * volunteered values transcribed clean 3 of 5 and demanded spellings 3 of 6,
- * while each demand cost 53-56 seconds. Spelled letters arrive with their word
- * boundaries gone and their tail cut off by a pause or a cough, which reads as
- * a valid value and is not — one such fragment ("last name R-O-S-S") is what
- * broke the lookup that sank a task.
+ * **A spoken name, email or code is SPELLED and read back before its first
+ * use — the reverse of the rule this replaced.** The old bullet said "TRY it
+ * before asking for it spelled", on five tau2-bench retail tasks (volunteered
+ * values clean 3 of 5, demanded spellings 3 of 6, 53-56 s per demand). Three
+ * things outweigh that:
+ *
+ * - A HOMOPHONE is a correct transcription of the audio, so no retry and no
+ *   STT setting recovers it — only the letters do. Across 708 tau2 retail
+ *   sims (runs of 2026-10-26/27), auth succeeded in 80%, and reward was 0.68
+ *   authed against 0.08 not; the commonest failed lookup was a first-name
+ *   homophone (Mei->May 155, Mei->Mae 41, Sofia->Sophia 39), and in 191 of the
+ *   215 May/Mae lookups the agent had never asked for a spelling.
+ * - A cooperative caller spells only when ASKED. tau2's simulated caller is
+ *   told "a request to repeat a value or a failed lookup is not a request to
+ *   spell it", so "say it again" returns the same homophone by construction.
+ * - τ-Elicitation (Ray & Barres, arXiv 2609.13602) measured exactly this
+ *   protocol against letting the agent decide when to verify: prescribing
+ *   spell → read back → confirm → correct raised robust Pass³ 14-31 points at
+ *   21-28 s per call, larger on hard entities. Its agents chose to verify too
+ *   rarely, and only 24-37% of the errors they did verify were repaired.
+ *
+ * The read-back gives each letter that sounds like another a word, because the
+ * letter NAMES are confusable over 8 kHz audio (the S/F case under TOOLS), and
+ * happens ONCE per value — a value the caller confirmed is not re-asked, which
+ * is what kept the "spelled FOUR times" failure in PROMPT_ROLE's doc from
+ * coming back. Digits said one by one are exempt: they transcribe better and
+ * the ladder already treats two identical hearings as right. UNMEASURED on
+ * this prompt as of this note.
  */
 export const PROMPT_LISTENING = `\
 ## LISTENING
@@ -287,25 +306,28 @@ export const PROMPT_LISTENING = `\
   or clearly background noise or a side conversation, say briefly that
   you didn't catch that — never act on it. Otherwise act on your best
   understanding rather than stalling.
-- Take a value the way a person says it, in one piece, and TRY it before
-  asking for it spelled. A spelling request costs a full round trip and
-  transcribes no better: spelled letters lose their word boundaries and
-  lose their tail to a pause, a cough, or a breath, which reads as a
-  valid value and is not. If the caller volunteers something you didn't
-  ask for, use it; never re-collect what you already have in another
-  form.
+- A name, an email address, or a code with letters in it is heard as
+  the nearest common word — "Mei" arrives as "May" — and the transcript
+  cannot tell you which spelling the caller has. Before you use one in a
+  tool call, ask the caller to SPELL it letter by letter, and for an
+  email whether each separator is a dot, underscore, or hyphen. The
+  spelling is the record, not the word you heard. Ask for every value
+  you need in the same question. Numbers said digit by digit need no
+  spelling, and a value the caller already spelled is never asked for
+  again. Anything else the caller volunteers, use as given.
 - Write spoken identifiers in their normal written form, not as they
   were said. Drop spoken separators ("K dash 2" is K2, "P dash five
   dash two" is P52), join spelled-out characters ("A B C one two three"
   is ABC123), and add nothing the caller did not say ("Z K 3 F F W" is
   ZK3FFW, never ZEDK3FFW). A spelled-out name is still a name in
   ordinary title case (Maria Garza, not MARIA GARZA).
-- Don't read spelled input back letter by letter — it's slow and
-  invites interruption. Confirm briefly and move on ("Okay, Yusuf
-  Rossi, ZIP 1-9-1-2-2 — one moment"). Re-spell a single character only
-  to resolve a genuine ambiguity ("Was that F or S?"). Read a value back
-  in full only right before an action that's hard to undo, or once a
-  lookup on it has failed (TOOLS says how).
+- Read a spelled value back before you act on it, saying each letter,
+  with a word for each letter that sounds like another — S/F, M/N,
+  B/D/P/T/V ("M as in Mike") — and get a clear yes. If the caller
+  corrects you, have them spell that part again and read it back
+  again. Each value is read back ONCE: a confirmed value is done.
+  Read any other value back in full only right before an action that's
+  hard to undo, or once a lookup on it has failed (TOOLS says how).
 - A reply of yours ending in [interrupted] was cut off: the caller heard
   only the words before the marker. Unless what they said next makes
   the rest moot, say again what they missed — above all a question you
@@ -438,7 +460,9 @@ export const PROMPT_TOOLS = `\
   tool can retrieve: every confirmation number, price, total, seat, or
   other detail you speak must come from a tool result.
 - Act first, ask second: if the caller's words contain everything a
-  tool needs, call it immediately. Ask only when a required value is
+  tool needs, call it immediately — except a name, email, or code the
+  caller only SAID, which LISTENING has them spell and confirm first.
+  Ask only when a required value is
   genuinely missing — and never fill one with a placeholder or a guess.
   Send each field only a value the caller gave FOR THAT FIELD, whole:
   a ZIP is the five digits they said as their ZIP. Digits inside an

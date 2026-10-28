@@ -273,8 +273,9 @@ describe("buildSystemPrompt", () => {
     const different = ask.indexOf("ask for something DIFFERENT");
     expect(readBack).toBeGreaterThan(-1);
     expect(different).toBeGreaterThan(readBack);
-    // LISTENING's no-read-back rule names the exception rather than contradicting it.
-    expect(result).toContain("once a\n  lookup on it has failed");
+    // LISTENING's read-back rule for other values names this case rather than
+    // contradicting it.
+    expect(result).toContain("or once a lookup on it has failed (TOOLS says how)");
   });
 
   // Three sections used to carry a repeat-ask budget in three different units
@@ -452,11 +453,14 @@ describe("buildSystemPrompt", () => {
     },
   );
 
-  // Verbose letter-by-letter readbacks make replies long and invite the
-  // caller to interrupt mid-sentence (see tau2 turn-taking analysis).
-  test("LISTENING forbids reading spelled input back letter by letter", () => {
+  // A homophone is a correct transcription, so only the caller's letters
+  // recover it — and a cooperative caller spells only when asked. See the
+  // PROMPT_LISTENING doc for the measurement behind spelling FIRST.
+  test("LISTENING has a spoken identifier spelled and read back before use", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: false });
-    expect(result).toContain("Don't read spelled input back letter by letter");
+    expect(result).toContain("Before you use one in a\n  tool call, ask the caller to SPELL it");
+    expect(result).toContain("Read a spelled value back before you act on it");
+    expect(result).toContain("Each value is read back ONCE");
   });
 
   test("includes correctly formatted date string", () => {

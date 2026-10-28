@@ -44,7 +44,7 @@ describe("one rule, one section", () => {
     ["the markdown ban", "No markdown", "PROMPT_SPEAKING"],
     ["the reply-length cap", "two sentences", "PROMPT_SPEAKING"],
     ["the eight-word opener", "eight words", "PROMPT_SPEAKING"],
-    ["the spelled-input readback", "spelled input back", "PROMPT_LISTENING"],
+    ["the spelled-value readback", "Read a spelled value back", "PROMPT_LISTENING"],
   ])("%s is stated in %s's section only", (_label, marker, owner) => {
     expect(sectionsContaining(marker)).toEqual([owner]);
   });

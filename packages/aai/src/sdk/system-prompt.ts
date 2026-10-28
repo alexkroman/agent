@@ -62,8 +62,9 @@ export {
  * 2. `## PERSONALITY` — warm, calm, competent; fully overridable.
  * 3. `## SPEAKING` — two sentences per reply, an eight-word first sentence,
  *    no markdown, how to say numbers and identifiers, one question per turn.
- * 4. `## LISTENING` — read through fillers and self-corrections, take a value
- *    in one piece before asking for it spelled, normalize spoken identifiers.
+ * 4. `## LISTENING` — read through fillers and self-corrections, have a
+ *    spoken name, email or code spelled and read back before using it,
+ *    normalize spoken identifiers.
  * 5. `## TOOLS` — never fabricate, act first and ask second, report results
  *    rather than intentions, and the mis-hearing retry ladder.
  *
