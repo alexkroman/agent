@@ -5201,9 +5201,11 @@ that passes the write when exceeded. Off by default while it is measured.
 optional verify?: boolean;
 ```
 
+Check each declared write before it runs (see `writes` above).
+
 ###### Default Value
 
-`{ verify: false }`
+`false`
 
 ###### Inherited from
 
@@ -6228,9 +6230,11 @@ that passes the write when exceeded. Off by default while it is measured.
 optional verify?: boolean;
 ```
 
+Check each declared write before it runs (see `writes` above).
+
 ###### Default Value
 
-`{ verify: false }`
+`false`
 
 ###### Inherited from
 
@@ -9834,9 +9838,11 @@ that passes the write when exceeded. Off by default while it is measured.
 optional verify?: boolean;
 ```
 
+Check each declared write before it runs (see `writes` above).
+
 ###### Default Value
 
-`{ verify: false }`
+`false`
 
 ***
 
