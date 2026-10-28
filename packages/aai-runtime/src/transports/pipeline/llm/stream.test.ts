@@ -527,7 +527,7 @@ describe("the ledger reaches the provider", () => {
     if (!Array.isArray(prompt)) throw new Error("call 0 sent no prompt array");
     const last = prompt.at(-1) as { role?: string; content?: unknown };
     expect(last.role).toBe("system");
-    expect(String(last.content)).toContain('get_order(order_id="#W1")');
+    expect(String(last.content)).toContain('<record source="get_order(order_id=\\"#W1\\")">');
     expect(String(last.content)).toContain('{"status":"delivered"}');
     // The session's own system prompt is still first, untouched.
     expect((prompt[0] as { content?: unknown }).content).toBe("s");

@@ -66,7 +66,7 @@ describe("the ledger", () => {
   test("rides a session whose tools declare a write, after the newest turn", async () => {
     const tail = await secondTurnTail([noopToolSchema, writeSchema]);
     expect(tail.role).toBe("system");
-    expect(String(tail.content)).toContain("lookup():");
+    expect(String(tail.content)).toContain('<record source="lookup()">');
     expect(String(tail.content)).toContain('{"status":"delivered"}');
   });
 
