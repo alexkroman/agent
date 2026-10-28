@@ -13,9 +13,7 @@ import {
   createToolSpeechController,
   FailedCallMemo,
   toVercelTools,
-  verifyWrite,
   withConfirmationGate,
-  withWriteVerification,
 } from "../../tools/index.ts";
 import { createEmitError } from "../emit-error.ts";
 import { resolveSystemPrompt, type Transport } from "../types.ts";
@@ -314,29 +312,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // After: the result's proper nouns bias the STT for the rest of the call
   // (`speech/keyterms.ts`), on providers that can take them mid-stream.
   const keyterms = createKeytermHarvester((terms) => providers.stt?.updateKeyterms?.(terms));
-  // Opt-in (`writes: { verify }`): a separate model call checks each declared
-  // write against the conversation before it runs — `tools/write-verifier.ts`.
-  // INSIDE the confirmation gate: the gate reads the authorizing turn's state,
-  // and must read it before the check's await, not after a new turn landed.
-  // Bound to the call's own (turn) signal, so a barge-in during the check
-  // cancels it and the write does not run afterwards.
-  const verifiedExecuteTool = resolved.verifyWrites
-    ? withWriteVerification(executeTool, {
-        schemas: toolSchemas,
-        check: (tool, args, signal) =>
-          verifyWrite({
-            model: opts.llm,
-            instructions: systemPrompt(),
-            messages: history.conversation,
-            tool,
-            args,
-            signal: signal ?? sessionAbort.signal,
-          }),
-        log,
-        sid: opts.sid,
-      })
-    : executeTool;
-  const checkedExecuteTool = withConfirmationGate(verifiedExecuteTool, {
+  const gatedExecuteTool = withConfirmationGate(executeTool, {
     schemas: toolSchemas,
     turnWasBackchannel,
     log,
@@ -344,7 +320,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   });
   const tools = toVercelTools(toolSchemas, {
     executeTool: async (name, args, sessionId, messages, options) => {
-      const result = await checkedExecuteTool(name, args, sessionId, messages, options);
+      const result = await gatedExecuteTool(name, args, sessionId, messages, options);
       keyterms.observe(result);
       return result;
     },

@@ -52,7 +52,6 @@ const PIPELINE_TUNING = {
   turnTaking: "the pipeline's turn-taking tuning",
   interruption: "the pipeline's barge-in tuning",
   silence: "the pipeline's dead-air cover and silence nudge",
-  writes: "the pipeline's checks on tools declared as writes",
   errorPhrase: "the phrase the pipeline speaks when a turn fails",
   startFailurePhrase: "the phrase the pipeline speaks when a provider fails to open",
 } as const satisfies Record<Exclude<PipelineOnlyField, GuardrailField | "stt" | "tts">, string>;

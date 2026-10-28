@@ -895,9 +895,6 @@ export interface PipelineTuning {
     interruption?: InterruptionTuning | "off";
     silence?: SilenceTuning;
     turnTaking?: TurnTakingTuning;
-    writes?: {
-        verify?: boolean;
-    };
 }
 
 // @public @input

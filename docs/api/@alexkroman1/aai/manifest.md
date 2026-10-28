@@ -196,9 +196,6 @@ function toAgentConfig(source: AgentConfigSource): {
      totalTokens?: number;
   };
   voicePresets?: readonly string[];
-  writes?: {
-     verify?: boolean;
-  };
 };
 ```
 
@@ -285,9 +282,6 @@ the runtime.
      totalTokens?: number;
   };
   voicePresets?: readonly string[];
-  writes?: {
-     verify?: boolean;
-  };
 }
 ```
 
@@ -509,14 +503,6 @@ optional tts?: ProviderDescriptor<string, Record<string, unknown>>;
 
 ```ts
 optional voicePresets?: readonly string[];
-```
-
-##### writes?
-
-```ts
-{
-  verify?: boolean;
-}
 ```
 
 ***

@@ -115,11 +115,6 @@ export interface PipelineTransportOptions {
    */
   deadAirCoverMs?: number | undefined;
   /**
-   * Check each declared write with a separate model call before it runs — the
-   * agent's `writes: { verify }`. See `tools/write-verifier.ts`. Default false.
-   */
-  verifyWrites?: boolean | undefined;
-  /**
    * Phrase spoken when the turn's LLM stream fails. Defaults to
    * `DEFAULT_ERROR_PHRASE`; `""` disables.
    */
@@ -335,7 +330,6 @@ export interface ResolvedPipelineOptions {
   interruptionBackoffMs: number;
   continuationWindowMs: number;
   deadAirCoverMs: number;
-  verifyWrites: boolean;
   heardLagMs: number;
   errorPhrase: string;
   startFailurePhrase: string;
@@ -390,7 +384,6 @@ export function resolvePipelineOptions(options: PipelineTransportOptions): Resol
     interruptionBackoffMs: or(options.interruptionBackoffMs, DEFAULT_INTERRUPTION_BACKOFF_MS),
     continuationWindowMs: or(options.continuationWindowMs, DEFAULT_CONTINUATION_WINDOW_MS),
     deadAirCoverMs: or(options.deadAirCoverMs, DEFAULT_DEAD_AIR_COVER_MS),
-    verifyWrites: or(options.verifyWrites, false),
     heardLagMs: or(options.heardLagMs, HEARD_AUDIO_LAG_MS),
     errorPhrase: or(options.errorPhrase, DEFAULT_ERROR_PHRASE),
     startFailurePhrase: or(options.startFailurePhrase, DEFAULT_START_FAILURE_PHRASE),

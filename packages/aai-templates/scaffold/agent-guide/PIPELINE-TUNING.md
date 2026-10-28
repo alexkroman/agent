@@ -147,12 +147,6 @@ been spoken (`{ afterReply: false }` cuts it); a spec reads
   `silence.deadAirCoverMs` is how long a turn may go silent before a short
   filler is spoken (default 2400; `0` disables). The wording is fixed:
   declarative, never a request for patience, or the caller's answer barges in.
-- `writes: { verify: true }` checks each tool declared as a write
-  (`annotations: { readOnlyHint: false }`) with a separate model call before it
-  runs: does it do exactly what the caller asked for and agreed to, on the
-  records as fetched? A specific mismatch goes back to the model instead of the
-  write; the same call made again runs. One model call per write, under a
-  timeout that lets the write through. Off by default while it is measured.
 - `interruption` — `minWords` (default 1) words interrupt a reply, gated by
   `minDurationMs` of sustained speech (default 500 ms; `0` disables; interims
   only — committed turns always land); `backoffMs` holds agent audio after a
