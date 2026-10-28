@@ -11,7 +11,7 @@ import type { FakeLanguageModel, ScriptedPart } from "../../../_fake-llm.ts";
 import { makeLogger, silentLogger } from "../../../_logger-test-utils.ts";
 import { createFakeLanguageModel } from "../../../_pipeline-test-fakes.ts";
 import { TOOL_ERROR_BUDGET } from "../../../_prepare-step.ts";
-import { createContextBudget } from "../history/index.ts";
+import { createContextBudget, createLedgerStep } from "../history/index.ts";
 import type { StreamPart } from "../reply/index.ts";
 import { type AdoptedLlmStream, consumeLlmStream, type TapeEntry } from "./stream.ts";
 
@@ -485,5 +485,50 @@ describe("the system prompt is resolved per REQUEST", () => {
     expect(systemPrompt).toHaveBeenCalledTimes(2);
     expect(systemOf(llm, 0)).toBe("Be terse. Phase: intake.");
     expect(systemOf(llm, 1)).toBe("Be terse. Phase: wrap-up.");
+  });
+});
+
+// The ledger is a SYSTEM message after the newest turn (`../history/ledger.ts`).
+// `streamText` refuses one without `allowSystemInMessages`, so this pins the
+// whole path: preparer → composed slot → the prompt the provider receives.
+describe("the ledger reaches the provider", () => {
+  const history: ModelMessage[] = [
+    { role: "user", content: "exchange my shirt" },
+    {
+      role: "assistant",
+      content: [
+        { type: "tool-call", toolCallId: "c1", toolName: "get_order", input: { order_id: "#W1" } },
+      ],
+    },
+    {
+      role: "tool",
+      content: [
+        {
+          type: "tool-result",
+          toolCallId: "c1",
+          toolName: "get_order",
+          output: { type: "text", value: '{"status":"delivered"}' },
+        },
+      ],
+    },
+    { role: "user", content: "yes, go ahead" },
+  ];
+
+  test("sent as the LAST prompt message, a system one, holding the read's result", async () => {
+    const llm = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
+    await consume({
+      llm,
+      sid: "ledger-1",
+      messages: history,
+      ledgerStep: createLedgerStep(new Set()),
+    });
+    const prompt = llm.calls[0]?.prompt;
+    if (!Array.isArray(prompt)) throw new Error("call 0 sent no prompt array");
+    const last = prompt.at(-1) as { role?: string; content?: unknown };
+    expect(last.role).toBe("system");
+    expect(String(last.content)).toContain('get_order(order_id="#W1")');
+    expect(String(last.content)).toContain('{"status":"delivered"}');
+    // The session's own system prompt is still first, untouched.
+    expect((prompt[0] as { content?: unknown }).content).toBe("s");
   });
 });

@@ -11,6 +11,7 @@ import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";
 import { compactRecordsForModel } from "../_compact-records.ts";
+import { writeToolNames } from "./confirmation-gate.ts";
 import { type FatalToolError, isFatalToolError } from "./error-policy.ts";
 import type { FailedCallMemo } from "./failed-call-memo.ts";
 import type { FormatMirror } from "./format-mirror.ts";
@@ -94,6 +95,7 @@ export function toVercelTools(
     recordToolResult: ctx.recordToolResult,
     failedCalls: ctx.failedCalls,
     formatMirror: ctx.formatMirror,
+    writeTools: writeToolNames(schemas),
   };
   for (const schema of schemas) {
     out[schema.name] = tool({

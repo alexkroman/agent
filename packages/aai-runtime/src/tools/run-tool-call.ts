@@ -40,6 +40,8 @@
  * - `format-mirror.ts`: a string written in a different shape from every value
  *   the records have shown for that field (`"New York"` where they say `"CO"`),
  *   refused once;
+ * - `arg-grounding.ts`: a WRITE naming an identifier no successful result has
+ *   shown, refused once;
  * - a {@link FailedCallMemo} (`failed-call-memo.ts`), when the context has
  *   one: the same tool already failed with the same arguments.
  *
@@ -64,6 +66,7 @@ import type { JSONSchema7 } from "json-schema";
 import { compactRecordsForModel } from "../_compact-records.ts";
 import { isFailedToolResult } from "../_prepare-step.ts";
 import { coerceToolArgs } from "./arg-coercion.ts";
+import { groundingRefusal } from "./arg-grounding.ts";
 import { emptyArgsNote, precheckToolArgs } from "./arg-precheck.ts";
 import type { FailedCallMemo } from "./failed-call-memo.ts";
 import { FormatMirror } from "./format-mirror.ts";
@@ -106,7 +109,14 @@ export type ToolCallContext = {
    * call reads its history afresh (a `TextAgent.tools` set has none).
    */
   formatMirror?: FormatMirror | undefined;
+  /**
+   * The tools declared writes (`annotations.readOnlyHint: false`) — the only
+   * calls `arg-grounding.ts` checks. Absent, none is.
+   */
+  writeTools?: ReadonlySet<string> | undefined;
 };
+
+const NO_WRITES: ReadonlySet<string> = new Set();
 
 /** A call that settled with a result the model reads. */
 export type SettledToolCall = {
@@ -161,6 +171,7 @@ export async function runToolCall(
   const refusal =
     precheckToolArgs(call.name, input, parameters) ??
     (ctx.formatMirror ?? new FormatMirror()).refuse(call.name, input, history) ??
+    groundingRefusal(call.name, input, history, ctx.writeTools ?? NO_WRITES) ??
     ctx.failedCalls?.refuse(call.name, input, history.length);
   if (refusal !== undefined) {
     // Recorded like any result: the call was made, and this is its answer.

@@ -47,16 +47,18 @@ import type { Logger } from "./logger.ts";
  *
  * 1. `caller` — a text-agent caller's own `prepareStep` (compaction, deadline
  *    notices). First, so everything below layers over what it decided.
- * 2. `context-budget` — owns `messages`, and shares no key with those below.
- * 3. `agent-tool-choice` — {@link resetToolChoiceAfterFirstStep}, the AGENT
+ * 2. `context-budget` — trims `messages` to the model's window.
+ * 3. `ledger` — appends the records block to the TRIMMED list (the pipeline's
+ *    `transports/pipeline/history/ledger.ts`), so the budget never drops it.
+ * 4. `agent-tool-choice` — {@link resetToolChoiceAfterFirstStep}, the AGENT
  *    scope.
- * 4. `persona` — the active persona's knobs: who is speaking is broader than
+ * 5. `persona` — the active persona's knobs: who is speaking is broader than
  *    where in their script they are.
- * 5. `dialog` — the active dialog state's knobs, which beat the agent's and the
+ * 6. `dialog` — the active dialog state's knobs, which beat the agent's and the
  *    persona's for exactly as long as the conversation is in that state.
- * 6. `tool-error-budget` — {@link toolErrorBudget}: a state pinning a tool must
+ * 7. `tool-error-budget` — {@link toolErrorBudget}: a state pinning a tool must
  *    not keep the model calling one that cannot succeed.
- * 7. `force-final-answer` — {@link forceFinalAnswer}, which owns `toolChoice`
+ * 8. `force-final-answer` — {@link forceFinalAnswer}, which owns `toolChoice`
  *    on the one reserved step and must win there over everything. It and the
  *    error budget both force `"none"`, so their relative order changes no
  *    request.
@@ -64,6 +66,7 @@ import type { Logger } from "./logger.ts";
 export const PREPARER_ORDER = [
   "caller",
   "context-budget",
+  "ledger",
   "agent-tool-choice",
   "persona",
   "dialog",
@@ -104,6 +107,14 @@ export interface Preparer {
  * - **A stage may be registered at most once**; a duplicate throws at
  *   construction, because two writers for one stage is exactly the ambiguity
  *   the order exists to remove.
+ * - **`messages` is CHAINED**: each stage sees the list the stages before it
+ *   returned, so the ledger appends to the list the budget trimmed rather than
+ *   the two overwriting each other.
+ * - **An EPHEMERAL message is stripped before any stage sees the list.** The
+ *   AI SDK carries a step's messages override into the next step's input, so a
+ *   message appended for one request (the ledger) would otherwise pile up
+ *   step after step — and break the budget's prefix check. See
+ *   {@link markEphemeral}.
  * - **An `undefined` preparer is skipped**, and a preparer answering
  *   `undefined` ("nothing to say about this step") contributes no keys rather
  *   than erasing the ones before it — the rule a hand-rolled `a ?? b` merge
@@ -123,12 +134,39 @@ export function composePreparers(preparers: readonly Preparer[]): PrepareStepFun
   const ordered = byRank.flatMap((p) => (p?.prepare === undefined ? [] : [p.prepare]));
   return async (options) => {
     const merged: NonNullable<PrepareStepResult<ToolSet>> = {};
+    let messages = withoutEphemeral(options.messages);
     for (const prepare of ordered) {
-      const result = await prepare(options);
-      if (result) Object.assign(merged, result);
+      const result = await prepare({ ...options, messages });
+      if (!result) continue;
+      Object.assign(merged, result);
+      if (result.messages !== undefined) messages = result.messages;
     }
+    // Sent even when no stage overrode it, if stripping changed the list.
+    if (messages !== options.messages) merged.messages = messages;
     return merged;
   };
+}
+
+/** Messages appended for ONE request — see {@link markEphemeral}. */
+const ephemeral = new WeakSet<object>();
+
+/**
+ * Mark a message a preparer appends for this request only (the ledger), so
+ * {@link composePreparers} strips it from the next step's input. Identity,
+ * not content: nothing a model or a tool wrote can be mistaken for one.
+ *
+ * @internal
+ */
+export function markEphemeral<M extends object>(message: M): M {
+  ephemeral.add(message);
+  return message;
+}
+
+/** `messages` without any {@link markEphemeral} message — the same array when there is none. */
+export function withoutEphemeral<M extends object>(messages: M[]): M[] {
+  return messages.some((m) => ephemeral.has(m))
+    ? messages.filter((m) => !ephemeral.has(m))
+    : messages;
 }
 
 /**

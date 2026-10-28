@@ -27,7 +27,12 @@ import type { Message } from "@alexkroman1/aai";
 import { DEFAULT_IDLE_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { consoleLogger } from "../logger.ts";
-import { type ClientToolAnswer, FailedCallMemo, FormatMirror } from "../tools/index.ts";
+import {
+  type ClientToolAnswer,
+  FailedCallMemo,
+  FormatMirror,
+  writeToolNames,
+} from "../tools/index.ts";
 import {
   createRetainedView,
   estimateConversationTokens,
@@ -162,6 +167,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
         // `../tools/failed-call-memo.ts`.
         failedCalls: new FailedCallMemo(),
         formatMirror: new FormatMirror(),
+        writeTools: writeToolNames(opts.toolSchemas ?? []),
       },
       conversation: () => conversation,
       emit,

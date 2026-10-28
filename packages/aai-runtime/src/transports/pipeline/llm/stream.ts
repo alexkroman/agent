@@ -109,6 +109,9 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     // prompt died with the run it was assembled for.
     system: resolveSystemPrompt(req.systemPrompt),
     messages: req.messages,
+    // The ledger is a system message after the newest turn, which `streamText`
+    // refuses without this — see `../history/ledger.ts`.
+    allowSystemInMessages: true,
     // OMITTED, not empty, when this request has no tools — and that is a
     // provider requirement rather than tidiness. Several small conversational
     // models refuse a tool list outright: the AssemblyAI gateway answers
@@ -145,14 +148,15 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     // Evaluated after each step, and the latch is set during the step's tool
     // execution, so it is already true when the SDK asks.
     stopWhen: [stepCountIs(req.maxSteps + 1), () => req.toolSpeech?.verbatim() !== undefined],
-    // ONE slot, SIX things to say — see `../../../_prepare-step.ts`. Each concern
+    // ONE slot, SEVEN things to say — see `../../../_prepare-step.ts`. Each concern
     // REGISTERS by stage and `composePreparers` layers them in
-    // `PREPARER_ORDER` (budget → agent reset → persona → dialog state → the
+    // `PREPARER_ORDER` (budget → ledger → agent reset → persona → dialog state → the
     // two forced answers), so the precedence is decided there and pinned by
     // its spec, not by the order of this list. Built HERE, per request,
     // because the error budget counts one turn.
     prepareStep: composePreparers([
       { stage: "context-budget", prepare: req.contextBudget },
+      { stage: "ledger", prepare: req.ledgerStep },
       {
         stage: "agent-tool-choice",
         prepare: resetToolChoiceAfterFirstStep(req.toolChoice, req.resetToolChoice ?? true),

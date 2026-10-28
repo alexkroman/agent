@@ -33,11 +33,12 @@ leaves in history is "History records what was HEARD" there.
 
 **Preparers REGISTER into one pipeline** (`../../../_prepare-step.ts`):
 `composePreparers([{ stage, prepare }, …])` layers them in `PREPARER_ORDER`
-(budget → agent reset → persona → dialog → error budget → `forceFinalAnswer`)
-whatever order a call site lists them in, last writer winning per key. Writing
-any preparer straight into the slot silently deletes the others, so
-`guard-invariants` rule 35 rejects a `prepareStep:` in this package whose value
-is not a `composePreparers(…)` call; a new concern is a new stage.
+(budget → ledger → agent reset → persona → dialog → error budget →
+`forceFinalAnswer`) whatever order a call site lists them in, last writer
+winning per key. Writing any preparer straight into the slot silently deletes
+the others, so `guard-invariants` rule 35 rejects a `prepareStep:` in this
+package whose value is not a `composePreparers(…)` call; a new concern is a new
+stage.
 
 ## A rollback must undo the eviction its push caused
 
@@ -50,3 +51,23 @@ single-message push, consumed by IDENTITY; a tool pair `canLeadLlm` took whole
 counts as part of the eviction. Oracle:
 `../../../integration/pipeline-history-rollback.integration.test.ts` (driven at
 a small `retainTokens`), plus two pins in `history.test.ts`.
+
+## The ledger is DERIVED from history before every step, never stored
+
+`ledger.ts` renders each lookup's latest successful result (keyed `tool(args)`)
+as ONE system message after the newest turn — LedgerAgent's records block (arXiv
+2606.20529). Rules:
+
+- **Only for a tool set that declares a write** (`readOnlyHint: false`);
+  `transport.ts` passes no step otherwise. A write's own result is not listed;
+  it marks the reads that named one of its values `(fetched before X ran)`.
+- **It reads the UNTRIMMED history** (`initialMessages` + `responseMessages`),
+  so a record the budget dropped stays visible, and it appends to the list the
+  budget returned (`composePreparers` chains `messages`).
+- **The message is `markEphemeral`**: the AI SDK carries a step's messages into
+  the next, and `composePreparers` strips it there, or it piles up and breaks
+  the budget's prefix check. `stream.ts` sets `allowSystemInMessages`, without
+  which `streamText` refuses it.
+- **Descriptive wording only.** A directive first draft ("look it up again
+  before relying on it") raised re-fetching on tau2 retail; the module doc has
+  the numbers.
