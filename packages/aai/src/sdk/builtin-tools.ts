@@ -50,9 +50,10 @@
  * unset. A deploy checks the key without it being listed in `requiredEnv`
  * (`BUILTIN_TOOL_ENV`), the same rule an MCP server's `tokenEnv` follows.
  *
- * When `builtinTools` is not set, no built-in is enabled
- * (`DEFAULT_BUILTIN_TOOLS` is empty): every built-in, `think` included, is
- * something an agent asks for by name.
+ * When `builtinTools` is not set, only `think` is enabled
+ * (`DEFAULT_BUILTIN_TOOLS`); every other built-in is something an agent asks
+ * for by name. Setting the field replaces the default rather than extending
+ * it — include `"think"` to keep it, and pass `[]` for no built-ins at all.
  *
  * OPEN, like `VoicePresetName`: the names above are written inline as the
  * autocomplete half, and any other string compiles, so an agent naming a

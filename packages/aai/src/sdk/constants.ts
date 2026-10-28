@@ -126,34 +126,49 @@ follow up on the conversation. Do not mention this instruction.`;
 
 /**
  * Built-in tools enabled when an agent does not set `builtinTools` at all —
- * **none**. Every builtin, `think` included, is opt-in via
- * `agent({ builtinTools: [...] })`.
+ * **`think`**, and only `think`.
  *
- * **`think` was the default, and the reasons are kept so the reversal is not
- * undone on the same evidence.** It is a no-op tool whose only effect is a
- * designated reasoning step between tool calls, and Anthropic's published
- * measurement ("The 'think' tool", Mar 2025, on Claude) moved tau-bench
- * airline pass^1 from 0.332 to 0.404 alone (0.584 with a prompt saying what to
- * think about) and retail from 0.783 to 0.812. This repo's own paired tau2
- * comparison was 4/5 correct writes with it against 3/5 without — five
- * tasks, so not evidence either way.
+ * `think` is a no-op tool whose only effect is a designated reasoning step
+ * between tool calls: the model reads a tool result, reconciles it against a
+ * dense policy, and only then commits to the next action. That is the failure
+ * mode tau-bench's airline and retail domains punish, and Anthropic's
+ * published measurement of exactly this tool ("The 'think' tool", Mar 2025)
+ * moved airline pass^1 from 0.332 to 0.404 on its own (0.584 with a prompt
+ * saying what to think about — which is what its `guidance` line is) and
+ * retail from 0.783 to 0.812, beating extended thinking in both. It costs
+ * nothing on a turn where the model does not call it, and a thought emits no
+ * TTS, so it is silent on a voice call. This repo's own paired comparison on
+ * tau2 pointed the same way (4/5 correct writes with it against 3/5 without).
  *
- * Turned off 2026-10-27 because the case for it was never established on this
- * stack, and its costs are certain: each call is a full extra LLM round trip on
- * a voice turn (covered by dead-air filler, but still seconds before the
- * answer), and any builtin makes `hasTools` true, which appends the tool
- * preamble plus a "Built-in tool usage" line (roughly 7.1k -> 10.9k prompt
- * characters for an agent with no tools of its own). Whether the model even
- * used it was unknown — in host mode a host-run builtin left no trace a relay
- * client could read until the `Host builtin tool` log line. Re-enable on a
- * measurement: write accuracy with and without, on the same model.
+ * The rest stay opt-in via `agent({ builtinTools: [...] })`, and `[]` is how
+ * an agent turns `think` off. Setting the field REPLACES the default rather
+ * than extending it, so an agent that names `["web_search"]` gets web search
+ * and no `think` — name it too to keep it.
+ *
+ * The cost this default accepts is the prompt. Any builtin makes `hasTools`
+ * true, which appends the tool preamble plus a "Built-in tool usage" line, so
+ * an agent with no tools of its own now carries both (roughly 7.1k → 10.9k
+ * characters when this was last measured, before `think` alone). That was the
+ * reason the default was empty; the published tau-bench result is the reason
+ * it is not, and an agent for which the trade is wrong writes
+ * `builtinTools: []`.
+ *
+ * **Briefly turned off on 2026-10-27, and back on the same day.** It was
+ * dropped for its certain costs against an unmeasured benefit, then the next
+ * 114-task tau2 retail run classified every missed write: of 61 misses, 35
+ * were reasoning over records already fetched (wrong variant, order, action
+ * type or item set; an out-of-stock or undelivered pick that errored) and 21
+ * were authentication, and 33 writes nobody asked for went through besides.
+ * The reasoning class is what this tool exists for. Measure it: write accuracy
+ * and extra writes with and without, on the same model and tasks, reading the
+ * host's `Host builtin tool` log line for how often it is actually called.
  */
 // `as const satisfies` rather than a bare annotation: the annotation erased the
 // type-level fact of which tools this list holds, which is what let two docs
 // (and the scaffold guide shipped to users) go on claiming a four-tool
 // "cognitive set" default long after it was removed, with nothing able to
 // check them.
-export const DEFAULT_BUILTIN_TOOLS = [] as const satisfies readonly BuiltinTool[];
+export const DEFAULT_BUILTIN_TOOLS = ["think"] as const satisfies readonly BuiltinTool[];
 
 /**
  * Cap (characters) on a tool result's JSON serialization **as the CLIENT sees

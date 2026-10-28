@@ -269,10 +269,12 @@ export interface AgentDeclaration
    */
   toolChoice?: ToolChoice;
   /**
-   * Built-in server-side tools enabled for this agent. Unset enables none
-   * (`DEFAULT_BUILTIN_TOOLS` is empty): every built-in, `think` included, is
-   * opt-in by name. See {@link BuiltinTool} for the catalog.
-   * @defaultValue `[]` (`DEFAULT_BUILTIN_TOOLS`)
+   * Built-in server-side tools enabled for this agent. Unset enables only
+   * `think` (`DEFAULT_BUILTIN_TOOLS`), a silent reasoning scratchpad the model
+   * uses between tool calls; every other built-in is opt-in by name. Setting
+   * the field REPLACES the default — include `"think"` to keep it, and pass
+   * `[]` for no built-ins at all. See {@link BuiltinTool} for the catalog.
+   * @defaultValue `["think"]` (`DEFAULT_BUILTIN_TOOLS`)
    */
   builtinTools?: readonly BuiltinTool[];
   /**

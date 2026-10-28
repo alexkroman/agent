@@ -65,11 +65,12 @@ describe("expectPromptBuiltinsDeclared", () => {
     ).toThrow(/declares none/);
   });
 
-  test("an unset `builtinTools` reports the default surface, which is none", () => {
-    // An unset field is what a deploy serves as the (empty) default.
+  test("an unset `builtinTools` reports the default surface, not 'none'", () => {
+    // An unset field is what a deploy serves as `["think"]`, and saying
+    // "declares none" there would be false.
     expect(() =>
       expectPromptBuiltinsDeclared(withSystemPrompt(agent({ name: "Coda" }), "Call run_code.")),
-    ).toThrow(/declares none/);
+    ).toThrow(/declares think, with no custom tool/);
   });
 
   test("a prompt commanding no builtin FAILS, pointing at the unapplied-prompt cause", () => {
