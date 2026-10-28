@@ -171,8 +171,12 @@ export function startSpeculativeStream(
       // speculation started. Not `AbortSignal.any`: the controller has to stay
       // independently abortable right up to this instant, which is what the
       // discard paths use.
-      if (turnSignal.aborted) ctl.abort();
-      else turnSignal.addEventListener("abort", () => ctl.abort(), { once: true });
+      // The turn's reason is forwarded, not dropped, so a reader of the
+      // request's `signal.reason` sees the barge-in's, exactly as a tool's
+      // per-call controller (`tools/executor.ts`) forwards it.
+      const followTurn = (): void => ctl.abort(turnSignal.reason);
+      if (turnSignal.aborted) followTurn();
+      else turnSignal.addEventListener("abort", followTurn, { once: true });
       // This run is the turn now, so everything it has already spent — and
       // everything it spends from here — is the SESSION's spend.
       adopted = true;

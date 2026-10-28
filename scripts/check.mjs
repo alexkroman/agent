@@ -45,6 +45,8 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import process from "node:process";
 
 import { parseScriptArgs, USAGE_EXIT } from "./_args.mjs";
@@ -418,6 +420,33 @@ function runTurboSelection(name) {
   process.exit(0);
 }
 
+/** Does the Node on PATH reach the major `.node-version` pins? Exits otherwise. */
+function assertNodeMajor() {
+  let wanted = "";
+  try {
+    wanted = readFileSync(join(ROOT, ".node-version"), "utf8").trim();
+  } catch {
+    return;
+  }
+  const floor = Number.parseInt(wanted, 10);
+  const have = Number.parseInt(process.versions.node, 10);
+  if (!Number.isFinite(floor) || have >= floor) return;
+  console.error(
+    `${RED}Node v${process.versions.node} is on PATH, but this repo runs on Node ${wanted} (.node-version).${NC}`,
+  );
+  console.error(
+    "  Under an older major the suites fail on globals it lacks, long after this point",
+  );
+  console.error("  and with nothing in the failures naming the cause.");
+  console.error(
+    `  Install Node ${wanted} (nvm, fnm, …) and put it first on PATH; in a Claude Code cloud`,
+  );
+  console.error(
+    "  session, .claude/hooks/session-start.sh does this when the repo's settings load.",
+  );
+  process.exit(1);
+}
+
 /**
  * `--fix`: every auto-fixer, in TABLE order after `pnpm format` — the `sync:*`
  * copies, the regenerated reports, and the lower-only baseline `--update`s
@@ -474,6 +503,14 @@ if (FLAGS.catalogue !== undefined) {
   const { runCatalogue } = await import("./_gate-catalogue.mjs");
   process.exit(await runCatalogue({ root: ROOT, gates: GATES, action: FLAGS.catalogue }));
 }
+
+// Refuse an older Node BEFORE the run, not a quarter of an hour into it.
+// `.node-version` is the major CI and the cloud session hook provision; under
+// the sandbox image's Node 22 the suites fail on globals that major lacks
+// (`AsyncDisposableStack`, `CloseEvent`) with nothing in the failures naming
+// the cause, and the lefthook pre-push gate fails with them. A NEWER major is
+// let through: `engines` admits a range, and pnpm already warns past it.
+assertNodeMajor();
 
 if (FLAGS.fix === true) runFixes();
 if (FLAGS.turbo !== undefined) runTurboSelection(FLAGS.turbo);
