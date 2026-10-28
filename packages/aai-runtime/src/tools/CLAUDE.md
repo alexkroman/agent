@@ -62,9 +62,13 @@ re-implement a step in a caller.
 - **A string in a different shape from the records is refused once**
   (`format-mirror.ts`): when every value tool results have shown for a field
   shares one tight shape (2-3 capitals, fixed-length digits, `#W`+digits), an
-  argument for that field in another shape is answered with the records' form
-  (`"New York"` where they say `"CO"`). The identical value re-sent after that
-  refusal runs — the records are evidence, not the schema.
+  argument for that field in another shape — and of the same KIND, since field
+  names match across tools — is answered with the records' form (`"New York"`
+  where they say `"CO"`, never `"delivered"` where one says `"OK"`). The
+  identical value re-sent after that refusal runs — the records are evidence,
+  not the schema. One `FormatMirror` per session (per turn in text mode) reads
+  each history message once and observes each settled result WHOLE, before
+  `toolResultMessage` caps it (a capped record is not JSON).
 - **A call that already failed with the same arguments never runs again.** The
   session's `FailedCallMemo` (`failed-call-memo.ts`, one per pipeline session
   and one per S2S session) refuses it BEFORE the hook and `executeTool` — so no

@@ -13,6 +13,7 @@ import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";
 import { compactRecordsForModel } from "../_compact-records.ts";
 import { type FatalToolError, isFatalToolError } from "./error-policy.ts";
 import type { FailedCallMemo } from "./failed-call-memo.ts";
+import type { FormatMirror } from "./format-mirror.ts";
 import type { ToolSpeechController } from "./messages-runner.ts";
 import { runToolCall, type SettledToolCall, type ToolCallContext } from "./run-tool-call.ts";
 
@@ -64,6 +65,8 @@ interface ToVercelToolsContext {
    * run and `TextAgent.tools` are not a conversation.
    */
   failedCalls?: FailedCallMemo;
+  /** The conversation's record formats (`format-mirror.ts`). Optional, as `failedCalls`. */
+  formatMirror?: FormatMirror;
   signal?: AbortSignal;
 }
 
@@ -90,6 +93,7 @@ export function toVercelTools(
     parameters: (name) => parameters.get(name),
     recordToolResult: ctx.recordToolResult,
     failedCalls: ctx.failedCalls,
+    formatMirror: ctx.formatMirror,
   };
   for (const schema of schemas) {
     out[schema.name] = tool({
