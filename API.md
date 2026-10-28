@@ -21799,7 +21799,9 @@ export function createStoredValue(key: string, options?: StoredValueOptions): St
 export function createWorkflowApi(options?: WorkflowApiOptions): AgentClient;
 
 // @public
-export function dictationTranscriber(url: string, options?: DictationTranscriberOptions): UseDictationOptions["transcribe"];
+export function dictationTranscriber(url: string, options?: DictationTranscriberOptions): (audio: Blob, options: {
+    signal: AbortSignal;
+}) => Promise<string>;
 
 // @public @input
 export type DictationTranscriberOptions = {

@@ -913,7 +913,7 @@ function dictationTranscriber(url: string, options?: DictationTranscriberOptions
 }) => Promise<string>;
 ```
 
-A `transcribe` for [useDictation](#usedictation) that POSTs each clip to `url` and
+A `transcribe` for `useDictation` that POSTs each clip to `url` and
 reads the `{ text } | { error }` reply `handleDictationRequest` answers with.
 
 Rejects with the server's own `error` sentence on a refusal, and with a

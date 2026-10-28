@@ -10,7 +10,7 @@
  * those lines, against the one reply shape the SDK route answers with.
  */
 
-import type { UseDictationOptions } from "./use-dictation.ts";
+import { isRecord } from "@alexkroman1/aai/utils";
 
 /**
  * Options for {@link dictationTranscriber}.
@@ -29,7 +29,7 @@ export type DictationTranscriberOptions = {
 };
 
 /**
- * A `transcribe` for {@link useDictation} that POSTs each clip to `url` and
+ * A `transcribe` for `useDictation` that POSTs each clip to `url` and
  * reads the `{ text } | { error }` reply `handleDictationRequest` answers with.
  *
  * Rejects with the server's own `error` sentence on a refusal, and with a
@@ -52,7 +52,9 @@ export type DictationTranscriberOptions = {
 export function dictationTranscriber(
   url: string,
   options: DictationTranscriberOptions = {},
-): UseDictationOptions["transcribe"] {
+  // Spelled out rather than `UseDictationOptions["transcribe"]`: that is an
+  // `@input` type, and naming it in a RESULT would make it reached both ways.
+): (audio: Blob, options: { signal: AbortSignal }) => Promise<string> {
   return async (audio, { signal }) => {
     const send = options.fetch ?? fetch;
     const extra = typeof options.headers === "function" ? options.headers() : options.headers;
@@ -67,8 +69,4 @@ export function dictationTranscriber(
     if (isRecord(body) && typeof body.error === "string") throw new Error(body.error);
     throw new Error(`Dictation failed (HTTP ${res.status})`);
   };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
