@@ -224,6 +224,7 @@ describe("preemptive generation: poison arriving AFTER adoption", () => {
         for (const part of parts) yield { kind: "part", part };
       },
       steps: () => Promise.resolve([]),
+      stalled: () => false,
       abandon,
     };
   }

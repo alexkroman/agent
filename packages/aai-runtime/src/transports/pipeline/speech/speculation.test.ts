@@ -45,6 +45,7 @@ function fakeStream(prompt: string): FakeStream {
         /* nothing to replay in the policy specs */
       },
       steps: async () => [],
+      stalled: () => false,
       // The policy specs never reach the late-poison restart; the real
       // implementation aborts the underlying request here.
       abandon: abort,

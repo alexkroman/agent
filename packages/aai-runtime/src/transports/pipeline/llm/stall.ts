@@ -13,8 +13,8 @@
  *
  * This clock runs inside the provider stream itself: armed by each chunk the
  * model sends, cleared when that stream ends — which is before any of its tool
- * calls execute. It aborts the request with the same `TimeoutError` shape the
- * SDK's clocks use, so `isStallTimeout` reads both alike. The FIRST-chunk clock
+ * calls execute. It aborts the request with a `TimeoutError` and REPORTS that
+ * it fired (`stalled()`), so nothing has to recognize its wording. The FIRST-chunk clock
  * stays the SDK's: it is cleared by the first output chunk, so it is never armed
  * while a tool runs.
  *
@@ -23,48 +23,63 @@
  * counts against it, which still beats no mid-stream deadline at all.
  */
 
+import type { Transformer } from "node:stream/web";
 import { type LanguageModel, type LanguageModelMiddleware, wrapLanguageModel } from "ai";
-import { createCoalescingTimer } from "../../../_timer.ts";
+import { createCoalescingTimer, type RestartableTimer } from "../../../_timer.ts";
 
 /**
  * Wrap `model` so a gap of `ms` between two of its stream chunks aborts the
- * request. Answers the request's model and signal, and the SDK `chunkMs` to
- * set — present only for a model given by id, which cannot be wrapped.
+ * request. Answers the request's model and signal, whether the watchdog
+ * fired, and the SDK `chunkMs` to set — present only for a model given by id,
+ * which cannot be wrapped.
  */
 export function withChunkWatchdog(
   model: LanguageModel,
   ms: number,
   signal: AbortSignal,
-): { model: LanguageModel; signal: AbortSignal; chunkMs?: number } {
-  if (typeof model === "string") return { model, signal, chunkMs: ms };
+): { model: LanguageModel; signal: AbortSignal; stalled: () => boolean; chunkMs?: number } {
+  if (typeof model === "string") return { model, signal, stalled: () => false, chunkMs: ms };
   const stall = new AbortController();
   const middleware: LanguageModelMiddleware = {
     wrapStream: async ({ doStream }) => {
       const { stream, ...rest } = await doStream();
       // Re-armed on every chunk: the coalescing timer keeps ONE pending timeout.
       const clock = createCoalescingTimer(() =>
-        stall.abort(new DOMException(`Chunk timeout of ${ms}ms exceeded`, "TimeoutError")),
+        stall.abort(
+          new DOMException(`Stream timeout: no model output for ${ms}ms`, "TimeoutError"),
+        ),
       );
-      signal.addEventListener("abort", clock.clear, { once: true });
       return {
         ...rest,
-        stream: stream.pipeThrough(
-          new TransformStream({
-            transform(chunk, controller) {
-              clock.arm(ms);
-              controller.enqueue(chunk);
-            },
-            flush() {
-              clock.clear();
-              signal.removeEventListener("abort", clock.clear);
-            },
-          }),
-        ),
+        stream: stream.pipeThrough(clockedPassThrough(clock, ms)),
       };
     },
   };
   return {
     model: wrapLanguageModel({ model, middleware }),
     signal: AbortSignal.any([signal, stall.signal]),
+    stalled: () => stall.signal.aborted,
   };
+}
+
+/**
+ * Pass chunks through, re-arming `clock` on each. Every way the stream can
+ * stop disarms it: it ended (`flush`), or it errored or was cancelled — a
+ * barge-in aborting the request is both, and a pipe calls `cancel` on either.
+ * A clock left armed would abort a request that had already finished.
+ *
+ * Typed with Node's `Transformer` (`cancel` included, Node >= 24 being this
+ * package's floor), not the DOM lib's, which a consumer compiling this file
+ * may load and which lacks it — hence an annotated variable, not a literal.
+ */
+function clockedPassThrough<T>(clock: RestartableTimer, ms: number): TransformStream<T, T> {
+  const transformer: Transformer<T, T> = {
+    transform(chunk, controller) {
+      clock.arm(ms);
+      controller.enqueue(chunk);
+    },
+    flush: clock.clear,
+    cancel: clock.clear,
+  };
+  return new TransformStream(transformer);
 }

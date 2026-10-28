@@ -9,11 +9,12 @@ import { withChunkWatchdog } from "./stall.ts";
 
 type Part = { type: "stream-start"; warnings: [] } | { type: "text-start"; id: string };
 
-/** A model whose one stream is driven by hand: `send` a part, `end` it. */
+/** A model whose one stream is driven by hand: `send` a part, `end` or `fail` it. */
 function handDrivenModel(): {
   model: LanguageModel;
   send: (part: Part) => void;
   end: () => void;
+  fail: (error: Error) => void;
 } {
   const fake = createFakeLanguageModel({ script: [] });
   if (typeof fake === "string") throw new Error("expected a model object");
@@ -28,6 +29,7 @@ function handDrivenModel(): {
     model: wrapLanguageModel({ model: fake, middleware }),
     send: (part) => controller?.enqueue(part),
     end: () => controller?.close(),
+    fail: (error) => controller?.error(error),
   };
 }
 
@@ -52,18 +54,18 @@ describe("withChunkWatchdog", () => {
     vi.useRealTimers();
   });
 
-  test("a gap between chunks aborts the request with a chunk TimeoutError", async () => {
+  test("a gap between chunks aborts the request, and the watchdog says it fired", async () => {
     const hand = handDrivenModel();
     const watched = withChunkWatchdog(hand.model, 100, new AbortController().signal);
     await open(watched.model, watched.signal);
     hand.send({ type: "stream-start", warnings: [] });
     await vi.advanceTimersByTimeAsync(99);
     expect(watched.signal.aborted).toBe(false);
+    expect(watched.stalled()).toBe(false);
     await vi.advanceTimersByTimeAsync(1);
     expect(watched.signal.aborted).toBe(true);
-    const reason: unknown = watched.signal.reason;
-    expect(reason).toBeInstanceOf(DOMException);
-    expect(String(reason)).toMatch(/TimeoutError: Chunk timeout of 100ms exceeded/);
+    expect(watched.stalled()).toBe(true);
+    expect((watched.signal.reason as DOMException).name).toBe("TimeoutError");
   });
 
   test("each chunk re-arms the clock", async () => {
@@ -88,6 +90,18 @@ describe("withChunkWatchdog", () => {
     expect(watched.signal.aborted).toBe(false);
   });
 
+  // A barge-in aborts the request, which errors its stream: the clock must not
+  // fire later into a request that already ended.
+  test("a stream that errors disarms the clock", async () => {
+    const hand = handDrivenModel();
+    const watched = withChunkWatchdog(hand.model, 100, new AbortController().signal);
+    await open(watched.model, watched.signal);
+    hand.send({ type: "stream-start", warnings: [] });
+    hand.fail(new Error("aborted"));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(watched.stalled()).toBe(false);
+  });
+
   test("the caller's own abort still reaches the request", () => {
     const hand = handDrivenModel();
     const turn = new AbortController();
@@ -100,10 +114,8 @@ describe("withChunkWatchdog", () => {
   // rather than losing a mid-stream deadline altogether.
   test("a model given by id is passed through, with the SDK's chunk clock", () => {
     const signal = new AbortController().signal;
-    expect(withChunkWatchdog("openai/gpt-5", 100, signal)).toEqual({
-      model: "openai/gpt-5",
-      signal,
-      chunkMs: 100,
-    });
+    const watched = withChunkWatchdog("openai/gpt-5", 100, signal);
+    expect(watched).toMatchObject({ model: "openai/gpt-5", signal, chunkMs: 100 });
+    expect(watched.stalled()).toBe(false);
   });
 });

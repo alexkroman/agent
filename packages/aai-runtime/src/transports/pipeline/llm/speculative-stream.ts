@@ -184,6 +184,7 @@ export function startSpeculativeStream(
       return {
         entries: follow,
         steps: (): Promise<readonly StepResult[]> => started.steps,
+        stalled: started.stalled,
         // The turn keeps running; only this request stops. `startLlmStream`
         // already observes `steps`' rejection, so the AbortError it settles
         // with cannot surface as an unhandled rejection.

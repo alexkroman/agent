@@ -207,6 +207,8 @@ export interface AdoptedLlmStream {
   entries(): AsyncIterable<TapeEntry>;
   /** `result.steps`, for the same final gather the ordinary path does. */
   steps(): Promise<readonly StepResult[]>;
+  /** The run's own stall watchdog fired — see `./stall.ts`. */
+  stalled(): boolean;
   /**
    * Abandon the adopted run WITHOUT aborting the turn that adopted it.
    *
@@ -234,6 +236,8 @@ export interface StartedLlmStream {
   fullStream: AsyncIterable<StreamPart>;
   /** Settles with every step of the turn, after the stream ends. */
   steps: Promise<readonly StepResult[]>;
+  /** The request's own stall watchdog fired — see `./stall.ts`. */
+  stalled: () => boolean;
 }
 
 /**
