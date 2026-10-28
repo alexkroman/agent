@@ -18,7 +18,8 @@ import { debugPartialsEnabled, type Logger, transcriptField } from "../../../log
 import type { SttTurnMeta } from "../../../providers/openers.ts";
 import type { TransportCallbacks } from "../../types.ts";
 import { buildCutNote, type FalseInterruptionRecovery } from "../heard/index.ts";
-import { createBargeInPolicy } from "./barge-in-policy.ts";
+import { isAcknowledgementOnly } from "./acknowledgement.ts";
+import { createBargeInPolicy, SUSTAINED_SPEECH_WORDS } from "./barge-in-policy.ts";
 import { type CallerLevelReading, createCallerLevel } from "./caller-level.ts";
 import { createContinuationGate } from "./continuation.ts";
 import type { GatedSpeechEdges, SpeechEdgeTracker } from "./edges.ts";
@@ -293,14 +294,12 @@ export function createSttEventHandlers(deps: {
    * Would this interim barge in, and does the level veto stop it? The veto is
    * logged only when it is what said no.
    */
-  function partialBargesIn(
-    text: string,
-    words: number,
-    reading: CallerLevelReading,
-    spokenMs: number | undefined,
-  ): boolean {
-    if (bargeIn.partialInterrupts(words, reading.quiet, spokenMs)) return true;
-    if (reading.quiet && bargeIn.partialInterrupts(words, false, spokenMs)) {
+  function partialBargesIn(text: string, words: number, reading: CallerLevelReading): boolean {
+    // Listening, not taking the floor — see `acknowledgement.ts`. Checked here,
+    // ahead of the content-blind policy, so the policy stays content-blind.
+    if (deps.utteranceOpenedOverSpeech() && isAcknowledgementOnly(text)) return false;
+    if (bargeIn.partialInterrupts(words, reading.quiet)) return true;
+    if (reading.quiet && bargeIn.partialInterrupts(words)) {
       if (!vetoLogged) log.info("Pipeline barge-in vetoed (quiet)", levelFields(reading, text));
       vetoLogged = true;
     } else {
@@ -389,9 +388,26 @@ export function createSttEventHandlers(deps: {
     return spokenMs === undefined || spokenMs < deps.interruptionMinDurationMs();
   }
 
-  /** A final over the agent that is not the caller answering it: quiet, or brief. */
+  /**
+   * A final that began over agent speech and says only "mm-hmm" / "yeah,
+   * right": the caller listening, so no cut and no commit — the reply plays on.
+   * The content counterpart of {@link dropsBriefFinal}, whose word-span signal
+   * the default STT inflates; `acknowledgement.ts` has the measurement.
+   */
+  function dropsAcknowledgementFinal(text: string): boolean {
+    if (!(deps.utteranceOpenedOverSpeech() && isAcknowledgementOnly(text))) return false;
+    log.info("Pipeline acknowledgement dropped", {
+      sid: deps.sid,
+      ...transcriptField("text", text),
+    });
+    return true;
+  }
+
+  /** A final over the agent that is not the caller answering it: quiet, brief, or an acknowledgement. */
   function isNotATurn(text: string, level: CallerLevelReading, meta?: SttTurnMeta): boolean {
-    return dropsQuietFinal(text, level) || dropsBriefFinal(text, meta);
+    return (
+      dropsQuietFinal(text, level) || dropsBriefFinal(text, meta) || dropsAcknowledgementFinal(text)
+    );
   }
 
   /**
@@ -422,7 +438,10 @@ export function createSttEventHandlers(deps: {
       // so the scan stops at the largest of those instead of walking the
       // whole partial, which grows to full-utterance length as the user keeps
       // speaking.
-      const words = scanWords(text, Math.max(deps.minBargeInWords(), turnLimit.maxWords, 1));
+      const words = scanWords(
+        text,
+        Math.max(deps.minBargeInWords(), turnLimit.maxWords, SUSTAINED_SPEECH_WORDS),
+      );
       // Live captions: forward the interim transcript as-is. The committed turn
       // still arrives via onUserTranscript once the STT final lands. Emitted
       // after any barge-in below, because the client's `cancelled` handler
@@ -464,7 +483,7 @@ export function createSttEventHandlers(deps: {
         emitPartial();
         return;
       }
-      if (!partialBargesIn(text, words, callerLevel.read(meta?.inputPeakDbfs), meta?.spokenMs)) {
+      if (!partialBargesIn(text, words, callerLevel.read(meta?.inputPeakDbfs))) {
         // The agent may have finished its reply while this utterance ran; a
         // held edge then has no floor left to protect and is released here
         // rather than on a timer. Cheap, and partials keep arriving for as
@@ -479,7 +498,17 @@ export function createSttEventHandlers(deps: {
         return;
       }
       const { peakDb, refDb } = callerLevel.read(meta?.inputPeakDbfs);
-      log.info("Pipeline barge-in", { sid: deps.sid, peakDb, refDb });
+      // The gate's inputs ride along: which of the edge clock and the words'
+      // own span let this through is not otherwise recoverable from a log.
+      log.info("Pipeline barge-in", {
+        sid: deps.sid,
+        peakDb,
+        refDb,
+        words,
+        spokenMs: meta?.spokenMs,
+        edgeMs: speechEdges.durationMs(),
+        ...transcriptField("text", text),
+      });
       armBargeInRecovery();
       // The caller has the floor: hold agent audio for the backoff window, so
       // the reply that follows does not land on top of the utterance that

@@ -207,7 +207,9 @@ describe("the relative-level veto", () => {
     h.handlers.onSttPartial("wait no", { inputPeakDbfs: -18 });
     expect(h.abortInFlightTurn).toHaveBeenCalledOnce();
     expect(h.reported).toContain("reply.cancelled");
-    expect(h.infoLines("Pipeline barge-in")).toEqual([{ sid: "s1", peakDb: -18, refDb: CALLER }]);
+    expect(h.infoLines("Pipeline barge-in")).toEqual([
+      expect.objectContaining({ sid: "s1", peakDb: -18, refDb: CALLER }),
+    ]);
   });
 
   test("a quiet final while the agent speaks is not a turn and does not interrupt", () => {
@@ -332,16 +334,19 @@ describe("a brief final over agent speech is an acknowledgement, not a turn", ()
     expect(h.committed).toEqual([{ text: "Yes." }]);
   });
 
+  // "Stop." rather than an "uh-huh": a short final that is NOT an
+  // acknowledgement, so these exercise the duration gate alone
+  // (`dropsAcknowledgementFinal` would drop an "uh-huh" on its words).
   test("fails open without word timings", () => {
     const h = makeBriefHandlers();
-    h.handlers.onSttFinal("Uh-huh.");
-    expect(h.committed).toEqual([{ text: "Uh-huh." }]);
+    h.handlers.onSttFinal("Stop.");
+    expect(h.committed).toEqual([{ text: "Stop." }]);
   });
 
   test("a gate of 0 disables it", () => {
     const h = makeBriefHandlers({ interruptionMinDurationMs: () => 0 });
-    h.handlers.onSttFinal("Uh-huh.", { spokenMs: 320 });
-    expect(h.committed).toEqual([{ text: "Uh-huh." }]);
+    h.handlers.onSttFinal("Stop.", { spokenMs: 320 });
+    expect(h.committed).toEqual([{ text: "Stop." }]);
   });
 });
 
@@ -442,7 +447,7 @@ describe("continuation: the caller resumes right after a commit", () => {
     handlers.onSttPartial("Um,");
     expect(abort).not.toHaveBeenCalled();
     at(101_600);
-    handlers.onSttPartial("Mm-hmm, yeah");
+    handlers.onSttPartial("Wait, stop");
     expect(abort).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
   });
@@ -456,6 +461,55 @@ describe("continuation: the caller resumes right after a commit", () => {
     handlers.onSttPartial("eight zero two");
     expect(abort).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
+  });
+});
+
+describe("acknowledgements over the agent are listening, not turns", () => {
+  /** The agent is speaking, and every utterance opens over it. */
+  function overSpeech() {
+    const abort = vi.fn();
+    const made = makeHandlers({
+      agentIsSpeaking: () => true,
+      utteranceOpenedOverSpeech: () => true,
+      isTurnInFlight: () => true,
+      minBargeInWords: () => 1,
+      interruptionMinDurationMs: () => 500,
+      abortInFlightTurn: abort,
+    });
+    return { ...made, abort };
+  }
+
+  test("an acknowledgement-only interim does not cut the reply", () => {
+    const { handlers, abort, reported } = overSpeech();
+    handlers.onSttPartial("Mm-hmm, yeah");
+    expect(abort).not.toHaveBeenCalled();
+    expect(reported).not.toContain("reply.cancelled");
+  });
+
+  test("an acknowledgement-only final is neither a cut nor a turn", () => {
+    const { handlers, abort, committed, reported } = overSpeech();
+    handlers.onSttFinal("Uh-huh, sure.");
+    expect(abort).not.toHaveBeenCalled();
+    expect(committed).toEqual([]);
+    expect(reported).not.toContain("reply.cancelled");
+  });
+
+  test("the same words after the agent stopped are an answer, and commit", () => {
+    const { handlers, committed } = makeHandlers({ minBargeInWords: () => 1 });
+    handlers.onSttFinal("Yeah, right.");
+    expect(committed).toEqual([{ text: "Yeah, right." }]);
+  });
+
+  test("a three-word interim cuts at once, with the edge just opened", () => {
+    const { handlers, abort } = overSpeech();
+    handlers.onSttPartial("Oh, before I");
+    expect(abort).toHaveBeenCalledTimes(1);
+  });
+
+  test("a one-word interim that is not an acknowledgement still waits for the gate", () => {
+    const { handlers, abort } = overSpeech();
+    handlers.onSttPartial("Hold");
+    expect(abort).not.toHaveBeenCalled();
   });
 });
 
