@@ -314,30 +314,34 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // After: the result's proper nouns bias the STT for the rest of the call
   // (`speech/keyterms.ts`), on providers that can take them mid-stream.
   const keyterms = createKeytermHarvester((terms) => providers.stt?.updateKeyterms?.(terms));
-  const gatedExecuteTool = withConfirmationGate(executeTool, {
-    schemas: toolSchemas,
-    turnWasBackchannel,
-    log,
-    sid: opts.sid,
-  });
   // Opt-in (`writes: { verify }`): a separate model call checks each declared
   // write against the conversation before it runs — `tools/write-verifier.ts`.
-  const checkedExecuteTool = resolved.verifyWrites
-    ? withWriteVerification(gatedExecuteTool, {
+  // INSIDE the confirmation gate: the gate reads the authorizing turn's state,
+  // and must read it before the check's await, not after a new turn landed.
+  // Bound to the call's own (turn) signal, so a barge-in during the check
+  // cancels it and the write does not run afterwards.
+  const verifiedExecuteTool = resolved.verifyWrites
+    ? withWriteVerification(executeTool, {
         schemas: toolSchemas,
-        check: (tool, args) =>
+        check: (tool, args, signal) =>
           verifyWrite({
             model: opts.llm,
             instructions: systemPrompt(),
             messages: history.conversation,
             tool,
             args,
-            signal: sessionAbort.signal,
+            signal: signal ?? sessionAbort.signal,
           }),
         log,
         sid: opts.sid,
       })
-    : gatedExecuteTool;
+    : executeTool;
+  const checkedExecuteTool = withConfirmationGate(verifiedExecuteTool, {
+    schemas: toolSchemas,
+    turnWasBackchannel,
+    log,
+    sid: opts.sid,
+  });
   const tools = toVercelTools(toolSchemas, {
     executeTool: async (name, args, sessionId, messages, options) => {
       const result = await checkedExecuteTool(name, args, sessionId, messages, options);
