@@ -5,7 +5,7 @@
     "packages/aai/etc/coding-tools.api.md": 1,
     "packages/aai/etc/experimental.api.md": 1,
     "packages/aai/etc/host-internal.api.md": 4,
-    "packages/aai/etc/index.api.md": 11,
+    "packages/aai/etc/index.api.md": 10,
     "packages/aai/etc/internal.api.md": 1,
     "packages/aai/etc/manifest.api.md": 1,
     "packages/aai/etc/step.api.md": 1,
