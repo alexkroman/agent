@@ -209,7 +209,11 @@ function hasNewConversation(source: string | undefined): boolean {
   // `<SessionControls>` is the full row — its New Conversation button IS
   // `restart()` — so a chrome built on it owes nothing further.
   const ui = importsFrom(code, "@alexkroman1/aai-ui");
-  if (ui.includes("Controls") || ui.includes("SessionControls")) return true;
+  // `<ChatView>` renders `<Controls>` as its footer, so a chrome built on it
+  // carries the row too (`kitchen-coach-agent`).
+  if (ui.includes("Controls") || ui.includes("SessionControls") || ui.includes("ChatView")) {
+    return true;
+  }
   // `session.restart()` — the SDK method that is this affordance. It used to
   // look for two occurrences of a hand-rolled `newConversation(`, which is what
   // all three of these clients had written because no such method existed; the

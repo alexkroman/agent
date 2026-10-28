@@ -1,6 +1,8 @@
 import deployedDef from "virtual:aai/agent";
+import type { RouteHandler, RouteRequest } from "@alexkroman1/aai";
 import { DEFAULT_CLIENT_DELIVERY_ATTEMPTS } from "@alexkroman1/aai/step";
 import {
+  createRouteContext,
   createRunSnapshot,
   createToolContext,
   createWorkflowContext,
@@ -70,6 +72,98 @@ describeAgent(deployedDef, (run) => {
       const tools = Object.keys(deployedDef.tools ?? {}).sort();
       expect(tools).toEqual(["cancel_reminders", "deep_research", "remind_me", "stop"]);
       for (const name of tools) expect(agentDef.builtinTools).not.toContain(name);
+    });
+  });
+
+  describe("the Coming up panel's routes (GET/DELETE /tasks)", () => {
+    /** One of the two handlers clientRunsRoutes declared, by its route key. */
+    const handler = (key: string): RouteHandler => {
+      const found = agentDef.routes?.[key];
+      if (typeof found !== "function") throw new Error(`no route ${key}`);
+      return found;
+    };
+    const request = (over: Partial<RouteRequest>): RouteRequest => ({
+      method: "GET",
+      path: "/tasks",
+      params: {},
+      query: {},
+      headers: {},
+      body: undefined,
+      ...over,
+    });
+
+    test("are the pair the page reads and cancels through", () => {
+      expect(Object.keys(agentDef.routes ?? {}).sort()).toEqual([
+        "DELETE /tasks/:runId",
+        "GET /tasks",
+      ]);
+    });
+
+    test("list this speaker's reminders and research, a research run with its newest line", async () => {
+      const workflows = installStubWorkflows({
+        agent: deployedDef,
+        lastLine: "Reading 4 of 9 pages",
+        runs: [
+          createRunSnapshot(remind, {
+            runId: "r1",
+            key: "kitchen",
+            label: "call the plumber · due 5 PM",
+            status: "running",
+          }),
+          createRunSnapshot(research, {
+            runId: "r2",
+            key: "kitchen",
+            label: "heat pumps",
+            status: "running",
+          }),
+        ],
+      });
+      const ctx = createRouteContext({ workflows });
+      const listed = await handler("GET /tasks")(request({ clientId: "kitchen" }), ctx);
+      expect(listed).toMatchObject({
+        runs: expect.arrayContaining([
+          // A reminder is parked on its sleep: no progress line is read for it.
+          {
+            runId: "r1",
+            workflow: "remind",
+            status: "running",
+            title: "call the plumber · due 5 PM",
+            createdAt: expect.any(Number),
+          },
+          {
+            runId: "r2",
+            workflow: "research",
+            status: "running",
+            title: "heat pumps",
+            detail: "Reading 4 of 9 pages",
+            createdAt: expect.any(Number),
+          },
+        ]),
+      });
+      expect(workflows.findByKey).toHaveBeenCalledWith("kitchen", expect.anything());
+      expect(workflows.lastLine).toHaveBeenCalledTimes(1);
+      expect(workflows.lastLine).toHaveBeenCalledWith("r2");
+    });
+
+    test("cancel only a run this speaker started", async () => {
+      const workflows = installStubWorkflows({
+        agent: deployedDef,
+        runs: [createRunSnapshot(remind, { runId: "r1", key: "kitchen", status: "running" })],
+      });
+      const ctx = createRouteContext({ workflows });
+      const cancel = handler("DELETE /tasks/:runId");
+      const theirs = await cancel(
+        request({ method: "DELETE", params: { runId: "r1" }, clientId: "bedroom" }),
+        ctx,
+      );
+      expect(theirs).toMatchObject({ status: 404 });
+      expect(workflows.cancel).not.toHaveBeenCalled();
+      const ours = await cancel(
+        request({ method: "DELETE", params: { runId: "r1" }, clientId: "kitchen" }),
+        ctx,
+      );
+      expect(ours).toEqual({ cancelled: true });
+      expect(workflows.cancel).toHaveBeenCalledWith("r1");
     });
   });
 

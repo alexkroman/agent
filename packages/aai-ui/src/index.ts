@@ -76,6 +76,10 @@ export {
 // term for instead of writing a ternary chain over the whole union. Same shape
 // and same argument as `WORKFLOW_STATUS_LABELS` below.
 export { AGENT_STATE_LABELS } from "./agent-state-labels.ts";
+// Speak into a text box: a recorded clip sent through the page's own
+// `transcribe` callback to the dictation API — the key stays on a server, the
+// microphone is released on every way out, and a late answer lands nowhere.
+export { appendDictation } from "./append-dictation.ts";
 // Pre-connection client-config lookup (name + greeting). `fetchClientConfig`
 // is the PUBLIC half — what a page with its own `component` calls, since both
 // mounts make this lookup only for the shell they render themselves. Its base
@@ -242,6 +246,7 @@ export { type ConversationLogEntry, inboxEventToItem } from "./conversation-log.
 export type { ClientConfig, ClientHandle } from "./define-client.tsx";
 // Entry
 export { mountClient } from "./define-client.tsx";
+export { type DictationTranscriberOptions, dictationTranscriber } from "./dictation-transcriber.ts";
 export {
   selectAgentState,
   useAgentState,
@@ -338,6 +343,11 @@ export {
   useConversationLog,
 } from "./use-conversation-log.ts";
 export { type UseCopyResult, useCopy } from "./use-copy.ts";
+export {
+  type UseDictationOptions,
+  type UseDictationResult,
+  useDictation,
+} from "./use-dictation.ts";
 // An upload id a run PRODUCED, as a URL a DOM element accepts — with the
 // object-URL revoke and the stale-run guard that two templates had each
 // re-derived.

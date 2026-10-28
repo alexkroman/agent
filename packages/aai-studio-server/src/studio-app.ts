@@ -105,6 +105,8 @@ export type StudioAppOpts = {
   deployProject?: StudioRouteOptions["deployProject"];
   studioSessionBroker?: StudioRouteOptions["broker"];
   wakePreview?: StudioRouteOptions["wakePreview"];
+  /** Test seam: the transport behind `POST /studio/dictation`. */
+  dictationFetch?: StudioRouteOptions["dictationFetch"];
   /**
    * Test seam: the route factory, so a spec can observe the options this app
    * forwards to it. Defaults to {@link createStudioRoutes}.
@@ -145,6 +147,7 @@ export function createStudioApp(opts: StudioAppOpts): {
       deployProject: opts.deployProject,
       broker: opts.studioSessionBroker,
       wakePreview: opts.wakePreview,
+      dictationFetch: opts.dictationFetch,
     }),
     previewQueue: opts.previewQueue,
   });

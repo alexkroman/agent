@@ -422,4 +422,14 @@ window the platform runs is declared in `studio-rate-limit.ts`.
   opening. Modal always appends a hop; a proxy that strips it would put every
   caller in that bucket.
 - Meter anything that can spawn a sandbox or costs a third party: the session
-  broker, preview wake, project create, GitHub sync (`GITHUB_SYNC_RATE_LIMIT`).
+  broker, preview wake, project create, GitHub sync (`GITHUB_SYNC_RATE_LIMIT`),
+  dictation (`DICTATION_RATE_LIMIT`).
+
+## Dictation (`studio-dictation-routes.ts`)
+
+`POST /studio/dictation` turns the composer's recorded clip into text. The
+request handling is the SDK's `handleDictationRequest` (body cap, empty-body
+refusal, the `{ text } | { error }` reply and its 413/429/502 mapping) — never
+re-implement it here. The studio adds only policy: the CALLER's key (never a
+platform key) and `DICTATION_RATE_LIMIT`. Specs inject `dictationFetch`, so the
+SDK's real error mapping runs under them. Nothing is stored.

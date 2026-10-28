@@ -1,0 +1,16 @@
+{
+  "kind": "aai-authoring-capability-contract",
+  "capability": "dictation",
+  "epoch": 1,
+  "rule": 3,
+  "sha256": "53fa49189f26fb8378a88c0c07e16b47f4f55bd8580e03cb4e9445804d0b3210",
+  "exports": [
+    "DictationTranscriberOptions",
+    "UseDictationOptions",
+    "UseDictationResult",
+    "appendDictation",
+    "dictationTranscriber",
+    "useDictation"
+  ],
+  "rollup": "e4b0fa1a8603f1294e76f78cc3232bf83d82653c8a60f8d40e9e04de22a97ea0"
+}

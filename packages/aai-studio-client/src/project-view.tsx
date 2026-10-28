@@ -186,6 +186,13 @@ export function ProjectView(props: ProjectViewProps) {
   // A rejected bearer is refreshed, never signed out on — see auth-recovery.ts.
   useAuthRecovery(authRejection(workspace.error, chat.error), refreshAuth);
 
+  // The composer's microphone: a spoken clip to text on the user's own key
+  // (`POST /studio/dictation`). Keyed on the bearer so a refresh is picked up.
+  const transcribe = useCallback(
+    (audio: Blob, opts: { signal: AbortSignal }) => api.transcribeDictation(bearer, audio, opts),
+    [bearer],
+  );
+
   const files = workspace.data?.files ?? EMPTY_FILES;
   const deployedSlug = workspace.data?.deployedSlug;
   // No pane is gated, so the user's pick IS the pane — there is nothing to
@@ -326,6 +333,7 @@ export function ProjectView(props: ProjectViewProps) {
             return queryClient.getQueryData<ChatSession>(queryKeys.chatSession(project));
           }}
           chatStatus={chatStatus}
+          transcribe={transcribe}
           initialPrompt={props.initialPrompt}
           onInitialPromptSent={props.onInitialPromptSent}
           onWorkspaceChanged={invalidateWorkspace}

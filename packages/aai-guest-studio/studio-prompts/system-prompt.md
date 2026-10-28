@@ -3468,6 +3468,48 @@ export function ConfirmTool({ ask }: { ask: (question: string) => Promise<boolea
 }
 ```
 
+**`useDictation`** — speak into a text box: records one clip, hands it to a
+`transcribe` callback, and gives back the words. It is not a session, so it
+works on any page. The clip goes to your own server, never straight to
+AssemblyAI (that would ship your key in the page): mount
+`handleDictationRequest(request, { apiKey })` from
+`@alexkroman1/aai/experimental` on any server that takes a web `Request`
+(Next.js, Hono, Deno, Workers) — it caps the body, calls the dictation API and
+answers `{ text }` or `{ error }`. Not on `agent({ routes })`, whose 64 KB JSON
+bodies hold about a second of audio. On the page, `dictationTranscriber(url)` is
+the matching `transcribe`, `appendDictation` adds the words to a draft, and
+`buttonProps` keeps a recording stoppable while `disabled`:
+
+```tsx
+import { appendDictation, dictationTranscriber, useDictation } from "@alexkroman1/aai-ui";
+import { useState } from "react";
+
+const transcribe = dictationTranscriber("/api/dictation");
+
+export function SpokenNote({ busy }: { busy: boolean }) {
+  const [draft, setDraft] = useState("");
+  const dictation = useDictation({
+    transcribe,
+    onText: (text) => setDraft((d) => appendDictation(d, text)),
+    disabled: busy,
+  });
+  return (
+    <div>
+      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} />
+      {dictation.supported && (
+        <button type="button" {...dictation.buttonProps}>
+          {dictation.phase === "recording" ? "Stop" : "Speak"}
+        </button>
+      )}
+      {dictation.error && <p>{dictation.error}</p>}
+    </div>
+  );
+}
+```
+
+It releases the microphone on every way out, drops an answer that arrives after
+a cancel, and stops by itself at the endpoint's 120-second limit.
+
 **Anti-pattern:** Do NOT use `useEffect` + `toolCalls` to build derived state.
 Use `useToolResult` — it deduplicates. The `useEffect` pattern re-processes
 every tool call on every render, causing duplicates.

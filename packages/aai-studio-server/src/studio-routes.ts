@@ -44,6 +44,8 @@
  *   for exactly that.
  * - `GET /studio/events` and `GET /studio/projects/:project/events` — the two
  *   SSE streams (studio-events-routes.ts).
+ * - `POST /studio/dictation` — a recorded clip to text for the composer, on the
+ *   caller's own key (studio-dictation-routes.ts).
  *
  * Plus the browser-session surface:
  * - `GET /studio/auth`         — public: how to sign in (Supabase/dev/none)
@@ -61,6 +63,7 @@
  * for raw callers — either way a caller only ever sees their own projects.
  */
 
+import type { DictationFetch } from "@alexkroman1/aai/experimental";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { zValidator } from "@hono/zod-validator";
 import { authMw, userApiKeySecretName } from "aai-server/http";
@@ -77,6 +80,7 @@ import {
 } from "./studio-context.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { createAfterDeploy } from "./studio-deploy-hooks.ts";
+import { registerDictationRoutes } from "./studio-dictation-routes.ts";
 import { registerEventRoutes } from "./studio-events-routes.ts";
 import { createGithubAppConfig, type GithubAppConfig } from "./studio-github-config.ts";
 import { registerGithubRoutes } from "./studio-github-routes.ts";
@@ -112,6 +116,8 @@ export type StudioRouteOptions = {
   broker?: typeof createStudioSessionBroker;
   /** Test seam: swap the project-preview wake (studio-preview-wake.ts). */
   wakePreview?: typeof wakeProjectPreview;
+  /** Test seam: the transport to the dictation API (studio-dictation-routes.ts). */
+  dictationFetch?: DictationFetch | undefined;
   /**
    * Cross-replica studio session registry + this replica's identity. Both or
    * neither: the registry's `owner` checks are meaningless without a distinct
@@ -201,6 +207,7 @@ export function createStudioRoutes(options: StudioRouteOptions): {
   studio.use("/projects", authMw);
   studio.use("/projects/*", authMw);
   studio.use("/events", authMw);
+  studio.use("/dictation", authMw);
 
   // Workspace scope: browser sessions scope by the studio user (stable
   // across AssemblyAI key rotation), raw-key callers (CLI, evals) by the
@@ -223,6 +230,14 @@ export function createStudioRoutes(options: StudioRouteOptions): {
 
   // The two live event streams (studio-events-routes.ts).
   registerEventRoutes(studio, requestScope);
+
+  // The composer's microphone: a spoken clip to text on the caller's own key
+  // (studio-dictation-routes.ts).
+  registerDictationRoutes(studio, {
+    requestScope,
+    dictation: limits.dictation,
+    ...omitUndefined({ dictationFetch: options.dictationFetch }),
+  });
 
   /** See studio-settled-edit.ts — what an out-of-turn workspace write owes. */
   const settledEdit = (c: Context<StudioHonoEnv>, scope: string, project: string): void =>

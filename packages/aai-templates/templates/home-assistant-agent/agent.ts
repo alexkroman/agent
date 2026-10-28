@@ -1,4 +1,4 @@
-import { agent } from "@alexkroman1/aai";
+import { agent, clientRunsRoutes } from "@alexkroman1/aai";
 import { assemblyAITts } from "@alexkroman1/aai/tts";
 import { remind, research } from "./shared.ts";
 
@@ -31,4 +31,10 @@ export default agent({
   // Deep research (tools/deep_research.ts): minutes of searching and reading, so a run
   // that says a summary on the speaker when it is done, and texts the report if asked.
   workflows: { remind, research },
+  // The page's "Coming up" panel: GET /api/tasks lists the runs a tool started under this
+  // speaker's ?client= id (reminders still waiting, research still going, anything that
+  // finished in the last ten minutes), and DELETE /api/tasks/:runId cancels one, but only
+  // a run keyed by the asking client, so one speaker can't cancel another's reminder.
+  // Only research narrates, so only its runs pay for a progress read on every poll.
+  routes: { ...clientRunsRoutes({ progressFor: (run) => run.workflow === "research" }) },
 });

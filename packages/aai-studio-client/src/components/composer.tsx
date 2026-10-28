@@ -6,6 +6,7 @@
 
 import clsx from "clsx";
 import type { QueuedMessage } from "../chat-queue.ts";
+import { DictationButton, type Transcribe, useComposerDictation } from "./dictation-button.tsx";
 import { isEnterSubmit, SEND_BUTTON_CLASS, SendIcon, StopIcon } from "./send-button.tsx";
 
 type ComposerProps = {
@@ -29,6 +30,12 @@ type ComposerProps = {
   /** Follow-ups waiting for the current turn to finish, oldest first. */
   queued?: readonly QueuedMessage[];
   onRemoveQueued?: (id: string) => void;
+  /**
+   * Speak a prompt instead of typing it: a mic button that records a clip and
+   * appends its transcript to the field. Absent, or in a browser that cannot
+   * record, there is no button.
+   */
+  transcribe?: Transcribe | undefined;
 };
 
 /**
@@ -56,7 +63,9 @@ export function Composer({
   onStop,
   queued = [],
   onRemoveQueued,
+  transcribe,
 }: ComposerProps) {
+  const voice = useComposerDictation(transcribe, value, onValueChange, disabled);
   const submit = () => {
     const text = value.trim();
     // `sendDisabled` returns WITHOUT clearing the field: the text is the
@@ -112,20 +121,45 @@ export function Composer({
           placeholder={placeholder}
         />
         <div className="flex items-center justify-between gap-2 pr-2 pb-2 pl-3.5">
-          <span className="truncate text-[11px] text-subtle">
-            {busy ? "Enter queues it for after this turn" : "Shift+Enter for a new line"}
-          </span>
-          <button
-            type="button"
-            aria-label={showStop ? "Stop" : "Send"}
-            className={clsx("h-8 w-8", SEND_BUTTON_CLASS, showStop && "bg-fg hover:bg-ink")}
-            onClick={showStop ? onStop : submit}
-            disabled={!showStop && (disabled || sendDisabled)}
-          >
-            {showStop ? <StopIcon /> : <SendIcon />}
-          </button>
+          <ComposerHint status={voice.status} failed={voice.dictation.error != null} busy={busy} />
+          <div className="flex flex-none items-center gap-1">
+            {voice.enabled && <DictationButton dictation={voice.dictation} />}
+            <button
+              type="button"
+              aria-label={showStop ? "Stop" : "Send"}
+              className={clsx("h-8 w-8", SEND_BUTTON_CLASS, showStop && "bg-fg hover:bg-ink")}
+              onClick={showStop ? onStop : submit}
+              disabled={!showStop && (disabled || sendDisabled)}
+            >
+              {showStop ? <StopIcon /> : <SendIcon />}
+            </button>
+          </div>
         </div>
       </div>
     </div>
+  );
+}
+
+/** The line under the field: what dictation is doing, else how Enter behaves. */
+function ComposerHint({
+  status,
+  failed,
+  busy,
+}: {
+  status: string | null;
+  failed: boolean;
+  busy: boolean;
+}) {
+  if (status !== null) {
+    return (
+      <span className={clsx("truncate text-[11px]", failed ? "text-err" : "text-subtle")}>
+        {status}
+      </span>
+    );
+  }
+  return (
+    <span className="truncate text-[11px] text-subtle">
+      {busy ? "Enter queues it for after this turn" : "Shift+Enter for a new line"}
+    </span>
   );
 }

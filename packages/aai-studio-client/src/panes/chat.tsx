@@ -19,6 +19,7 @@ import type { ChatSession, StudioStatus } from "../api.ts";
 import { errorText } from "../api-error.ts";
 import { EmptyStateBody, Transcript } from "../components/chat-transcript.tsx";
 import { Composer } from "../components/composer.tsx";
+import type { Transcribe } from "../components/dictation-button.tsx";
 import { SpinnerIcon } from "../components/icons.tsx";
 import { useMessageQueue } from "../hooks/use-message-queue.ts";
 import { CHAT_COLUMN } from "../pane-shell.tsx";
@@ -74,6 +75,8 @@ type ChatPanelProps = {
    * no turn is in flight and the tree is still mid-edit.
    */
   onBusyChange?: ((busy: boolean) => void) | undefined;
+  /** Speak a prompt into the composer — `api.transcribeDictation` under the user's bearer. */
+  transcribe?: Transcribe | undefined;
 };
 
 /** A wait in progress, said at the foot of the transcript with a spinner beside it. */
@@ -138,6 +141,7 @@ function PendingChat({
   onSessionStale,
   input,
   onInputChange,
+  transcribe,
 }: {
   history: UIMessage[];
   chatStatus: StudioStatus | undefined;
@@ -147,6 +151,7 @@ function PendingChat({
   onSessionStale: () => Promise<ChatSession | undefined>;
   input: string;
   onInputChange: Dispatch<SetStateAction<string>>;
+  transcribe?: Transcribe | undefined;
 }) {
   return (
     <>
@@ -168,6 +173,7 @@ function PendingChat({
         onValueChange={onInputChange}
         // Unreachable: `sendDisabled` returns before any send.
         onSend={() => undefined}
+        transcribe={transcribe}
       />
     </>
   );
@@ -190,6 +196,7 @@ function ProjectChat({
   onSessionStale,
   input,
   onInputChange,
+  transcribe,
 }: Omit<ChatPanelProps, "chatHistory" | "chatSession" | "sessionError"> & {
   session: ChatSession;
   initialMessages: UIMessage[];
@@ -335,6 +342,7 @@ function ProjectChat({
         onSend={queue.submit}
         queued={queue.items}
         onRemoveQueued={queue.remove}
+        transcribe={transcribe}
       />
     </>
   );
@@ -383,6 +391,7 @@ export function ChatPanel(props: ChatPanelProps) {
         onSessionStale={props.onSessionStale}
         input={input}
         onInputChange={setInput}
+        transcribe={props.transcribe}
       />
     );
   } else {
@@ -399,6 +408,7 @@ export function ChatPanel(props: ChatPanelProps) {
         onSessionStale={props.onSessionStale}
         input={input}
         onInputChange={setInput}
+        transcribe={props.transcribe}
       />
     );
   }

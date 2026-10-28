@@ -1192,6 +1192,42 @@ interface DelegateToolCall {
 }
 
 // @public
+export const DICTATION_ENDPOINT: string;
+
+// @public
+export const DICTATION_MAX_BYTES: number;
+
+// @public
+export const DICTATION_MAX_SECONDS: number;
+
+// @public
+export const DICTATION_MODEL: string;
+
+// @public
+export const DICTATION_SAMPLE_RATE: number;
+
+// @public
+export const DICTATION_TIMEOUT_MS: number;
+
+// @public
+export type DictationFetch = (url: string, init: {
+    method: string;
+    headers: Record<string, string>;
+    body: Uint8Array<ArrayBuffer>;
+    signal: AbortSignal;
+}) => Promise<Response>;
+
+// @public @input
+export type DictationRequestOptions = Omit<TranscribeDictationOptions, "type" | "signal">;
+
+// @public @sealed
+export type DictationResponseBody = {
+    text: string;
+} | {
+    error: string;
+};
+
+// @public
 export const DTMF_KEYS: string;
 
 // @public
@@ -1257,6 +1293,9 @@ type GenerateResult = {
 
 // @public
 type GuardrailVerdict = true | string;
+
+// @public
+export function handleDictationRequest(request: Request, options: DictationRequestOptions): Promise<Response>;
 
 // @public
 type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S extends undefined ? Record<string, never> : never;
@@ -1748,6 +1787,23 @@ type ToolStartMessage = {
 type ToolUi = {
     icon?: string | undefined;
     label?: string | undefined;
+};
+
+// @public
+export function transcribeDictation(audio: Uint8Array | readonly Uint8Array[], options: TranscribeDictationOptions): Promise<{
+    text: string;
+}>;
+
+// @public @input
+export type TranscribeDictationOptions = {
+    apiKey: string;
+    model?: string | undefined;
+    type?: string | undefined;
+    filename?: string | undefined;
+    label?: string | undefined;
+    timeoutMs?: number | undefined;
+    signal?: AbortSignal | undefined;
+    fetch?: DictationFetch | undefined;
 };
 
 // @public
@@ -21615,6 +21671,9 @@ export type AgentState = "disconnected" | "connecting" | "ready" | "listening" |
 export type AgentStateFrame = Readonly<Record<string, unknown>>;
 
 // @public
+export function appendDictation(draft: string, text: string): string;
+
+// @public
 export function AudioResult(input: AudioResultProps): ReactNode;
 
 // @public @input
@@ -21881,6 +21940,17 @@ export function createStoredValue(key: string, options?: StoredValueOptions): St
 
 // @public
 export function createWorkflowApi(options?: WorkflowApiOptions): AgentClient;
+
+// @public
+export function dictationTranscriber(url: string, options?: DictationTranscriberOptions): (audio: Blob, options: {
+    signal: AbortSignal;
+}) => Promise<string>;
+
+// @public @input
+export type DictationTranscriberOptions = {
+    headers?: Record<string, string> | (() => Record<string, string>);
+    fetch?: typeof fetch;
+};
 
 export { errorMessage }
 
@@ -22412,6 +22482,35 @@ export type UseCopyResult = {
     copy: (text: string) => void;
     label: (text: string, idle?: string) => string;
     didCopy: (text: string) => boolean;
+};
+
+// @public
+export function useDictation(options: UseDictationOptions): UseDictationResult;
+
+// @public @input
+export type UseDictationOptions = {
+    transcribe: (audio: Blob, options: {
+        signal: AbortSignal;
+    }) => Promise<string>;
+    onText: (text: string) => void;
+    maxSeconds?: number;
+    disabled?: boolean;
+};
+
+// @public @sealed
+export type UseDictationResult = {
+    phase: "idle" | "starting" | "recording" | "transcribing" | (string & {});
+    error: string | null;
+    supported: boolean;
+    start: () => void;
+    stop: () => void;
+    cancel: () => void;
+    toggle: () => void;
+    buttonProps: {
+        onClick: () => void;
+        disabled: boolean;
+        "aria-pressed": boolean;
+    };
 };
 
 // @public
