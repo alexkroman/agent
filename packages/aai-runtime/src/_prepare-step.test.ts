@@ -268,8 +268,9 @@ describe("createPinRelease", () => {
 
 // A tool round trip is silence on a phone call. The cases below are the shapes
 // seen in recorded voice runs: repeated identity lookups that each failed while
-// the caller asked whether anyone was there, and one call retried with
-// identical arguments after each `Error: ...` result.
+// the caller asked whether anyone was there. (One call retried with identical
+// arguments is no longer this preparer's: `tools/failed-call-memo.ts` refuses
+// it before it runs.)
 describe("toolErrorBudget", () => {
   type Part = Record<string, unknown>;
   const call = (toolName: string, input: unknown): Part => ({
@@ -302,14 +303,16 @@ describe("toolErrorBudget", () => {
     expect(budget({ steps })).toBeUndefined();
   });
 
-  test("an identical retry of a failed call forces an answer", () => {
+  test("an identical retry of a failed call does not, by itself, end the turn", () => {
+    // It used to force an answer, which cost the repeat AND the rest of the
+    // recovery. The memo now refuses it before it runs, with a result telling
+    // the model to change something; that refusal counts as one failure here.
     const budget = toolErrorBudget(silentLogger, "sid");
     const steps = [
       round("find_user", { name: "Ada", zip: "1" }, "Error: not found"),
-      // Same call, keys in another order: canonical JSON makes it identical.
-      { content: [call("find_user", { zip: "1", name: "Ada" })] },
+      round("find_user", { zip: "1", name: "Ada" }, failure),
     ];
-    expect(budget({ steps })).toEqual({ toolChoice: "none" });
+    expect(budget({ steps })).toBeUndefined();
   });
 
   test("retrying a call that SUCCEEDED is not a repeat", () => {
@@ -322,15 +325,33 @@ describe("toolErrorBudget", () => {
   });
 
   test("the budget's worth of failures forces an answer", () => {
-    expect(TOOL_ERROR_BUDGET).toBe(3);
+    // 6: room for the whole lookup-recovery ladder — see TOOL_ERROR_BUDGET.
+    expect(TOOL_ERROR_BUDGET).toBe(6);
+    const budget = toolErrorBudget(silentLogger, "sid");
+    // Every failure shape counts: an error result, a thrown tool, an error part.
+    const shapes = [
+      (i: number) => round("find_user", { name: `Ada${i}` }, failure),
+      (i: number) => ({
+        content: [{ type: "tool-error", toolName: "find_user", input: { a: i }, error: "boom" }],
+      }),
+      (i: number) =>
+        round("find_user", { email: `x${i}` }, { type: "error-text", value: "denied" }),
+    ];
+    const steps = Array.from({ length: TOOL_ERROR_BUDGET }, (_, i) =>
+      (shapes[i % shapes.length] as (i: number) => { content: Part[] })(i),
+    );
+    expect(budget({ steps: steps.slice(0, -1) })).toBeUndefined();
+    expect(budget({ steps })).toEqual({ toolChoice: "none" });
+  });
+
+  test("three distinct failed lookups no longer end the turn — the ladder continues", () => {
     const budget = toolErrorBudget(silentLogger, "sid");
     const steps = [
-      round("find_user", { name: "Ada" }, failure),
-      { content: [{ type: "tool-error", toolName: "find_user", input: { a: 1 }, error: "boom" }] },
-      round("find_user", { email: "x" }, { type: "error-text", value: "denied" }),
+      round("find_user", { first: "Sophia", zip: "19122" }, failure),
+      round("find_user", { first: "Sofia", zip: "19122" }, failure),
+      round("find_user", { email: "sophia@example.com" }, failure),
     ];
-    expect(budget({ steps: steps.slice(0, 2) })).toBeUndefined();
-    expect(budget({ steps })).toEqual({ toolChoice: "none" });
+    expect(budget({ steps })).toBeUndefined();
   });
 
   test("failures in earlier turns never count — steps are one turn's", () => {
@@ -346,14 +367,15 @@ describe("toolErrorBudget", () => {
     const info = vi.fn();
     const log: Logger = { ...silentLogger, info };
     const budget = toolErrorBudget(log, "sid-1");
-    const steps = [round("t", { q: 1 }, failure), { content: [call("t", { q: 1 })] }];
+    const steps = Array.from({ length: TOOL_ERROR_BUDGET }, (_, i) =>
+      round("t", { q: i }, failure),
+    );
     budget({ steps });
     budget({ steps });
     expect(info).toHaveBeenCalledTimes(1);
     expect(info).toHaveBeenCalledWith("tool-error budget spent; forcing an answer", {
       sid: "sid-1",
-      errors: 1,
-      identicalRepeat: true,
+      errors: TOOL_ERROR_BUDGET,
     });
   });
 
@@ -364,11 +386,13 @@ describe("toolErrorBudget", () => {
       { stage: "tool-error-budget", prepare: toolErrorBudget(silentLogger, "sid") },
       { stage: "force-final-answer", prepare: forceFinalAnswer(5, silentLogger, "sid") },
     ]);
-    const failed = round("t", { q: 1 }, failure);
+    const failed = Array.from({ length: TOOL_ERROR_BUDGET }, (_, i) =>
+      round("t", { q: i }, failure),
+    );
     const options = step({ stepNumber: 1 });
     expect(await composed({ ...options, steps: [] })).toEqual({ toolChoice: "required" });
-    const repeat = { ...options, stepNumber: 2, steps: [failed, failed] as typeof options.steps };
-    expect(await composed(repeat)).toEqual({ toolChoice: "none" });
+    const spent = { ...options, stepNumber: 2, steps: failed as typeof options.steps };
+    expect(await composed(spent)).toEqual({ toolChoice: "none" });
   });
 });
 

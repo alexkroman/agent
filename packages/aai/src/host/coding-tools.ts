@@ -183,6 +183,13 @@ function renderTodos(todos: z.infer<typeof TodoItemSchema>[]): string {
 }
 
 /**
+ * The three coding tools that change files are writes — see `ToolDef.effect`.
+ * A voice agent then cannot overwrite or delete a file on a caller's "uh-huh"
+ * spoken over its own question.
+ */
+const WRITE = "write" as const;
+
+/**
  * Build a coding agent's tool set over one directory.
  *
  * The result is keyed by the name the model calls, so it goes onto a definition
@@ -284,6 +291,8 @@ export function createCodingTools<const N extends CodingToolName = CodingToolNam
     }),
     write_file: tool({
       description: describe.write_file,
+      // A write: the pipeline runs it only on a caller turn spoken into silence.
+      effect: WRITE,
       inputSchema: z.object({
         path: z.string().describe("Workspace-relative path"),
         content: z.string().describe("Full new file contents"),
@@ -302,6 +311,8 @@ export function createCodingTools<const N extends CodingToolName = CodingToolNam
     }),
     edit_file: tool({
       description: describe.edit_file,
+      // A write: the pipeline runs it only on a caller turn spoken into silence.
+      effect: WRITE,
       inputSchema: z.object({
         path: z.string().describe("Workspace-relative path"),
         oldText: z.string().describe("Exact text to replace; must be unique in the file"),
@@ -333,6 +344,8 @@ export function createCodingTools<const N extends CodingToolName = CodingToolNam
     }),
     delete_file: tool({
       description: describe.delete_file,
+      // A write: the pipeline runs it only on a caller turn spoken into silence.
+      effect: WRITE,
       inputSchema: z.object({ path: z.string() }),
       execute: async ({ path: rel }) => {
         const abs = resolveInside(dir, rel);

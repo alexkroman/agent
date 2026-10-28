@@ -402,6 +402,10 @@ const HostConfigMessageSchema: z.ZodObject<{
      systemPrompt: z.ZodString;
      tools: z.ZodArray<z.ZodObject<{
         description: z.ZodString;
+        effect: z.ZodOptional<z.ZodEnum<{
+           read: "read";
+           write: "write";
+        }>>;
         messages: z.ZodOptional<z.ZodObject<{
            complete: z.ZodOptional<...>;
            delayed: z.ZodOptional<...>;
@@ -442,6 +446,10 @@ const HostConfigSchema: z.ZodObject<{
   systemPrompt: z.ZodString;
   tools: z.ZodArray<z.ZodObject<{
      description: z.ZodString;
+     effect: z.ZodOptional<z.ZodEnum<{
+        read: "read";
+        write: "write";
+     }>>;
      messages: z.ZodOptional<z.ZodObject<{
         complete: z.ZodOptional<z.ZodArray<z.ZodObject<..., ...>>>;
         delayed: z.ZodOptional<z.ZodArray<z.ZodObject<..., ...>>>;

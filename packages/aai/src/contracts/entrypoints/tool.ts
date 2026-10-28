@@ -47,6 +47,8 @@ export {
   type ToolContext,
   type ToolDef,
   type ToolDelayedMessage,
+  // `tool({ effect })`: a declared write; rides on the wire `ToolSchema`.
+  type ToolEffect,
   type ToolErrorHandler,
   type ToolFailure,
   type ToolInputSchema,

@@ -17,9 +17,11 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import { debugPartialsEnabled, type Logger, transcriptField } from "../../../logger.ts";
 import type { SttTurnMeta } from "../../../providers/openers.ts";
 import type { TransportCallbacks } from "../../types.ts";
-import type { FalseInterruptionRecovery } from "../heard/index.ts";
-import { createBargeInPolicy } from "./barge-in-policy.ts";
+import { buildCutNote, type FalseInterruptionRecovery } from "../heard/index.ts";
+import { isAcknowledgementOnly } from "./acknowledgement.ts";
+import { createBargeInPolicy, SUSTAINED_SPEECH_WORDS } from "./barge-in-policy.ts";
 import { type CallerLevelReading, createCallerLevel } from "./caller-level.ts";
+import { createContinuationGate } from "./continuation.ts";
 import type { GatedSpeechEdges, SpeechEdgeTracker } from "./edges.ts";
 import type { ManualTurn } from "./manual-turn.ts";
 import type { SilenceNudger } from "./silence.ts";
@@ -110,6 +112,8 @@ export function createSttEventHandlers(deps: {
    * an utterance can barge in — see `createBargeInPolicy`, step 1.
    */
   utteranceOpenedOverSpeech: () => boolean;
+  /** The same, against any agent audio (filler included) — the write gate's input. */
+  utteranceOpenedOverAudio: () => boolean;
   /** Has this reply sent real speech, as opposed to dead-air filler? */
   hasSpokenRecordable: () => boolean;
   /** Abort the in-flight turn and cancel TTS playback. */
@@ -123,6 +127,12 @@ export function createSttEventHandlers(deps: {
    * reads the same answer either side of it.
    */
   tailResumePrompt: () => string | undefined;
+  /**
+   * The heard text of the reply a barge-in is cutting, for the note the turn
+   * it commits carries — `HeardTracker.cutAnchor`. Read before the abort, like
+   * {@link tailResumePrompt}.
+   */
+  cutAnchor: () => string | undefined;
   speechEdges: SpeechEdgeTracker;
   /** Outward speaking-edge gate — see {@link createGatedSpeechEdges}. */
   edgeGate: GatedSpeechEdges;
@@ -133,7 +143,7 @@ export function createSttEventHandlers(deps: {
    * Commit a user turn: emit the transcript and run the chained reply. `note`
    * rides on the MODEL's copy only — see {@link createUserActivity}.
    */
-  commitUserTurn: (text: string, note?: string) => void;
+  commitUserTurn: (text: string, note?: string, meta?: SttTurnMeta, backchannel?: boolean) => void;
   /** Preemptive generation, or a no-op controller when the flag is off. */
   speculation: SpeculationHooks;
   /**
@@ -146,6 +156,8 @@ export function createSttEventHandlers(deps: {
   minBargeInWords: () => number;
   /** Sustained-speech gate for interim-triggered barge-in; 0 disables. Per state too. */
   interruptionMinDurationMs: () => number;
+  /** Resumed speech this soon after a commit continues that turn; 0 disables. Per state. */
+  continuationWindowMs: () => number;
   /** A real interruption fired: arm the post-interruption audio block. */
   onInterrupted: () => void;
   /**
@@ -200,7 +212,22 @@ export function createSttEventHandlers(deps: {
    * pipeline-recovery.ts for the repetition measurement behind that), and a
    * fully-heard tail arms nothing: there is nothing left to resume.
    */
+  /**
+   * The note for a turn whose final is itself cutting the reply: one a partial
+   * barge-in already recorded wins, else the cut this final makes. Read before
+   * the abort, like the `tailResumePrompt` it pairs with.
+   */
+  function cutNoteFor(recorded: string | undefined): string | undefined {
+    if (recorded !== undefined) return recorded;
+    const anchor = deps.cutAnchor();
+    return anchor === undefined ? undefined : buildCutNote(anchor);
+  }
+
   function armBargeInRecovery(): void {
+    // Whichever way the utterance resolves: a resume if it never commits, a
+    // note on the turn if it does (`buildCutNote`).
+    const anchor = deps.cutAnchor();
+    if (anchor !== undefined) recovery.noteCut(anchor);
     const cutPrompt = deps.tailResumePrompt();
     if (deps.isTurnInFlight() && !deps.isTurnDraining()) {
       recovery.arm(cutPrompt ?? DEFAULT_FALSE_INTERRUPTION_PROMPT);
@@ -225,6 +252,35 @@ export function createSttEventHandlers(deps: {
   // interims it produces. See pipeline-caller-level.ts.
   const callerLevel = createCallerLevel();
   let vetoLogged = false;
+  const continuation = createContinuationGate({ windowMs: deps.continuationWindowMs });
+
+  /**
+   * Did the caller resume speaking right after the last commit, while the
+   * reply to it is still in flight or playing? Then this utterance is the rest
+   * of that turn — see `continuation.ts`. A quiet utterance is not: the level
+   * veto that keeps background speech from barging in keeps it from this too.
+   *
+   * Neither is one that OPENED OVER the agent's speech. Continuation exists for
+   * speech that began before the reply was audible, which the barge-in rules
+   * cannot see (`utteranceOpenedOverSpeech` is false). Speech that began over
+   * the reply is exactly what those rules are for, and this path skips all of
+   * them: one interim word cuts at once, with no sustained-speech gate and no
+   * brief-final drop. On Full-Duplex-Bench v1.5 (run `v15-full-3`) it decided
+   * 350 of 352 overlaps that opened over a reply, because each opened within
+   * the 3.5s window of the question's commit. A backchannel cut the answer
+   * ~0.3s in, on an interim the STT heard as "Um,", and committed "Mm-hmm,
+   * yeah." onto the question, so the answer restarted from the top.
+   */
+  function continuesLastTurn(meta?: SttTurnMeta): boolean {
+    // `interruption: "off"` and a held floor both read as an unreachable word
+    // threshold: a disclosure must FINISH, and a continuation is still a cut.
+    if (!Number.isFinite(deps.minBargeInWords())) return false;
+    // Opened over the reply: the barge-in policy decides, gates included.
+    if (deps.utteranceOpenedOverSpeech()) return false;
+    if (!(deps.isTurnInFlight() || deps.audioOnLine())) return false;
+    if (callerLevel.read(meta?.inputPeakDbfs).quiet) return false;
+    return continuation.continues(Date.now() - speechEdges.durationMs());
+  }
   function levelFields(reading: CallerLevelReading, text: string): Record<string, unknown> {
     return {
       sid: deps.sid,
@@ -239,6 +295,9 @@ export function createSttEventHandlers(deps: {
    * logged only when it is what said no.
    */
   function partialBargesIn(text: string, words: number, reading: CallerLevelReading): boolean {
+    // Listening, not taking the floor — see `acknowledgement.ts`. Checked here,
+    // ahead of the content-blind policy, so the policy stays content-blind.
+    if (deps.utteranceOpenedOverSpeech() && isAcknowledgementOnly(text)) return false;
     if (bargeIn.partialInterrupts(words, reading.quiet)) return true;
     if (reading.quiet && bargeIn.partialInterrupts(words)) {
       if (!vetoLogged) log.info("Pipeline barge-in vetoed (quiet)", levelFields(reading, text));
@@ -270,6 +329,88 @@ export function createSttEventHandlers(deps: {
   }
 
   /**
+   * A BRIEF final spoken over the agent is an acknowledgement, not a turn:
+   * dropped as if the STT had never sent it, exactly like a quiet one — the
+   * reply is not cut, and nothing reaches the model.
+   *
+   * This is the sustained-speech gate (`interruptionMinDurationMs`) applied to
+   * the one path that skipped it. An interim must last that long to barge in,
+   * but a final did not, on the grounds that a final is real speech. Real is
+   * not floor-taking: a one-beat "uh-huh" commits as a final with no qualifying
+   * interim before it, so with `minBargeInWords` at 1 every backchannel cut the
+   * reply — 334 of 367 on six tau2-bench retail runs.
+   *
+   * Cutting was the lesser harm. Committed, the acknowledgement became the
+   * caller's ANSWER to whatever the agent was asking: "Shall I request the
+   * return for all four items?" / "Uh-huh." ran `return_delivered_order_items`
+   * on 11 occasions in those runs, the caller having consented to nothing. So
+   * deferring it as a chained turn is no fix either — it would land right
+   * after the question it never answered.
+   *
+   * Measured on the WORDS' span (`SttTurnMeta.spokenMs`), not on the time since
+   * the first interim, which includes the endpointing silence before the
+   * final. Content-blind: nothing here reads what was said. Only for an
+   * utterance that BEGAN over agent speech, so a short answer given after the
+   * agent stopped still commits; the edge is left to its idle watchdog, which
+   * fires a false-interruption resume should a partial barge-in have armed
+   * one. Fails open on a provider that reports no word timings.
+   *
+   * The cost: a genuine "yes" spoken over the agent's own question is dropped.
+   * The agent finishes the question, and the caller answers it again.
+   */
+  function dropsBriefFinal(text: string, meta?: SttTurnMeta): boolean {
+    if (!deps.utteranceOpenedOverSpeech()) return false;
+    const gate = deps.interruptionMinDurationMs();
+    const spokenMs = meta?.spokenMs;
+    if (!(gate > 0 && spokenMs !== undefined && spokenMs < gate)) return false;
+    log.info("Pipeline brief final dropped", {
+      sid: deps.sid,
+      spokenMs,
+      ...transcriptField("text", text),
+    });
+    return true;
+  }
+
+  /**
+   * Could this turn only be the caller LISTENING — so it cannot confirm a write
+   * (`tools/confirmation-gate.ts`)? It opened over agent audio, filler included,
+   * AND its words span less than the sustained-speech gate. Overlap alone was
+   * the first rule and refused real answers: callers start "Yeah, cancel that
+   * charger order" over the last ~1.4s of the question (tau2 retail task 32,
+   * twice, and the agent gave up), which by how much of the question it talked
+   * over is indistinguishable from an "uh-huh" (task 12, ~1.2s). Length is what
+   * separates them — an acknowledgement is ~0.3s of speech, an answer longer.
+   * Without word timings the old rule stands: overlap refuses.
+   */
+  function isBackchannel(openedOverAudio: boolean, meta?: SttTurnMeta): boolean {
+    if (!openedOverAudio) return false;
+    const spokenMs = meta?.spokenMs;
+    return spokenMs === undefined || spokenMs < deps.interruptionMinDurationMs();
+  }
+
+  /**
+   * A final that began over agent speech and says only "mm-hmm" / "yeah,
+   * right": the caller listening, so no cut and no commit — the reply plays on.
+   * The content counterpart of {@link dropsBriefFinal}, whose word-span signal
+   * the default STT inflates; `acknowledgement.ts` has the measurement.
+   */
+  function dropsAcknowledgementFinal(text: string): boolean {
+    if (!(deps.utteranceOpenedOverSpeech() && isAcknowledgementOnly(text))) return false;
+    log.info("Pipeline acknowledgement dropped", {
+      sid: deps.sid,
+      ...transcriptField("text", text),
+    });
+    return true;
+  }
+
+  /** A final over the agent that is not the caller answering it: quiet, brief, or an acknowledgement. */
+  function isNotATurn(text: string, level: CallerLevelReading, meta?: SttTurnMeta): boolean {
+    return (
+      dropsQuietFinal(text, level) || dropsBriefFinal(text, meta) || dropsAcknowledgementFinal(text)
+    );
+  }
+
+  /**
    * Log the level a committed turn carried, against the reference it was read
    * with — the record the veto's threshold is validated from — and let it
    * feed that reference.
@@ -297,7 +438,10 @@ export function createSttEventHandlers(deps: {
       // so the scan stops at the largest of those instead of walking the
       // whole partial, which grows to full-utterance length as the user keeps
       // speaking.
-      const words = scanWords(text, Math.max(deps.minBargeInWords(), turnLimit.maxWords, 1));
+      const words = scanWords(
+        text,
+        Math.max(deps.minBargeInWords(), turnLimit.maxWords, SUSTAINED_SPEECH_WORDS),
+      );
       // Live captions: forward the interim transcript as-is. The committed turn
       // still arrives via onUserTranscript once the STT final lands. Emitted
       // after any barge-in below, because the client's `cancelled` handler
@@ -326,6 +470,19 @@ export function createSttEventHandlers(deps: {
         onManualPartial(text, words, meta);
         return;
       }
+      if (words >= 1 && continuesLastTurn(meta)) {
+        // The barge-in path, deliberately: the abort, the cancelled report and
+        // false-interruption recovery are the same, so speech that never
+        // commits (noise) resumes the reply instead of losing it.
+        log.info("Pipeline continuation", { sid: deps.sid, spoke: deps.hasTurnSpoken() });
+        armBargeInRecovery();
+        deps.onInterrupted();
+        deps.abortInFlightTurn();
+        deps.edgeGate.release();
+        callbacks.report({ type: "reply.cancelled" });
+        emitPartial();
+        return;
+      }
       if (!partialBargesIn(text, words, callerLevel.read(meta?.inputPeakDbfs))) {
         // The agent may have finished its reply while this utterance ran; a
         // held edge then has no floor left to protect and is released here
@@ -337,11 +494,21 @@ export function createSttEventHandlers(deps: {
         // nowhere else — the non-barge-in branch IS the idle-ish case it is
         // allowed to fire in, and one call site keeps this handler under the
         // cognitive-complexity cap it already sits near.
-        deps.speculation.onPartial(text, meta?.endOfTurnConfidence);
+        deps.speculation.onPartial(text);
         return;
       }
       const { peakDb, refDb } = callerLevel.read(meta?.inputPeakDbfs);
-      log.info("Pipeline barge-in", { sid: deps.sid, peakDb, refDb });
+      // The gate's inputs ride along: which of the edge clock and the words'
+      // own span let this through is not otherwise recoverable from a log.
+      log.info("Pipeline barge-in", {
+        sid: deps.sid,
+        peakDb,
+        refDb,
+        words,
+        spokenMs: meta?.spokenMs,
+        edgeMs: speechEdges.durationMs(),
+        ...transcriptField("text", text),
+      });
       armBargeInRecovery();
       // The caller has the floor: hold agent audio for the backoff window, so
       // the reply that follows does not land on top of the utterance that
@@ -366,7 +533,7 @@ export function createSttEventHandlers(deps: {
       log.debug("Pipeline STT final", { sid: deps.sid, ...transcriptField("text", trimmed) });
       vetoLogged = false;
       const level = callerLevel.read(meta?.inputPeakDbfs);
-      if (!manualTurn.enabled && dropsQuietFinal(trimmed, level)) return;
+      if (!manualTurn.enabled && isNotATurn(trimmed, level, meta)) return;
       // Before anything else this handler does: a speculation this final cannot
       // match is billed for as long as it runs, so it is aborted at the
       // earliest possible instant rather than when the turn chain drains.
@@ -374,7 +541,9 @@ export function createSttEventHandlers(deps: {
       // Real speech reached a final — whatever barge-in preceded it was not a
       // false interruption; a genuine turn commits below. Restores the
       // consecutive-resume budget too: the user is demonstrably present.
-      recovery.onUserTurn();
+      // The note this turn carries if the utterance cut a reply on its way in
+      // — a partial barge-in recorded it; a final that interrupts, below, does.
+      let cutNote = recovery.onUserTurn();
       // The resume may have already fired: the speaking edge went idle before
       // this final landed, which happens whenever the STT's endpointing plus
       // final-emission latency exceeds `speechIdleTimeoutMs` — the transport
@@ -394,6 +563,8 @@ export function createSttEventHandlers(deps: {
       // A final can arrive without any preceding partial (short utterances on
       // some STT providers) — make sure the speaking edge still fires.
       speechEdges.speechStarted();
+      // Sampled before `speechEnded()` below clears it.
+      const backchannel = isBackchannel(deps.utteranceOpenedOverAudio(), meta);
       // The turn that follows re-arms the nudge on completion.
       nudger.onUserTurn();
       // Push-to-talk: the final is one piece of a turn the CLIENT ends, so it
@@ -415,6 +586,7 @@ export function createSttEventHandlers(deps: {
           peakDb: level.peakDb,
           refDb: level.refDb,
         });
+        cutNote = cutNoteFor(cutNote);
         deps.onInterrupted();
         deps.abortInFlightTurn();
         deps.edgeGate.release();
@@ -425,7 +597,8 @@ export function createSttEventHandlers(deps: {
       // AssemblyAI opener sets `min_turn_silence` for exactly this.
       speechEdges.speechEnded();
       recordCommittedLevel(level);
-      deps.commitUserTurn(trimmed);
+      deps.commitUserTurn(trimmed, cutNote, meta, backchannel);
+      continuation.onCommit();
     },
   };
 }

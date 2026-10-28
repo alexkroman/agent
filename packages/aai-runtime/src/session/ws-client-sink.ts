@@ -96,5 +96,10 @@ export function createClientSink(
     },
     close: raw.close,
   };
-  return { client, stopPacing: paced.stopPacing, endAfterReply: paced.endAfterReply };
+  return {
+    client,
+    stopPacing: paced.stopPacing,
+    endAfterReply: paced.endAfterReply,
+    heldAudioMs: paced.heldAudioMs,
+  };
 }

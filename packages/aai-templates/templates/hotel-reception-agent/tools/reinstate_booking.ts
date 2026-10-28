@@ -12,6 +12,7 @@ import { hotelSlot } from "../session.ts";
  * different room and call it reinstated.
  */
 export default hotelSlot.updateTool({
+  effect: "write",
   description:
     "Reactivate a room booking the caller previously CANCELLED. Takes last name plus the " +
     "confirmation code (this is the one lookup that accepts a cancelled booking), checks the " +

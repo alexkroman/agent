@@ -143,6 +143,29 @@ export const STT_CONNECT_RETRY_DELAY_MS = 500;
 export const DEFAULT_VOICE_FOCUS_THRESHOLD = 0.9;
 
 /**
+ * Confidence (0-1) the AssemblyAI service's voice-activity detector needs before
+ * a frame counts as speech, sent as `vad_threshold`. The service's own default
+ * is 0.2 on the U3 Pro models.
+ *
+ * **0.02, because a caller the gate drops is never heard at all.** On tau2-bench
+ * retail one caller voice, after 8 kHz mu-law telephony encoding, produced ZERO
+ * service events at the service default — no `speech.started`, no transcript —
+ * and "the agent never answered" was mostly that voice. Replayed across its
+ * calls, caller transcripts went 12 -> 19 of 30 lines at 0.01 (0.02: 18) while
+ * background speech leaking into transcripts stayed at 2-3 throughout. On the
+ * 114-task run at 0.02 (with 800 ms endpointing and continuation), caller speech
+ * left unanswered fell 14% -> 5%.
+ *
+ * Not a substitute for `DEFAULT_VOICE_FOCUS_THRESHOLD`: background SPEECH
+ * passes any VAD, because it is speech. A lower gate reports speech more
+ * readily, which is what opens a barge-in — so a rise in false interruptions is
+ * what to watch if this moves.
+ *
+ * @internal
+ */
+export const DEFAULT_VAD_THRESHOLD = 0.02;
+
+/**
  * Voice Focus model both transports pin — the near-field one, matching a caller
  * speaking into a handset or headset.
  *
@@ -179,6 +202,20 @@ export const DEFAULT_VOICE_FOCUS = "near-field";
  * @internal
  */
 export const TTS_RECONNECT_TIMEOUT_MS = 8000;
+
+/**
+ * How long the AssemblyAI TTS socket may send nothing before the adapter sends
+ * a `KeepAlive` frame. The service closes a socket after **120 s** with no
+ * client message (`3006`, "No message received for 120 seconds"), and the
+ * pipeline treats any provider error as fatal, so an idle close ends the call:
+ * measured on tau2-bench retail, a 2-minute stretch with no agent speech closed
+ * TTS, the session tore down, and the host answered none of the caller's next
+ * four utterances. A quarter of the service's window, so one late or dropped
+ * timer tick cannot reach it.
+ *
+ * @internal
+ */
+export const TTS_KEEPALIVE_INTERVAL_MS = 30_000;
 
 /**
  * How long a `Cancel` frame's `Cancelled` acknowledgement may take before the
@@ -281,46 +318,52 @@ export const TTS_CANCEL_ACK_TIMEOUT_MS = 2000;
 export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 4000;
 
 /**
- * `SttTurnMeta.endOfTurnConfidence` at or above which preemptive generation
- * starts a speculative reply from an INTERIM transcript (`preemptiveGeneration`;
- * see `host/transports/pipeline/speech/speculation.ts`).
+ * How long an INTERIM transcript's text must stay unchanged before preemptive
+ * generation starts a speculative reply from it (`preemptiveGeneration`; see
+ * `aai-runtime/src/transports/pipeline/speech/speculation.ts`), in ms.
  *
- * **A JUDGEMENT CALL, not a measurement.** What is real is the SHAPE of the
- * signal, recorded verbatim on `SttTurnMeta.endOfTurnConfidence` in
- * `sdk/providers.ts` — read it there rather than trusting a restatement here;
- * a duplicated measurement is the one that drifts. 0.9 is chosen because that
- * recorded sawtooth separates cleanly at it: the false peaks partway through a
- * dictated identifier top out at 0.25, while the settled utterance runs
- * 0.7 → 0.8 → 0.95 → 1. One trace is not a distribution, so treat this as the
- * value to VARY once the `headStartMs` log exists — a lower threshold trades
- * head start for adoption rate and both come out of the same log — and not as
- * a number anything has confirmed.
+ * **Time, not `SttTurnMeta.endOfTurnConfidence`, because the confidence never
+ * moves.** The trigger used to be an interim at or above 0.9 confidence. On
+ * `universal-3-5-pro`, the default pipeline STT, every interim reports 0 and
+ * only the final reports 1 (26 of 26 interims, 12 of 12 finals, across six
+ * Full-Duplex-Bench v1.5 sessions, AAI_DEBUG). So the gate was unreachable,
+ * and the feature was inert on the pipeline it ships with: 0 adoptions in 1370
+ * LLM turns of run `v15-full-3` with the flag on. A quiet window needs no provider
+ * support, and every provider sends interims.
  *
- * It is deliberately not an author knob, on the `resumeFalseInterruption`
- * precedent: its useful range is set by provider endpointing behaviour the
- * transport cannot see.
+ * **A JUDGEMENT CALL, not a measurement.** It has to sit well inside
+ * `DEFAULT_MIN_TURN_SILENCE_MS`, or the final lands first and there is no
+ * head start. The test file asserts that ordering. Against that, a shorter
+ * window fires on more mid-sentence pauses: each one is a speculation that a
+ * later partial supersedes and aborts, and
+ * {@link MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE} caps the waste. 300 leaves
+ * ~500ms of the 800ms endpointing window as head start, more than the
+ * pipeline LLM's time to first part (p50 446ms in `v15-full-3`). Vary it from
+ * the `headStartMs` / discard-reason logs, not from this paragraph.
+ *
+ * Not an author knob, on the `resumeFalseInterruption` precedent: its useful
+ * range is set by provider endpointing behaviour the transport cannot see.
  *
  * @internal
  */
-export const PREEMPTIVE_CONFIDENCE_THRESHOLD = 0.9;
+export const PREEMPTIVE_QUIET_MS = 300;
 
 /**
  * How many speculative generations one utterance may start before preemption
  * gives up on it and waits for the final.
  *
- * **A JUDGEMENT CALL.** The bound exists because confidence SAWTOOTHS rather
- * than ramps (again: the trace on `SttTurnMeta.endOfTurnConfidence`), so a
- * caller dictating an identifier can cross the threshold repeatedly on
- * successive revisions of the same prefix. Two other rules already cut most of
- * that — a partial whose normalized text differs from the live speculation
- * aborts it immediately, so a mid-identifier peak dies on the next digit, and
- * an identical text at rising confidence never re-fires, which is what the
- * recorded terminal `0.95 → 1` re-emission would otherwise cost. This is the
- * backstop under both, and it is what caps the worst case at ~2 extra billed
- * LLM requests per utterance.
+ * **A JUDGEMENT CALL.** The bound exists because a caller who pauses
+ * mid-sentence, or between the digits of a dictated identifier, goes quiet for
+ * {@link PREEMPTIVE_QUIET_MS} more than once per utterance. Each pause fires a
+ * speculation built on a prefix. Another rule already cuts most of the cost: a
+ * partial whose normalized text differs from the live speculation aborts it
+ * immediately, so a prefix speculation dies on the next word. This is the
+ * backstop under that rule, and it caps the worst case at ~2 extra billed LLM
+ * requests per utterance.
  *
- * 2 rather than 1 because the common shape is one false peak followed by the
- * real one; 2 rather than 3+ because nothing has measured that a third pays.
+ * 2 rather than 1 because the common shape is one mid-sentence pause followed
+ * by the real end; 2 rather than 3+ because nothing has measured that a third
+ * pays.
  *
  * @internal
  */
@@ -332,6 +375,7 @@ export {
   DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_COVER_PHRASES,
   DEAD_AIR_OPENING_PHRASE,
+  DEAD_AIR_OPENING_TARGET_MS,
   DEAD_AIR_TOOL_COVER_MS,
   DEFAULT_DEAD_AIR_COVER_MS,
 } from "./dead-air-constants.ts";

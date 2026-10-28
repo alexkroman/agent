@@ -9,6 +9,7 @@ import announce from "../workflows/announce.ts";
 // back out of the door's log, so a message is never stored twice.
 
 export default tool({
+  effect: "write",
   description:
     "Pass a visitor's message to the owner's phone. Use it once you know who they are and " +
     "what they want to say, e.g. a delivery, a neighbour, a friend dropping by.",

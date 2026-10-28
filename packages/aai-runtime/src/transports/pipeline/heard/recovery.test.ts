@@ -9,7 +9,11 @@
 
 import { DEFAULT_FALSE_INTERRUPTION_PROMPT } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
-import { buildTailResumePrompt, createFalseInterruptionRecovery } from "./recovery.ts";
+import {
+  buildCutNote,
+  buildTailResumePrompt,
+  createFalseInterruptionRecovery,
+} from "./recovery.ts";
 
 const PROMPT = DEFAULT_FALSE_INTERRUPTION_PROMPT;
 
@@ -178,5 +182,58 @@ describe("buildTailResumePrompt", () => {
 
   test("whitespace-only heard text is the nothing-heard case", () => {
     expect(buildTailResumePrompt("   ")).toContain("Give that reply again");
+  });
+});
+
+describe("the cut note", () => {
+  function makeRecovery(enabled = true) {
+    return createFalseInterruptionRecovery({
+      enabled: () => enabled,
+      maxConsecutive: 3,
+      isActive: () => true,
+      isBusy: () => false,
+      onResume: vi.fn(),
+    });
+  }
+
+  test("a committed turn takes the note once", () => {
+    const recovery = makeRecovery();
+    recovery.noteCut("I have May Kovacs, ZIP 2");
+    expect(recovery.onUserTurn()).toBe(buildCutNote("I have May Kovacs, ZIP 2"));
+    expect(recovery.onUserTurn()).toBeUndefined();
+  });
+
+  test("recorded even with resumes disabled — the note costs no turn", () => {
+    const recovery = makeRecovery(false);
+    recovery.noteCut("I have");
+    expect(recovery.onUserTurn()).toBeDefined();
+  });
+
+  test("an utterance that ends without a turn drops it: a resume covers the cut", () => {
+    const recovery = makeRecovery();
+    recovery.noteCut("I have");
+    recovery.onUtteranceEnded();
+    expect(recovery.onUserTurn()).toBeUndefined();
+  });
+
+  test("clear() drops it", () => {
+    const recovery = makeRecovery();
+    recovery.noteCut("I have");
+    recovery.clear();
+    expect(recovery.onUserTurn()).toBeUndefined();
+  });
+});
+
+describe("buildCutNote", () => {
+  test("quotes the last heard words and leaves the decision to the model", () => {
+    const note = buildCutNote("I have May Kovacs, ZIP 2");
+    expect(note).toContain('"…I have May Kovacs, ZIP 2"');
+    expect(note).toContain("answers it, changes course, or asks you to stop");
+    expect(note).toContain("any question it was asking");
+  });
+
+  test("heard nothing: says so instead of quoting an empty anchor", () => {
+    expect(buildCutNote("")).toContain("before they heard any of it");
+    expect(buildCutNote("")).not.toContain('"…');
   });
 });

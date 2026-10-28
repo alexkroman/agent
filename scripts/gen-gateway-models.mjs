@@ -93,7 +93,7 @@ async function models(url, key) {
  * message because max_tokens…"*, a **400**, which this probe read as a dead
  * model. It reported the ENTIRE gpt-5 family dead in one run (`gpt-5`,
  * `-mini`, `-nano`, `5.1`, `5.2`, `5.5`, both `5.6`s, `gpt-6-astra`), and
- * `gpt-5.6-luna` is `ASSEMBLYAI_LLM_DEFAULT_MODEL` — so a regeneration
+ * `gpt-5.6-luna` was then `ASSEMBLYAI_LLM_DEFAULT_MODEL` — so a regeneration
  * silently dropped the default model, and every other one an agent is likely
  * to want, out of `gatewayModelIds()` and therefore out of the studio's model
  * picker. Measured per model: 400 at `max_tokens: 1`, 200 at 16.

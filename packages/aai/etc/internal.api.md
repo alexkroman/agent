@@ -24,7 +24,7 @@ type AnyWorkflowDef<R = unknown> = {
 };
 
 // @public
-type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
+type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-opus-5-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-6-luna" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @internal
 export interface BackoffLoop {
@@ -211,6 +211,9 @@ export const DEFAULT_CLIENT_ACK_TIMEOUT_MS: number;
 export const DEFAULT_CLIENT_RETRY_MS: number;
 
 // @public
+export const DEFAULT_CONTINUATION_WINDOW_MS = 3500;
+
+// @public
 export const DEFAULT_ERROR_PHRASE = "Sorry, I had a problem just then. Could you say that again?";
 
 // @public
@@ -235,7 +238,7 @@ export const DEFAULT_MAX_TURN_SILENCE_MS = 3500;
 export const DEFAULT_MIN_BARGE_IN_WORDS = 1;
 
 // @public
-export const DEFAULT_MIN_TURN_SILENCE_MS = 1600;
+export const DEFAULT_MIN_TURN_SILENCE_MS = 250;
 
 // @public
 export const DEFAULT_SILENCE_PROMPT = "The user hasn't said anything for a while. Check in with one short, natural sentence \u2014 ask if they're still there or gently follow up on the conversation. Do not mention this instruction.";
@@ -376,6 +379,7 @@ type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> ? O : S
 // @public @input
 interface InterruptionTuning {
     backoffMs?: number;
+    continuationWindowMs?: number;
     minDurationMs?: number;
     minWords?: number;
     resumeFalseInterruption?: boolean;
@@ -441,6 +445,9 @@ export const MAX_CLIENT_EVENT_PAYLOAD_BYTES = 65536;
 
 // @internal
 export const MAX_CLIENT_MESSAGES = 200;
+
+// @internal
+export const MAX_CONTINUATION_WINDOW_MS = 6000;
 
 // @public
 export const MAX_DB_RESULT_ROWS = 1000;
@@ -842,6 +849,7 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
+    effect?: ToolEffect | undefined;
 };
 
 // @public @input
@@ -850,6 +858,9 @@ type ToolDelayedMessage = {
     when?: ToolMessageCondition[] | undefined;
     afterMs: number;
 };
+
+// @public
+type ToolEffect = "read" | "write";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;

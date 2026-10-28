@@ -7,6 +7,7 @@ import { addTicket } from "../shared.ts";
 
 /** Their `set_do_not_disturb`: a standing hold on a room's calls and messages. */
 export default hotelSlot.updateTool({
+  effect: "write",
   description:
     "Place a Do-Not-Disturb hold on an in-house guest's room - their calls and messages are held until " +
     "they lift it. A standing hold, not a one-off. Always tell the guest a genuine emergency still gets through.",

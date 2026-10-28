@@ -5,6 +5,7 @@ import { addTicket } from "../shared.ts";
 
 /** Their `record_group_inquiry`: fifteen or more guests is a block, never a booking. */
 export default hotelSlot.updateTool({
+  effect: "write",
   description:
     "Open a room-block inquiry for a group of 15 or more guests. Records it for the group desk - it " +
     "does NOT confirm or hold rooms, and nothing can be confirmed on this call however hard the caller " +

@@ -61,20 +61,14 @@ export type SttTurnMeta = {
    * cannot tell "paused between digits" from "finished", which is the
    * mechanism that truncates a spelled identifier mid-entity.
    *
-   * One policy reads it today: PREEMPTIVE GENERATION
-   * (`AgentDef.preemptiveGeneration`, OFF by default), which starts a
-   * speculative LLM stream from an interim whose confidence clears
-   * `PREEMPTIVE_CONFIDENCE_THRESHOLD`. The sawtooth above is not
-   * background for that policy — it DICTATED two of its rules, and both are
-   * only defensible while the trace stays here. (1) A partial whose normalized
-   * text differs from the live speculation's prompt aborts it immediately, so a
-   * false peak partway through a dictated identifier dies on the next digit
-   * instead of being billed in full. (2) An identical text at rising confidence
-   * never re-fires, which is what the terminal `0.95 → 1` re-emission above
-   * would otherwise cost on every completed utterance. Endpointing itself is
-   * still time-based and unchanged; a confidence-aware endpointing or barge-in
-   * policy remains unbuilt, and this field is still what would let one be
-   * measured against the current one rather than guessed at.
+   * No policy reads it today. Preemptive generation used to fire on an
+   * interim at 0.9 confidence. It now fires on a quiet window
+   * (`PREEMPTIVE_QUIET_MS`), because `universal-3-5-pro` reports 0 on every
+   * interim and the threshold was never reached. The field still reaches the
+   * wire (`userTranscript.updated`'s `eotConfidence`) and the logs. A
+   * confidence-aware endpointing or barge-in policy remains unbuilt, and this
+   * field is what would let one be measured against the current one rather than
+   * guessed at, on a provider whose interims carry it.
    */
   endOfTurnConfidence?: number;
   /**
@@ -92,6 +86,29 @@ export type SttTurnMeta = {
    * omitted level never blocks anything.
    */
   inputPeakDbfs?: number;
+  /**
+   * How long the caller actually spoke for this transcript, in ms: the span
+   * of its words on the service's audio clock (earliest word start to latest
+   * word end). Omitted when the provider reports no word timings.
+   *
+   * Unlike the time since the utterance's first interim, this excludes the
+   * endpointing silence that precedes a final, so it is what can tell a
+   * one-beat acknowledgement ("uh-huh") from an utterance that takes the
+   * floor once the transcript has already COMMITTED. The pipeline transport
+   * reads it that way; an omitted span never blocks anything.
+   */
+  spokenMs?: number;
+  /**
+   * How long before this transcript was emitted the caller's last word ENDED,
+   * in ms: audio sent so far minus the latest word end, both on the service's
+   * audio clock. On a final it is the caller-side wait the commit already
+   * cost — endpointing silence plus the service's latency — which is time the
+   * caller has spent listening to nothing. Omitted without word timings.
+   *
+   * The pipeline transport anchors the turn's opening dead-air filler on it
+   * (`DEAD_AIR_OPENING_TARGET_MS`); an omitted value leaves the fixed window.
+   */
+  trailingSilenceMs?: number;
 };
 
 export type SttEvents = {
@@ -143,6 +160,15 @@ export interface SttSession {
    * the cap is inert. Today only AssemblyAI has it (`ForceEndpoint`).
    */
   forceEndOfTurn?(): void;
+  /**
+   * Replace the terms the transcriber is biased toward, mid-stream — what the
+   * pipeline feeds the proper nouns of tool results through
+   * (`transports/pipeline/speech/keyterms.ts`). The WHOLE set each call: the
+   * service replaces rather than merges. Optional for the reason
+   * {@link updateEndpointing} is. Today only AssemblyAI has it
+   * (`UpdateConfiguration.keyterms_prompt`).
+   */
+  updateKeyterms?(terms: readonly string[]): void;
 }
 
 /** Options the host passes when opening an STT stream. */

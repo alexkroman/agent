@@ -12,10 +12,12 @@
  */
 
 export { mergeBuiltinSurface } from "./builtin-surface.ts";
+export { ToolCallGuards } from "./call-guards.ts";
 export { pairToolCalls, pairToolCallsInPlace, pairToolCallsLogged } from "./call-pairs.ts";
 export { createToolCallRepair, salvageJson, type ToolCallRepairOptions } from "./call-repair.ts";
 export type { ClientToolAnswer, ClientToolBroker } from "./client-tool-broker.ts";
 export { createClientToolBroker } from "./client-tool-broker.ts";
+export { withConfirmationGate } from "./confirmation-gate.ts";
 export type { FatalToolLatch } from "./error-policy.ts";
 export { createFatalToolLatch, FatalToolError, withFatalSignal } from "./error-policy.ts";
 export type {

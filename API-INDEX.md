@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 631 names
+- [Agent authoring](#agent-authoring) — 632 names
 - [Browser client](#browser-client) — 212 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
-- [Framework internals](#framework-internals) — 520 names
+- [Framework internals](#framework-internals) — 525 names
 
 ## Agent authoring
 
@@ -338,6 +338,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `ToolConditionOperator` | type | `@alexkroman1/aai` |  | Comparison a `ToolMessageCondition` applies. |
 | `ToolContext` | type | `@alexkroman1/aai` |  | Context passed to tool `execute` functions. |
 | `ToolDef` | type | `@alexkroman1/aai` |  | Definition of a custom tool that the agent can invoke. |
+| `ToolEffect` | type | `@alexkroman1/aai` |  | What a tool does to the world — see `ToolDef.effect`. |
 | `ToolErrorHandler` | type | `@alexkroman1/aai` |  | What a tool does with an exception its `execute` threw — the shape of `ToolDef.onError`. |
 | `ToolFailure` | type | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) |  | A tool result that reports a recoverable failure to the LLM. |
 | `ToolInputSchema` | type | `@alexkroman1/aai` |  | A schema accepted for tool inputs and `ctx.generate` structured output: any Standard Schema that can also convert to JSON Schema (Zod natively, or a vendor … |
@@ -1355,6 +1356,7 @@ trace or a type error can be traced back to something.
 | `DEAD_AIR_COVER_MAX_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEAD_AIR_COVER_PHRASES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEAD_AIR_OPENING_PHRASE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEAD_AIR_OPENING_TARGET_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEAD_AIR_TOOL_COVER_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEEPGRAM_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the Deepgram API key. |
 | `DEEPGRAM_DEFAULT_ENDPOINTING_MS` | const | `@alexkroman1/aai/internal` |  | Default Deepgram `endpointing` (ms) — **the same knob as `DEFAULT_MIN_TURN_SILENCE_MS`, seen from a different vendor.** The transport commits a turn on every … |
@@ -1364,6 +1366,7 @@ trace or a type error can be traced back to something.
 | `DEFAULT_CALL_TIME_LIMIT_S` | const | `@alexkroman1/aai/internal` |  | Default `PlaceCallOptions.timeLimitS`: Twilio hangs up after ten minutes whatever the agent is doing, so a stuck conversation cannot run up hours of minutes … |
 | `DEFAULT_CLIENT_ACK_TIMEOUT_MS` | const | `@alexkroman1/aai/internal` |  | Default `StepNotifyClientOptions.ackTimeoutMs`. |
 | `DEFAULT_CLIENT_RETRY_MS` | const | `@alexkroman1/aai/internal` |  | Default `StepNotifyClientOptions.retryAfterMs`. |
+| `DEFAULT_CONTINUATION_WINDOW_MS` | const | `@alexkroman1/aai/internal` |  | How soon after a committed user turn the caller may resume speaking and have it treated as a continuation of that turn, in ms. |
 | `DEFAULT_DEAD_AIR_COVER_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEFAULT_ERROR_PHRASE` | const | `@alexkroman1/aai/internal` |  | Spoken when a pipeline turn's LLM stream fails, so a provider outage is a recoverable moment in the conversation instead of a dead line. |
 | `DEFAULT_FALSE_INTERRUPTION_PROMPT` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
@@ -1392,6 +1395,7 @@ trace or a type error can be traced back to something.
 | `DEFAULT_TOOL_CHOICE` | const | `@alexkroman1/aai/internal` |  | Default `toolChoice`: the LLM decides when to call tools vs respond directly. |
 | `DEFAULT_TOOL_START_PHRASES` | const | `@alexkroman1/aai/host-internal` |  | The pool a `start: true` draws from — Vapi's own default filler set, which they publish nowhere but the schema. |
 | `DEFAULT_TTS_SAMPLE_RATE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `DEFAULT_VAD_THRESHOLD` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEFAULT_VOICE_FOCUS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEFAULT_VOICE_FOCUS_THRESHOLD` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `DEFAULT_WORKFLOW_POLL_MS` | const | `@alexkroman1/aai-ui/internal` |  | How often `useWorkflowRun` re-reads a live run when it has to poll. |
@@ -1444,6 +1448,7 @@ trace or a type error can be traced back to something.
 | `MAX_CLIENT_WS_BUFFERED_BYTES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `MAX_CONSECUTIVE_SILENCE_NUDGES` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `MAX_CONTINUATION_WINDOW_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `MAX_DB_RESULT_ROWS` | const | `@alexkroman1/aai/internal` |  | Max rows one `Db` query may return; queries that could exceed it should paginate with LIMIT/OFFSET. |
 | `MAX_FAILOVER_REASON_CHARS` | const | `@alexkroman1/aai/host-internal` |  | The longest `reason` a `provider.failedOver` carries — an error body can be a page of HTML. |
 | `MAX_INTERRUPTION_BACKOFF_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
@@ -1483,7 +1488,7 @@ trace or a type error can be traced back to something.
 | `PLAYBACK_DONE_POLL_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `PLAYBACK_FILL_MS` | const · `@internal` | `@alexkroman1/aai/internal` |  |  |
 | `PLAYBACK_PROGRESS_INTERVAL_MS` | const | `@alexkroman1/aai/internal` |  | How often a client reports its unplayed agent-audio backlog to the host (`playback_progress`), while it holds any. |
-| `PREEMPTIVE_CONFIDENCE_THRESHOLD` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `PREEMPTIVE_QUIET_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `PREVIEW_SLUG_SUFFIX` | const | `@alexkroman1/aai/internal` |  | Suffix the studio's auto-preview deploys own (`<project>-preview`). |
 | `PROVIDER_CATALOG` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `PUBLIC_URL_UNCONFIGURED_MESSAGE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
@@ -1595,6 +1600,7 @@ trace or a type error can be traced back to something.
 | `TRANSCRIBE_WINDOW_BYTES` | const | `@alexkroman1/aai/internal` |  | How much of a stored upload one outbound window carries. |
 | `TRANSCRIBING_PLACEHOLDER` | const · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |
 | `TTS_CANCEL_ACK_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
+| `TTS_KEEPALIVE_INTERVAL_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `TTS_PROVIDERS` | const | `@alexkroman1/aai/host-internal` |  | The TTS vendors, in the order the docs table lists them. |
 | `TTS_RECONNECT_TIMEOUT_MS` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `ThemeProvider` | component · `@internal` | `@alexkroman1/aai-ui/internal` |  |  |

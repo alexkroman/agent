@@ -41,8 +41,8 @@ the after-build gates in source order.
 - **`pnpm check:local`** is what the pre-push hook runs. Full mode is a strict
   SUPERSET of it (the runner refuses to start otherwise), and it ends by naming
   what it skipped — computed as full minus local: `check:attw`, `check:dedupe`,
-  `check:markdown`, `check:shell`, `check:integration`, `check:scenario`,
-  `docs`, `check:e2e` — so a green subset is not read as a green branch.
+  `check:shell`, `check:integration`, `check:scenario`, `docs`, `check:e2e` — so
+  a green subset is not read as a green branch.
 - **`pnpm fix`** runs every auto-fixer: `pnpm format`, then each row's `fix` in
   table order (the `sync:*` copies, `api-report`, `docs:md`, the lower-only
   baseline `*:update`s).

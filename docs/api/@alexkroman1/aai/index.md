@@ -8438,6 +8438,44 @@ Human-readable description shown to the LLM.
 Omit.description
 ```
 
+##### effect?
+
+```ts
+optional effect?: ToolEffect;
+```
+
+What the tool does to the world. `"write"` declares something that changes
+state the caller cannot take back by asking — a booking, an order, a
+cancellation, a message sent, a ticket filed for someone to act on. In a
+voice pipeline a declared write runs only on a caller turn that did not
+start over the agent's own audio: an "uh-huh" spoken over "Shall I cancel
+it?" is the caller listening, not agreeing, and the model is told to ask
+again instead.
+
+`"read"` or no `effect` runs as an ordinary call. A cart or draft step that
+a later tool confirms is not a write; the confirming tool is. An MCP tool's
+effect comes from its server's `readOnlyHint` (see `mcp/adapt.ts`).
+
+###### Example
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Cancel a pending order.",
+  inputSchema: z.object({ orderId: z.string() }),
+  effect: "write",
+  execute: ({ orderId }) => ({ cancelled: orderId }),
+});
+```
+
+###### Inherited from
+
+```ts
+Omit.effect
+```
+
 ##### inputSchema?
 
 ```ts
@@ -8953,6 +8991,23 @@ are one deadline, `max(floor, backoff)`.
 ###### Default Value
 
 `0` (`DEFAULT_INTERRUPTION_BACKOFF_MS`)
+
+##### continuationWindowMs?
+
+```ts
+optional continuationWindowMs?: number;
+```
+
+When the caller starts speaking again within this many ms of a committed
+turn, treat it as the REST of that turn: the reply already answering the
+first fragment is cut, and the agent answers once the caller finishes.
+Covers a caller who pauses mid-sentence — reading out a ZIP, recalling an
+email — and gets split into two turns; without it the agent replies to
+half the sentence first. `0` disables.
+
+###### Default Value
+
+`3500` (`DEFAULT_CONTINUATION_WINDOW_MS`)
 
 ##### minDurationMs?
 
@@ -12947,6 +13002,44 @@ Human-readable description shown to the LLM.
 Omit.description
 ```
 
+##### effect?
+
+```ts
+optional effect?: ToolEffect;
+```
+
+What the tool does to the world. `"write"` declares something that changes
+state the caller cannot take back by asking — a booking, an order, a
+cancellation, a message sent, a ticket filed for someone to act on. In a
+voice pipeline a declared write runs only on a caller turn that did not
+start over the agent's own audio: an "uh-huh" spoken over "Shall I cancel
+it?" is the caller listening, not agreeing, and the model is told to ask
+again instead.
+
+`"read"` or no `effect` runs as an ordinary call. A cart or draft step that
+a later tool confirms is not a write; the confirming tool is. An MCP tool's
+effect comes from its server's `readOnlyHint` (see `mcp/adapt.ts`).
+
+###### Example
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Cancel a pending order.",
+  inputSchema: z.object({ orderId: z.string() }),
+  effect: "write",
+  execute: ({ orderId }) => ({ cancelled: orderId }),
+});
+```
+
+###### Inherited from
+
+```ts
+Omit.effect
+```
+
 ##### inputSchema?
 
 ```ts
@@ -13292,6 +13385,44 @@ Human-readable description shown to the LLM.
 
 ```ts
 Omit.description
+```
+
+##### effect?
+
+```ts
+optional effect?: ToolEffect;
+```
+
+What the tool does to the world. `"write"` declares something that changes
+state the caller cannot take back by asking — a booking, an order, a
+cancellation, a message sent, a ticket filed for someone to act on. In a
+voice pipeline a declared write runs only on a caller turn that did not
+start over the agent's own audio: an "uh-huh" spoken over "Shall I cancel
+it?" is the caller listening, not agreeing, and the model is told to ask
+again instead.
+
+`"read"` or no `effect` runs as an ordinary call. A cart or draft step that
+a later tool confirms is not a write; the confirming tool is. An MCP tool's
+effect comes from its server's `readOnlyHint` (see `mcp/adapt.ts`).
+
+###### Example
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Cancel a pending order.",
+  inputSchema: z.object({ orderId: z.string() }),
+  effect: "write",
+  execute: ({ orderId }) => ({ cancelled: orderId }),
+});
+```
+
+###### Inherited from
+
+```ts
+Omit.effect
 ```
 
 ##### inputSchema?
@@ -13675,6 +13806,42 @@ Human-readable description shown to the LLM.
 ###### Inherited from
 
 [`SlotToolDef`](#slottooldef).[`description`](#description-2)
+
+##### effect?
+
+```ts
+optional effect?: ToolEffect;
+```
+
+What the tool does to the world. `"write"` declares something that changes
+state the caller cannot take back by asking — a booking, an order, a
+cancellation, a message sent, a ticket filed for someone to act on. In a
+voice pipeline a declared write runs only on a caller turn that did not
+start over the agent's own audio: an "uh-huh" spoken over "Shall I cancel
+it?" is the caller listening, not agreeing, and the model is told to ask
+again instead.
+
+`"read"` or no `effect` runs as an ordinary call. A cart or draft step that
+a later tool confirms is not a write; the confirming tool is. An MCP tool's
+effect comes from its server's `readOnlyHint` (see `mcp/adapt.ts`).
+
+###### Example
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Cancel a pending order.",
+  inputSchema: z.object({ orderId: z.string() }),
+  effect: "write",
+  execute: ({ orderId }) => ({ cancelled: orderId }),
+});
+```
+
+###### Inherited from
+
+[`SlotToolDef`](#slottooldef).[`effect`](#effect-2)
 
 ##### inputSchema?
 
@@ -14648,7 +14815,7 @@ refused beside one.
 
 ###### Default Value
 
-`1600` (`DEFAULT_MIN_TURN_SILENCE_MS`)
+`250` (`DEFAULT_MIN_TURN_SILENCE_MS`)
 
 ##### preemptiveGeneration?
 
@@ -15617,6 +15784,7 @@ type AssemblyAIGatewayModel =
   | "claude-opus-4-7"
   | "claude-opus-4-8"
   | "claude-opus-5"
+  | "claude-opus-5-5"
   | "claude-sonnet-4-5-20250929"
   | "claude-sonnet-4-6"
   | "claude-sonnet-5"
@@ -15641,6 +15809,7 @@ type AssemblyAIGatewayModel =
   | "gpt-5.6-sol"
   | "gpt-5.6-terra"
   | "gpt-6-astra"
+  | "gpt-6-luna"
   | "gpt-oss-120b"
   | "gpt-oss-20b"
   | "qwen3-32B"
@@ -19378,6 +19547,7 @@ backend configured, naming which.
 ```ts
 type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined, R = unknown> = {
   description: string;
+  effect?: ToolEffect;
   inputSchema?: P;
   messages?: ToolMessagesInput;
   onError?: ToolErrorHandler;
@@ -19481,6 +19651,38 @@ description: string;
 ```
 
 Human-readable description shown to the LLM.
+
+##### effect?
+
+```ts
+optional effect?: ToolEffect;
+```
+
+What the tool does to the world. `"write"` declares something that changes
+state the caller cannot take back by asking — a booking, an order, a
+cancellation, a message sent, a ticket filed for someone to act on. In a
+voice pipeline a declared write runs only on a caller turn that did not
+start over the agent's own audio: an "uh-huh" spoken over "Shall I cancel
+it?" is the caller listening, not agreeing, and the model is told to ask
+again instead.
+
+`"read"` or no `effect` runs as an ordinary call. A cart or draft step that
+a later tool confirms is not a write; the confirming tool is. An MCP tool's
+effect comes from its server's `readOnlyHint` (see `mcp/adapt.ts`).
+
+###### Example
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Cancel a pending order.",
+  inputSchema: z.object({ orderId: z.string() }),
+  effect: "write",
+  execute: ({ orderId }) => ({ cancelled: orderId }),
+});
+```
 
 ##### inputSchema?
 
@@ -19666,6 +19868,17 @@ optional when?: ToolMessageCondition[];
 ```
 
 Conditions on the call's arguments — see [ToolMessageCondition](#toolmessagecondition).
+
+***
+
+### ToolEffect
+
+```ts
+type ToolEffect = "read" | "write";
+```
+
+What a tool does to the world — see `ToolDef.effect`. Carried on the wire as
+`ToolSchema.effect`.
 
 ***
 
@@ -23113,8 +23326,9 @@ the last is included only when the session has tools:
 2. `## PERSONALITY` — warm, calm, competent; fully overridable.
 3. `## SPEAKING` — two sentences per reply, an eight-word first sentence,
    no markdown, how to say numbers and identifiers, one question per turn.
-4. `## LISTENING` — read through fillers and self-corrections, take a value
-   in one piece before asking for it spelled, normalize spoken identifiers.
+4. `## LISTENING` — read through fillers and self-corrections, have a
+   spoken name, email or code spelled and read back before using it,
+   normalize spoken identifiers.
 5. `## TOOLS` — never fabricate, act first and ask second, report results
    rather than intentions, and the mis-hearing retry ladder.
 

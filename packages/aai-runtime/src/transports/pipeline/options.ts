@@ -12,8 +12,10 @@ import {
   DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
+  PREEMPTIVE_QUIET_MS,
 } from "@alexkroman1/aai/host-internal";
 import {
+  DEFAULT_CONTINUATION_WINDOW_MS,
   DEFAULT_ERROR_PHRASE,
   DEFAULT_INTERRUPTION_BACKOFF_MS,
   DEFAULT_INTERRUPTION_MIN_DURATION_MS,
@@ -80,9 +82,11 @@ export interface PipelineTransportOptions {
   /**
    * Minimum sustained speech (ms since the utterance's first interim
    * transcript) before an interim-triggered barge-in aborts the reply — a
-   * duration gate alongside `minBargeInWords`. Committed turns (STT finals)
-   * are never gated. Defaults to DEFAULT_INTERRUPTION_MIN_DURATION_MS; 0
-   * disables the gate.
+   * duration gate alongside `minBargeInWords`. A committed turn (STT final)
+   * begun over agent speech is gated on its words' span instead
+   * (`SttTurnMeta.spokenMs`): shorter than this, it is an acknowledgement and
+   * is dropped rather than committed. Defaults to
+   * DEFAULT_INTERRUPTION_MIN_DURATION_MS; 0 disables both.
    */
   interruptionMinDurationMs?: number | undefined;
   /**
@@ -97,6 +101,13 @@ export interface PipelineTransportOptions {
    * above, never cumulative — see `output/speak-gate.ts`.
    */
   interruptionBackoffMs?: number | undefined;
+  /**
+   * Ms after a committed turn within which resumed caller speech continues
+   * that turn — the reply in flight is cut and the agent answers once the
+   * caller finishes. Defaults to {@link DEFAULT_CONTINUATION_WINDOW_MS};
+   * `0` disables. See `speech/continuation.ts`.
+   */
+  continuationWindowMs?: number | undefined;
   /**
    * How long a turn may send nothing to TTS before the transport speaks a short
    * filler. Defaults to {@link DEFAULT_DEAD_AIR_COVER_MS}; `0` disables the
@@ -180,6 +191,13 @@ export interface PipelineTransportOptions {
    * speculation at the tool boundary, so it would be pure cost.
    */
   preemptiveGeneration?: boolean | undefined;
+  /**
+   * How long an interim's text must hold still before a speculation starts
+   * from it. See {@link PREEMPTIVE_QUIET_MS}, which it defaults to. Exposed for
+   * tests whose clock runs in single milliseconds (the fuzz), not as an author
+   * knob. `0` starts the speculation on the partial itself.
+   */
+  preemptiveQuietMs?: number | undefined;
   /**
    * How long after the last STT partial to force `speech_stopped` when no
    * non-empty final ever arrives — and, because that is the signal a false
@@ -310,12 +328,14 @@ export interface ResolvedPipelineOptions {
   interruptionMinDurationMs: number;
   startSpeakingFloorMs: number;
   interruptionBackoffMs: number;
+  continuationWindowMs: number;
   deadAirCoverMs: number;
   heardLagMs: number;
   errorPhrase: string;
   startFailurePhrase: string;
   resumeFalseInterruption: boolean;
   preemptiveGeneration: boolean;
+  preemptiveQuietMs: number;
   /**
    * Resolved once, and `undefined` for the agents that declare no policy —
    * which is the state the transport reads as "commit every final". A resolved
@@ -362,12 +382,14 @@ export function resolvePipelineOptions(options: PipelineTransportOptions): Resol
     ),
     startSpeakingFloorMs: or(options.startSpeakingFloorMs, DEFAULT_START_SPEAKING_FLOOR_MS),
     interruptionBackoffMs: or(options.interruptionBackoffMs, DEFAULT_INTERRUPTION_BACKOFF_MS),
+    continuationWindowMs: or(options.continuationWindowMs, DEFAULT_CONTINUATION_WINDOW_MS),
     deadAirCoverMs: or(options.deadAirCoverMs, DEFAULT_DEAD_AIR_COVER_MS),
     heardLagMs: or(options.heardLagMs, HEARD_AUDIO_LAG_MS),
     errorPhrase: or(options.errorPhrase, DEFAULT_ERROR_PHRASE),
     startFailurePhrase: or(options.startFailurePhrase, DEFAULT_START_FAILURE_PHRASE),
     resumeFalseInterruption: or(options.resumeFalseInterruption, true),
     preemptiveGeneration: or(options.preemptiveGeneration, false),
+    preemptiveQuietMs: or(options.preemptiveQuietMs, PREEMPTIVE_QUIET_MS),
     speechIdleTimeoutMs: or(options.speechIdleTimeoutMs, DEFAULT_SPEECH_IDLE_TIMEOUT_MS),
     toolChoice: or(options.toolChoice, DEFAULT_TOOL_CHOICE),
     toolSchemas: or(options.toolSchemas, []),

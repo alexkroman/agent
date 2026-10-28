@@ -17,7 +17,7 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
-import type { ToolUi } from "./tool-def.ts";
+import type { ToolEffect, ToolUi } from "./tool-def.ts";
 import { type ToolMessages, ToolMessagesSchema } from "./tool-messages.ts";
 
 /**
@@ -202,6 +202,7 @@ export const ToolSchemaSchema: z.ZodObject<
       >
     >;
     ui: z.ZodOptional<z.ZodType<ToolUi>>;
+    effect: z.ZodOptional<z.ZodEnum<{ read: "read"; write: "write" }>>;
   },
   z.core.$strip
 > = z.object({
@@ -211,6 +212,7 @@ export const ToolSchemaSchema: z.ZodObject<
   parameters: z.record(z.string(), z.unknown()),
   messages: ToolMessagesSchema.optional(),
   ui: ToolUiSchema.optional(),
+  effect: z.enum(["read", "write"]).optional(),
 });
 
 /**
@@ -245,4 +247,10 @@ export type ToolSchema = {
    * renders the same thing everywhere. Absent for a tool that declares none.
    */
   ui?: ToolUi | undefined;
+  /**
+   * What the tool does to the world — see `ToolDef.effect`. A host-mode client
+   * declaring its own tools sets it the same way; an MCP tool's comes from its
+   * server's `readOnlyHint`. Never sent to the model.
+   */
+  effect?: ToolEffect | undefined;
 };

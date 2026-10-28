@@ -7,6 +7,7 @@
 
 import { describe, expect, test } from "vitest";
 import { InterruptionSchema, SilenceSchema, TurnTakingSchema } from "./_tuning-schema.ts";
+import { MAX_CONTINUATION_WINDOW_MS } from "./continuation-constants.ts";
 import { MAX_INTERRUPTION_BACKOFF_MS } from "./speak-gate-constants.ts";
 
 describe("TurnTakingSchema", () => {
@@ -40,6 +41,16 @@ describe("InterruptionSchema", () => {
       InterruptionSchema.safeParse({ backoffMs: MAX_INTERRUPTION_BACKOFF_MS + 1 }).success,
     ).toBe(false);
     expect(InterruptionSchema.safeParse({ minWords: 0 }).success).toBe(false);
+  });
+
+  test("accepts a continuation window, 0 to disable, bounded above", () => {
+    expect(InterruptionSchema.parse({ continuationWindowMs: 0 })).toEqual({
+      continuationWindowMs: 0,
+    });
+    expect(
+      InterruptionSchema.safeParse({ continuationWindowMs: MAX_CONTINUATION_WINDOW_MS + 1 })
+        .success,
+    ).toBe(false);
   });
 });
 

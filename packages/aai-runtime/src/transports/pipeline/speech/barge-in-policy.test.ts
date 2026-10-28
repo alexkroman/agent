@@ -14,6 +14,7 @@ import {
   createAgentSpeakingPredicate,
   createAudioOnLinePredicate,
   createBargeInPolicy,
+  SUSTAINED_SPEECH_WORDS,
 } from "./barge-in-policy.ts";
 
 function makePolicy(
@@ -87,10 +88,23 @@ describe("step 3: the two thresholds", () => {
       interruptionMinDurationMs: 500,
       utteranceDurationMs: 100,
     });
-    expect(policy.partialInterrupts(3)).toBe(false);
+    expect(policy.partialInterrupts(SUSTAINED_SPEECH_WORDS - 1)).toBe(false);
     // A committed final is demonstrably real speech, so there is nothing for a
     // sustained-speech gate to establish.
     expect(policy.finalInterrupts("let me ask")).toBe(true);
+  });
+
+  test("an interim of SUSTAINED_SPEECH_WORDS words satisfies the duration gate", () => {
+    // Sparse multi-word interims: the first arrives with the edge just opened
+    // (duration 0) but already five words into an interruption.
+    const policy = makePolicy({
+      minBargeInWords: 1,
+      interruptionMinDurationMs: 500,
+      utteranceDurationMs: 0,
+    });
+    expect(policy.partialInterrupts(SUSTAINED_SPEECH_WORDS)).toBe(true);
+    // A one- or two-beat backchannel waits for the edge's own clock.
+    expect(policy.partialInterrupts(SUSTAINED_SPEECH_WORDS - 1)).toBe(false);
   });
 
   test("0 disables the duration gate", () => {

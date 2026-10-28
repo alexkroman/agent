@@ -36,7 +36,7 @@ describe("createSessionCore — tool call pending results", () => {
     await flush();
     core.report({ type: "reply.completed" });
     const rows =
-      "3 records (key column: index): index | id | ok\n0 | 1 | true\n1 | 2 | false\n2 | 3 | true";
+      "3 records (key column: index; ok: 2 true, 1 false): index | id | ok\n0 | 1 | true\n1 | 2 | false\n2 | 3 | true";
     await vi.waitFor(() => expect(transport.sendToolResult).toHaveBeenCalledWith("cid", rows));
     expect(sink.events).toContainEqual(
       expect.objectContaining({ type: "tool.completed", result: raw }),

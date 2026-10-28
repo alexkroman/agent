@@ -113,6 +113,7 @@
     "ToolCompletionMessage",
     "ToolConditionOperator",
     "ToolDelayedMessage",
+    "ToolEffect",
     "ToolInputSchema",
     "ToolMessageCondition",
     "ToolMessages",

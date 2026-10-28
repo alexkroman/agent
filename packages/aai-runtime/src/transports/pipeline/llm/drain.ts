@@ -33,6 +33,16 @@ export async function drainEntries(
     onStepPersisted?: (() => void) | undefined;
     /** Per-turn timing; sees every part, including the ones handled below. */
     trace?: Pick<TurnTrace, "onPart"> | undefined;
+    /**
+     * `visible` is set once anything of the run reached the caller or the world
+     * — text, a tool call, a completed step, or an `error` part (which the
+     * handler reports to the client). Caller-owned rather than returned,
+     * because it has to survive the stream throwing: it is what tells a stalled
+     * run that can be re-sent silently from one that cannot (see `stream.ts`).
+     * `abort` is the reason of an `abort` part — the AI SDK's own timeouts end
+     * the stream that way, and after a completed step nothing throws.
+     */
+    progress?: RunProgress | undefined;
   },
 ): Promise<{ lateToolCall: boolean; spokeBeforeRestart: boolean }> {
   let lateToolCall = false;
@@ -45,6 +55,7 @@ export async function drainEntries(
       // transcript that step covers, and a replay that batched them at the end
       // would put the `[interrupted]` split in the wrong place.
       opts.collected.push(...entry.messages);
+      if (opts.progress) opts.progress.visible = true;
       opts.onStepPersisted?.();
       continue;
     }
@@ -56,7 +67,22 @@ export async function drainEntries(
       break;
     }
     if (entry.part.type === "text-delta") spokeBeforeRestart = true;
+    if (opts.progress) noteProgress(opts.progress, entry.part);
     handler.handle(entry.part);
   }
   return { lateToolCall, spokeBeforeRestart };
+}
+
+/** What a run has shown so far — see `drainEntries`' `progress`. */
+export type RunProgress = { visible: boolean; abort?: unknown };
+
+/** The part types the caller (or the client) sees — see `progress` above. */
+const VISIBLE_PARTS: ReadonlySet<string> = new Set(["text-delta", "tool-call", "error"]);
+
+/** Record what one part says about the run — see `progress` above. */
+function noteProgress(progress: RunProgress, part: StreamPart): void {
+  if (VISIBLE_PARTS.has(part.type)) progress.visible = true;
+  // `reason` is on the AI SDK's abort part but not on the pipeline's narrower
+  // `StreamPart`, so it is read defensively.
+  if (part.type === "abort") progress.abort = (part as { reason?: unknown }).reason;
 }

@@ -7,10 +7,13 @@
 // which is S2S-only). `sendToolResult` is a no-op because results are
 // already handled by streamText.
 
+import { omitUndefined } from "@alexkroman1/aai/utils";
 import {
   createFatalToolLatch,
   createToolSpeechController,
+  ToolCallGuards,
   toVercelTools,
+  withConfirmationGate,
 } from "../../tools/index.ts";
 import { createEmitError } from "../emit-error.ts";
 import { resolveSystemPrompt, type Transport } from "../types.ts";
@@ -27,6 +30,7 @@ import { createReplyRunner } from "./reply-runner.ts";
 import { createSessionSignal } from "./session-signal.ts";
 import {
   createForceEndOfTurn,
+  createKeytermHarvester,
   createPipelineSpeculation,
   createUserActivity,
 } from "./speech/index.ts";
@@ -86,6 +90,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     errorPhrase,
     startFailurePhrase,
     preemptiveGeneration,
+    preemptiveQuietMs,
     speechIdleTimeoutMs,
     toolSchemas,
     executeTool,
@@ -189,6 +194,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       opts.turnDetection !== "manual" &&
       knobs.dialogStep === undefined &&
       personaStep === undefined,
+    quietMs: preemptiveQuietMs,
     request: llmRequest,
     toolSchemas,
     systemPrompt,
@@ -218,42 +224,52 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const sendTtsText = audioOut.sendTtsText;
 
   // Nudger, recovery, speaking edges and STT handlers — see createUserActivity.
-  const { nudger, recovery, speechEdges, sttEvents, manualTurn, commitTypedTurn } =
-    createUserActivity({
+  const {
+    nudger,
+    recovery,
+    speechEdges,
+    sttEvents,
+    manualTurn,
+    commitTypedTurn,
+    callerStoppedAt,
+    turnWasBackchannel,
+  } = createUserActivity({
+    log,
+    sid: opts.sid,
+    callbacks,
+    silenceTimeoutMs: opts.silenceTimeoutMs,
+    silencePrompt: opts.silencePrompt,
+    resumeFalseInterruption: knobs.resumeFalseInterruption,
+    speculation,
+    speechIdleTimeoutMs,
+    minBargeInWords: knobs.minBargeInWords,
+    interruptionMinDurationMs: knobs.interruptionMinDurationMs,
+    continuationWindowMs: knobs.continuationWindowMs,
+    onInterrupted: audioOut.onInterrupted,
+    userTurnLimit: opts.userTurnLimit,
+    turnDetection: opts.turnDetection,
+    onUtteranceEnded: metrics.onUtteranceEnded,
+    // `providers` is reached lazily: this fires from an STT event, which only
+    // exists once `providers.open()` has run.
+    forceEndOfTurn: createForceEndOfTurn({
+      stt: () => providers.stt,
+      sttName: opts.stt.name,
       log,
       sid: opts.sid,
-      callbacks,
-      silenceTimeoutMs: opts.silenceTimeoutMs,
-      silencePrompt: opts.silencePrompt,
-      resumeFalseInterruption: knobs.resumeFalseInterruption,
-      speculation,
-      speechIdleTimeoutMs,
-      minBargeInWords: knobs.minBargeInWords,
-      interruptionMinDurationMs: knobs.interruptionMinDurationMs,
-      onInterrupted: audioOut.onInterrupted,
-      userTurnLimit: opts.userTurnLimit,
-      turnDetection: opts.turnDetection,
-      onUtteranceEnded: metrics.onUtteranceEnded,
-      // `providers` is reached lazily: this fires from an STT event, which only
-      // exists once `providers.open()` has run.
-      forceEndOfTurn: createForceEndOfTurn({
-        stt: () => providers.stt,
-        sttName: opts.stt.name,
-        log,
-        sid: opts.sid,
-      }),
-      isTerminated,
-      isSessionActive: () => !isTerminated(),
-      isTurnInFlight: () => turns.inFlight(),
-      isTurnDraining: () => turns.draining(),
-      isResumeTurnInFlight: () => turns.resumeInFlight(),
-      hasTurnSpoken: () => turns.spoke(),
-      isPlaybackPending: () => heard.pending(),
-      hasSpokenRecordable: () => heard.spokeRecordable(),
-      abortInFlightTurn: () => abortInFlightTurn(),
-      tailResumePrompt: () => heard.resumePrompt(),
-      runChainedTurn,
-    });
+    }),
+    isTerminated,
+    isSessionActive: () => !isTerminated(),
+    isTurnInFlight: () => turns.inFlight(),
+    isTurnDraining: () => turns.draining(),
+    isResumeTurnInFlight: () => turns.resumeInFlight(),
+    hasTurnSpoken: () => turns.spoke(),
+    isPlaybackPending: () => heard.pending(),
+    hasSpokenRecordable: () => heard.spokeRecordable(),
+    abortInFlightTurn: () => abortInFlightTurn(),
+    tailResumePrompt: () => heard.resumePrompt(),
+    cutAnchor: () => heard.cutAnchor(),
+    runChainedTurn,
+  });
 
   // Provider lifecycle (open/adopt/close of the STT+TTS pair) lives in
   // pipeline-providers.ts; the (hoisted) handlers below route provider
@@ -291,8 +307,23 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // Session-scoped like the tool set; the turn binds its own speech channel.
   const toolSpeech = createToolSpeechController({ log, sid: opts.sid });
 
+  // Two wrappers around every model tool call. Before: a declared write runs
+  // only on a caller turn spoken into silence (`tools/confirmation-gate.ts`).
+  // After: the result's proper nouns bias the STT for the rest of the call
+  // (`speech/keyterms.ts`), on providers that can take them mid-stream.
+  const keyterms = createKeytermHarvester((terms) => providers.stt?.updateKeyterms?.(terms));
+  const gatedExecuteTool = withConfirmationGate(executeTool, {
+    schemas: toolSchemas,
+    turnWasBackchannel,
+    log,
+    sid: opts.sid,
+  });
   const tools = toVercelTools(toolSchemas, {
-    executeTool,
+    executeTool: async (name, args, sessionId, messages, options) => {
+      const result = await gatedExecuteTool(name, args, sessionId, messages, options);
+      keyterms.observe(result);
+      return result;
+    },
     sessionId: opts.sid,
     toolSpeech,
     // The one thing that makes `ToolDef.onError`'s fatal arm stop a turn rather
@@ -304,19 +335,23 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // answered: the step's own messages only reach `llm` when the step ends,
     // and this view is the one `ctx.messages` reads.
     recordToolResult: (message) => history.pushToolResult(message),
+    // Session-scoped like the tool set: an argument shaped unlike the records,
+    // or an identical failed call, is refused before it runs — `call-guards.ts`.
+    guards: new ToolCallGuards({ rememberFailures: true }),
   });
 
   function runChainedTurn(
     text: string,
     crashLabel: string,
-    kind?: { isResume?: boolean; synthetic?: boolean },
+    kind?: { isResume?: boolean; synthetic?: boolean; note?: string },
   ): void {
     turnChain.chain(async () => {
       turns.setResumeScope(kind?.isResume === true);
       try {
-        await runTurn(text, { synthetic: kind?.synthetic === true }).catch(
-          logTurnCrash(crashLabel),
-        );
+        await runTurn(text, {
+          synthetic: kind?.synthetic === true,
+          ...omitUndefined({ note: kind?.note }),
+        }).catch(logTurnCrash(crashLabel));
       } finally {
         turns.setResumeScope(false);
       }
@@ -357,6 +392,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     tools,
     fatalTool,
     deadAirCoverMs,
+    callerStoppedAt,
     // An open speech edge means an utterance is in progress (0 when not).
     callerSpeaking: () => speechEdges.durationMs() > 0,
     toolSpeech,

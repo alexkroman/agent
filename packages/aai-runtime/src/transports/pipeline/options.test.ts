@@ -11,6 +11,7 @@
 
 import { DEFAULT_DEAD_AIR_COVER_MS } from "@alexkroman1/aai/host-internal";
 import {
+  DEFAULT_CONTINUATION_WINDOW_MS,
   DEFAULT_INTERRUPTION_BACKOFF_MS,
   DEFAULT_INTERRUPTION_MIN_DURATION_MS,
   DEFAULT_MIN_BARGE_IN_WORDS,
@@ -65,6 +66,13 @@ describe("pipeline defaults", () => {
     expect(resolved.interruptionBackoffMs).toBe(DEFAULT_INTERRUPTION_BACKOFF_MS);
   });
 
+  test("continuation is ON in the shipped default, and 0 turns it off", () => {
+    // Pinned because the transport harness turns it OFF for the barge-in specs:
+    // without this, a bad default would hide behind that override.
+    expect(resolveBare().continuationWindowMs).toBe(DEFAULT_CONTINUATION_WINDOW_MS);
+    expect(DEFAULT_CONTINUATION_WINDOW_MS).toBe(3500);
+  });
+
   test("preemptive generation is OFF in the shipped default", () => {
     // The one assertion that pins the shipped state of this feature. It was ON
     // by author decision; the adoption log it shipped without was finally
@@ -87,13 +95,16 @@ describe("pipeline defaults", () => {
     // half the request. It has to be long enough for the pause between two
     // spoken sentences.
     //
-    // The floor is 1000, and it briefly moved to 800 to follow a default that
-    // was set to 800 and then reverted on tau2 reward (0.68 -> 0.12; see the
-    // block comment on DEFAULT_MIN_TURN_SILENCE_MS). It is back where it was:
-    // 800 is below every window the measurements justified, and this assertion
-    // guards DRIFT rather than correctness — it cannot tell you whether a value
-    // above the floor is right.
-    expect(DEFAULT_MIN_TURN_SILENCE_MS).toBeGreaterThanOrEqual(1000);
+    // ALONE that window must be at least 1000: 800 without continuation was
+    // reverted on tau2 reward (0.68 -> 0.12), the split landing mid-entity. With
+    // continuation on, a split is re-joined when the caller resumes, and 800 held
+    // reward on a 114-task run; 250 then held Full-Duplex-Bench v1.5 (see
+    // DEFAULT_MIN_TURN_SILENCE_MS). So the pinned invariant is the PAIR: a floor
+    // under 1000 only while continuation is on. It guards drift rather than
+    // correctness — it cannot say a value is right.
+    expect(DEFAULT_MIN_TURN_SILENCE_MS >= 1000 || DEFAULT_CONTINUATION_WINDOW_MS > 0).toBe(true);
+    // Measured down to 250, not below it.
+    expect(DEFAULT_MIN_TURN_SILENCE_MS).toBeGreaterThanOrEqual(250);
   });
 
   test("the barge-in duration gate is on, and short enough to stay responsive", () => {

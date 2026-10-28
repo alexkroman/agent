@@ -5,6 +5,7 @@
 // being ON (plus the explicit opt-out). The policy rules live in
 // pipeline-speculation.test.ts.
 
+import { PREEMPTIVE_QUIET_MS } from "@alexkroman1/aai/host-internal";
 import type { ModelMessage } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../../_pipeline-test-fakes.ts";
@@ -19,9 +20,16 @@ import {
 } from "../_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./transport.ts";
 
-/** High enough to clear PREEMPTIVE_CONFIDENCE_THRESHOLD however it is retuned. */
-const CERTAIN = { endOfTurnConfidence: 1 };
 const UTTERANCE = "what is my order status";
+
+/**
+ * An interim, then the caller pausing past the quiet window: what launches a
+ * speculation when the feature is on (PREEMPTIVE_QUIET_MS).
+ */
+async function pauseOn(stt: ReturnType<typeof makeOpts>["stt"], text: string): Promise<void> {
+  stt.last()?.firePartial(text);
+  await vi.advanceTimersByTimeAsync(PREEMPTIVE_QUIET_MS);
+}
 
 /** Prompt messages of a recorded `doStream` call. */
 function promptOf(call: { prompt?: unknown }): ModelMessage[] {
@@ -49,7 +57,7 @@ function userTexts(call: { prompt?: unknown }): string[] {
 useVirtualTime();
 
 describe("preemptive generation — guardrail 1: nothing speculative is ever spoken", () => {
-  test("a high-confidence partial generates but sends no TTS text, audio, or client frame", async () => {
+  test("a paused-on partial generates but sends no TTS text, audio, or client frame", async () => {
     const { opts, stt, tts, callbacks } = makeOpts({
       preemptiveGeneration: true,
       llm: createFakeLanguageModel({ script: [{ type: "text", text: "Your order shipped." }] }),
@@ -57,7 +65,7 @@ describe("preemptive generation — guardrail 1: nothing speculative is ever spo
     const t = createPipelineTransport(opts);
     await t.start();
 
-    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await pauseOn(stt, UTTERANCE);
     // Wait until the speculation is demonstrably streaming, so the assertions
     // below run after it started rather than before.
     await vi.waitFor(() => {
@@ -101,7 +109,7 @@ describe("preemptive generation — guardrail 2: nothing speculative executes a 
     const t = createPipelineTransport(opts);
     await t.start();
 
-    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await pauseOn(stt, UTTERANCE);
     await vi.waitFor(() => {
       expect(llmCalls(opts).calls).toHaveLength(1);
     });
@@ -134,7 +142,7 @@ describe("preemptive generation — adoption", () => {
     const t = createPipelineTransport(opts);
     await t.start();
 
-    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await pauseOn(stt, UTTERANCE);
     await vi.waitFor(() => {
       expect(llmCalls(opts).calls).toHaveLength(1);
     });
@@ -173,7 +181,7 @@ describe("preemptive generation — adoption", () => {
       const t = createPipelineTransport(opts);
       await t.start();
       if (preemptiveGeneration) {
-        stt.last()?.firePartial(UTTERANCE, CERTAIN);
+        await pauseOn(stt, UTTERANCE);
         await vi.waitFor(() => {
           expect(llmCalls(opts).calls).toHaveLength(1);
         });
@@ -210,7 +218,7 @@ describe("preemptive generation — adoption", () => {
     const t = createPipelineTransport(opts);
     await t.start();
 
-    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await pauseOn(stt, UTTERANCE);
     await vi.waitFor(() => {
       expect(llmCalls(opts).calls).toHaveLength(1);
     });
@@ -242,7 +250,7 @@ describe("preemptive generation — adoption", () => {
     const t = createPipelineTransport(opts);
     await t.start();
 
-    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await pauseOn(stt, UTTERANCE);
     await vi.waitFor(() => {
       expect(llmCalls(opts).calls).toHaveLength(1);
     });
@@ -272,7 +280,7 @@ describe("preemptive generation — mismatch", () => {
     const t = createPipelineTransport(opts);
     await t.start();
 
-    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await pauseOn(stt, UTTERANCE);
     await vi.waitFor(() => {
       expect(llmCalls(opts).calls).toHaveLength(1);
     });
@@ -307,12 +315,12 @@ describe("preemptive generation — no trace", () => {
     const t = createPipelineTransport(opts);
     await t.start();
 
-    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await pauseOn(stt, UTTERANCE);
     await vi.waitFor(() => {
       expect(llmCalls(opts).calls).toHaveLength(1);
     });
     await vi.advanceTimersByTimeAsync(20);
-    stt.last()?.firePartial("something else entirely", CERTAIN);
+    stt.last()?.firePartial("something else entirely");
     await flush();
 
     // The next real turn's request is the load-bearing assertion: an equal
@@ -332,19 +340,20 @@ describe("preemptive generation — recovery cannot resume a speculation", () =>
   test("an utterance that never commits discards the speculation and runs no turn", async () => {
     const { opts, stt, tts, callbacks } = makeOpts({
       preemptiveGeneration: true,
-      // Short enough that the watchdog fires inside the spec.
-      speechIdleTimeoutMs: 30,
+      // Long enough for the quiet window to fire first, short enough that the
+      // watchdog still fires inside the spec.
+      speechIdleTimeoutMs: PREEMPTIVE_QUIET_MS + 30,
       llm: createFakeLanguageModel({ script: [{ type: "text", text: "Speculated answer." }] }),
     });
     const t = createPipelineTransport(opts);
     await t.start();
 
-    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await pauseOn(stt, UTTERANCE);
     await vi.waitFor(() => {
       expect(llmCalls(opts).calls).toHaveLength(1);
     });
     // Let the speaking edge go idle — the false-interruption resume signal.
-    await vi.advanceTimersByTimeAsync(80);
+    await vi.advanceTimersByTimeAsync(PREEMPTIVE_QUIET_MS);
 
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
     expect(tts.last()?.sendText).not.toHaveBeenCalled();
@@ -373,8 +382,8 @@ describe("preemptive generation — OFF by default", () => {
     const t = createPipelineTransport(opts);
     await t.start();
 
-    // A high-confidence partial buys no request on the default path.
-    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    // A paused-on partial buys no request on the default path.
+    await pauseOn(stt, UTTERANCE);
     await flush();
     expect(llmCalls(opts).calls).toHaveLength(0);
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
@@ -389,7 +398,7 @@ describe("preemptive generation — OFF by default", () => {
     await t.stop();
   });
 
-  test("`preemptiveGeneration: false` opts out: the high-confidence partial generates nothing", async () => {
+  test("`preemptiveGeneration: false` opts out: a paused-on partial generates nothing", async () => {
     const { opts, stt, tts, callbacks } = makeOpts({
       preemptiveGeneration: false,
       llm: createFakeLanguageModel({ script: [{ type: "text", text: "Your order shipped." }] }),
@@ -397,7 +406,7 @@ describe("preemptive generation — OFF by default", () => {
     const t = createPipelineTransport(opts);
     await t.start();
 
-    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await pauseOn(stt, UTTERANCE);
     await vi.advanceTimersByTimeAsync(30);
     expect(llmCalls(opts).calls).toHaveLength(0);
 
@@ -420,7 +429,7 @@ describe("preemptive generation — OFF by default", () => {
     });
     const t = createPipelineTransport(opts);
     await t.start();
-    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await pauseOn(stt, UTTERANCE);
     await vi.advanceTimersByTimeAsync(30);
     expect(llmCalls(opts).calls).toHaveLength(0);
     await t.stop();
@@ -447,7 +456,7 @@ describe("preemptive generation — the SYSTEM PROMPT is part of request parity"
     const t = createPipelineTransport(opts);
     await t.start();
 
-    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await pauseOn(stt, UTTERANCE);
     await vi.waitFor(() => {
       expect(llmCalls(opts).calls).toHaveLength(1);
     });
@@ -478,7 +487,7 @@ describe("preemptive generation — the SYSTEM PROMPT is part of request parity"
     const t = createPipelineTransport(opts);
     await t.start();
 
-    stt.last()?.firePartial(UTTERANCE, CERTAIN);
+    await pauseOn(stt, UTTERANCE);
     await vi.waitFor(() => {
       expect(llmCalls(opts).calls).toHaveLength(1);
     });

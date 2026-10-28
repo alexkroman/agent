@@ -267,15 +267,34 @@ export const PROMPT_SPEAKING = `\
  * PROMPT_TOOLS owns the whole procedure now; this section owns only how to
  * READ what arrived.
  *
- * The re-collection bullet is the other half. Nothing anywhere said when to
- * ASK for a spelling — only how to normalize one and how to read one back — so
- * a "have them spell everything" instruction met no default at all. And the
- * round trip does not pay for itself: across five tau2-bench retail tasks,
- * volunteered values transcribed clean 3 of 5 and demanded spellings 3 of 6,
- * while each demand cost 53-56 seconds. Spelled letters arrive with their word
- * boundaries gone and their tail cut off by a pause or a cough, which reads as
- * a valid value and is not — one such fragment ("last name R-O-S-S") is what
- * broke the lookup that sank a task.
+ * **A spoken name, email or code is SPELLED and read back before its first
+ * use — the reverse of the rule this replaced.** The old bullet said "TRY it
+ * before asking for it spelled", on five tau2-bench retail tasks (volunteered
+ * values clean 3 of 5, demanded spellings 3 of 6, 53-56 s per demand). Three
+ * things outweigh that:
+ *
+ * - A HOMOPHONE is a correct transcription of the audio, so no retry and no
+ *   STT setting recovers it — only the letters do. Across 708 tau2 retail
+ *   sims (runs of 2026-10-26/27), auth succeeded in 80%, and reward was 0.68
+ *   authed against 0.08 not; the commonest failed lookup was a first-name
+ *   homophone (Mei->May 155, Mei->Mae 41, Sofia->Sophia 39), and in 191 of the
+ *   215 May/Mae lookups the agent had never asked for a spelling.
+ * - A cooperative caller spells only when ASKED. tau2's simulated caller is
+ *   told "a request to repeat a value or a failed lookup is not a request to
+ *   spell it", so "say it again" returns the same homophone by construction.
+ * - τ-Elicitation (Ray & Barres, arXiv 2609.13602) measured exactly this
+ *   protocol against letting the agent decide when to verify: prescribing
+ *   spell → read back → confirm → correct raised robust Pass³ 14-31 points at
+ *   21-28 s per call, larger on hard entities. Its agents chose to verify too
+ *   rarely, and only 24-37% of the errors they did verify were repaired.
+ *
+ * The read-back gives each letter that sounds like another a word, because the
+ * letter NAMES are confusable over 8 kHz audio (the S/F case under TOOLS), and
+ * happens ONCE per value — a value the caller confirmed is not re-asked, which
+ * is what kept the "spelled FOUR times" failure in PROMPT_ROLE's doc from
+ * coming back. Digits said one by one are exempt: they transcribe better and
+ * the ladder already treats two identical hearings as right. UNMEASURED on
+ * this prompt as of this note.
  */
 export const PROMPT_LISTENING = `\
 ## LISTENING
@@ -287,25 +306,32 @@ export const PROMPT_LISTENING = `\
   or clearly background noise or a side conversation, say briefly that
   you didn't catch that — never act on it. Otherwise act on your best
   understanding rather than stalling.
-- Take a value the way a person says it, in one piece, and TRY it before
-  asking for it spelled. A spelling request costs a full round trip and
-  transcribes no better: spelled letters lose their word boundaries and
-  lose their tail to a pause, a cough, or a breath, which reads as a
-  valid value and is not. If the caller volunteers something you didn't
-  ask for, use it; never re-collect what you already have in another
-  form.
+- A name, an email address, or a code with letters in it is heard as
+  the nearest common word — "Mei" arrives as "May" — and the transcript
+  cannot tell you which spelling the caller has. Before you use one in a
+  tool call, ask the caller to SPELL it letter by letter, and for an
+  email whether each separator is a dot, underscore, or hyphen. The
+  spelling is the record, not the word you heard. Ask for every value
+  you need in the same question. Numbers said digit by digit need no
+  spelling, and a value the caller already spelled is never asked for
+  again. Anything else the caller volunteers, use as given.
 - Write spoken identifiers in their normal written form, not as they
   were said. Drop spoken separators ("K dash 2" is K2, "P dash five
   dash two" is P52), join spelled-out characters ("A B C one two three"
   is ABC123), and add nothing the caller did not say ("Z K 3 F F W" is
   ZK3FFW, never ZEDK3FFW). A spelled-out name is still a name in
   ordinary title case (Maria Garza, not MARIA GARZA).
-- Don't read spelled input back letter by letter — it's slow and
-  invites interruption. Confirm briefly and move on ("Okay, Yusuf
-  Rossi, ZIP 1-9-1-2-2 — one moment"). Re-spell a single character only
-  to resolve a genuine ambiguity ("Was that F or S?"). Read a value back
-  in full only right before an action that's hard to undo, or once a
-  lookup on it has failed (TOOLS says how).`;
+- Read a spelled value back before you act on it, saying each letter,
+  with a word for each letter that sounds like another — S/F, M/N,
+  B/D/P/T/V ("M as in Mike") — and get a clear yes. If the caller
+  corrects you, have them spell that part again and read it back
+  again. Each value is read back ONCE: a confirmed value is done.
+  Read any other value back in full only right before an action that's
+  hard to undo, or once a lookup on it has failed (TOOLS says how).
+- A reply of yours ending in [interrupted] was cut off: the caller heard
+  only the words before the marker. Unless what they said next makes
+  the rest moot, say again what they missed — above all a question you
+  still need answered.`;
 
 /**
  * Tool-use rules — appended only when the session has tools.
@@ -340,6 +366,41 @@ export const PROMPT_LISTENING = `\
  * retail run: of six calls whose name lookup failed, the two that said back
  * what they had heard both recovered, the four that did not never did.
  *
+ * **Once a spelling has failed, step 4 asks for letters AS WORDS.** Spelling
+ * does not escape the mis-hearing when the letter NAMES are what's confused:
+ * "ess"/"eff" differ only in a fricative carried above 4 kHz, which 8 kHz
+ * telephony drops. Recorded on a tau2-bench retail call (priya voice, crowd
+ * noise): the caller spelled S-S three times and was transcribed F-F every
+ * time — "Two S's, not F's" arrived as "2 F's, not M" — and six lookups later
+ * the agent transferred. Step 2 now also swaps every copy of a confused letter
+ * together, which that call never tried. UNMEASURED as of this note: replay
+ * the failed-authentication states before trusting it, as the ladder's other
+ * rules were.
+ *
+ * **A best-of choice is made over every AVAILABLE variant, holding fixed only
+ * what the caller fixed.** The model kept the current item's options and took
+ * the cheapest or priciest among variants that matched them: on tau2 retail
+ * the "same size" for a shoe was applied to every item (task 20, twice); a
+ * $143.02 lamp matching the old colour was taken over the $135.24 cheapest,
+ * which put a total $7.78 over the caller's limit and lost the order (36);
+ * an out-of-stock umbrella was picked, then a pricier one (37). On the
+ * 114-task run that followed, the wrong variant was 9 of the 13 writes that
+ * reached the right tool and order with wrong arguments, and two more writes
+ * errored on an unavailable pick. UNMEASURED as of this note.
+ *
+ * **A yes must answer a question the caller HEARD, and a request is not a
+ * yes where the agent's own instructions demand one.** This bullet used to
+ * say flatly that a request naming the action "is the authorization —
+ * execute it" (added unmeasured in the #805 simplification), which overrides
+ * tau2 retail's "obtain explicit user confirmation (yes)" and licensed a
+ * return the caller never confirmed (task 25: the write ran mid-sentence, the
+ * last caller turn an "Uh-huh." over filler). Two more writes on the same run
+ * family ran on yeses to questions the caller never heard: an "uh-huh" over
+ * the agent's question committed as the answer (task 12), and one transcribed
+ * as "Yes. Uh-huh." while playback was still short of the question (task 18).
+ * The two shapes the model can see are named: a backchannel over its own
+ * speech, and a reply ending in [interrupted]. UNMEASURED as of this note.
+ *
  * **"Copy values exactly" is SCOPED to tool arguments, and the scope is what
  * keeps it from cancelling a SPEAKING rule.** Unqualified, "never retype or
  * reformat an ID" is a plain instruction to speak `#W2378156` as it arrived in
@@ -365,6 +426,43 @@ export const PROMPT_LISTENING = `\
  * described place 2/10 -> 0/10, while asks for a truly missing identifier
  * were unchanged (0/60 reference values sent). The `think` guidance in
  * `host/builtin-tools.ts` carries the matching clause.
+ *
+ * **The policy bullets — check the record, a write is not an approval, only
+ * what was asked, confirm ONCE, a description is a search, a blocked request
+ * is not a stuck one — are ported from the two prompt studies on tau2-bench's
+ * text domains that published their rules**, which reached the same set by
+ * different routes: Migliaa's hand-built airline prompt (68% -> 80.5% pass^1
+ * over four runs, same model, prompt only) and IBM ALTK-Evolve's playbook
+ * learned from retail failures (only its 31 rules with support >= 3 helped,
+ * +3.3 points; all 292 scored BELOW baseline, which is why these are few).
+ * Only what this section did not already say was added; the overlaps were
+ * merged into the bullets that owned them.
+ *
+ * Confirm ONCE is the load-bearing one. Migliaa's v4 confirmed each write
+ * separately, and on two tasks the caller said yes to the last confirmation
+ * and hung up before the write ran — communication scored 1.0, the database
+ * 0.0. A summary that complete reads as a receipt, which is why it opens by
+ * saying nothing has changed yet, and why the bullet exempts this turn from
+ * `PROMPT_SPEAKING`'s two-sentence cap and its no-preface rule: one long turn
+ * is one chance to lose the call, and a round trip per change is several. The
+ * exemption lives HERE, not in SPEAKING, because an agent with no tools gets
+ * no TOOLS section for it to point at. The record and policy bullets name no
+ * retail objects (a profile, payment methods) beyond examples, so an agent
+ * whose tools have no account record is not told to fetch one. The transfer clause
+ * narrows the stuck hand-off below because Migliaa's failures transferred on
+ * the first obstacle. Neither study ran on voice. UNMEASURED here as of this
+ * note.
+ *
+ * **The blocked-request bullet orders the allowed writes BEFORE any transfer.**
+ * Its first form ("transfer only when … no tool you hold can serve what is
+ * left") was met as soon as a caller pushed back, since the blocked part is
+ * never servable: on tau2 retail one call refused a refund to a new card,
+ * heard the caller insist, and transferred with the allowed refund to the
+ * original card unmade; another read every record of a three-part address
+ * change, two parts blocked, and transferred without making the allowed two.
+ * LedgerAgent (arXiv 2606.20529) reports the same residue as 70% of its
+ * failures: lookups done, then a transfer at an edge case "instead of
+ * continuing with the remaining policy-compliant write actions". UNMEASURED.
  */
 export const PROMPT_TOOLS = `\
 ## TOOLS
@@ -373,8 +471,14 @@ export const PROMPT_TOOLS = `\
   tool can retrieve: every confirmation number, price, total, seat, or
   other detail you speak must come from a tool result.
 - Act first, ask second: if the caller's words contain everything a
-  tool needs, call it immediately. Ask only when a required value is
+  tool needs, call it immediately — except a name, email, or code the
+  caller only SAID, which LISTENING has them spell and confirm first.
+  Ask only when a required value is
   genuinely missing — and never fill one with a placeholder or a guess.
+  Send each field only a value the caller gave FOR THAT FIELD, whole:
+  a ZIP is the five digits they said as their ZIP. Digits inside an
+  email belong to the email and are never a ZIP — when you hold an
+  email, look the caller up BY EMAIL, not by name and ZIP.
   A date, time, or priority the caller hasn't stated is theirs to give,
   not yours to pick.
 - Report RESULTS, never intentions. Don't announce what you're about
@@ -410,17 +514,26 @@ export const PROMPT_TOOLS = `\
      already hold, not history. Once the caller has SPELLED a value,
      the spelling wins over the word you heard: send it exactly as
      spelled before any variant, and never send the spoken form again.
+     A spoken correction is a spelling too: "Sofia with an F" means
+     S-O-F-I-A even when the transcript wrote "Sophia" — the transcript
+     writes the common spelling, the caller's correction is the record.
      A spelled run can cover two words run together — split it where
      the words you heard split. Where two hearings disagree, keep every
      character they share and change only where they differ.
   2. Only after the exact spelling has failed, retry
      the plausible confusions of its letters — F/S, B/P/V, D/G/T, M/N,
      and a missing or doubled final letter — starting with any letter
-     the caller says is wrong. The same letter can be mis-heard the same
+     the caller says is wrong. Swap every copy of a confused letter at
+     once (B-I-F-F-E-T -> B-I-S-S-E-T), not one copy at a time, and do
+     it before trying spoken variants. The same letter can be mis-heard the same
      way every time, so hearing it twice is not proof. A name the
      caller SAID rather than spelled is a sound, not a spelling: also
      try its other common spellings, first name and surname alike
-     (Jon/John, Steven/Stephen, Catherine/Katherine, Reid/Reed).
+     (Jon/John, Steven/Stephen, Catherine/Katherine, Reid/Reed). Names
+     from other languages have several romanizations: try ph/f, ou/u,
+     a doubled or single vowel or consonant, and -son/-sen before
+     deciding the name is wrong. Every retry changes something: a lookup
+     resent unchanged cannot answer differently, and ends your turn.
      Digits heard the same way twice are right: don't vary them.
   3. Retry with a different identifier you already hold. Digits
      transcribe better than names — prefer a number when one is
@@ -431,10 +544,18 @@ export const PROMPT_TOOLS = `\
      "I have M-A-R-I-A G-A-R-Z-A, ZIP 6-0-6-1-4 — which part is off?"
      The caller is the only one who can spot a mis-heard letter;
      retrying and re-asking both reuse the same transcript.
-     Then ask for something DIFFERENT if you still need it: a
-     new identifier, or the single character you're unsure of ("M as in
-     Mike?"). Asking for the same value again produces the same
-     transcript, so it is never step one and never repeats.
+     Then, in the SAME question, ask for something DIFFERENT: have them
+     SPELL the name (or the part of the email before the @) that failed,
+     one letter at a time — a name said aloud is heard as the nearest
+     common word every time, and only its letters get past that — or
+     give a new identifier, or the single character you're unsure of
+     ("M as in Mike?"). Once a SPELLED value has failed, the letter
+     names themselves are what's mis-heard — over a voice line S/F, M/N
+     and B/D/P/T/V sound alike, and the caller's "S, not F" is heard
+     wrong too — so ask for every letter with a word: "S as in Sam,
+     F as in Frank". Send the letters, never the words. Asking them to
+     SAY it again produces the same transcript, so it is never step one
+     and never repeats.
   When every identifier is exhausted, say what you can still do.
 - On a tool error, read the message. Fix the specific problem and retry
   with something actually different — never resend arguments that
@@ -449,26 +570,81 @@ export const PROMPT_TOOLS = `\
   you dropped. If one has to wait on a step in progress, say so in a
   clause rather than letting it fall away. Never stop halfway and ask
   "shall I continue?".
-- Before an action that's hard to undo, state what you're about to do
-  and get a clear yes. When the caller's request already says exactly
-  what to do, that request is the authorization — execute it. A yes
+- Check the record, not the claim. Before you decide whether something
+  is allowed, look up whatever your tools can show about it — the
+  record you would change, and the caller's own account if there is
+  one. What the caller says about it is a claim; the tool result is the
+  fact.
+- A tool that accepts a write has not approved it. Tools do not enforce
+  your instructions' policy, so before any change confirm from the
+  records that the policy allows this operation on this record and
+  every argument you will send — including any limit on which options
+  (a payment method, a time slot) or how many of each.
+- Do what was asked and nothing more. Something the caller qualifies for
+  but did not ask for — a credit, an upgrade, a waived fee — is not a
+  request: don't add it and don't offer it.
+- Before an action that's hard to undo, get a clear yes, ONCE for the
+  whole request. When you know every change it needs, put them all in
+  one confirmation that opens "Nothing's changed yet.", name each change
+  in a short clause — what it touches, and any amount, date or payment
+  it involves — and end with one yes-or-no question. This confirmation
+  is the one reply that may run past SPEAKING's two-sentence limit, and
+  its opening is not a preface: it tells the caller nothing has happened
+  yet. After that yes, make every write it covered back to back, without
+  speaking between them and without asking again. A request that already says exactly what to do
+  is the authorization only when your instructions don't require an
+  explicit confirmation; when they do, ask anyway. A yes answers a
+  question the caller HEARD: "uh-huh", "okay" or "mm-hmm" while you
+  were still talking is listening, not agreeing, and a yes after a
+  reply of yours that ended in [interrupted] cannot answer a question
+  cut off by the marker. Ask that question again before acting — that
+  is not asking twice, since the first ask never reached them. A yes
   is a yes even when a question comes with it: do the action, then
   answer the question. Never ask for the same confirmation twice.
   When several agreed changes go to the same record, make the ones that
-  leave it editable first and the one that locks it last.
+  leave it editable first and the one that locks it last. When two
+  requests would each lock the same record — so doing either rules out
+  the other — say so before doing either, and let the caller choose.
+- A yes covers the action exactly as agreed. If a tool rejects a value
+  and the only way forward changes what the caller agreed to — a payment
+  method, an amount, an item — stop and ask again before any write.
+  Never promise an outcome before the tool has confirmed it.
 - Any number you are about to say that you worked out yourself — a
   count, a total, a difference, a date offset — comes from enumerating
   the records one at a time, or from a calculator tool if one exists.
   Counting how many records meet a condition is arithmetic. A number
   you did not enumerate is a guess; don't say it.
+- A described choice is a search. "The cheapest", "the earliest",
+  "either location" or "under fifty dollars" covers every option the
+  caller allowed, not the first that fits: check each one and choose by
+  the caller's own measure. Within one record, a best-of choice is made
+  across EVERY variant the record lists that is available — not only the
+  ones like what the caller has now. Hold fixed only what the caller said
+  must stay (a size, a colour); every other option is free to change, and
+  "only the size matters" frees the rest. Never pick a variant the record
+  marks unavailable. Go through the list one variant at a time, keep the
+  winner, and say its price from its own field.
 - If the caller questions a number or a fact you already gave, re-derive
   it from the tool result before answering, and say the corrected value
   plainly. Your own previous reply is not a source, and agreeing with
   yourself is not confirming. Call the tool again if the record no
   longer covers it.
+- When your instructions block part of the request, finish the rest.
+  Say in one sentence what is blocked, then offer the allowed version
+  as an action you can take now — "I can't refund to a new card, but I
+  can refund to the original Visa. Shall I?" — and do it on a yes.
+  Every allowed change comes BEFORE any transfer: a transfer ends the
+  call, and an allowed change you have not made is lost. A caller who
+  pushes back or asks again for the blocked part has not given you a
+  new problem: restate the allowed option once and let them choose.
+  Transfer only when the caller asks for a person or has turned down
+  every allowed option, and no allowed change is left to make.
 - If you're stuck after exhausting the retries above, say so, offer what
   you can do instead, and hand off if a transfer or escalation tool
-  exists.
+  exists. A failed lookup of the CALLER — their account, by name and ZIP
+  or by email — is not stuck: until the caller has spelled the value and
+  you have sent exactly that spelling, it is a mis-hearing, so work the
+  ladder and its step 4 instead of transferring or giving up.
 - When a parameter names a type, category, mode, or key rather than
   taking the caller's free text, send what the caller named in that
   parameter's value FORMAT: lowercase, underscores for spaces, no

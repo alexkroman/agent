@@ -27,7 +27,7 @@
  * A table is a header line and one line per record, in the original order:
  *
  * ```text
- * 3 records (key column: id): id | options.size | available | price
+ * 3 records (key column: id; available: 2 true, 1 false): id | options.size | available | price
  * 0012 | S | true | 10
  * 0013 | M | false | 12.5
  * 0014 | L | true | 9
@@ -41,6 +41,13 @@
  *   survives), numbers as JSON writes them, `true`/`false`, `null`. Inside a
  *   value `\` becomes `\\`, the delimiter `|` becomes `\|`, and a line break
  *   becomes `\n` / `\r`, so a row is always exactly one line.
+ * - **A boolean column is TALLIED in the header** — `3 records (key column:
+ *   id; available: 2 true, 1 false)`. The header used to carry only the row
+ *   count, and a model asked "how many are available" answered with it: on
+ *   tau2 retail, "twelve t-shirt options" for a 12-row table with two
+ *   `false`, twice in one run, the agent never counting the column. The tally
+ *   states the answer as plainly as the wrong one was. Only columns whose
+ *   every cell is a JSON boolean are tallied; a string `"true"` is not one.
  * - **Nothing is sorted, filtered or truncated.**
  *
  * A result that IS a collection becomes the bare table. A collection nested in
@@ -187,6 +194,27 @@ function escapeCell(text: string): string {
     .replaceAll("\r", "\\r");
 }
 
+/**
+ * `; <column>: N true, M false` for every column whose cells are all JSON
+ * booleans — strings spelled "true" do not count — or `""` when none are.
+ */
+function booleanTallies(columns: readonly string[], rows: readonly Map<string, Scalar>[]): string {
+  let out = "";
+  for (const column of columns) {
+    let yes = 0;
+    let no = 0;
+    for (const row of rows) {
+      const cell = row.get(column) as Scalar;
+      if (cell.isString) break;
+      if (cell.text === "true") yes += 1;
+      else if (cell.text === "false") no += 1;
+      else break;
+    }
+    if (yes + no === rows.length) out += `; ${escapeCell(column)}: ${yes} true, ${no} false`;
+  }
+  return out;
+}
+
 /** A column name the records do not already use. */
 function freshColumn(name: string, columns: readonly string[]): string {
   let chosen = name;
@@ -233,7 +261,8 @@ function tableOf(node: Node): string | undefined {
     if (keyField === undefined) cells.unshift(escapeCell(ids[i] as string));
     return cells.join(DELIMITER);
   });
-  const title = `${rows.length} records (key column: ${escapeCell(keyName)}): `;
+  const tallies = booleanTallies(columns, rows);
+  const title = `${rows.length} records (key column: ${escapeCell(keyName)}${tallies}): `;
   return [title + header.map(escapeCell).join(DELIMITER), ...lines].join("\n");
 }
 

@@ -26,7 +26,7 @@
  */
 
 import type { ClientSink } from "@alexkroman1/aai/protocol";
-import { omitUndefined } from "@alexkroman1/aai/utils";
+import { isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { createAudioPacer } from "./audio-pacer.ts";
 
 /**
@@ -73,7 +73,33 @@ export type PacedClientSink = {
    * now. A second request is ignored.
    */
   endAfterReply: (request: { afterReply: boolean }, close: () => void) => void;
+  /** Audio held here and not yet sent — see {@link withHeldAudio}. */
+  heldAudioMs: () => number;
 };
+
+/**
+ * A client's inbound command, with the audio this side still HOLDS added to a
+ * `playback_progress` report. Anything else is returned unchanged.
+ *
+ * **Why.** A client reports the backlog it has RECEIVED; audio the pacer is
+ * still holding back is invisible to it, and the session takes the report as
+ * the whole of what is left to play. A client draining in real time hides the
+ * gap — the open-loop clock covers it — but one draining slower does not: on
+ * tau2-bench retail (which plays slower than real time) instrumented cuts had
+ * 2.6-8.3 s held here, the heard cursor ran 2.4-3.3 s past the audio the
+ * caller had been played, and resumes skipped words they never heard — "one
+ * thousand four hundred ninety-seven dollars" resumed as "four hundred
+ * ninety-seven dollars". `reply.cancelled` then discards that held audio, so
+ * the cursor had counted as heard audio that was never sent at all.
+ *
+ * @internal
+ */
+export function withHeldAudio(command: unknown, heldMs: number): unknown {
+  if (heldMs <= 0 || !isRecord(command) || command.type !== "playback_progress") return command;
+  const { bufferedMs } = command;
+  if (typeof bufferedMs !== "number" || !Number.isFinite(bufferedMs)) return command;
+  return { ...command, bufferedMs: bufferedMs + heldMs };
+}
 
 /**
  * Wrap `raw` so its audio is paced and its turn-closing events wait for it.
@@ -154,6 +180,7 @@ export function createPacedClientSink(
   };
   return {
     client,
+    heldAudioMs: () => pacer.heldMs(),
     stopPacing: () => {
       pacer.stop();
       clearEndTimer();

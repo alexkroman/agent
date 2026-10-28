@@ -7,8 +7,8 @@
  * ordinary tool rather than an AI SDK tool handed to `streamText`.
  */
 
-import type { ToolDef } from "@alexkroman1/aai";
-import { errorMessage, toolFailure } from "@alexkroman1/aai/utils";
+import type { ToolDef, ToolEffect } from "@alexkroman1/aai";
+import { errorMessage, isRecord, toolFailure } from "@alexkroman1/aai/utils";
 import type { Tool, ToolSet } from "ai";
 import type { JSONSchema7 } from "json-schema";
 import { type McpCallResult, toCallResult } from "./connect.ts";
@@ -47,10 +47,26 @@ export type DiscoveredTool = {
   call: NonNullable<Tool["execute"]>;
 };
 
+/**
+ * An MCP tool's {@link ToolEffect}, by MCP's own rule: `readOnlyHint` DEFAULTS
+ * to false — a tool may modify its environment unless its server says it does
+ * not — so only `readOnlyHint: true` is a read. An unannotated tool is a write,
+ * and the confirmation gate treats it as one, which is the safe direction for
+ * a third party's tool. The hint is the
+ * server's word, not a guarantee, and the AI SDK's MCP client carries it on
+ * `tool.metadata.annotations`.
+ */
+export function mcpToolEffect(tool: Tool): ToolEffect {
+  const metadata: unknown = (tool as { metadata?: unknown }).metadata;
+  const annotations = isRecord(metadata) ? metadata.annotations : undefined;
+  return isRecord(annotations) && annotations.readOnlyHint === true ? "read" : "write";
+}
+
 /** Build the `ToolDef` for one discovered tool. */
 export function mcpTool(found: DiscoveredTool, serverKey: string, name: string): ToolDef {
   const described = found.tool.description ?? `The "${found.remote}" tool`;
   return {
+    effect: mcpToolEffect(found.tool),
     // The origin is in the description as well as in the name. The name already
     // carries it, but the description is what the model reasons over, and
     // "which of these tools is a third party's" is exactly the distinction an

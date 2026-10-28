@@ -257,8 +257,21 @@ export function forceFinalAnswer(
 /**
  * How many failed tool results one turn may collect before its next step is
  * spent on an answer. Internal, not a knob — see {@link toolErrorBudget}.
+ *
+ * **6, up from 3 (2026-10-27), because 3 cut the lookup-recovery ladder in
+ * half.** `PROMPT_TOOLS` tells the model to work a failed spoken lookup through
+ * earlier hearings, letter confusions and the other common spellings of a name
+ * before asking — four or more attempts — while this budget forced an answer
+ * after the third "not found". On a 114-task tau2-bench retail run, 37 of 60
+ * failures never authenticated, mostly on homophone spellings (Sofia/Sophia,
+ * Yusuf/Yusef, Aarav/Arav) that only the later rungs reach, and the commonest
+ * shape before the agent transferred the call was exactly three failed lookups
+ * and nothing else (12 of 33 transfers). The silence those extra lookups cost
+ * is covered by dead-air filler. A call that cannot answer differently — the
+ * same failed call again — never runs at all: `tools/failed-call-memo.ts`
+ * refuses it before execution, and the refusal counts here as a failure.
  */
-export const TOOL_ERROR_BUDGET = 3;
+export const TOOL_ERROR_BUDGET = 6;
 
 /** The slice of a finished step {@link toolErrorBudget} reads: its content. */
 type ToolErrorBudgetStep = { readonly content: readonly unknown[] };
@@ -273,14 +286,16 @@ type ToolErrorBudgetStep = { readonly content: readonly unknown[] };
  * asks whether anyone is still there. `forceFinalAnswer` bounds that only at
  * `maxSteps`, which is long enough to lose the caller.
  *
- * So the next step is forced to `toolChoice: "none"` — the model keeps every
- * result in context, and its only move is to tell the caller what happened —
- * as soon as EITHER:
+ * So once {@link TOOL_ERROR_BUDGET} tool results in this turn have failed, the
+ * next step is forced to `toolChoice: "none"` — the model keeps every result
+ * in context, and its only move is to tell the caller what happened.
  *
- * - the step just finished repeats a call (same tool, same canonical-JSON
- *   arguments) that already FAILED earlier in this turn — a retry that cannot
- *   answer differently; or
- * - {@link TOOL_ERROR_BUDGET} tool results in this turn have failed.
+ * There is deliberately no rule for an IDENTICAL repeat here any more. That
+ * repeat used to run and then force the answer, costing a call and the rest of
+ * the model's recovery; `tools/failed-call-memo.ts` now refuses it before it
+ * runs, with a result telling the model to change something, and the turn goes
+ * on. The refusal is itself a failed result, so a model that keeps re-sending
+ * still exhausts this budget.
  *
  * "This turn" is `steps`, which the AI SDK scopes to one `streamText` call, so
  * failures in earlier turns never count: a caller who corrects their details
@@ -299,55 +314,37 @@ export function toolErrorBudget(
   return ({ steps }) => {
     const last = steps.at(-1);
     if (last === undefined) return;
-    const failed = new Set<string>();
     let errors = 0;
-    for (const step of steps.slice(0, -1)) errors += collectFailures(step, failed);
-    const identicalRepeat = last.content.some(
-      (part) => isToolPart(part) && part.type === "tool-call" && failed.has(callKey(part)),
-    );
-    errors += collectFailures(last, failed);
-    if (!(identicalRepeat || errors >= TOOL_ERROR_BUDGET)) return;
+    for (const step of steps) errors += countFailures(step);
+    if (errors < TOOL_ERROR_BUDGET) return;
     if (!fired) {
       fired = true;
-      log.info("tool-error budget spent; forcing an answer", { sid, errors, identicalRepeat });
+      log.info("tool-error budget spent; forcing an answer", { sid, errors });
     }
     return { toolChoice: "none" };
   };
 }
 
 /** A tool part of a step's content, narrowed to the fields this reads. */
-type ToolPart = { type: string; toolName?: unknown; input?: unknown; output?: unknown };
+type ToolPart = { type: string; output?: unknown };
 
 function isToolPart(part: unknown): part is ToolPart {
   return isRecord(part) && typeof part.type === "string";
 }
 
-/** Add each failed call in `step` to `failed` by key; return how many failed. */
-function collectFailures(step: ToolErrorBudgetStep, failed: Set<string>): number {
+/** How many of `step`'s tool parts are failures. */
+function countFailures(step: ToolErrorBudgetStep): number {
   let count = 0;
   for (const part of step.content) {
     if (!isToolPart(part)) continue;
-    const isFailure =
+    if (
       part.type === "tool-error" ||
-      (part.type === "tool-result" && isFailedToolResult(part.output));
-    if (!isFailure) continue;
-    failed.add(callKey(part));
-    count += 1;
+      (part.type === "tool-result" && isFailedToolResult(part.output))
+    ) {
+      count += 1;
+    }
   }
   return count;
-}
-
-/** `(toolName, canonical-JSON input)` — key order does not make a call new. */
-function callKey(part: ToolPart): string {
-  return JSON.stringify([part.toolName, canonicalJson(part.input)]);
-}
-
-function canonicalJson(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalJson);
-  if (!isRecord(value)) return value;
-  const sorted: Record<string, unknown> = {};
-  for (const key of Object.keys(value).sort()) sorted[key] = canonicalJson(value[key]);
-  return sorted;
 }
 
 /**

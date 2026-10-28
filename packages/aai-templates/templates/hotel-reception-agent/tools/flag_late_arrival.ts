@@ -5,6 +5,7 @@ import { verified, verifiedBooking } from "../shared.ts";
 
 /** Their `flag_late_arrival`: a note on the booking so the desk holds the room. */
 export default hotelSlot.updateTool({
+  effect: "write",
   description:
     'Flag the verified booking with an expected late arrival ("checking in around 1 AM", "redeye ' +
     'lands at 11 PM") so the front desk holds the room and does not no-show it. Verify first.',

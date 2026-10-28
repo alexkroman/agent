@@ -1,11 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { DEFAULT_SESSION_START_TIMEOUT_MS, PIPELINE_FLUSH_TIMEOUT_MS } from "./constants.ts";
+import { DEFAULT_MIN_TURN_SILENCE_MS } from "./endpointing-constants.ts";
 import {
   DEFAULT_FALSE_INTERRUPTION_PROMPT,
   DEFAULT_VOICE_FOCUS_THRESHOLD,
   MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE,
-  PREEMPTIVE_CONFIDENCE_THRESHOLD,
+  PREEMPTIVE_QUIET_MS,
   STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_RETRY_DELAY_MS,
   STT_CONNECT_TIMEOUT_MS,
@@ -33,11 +34,20 @@ describe("pipeline tuning", () => {
     expect(TTS_CANCEL_ACK_TIMEOUT_MS).toBeLessThan(PIPELINE_FLUSH_TIMEOUT_MS);
   });
 
-  test("the thresholds are probabilities, and speculation is bounded", () => {
-    for (const threshold of [DEFAULT_VOICE_FOCUS_THRESHOLD, PREEMPTIVE_CONFIDENCE_THRESHOLD]) {
-      expect(threshold).toBeGreaterThan(0);
-      expect(threshold).toBeLessThanOrEqual(1);
-    }
+  test("the voice-focus threshold is a probability", () => {
+    expect(DEFAULT_VOICE_FOCUS_THRESHOLD).toBeGreaterThan(0);
+    expect(DEFAULT_VOICE_FOCUS_THRESHOLD).toBeLessThanOrEqual(1);
+  });
+
+  test("speculation fires inside the endpointing window, and is bounded", () => {
+    // A quiet window that outlasts the wait for the final fires after the turn
+    // has already committed: no head start, only a wasted request. That wait is
+    // the endpointing silence PLUS STT finalization, measured at ~0.7s on
+    // universal-3-5-pro (last word to commit p50 0.94s at 250ms; see
+    // DEFAULT_MIN_TURN_SILENCE_MS), so the window must close well inside it.
+    const finalizationMs = 700;
+    expect(PREEMPTIVE_QUIET_MS).toBeGreaterThan(0);
+    expect(PREEMPTIVE_QUIET_MS).toBeLessThan((DEFAULT_MIN_TURN_SILENCE_MS + finalizationMs) / 2);
     expect(MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE).toBeGreaterThanOrEqual(1);
   });
 

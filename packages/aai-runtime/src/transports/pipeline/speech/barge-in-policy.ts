@@ -33,7 +33,8 @@
  *    by the author. The phrase lists below override a THRESHOLD; they must not
  *    override a declaration that there is no threshold.
  * 3. **The two thresholds.** `minBargeInWords`, and then — for an interim
- *    only — `interruptionMinDurationMs`.
+ *    only — `interruptionMinDurationMs`, met by the time since the first
+ *    interim OR by an interim of {@link SUSTAINED_SPEECH_WORDS} words.
  *
  * 4. **The relative-level veto.** An utterance whose loudest audio is far
  *    below the caller's own speech level is not the caller — a television, an
@@ -41,9 +42,11 @@
  *    has. It is a VETO: it can only turn a yes into a no, and it fails open
  *    (no measurement is never quiet). `caller-level.ts` owns the rule.
  *
- * A committed FINAL skips step 3's second half, as it always has: a final is
- * demonstrably real speech, so there is nothing for a sustained-speech gate to
- * establish.
+ * A committed FINAL skips step 3's second half HERE: the time since its first
+ * interim includes the endpointing silence, so it cannot measure sustained
+ * speech. The gate still applies to finals, upstream and on the words' own
+ * span — a final shorter than it, begun over agent speech, is dropped before
+ * this policy is asked (`dropsBriefFinal` in `stt-handlers.ts`).
  *
  * **Empty lists make this byte-identical to the pre-phrase behaviour**, which
  */
@@ -113,12 +116,32 @@ export function createAgentSpeakingPredicate(deps: {
   return () => audioOnLine() && deps.hasSpokenRecordable();
 }
 
+/**
+ * Interim words that prove sustained speech on their own, without waiting out
+ * `interruptionMinDurationMs` on the edge's clock.
+ *
+ * The clock starts at the FIRST interim, and `universal-3-5-pro` sends sparse,
+ * multi-word interims: the first one lands ~1.3s into an interruption already
+ * five words long, so a clock-only gate held the cut back to the second
+ * interim (~1.8s on Full-Duplex-Bench v1.5). Words are the evidence that
+ * survives that. The interim's word SPAN (`SttTurnMeta.spokenMs`) does not:
+ * on `universal-3-5-pro` the first word's start is the start of the turn
+ * window, not of speech. A one-word "Hmm." spoken at 6.0-7.0s reported
+ * 5024-6176ms (raw streaming probe, 2026-10-27), so every one-beat
+ * backchannel read as ~1.1s of speech and cut the reply ~0.3s in.
+ *
+ * 3, because a backchannel is one or two words ("Mm-hmm, yeah.") and an
+ * interruption's first interim is usually three or more.
+ */
+export const SUSTAINED_SPEECH_WORDS = 3;
+
 export interface BargeInPolicy {
   /**
    * Should this INTERIM transcript interrupt? `words` is the caller's
    * already-counted word total (the scan is bounded, so it is not recomputed
    * here). It takes no TEXT: nothing left in this policy reads the caller's
-   * wording. `quiet` is the level veto — see the module doc, step 4.
+   * wording. `quiet` is the level veto — see the module doc, step 4. The
+   * scan behind `words` must count up to {@link SUSTAINED_SPEECH_WORDS}.
    */
   partialInterrupts(words: number, quiet?: boolean): boolean;
   /** Should this committed FINAL replace the in-flight reply? `quiet` as above. */
@@ -145,7 +168,8 @@ export function createBargeInPolicy(deps: {
       if (!(deps.agentIsSpeaking() && deps.utteranceOpenedOverSpeech())) return false;
       if (words < deps.minBargeInWords()) return false;
       const gate = deps.interruptionMinDurationMs();
-      if (gate > 0 && deps.utteranceDurationMs() < gate) return false;
+      const sustained = words >= SUSTAINED_SPEECH_WORDS || deps.utteranceDurationMs() >= gate;
+      if (gate > 0 && !sustained) return false;
       return !quiet;
     },
 

@@ -74,6 +74,14 @@ describe("createInputLevelLedger", () => {
     expect(ledger.peakDbfs(0, 5000)).toBeCloseTo(dbfs(500), 6);
   });
 
+  test("sentMs counts every sample sent, mid-block included", () => {
+    const ledger = createInputLevelLedger(RATE);
+    expect(ledger.sentMs()).toBe(0);
+    ledger.record(tone(1000, 120));
+    ledger.record(tone(1000, 15));
+    expect(ledger.sentMs()).toBe(135);
+  });
+
   test("a new ledger starts its axis at zero, as a reconnected socket's clock does", () => {
     const first = createInputLevelLedger(RATE);
     first.record(tone(7000, 2000));

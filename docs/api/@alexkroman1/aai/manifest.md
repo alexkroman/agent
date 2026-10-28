@@ -138,6 +138,7 @@ function toAgentConfig(source: AgentConfigSource): {
   interruption?:   | "off"
      | {
      backoffMs?: number;
+     continuationWindowMs?: number;
      minDurationMs?: number;
      minWords?: number;
      resumeFalseInterruption?: boolean;
@@ -223,6 +224,7 @@ the runtime.
   interruption?:   | "off"
      | {
      backoffMs?: number;
+     continuationWindowMs?: number;
      minDurationMs?: number;
      minWords?: number;
      resumeFalseInterruption?: boolean;
@@ -322,6 +324,7 @@ optional interruption?:
   | "off"
   | {
   backoffMs?: number;
+  continuationWindowMs?: number;
   minDurationMs?: number;
   minWords?: number;
   resumeFalseInterruption?: boolean;
@@ -1135,6 +1138,7 @@ A checked set of tools, keyed by the name the model calls.
 ```ts
 type ToolSchema = {
   description: string;
+  effect?: ToolEffect;
   messages?: ToolMessages;
   name: string;
   parameters: JSONSchema7;
@@ -1153,6 +1157,16 @@ parameters — the serializable counterpart of `ToolDef`.
 ```ts
 description: string;
 ```
+
+##### effect?
+
+```ts
+optional effect?: ToolEffect;
+```
+
+What the tool does to the world — see `ToolDef.effect`. A host-mode client
+declaring its own tools sets it the same way; an MCP tool's comes from its
+server's `readOnlyHint`. Never sent to the model.
 
 ##### messages?
 

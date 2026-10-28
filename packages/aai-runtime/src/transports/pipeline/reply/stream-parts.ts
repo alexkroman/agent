@@ -13,7 +13,7 @@ import { errorMessage, omitUndefined } from "@alexkroman1/aai/utils";
 import { APICallError, RetryError } from "ai";
 import type { Logger } from "../../../logger.ts";
 import type { EmitError, SendTtsText } from "../../types.ts";
-import { createDeadAirCover } from "./dead-air.ts";
+import { createDeadAirCover, openingCoverMs } from "./dead-air.ts";
 import { type InReplyLineFlags, speakInReply } from "./lines.ts";
 
 /** Dead-air filler's flags — see `lines.ts`'s table. */
@@ -57,6 +57,12 @@ type StreamPartHandlerDeps = {
    * {@link DEFAULT_DEAD_AIR_COVER_MS}; `0` disables the cover outright.
    */
   deadAirCoverMs?: number | undefined;
+  /**
+   * Epoch ms the caller stopped talking, when this turn answers a fresh
+   * commit and the STT timed it — anchors the OPENING filler on the caller's
+   * wait rather than on the commit (`openingCoverMs` in `dead-air.ts`).
+   */
+  callerStoppedAt?: number | undefined;
   /**
    * The owning turn's abort signal. The dead-air cover is a real timer, and a
    * barge-in can abort the turn while a tool execution has the `fullStream`
@@ -311,6 +317,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
   // two log lines that say what it did.
   const cover = createDeadAirCover({
     coverMs,
+    openingMs: openingCoverMs(coverMs, deps.callerStoppedAt, Date.now()),
     signal,
     callerSpeaking,
     toolCovering,

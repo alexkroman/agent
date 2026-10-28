@@ -20,6 +20,28 @@ describe("buildSystemPrompt — records and lookups", () => {
     expect(ladder).toContain("first name and surname alike");
   });
 
+  // A caller spelled S-S three times and was transcribed F-F every time; the
+  // agent re-asked for letter names, never swapped both F's at once, and
+  // transferred after six failed lookups.
+  test("after a failed spelling, the ladder swaps letters together and asks for letters as words", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    const ladder = result.slice(result.indexOf("MIS-HEARING until proven"));
+    const askAgain = ladder.indexOf("Only now ask the caller");
+    expect(ladder.indexOf("Swap every copy of a confused letter")).toBeLessThan(askAgain);
+    const asWords = ladder.indexOf("ask for every letter with a word");
+    expect(asWords).toBeGreaterThan(askAgain);
+    expect(ladder.indexOf("Send the letters, never the words")).toBeGreaterThan(asWords);
+  });
+
+  // tau2 retail tasks 20, 36, 37: "cheapest"/"most expensive" was taken among
+  // variants matching the current item's options, or an unavailable one.
+  test("a best-of choice spans every available variant, holding only what the caller fixed", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: true });
+    expect(result).toContain("across EVERY variant the record lists that is available");
+    expect(result).toContain("Hold fixed only what the caller said\n  must stay");
+    expect(result).toContain("marks unavailable");
+  });
+
   // The agent told the caller a value "isn't on file" because the record they
   // named lacked it — while another result it had already fetched held it —
   // and elsewhere wrote an address built from two records' fields.

@@ -18,6 +18,7 @@ import {
  * the severity and type" as part of this result.
  */
 export default dispatchSlot.updateTool({
+  effect: "write",
   description: "Create a new incident from an incoming emergency call.",
   dialog: callFlow,
   send: { type: "LOGGED" },

@@ -11,6 +11,7 @@ import { verified, verifiedBooking } from "../shared.ts";
  * house is full, a walk to the partner hotel on us.
  */
 export default hotelSlot.updateTool({
+  effect: "write",
   description:
     "Fix a double-booked / no-room situation on the verified booking - run this when lookup_booking " +
     "warned the room is double-booked. Moves the guest to a same-or-better room for free, or when " +

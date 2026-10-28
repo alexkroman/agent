@@ -9,9 +9,11 @@ import type { TurnDetectionMode, UserTurnLimit } from "@alexkroman1/aai";
 import { MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES } from "@alexkroman1/aai/host-internal";
 import { DEFAULT_SILENCE_PROMPT } from "@alexkroman1/aai/internal";
 import { type Logger, transcriptField } from "../../../logger.ts";
+import type { SttTurnMeta } from "../../../providers/openers.ts";
 import type { TransportCallbacks } from "../../types.ts";
 import { createFalseInterruptionRecovery, type FalseInterruptionRecovery } from "../heard/index.ts";
 import { createAgentSpeakingPredicate, createAudioOnLinePredicate } from "./barge-in-policy.ts";
+import { createCallerStop } from "./caller-stop.ts";
 import type { SpeechEdgeTracker } from "./edges.ts";
 import { createGatedSpeechEdges, createSpeechEdgeTracker } from "./edges.ts";
 import { createManualTurn, type ManualTurn } from "./manual-turn.ts";
@@ -40,6 +42,10 @@ export interface UserActivity {
    * `Transport.sendUserText`, which is the only caller.
    */
   commitTypedTurn(text: string): void;
+  /** When the caller stopped, for a turn opening now — see `caller-stop.ts`. */
+  callerStoppedAt(): number | undefined;
+  /** Was the latest committed turn a backchannel over the agent? See `tools/confirmation-gate.ts`. */
+  turnWasBackchannel(): boolean;
 }
 
 /**
@@ -75,6 +81,8 @@ export function createUserActivity(deps: {
   minBargeInWords: () => number;
   /** Sustained-speech gate for interim-triggered barge-in; 0 disables. Per state too. */
   interruptionMinDurationMs: () => number;
+  /** Resumed speech this soon after a commit continues that turn; 0 disables. Per state. */
+  continuationWindowMs: () => number;
   /** A real interruption fired: arm the post-interruption audio block. */
   onInterrupted(): void;
   /** Cap one user turn by words and/or time; unset is no cap. See `UserTurnLimit`. */
@@ -108,6 +116,8 @@ export function createUserActivity(deps: {
   abortInFlightTurn(): void;
   /** Cut-point resume prompt for a playback-tail barge-in — see {@link SttEventHandlers}. */
   tailResumePrompt(): string | undefined;
+  /** Heard text of the reply a barge-in is cutting — see {@link SttEventHandlers}. */
+  cutAnchor(): string | undefined;
   /**
    * Chain `runTurn(text)` behind the active turn, logging crashes as
    * `crashLabel`. `synthetic` marks `text` as an injected instruction rather
@@ -117,19 +127,35 @@ export function createUserActivity(deps: {
   runChainedTurn(
     text: string,
     crashLabel: string,
-    kind?: { isResume?: boolean; synthetic?: boolean },
+    kind?: { isResume?: boolean; synthetic?: boolean; note?: string },
   ): void;
 }): UserActivity {
   const { log, sid, callbacks } = deps;
   // Answer one committed user turn: the record, then the reply. Hoisted so the
   // STT handlers (a final, under "auto") and push-to-talk (a commit, under
   // "manual") answer a turn the same way.
-  const commitUserTurn = (text: string): void => {
+  const callerStop = createCallerStop();
+  // Was the latest committed turn a backchannel over the agent (brief, and
+  // begun over its audio)? Read by the write gate for every tool call of the
+  // reply that turn starts.
+  let lastTurnWasBackchannel = false;
+  const commitUserTurn = (
+    text: string,
+    note?: string,
+    meta?: SttTurnMeta,
+    backchannel = false,
+  ): void => {
+    // Before the chained turn starts: its dead-air cover reads this as it opens.
+    callerStop.onCommit(meta?.trailingSilenceMs);
+    lastTurnWasBackchannel = backchannel;
     // Debug trace (AAI_DEBUG=1): verbatim what the turn prompts the LLM with
     // — outside production; there `transcriptField` leaves a character count.
     log.debug("Pipeline turn committed", { sid, ...transcriptField("text", text) });
     callbacks.report({ type: "userTranscript.committed", text });
-    deps.runChainedTurn(text, "Pipeline turn crashed");
+    // `note` is for the MODEL (a reply this utterance cut — `buildCutNote`):
+    // the transcript the client sees, and the conversation record, are only
+    // what the caller said.
+    deps.runChainedTurn(text, "Pipeline turn crashed", note === undefined ? undefined : { note });
   };
   const manualTurn = createManualTurn(deps.turnDetection, {
     forceEndOfTurn: deps.forceEndOfTurn,
@@ -182,20 +208,26 @@ export function createUserActivity(deps: {
   // the edge's opening and never after: only an utterance that started over
   // the agent's speech can barge in (see createBargeInPolicy, step 1).
   let utteranceOpenedOverSpeech = false;
+  // The same sample against ANY agent audio, filler included — what decides
+  // whether the turn can authorize a write (`tools/confirmation-gate.ts`).
+  let utteranceOpenedOverAudio = false;
   const edgesWithLimit = {
     onSpeechStarted(): void {
       utteranceOpenedOverSpeech = agentIsSpeaking();
+      utteranceOpenedOverAudio = audioOnLine();
       edgeGate.onSpeechStarted();
       turnLimit.onUtteranceStarted();
     },
     onSpeechStopped(): void {
       utteranceOpenedOverSpeech = false;
+      utteranceOpenedOverAudio = false;
       edgeGate.onSpeechStopped();
       turnLimit.onUtteranceEnded();
       deps.onUtteranceEnded?.();
     },
     reset(): void {
       utteranceOpenedOverSpeech = false;
+      utteranceOpenedOverAudio = false;
       edgeGate.reset();
       turnLimit.onUtteranceEnded();
       deps.onUtteranceEnded?.();
@@ -263,9 +295,11 @@ export function createUserActivity(deps: {
     agentIsSpeaking,
     audioOnLine,
     utteranceOpenedOverSpeech: () => utteranceOpenedOverSpeech,
+    utteranceOpenedOverAudio: () => utteranceOpenedOverAudio,
     hasSpokenRecordable: deps.hasSpokenRecordable,
     abortInFlightTurn: deps.abortInFlightTurn,
     tailResumePrompt: deps.tailResumePrompt,
+    cutAnchor: deps.cutAnchor,
     speechEdges,
     edgeGate,
     recovery,
@@ -276,6 +310,7 @@ export function createUserActivity(deps: {
     manualTurn,
     minBargeInWords: deps.minBargeInWords,
     interruptionMinDurationMs: deps.interruptionMinDurationMs,
+    continuationWindowMs: deps.continuationWindowMs,
     onInterrupted: deps.onInterrupted,
     turnLimit,
     log,
@@ -307,5 +342,14 @@ export function createUserActivity(deps: {
     commitUserTurn(text);
   };
 
-  return { nudger, recovery, speechEdges, sttEvents, manualTurn, commitTypedTurn };
+  return {
+    nudger,
+    recovery,
+    speechEdges,
+    sttEvents,
+    manualTurn,
+    commitTypedTurn,
+    callerStoppedAt: callerStop.stoppedAt,
+    turnWasBackchannel: () => lastTurnWasBackchannel,
+  };
 }

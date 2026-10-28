@@ -15,7 +15,7 @@ import {
 
 describe("assemblyAIReasoningEffort", () => {
   it("fills `none` for a model that rejects tools with reasoning on", () => {
-    for (const model of ["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]) {
+    for (const model of ["gpt-6-luna", "gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]) {
       expect(assemblyAIReasoningEffort(model, undefined), String(model)).toBe("none");
     }
   });

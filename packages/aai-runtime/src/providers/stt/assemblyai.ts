@@ -204,6 +204,9 @@ function buildTranscriberParams(
     params.voiceFocus = settings.voiceFocus;
     params.voiceFocusThreshold = settings.voiceFocusThreshold;
   }
+  // Independent of voice focus: the VAD gates frames whether or not the
+  // isolation filter ran in front of it.
+  if (settings.vadThreshold !== undefined) params.vadThreshold = settings.vadThreshold;
   return { params, awaitingFormatted, settings };
 }
 
@@ -292,8 +295,10 @@ export function openAssemblyAI(
         // distinguishes the two, and "the provider said nothing" is the absent case.
         const span = turnWordSpanMs(event);
         const inputPeakDbfs = span && levels.peakDbfs(span.startMs, span.endMs);
+        const spokenMs = span && span.endMs - span.startMs;
+        const trailingSilenceMs = span && Math.max(0, levels.sentMs() - span.endMs);
         shell.emit(isCommittingTurn(event, awaitingFormatted) ? "final" : "partial", text, {
-          ...omitUndefined({ endOfTurnConfidence, inputPeakDbfs }),
+          ...omitUndefined({ endOfTurnConfidence, inputPeakDbfs, spokenMs, trailingSilenceMs }),
         });
       });
 
@@ -359,6 +364,11 @@ export function openAssemblyAI(
           // NOTE: snake_case — `updateConfiguration` takes the service's own
           // wire names, unlike the camelCase connect params.
           transcriber.updateConfiguration({ min_turn_silence: bounded });
+        },
+        updateKeyterms(terms) {
+          if (shell.isClosed()) return;
+          // Replaces the session's set — the caller sends all of it every time.
+          transcriber.updateConfiguration({ keyterms_prompt: [...terms] });
         },
         forceEndOfTurn() {
           if (shell.isClosed()) return;

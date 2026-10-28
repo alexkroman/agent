@@ -24,6 +24,7 @@
 
 import {
   DEAD_AIR_OPENING_PHRASE,
+  DEAD_AIR_OPENING_TARGET_MS,
   DEAD_AIR_TOOL_COVER_MS,
   DEFAULT_DEAD_AIR_COVER_MS,
 } from "@alexkroman1/aai/host-internal";
@@ -216,5 +217,43 @@ describe("filler never talks over the caller", () => {
     });
     expect(tts.last()?.textChunks.join("")).not.toContain(DEAD_AIR_OPENING_PHRASE);
     await t.stop();
+  });
+});
+
+describe("PipelineTransport opening cover, anchored on the caller's last word", () => {
+  // A turn that stalls with no tool call, so only the opening window decides.
+  const stalled = () =>
+    createFakeLanguageModel({ steps: [[{ type: "text", text: "Here it is." }]], delayMs: 8000 });
+  const firstFillerAt = async (meta?: { trailingSilenceMs: number }): Promise<number> => {
+    const { opts, stt, callbacks } = makeOpts({
+      llm: stalled(),
+      deadAirCoverMs: DEFAULT_DEAD_AIR_COVER_MS,
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    stt.last()?.fireFinal("where's my order?", meta);
+    let waited = 0;
+    const filler = callbacks.reported("agentTranscript.updated");
+    while (filler.mock.calls.length === 0 && waited < 8000) {
+      await vi.advanceTimersByTimeAsync(50);
+      waited += 50;
+    }
+    await t.stop();
+    return waited;
+  };
+
+  test("a slow commit gets its filler sooner: the target, less the wait already spent", async () => {
+    const waited = await firstFillerAt({ trailingSilenceMs: 3000 });
+    expect(waited).toBe(DEAD_AIR_OPENING_TARGET_MS - 3000);
+  });
+
+  test("a fast commit leaves the model more room than the fixed window", async () => {
+    const waited = await firstFillerAt({ trailingSilenceMs: 900 });
+    expect(waited).toBe(DEAD_AIR_OPENING_TARGET_MS - 900);
+    expect(waited).toBeGreaterThan(DEFAULT_DEAD_AIR_COVER_MS);
+  });
+
+  test("without the STT's timing the fixed window applies, as before", async () => {
+    expect(await firstFillerAt()).toBe(DEFAULT_DEAD_AIR_COVER_MS);
   });
 });

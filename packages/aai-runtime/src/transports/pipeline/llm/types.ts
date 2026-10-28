@@ -60,6 +60,12 @@ export interface ConsumeLlmStreamParams {
   maxOutputTokens?: number | undefined;
   /** Provider-retry budget; omitted when unset, leaving the AI SDK's own default. */
   maxRetries?: number | undefined;
+  /**
+   * Longest silence a response stream may hold — before its first chunk and
+   * between chunks — before the request is abandoned. Unset is
+   * `LLM_STALL_TIMEOUT_MS` (`./stream.ts`); it exists so a spec can use milliseconds.
+   */
+  stallTimeoutMs?: number | undefined;
   /** Reset a demanding `toolChoice` after step 0 — see `../../../_prepare-step.ts`. */
   resetToolChoice?: boolean | undefined;
   /**
@@ -96,6 +102,8 @@ export interface ConsumeLlmStreamParams {
   sendTtsText: SendTtsText;
   /** Dead-air cover window (ms); 0 disables — see {@link StreamPartHandlerDeps}. */
   deadAirCoverMs?: number | undefined;
+  /** When the caller stopped, for a turn opening now — see {@link StreamPartHandlerDeps}. */
+  callerStoppedAt?: (() => number | undefined) | undefined;
   /** Is the caller speaking right now? Suppresses filler — see StreamPartHandlerDeps. */
   callerSpeaking?: (() => boolean) | undefined;
   /**
@@ -199,6 +207,8 @@ export interface AdoptedLlmStream {
   entries(): AsyncIterable<TapeEntry>;
   /** `result.steps`, for the same final gather the ordinary path does. */
   steps(): Promise<readonly StepResult[]>;
+  /** The run's own stall watchdog fired — see `./stall.ts`. */
+  stalled(): boolean;
   /**
    * Abandon the adopted run WITHOUT aborting the turn that adopted it.
    *
@@ -226,6 +236,8 @@ export interface StartedLlmStream {
   fullStream: AsyncIterable<StreamPart>;
   /** Settles with every step of the turn, after the stream ends. */
   steps: Promise<readonly StepResult[]>;
+  /** The request's own stall watchdog fired — see `./stall.ts`. */
+  stalled: () => boolean;
 }
 
 /**
@@ -270,6 +282,7 @@ export type LlmRequest = Pick<
   | "contextBudget"
   | "maxOutputTokens"
   | "maxRetries"
+  | "stallTimeoutMs"
   | "resetToolChoice"
   | "onUsage"
   | "toolSpeech"

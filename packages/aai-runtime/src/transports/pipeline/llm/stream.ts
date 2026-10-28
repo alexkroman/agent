@@ -32,10 +32,11 @@ import {
   type StreamPart,
   type StreamPartHandler,
 } from "../reply/index.ts";
-import { drainEntries, partsAsEntries } from "./drain.ts";
+import { drainEntries, partsAsEntries, type RunProgress } from "./drain.ts";
 import { smoothTextStream } from "./smooth.ts";
+import { withChunkWatchdog } from "./stall.ts";
 import { bindToolSpeech, stepMessages } from "./tool-speech.ts";
-import { createTurnTrace } from "./trace.ts";
+import { createTurnTrace, type TurnTrace } from "./trace.ts";
 import type {
   AdoptedLlmStream,
   ConsumeLlmStreamParams,
@@ -45,6 +46,25 @@ import type {
   StepResult,
   TapeEntry,
 } from "./types.ts";
+
+/**
+ * Longest a response stream may stay silent — before its first chunk, and
+ * between chunks — before the request is abandoned.
+ *
+ * **Without it the only deadline was undici's 300 s body timeout.** A gateway
+ * answered `200`, sent its headers, and then nothing: the turn sat for 5 min
+ * 3 s (tau2 retail task 104), the dead-air filler looping over ~20 unanswered
+ * caller turns, until undici cut the body and the SDK reported "Failed to
+ * process successful response (HTTP 200)". The AI SDK's `maxRetries` cannot
+ * see that case: it retries a request that fails, and this one had succeeded.
+ *
+ * 15 s, from the same benchmark's healthy turns: across 3,149 committed caller
+ * turns in two 114-task runs, the slowest first model output came 12.3 s after
+ * the turn committed (and that includes STT finalization); across 6,062 gaps
+ * inside streaming replies the longest was 9.8 s. So neither clock has fired
+ * on a healthy turn, and a stall is cut 20x sooner than undici would.
+ */
+export const LLM_STALL_TIMEOUT_MS = 15_000;
 
 /**
  * Every TYPE this module's two functions speak — the request parameters, the
@@ -78,8 +98,11 @@ export type {
  * — see the request-parity spec in `stream.test.ts`.
  */
 export function startLlmStream(req: LlmRequest): StartedLlmStream {
+  const stallMs = req.stallTimeoutMs ?? LLM_STALL_TIMEOUT_MS;
+  // The between-chunks clock, on the model's own stream — see `./stall.ts`.
+  const watched = withChunkWatchdog(req.llm, stallMs, req.signal);
   const result = streamText({
-    model: req.llm,
+    model: watched.model,
     // Resolved HERE, at request-assembly time, so the request carries the phase
     // the turn is actually in. The restart pass below (late poison) therefore
     // re-resolves too, which is right: it is a new request, and the old one's
@@ -139,7 +162,12 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
       { stage: "tool-error-budget", prepare: toolErrorBudget(req.log, req.sid) },
       { stage: "force-final-answer", prepare: forceFinalAnswer(req.maxSteps, req.log, req.sid) },
     ]),
-    abortSignal: req.signal,
+    abortSignal: watched.signal,
+    // A stalled response is a FAILED request, not a slow one — see
+    // LLM_STALL_TIMEOUT_MS. Only the FIRST-chunk clock is the SDK's: its
+    // `chunkMs` stays armed while a step's tools run and aborts them, so the
+    // between-chunks clock is `withChunkWatchdog`'s, which never counts tool time.
+    timeout: { firstChunkMs: stallMs, ...omitUndefined({ chunkMs: watched.chunkMs }) },
     onStepFinish: (step) => {
       // The provider's own counts, folded in before the messages: a step that
       // completes has been billed whether or not the turn survives to use it.
@@ -173,6 +201,7 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
   return {
     fullStream: result.fullStream as AsyncIterable<StreamPart>,
     steps: Promise.resolve(result.steps),
+    stalled: watched.stalled,
   };
 }
 
@@ -239,10 +268,137 @@ export function createTurnLlmRunner(deps: TurnLlmRunnerDeps): TurnLlmRunner {
 function openPass(
   adopted: AdoptedLlmStream | undefined,
   launch: () => StartedLlmStream,
-): { entries: AsyncIterable<TapeEntry>; steps: Promise<readonly StepResult[]> } {
-  if (adopted) return { entries: adopted.entries(), steps: adopted.steps() };
+): {
+  entries: AsyncIterable<TapeEntry>;
+  steps: Promise<readonly StepResult[]>;
+  /** Did this pass end on a stall clock — see {@link LLM_STALL_TIMEOUT_MS}. */
+  isStall: (reason: unknown) => boolean;
+} {
+  if (adopted) {
+    return { entries: adopted.entries(), steps: adopted.steps(), isStall: stallCheck(adopted) };
+  }
   const started = launch();
-  return { entries: partsAsEntries(started.fullStream), steps: started.steps };
+  return {
+    entries: partsAsEntries(started.fullStream),
+    steps: started.steps,
+    isStall: stallCheck(started),
+  };
+}
+
+/** Our watchdog SAYS it fired; the SDK's own clocks are known by their reason. */
+function stallCheck(run: { stalled: () => boolean }): (reason: unknown) => boolean {
+  return (reason) => run.stalled() || isSdkStallTimeout(reason);
+}
+
+/**
+ * Log and report a turn's thrown LLM failure. ONE failure, reported ONCE — when
+ * the stream's `error` part already named the cause (`reported`), this throw
+ * does not; {@link llmErrorSentence} carries the argument. NON-fatal: this turn
+ * is over, the session is not. The caller returns `failed: true`, which speaks
+ * `errorPhrase` — "Sorry, I had a problem just then. Could you say that
+ * again?" — so reporting the session dead here asked the user to repeat
+ * themselves into a released microphone.
+ */
+function reportLlmFailure(
+  err: unknown,
+  ctx: {
+    reported: boolean;
+    emitError: ConsumeLlmStreamParams["emitError"];
+    log: ConsumeLlmStreamParams["log"];
+    sid: string;
+  },
+): void {
+  const msg = llmErrorSentence(err);
+  ctx.log.error("LLM streamText failed", { error: msg, sid: ctx.sid, ...llmErrorDetails(err) });
+  if (!ctx.reported) ctx.emitError("llm", msg, { fatal: false });
+}
+
+/** {@link settleOrRetry}'s answer for "re-send this pass". */
+const RETRY = Symbol("retry");
+
+/**
+ * Await a pass's steps, answering {@link RETRY} where its rejection may be
+ * re-sent. The AI SDK ends `fullStream` quietly on its own timeout abort, so a
+ * stall's `TimeoutError` surfaces HERE rather than from the stream. Re-sent
+ * ONCE and only before any output (`canRetry`): a completed step may have run a
+ * write tool, and re-sending would run it again. The caller deliberately does
+ * NOT call `onRestart` — nothing the model produced reached `onDelta`; what the
+ * caller heard was filler, which was really said.
+ */
+async function settleOrRetry(
+  steps: Promise<readonly StepResult[]>,
+  canRetry: (err: unknown) => boolean,
+): Promise<readonly StepResult[] | typeof RETRY> {
+  try {
+    return await steps;
+  } catch (err: unknown) {
+    if (canRetry(err)) return RETRY;
+    throw err;
+  }
+}
+
+/**
+ * A stall AFTER a completed step: the stream ends with an `abort` part and
+ * `steps` resolves — nothing throws, and the turn would end in silence right
+ * after a tool ran. Reported as a failed turn (the caller hears the recovery
+ * phrase; the completed steps are kept). Answers whether the turn FAILED —
+ * this stall, or an `error` part the handler saw.
+ */
+function failedOrStalled(
+  abortReason: unknown,
+  ctx: {
+    signal: AbortSignal;
+    handler: StreamPartHandler;
+    isStall: (reason: unknown) => boolean;
+    emitError: ConsumeLlmStreamParams["emitError"];
+    log: ConsumeLlmStreamParams["log"];
+    sid: string;
+  },
+): boolean {
+  if (ctx.signal.aborted || !ctx.isStall(abortReason)) return ctx.handler.errored();
+  const msg = llmErrorSentence(abortReason);
+  ctx.log.error("LLM stream stalled after output; turn failed", { error: msg, sid: ctx.sid });
+  if (!ctx.handler.errored()) ctx.emitError("llm", msg, { fatal: false });
+  return true;
+}
+
+/**
+ * Did this pass end on {@link LLM_STALL_TIMEOUT_MS} before producing anything —
+ * so re-sending it repeats nothing the caller heard, nothing a tool did, and no
+ * failure the client was already told about?
+ *
+ * A barge-in is never one: the turn's own signal is checked first.
+ */
+function isQuietStall(
+  err: unknown,
+  pass: {
+    progress: RunProgress;
+    collected: readonly ModelMessage[];
+    signal: AbortSignal;
+    isStall: (reason: unknown) => boolean;
+    /** This turn already used its one retry. */
+    retried: boolean;
+  },
+): boolean {
+  if (pass.retried || pass.signal.aborted || pass.progress.visible) return false;
+  if (pass.collected.length > 0) return false;
+  return pass.isStall(err);
+}
+
+/**
+ * The AI SDK's OWN first-chunk or chunk clock fired — see
+ * {@link LLM_STALL_TIMEOUT_MS}. Our watchdog is not read this way: it reports
+ * itself (`stalled()`, `./stall.ts`), so its wording is free.
+ *
+ * The SDK aborts with a `TimeoutError` named for the clock that fired ("First
+ * chunk timeout…", "Chunk timeout…"), in two shapes: `result.steps` rejects with the `TimeoutError` itself,
+ * while the stream's `abort` part carries it SERIALIZED (the SDK runs the reason
+ * through `getErrorMessage`, giving `"TimeoutError: First chunk timeout of …"`).
+ */
+function isSdkStallTimeout(err: unknown): boolean {
+  let text = typeof err === "string" ? err : "";
+  if (err instanceof Error) text = `${err.name}: ${err.message}`;
+  return /^TimeoutError: .*chunk timeout/i.test(text);
 }
 
 /**
@@ -260,6 +416,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
   const {
     sendTtsText,
     deadAirCoverMs,
+    callerStoppedAt,
     callerSpeaking,
     callbacks,
     emitError,
@@ -301,12 +458,19 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
   // Response messages of completed steps — on the adopted path this module owns
   // the copy, since the speculation's own `collected` is behind the tape.
   const collected: ModelMessage[] = [];
+  // The current pass's trace, reported in `finally` on every path that does
+  // not report it first (idempotent). A stall retry is the SAME turn, so it
+  // keeps the stalled pass's trace and reports one timing, from the first send;
+  // a poisoned-adoption restart reports its own and starts a fresh one.
+  let trace: TurnTrace | undefined;
   try {
     // At most two passes: the adopted tape, then — if that tape turns out to
     // hold a tool call — one fresh run with the real, executable tools.
     let useAdopted = adopted;
+    // At most one stall retry per turn — see `settleOrRetry`.
+    let stallRetried = false;
     for (;;) {
-      const { entries, steps } = openPass(useAdopted, () =>
+      const { entries, steps, isStall } = openPass(useAdopted, () =>
         startLlmStream({
           ...params,
           signal: requestSignal,
@@ -321,6 +485,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
         sendTtsText: ttsText.send,
         onTtsBoundary: ttsText.boundary,
         deadAirCoverMs,
+        callerStoppedAt: callerStoppedAt?.(),
         // Lets the dead-air cover die with the turn: a barge-in during a tool
         // execution parks the fullStream read, deferring dispose() below.
         signal,
@@ -354,21 +519,24 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       // only repair: the preamble cannot be spliced onto a fresh request (that
       // is the same request-parity argument that makes adoption legitimate in
       // the first place), so the run is abandoned whole.
-      const trace = createTurnTrace({
+      trace ??= createTurnTrace({
         log,
         sid,
         adopted: useAdopted !== undefined,
         onDone: params.onLlmTiming,
       });
+      const progress: RunProgress = { visible: false };
       const { lateToolCall, spokeBeforeRestart } = await drainEntries(entries, handler, {
         adopted: useAdopted !== undefined,
         signal,
         collected,
         onStepPersisted,
         trace,
+        progress,
       });
-      trace.done({ steps: collected.length, aborted: signal.aborted });
       if (lateToolCall && useAdopted && !signal.aborted) {
+        trace.done({ steps: collected.length, aborted: false });
+        trace = undefined;
         handler.dispose();
         useAdopted.abandon();
         useAdopted = undefined;
@@ -405,12 +573,24 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       // `result.response.messages` is final-step only and drops the tool call.
       // Preferred over `collected` on the happy path in case a final step
       // resolves after the stream ends but before its onStepFinish fires.
-      const settled = await steps;
+      // STALL RETRY — see settleOrRetry and LLM_STALL_TIMEOUT_MS.
+      const settled = await settleOrRetry(steps, (err) =>
+        isQuietStall(err, { progress, collected, signal, isStall, retried: stallRetried }),
+      );
+      if (settled === RETRY) {
+        stallRetried = true;
+        useAdopted?.abandon();
+        useAdopted = undefined;
+        ttsText = createTtsTextCoalescer(sendTtsText);
+        log.warn("LLM stream stalled before any output; re-sending once", { sid });
+        continue;
+      }
       return {
         messages: stepMessages(settled, toolSpeech),
         // A stream can end without throwing having emitted nothing but an `error`
         // part, which is still a turn the caller never heard a reply to.
-        failed: handler.errored(),
+        // So can a stall after a completed step — see failedOrStalled.
+        failed: failedOrStalled(progress.abort, { signal, handler, isStall, emitError, log, sid }),
       };
     }
   } catch (err: unknown) {
@@ -444,17 +624,10 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     // Flush buffered TTS text so speech matches the transcript already
     // accumulated via onDelta for the pre-error portion of the turn.
     ttsText.flush();
-    const msg = llmErrorSentence(err);
-    log.error("LLM streamText failed", { error: msg, sid, ...llmErrorDetails(err) });
-    // ONE failure, reported ONCE — the part-level report already named the cause
-    // and this throw does not; {@link llmErrorSentence} carries the argument.
-    // NON-fatal: this turn is over, the session is not. The caller returns
-    // `failed: true`, which speaks `errorPhrase` — "Sorry, I had a problem just
-    // then. Could you say that again?" — so reporting the session dead here asked
-    // the user to repeat themselves into a released microphone.
-    if (handler?.errored() !== true) emitError("llm", msg, { fatal: false });
+    reportLlmFailure(err, { reported: handler?.errored() === true, emitError, log, sid });
     return { messages: collected, failed: true };
   } finally {
+    trace?.done({ steps: collected.length, aborted: signal.aborted });
     // The turn is over on every path (completed, aborted, errored) — no
     // dead-air filler may fire into the silence that follows it.
     handler?.dispose();

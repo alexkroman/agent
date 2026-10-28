@@ -170,6 +170,10 @@ export {
   TOOL_RESULT_TRUNCATION_MARKER,
   WS_OPEN,
 } from "./sdk/constants.ts";
+export {
+  DEFAULT_CONTINUATION_WINDOW_MS,
+  MAX_CONTINUATION_WINDOW_MS,
+} from "./sdk/continuation-constants.ts";
 // The row cap around `Db`. Tool code never sees that handle — it backs the
 // runtime's OWN stores; the cap is what the driver and the guest mirror
 // enforce.

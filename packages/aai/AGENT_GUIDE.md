@@ -195,7 +195,7 @@ fails at `aai publish` instead of mid-call). `agent-guide/AGENT-API.md` lists
 every field.
 
 **To change the model, set `llm` in `agent.ts`** (templates usually omit it).
-The default is `gpt-5.6-luna` on the AssemblyAI LLM Gateway, which is **not part
+The default is `gpt-6-luna` on the AssemblyAI LLM Gateway, which is **not part
 of AssemblyAI's free credits**: an account with no payment method is refused
 ("does not have access to this LLM Gateway model"). Add a card in the dashboard,
 or bring another provider's key (`agent-guide/PROVIDERS.md`). A model must
@@ -220,13 +220,13 @@ agent({ name: "My Agent", turnTaking: { minSilenceMs: 1600, maxSilenceMs: 3500 }
 
 The default pipeline lowers the pair onto its STT stage; beside an explicit
 `stt` the shorthand is refused — set
-`assemblyAIStt({ minTurnSilenceMs, maxTurnSilenceMs })` instead. Defaults 1600 /
-3500 ms. **`maxSilenceMs` is the pause-tolerance knob** (raise it for hesitant
-or dictating callers; only turns that never read as complete pay it);
-`minSilenceMs` taxes every finished turn — the doc comments on
-`DEFAULT_MIN_TURN_SILENCE_MS`/`DEFAULT_MAX_TURN_SILENCE_MS` say why. Min must be
-<= max. S2S has no such knob: its adaptive end-of-turn detection would be
-disabled by one (`AssemblyAIS2sOptions`).
+`assemblyAIStt({ minTurnSilenceMs, maxTurnSilenceMs })` instead. Defaults 800 /
+3500 ms (800 needs continuation; 1600 without). **`maxSilenceMs` is the
+pause-tolerance knob** (raise it for hesitant or dictating callers; only turns
+that never read as complete pay it); `minSilenceMs` taxes every finished turn —
+the doc comments on `DEFAULT_MIN_TURN_SILENCE_MS`/`DEFAULT_MAX_TURN_SILENCE_MS`
+say why. Min must be <= max. S2S has no such knob: its adaptive end-of-turn
+detection would be disabled by one (`AssemblyAIS2sOptions`).
 
 ## `tool()` basics
 

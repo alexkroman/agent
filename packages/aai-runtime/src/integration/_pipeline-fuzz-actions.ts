@@ -55,9 +55,9 @@ export function buildActions(
       speculated.text = null;
       stt.last()?.fireFinal(text);
     },
-    // A confident interim — what a real STT emits as an utterance completes
-    // (`SttTurnMeta.endOfTurnConfidence`); 1 clears the threshold however it is
-    // retuned. Biased toward the speculating state the way `armBargeInFromTool`
+    // The interim a caller pauses on, which is what launches a speculation. The
+    // run sets `preemptiveQuietMs: 0`, so it fires on the partial itself rather
+    // than after the shipped quiet window. Biased toward the speculating state the way `armBargeInFromTool`
     // is biased toward a barge-in inside a tool call, and everything it fires is
     // something a real session does.
     //
@@ -72,7 +72,7 @@ export function buildActions(
     // `speechIdleTimeoutMs` the watchdog reaps it, which is the DISCARD side.
     highConfidencePartial: (opener) => {
       const text = utterance(opener);
-      stt.last()?.firePartial(text, { endOfTurnConfidence: 1 });
+      stt.last()?.firePartial(text);
       if (lastPauseWasNull()) stt.last()?.fireFinal(text);
       else speculated.text = text;
     },

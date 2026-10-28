@@ -15,10 +15,15 @@
  * at all without the line it asserts.
  */
 
-import { DEAD_AIR_COVER_MAX_MS } from "@alexkroman1/aai/host-internal";
+import {
+  DEAD_AIR_COVER_MAX_MS,
+  DEAD_AIR_OPENING_PHRASE,
+  DEAD_AIR_OPENING_TARGET_MS,
+  DEFAULT_DEAD_AIR_COVER_MS,
+} from "@alexkroman1/aai/host-internal";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeLogger, type TestLogger } from "../../../_logger-test-utils.ts";
-import { createDeadAirCover, type DeadAirCover } from "./dead-air.ts";
+import { createDeadAirCover, type DeadAirCover, openingCoverMs } from "./dead-air.ts";
 
 const COVER_MS = 1000;
 
@@ -150,5 +155,58 @@ describe("createDeadAirCover", () => {
     await vi.advanceTimersByTimeAsync(windowFor(0) * 4);
     expect(h.spoken).toEqual([]);
     expect(deferrals(h.log)).toHaveLength(0);
+  });
+});
+
+describe("openingCoverMs — the opening window, anchored on the caller's last word", () => {
+  const TARGET = DEAD_AIR_OPENING_TARGET_MS;
+
+  it("is the target minus the caller's wait already spent", () => {
+    // A commit 1.4s after the last word (the measured p50) leaves 3.2s.
+    expect(openingCoverMs(DEFAULT_DEAD_AIR_COVER_MS, 10_000, 11_400)).toBe(TARGET - 1400);
+  });
+
+  it("fires at once when the caller has already waited the target", () => {
+    expect(openingCoverMs(DEFAULT_DEAD_AIR_COVER_MS, 0, TARGET + 2000)).toBe(0);
+  });
+
+  it("keeps the fixed window without a stop time, and stays off at 0", () => {
+    expect(openingCoverMs(DEFAULT_DEAD_AIR_COVER_MS, undefined, 5000)).toBe(
+      DEFAULT_DEAD_AIR_COVER_MS,
+    );
+    expect(openingCoverMs(0, 1000, 1500)).toBe(0);
+  });
+
+  it("an author's window shifts the target by what it differs from the default", () => {
+    const authored = DEFAULT_DEAD_AIR_COVER_MS + 1000;
+    expect(openingCoverMs(authored, 0, 1000)).toBe(TARGET + 1000 - 1000);
+  });
+
+  it("arms the first window from it, and backs off from coverMs after", async () => {
+    vi.useFakeTimers();
+    try {
+      const spoken: string[] = [];
+      createDeadAirCover({
+        coverMs: COVER_MS,
+        openingMs: 300,
+        callerSpeaking: () => false,
+        toolCovering: () => false,
+        spokeText: () => false,
+        speak: (phrase) => void spoken.push(phrase),
+        log: makeLogger(),
+        sid: "s-1",
+      });
+      await vi.advanceTimersByTimeAsync(299);
+      expect(spoken).toHaveLength(0);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(spoken).toEqual([DEAD_AIR_OPENING_PHRASE]);
+      // The second window is the normal backoff from coverMs, not from 300.
+      await vi.advanceTimersByTimeAsync(windowFor(1) - 1);
+      expect(spoken).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(spoken).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

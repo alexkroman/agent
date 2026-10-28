@@ -111,7 +111,7 @@ export interface TurnTakingTuning {
    * moving it. An explicit `stt` descriptor owns its own window, so this is
    * refused beside one.
    *
-   * @defaultValue `1600` (`DEFAULT_MIN_TURN_SILENCE_MS`)
+   * @defaultValue `250` (`DEFAULT_MIN_TURN_SILENCE_MS`)
    */
   minSilenceMs?: number;
   /**
@@ -205,6 +205,17 @@ export interface InterruptionTuning {
    * @defaultValue `0` (`DEFAULT_INTERRUPTION_BACKOFF_MS`)
    */
   backoffMs?: number;
+  /**
+   * When the caller starts speaking again within this many ms of a committed
+   * turn, treat it as the REST of that turn: the reply already answering the
+   * first fragment is cut, and the agent answers once the caller finishes.
+   * Covers a caller who pauses mid-sentence — reading out a ZIP, recalling an
+   * email — and gets split into two turns; without it the agent replies to
+   * half the sentence first. `0` disables.
+   *
+   * @defaultValue `3500` (`DEFAULT_CONTINUATION_WINDOW_MS`)
+   */
+  continuationWindowMs?: number;
   /**
    * Resume the agent's reply when a barge-in aborts it and no user turn ever
    * commits (STT noise, a hallucinated partial) — the interruption was a false

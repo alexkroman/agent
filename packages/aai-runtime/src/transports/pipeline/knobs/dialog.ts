@@ -66,6 +66,8 @@ export interface DialogTurnKnobs {
   interruptionMinDurationMs?: number | undefined;
   /** How long agent audio stays held after a real interruption; 0 disables it. */
   interruptionBackoffMs?: number | undefined;
+  /** Resumed speech this soon after a commit continues that turn; 0 disables it. */
+  continuationWindowMs?: number | undefined;
   /** Whether a barge-in that never commits a turn resumes the reply. */
   resumeFalseInterruption?: boolean | undefined;
   /** Tool-selection policy for the steps taken while this state is active. */
@@ -96,6 +98,8 @@ export interface PipelineDialogKnobs {
   interruptionMinDurationMs: () => number;
   /** For the audio-out's speak gate — read at the moment an interruption lands. */
   interruptionBackoffMs: () => number;
+  /** For `createUserActivity` — read when resumed speech opens after a commit. */
+  continuationWindowMs: () => number;
   /** For false-interruption recovery — read at the moment a resume is armed. */
   resumeFalseInterruption: () => boolean;
   /**
@@ -147,6 +151,7 @@ export function interruptionKnobs(interruption: InterruptionInput): DialogTurnKn
     minBargeInWords: interruption.minWords,
     interruptionMinDurationMs: interruption.minDurationMs,
     interruptionBackoffMs: interruption.backoffMs,
+    continuationWindowMs: interruption.continuationWindowMs,
     resumeFalseInterruption: interruption.resumeFalseInterruption,
   });
 }
@@ -161,6 +166,7 @@ export interface InterruptionBase {
   minBargeInWords: number;
   interruptionMinDurationMs: number;
   interruptionBackoffMs: number;
+  continuationWindowMs: number;
   resumeFalseInterruption: boolean;
 }
 
@@ -224,6 +230,7 @@ function readKnobs(
       base.interruptionMinDurationMs,
     ),
     interruptionBackoffMs: read((k) => k.interruptionBackoffMs, base.interruptionBackoffMs),
+    continuationWindowMs: read((k) => k.continuationWindowMs, base.continuationWindowMs),
     resumeFalseInterruption: read((k) => k.resumeFalseInterruption, base.resumeFalseInterruption),
   };
   if (source === undefined) return { ...knobs, dialogStep: undefined };

@@ -16,9 +16,9 @@ asking.
 ## 1. Before the first commit: `pnpm check:local`
 
 It runs the ratchet gates in parallel, then build, typecheck, lint, publint,
-syncpack, sherif, knip, prettier, polyglot and `test:coverage` in one turbo call
-with `--continue`, the stubbed template evals, and the after-build gates, then
-NAMES what it skipped (`check:attw`, `check:dedupe`, `check:markdown`,
+syncpack, sherif, knip, prettier, polyglot, markdownlint and `test:coverage` in
+one turbo call with `--continue`, the stubbed template evals, and the
+after-build gates, then NAMES what it skipped (`check:attw`, `check:dedupe`,
 `check:shell`, `check:integration`, `check:scenario`, `docs`, `check:e2e`) — a
 green subset is not a green branch; CI runs them all. `pnpm check:affected`
 limits it to packages changed since `main`.

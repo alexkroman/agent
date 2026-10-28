@@ -72,7 +72,8 @@ export interface DeepgramSttOptions extends ProviderCredentialOptions {
  * mid-utterance pause.
  *
  * @see `DEFAULT_MIN_TURN_SILENCE_MS` on `@alexkroman1/aai` — the AssemblyAI
- * opener's `min_turn_silence`, 1600 ms, the value this 1500 ms window is
+ * opener's `min_turn_silence` before continuation let it drop to 800 — 1600
+ * ms, the value this 1500 ms window is
  * matched to. Its doc carries the sweep that puts the knee there, and is the
  * one to read before moving either number.
  * @see `DEFAULT_MAX_TURN_SILENCE_MS` on `@alexkroman1/aai` — the AssemblyAI

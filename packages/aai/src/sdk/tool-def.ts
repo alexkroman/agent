@@ -65,6 +65,14 @@ export type ToolUi = {
 export type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
 
 /**
+ * What a tool does to the world — see `ToolDef.effect`. Carried on the wire as
+ * `ToolSchema.effect`.
+ *
+ * @public
+ */
+export type ToolEffect = "read" | "write";
+
+/**
  * Definition of a custom tool that the agent can invoke.
  *
  * Tools are the primary way to extend agent capabilities. Each tool has a
@@ -240,6 +248,33 @@ export type ToolDef<
    * and on the platform.
    */
   ui?: ToolUi;
+  /**
+   * What the tool does to the world. `"write"` declares something that changes
+   * state the caller cannot take back by asking — a booking, an order, a
+   * cancellation, a message sent, a ticket filed for someone to act on. In a
+   * voice pipeline a declared write runs only on a caller turn that did not
+   * start over the agent's own audio: an "uh-huh" spoken over "Shall I cancel
+   * it?" is the caller listening, not agreeing, and the model is told to ask
+   * again instead.
+   *
+   * `"read"` or no `effect` runs as an ordinary call. A cart or draft step that
+   * a later tool confirms is not a write; the confirming tool is. An MCP tool's
+   * effect comes from its server's `readOnlyHint` (see `mcp/adapt.ts`).
+   *
+   * @example
+   * ```ts
+   * import { tool } from "@alexkroman1/aai";
+   * import { z } from "zod";
+   *
+   * export default tool({
+   *   description: "Cancel a pending order.",
+   *   inputSchema: z.object({ orderId: z.string() }),
+   *   effect: "write",
+   *   execute: ({ orderId }) => ({ cancelled: orderId }),
+   * });
+   * ```
+   */
+  effect?: ToolEffect | undefined;
 };
 
 /**

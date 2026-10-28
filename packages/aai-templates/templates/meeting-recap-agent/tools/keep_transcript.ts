@@ -3,6 +3,7 @@ import { z } from "zod";
 import recap from "../workflows/recap.ts";
 
 export default tool({
+  effect: "write",
   description:
     "Answer the desk's question about the transcript. Use when the caller says to keep it, save it, or delete it.",
   inputSchema: z.object({

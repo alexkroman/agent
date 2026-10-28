@@ -78,7 +78,7 @@ export default agent({
   // ── pipeline only: three groups (`PipelineTuning`), refused on s2s / text ──
   turnTaking?: {
     minSilenceMs?: number;                   // pause (ms) that ENDS a turn once the text reads
-                                             // complete (default 1600) — lowered onto the default
+                                             // complete (default 250) — lowered onto the default
     maxSilenceMs?: number;                   // assemblyAIStt(); pause that ends it REGARDLESS of
                                              // content (default 3500). Invalid beside an explicit `stt`.
     detection?: "auto" | "manual";           // "manual" is push-to-talk: the CLIENT ends each turn

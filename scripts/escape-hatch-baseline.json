@@ -1,17 +1,17 @@
 {
-  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN \u2014 `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
+  "_description": "Per-file escape-hatch budgets. A file may hold FEWER occurrences than recorded here; it may never hold more; a file absent from a pattern may hold none. Counts only ratchet DOWN — `node scripts/check-escape-hatches.mjs --update` lowers them to match the tree and refuses to raise any. Raising one requires editing this file by hand, so the increase lands in a reviewable diff. See the header of scripts/check-escape-hatches.mjs.",
   "@ts-expect-error": {
     "packages/aai-runtime/src/testing/run-workflow.test.ts": 1,
     "packages/aai-ui/src/hooks.test-d.ts": 4,
     "packages/aai-ui/src/types.test.ts": 2,
-    "packages/aai/src/sdk/session-slot.test.ts": 2
+    "packages/aai/src/sdk/session-slot.test.ts": 1
   },
   "biome-ignore": {
     "packages/aai-runtime/src/_mock-ws.ts": 1,
     "packages/aai-templates/templates/tabletop-rpg-agent/client.tsx": 2,
     "packages/aai/src/host/_ffmpeg-spawn.ts": 1,
-    "packages/aai/src/host/eval-worker.ts": 1,
     "packages/aai/src/host/coding-spawn.ts": 1,
+    "packages/aai/src/host/eval-worker.ts": 1,
     "packages/aai/src/index.ts": 1,
     "packages/aai/src/sdk/session-event-map.ts": 1
   },

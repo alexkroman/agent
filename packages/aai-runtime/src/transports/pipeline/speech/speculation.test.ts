@@ -3,15 +3,25 @@
 // The transport-level guarantees (no TTS, no tool execution, no history trace)
 // live in pipeline-preemption.test.ts.
 
-import { PREEMPTIVE_CONFIDENCE_THRESHOLD } from "@alexkroman1/aai/host-internal";
-import { describe, expect, test, vi } from "vitest";
+import { PREEMPTIVE_QUIET_MS } from "@alexkroman1/aai/host-internal";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { silentLogger } from "../../../_logger-test-utils.ts";
 import type { Logger } from "../../../logger.ts";
 import type { SpeculativeStream } from "../llm/index.ts";
 import { createSpeculationController, type SpeculationControllerDeps } from "./speculation.ts";
 
-const ABOVE = PREEMPTIVE_CONFIDENCE_THRESHOLD;
-const BELOW = PREEMPTIVE_CONFIDENCE_THRESHOLD - 0.1;
+beforeEach(() => {
+  vi.useFakeTimers();
+});
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+/** An interim, then the caller pausing long enough for it to fire. */
+function settle(a: { ctl: { onPartial(text: string): void } }, text: string): void {
+  a.ctl.onPartial(text);
+  vi.advanceTimersByTime(PREEMPTIVE_QUIET_MS);
+}
 
 type FakeStream = SpeculativeStream & {
   readonly abort: ReturnType<typeof vi.fn>;
@@ -35,6 +45,7 @@ function fakeStream(prompt: string): FakeStream {
         /* nothing to replay in the policy specs */
       },
       steps: async () => [],
+      stalled: () => false,
       // The policy specs never reach the late-poison restart; the real
       // implementation aborts the underlying request here.
       abandon: abort,
@@ -78,6 +89,7 @@ function harness(overrides: Partial<SpeculationControllerDeps> = {}): {
   let prompt = "base prompt";
   const deps: SpeculationControllerDeps = {
     enabled: true,
+    quietMs: PREEMPTIVE_QUIET_MS,
     isIdle: () => true,
     historyRevision: () => revision,
     historyIsCurrent: (n) => n === revision,
@@ -106,60 +118,102 @@ function harness(overrides: Partial<SpeculationControllerDeps> = {}): {
 }
 
 describe("firing rules", () => {
-  test("fires above the threshold and not below", () => {
-    const a = harness();
-    a.ctl.onPartial("what is my order status", BELOW);
-    expect(a.started).toHaveLength(0);
-
-    const b = harness();
-    b.ctl.onPartial("what is my order status", ABOVE);
-    expect(b.started).toHaveLength(1);
-  });
-
-  test("no confidence at all never fires", () => {
+  test("fires once the text has held still for the quiet window, not before", () => {
     const a = harness();
     a.ctl.onPartial("what is my order status");
+    vi.advanceTimersByTime(PREEMPTIVE_QUIET_MS - 1);
     expect(a.started).toHaveLength(0);
+    vi.advanceTimersByTime(1);
+    expect(a.started).toHaveLength(1);
+    expect(a.started[0]?.prompt).toBe("what is my order status");
+  });
+
+  test("new text restarts the window, and the speculation is built on the latest", () => {
+    const a = harness();
+    a.ctl.onPartial("what is");
+    vi.advanceTimersByTime(PREEMPTIVE_QUIET_MS - 1);
+    a.ctl.onPartial("what is my order status");
+    vi.advanceTimersByTime(PREEMPTIVE_QUIET_MS - 1);
+    expect(a.started).toHaveLength(0);
+    vi.advanceTimersByTime(1);
+    expect(a.started.map((x) => x.prompt)).toEqual(["what is my order status"]);
+  });
+
+  test("the same text re-sent does not hold the window open", () => {
+    // A provider re-emitting its last interim (or re-punctuating it) is not new
+    // speech; re-arming on it would postpone the fire for as long as it repeats.
+    const a = harness();
+    a.ctl.onPartial("what is my order status");
+    vi.advanceTimersByTime(PREEMPTIVE_QUIET_MS - 50);
+    a.ctl.onPartial("What is my order status?");
+    vi.advanceTimersByTime(50);
+    expect(a.started).toHaveLength(1);
+  });
+
+  test("a zero window fires on the partial itself", () => {
+    const a = harness({ quietMs: 0 });
+    a.ctl.onPartial("what is my order status");
+    expect(a.started).toHaveLength(1);
   });
 
   test("disabled never fires", () => {
     const a = harness({ enabled: false });
-    a.ctl.onPartial("what is my order status", 1);
+    settle(a, "what is my order status");
     expect(a.started).toHaveLength(0);
     expect(a.ctl.take("what is my order status")).toBeNull();
   });
 
   test("a busy transport never fires", () => {
     const a = harness({ isIdle: () => false });
-    a.ctl.onPartial("what is my order status", 1);
+    settle(a, "what is my order status");
     expect(a.started).toHaveLength(0);
   });
 
-  test("does NOT re-fire on identical text at rising confidence", () => {
-    // The recorded `0.95 → 1` terminal re-emission — see
-    // SttTurnMeta.endOfTurnConfidence.
+  test("idleness is read when the window closes, not when the partial arrived", () => {
+    let idle = false;
+    const a = harness({ isIdle: () => idle });
+    a.ctl.onPartial("what is my order status");
+    idle = true;
+    vi.advanceTimersByTime(PREEMPTIVE_QUIET_MS);
+    expect(a.started).toHaveLength(1);
+  });
+
+  test("does NOT re-fire on identical text", () => {
     const a = harness();
-    a.ctl.onPartial("my order is twelve thirty four", 0.95);
-    a.ctl.onPartial("my order is twelve thirty four", 1);
+    settle(a, "my order is twelve thirty four");
+    settle(a, "my order is twelve thirty four");
     expect(a.started).toHaveLength(1);
     expect(a.started[0]?.abort).not.toHaveBeenCalled();
   });
 
   test("normalization means punctuation alone is not a new utterance", () => {
     const a = harness();
-    a.ctl.onPartial("my order is 1234", 1);
-    a.ctl.onPartial("My order is 1234.", 1);
+    settle(a, "my order is 1234");
+    settle(a, "My order is 1234.");
     expect(a.started).toHaveLength(1);
+  });
+
+  test.each([
+    ["a final", (a: ReturnType<typeof harness>) => a.ctl.onFinal("what is my order status")],
+    ["a take", (a: ReturnType<typeof harness>) => a.ctl.take("what is my order status")],
+    ["a discard", (a: ReturnType<typeof harness>) => a.ctl.discard("reset")],
+    ["an idle utterance", (a: ReturnType<typeof harness>) => a.ctl.onUtteranceIdle()],
+  ])("%s inside the window cancels the pending fire", (_label, act) => {
+    const a = harness();
+    a.ctl.onPartial("what is my order status");
+    act(a);
+    vi.advanceTimersByTime(PREEMPTIVE_QUIET_MS * 2);
+    expect(a.started).toHaveLength(0);
   });
 });
 
-describe("the confidence sawtooth", () => {
+describe("mid-utterance pauses", () => {
   test("a changed partial ABORTS the live speculation immediately", () => {
     const r = recordingLog();
     const a = harness({ log: r.log });
-    a.ctl.onPartial("my number is five five five", 1);
+    settle(a, "my number is five five five");
     const first = a.started[0];
-    a.ctl.onPartial("my number is five five five one", 0);
+    a.ctl.onPartial("my number is five five five one");
     expect(first?.abort).toHaveBeenCalledTimes(1);
     // And logged as the caller REVISING what they said — the reason the fuzz
     // counts as `speculationDiscarded:superseded`.
@@ -168,31 +222,28 @@ describe("the confidence sawtooth", () => {
     expect(a.ctl.take("my number is five five five")).toBeNull();
   });
 
-  test("bounded per utterance however the confidence sawtooths", () => {
+  test("bounded per utterance however often the caller pauses", () => {
     const a = harness();
-    // Rising / falling / rising across revisions of the same dictated
-    // identifier — the shape recorded on SttTurnMeta.endOfTurnConfidence.
-    const revisions = [
+    // A dictated identifier, with a pause after every group.
+    for (const text of [
       "five five",
       "five five five",
       "five five five one",
       "five five five one two",
-    ];
-    for (const text of revisions) {
-      a.ctl.onPartial(text, 0);
-      a.ctl.onPartial(text, 1);
+    ]) {
+      settle(a, text);
     }
     expect(a.started.length).toBeLessThanOrEqual(2);
   });
 
   test("the budget is restored when the utterance ends", () => {
     const a = harness();
-    a.ctl.onPartial("one", 1);
-    a.ctl.onPartial("two", 1);
-    a.ctl.onPartial("three", 1);
+    settle(a, "one");
+    settle(a, "two");
+    settle(a, "three");
     expect(a.started).toHaveLength(2);
     a.ctl.onUtteranceIdle();
-    a.ctl.onPartial("four", 1);
+    settle(a, "four");
     expect(a.started).toHaveLength(3);
   });
 });
@@ -200,7 +251,7 @@ describe("the confidence sawtooth", () => {
 describe("take", () => {
   function live(): ReturnType<typeof harness> {
     const a = harness();
-    a.ctl.onPartial("what is my order status", 1);
+    settle(a, "what is my order status");
     return a;
   }
 
@@ -256,7 +307,7 @@ describe("take", () => {
     // prompt the model never saw, and the check above would then pass on a lie.
     const a = harness();
     a.setPrompt("phase one");
-    a.ctl.onPartial("what is my order status", 1);
+    settle(a, "what is my order status");
     expect(a.startedPrompts).toEqual(["phase one"]);
     expect(a.ctl.take("what is my order status")).toBe(a.started[0]);
   });
@@ -272,7 +323,7 @@ describe("discard", () => {
   test("onFinal aborts a speculation the final cannot match", () => {
     const r = recordingLog();
     const a = harness({ log: r.log });
-    a.ctl.onPartial("what is my order status", 1);
+    settle(a, "what is my order status");
     a.ctl.onFinal("cancel my order");
     expect(a.started[0]?.abort).toHaveBeenCalledTimes(1);
     // Logged as the FINAL disagreeing with the speculated text — the reason the
@@ -282,7 +333,7 @@ describe("discard", () => {
 
   test("onFinal keeps a matching speculation for take()", () => {
     const a = harness();
-    a.ctl.onPartial("what is my order status", 1);
+    settle(a, "what is my order status");
     a.ctl.onFinal("What is my order status?");
     expect(a.started[0]?.abort).not.toHaveBeenCalled();
     expect(a.ctl.take("What is my order status?")).toBe(a.started[0]);
@@ -290,7 +341,7 @@ describe("discard", () => {
 
   test("onUtteranceIdle discards and aborts", () => {
     const a = harness();
-    a.ctl.onPartial("what is my order status", 1);
+    settle(a, "what is my order status");
     a.ctl.onUtteranceIdle();
     expect(a.started[0]?.abort).toHaveBeenCalledTimes(1);
     expect(a.ctl.take("what is my order status")).toBeNull();
@@ -298,7 +349,7 @@ describe("discard", () => {
 
   test("an explicit discard aborts", () => {
     const a = harness();
-    a.ctl.onPartial("what is my order status", 1);
+    settle(a, "what is my order status");
     a.ctl.discard("reset");
     expect(a.started[0]?.abort).toHaveBeenCalledTimes(1);
   });

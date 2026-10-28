@@ -11,6 +11,7 @@ import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";
 import { compactRecordsForModel } from "../_compact-records.ts";
+import { ToolCallGuards } from "./call-guards.ts";
 import { type FatalToolError, isFatalToolError } from "./error-policy.ts";
 import type { ToolSpeechController } from "./messages-runner.ts";
 import { runToolCall, type SettledToolCall, type ToolCallContext } from "./run-tool-call.ts";
@@ -58,6 +59,13 @@ interface ToVercelToolsContext {
    * speculation have nobody to speak to.
    */
   toolSpeech?: ToolSpeechController;
+  /**
+   * The conversation's guards on its calls (`call-guards.ts`). Absent, the
+   * tool set gets its own, without the failed-call memory — the right scope
+   * for a text-agent turn or a subagent run, whose tool set lives exactly as
+   * long as its conversation and which is not one a caller can repair.
+   */
+  guards?: ToolCallGuards;
   signal?: AbortSignal;
 }
 
@@ -83,6 +91,7 @@ export function toVercelTools(
     messages: ctx.messages,
     parameters: (name) => parameters.get(name),
     recordToolResult: ctx.recordToolResult,
+    guards: ctx.guards ?? new ToolCallGuards({ rememberFailures: false }),
   };
   for (const schema of schemas) {
     out[schema.name] = tool({

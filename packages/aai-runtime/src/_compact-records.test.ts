@@ -24,7 +24,7 @@ describe("compactRecordsForModel", () => {
     };
     expect(compactRecordsForModel(asText(result))).toBe(
       [
-        "3 records (key column: id): id | options.color | options.size | available | price",
+        "3 records (key column: id; available: 2 true, 1 false): id | options.color | options.size | available | price",
         "0012 | red | S | false | 9.5",
         "0345 | blue | M | true | 12",
         "9001x | red | L | true | 10.25",
@@ -78,7 +78,7 @@ describe("compactRecordsForModel", () => {
     expect(compactRecordsForModel(asText(result))).toBe(
       [
         '{"name":"Widget","id":"77","variants":',
-        "3 records (key column: id): id | options.color | options.size | available | price",
+        "3 records (key column: id; available: 2 true, 1 false): id | options.color | options.size | available | price",
         "1 | red | S | true | 5",
         "2 | red | M | false | 6",
         "3 | red | L | true | 7",
@@ -152,7 +152,7 @@ describe("compactRecordsForModel", () => {
     const relayed = '[{"id": "1", "ok": true}, {"id": "2", "ok": false}, {"id": "3", "ok": true}]';
     expect(compactRecordsForModel(relayed)).toBe(
       [
-        "3 records (key column: index): index | id | ok",
+        "3 records (key column: index; ok: 2 true, 1 false): index | id | ok",
         "0 | 1 | true",
         "1 | 2 | false",
         "2 | 3 | true",
@@ -175,7 +175,7 @@ describe("compactRecordsForModel", () => {
     ];
     expect(compactRecordsForModel(asText(result))).toBe(
       [
-        "3 records (key column: index): index | id | code | flag | n",
+        "3 records (key column: index; flag: 2 true, 1 false): index | id | code | flag | n",
         "0 | 000123 | 1e3 | true | 0.1",
         "1 | 0 | true | false | -3",
         "2 | 007 |  | true | 1000000",
@@ -228,7 +228,12 @@ describe("compactRecordsForModel", () => {
     const text =
       '{"9001": {"id": "9001", "ok": true}, "0012": {"id": "0012", "ok": false}, "5": {"id": "5", "ok": true}}';
     expect(compactRecordsForModel(text)).toBe(
-      ["3 records (key column: id): id | ok", "9001 | true", "0012 | false", "5 | true"].join("\n"),
+      [
+        "3 records (key column: id; ok: 2 true, 1 false): id | ok",
+        "9001 | true",
+        "0012 | false",
+        "5 | true",
+      ].join("\n"),
     );
   });
 
@@ -244,6 +249,43 @@ describe("compactRecordsForModel", () => {
         "2 | 3",
         "}",
       ].join("\n"),
+    );
+  });
+});
+
+describe("boolean tallies in the table header", () => {
+  test("a boolean column is counted, so 'how many are available' is stated", () => {
+    // Recorded on tau2 retail: a 12-variant product with 2 unavailable, and the
+    // agent said "twelve t-shirt options" — the only count the header gave.
+    const variants = Array.from({ length: 12 }, (_, i) => ({
+      item_id: String(1000 + i),
+      available: i !== 7 && i !== 10,
+    }));
+    const header = compactRecordsForModel(JSON.stringify(variants)).split("\n")[0];
+    expect(header).toBe(
+      "12 records (key column: index; available: 10 true, 2 false): index | item_id | available",
+    );
+  });
+
+  test("every boolean column is tallied, in column order", () => {
+    const rows = [
+      { a: true, b: false },
+      { a: true, b: true },
+      { a: false, b: true },
+    ];
+    expect(compactRecordsForModel(JSON.stringify(rows)).split("\n")[0]).toBe(
+      "3 records (key column: index; a: 2 true, 1 false; b: 2 true, 1 false): index | a | b",
+    );
+  });
+
+  test("a column with a null, or a string spelled true, is not a boolean column", () => {
+    const rows = [
+      { flag: true, label: "true" },
+      { flag: null, label: "false" },
+      { flag: false, label: "true" },
+    ];
+    expect(compactRecordsForModel(JSON.stringify(rows)).split("\n")[0]).toBe(
+      "3 records (key column: index): index | flag | label",
     );
   });
 });

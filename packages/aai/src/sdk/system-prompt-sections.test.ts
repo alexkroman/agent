@@ -44,7 +44,7 @@ describe("one rule, one section", () => {
     ["the markdown ban", "No markdown", "PROMPT_SPEAKING"],
     ["the reply-length cap", "two sentences", "PROMPT_SPEAKING"],
     ["the eight-word opener", "eight words", "PROMPT_SPEAKING"],
-    ["the spelled-input readback", "spelled input back", "PROMPT_LISTENING"],
+    ["the spelled-value readback", "Read a spelled value back", "PROMPT_LISTENING"],
   ])("%s is stated in %s's section only", (_label, marker, owner) => {
     expect(sectionsContaining(marker)).toEqual([owner]);
   });
@@ -56,6 +56,41 @@ describe("one rule, one section", () => {
   test("the spelling rule and the copy-exactly rule stay one section each", () => {
     expect(sectionsContaining("hyphenate it")).toEqual(["PROMPT_SPEAKING"]);
     expect(sectionsContaining("Copy values from prior tool results")).toEqual(["PROMPT_TOOLS"]);
+  });
+
+  // The policy rules ported from the tau2-bench prompt studies (see the
+  // PROMPT_TOOLS doc). Each overlapped a rule already here, so each was merged
+  // into the bullet that owned it rather than stated again.
+  test.each([
+    ["checking the record over the claim", "Check the record, not the claim."],
+    ["a write is not an approval", "A tool that accepts a write has not approved it."],
+    ["only what was asked", "don't add it and don't offer it"],
+    ["one confirmation per request", 'one confirmation that opens "Nothing\'s changed yet."'],
+    ["every write the yes covered", "make every write it covered back to back"],
+    ["a description is a search", "A described choice is a search."],
+    [
+      "finishing the allowed part of a blocked request",
+      "Every allowed change comes BEFORE any transfer",
+    ],
+  ])("the policy rule on %s lives in TOOLS only", (_label, marker) => {
+    expect(sectionsContaining(marker)).toEqual(["PROMPT_TOOLS"]);
+  });
+
+  // The confirmation runs past SPEAKING's cap on purpose. TOOLS states the
+  // exemption: a tool-less agent gets no TOOLS section, so a pointer to it from
+  // SPEAKING would name a section that prompt does not have.
+  test("the confirmation's exemption from SPEAKING lives in TOOLS", () => {
+    expect(PROMPT_SPEAKING).not.toContain("TOOLS");
+    expect(PROMPT_TOOLS).toContain("may run past SPEAKING's two-sentence limit");
+    expect(PROMPT_TOOLS).toContain("its opening is not a preface");
+    expect(sectionsContaining("Nothing's changed yet")).toEqual(["PROMPT_TOOLS"]);
+  });
+
+  // Asked ONCE: a second confirmation before the writes is the round trip the
+  // rule exists to remove, so it must not come back as a separate bullet.
+  test("there is one confirmation bullet, not one per change", () => {
+    expect(PROMPT_TOOLS.split("Before an action that's hard to undo")).toHaveLength(2);
+    expect(PROMPT_TOOLS).toContain("Never ask for the same confirmation twice.");
   });
 });
 

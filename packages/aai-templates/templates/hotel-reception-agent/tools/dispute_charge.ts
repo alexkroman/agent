@@ -26,6 +26,7 @@ import { takenCodes, verified, verifiedBooking } from "../shared.ts";
  * caller to pick from a list they had already picked from.
  */
 export default hotelSlot.updateTool({
+  effect: "write",
   description:
     "File a dispute on one invoice line item for the verified caller and apply the policy outcome. " +
     "Call lookup_invoice FIRST and read the lines back; then pass the line the CALLER named, in " +

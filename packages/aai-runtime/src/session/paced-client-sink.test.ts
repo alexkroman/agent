@@ -14,6 +14,7 @@ import {
   createPacedClientSink,
   END_SESSION_PLAYOUT_MARGIN_MS,
   END_SESSION_REPLY_TIMEOUT_MS,
+  withHeldAudio,
 } from "./paced-client-sink.ts";
 
 /** 24 kHz PCM16 is 48 bytes/ms, so this is 100ms of audio. */
@@ -182,5 +183,34 @@ describe("endAfterReply — endSession's wait for the goodbye", () => {
     paced.stopPacing();
     vi.advanceTimersByTime(END_SESSION_REPLY_TIMEOUT_MS);
     expect(close).not.toHaveBeenCalled();
+  });
+});
+
+describe("withHeldAudio — a playback report plus what the client never received", () => {
+  test("adds held audio to a playback_progress report", () => {
+    expect(withHeldAudio({ type: "playback_progress", bufferedMs: 500 }, 3200)).toEqual({
+      type: "playback_progress",
+      bufferedMs: 3700,
+    });
+  });
+
+  test("leaves every other command, a malformed report and a zero hold untouched", () => {
+    const cancel = { type: "cancel" };
+    expect(withHeldAudio(cancel, 3200)).toBe(cancel);
+    const bad = { type: "playback_progress", bufferedMs: "500" };
+    expect(withHeldAudio(bad, 3200)).toBe(bad);
+    const report = { type: "playback_progress", bufferedMs: 500 };
+    expect(withHeldAudio(report, 0)).toBe(report);
+    expect(withHeldAudio("not a command", 3200)).toBe("not a command");
+  });
+
+  test("the sink's heldAudioMs reads its own pacer", () => {
+    const { sink } = recordingSink();
+    const paced = createPacedClientSink(sink, { sampleRate: 24_000, leadMs: 1000 });
+    for (let i = 0; i < 30; i++) paced.client.playAudioChunk(CHUNK());
+    expect(paced.heldAudioMs()).toBeGreaterThan(1500);
+    paced.client.event(stampSessionEvent({ type: "reply.cancelled" }));
+    expect(paced.heldAudioMs()).toBe(0);
+    paced.stopPacing();
   });
 });

@@ -17,6 +17,7 @@ import {
   type AttachSessionOptions,
   attachSession,
   createPacedClientSink,
+  withHeldAudio,
 } from "../session/index.ts";
 import type { Runtime, SessionConnection, SessionConnectOptions } from "./types.ts";
 
@@ -186,7 +187,9 @@ function attachConnection(
     id: connection.id,
     readyConfig,
     sendAudio: connection.sendAudio,
-    sendCommand: connection.sendCommand,
+    // A playback report counts what the caller's sink RECEIVED; the audio the
+    // pacer still holds is added here — see `withHeldAudio`.
+    sendCommand: (command) => connection.sendCommand(withHeldAudio(command, paced.heldAudioMs())),
     close: () => detach(),
     ended: connection.ended,
   };

@@ -31,6 +31,22 @@
  *    instruction taken OUT of the tool's own string and appended to the
  *    model's (`result-instruction.ts`).
  *
+ * Between steps 2 and 3 a call can also be REFUSED, and then nothing below
+ * runs — no hook, no execution, so no tool speech and, in host mode, no relayed
+ * call — and the refusal is recorded as its result:
+ *
+ * - `arg-precheck.ts`: a required parameter missing, an undeclared one, or a
+ *   placeholder (`"unknown"`, `"?"`) for a value;
+ * - the conversation's {@link ToolCallGuards} (`call-guards.ts`):
+ *   `format-mirror.ts` — a string written in a different shape from every
+ *   value the records have shown for that field (`"New York"` where they say
+ *   `"CO"`), refused once — and, for a session, `failed-call-memo.ts` — the
+ *   same tool already failed with the same arguments.
+ *
+ * And a FAILURE's model copy is annotated — a required string it sent empty,
+ * then every failed call so far — carried as an instruction so the pipeline's
+ * `toModelOutput` keeps it.
+ *
  * ## A rejection is returned to the CALLER's policy, never decided here
  *
  * `executeTool` rejects on exactly one path — a `FatalToolError`, a failure
@@ -46,7 +62,10 @@ import type { ExecuteTool, ExecuteToolOptions } from "@alexkroman1/aai/host-inte
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { JSONSchema7 } from "json-schema";
 import { compactRecordsForModel } from "../_compact-records.ts";
+import { isFailedToolResult } from "../_prepare-step.ts";
 import { coerceToolArgs } from "./arg-coercion.ts";
+import { emptyArgsNote, precheckToolArgs } from "./arg-precheck.ts";
+import type { ToolCallGuards } from "./call-guards.ts";
 import { splitInstruction, withInstructionForModel } from "./result-instruction.ts";
 import { toolResultMessage } from "./result-message.ts";
 
@@ -76,6 +95,11 @@ export type ToolCallContext = {
    * conversation.
    */
   recordToolResult?: ((message: Message) => void) | undefined;
+  /**
+   * The conversation's guards on its calls — see `call-guards.ts`. One per
+   * session, or per tool set where the set is the conversation's scope.
+   */
+  guards: ToolCallGuards;
 };
 
 /** A call that settled with a result the model reads. */
@@ -127,6 +151,16 @@ export async function runToolCall(
 ): Promise<SettledToolCall> {
   const input = coerceCallArgs(call.name, call.args, ctx);
   const history = ctx.messages().slice();
+  const parameters = ctx.parameters?.(call.name);
+  const refusal =
+    precheckToolArgs(call.name, input, parameters) ?? ctx.guards.refuse(call.name, input, history);
+  if (refusal !== undefined) {
+    // Recorded like any result: the call was made, and this is its answer.
+    ctx.recordToolResult?.(
+      toolResultMessage({ result: refusal, toolName: call.name, toolCallId: call.toolCallId }),
+    );
+    return { input, result: refusal, forModel: refusal };
+  }
   // Awaited only when there IS a hook: an `await` on nothing would still yield
   // a microtask, and the S2S step relies on `executeTool` STARTING
   // synchronously with the report — a barge-in in that gap would abort a
@@ -138,13 +172,21 @@ export async function runToolCall(
   const raw = await ctx.executeTool(call.name, input, ctx.sessionId, history, options);
   // The instruction comes OUT here, before anything that is not the model
   // sees the string — see `result-instruction.ts`.
-  const { result, instruction } = splitInstruction(raw);
+  const split = splitInstruction(raw);
+  const { result } = split;
+  const recorded = toolResultMessage({ result, toolName: call.name, toolCallId: call.toolCallId });
+  // The guards see the result WHOLE, before `recorded` caps it. Their note
+  // rides as an instruction: model copy only, and kept by the pipeline's
+  // `toModelOutput`, which recomputes any copy that carries none.
+  const memoNote = ctx.guards.settle(call.name, input, result, recorded);
+  // Only a failure is explained: an empty required string can be a real answer.
+  const emptyNote = isFailedToolResult(result) ? emptyArgsNote(input, parameters) : undefined;
+  const notes = [split.instruction, emptyNote, memoNote].filter((part) => part !== undefined);
+  const instruction = notes.length > 0 ? notes.join("\n") : undefined;
   // AFTER the call, so a tool never reads its own result back, and in
   // COMPLETION order — the only order that is true when sibling calls run
   // concurrently.
-  ctx.recordToolResult?.(
-    toolResultMessage({ result, toolName: call.name, toolCallId: call.toolCallId }),
-  );
+  ctx.recordToolResult?.(recorded);
   return {
     input,
     result,

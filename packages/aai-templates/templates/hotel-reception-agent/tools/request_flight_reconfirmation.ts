@@ -7,6 +7,7 @@ import { addTicket } from "../shared.ts";
 
 /** Their `request_flight_reconfirmation`: the concierge calls the carrier and rings the room. */
 export default hotelSlot.updateTool({
+  effect: "write",
   description:
     "Log a flight-reconfirmation request for an in-house guest: the concierge calls the carrier and " +
     "rings the room with the result. Collect ALL the details and read the booking reference back " +

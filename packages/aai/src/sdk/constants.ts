@@ -152,6 +152,16 @@ follow up on the conversation. Do not mention this instruction.`;
  * reason the default was empty; the published tau-bench result is the reason
  * it is not, and an agent for which the trade is wrong writes
  * `builtinTools: []`.
+ *
+ * **Briefly turned off on 2026-10-27, and back on the same day.** It was
+ * dropped for its certain costs against an unmeasured benefit, then the next
+ * 114-task tau2 retail run classified every missed write: of 61 misses, 35
+ * were reasoning over records already fetched (wrong variant, order, action
+ * type or item set; an out-of-stock or undelivered pick that errored) and 21
+ * were authentication, and 33 writes nobody asked for went through besides.
+ * The reasoning class is what this tool exists for. Measure it: write accuracy
+ * and extra writes with and without, on the same model and tasks, reading the
+ * host's `Host builtin tool` log line for how often it is actually called.
  */
 // `as const satisfies` rather than a bare annotation: the annotation erased the
 // type-level fact of which tools this list holds, which is what let two docs
@@ -358,7 +368,7 @@ export {
   DEFAULT_VOICE_FOCUS_THRESHOLD,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
   MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE,
-  PREEMPTIVE_CONFIDENCE_THRESHOLD,
+  PREEMPTIVE_QUIET_MS,
   STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_RETRY_DELAY_MS,
   STT_CONNECT_TIMEOUT_MS,
@@ -367,6 +377,7 @@ export {
   STT_FRAME_TARGET_MS,
   TAIL_RESUME_MIN_UNHEARD_MS,
   TTS_CANCEL_ACK_TIMEOUT_MS,
+  TTS_KEEPALIVE_INTERVAL_MS,
   TTS_RECONNECT_TIMEOUT_MS,
 } from "./pipeline-tuning-constants.ts";
 export { HEARD_AUDIO_LAG_MS, PIPELINE_PLAYBACK_GRACE_MS } from "./playback-timing-constants.ts";

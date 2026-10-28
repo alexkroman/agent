@@ -9,6 +9,7 @@
  * test-length cap and because the subject is this module.
  */
 
+import { DEFAULT_MIN_TURN_SILENCE_MS } from "@alexkroman1/aai/internal";
 import { assemblyAIStt, deepgramStt, fallback } from "@alexkroman1/aai/stt";
 import { describe, expect, test } from "vitest";
 import { describeResolvedProviders } from "./_provider-settings.ts";
@@ -31,7 +32,7 @@ describe("describeResolvedProviders", () => {
       // glance", and which languages a session pins is a glance.
       languages: ["en", "es"],
       // And the settings a reader came for are untouched by the squash.
-      minTurnSilenceMs: 1600,
+      minTurnSilenceMs: DEFAULT_MIN_TURN_SILENCE_MS,
     });
   });
 
@@ -43,7 +44,7 @@ describe("describeResolvedProviders", () => {
     expect(described.stt).toMatchObject({
       kind: "fallback",
       providers: [
-        { kind: "assemblyai", minTurnSilenceMs: 1600 },
+        { kind: "assemblyai", minTurnSilenceMs: DEFAULT_MIN_TURN_SILENCE_MS },
         { kind: "deepgram", model: "nova-3", language: "en" },
       ],
     });

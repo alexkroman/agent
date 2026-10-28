@@ -17,6 +17,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { WorkflowClient } from "@alexkroman1/aai/workflow-api";
 import { createStateSync } from "../_state-sync.ts";
 import { createGenerateFn, type HostGenerateFn } from "../generate.ts";
+import { transcriptField } from "../logger.ts";
 import type { SessionDirectory, SessionEmitter, SpeechDirectory } from "../session/index.ts";
 import type { SessionStateStore } from "../session-state/store.ts";
 import { createSubagentRunner } from "../subagent.ts";
@@ -210,6 +211,16 @@ function setupSandboxTools(
     // never on the host. They are delegated via RPC like custom tools;
     // the guest harness runs them directly.
     if (builtins.list()[name] && !SANDBOX_ONLY_BUILTINS.has(name)) {
+      // LOGGED, because in this mode nothing else records it: the client sees a
+      // `tool.called` only for a call it must run (`session/report.ts`), and a
+      // host builtin it never runs. So a relay harness (tau2's) could not tell
+      // whether the model used `think` before a write at all — every run read
+      // as zero calls, whatever happened. The thought itself is transcript-gated.
+      logger.info("Host builtin tool", {
+        sid: sessionId,
+        tool: name,
+        ...(typeof args.thought === "string" ? transcriptField("thought", args.thought) : {}),
+      });
       return executeToolCall(name, args, {
         toolset: builtins,
         env: frozenEnv,

@@ -4,6 +4,7 @@ import { describe, expect, test, vi } from "vitest";
 import { makeConfig } from "../_agent-test-utils.ts";
 import { makeLogger } from "../_logger-test-utils.ts";
 import { flush } from "../_timing-test-utils.ts";
+import { ToolCallGuards } from "../tools/index.ts";
 import type { TransportEventBody } from "../transports/types.ts";
 import type { SessionEmitter } from "./emitter.ts";
 import { createReplyTracker } from "./reply-tracker.ts";
@@ -33,6 +34,7 @@ function harness(opts: { hosted?: boolean; relayed?: boolean; stopped?: boolean 
         sessionId: "s1",
         messages: () => [],
         recordToolResult: vi.fn(),
+        guards: new ToolCallGuards({ rememberFailures: true }),
       },
       conversation: () => 0,
       emit,
