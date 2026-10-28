@@ -66,19 +66,20 @@ describe("one rule, one section", () => {
     ["a write is not an approval", "A tool that accepts a write has not approved it."],
     ["only what was asked", "don't add it and don't offer it"],
     ["one confirmation per request", 'one confirmation that opens "Nothing\'s changed yet."'],
-    ["every write the yes covered", "make every write\n  it covered back to back"],
+    ["every write the yes covered", "make every write it covered back to back"],
     ["a description is a search", "A described choice is a search."],
     ["a blocked request is not a stuck one", "A blocked request is not a stuck one"],
   ])("the policy rule on %s lives in TOOLS only", (_label, marker) => {
     expect(sectionsContaining(marker)).toEqual(["PROMPT_TOOLS"]);
   });
 
-  // The confirmation runs past SPEAKING's cap on purpose, and SPEAKING says so
-  // by REFERENCE rather than restating the confirmation.
-  test("the reply-length cap names the confirmation as its one exception", () => {
-    expect(PROMPT_SPEAKING).toContain(
-      "The one exception is the single\n  confirmation TOOLS describes",
-    );
+  // The confirmation runs past SPEAKING's cap on purpose. TOOLS states the
+  // exemption: a tool-less agent gets no TOOLS section, so a pointer to it from
+  // SPEAKING would name a section that prompt does not have.
+  test("the confirmation's exemption from SPEAKING lives in TOOLS", () => {
+    expect(PROMPT_SPEAKING).not.toContain("TOOLS");
+    expect(PROMPT_TOOLS).toContain("may run past SPEAKING's two-sentence limit");
+    expect(PROMPT_TOOLS).toContain("its opening is not a preface");
     expect(sectionsContaining("Nothing's changed yet")).toEqual(["PROMPT_TOOLS"]);
   });
 
