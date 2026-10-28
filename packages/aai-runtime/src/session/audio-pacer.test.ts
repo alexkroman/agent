@@ -219,3 +219,32 @@ describe("createAudioPacer", () => {
     pacer.stop();
   });
 });
+
+describe("createAudioPacer — heldMs", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // The part of the backlog a client cannot report: it never received it.
+  test("counts audio queued past the lead, and drops to zero on clear", () => {
+    const { pacer, audio } = makePacer(1000);
+    pushChunks(pacer, 30); // 3 s of audio against a 1 s lead
+    const sent = audio.length * 100;
+    expect(pacer.heldMs()).toBeCloseTo(3000 - sent, 5);
+    expect(pacer.heldMs()).toBeGreaterThan(1500);
+    pacer.clear();
+    expect(pacer.heldMs()).toBe(0);
+  });
+
+  test("shrinks as the lead drains and held audio is sent", () => {
+    const { pacer } = makePacer(1000);
+    pushChunks(pacer, 30);
+    const before = pacer.heldMs();
+    vi.advanceTimersByTime(1000);
+    expect(pacer.heldMs()).toBeLessThan(before);
+  });
+});

@@ -91,6 +91,12 @@ export type PacedAudioSink = {
    * that frame is still audible (`endSession`'s wait).
    */
   playoutRemainingMs(): number;
+  /**
+   * Ms of audio queued here and not yet SENT. A client's `playback_progress`
+   * can only count audio it has received, so this is the part of the backlog
+   * only the sender can see — see `withHeldAudio` in `paced-client-sink.ts`.
+   */
+  heldMs(): number;
 };
 
 type QueueItem =
@@ -194,6 +200,12 @@ export function createAudioPacer(opts: AudioPacerOptions): PacedAudioSink {
     stop() {
       stopped = true;
       reset();
+    },
+
+    heldMs() {
+      let held = 0;
+      for (const item of queue) if (item.kind === "audio") held += item.durationMs;
+      return held;
     },
 
     playoutRemainingMs() {
