@@ -21,7 +21,7 @@ export default agent({
   greeting: "Hi, what can I do for you?",
   // Only the speaking stage is declared; speech-to-text and the LLM are the defaults.
   tts: assemblyAITts({ voice: "aai-jane" }),
-  // Every built-in is opt-in (the default is none), `think` included. All
+  // Setting this REPLACES the default (`["think"]`), so `think` is listed to keep it. All
   // keyless but text_me, which reads TEXTBELT_KEY and SMS_TO_PHONE and texts only the
   // owner: without them it says it can't, and nothing else here depends on it.
   builtinTools: ["think", "open_meteo", "web_search", "calculate", "visit_webpage", "text_me"],

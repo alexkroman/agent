@@ -28,11 +28,11 @@ describe("constants", () => {
    * which was vacuously true while the list was empty — so nothing checked the
    * default at all, and three separate docs (including the scaffold guide
    * shipped to users) went on describing a four-tool "cognitive set" default
-   * long after it was removed. The default is empty; every built-in, `think`
-   * included, is opt-in by name (see the constant for why `think` was dropped).
+   * long after it was removed. The default is `think` alone; every other
+   * built-in is opt-in by name.
    */
-  test("DEFAULT_BUILTIN_TOOLS is empty — every built-in is opt-in by name", () => {
-    expect(DEFAULT_BUILTIN_TOOLS).toEqual([]);
+  test("DEFAULT_BUILTIN_TOOLS is exactly `think` — the rest are opt-in by name", () => {
+    expect(DEFAULT_BUILTIN_TOOLS).toEqual(["think"]);
     expect(agent({ name: "t" }).builtinTools).toBeUndefined();
   });
 
