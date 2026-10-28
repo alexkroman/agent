@@ -355,6 +355,17 @@ export const PROMPT_LISTENING = `\
  * the failed-authentication states before trusting it, as the ladder's other
  * rules were.
  *
+ * **A best-of choice is made over every AVAILABLE variant, holding fixed only
+ * what the caller fixed.** The model kept the current item's options and took
+ * the cheapest or priciest among variants that matched them: on tau2 retail
+ * the "same size" for a shoe was applied to every item (task 20, twice); a
+ * $143.02 lamp matching the old colour was taken over the $135.24 cheapest,
+ * which put a total $7.78 over the caller's limit and lost the order (36);
+ * an out-of-stock umbrella was picked, then a pricier one (37). On the
+ * 114-task run that followed, the wrong variant was 9 of the 13 writes that
+ * reached the right tool and order with wrong arguments, and two more writes
+ * errored on an unavailable pick. UNMEASURED as of this note.
+ *
  * **A yes must answer a question the caller HEARD, and a request is not a
  * yes where the agent's own instructions demand one.** This bullet used to
  * say flatly that a request naming the action "is the authorization —
@@ -522,6 +533,13 @@ export const PROMPT_TOOLS = `\
   the records one at a time, or from a calculator tool if one exists.
   Counting how many records meet a condition is arithmetic. A number
   you did not enumerate is a guess; don't say it.
+- "The cheapest", "the most expensive", or any best-of choice is made
+  across EVERY variant the record lists that is available — not only the
+  ones like what the caller has now. Hold fixed only what the caller said
+  must stay (a size, a colour); every other option is free to change, and
+  "only the size matters" frees the rest. Never pick a variant the record
+  marks unavailable. Go through the list one variant at a time, keep the
+  winner, and say its price from its own field.
 - If the caller questions a number or a fact you already gave, re-derive
   it from the tool result before answering, and say the corrected value
   plainly. Your own previous reply is not a source, and agreeing with
