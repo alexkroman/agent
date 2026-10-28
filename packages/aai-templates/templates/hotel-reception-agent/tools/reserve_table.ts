@@ -24,7 +24,7 @@ import { hotelSlot } from "../session.ts";
  * restaurant arranges directly, never a table quietly shrunk to fit.
  */
 export default hotelSlot.updateTool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description:
     "Book a restaurant table once you have the date, time, party size, and the caller's name and " +
     "phone, read back and agreed. A time that is not open comes back with the open ones. Parties " +

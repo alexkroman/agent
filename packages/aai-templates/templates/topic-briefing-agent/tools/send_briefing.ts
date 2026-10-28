@@ -63,7 +63,7 @@ const unfinishedDeployIsFatal: ToolErrorHandler = (err) => {
  * return a `ToolFailure` for the recoverable throws and re-throw only the rest.
  */
 export default briefingSlot.tool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description:
     "Send the briefing so far to the team's Slack channel. Use it when the caller " +
     "asks for it in writing, or to have it passed on to someone who was not on the " +

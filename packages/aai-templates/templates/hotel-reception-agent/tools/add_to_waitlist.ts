@@ -6,7 +6,7 @@ import { addTicket } from "../shared.ts";
 
 /** Their `add_to_waitlist`: for dates the hotel is sold out on. Holds nothing. */
 export default hotelSlot.updateTool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description:
     "Put the caller on the waitlist for dates the hotel is SOLD OUT on - only after " +
     "check_room_availability came back empty and they want to be told if something opens up. " +

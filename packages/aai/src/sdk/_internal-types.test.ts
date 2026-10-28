@@ -57,34 +57,30 @@ test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
   expect(schemas[1]?.parameters).toMatchObject({ required: ["time"] });
 });
 
-// The pipeline's confirmation gate reads `annotations.readOnlyHint` off the wire
-// declaration, so an authored write has to carry it there.
-test("agentToolsToSchemas - a tool's `annotations` ride the wire declaration", () => {
+// The pipeline's write gate, ledger and grounding check read `effect` off the
+// wire declaration, so an authored write has to carry it there.
+test("agentToolsToSchemas - a tool's `effect` rides the wire declaration", () => {
   const noop = async () => "ok";
   const schemas = agentToolsToSchemas(
     files({
-      cancel_order: { description: "Cancel", execute: noop, annotations: { readOnlyHint: false } },
-      get_order: { description: "Get", execute: noop, annotations: { readOnlyHint: true } },
+      cancel_order: { description: "Cancel", execute: noop, effect: "write" },
+      get_order: { description: "Get", execute: noop, effect: "read" },
       plain: { description: "Plain", execute: noop },
     }),
   );
-  expect(schemas.map((one) => one.annotations)).toEqual([
-    { readOnlyHint: false },
-    { readOnlyHint: true },
-    undefined,
-  ]);
-  expect(schemas[2]).not.toHaveProperty("annotations");
+  expect(schemas.map((one) => one.effect)).toEqual(["write", "read", undefined]);
+  expect(schemas[2]).not.toHaveProperty("effect");
 });
 
 // Most template writes are slot tools, whose builder rebuilds the def from the
-// fields it knows (`wireFields`). The annotation has to survive that too.
-test("agentToolsToSchemas - a slot tool's `annotations` survive its builder", () => {
+// fields it knows (`wireFields`). The effect has to survive that too.
+test("agentToolsToSchemas - a slot tool's `effect` survives its builder", () => {
   const cart = sessionSlot("cart", () => ({ placed: false }));
   const schemas = agentToolsToSchemas(
     files({
       place_order: cart.updateTool({
         description: "Place the order",
-        annotations: { readOnlyHint: false },
+        effect: "write",
         execute: (_args, draft) => {
           draft.placed = true;
           return "placed";
@@ -92,7 +88,7 @@ test("agentToolsToSchemas - a slot tool's `annotations` survive its builder", ()
       }),
     }),
   );
-  expect(schemas[0]?.annotations).toEqual({ readOnlyHint: false });
+  expect(schemas[0]?.effect).toBe("write");
 });
 
 test("agentToolsToSchemas - a tool's `ui` rides the wire declaration, undeclared fields omitted", () => {

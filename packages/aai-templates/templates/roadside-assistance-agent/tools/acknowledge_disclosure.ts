@@ -12,7 +12,7 @@ import { roadsideSlot } from "../shared.ts";
  * error.
  */
 export default roadsideSlot.updateTool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description:
     "Record the caller's answer to the fee disclosure, after you have read it to them in full. " +
     "Set accepted to true only if they said yes to the charge. If they said no, or want to " +

@@ -10,7 +10,7 @@ import { supportSlot } from "../shared.ts";
  * there is somewhere to go from it, and this is that somewhere.
  */
 export default supportSlot.updateTool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description:
     "Log a callback ticket for a question the knowledge base could not answer. " +
     "Ask for a callback number first, and read the reference back.",

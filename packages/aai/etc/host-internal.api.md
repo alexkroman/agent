@@ -2015,9 +2015,7 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    };
+    effect?: ToolEffect | undefined;
 };
 
 // @public
@@ -2029,6 +2027,9 @@ type ToolDelayedMessage = {
     when?: ToolMessageCondition[] | undefined;
     afterMs: number;
 };
+
+// @public
+type ToolEffect = "read" | "write";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -2084,9 +2085,7 @@ type ToolSchema = {
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
     ui?: ToolUi | undefined;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    } | undefined;
+    effect?: ToolEffect | undefined;
 };
 
 // @public @input

@@ -130,6 +130,7 @@ export type {
   ToolConditionOperator,
   ToolDef,
   ToolDelayedMessage,
+  ToolEffect,
   ToolErrorHandler,
   ToolMap,
   ToolMessageCondition,

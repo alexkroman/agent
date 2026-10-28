@@ -14,7 +14,7 @@
  *
  * ## What is checked
  *
- * Only a tool declared a write (`annotations.readOnlyHint: false`), and only
+ * Only a tool declared a write (`effect: "write"`), and only
  * its IDENTIFIER arguments: a key named like `order_id`, `item_ids` or
  * `flight_number` (at any nesting, an array's strings under its key) whose
  * value has a digit and no spaces — so a dictated address, a date or a free-text

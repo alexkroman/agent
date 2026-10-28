@@ -14,7 +14,7 @@
  * So the check is made here, in code, on facts the model cannot see: did the
  * turn that started this reply open over the agent's audio, filler included,
  * AND was it brief — a backchannel's length, under the sustained-speech gate?
- * Then a tool declared `annotations.readOnlyHint: false` is not run, and the
+ * Then a tool declared `effect: "write"` is not run, and the
  * model is told to ask once more and wait. Content-blind: nothing reads what
  * was said.
  *
@@ -47,7 +47,7 @@ export const UNCONFIRMED_WRITE_RESULT: string =
 
 /** Names of the tools a declaration marks as writes. @internal */
 export function writeToolNames(schemas: readonly ToolSchema[]): ReadonlySet<string> {
-  return new Set(schemas.filter((s) => s.annotations?.readOnlyHint === false).map((s) => s.name));
+  return new Set(schemas.filter((s) => s.effect === "write").map((s) => s.name));
 }
 
 /**

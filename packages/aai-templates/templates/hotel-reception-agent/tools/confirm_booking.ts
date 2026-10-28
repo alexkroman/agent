@@ -26,7 +26,7 @@ import { bookingByCode } from "../shared.ts";
  * flow where the caller has to pick again.
  */
 export default deskFlow.tool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description:
     "Finalize the booking and charge the card, or write a modification back. Call ONLY after " +
     "the caller has agreed to your read-back. Returns the final confirmation - relay the code " +

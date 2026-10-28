@@ -21,7 +21,7 @@ import { hotelSlot } from "../session.ts";
  * on the read-back.
  */
 export default hotelSlot.updateTool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description:
     "Move a confirmed restaurant reservation to a new date and time (and optionally a new party size), " +
     "keeping its code. Verifies with last name + RES code. Omit newPartySize unless the caller states a " +

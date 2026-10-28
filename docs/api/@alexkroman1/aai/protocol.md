@@ -401,10 +401,11 @@ const HostConfigMessageSchema: z.ZodObject<{
      sttPrompt: z.ZodOptional<z.ZodString>;
      systemPrompt: z.ZodString;
      tools: z.ZodArray<z.ZodObject<{
-        annotations: z.ZodOptional<z.ZodObject<{
-           readOnlyHint: z.ZodOptional<...>;
-        }, z.core.$strip>>;
         description: z.ZodString;
+        effect: z.ZodOptional<z.ZodEnum<{
+           read: "read";
+           write: "write";
+        }>>;
         messages: z.ZodOptional<z.ZodObject<{
            complete: z.ZodOptional<...>;
            delayed: z.ZodOptional<...>;
@@ -444,10 +445,11 @@ const HostConfigSchema: z.ZodObject<{
   sttPrompt: z.ZodOptional<z.ZodString>;
   systemPrompt: z.ZodString;
   tools: z.ZodArray<z.ZodObject<{
-     annotations: z.ZodOptional<z.ZodObject<{
-        readOnlyHint: z.ZodOptional<z.ZodBoolean>;
-     }, z.core.$strip>>;
      description: z.ZodString;
+     effect: z.ZodOptional<z.ZodEnum<{
+        read: "read";
+        write: "write";
+     }>>;
      messages: z.ZodOptional<z.ZodObject<{
         complete: z.ZodOptional<z.ZodArray<z.ZodObject<..., ...>>>;
         delayed: z.ZodOptional<z.ZodArray<z.ZodObject<..., ...>>>;

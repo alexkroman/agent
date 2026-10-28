@@ -14,7 +14,7 @@ import { addTicket } from "../shared.ts";
  * sentence a model says whether or not anything was.
  */
 export default hotelSlot.updateTool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description:
     "Record a request for a human to follow up: housekeeping (in-house guest needs something " +
     "brought or fixed), sales_lead (events, weddings, corporate rates), identity_change (email, " +

@@ -10,7 +10,7 @@ import { verified, verifiedBooking } from "../shared.ts";
  * digit bounces with the field to re-ask, and only the last four is stored.
  */
 export default hotelSlot.updateTool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description:
     "Replace the card on file for the verified caller's booking - the path when a card isn't going " +
     "through or they want a different card charged. Take the whole card (number, expiry, security " +

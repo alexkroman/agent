@@ -1739,9 +1739,7 @@ export type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | un
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    };
+    effect?: ToolEffect | undefined;
 };
 
 // @public @input
@@ -1750,6 +1748,9 @@ export type ToolDelayedMessage = {
     when?: ToolMessageCondition[] | undefined;
     afterMs: number;
 };
+
+// @public
+export type ToolEffect = "read" | "write";
 
 // @public
 export type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;

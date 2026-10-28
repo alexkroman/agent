@@ -83,7 +83,7 @@ const planDispatch = failable(
  * pinned calls in the SAME step, which the LLM loop runs concurrently.
  */
 export default roadsideSlot.updateTool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description:
     "Dispatch the truck and price the tow. Call this once the caller has accepted the fee. " +
     "Calling it again on the same call reports the SAME job — it never sends a second truck.",

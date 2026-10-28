@@ -65,6 +65,14 @@ export type ToolUi = {
 export type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
 
 /**
+ * What a tool does to the world — see `ToolDef.effect`. Carried on the wire as
+ * `ToolSchema.effect`.
+ *
+ * @public
+ */
+export type ToolEffect = "read" | "write";
+
+/**
  * Definition of a custom tool that the agent can invoke.
  *
  * Tools are the primary way to extend agent capabilities. Each tool has a
@@ -241,14 +249,22 @@ export type ToolDef<
    */
   ui?: ToolUi;
   /**
-   * What the tool does to the world, in MCP's vocabulary. `readOnlyHint:
-   * false` declares a WRITE — something that changes state the caller cannot
-   * take back by asking (a booking, an order, a cancellation, a message sent).
-   * The pipeline transport then runs it only on a caller turn that did not
-   * start over the agent's own audio: an "uh-huh" spoken over its "Shall I
-   * cancel it?" is the caller listening, not agreeing, and the model is told
-   * to ask again instead. `true`, or no annotation, runs as it always has.
-   * Carried on the wire `ToolSchema.annotations`.
+   * What the tool does to the world. `"write"` declares something that changes
+   * state the caller cannot take back by asking — a booking, an order, a
+   * cancellation, a message sent, a ticket filed for someone to act on. In a
+   * voice pipeline a declared write:
+   *
+   * - runs only on a caller turn that did not start over the agent's own
+   *   audio: an "uh-huh" spoken over "Shall I cancel it?" is the caller
+   *   listening, not agreeing, and the model is told to ask again instead;
+   * - turns on the session's LEDGER, the latest result of every lookup, sent to
+   *   the model before each step;
+   * - has its identifier arguments (`order_id`, `item_ids`) checked against
+   *   what earlier results contained, refused once when none did.
+   *
+   * `"read"` or no `effect` runs as an ordinary call. A cart or draft step that
+   * a later tool confirms is not a write; the confirming tool is. An MCP tool's
+   * effect comes from its server's `readOnlyHint` (see `mcp/adapt.ts`).
    *
    * @example
    * ```ts
@@ -258,12 +274,12 @@ export type ToolDef<
    * export default tool({
    *   description: "Cancel a pending order.",
    *   inputSchema: z.object({ orderId: z.string() }),
-   *   annotations: { readOnlyHint: false },
+   *   effect: "write",
    *   execute: ({ orderId }) => ({ cancelled: orderId }),
    * });
    * ```
    */
-  annotations?: { readOnlyHint?: boolean | undefined };
+  effect?: ToolEffect | undefined;
 };
 
 /**

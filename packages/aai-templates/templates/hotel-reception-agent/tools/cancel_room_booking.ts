@@ -22,7 +22,7 @@ import { verified, verifiedBooking } from "../shared.ts";
  * caller turn first.
  */
 export default hotelSlot.updateTool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description:
     "Cancel the verified caller's room booking - including when they pivot mid-modification " +
     "(abandon_booking first). Returns the refund outcome: relay it exactly, never guess a refund " +

@@ -105,7 +105,7 @@ export type ToolCallContext = {
    */
   guards: ToolCallGuards;
   /**
-   * The tools declared writes (`annotations.readOnlyHint: false`) — the only
+   * The tools declared writes (`effect: "write"`) — the only
    * calls `arg-grounding.ts` checks. Absent, none is.
    */
   writeTools?: ReadonlySet<string> | undefined;

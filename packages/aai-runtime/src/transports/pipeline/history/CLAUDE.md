@@ -58,7 +58,7 @@ a small `retainTokens`), plus two pins in `history.test.ts`.
 as ONE system message after the newest turn — LedgerAgent's records block (arXiv
 2606.20529). Rules:
 
-- **Only for a tool set that declares a write** (`readOnlyHint: false`);
+- **Only for a tool set that declares a write** (`effect: "write"`);
   `transport.ts` passes no step otherwise. A write's own result is not listed;
   it marks the reads that named one of its values `(fetched before X ran)`.
 - **It reads the UNTRIMMED history** (`initialMessages` + `responseMessages`),

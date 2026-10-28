@@ -37,8 +37,8 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
 
 exports[`manifest schema shapes > ToolSchemaSchema shape 1`] = `
 [
-  "annotations",
   "description",
+  "effect",
   "messages",
   "name",
   "parameters",

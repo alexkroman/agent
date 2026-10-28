@@ -2,7 +2,7 @@ import { tool } from "@alexkroman1/aai";
 import research from "../workflows/research.ts";
 
 export default tool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description:
     "Skip the review wait on the research and file it immediately. Use when the caller says they need it now.",
   execute: async (_args, ctx) => {

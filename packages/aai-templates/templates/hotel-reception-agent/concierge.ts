@@ -70,8 +70,8 @@ const COMMON = z.object({
 // covariant, so the tool is still assignable wherever a `ToolDef` is expected.
 export function catalogBookingTool<P extends z.ZodObject>(spec: CatalogBookingSpec<P>) {
   return hotelSlot.updateTool({
-    // Every catalog booking is paid: a write (`readOnlyHint: false`).
-    annotations: { readOnlyHint: false },
+    // Every catalog booking is paid: a write (`effect: "write"`).
+    effect: "write",
     description: spec.description,
     inputSchema: spec.inputSchema,
     execute(args, hotel) {

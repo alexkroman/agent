@@ -17,7 +17,7 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
-import type { ToolUi } from "./tool-def.ts";
+import type { ToolEffect, ToolUi } from "./tool-def.ts";
 import { type ToolMessages, ToolMessagesSchema } from "./tool-messages.ts";
 
 /**
@@ -202,9 +202,7 @@ export const ToolSchemaSchema: z.ZodObject<
       >
     >;
     ui: z.ZodOptional<z.ZodType<ToolUi>>;
-    annotations: z.ZodOptional<
-      z.ZodObject<{ readOnlyHint: z.ZodOptional<z.ZodBoolean> }, z.core.$strip>
-    >;
+    effect: z.ZodOptional<z.ZodEnum<{ read: "read"; write: "write" }>>;
   },
   z.core.$strip
 > = z.object({
@@ -214,7 +212,7 @@ export const ToolSchemaSchema: z.ZodObject<
   parameters: z.record(z.string(), z.unknown()),
   messages: ToolMessagesSchema.optional(),
   ui: ToolUiSchema.optional(),
-  annotations: z.object({ readOnlyHint: z.boolean().optional() }).optional(),
+  effect: z.enum(["read", "write"]).optional(),
 });
 
 /**
@@ -250,8 +248,9 @@ export type ToolSchema = {
    */
   ui?: ToolUi | undefined;
   /**
-   * What the tool does to the world — see `ToolDef.annotations`; `readOnlyHint:
-   * false` is a write the pipeline gates. Never sent to the model.
+   * What the tool does to the world — see `ToolDef.effect`. A host-mode client
+   * declaring its own tools sets it the same way; an MCP tool's comes from its
+   * server's `readOnlyHint`. Never sent to the model.
    */
-  annotations?: { readOnlyHint?: boolean | undefined } | undefined;
+  effect?: ToolEffect | undefined;
 };

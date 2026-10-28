@@ -6,7 +6,7 @@ import { hotelSlot } from "../session.ts";
 
 /** Their `cancel_restaurant_reservation`: last name + RES code, no card, no email. */
 export default hotelSlot.updateTool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description:
     "Cancel a restaurant reservation. Verifies with last name + the RES confirmation code.",
   inputSchema: z.object({ lastName: z.string().min(1), confirmationCode: z.string().min(1) }),

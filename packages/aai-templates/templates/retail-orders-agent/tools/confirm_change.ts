@@ -10,7 +10,7 @@ import { callFlow, retailSlot } from "../store.ts";
  * `pending.ts`.
  */
 export default retailSlot.updateTool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   dialog: callFlow,
   when: "serving.awaitingConfirmation",
   send: { type: "SETTLED" },

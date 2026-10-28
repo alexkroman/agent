@@ -629,9 +629,7 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    };
+    effect?: ToolEffect | undefined;
 };
 
 // @public @input
@@ -640,6 +638,9 @@ type ToolDelayedMessage = {
     when?: ToolMessageCondition[] | undefined;
     afterMs: number;
 };
+
+// @public
+type ToolEffect = "read" | "write";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -1729,9 +1730,7 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    };
+    effect?: ToolEffect | undefined;
 };
 
 // @public @input
@@ -1740,6 +1739,9 @@ type ToolDelayedMessage = {
     when?: ToolMessageCondition[] | undefined;
     afterMs: number;
 };
+
+// @public
+type ToolEffect = "read" | "write";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -4111,9 +4113,7 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    };
+    effect?: ToolEffect | undefined;
 };
 
 // @public
@@ -4125,6 +4125,9 @@ type ToolDelayedMessage = {
     when?: ToolMessageCondition[] | undefined;
     afterMs: number;
 };
+
+// @public
+type ToolEffect = "read" | "write";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -4180,9 +4183,7 @@ type ToolSchema = {
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
     ui?: ToolUi | undefined;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    } | undefined;
+    effect?: ToolEffect | undefined;
 };
 
 // @public @input
@@ -6245,9 +6246,7 @@ export type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | un
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    };
+    effect?: ToolEffect | undefined;
 };
 
 // @public @input
@@ -6256,6 +6255,9 @@ export type ToolDelayedMessage = {
     when?: ToolMessageCondition[] | undefined;
     afterMs: number;
 };
+
+// @public
+export type ToolEffect = "read" | "write";
 
 // @public
 export type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -7457,9 +7459,7 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    };
+    effect?: ToolEffect | undefined;
 };
 
 // @public @input
@@ -7468,6 +7468,9 @@ type ToolDelayedMessage = {
     when?: ToolMessageCondition[] | undefined;
     afterMs: number;
 };
+
+// @public
+type ToolEffect = "read" | "write";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -8983,9 +8986,7 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    };
+    effect?: ToolEffect | undefined;
 };
 
 // @public @input
@@ -8994,6 +8995,9 @@ export type ToolDelayedMessage = {
     when?: ToolMessageCondition[] | undefined;
     afterMs: number;
 };
+
+// @public
+type ToolEffect = "read" | "write";
 
 // @public
 export function toolEntry(def: ToolDef): ToolsetEntry;
@@ -9066,9 +9070,7 @@ export type ToolSchema = {
     parameters: JSONSchema7;
     messages?: ToolMessages | undefined;
     ui?: ToolUi | undefined;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    } | undefined;
+    effect?: ToolEffect | undefined;
 };
 
 // @internal
@@ -9150,9 +9152,10 @@ export const ToolSchemaSchema: z.ZodObject<{
         }, z.core.$strip>>>;
     }, z.core.$strip>>;
     ui: z.ZodOptional<z.ZodType<ToolUi>>;
-    annotations: z.ZodOptional<z.ZodObject<{
-        readOnlyHint: z.ZodOptional<z.ZodBoolean>;
-    }, z.core.$strip>>;
+    effect: z.ZodOptional<z.ZodEnum<{
+        read: "read";
+        write: "write";
+    }>>;
 }, z.core.$strip>;
 
 // @public
@@ -9565,9 +9568,10 @@ export const HostConfigMessageSchema: z.ZodObject<{
                 }, z.core.$strip>>>;
             }, z.core.$strip>>;
             ui: z.ZodOptional<z.ZodType<ToolUi>>;
-            annotations: z.ZodOptional<z.ZodObject<{
-                readOnlyHint: z.ZodOptional<z.ZodBoolean>;
-            }, z.core.$strip>>;
+            effect: z.ZodOptional<z.ZodEnum<{
+                read: "read";
+                write: "write";
+            }>>;
         }, z.core.$strip>>;
         sttPrompt: z.ZodOptional<z.ZodString>;
         credentials: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
@@ -9662,9 +9666,10 @@ export const HostConfigSchema: z.ZodObject<{
             }, z.core.$strip>>>;
         }, z.core.$strip>>;
         ui: z.ZodOptional<z.ZodType<ToolUi>>;
-        annotations: z.ZodOptional<z.ZodObject<{
-            readOnlyHint: z.ZodOptional<z.ZodBoolean>;
-        }, z.core.$strip>>;
+        effect: z.ZodOptional<z.ZodEnum<{
+            read: "read";
+            write: "write";
+        }>>;
     }, z.core.$strip>>;
     sttPrompt: z.ZodOptional<z.ZodString>;
     credentials: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
@@ -10908,9 +10913,7 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    };
+    effect?: ToolEffect | undefined;
 };
 
 // @public @input
@@ -10919,6 +10922,9 @@ type ToolDelayedMessage = {
     when?: ToolMessageCondition[] | undefined;
     afterMs: number;
 };
+
+// @public
+type ToolEffect = "read" | "write";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -13161,9 +13167,7 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    };
+    effect?: ToolEffect | undefined;
 };
 
 // @public @input
@@ -13172,6 +13176,9 @@ type ToolDelayedMessage = {
     when?: ToolMessageCondition[] | undefined;
     afterMs: number;
 };
+
+// @public
+type ToolEffect = "read" | "write";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -14449,9 +14456,7 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    };
+    effect?: ToolEffect | undefined;
 };
 
 // @public @input
@@ -14460,6 +14465,9 @@ type ToolDelayedMessage = {
     when?: ToolMessageCondition[] | undefined;
     afterMs: number;
 };
+
+// @public
+type ToolEffect = "read" | "write";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -15099,9 +15107,7 @@ type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined
     onError?: ToolErrorHandler;
     messages?: ToolMessagesInput;
     ui?: ToolUi;
-    annotations?: {
-        readOnlyHint?: boolean | undefined;
-    };
+    effect?: ToolEffect | undefined;
 };
 
 // @public @input
@@ -15110,6 +15116,9 @@ type ToolDelayedMessage = {
     when?: ToolMessageCondition[] | undefined;
     afterMs: number;
 };
+
+// @public
+type ToolEffect = "read" | "write";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;

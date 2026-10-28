@@ -3,7 +3,7 @@ import { callFlow, dispatchSlot, logEvent, requireIncident } from "../shared.ts"
 
 /** Gated on `working` — there is nothing to annotate before anything is logged. */
 export default dispatchSlot.updateTool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description: "Add a situational update note to an incident's timeline.",
   dialog: callFlow,
   when: "working",

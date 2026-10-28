@@ -15,7 +15,7 @@ import {
  * state's instruction.
  */
 export default dispatchSlot.updateTool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description: "Escalate an incident when it exceeds current capacity or severity increases.",
   dialog: callFlow,
   when: "working",

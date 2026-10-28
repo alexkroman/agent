@@ -28,7 +28,7 @@
  *   replaces the older one; a failed call never enters.
  * - **Writes don't update it, they stale it** (the paper's "observe, don't
  *   assume"): a read whose argument values a later successful write
- *   (`annotations.readOnlyHint: false`) also named is marked as read before
+ *   (`effect: "write"`) also named is marked as read before
  *   that write.
  * - **Only for a tool set that DECLARES a write** (the transport passes no
  *   step otherwise). Without one, every tool counts as a lookup: a

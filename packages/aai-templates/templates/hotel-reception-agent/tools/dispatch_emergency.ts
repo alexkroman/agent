@@ -24,7 +24,7 @@ const DIRECTION: Record<EmergencyKind, string> = {
  * the PRIMARY action; outside help is the direction given to the caller after.
  */
 export default hotelSlot.updateTool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description:
     "EMERGENCY ONLY - a real, in-progress danger. Call it the MOMENT you have the room number and what's " +
     "happening: no verification, no other question first. medical = someone hurt, collapsed, unresponsive; " +

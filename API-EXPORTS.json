@@ -605,6 +605,7 @@
     "ToolContext",
     "ToolDef",
     "ToolDelayedMessage",
+    "ToolEffect",
     "ToolErrorHandler",
     "ToolFailure",
     "ToolInputSchema",

@@ -218,13 +218,11 @@ function requireAnswer(response: HumanResponse) {
 
 // ─── The four answers ────────────────────────────────────────────────────────
 
-/** Accepting or editing SENDS the staged email or invite: a write (`readOnlyHint: false`). */
-const WRITE = { readOnlyHint: false } as const;
-
 /** `accept` — their `accept`: send it as proposed. */
 export function acceptTool() {
   return assistantSlot.updateTool({
-    annotations: WRITE,
+    // Accepting or editing SENDS the staged email or invite.
+    effect: "write",
     description:
       `${name} said yes to what you just read back — send it as it is. Only after a clear ` +
       "yes; this is the one tool that actually sends. Not an answer to a question or a heads-up.",
@@ -304,7 +302,8 @@ function editProposal(
  */
 export function editTool() {
   return assistantSlot.updateTool({
-    annotations: WRITE,
+    // Accepting or editing SENDS the staged email or invite.
+    effect: "write",
     description:
       `${name} dictated changes to the draft or the invite — send THEIR version. Only when ` +
       "their words CHANGE what you read back; a restatement of it is not an edit, so ask " +

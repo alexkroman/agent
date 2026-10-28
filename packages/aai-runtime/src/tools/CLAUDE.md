@@ -78,12 +78,12 @@ re-implement a step in a caller.
   identical value re-sent after that refusal runs — the records are evidence,
   not the schema.
 - **A WRITE naming an identifier no result has shown is refused once**
-  (`arg-grounding.ts`): only a tool declared `readOnlyHint: false`, only its
+  (`arg-grounding.ts`): only a tool declared `effect: "write"`, only its
   identifier arguments (`order_id`, `item_ids`, `flight_number`; a digit, no
   spaces), and only against SUCCESSFUL results in the history — a failure echoes
   the bad value back. The refusal names the values the records hold; the
-  identical call re-sent runs. No state: the history is the memory, so it is
-  not one of the `ToolCallGuards`.
+  identical call re-sent runs. No state: the history is the memory, so it is not
+  one of the `ToolCallGuards`.
 - **Every refusal closes by saying whether the identical call will run** —
   precheck and the memo: refused again; format mirror and grounding: runs.
 - **A call that already failed with the same arguments never runs again**

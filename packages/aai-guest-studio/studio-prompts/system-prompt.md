@@ -1222,17 +1222,18 @@ const myTool = tool({
   ui?: { icon?, label? };        // how a page shows this tool's calls — served to the
                                  // client with the declaration, so no page-side map
   messages?: ToolMessagesInput;  // what to SAY while it runs (PIPELINE-TUNING.md)
-  annotations?: { readOnlyHint?: boolean };  // false = a WRITE (see below)
+  effect?: "read" | "write";     // "write" = a WRITE (see below)
 });
 ```
 
 `execute` may call `fetch` directly — tool code reaches external APIs the same
 way in `aai dev` and deployed.
 
-**Mark every write `annotations: { readOnlyHint: false }`** — a tool that books,
-orders, cancels, sends, dispatches, deletes, changes an account, or files a
-ticket or request someone else will act on. Lookups, calculations and cart or
-draft steps that a later tool confirms stay unmarked. In a voice pipeline a
+**Mark every write `effect: "write"`** — a tool that books, orders, cancels,
+sends, dispatches, deletes, changes an account, or files a ticket or request
+someone else will act on. Lookups, calculations and cart or draft steps that a
+later tool confirms stay unmarked. An MCP tool is a write unless its server
+marks it `readOnlyHint: true` (MCP's own default). In a voice pipeline a
 declared write turns on three things:
 
 - It runs only on a caller turn that did not start while the agent was talking:

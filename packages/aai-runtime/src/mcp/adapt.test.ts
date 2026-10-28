@@ -8,7 +8,7 @@ import { createToolContext } from "@alexkroman1/aai/testing";
 import { isToolFailure } from "@alexkroman1/aai/utils";
 import { tool as aiTool, jsonSchema } from "ai";
 import { describe, expect, test } from "vitest";
-import { discover, mcpTool, toToolResult } from "./adapt.ts";
+import { discover, mcpTool, mcpToolEffect, toToolResult } from "./adapt.ts";
 
 describe("toToolResult", () => {
   test("the server's isError wins, as a ToolFailure", () => {
@@ -46,5 +46,37 @@ describe("mcpTool", () => {
     const result = await def.execute({}, createToolContext());
     expect(isToolFailure(result)).toBe(true);
     expect(JSON.stringify(result)).toContain("socket closed");
+  });
+});
+
+// MCP's `readOnlyHint` defaults to FALSE: a tool may modify its environment
+// unless its server says otherwise, so only an explicit `true` is a read.
+describe("mcpToolEffect", () => {
+  const remote = (metadata?: unknown) =>
+    Object.assign(
+      aiTool({
+        inputSchema: jsonSchema<Record<string, never>>({ type: "object" }),
+        execute: async () => "ok",
+      }),
+      metadata === undefined ? {} : { metadata },
+    );
+
+  test("readOnlyHint: true is a read", () => {
+    expect(mcpToolEffect(remote({ annotations: { readOnlyHint: true } }))).toBe("read");
+  });
+
+  test.each([
+    ["readOnlyHint: false", { annotations: { readOnlyHint: false } }],
+    ["annotations without the hint", { annotations: { title: "Search" } }],
+    ["no annotations", {}],
+    ["no metadata at all", undefined],
+  ])("%s is a write — the spec's default", (_label, metadata) => {
+    expect(mcpToolEffect(remote(metadata))).toBe("write");
+  });
+
+  test("the effect rides the adapted ToolDef", async () => {
+    const [found] = await discover({ lookup: remote({ annotations: { readOnlyHint: true } }) });
+    if (!found) throw new Error("discover dropped the tool");
+    expect(mcpTool(found, "docs", "mcp_docs_lookup").effect).toBe("read");
   });
 });

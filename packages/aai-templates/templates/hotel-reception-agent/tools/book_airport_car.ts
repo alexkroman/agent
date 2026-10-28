@@ -16,7 +16,7 @@ import { addTicket } from "../shared.ts";
 
 /** Their `book_airport_car`: the hotel car, hotel-to-airport only, charged to the room. */
 export default hotelSlot.updateTool({
-  annotations: { readOnlyHint: false },
+  effect: "write",
   description:
     `Book the hotel car to the airport for an in-house guest: flat ${speakUsd(AIRPORT_CAR.flatPrice)} to ` +
     `${AIRPORT_CAR.destination}, seats up to ${AIRPORT_CAR.maxPassengers} with luggage, charged to the room. ` +

@@ -8424,49 +8424,6 @@ narrow a value it is never handed: the failure check returns before it runs.
 
 #### Properties
 
-##### annotations?
-
-```ts
-optional annotations?: {
-  readOnlyHint?: boolean;
-};
-```
-
-What the tool does to the world, in MCP's vocabulary. `readOnlyHint:
-false` declares a WRITE — something that changes state the caller cannot
-take back by asking (a booking, an order, a cancellation, a message sent).
-The pipeline transport then runs it only on a caller turn that did not
-start over the agent's own audio: an "uh-huh" spoken over its "Shall I
-cancel it?" is the caller listening, not agreeing, and the model is told
-to ask again instead. `true`, or no annotation, runs as it always has.
-Carried on the wire `ToolSchema.annotations`.
-
-###### readOnlyHint?
-
-```ts
-optional readOnlyHint?: boolean;
-```
-
-###### Example
-
-```ts
-import { tool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-export default tool({
-  description: "Cancel a pending order.",
-  inputSchema: z.object({ orderId: z.string() }),
-  annotations: { readOnlyHint: false },
-  execute: ({ orderId }) => ({ cancelled: orderId }),
-});
-```
-
-###### Inherited from
-
-```ts
-Omit.annotations
-```
-
 ##### description
 
 ```ts
@@ -8479,6 +8436,49 @@ Human-readable description shown to the LLM.
 
 ```ts
 Omit.description
+```
+
+##### effect?
+
+```ts
+optional effect?: ToolEffect;
+```
+
+What the tool does to the world. `"write"` declares something that changes
+state the caller cannot take back by asking — a booking, an order, a
+cancellation, a message sent, a ticket filed for someone to act on. In a
+voice pipeline a declared write:
+
+- runs only on a caller turn that did not start over the agent's own
+  audio: an "uh-huh" spoken over "Shall I cancel it?" is the caller
+  listening, not agreeing, and the model is told to ask again instead;
+- turns on the session's LEDGER, the latest result of every lookup, sent to
+  the model before each step;
+- has its identifier arguments (`order_id`, `item_ids`) checked against
+  what earlier results contained, refused once when none did.
+
+`"read"` or no `effect` runs as an ordinary call. A cart or draft step that
+a later tool confirms is not a write; the confirming tool is. An MCP tool's
+effect comes from its server's `readOnlyHint` (see `mcp/adapt.ts`).
+
+###### Example
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Cancel a pending order.",
+  inputSchema: z.object({ orderId: z.string() }),
+  effect: "write",
+  execute: ({ orderId }) => ({ cancelled: orderId }),
+});
+```
+
+###### Inherited from
+
+```ts
+Omit.effect
 ```
 
 ##### inputSchema?
@@ -12993,49 +12993,6 @@ answering it.
 
 #### Properties
 
-##### annotations?
-
-```ts
-optional annotations?: {
-  readOnlyHint?: boolean;
-};
-```
-
-What the tool does to the world, in MCP's vocabulary. `readOnlyHint:
-false` declares a WRITE — something that changes state the caller cannot
-take back by asking (a booking, an order, a cancellation, a message sent).
-The pipeline transport then runs it only on a caller turn that did not
-start over the agent's own audio: an "uh-huh" spoken over its "Shall I
-cancel it?" is the caller listening, not agreeing, and the model is told
-to ask again instead. `true`, or no annotation, runs as it always has.
-Carried on the wire `ToolSchema.annotations`.
-
-###### readOnlyHint?
-
-```ts
-optional readOnlyHint?: boolean;
-```
-
-###### Example
-
-```ts
-import { tool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-export default tool({
-  description: "Cancel a pending order.",
-  inputSchema: z.object({ orderId: z.string() }),
-  annotations: { readOnlyHint: false },
-  execute: ({ orderId }) => ({ cancelled: orderId }),
-});
-```
-
-###### Inherited from
-
-```ts
-Omit.annotations
-```
-
 ##### description
 
 ```ts
@@ -13048,6 +13005,49 @@ Human-readable description shown to the LLM.
 
 ```ts
 Omit.description
+```
+
+##### effect?
+
+```ts
+optional effect?: ToolEffect;
+```
+
+What the tool does to the world. `"write"` declares something that changes
+state the caller cannot take back by asking — a booking, an order, a
+cancellation, a message sent, a ticket filed for someone to act on. In a
+voice pipeline a declared write:
+
+- runs only on a caller turn that did not start over the agent's own
+  audio: an "uh-huh" spoken over "Shall I cancel it?" is the caller
+  listening, not agreeing, and the model is told to ask again instead;
+- turns on the session's LEDGER, the latest result of every lookup, sent to
+  the model before each step;
+- has its identifier arguments (`order_id`, `item_ids`) checked against
+  what earlier results contained, refused once when none did.
+
+`"read"` or no `effect` runs as an ordinary call. A cart or draft step that
+a later tool confirms is not a write; the confirming tool is. An MCP tool's
+effect comes from its server's `readOnlyHint` (see `mcp/adapt.ts`).
+
+###### Example
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Cancel a pending order.",
+  inputSchema: z.object({ orderId: z.string() }),
+  effect: "write",
+  execute: ({ orderId }) => ({ cancelled: orderId }),
+});
+```
+
+###### Inherited from
+
+```ts
+Omit.effect
 ```
 
 ##### inputSchema?
@@ -13383,49 +13383,6 @@ The tool body, handed this session's slot value alongside the usual args.
 
 #### Properties
 
-##### annotations?
-
-```ts
-optional annotations?: {
-  readOnlyHint?: boolean;
-};
-```
-
-What the tool does to the world, in MCP's vocabulary. `readOnlyHint:
-false` declares a WRITE — something that changes state the caller cannot
-take back by asking (a booking, an order, a cancellation, a message sent).
-The pipeline transport then runs it only on a caller turn that did not
-start over the agent's own audio: an "uh-huh" spoken over its "Shall I
-cancel it?" is the caller listening, not agreeing, and the model is told
-to ask again instead. `true`, or no annotation, runs as it always has.
-Carried on the wire `ToolSchema.annotations`.
-
-###### readOnlyHint?
-
-```ts
-optional readOnlyHint?: boolean;
-```
-
-###### Example
-
-```ts
-import { tool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-export default tool({
-  description: "Cancel a pending order.",
-  inputSchema: z.object({ orderId: z.string() }),
-  annotations: { readOnlyHint: false },
-  execute: ({ orderId }) => ({ cancelled: orderId }),
-});
-```
-
-###### Inherited from
-
-```ts
-Omit.annotations
-```
-
 ##### description
 
 ```ts
@@ -13438,6 +13395,49 @@ Human-readable description shown to the LLM.
 
 ```ts
 Omit.description
+```
+
+##### effect?
+
+```ts
+optional effect?: ToolEffect;
+```
+
+What the tool does to the world. `"write"` declares something that changes
+state the caller cannot take back by asking — a booking, an order, a
+cancellation, a message sent, a ticket filed for someone to act on. In a
+voice pipeline a declared write:
+
+- runs only on a caller turn that did not start over the agent's own
+  audio: an "uh-huh" spoken over "Shall I cancel it?" is the caller
+  listening, not agreeing, and the model is told to ask again instead;
+- turns on the session's LEDGER, the latest result of every lookup, sent to
+  the model before each step;
+- has its identifier arguments (`order_id`, `item_ids`) checked against
+  what earlier results contained, refused once when none did.
+
+`"read"` or no `effect` runs as an ordinary call. A cart or draft step that
+a later tool confirms is not a write; the confirming tool is. An MCP tool's
+effect comes from its server's `readOnlyHint` (see `mcp/adapt.ts`).
+
+###### Example
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Cancel a pending order.",
+  inputSchema: z.object({ orderId: z.string() }),
+  effect: "write",
+  execute: ({ orderId }) => ({ cancelled: orderId }),
+});
+```
+
+###### Inherited from
+
+```ts
+Omit.effect
 ```
 
 ##### inputSchema?
@@ -13810,47 +13810,6 @@ declined, not half-succeeded.
 
 #### Properties
 
-##### annotations?
-
-```ts
-optional annotations?: {
-  readOnlyHint?: boolean;
-};
-```
-
-What the tool does to the world, in MCP's vocabulary. `readOnlyHint:
-false` declares a WRITE — something that changes state the caller cannot
-take back by asking (a booking, an order, a cancellation, a message sent).
-The pipeline transport then runs it only on a caller turn that did not
-start over the agent's own audio: an "uh-huh" spoken over its "Shall I
-cancel it?" is the caller listening, not agreeing, and the model is told
-to ask again instead. `true`, or no annotation, runs as it always has.
-Carried on the wire `ToolSchema.annotations`.
-
-###### readOnlyHint?
-
-```ts
-optional readOnlyHint?: boolean;
-```
-
-###### Example
-
-```ts
-import { tool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-export default tool({
-  description: "Cancel a pending order.",
-  inputSchema: z.object({ orderId: z.string() }),
-  annotations: { readOnlyHint: false },
-  execute: ({ orderId }) => ({ cancelled: orderId }),
-});
-```
-
-###### Inherited from
-
-[`SlotToolDef`](#slottooldef).[`annotations`](#annotations-2)
-
 ##### description
 
 ```ts
@@ -13862,6 +13821,47 @@ Human-readable description shown to the LLM.
 ###### Inherited from
 
 [`SlotToolDef`](#slottooldef).[`description`](#description-2)
+
+##### effect?
+
+```ts
+optional effect?: ToolEffect;
+```
+
+What the tool does to the world. `"write"` declares something that changes
+state the caller cannot take back by asking — a booking, an order, a
+cancellation, a message sent, a ticket filed for someone to act on. In a
+voice pipeline a declared write:
+
+- runs only on a caller turn that did not start over the agent's own
+  audio: an "uh-huh" spoken over "Shall I cancel it?" is the caller
+  listening, not agreeing, and the model is told to ask again instead;
+- turns on the session's LEDGER, the latest result of every lookup, sent to
+  the model before each step;
+- has its identifier arguments (`order_id`, `item_ids`) checked against
+  what earlier results contained, refused once when none did.
+
+`"read"` or no `effect` runs as an ordinary call. A cart or draft step that
+a later tool confirms is not a write; the confirming tool is. An MCP tool's
+effect comes from its server's `readOnlyHint` (see `mcp/adapt.ts`).
+
+###### Example
+
+```ts
+import { tool } from "@alexkroman1/aai";
+import { z } from "zod";
+
+export default tool({
+  description: "Cancel a pending order.",
+  inputSchema: z.object({ orderId: z.string() }),
+  effect: "write",
+  execute: ({ orderId }) => ({ cancelled: orderId }),
+});
+```
+
+###### Inherited from
+
+[`SlotToolDef`](#slottooldef).[`effect`](#effect-2)
 
 ##### inputSchema?
 
@@ -19566,10 +19566,8 @@ backend configured, naming which.
 
 ```ts
 type ToolDef<P extends ToolInputSchema | undefined = ToolInputSchema | undefined, R = unknown> = {
-  annotations?: {
-     readOnlyHint?: boolean;
-  };
   description: string;
+  effect?: ToolEffect;
   inputSchema?: P;
   messages?: ToolMessagesInput;
   onError?: ToolErrorHandler;
@@ -19666,28 +19664,36 @@ once per tool (see `warnOversizedResult` in `aai-runtime`'s
 
 #### Properties
 
-##### annotations?
+##### description
 
 ```ts
-optional annotations?: {
-  readOnlyHint?: boolean;
-};
+description: string;
 ```
 
-What the tool does to the world, in MCP's vocabulary. `readOnlyHint:
-false` declares a WRITE — something that changes state the caller cannot
-take back by asking (a booking, an order, a cancellation, a message sent).
-The pipeline transport then runs it only on a caller turn that did not
-start over the agent's own audio: an "uh-huh" spoken over its "Shall I
-cancel it?" is the caller listening, not agreeing, and the model is told
-to ask again instead. `true`, or no annotation, runs as it always has.
-Carried on the wire `ToolSchema.annotations`.
+Human-readable description shown to the LLM.
 
-###### readOnlyHint?
+##### effect?
 
 ```ts
-optional readOnlyHint?: boolean;
+optional effect?: ToolEffect;
 ```
+
+What the tool does to the world. `"write"` declares something that changes
+state the caller cannot take back by asking — a booking, an order, a
+cancellation, a message sent, a ticket filed for someone to act on. In a
+voice pipeline a declared write:
+
+- runs only on a caller turn that did not start over the agent's own
+  audio: an "uh-huh" spoken over "Shall I cancel it?" is the caller
+  listening, not agreeing, and the model is told to ask again instead;
+- turns on the session's LEDGER, the latest result of every lookup, sent to
+  the model before each step;
+- has its identifier arguments (`order_id`, `item_ids`) checked against
+  what earlier results contained, refused once when none did.
+
+`"read"` or no `effect` runs as an ordinary call. A cart or draft step that
+a later tool confirms is not a write; the confirming tool is. An MCP tool's
+effect comes from its server's `readOnlyHint` (see `mcp/adapt.ts`).
 
 ###### Example
 
@@ -19698,18 +19704,10 @@ import { z } from "zod";
 export default tool({
   description: "Cancel a pending order.",
   inputSchema: z.object({ orderId: z.string() }),
-  annotations: { readOnlyHint: false },
+  effect: "write",
   execute: ({ orderId }) => ({ cancelled: orderId }),
 });
 ```
-
-##### description
-
-```ts
-description: string;
-```
-
-Human-readable description shown to the LLM.
 
 ##### inputSchema?
 
@@ -19895,6 +19893,17 @@ optional when?: ToolMessageCondition[];
 ```
 
 Conditions on the call's arguments — see [ToolMessageCondition](#toolmessagecondition).
+
+***
+
+### ToolEffect
+
+```ts
+type ToolEffect = "read" | "write";
+```
+
+What a tool does to the world — see `ToolDef.effect`. Carried on the wire as
+`ToolSchema.effect`.
 
 ***
 

@@ -1137,10 +1137,8 @@ A checked set of tools, keyed by the name the model calls.
 
 ```ts
 type ToolSchema = {
-  annotations?: {
-     readOnlyHint?: boolean;
-  };
   description: string;
+  effect?: ToolEffect;
   messages?: ToolMessages;
   name: string;
   parameters: JSONSchema7;
@@ -1154,28 +1152,21 @@ parameters — the serializable counterpart of `ToolDef`.
 
 #### Properties
 
-##### annotations?
-
-```ts
-optional annotations?: {
-  readOnlyHint?: boolean;
-};
-```
-
-What the tool does to the world — see `ToolDef.annotations`; `readOnlyHint:
-false` is a write the pipeline gates. Never sent to the model.
-
-###### readOnlyHint?
-
-```ts
-optional readOnlyHint?: boolean;
-```
-
 ##### description
 
 ```ts
 description: string;
 ```
+
+##### effect?
+
+```ts
+optional effect?: ToolEffect;
+```
+
+What the tool does to the world — see `ToolDef.effect`. A host-mode client
+declaring its own tools sets it the same way; an MCP tool's comes from its
+server's `readOnlyHint`. Never sent to the model.
 
 ##### messages?
 

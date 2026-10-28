@@ -18,7 +18,7 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 631 names
+- [Agent authoring](#agent-authoring) — 632 names
 - [Browser client](#browser-client) — 212 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
@@ -338,6 +338,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `ToolConditionOperator` | type | `@alexkroman1/aai` |  | Comparison a `ToolMessageCondition` applies. |
 | `ToolContext` | type | `@alexkroman1/aai` |  | Context passed to tool `execute` functions. |
 | `ToolDef` | type | `@alexkroman1/aai` |  | Definition of a custom tool that the agent can invoke. |
+| `ToolEffect` | type | `@alexkroman1/aai` |  | What a tool does to the world — see `ToolDef.effect`. |
 | `ToolErrorHandler` | type | `@alexkroman1/aai` |  | What a tool does with an exception its `execute` threw — the shape of `ToolDef.onError`. |
 | `ToolFailure` | type | `@alexkroman1/aai/utils` (also `@alexkroman1/aai`) |  | A tool result that reports a recoverable failure to the LLM. |
 | `ToolInputSchema` | type | `@alexkroman1/aai` |  | A schema accepted for tool inputs and `ctx.generate` structured output: any Standard Schema that can also convert to JSON Schema (Zod natively, or a vendor … |

@@ -1,4 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
+import type { ToolEffect } from "@alexkroman1/aai";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { describe, expect, test, vi } from "vitest";
@@ -10,14 +11,14 @@ import {
   writeToolNames,
 } from "./confirmation-gate.ts";
 
-const tool = (name: string, readOnlyHint?: boolean): ToolSchema => ({
+const tool = (name: string, effect?: ToolEffect): ToolSchema => ({
   type: "function",
   name,
   description: name,
   parameters: { type: "object" },
-  ...omitUndefined({ annotations: readOnlyHint === undefined ? undefined : { readOnlyHint } }),
+  ...omitUndefined({ effect }),
 });
-const SCHEMAS = [tool("get_order", true), tool("return_items", false), tool("transfer")];
+const SCHEMAS = [tool("get_order", "read"), tool("return_items", "write"), tool("transfer")];
 
 function gate(overlapped: boolean) {
   const inner = vi.fn(async () => "done");
@@ -32,7 +33,7 @@ function gate(overlapped: boolean) {
 }
 
 describe("withConfirmationGate", () => {
-  test("only tools declared readOnlyHint: false are writes", () => {
+  test('only tools declared effect: "write" are writes', () => {
     expect([...writeToolNames(SCHEMAS)]).toEqual(["return_items"]);
   });
 
@@ -67,7 +68,7 @@ describe("withConfirmationGate", () => {
   test("with no declared writes the executor is returned untouched", () => {
     const inner = vi.fn(async () => "x");
     const exec = withConfirmationGate(inner, {
-      schemas: [tool("a"), tool("b", true)],
+      schemas: [tool("a"), tool("b", "read")],
       turnWasBackchannel: () => true,
       log: makeLogger(),
       sid: "s1",

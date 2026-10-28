@@ -28,7 +28,7 @@ const writeSchema: ToolSchema = {
   name: "cancel",
   description: "Cancel something.",
   parameters: { type: "object", properties: {}, required: [] },
-  annotations: { readOnlyHint: false },
+  effect: "write",
 };
 
 /** The last message of the request sent on the second turn. */

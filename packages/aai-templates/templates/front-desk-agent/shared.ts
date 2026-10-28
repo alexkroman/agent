@@ -157,7 +157,7 @@ export const billingTools = {
     },
   }),
   issue_refund: deskSlot.updateTool({
-    annotations: { readOnlyHint: false },
+    effect: "write",
     description:
       "Refund one invoice in full. Only after the caller has confirmed the invoice id and amount.",
     inputSchema: z.object({ invoiceId: z.string() }),
@@ -202,7 +202,7 @@ export const supportTools = {
     },
   }),
   schedule_technician: deskSlot.updateTool({
-    annotations: { readOnlyHint: false },
+    effect: "write",
     description: "Book a technician visit. Only after run_diagnostic reported a fault.",
     inputSchema: z.object({
       day: z.string().describe("The day, as the caller said it."),
