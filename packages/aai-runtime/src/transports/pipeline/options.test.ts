@@ -98,11 +98,13 @@ describe("pipeline defaults", () => {
     // ALONE that window must be at least 1000: 800 without continuation was
     // reverted on tau2 reward (0.68 -> 0.12), the split landing mid-entity. With
     // continuation on, a split is re-joined when the caller resumes, and 800 held
-    // reward on a 114-task run (see DEFAULT_MIN_TURN_SILENCE_MS). So the pinned
-    // invariant is the PAIR: a floor under 1000 only while continuation is on.
-    // It guards drift rather than correctness — it cannot say a value is right.
+    // reward on a 114-task run; 250 then held Full-Duplex-Bench v1.5 (see
+    // DEFAULT_MIN_TURN_SILENCE_MS). So the pinned invariant is the PAIR: a floor
+    // under 1000 only while continuation is on. It guards drift rather than
+    // correctness — it cannot say a value is right.
     expect(DEFAULT_MIN_TURN_SILENCE_MS >= 1000 || DEFAULT_CONTINUATION_WINDOW_MS > 0).toBe(true);
-    expect(DEFAULT_MIN_TURN_SILENCE_MS).toBeGreaterThanOrEqual(800);
+    // Measured down to 250, not below it.
+    expect(DEFAULT_MIN_TURN_SILENCE_MS).toBeGreaterThanOrEqual(250);
   });
 
   test("the barge-in duration gate is on, and short enough to stay responsive", () => {

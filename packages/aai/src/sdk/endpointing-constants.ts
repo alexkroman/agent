@@ -54,7 +54,23 @@
  * is still being spoken, then that same breath barging in and cancelling the
  * reply.
  *
- * **800 (2026-10-27), and ONLY because continuation is on.** Everything below
+ * **250 (2026-10-28), measured on Full-Duplex-Bench v1.5; still ONLY because
+ * continuation is on.** On Universal-3.5 Pro this value is the completeness
+ * CHECK, not a force-end, so a sentence that does not read complete stays
+ * open until `DEFAULT_MAX_TURN_SILENCE_MS` whatever this is. On v1.5's 498
+ * scenarios (16 concurrent sessions, everything else equal), the last-word to
+ * commit wait at 800 / 400 / 250 was p50 1.52 / 1.14 / 0.94 s, and
+ * interruption response latency was 2.71 / 2.31 / 2.04 s. Interruption
+ * Respond held at 0.78 / 0.81 / 0.88, and split turns repaired by continuation
+ * did not rise (323 -> 3 -> 1, the first figure inflated by the since-fixed
+ * over-speech continuation bug). About 0.7 s of the remaining wait is STT
+ * finalization this does not touch. **NOT yet re-measured on tau2-bench
+ * retail**, whose spelled names and dictated ZIPs are exactly what the 800 and
+ * 1600 records below were protecting. Continuation repairs a split there, but
+ * only once the caller resumes speaking.
+ *
+ * The record that set 800 (2026-10-27), and why it was ONLY safe with
+ * continuation on, follows. Everything below
  * argues for 1600 and was right without continuation: at 800 a spelled name or
  * a dictated ZIP is split mid-entity and the agent acts on the fragment (the
  * 0.12-vs-0.68 run recorded further down). `interruption.continuationWindowMs`
@@ -217,7 +233,7 @@
  * endpoints in its own recognizer rather than through these two, so a pipeline
  * fronted by Deepgram is tuned there instead.
  */
-export const DEFAULT_MIN_TURN_SILENCE_MS = 800;
+export const DEFAULT_MIN_TURN_SILENCE_MS = 250;
 
 /**
  * Maximum silence (ms) before AssemblyAI force-ends a turn regardless of

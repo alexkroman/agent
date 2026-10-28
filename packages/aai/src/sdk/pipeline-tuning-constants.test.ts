@@ -40,10 +40,14 @@ describe("pipeline tuning", () => {
   });
 
   test("speculation fires inside the endpointing window, and is bounded", () => {
-    // A quiet window at or past the endpointing silence fires after the final
-    // has already committed the turn: no head start, only a wasted request.
+    // A quiet window that outlasts the wait for the final fires after the turn
+    // has already committed: no head start, only a wasted request. That wait is
+    // the endpointing silence PLUS STT finalization, measured at ~0.7s on
+    // universal-3-5-pro (last word to commit p50 0.94s at 250ms; see
+    // DEFAULT_MIN_TURN_SILENCE_MS), so the window must close well inside it.
+    const finalizationMs = 700;
     expect(PREEMPTIVE_QUIET_MS).toBeGreaterThan(0);
-    expect(PREEMPTIVE_QUIET_MS).toBeLessThan(DEFAULT_MIN_TURN_SILENCE_MS / 2);
+    expect(PREEMPTIVE_QUIET_MS).toBeLessThan((DEFAULT_MIN_TURN_SILENCE_MS + finalizationMs) / 2);
     expect(MAX_PREEMPTIVE_SPECULATIONS_PER_UTTERANCE).toBeGreaterThanOrEqual(1);
   });
 

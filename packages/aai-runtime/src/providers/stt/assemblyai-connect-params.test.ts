@@ -198,9 +198,10 @@ describe("assemblyAIStt STT adapter — endpointing (min/max_turn_silence)", () 
     const session = await openSession({ model: "universal-3-5-pro" });
     const fake = fakeOf(session);
     expect(fake.params.minTurnSilence).toBe(DEFAULT_MIN_TURN_SILENCE_MS);
-    // 800 only beside continuation, which re-joins a mid-entity split — see
+    // 250 only beside continuation, which re-joins a mid-entity split, and
+    // measured on Full-Duplex-Bench v1.5 rather than tau2 — see
     // DEFAULT_MIN_TURN_SILENCE_MS.
-    expect(fake.params.minTurnSilence).toBe(800);
+    expect(fake.params.minTurnSilence).toBe(250);
     expect(fake.params.maxTurnSilence).toBe(DEFAULT_MAX_TURN_SILENCE_MS);
     // 3500 is the measured half of the pair (tau2-bench retail reward 0.68,
     // twice); the 3000 trim was reverted when the asymmetry its own doc named
