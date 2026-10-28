@@ -37,6 +37,9 @@
  *
  * - `arg-precheck.ts`: a required parameter missing, an undeclared one, or a
  *   placeholder (`"unknown"`, `"?"`) for a value;
+ * - `format-mirror.ts`: a string written in a different shape from every value
+ *   the records have shown for that field (`"New York"` where they say `"CO"`),
+ *   refused once;
  * - a {@link FailedCallMemo} (`failed-call-memo.ts`), when the context has
  *   one: the same tool already failed with the same arguments.
  *
@@ -63,6 +66,7 @@ import { isFailedToolResult } from "../_prepare-step.ts";
 import { coerceToolArgs } from "./arg-coercion.ts";
 import { emptyArgsNote, precheckToolArgs } from "./arg-precheck.ts";
 import type { FailedCallMemo } from "./failed-call-memo.ts";
+import { formatMismatchRefusal } from "./format-mirror.ts";
 import { splitInstruction, withInstructionForModel } from "./result-instruction.ts";
 import { toolResultMessage } from "./result-message.ts";
 
@@ -151,6 +155,7 @@ export async function runToolCall(
   const parameters = ctx.parameters?.(call.name);
   const refusal =
     precheckToolArgs(call.name, input, parameters) ??
+    formatMismatchRefusal(call.name, input, history) ??
     ctx.failedCalls?.refuse(call.name, input, history.length);
   if (refusal !== undefined) {
     // Recorded like any result: the call was made, and this is its answer.
