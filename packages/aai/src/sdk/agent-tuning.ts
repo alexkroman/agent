@@ -318,10 +318,15 @@ export interface PipelineTuning {
    * tool result) is handed back to the model instead of running the write; the
    * same call made again runs. Costs one model call per write, under a timeout
    * that passes the write when exceeded. Off by default while it is measured.
-   *
-   * @defaultValue `{ verify: false }`
    */
-  writes?: { verify?: boolean };
+  writes?: {
+    /**
+     * Check each declared write before it runs (see `writes` above).
+     *
+     * @defaultValue `false`
+     */
+    verify?: boolean;
+  };
 }
 
 /**
