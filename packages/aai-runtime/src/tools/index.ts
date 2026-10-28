@@ -12,6 +12,7 @@
  */
 
 export { mergeBuiltinSurface } from "./builtin-surface.ts";
+export { ToolCallGuards } from "./call-guards.ts";
 export { pairToolCalls, pairToolCallsInPlace, pairToolCallsLogged } from "./call-pairs.ts";
 export { createToolCallRepair, salvageJson, type ToolCallRepairOptions } from "./call-repair.ts";
 export type { ClientToolAnswer, ClientToolBroker } from "./client-tool-broker.ts";
@@ -26,8 +27,6 @@ export type {
   ToolCallDefaults,
 } from "./executor.ts";
 export { createToolDispatcher, executeToolCall } from "./executor.ts";
-export { FailedCallMemo } from "./failed-call-memo.ts";
-export { FormatMirror } from "./format-mirror.ts";
 export type { ToolSpeechController } from "./messages-runner.ts";
 export { awaitSpokenEstimate, createToolSpeechController } from "./messages-runner.ts";
 export { toolResultMessage } from "./result-message.ts";

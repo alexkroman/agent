@@ -4,9 +4,8 @@ import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import { withInstruction } from "@alexkroman1/aai/utils";
 import type { JSONSchema7 } from "json-schema";
 import { describe, expect, test, vi } from "vitest";
+import { ToolCallGuards } from "./call-guards.ts";
 import { FatalToolError } from "./error-policy.ts";
-import { FailedCallMemo } from "./failed-call-memo.ts";
-import { FormatMirror } from "./format-mirror.ts";
 import { TOOL_INSTRUCTION_LABEL } from "./result-instruction.ts";
 import { runToolCall, type ToolCallContext } from "./run-tool-call.ts";
 
@@ -23,7 +22,7 @@ function context(executeTool: ExecuteTool, history: Message[] = []) {
     messages: () => history,
     parameters: (name) => (name === "count" ? PARAMS : undefined),
     recordToolResult: (m) => recorded.push(m),
-    formatMirror: new FormatMirror(),
+    guards: new ToolCallGuards({ rememberFailures: false }),
   };
   return { ctx, recorded };
 }
@@ -103,11 +102,11 @@ describe("runToolCall", () => {
   });
 });
 
-describe("runToolCall with a FailedCallMemo", () => {
+describe("runToolCall with a session's guards", () => {
   test("an identical failed call never reaches executeTool or the hook, and is recorded", async () => {
     const executeTool = vi.fn<ExecuteTool>(async () => "Error: User not found");
     const { ctx, recorded } = context(executeTool);
-    ctx.failedCalls = new FailedCallMemo();
+    ctx.guards = new ToolCallGuards({ rememberFailures: true });
     const hook = vi.fn(async () => undefined);
     const args = { first: "Sophia", zip: "78260" };
     await runToolCall({ name: "find_user", args, toolCallId: "c1" }, ctx, hook);
@@ -123,7 +122,7 @@ describe("runToolCall with a FailedCallMemo", () => {
 
   test("a failure's MODEL copy lists what was tried; its own string and the history do not", async () => {
     const { ctx, recorded } = context(vi.fn<ExecuteTool>(async () => "Error: User not found"));
-    ctx.failedCalls = new FailedCallMemo();
+    ctx.guards = new ToolCallGuards({ rememberFailures: true });
     const settled = await runToolCall(
       { name: "find_user", args: { first: "Sophia" }, toolCallId: "c1" },
       ctx,
@@ -139,7 +138,7 @@ describe("runToolCall with a FailedCallMemo", () => {
   test("a tool's own instruction comes first, the memo's note after it", async () => {
     const raw = JSON.stringify(withInstruction({ error: "nope" }, "Ask for the email."));
     const { ctx } = context(vi.fn<ExecuteTool>(async () => raw));
-    ctx.failedCalls = new FailedCallMemo();
+    ctx.guards = new ToolCallGuards({ rememberFailures: true });
     const settled = await runToolCall({ name: "find_user", args: {}, toolCallId: "c1" }, ctx);
     expect(settled.instruction).toBe(
       "Ask for the email.\nAlready tried, all failed: find_user({})",
@@ -182,7 +181,7 @@ describe("runToolCall argument prechecks", () => {
 
   test("a failure with an empty required string says so, ahead of the tried-list", async () => {
     const { ctx } = withSchema(vi.fn<ExecuteTool>(async () => "Error: User not found"));
-    ctx.failedCalls = new FailedCallMemo();
+    ctx.guards = new ToolCallGuards({ rememberFailures: true });
     const settled = await runToolCall(
       { name: "find_user", args: { first_name: "Sofia", zip: "" }, toolCallId: "c1" },
       ctx,

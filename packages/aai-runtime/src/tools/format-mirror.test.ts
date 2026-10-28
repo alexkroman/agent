@@ -3,12 +3,16 @@
 import { describe, expect, test } from "vitest";
 import { FORMAT_MISMATCH_REASON, FormatMirror } from "./format-mirror.ts";
 
-/** A fresh mirror per call — the history alone, as a per-turn view reads it. */
-const formatMismatchRefusal = (
+/** A fresh mirror that has read `history`, asked about one call. */
+function formatMismatchRefusal(
   name: string,
   args: Record<string, unknown>,
   history: { role: string; content?: unknown }[],
-) => new FormatMirror().refuse(name, args, history);
+): string | undefined {
+  const mirror = new FormatMirror();
+  mirror.read(history);
+  return mirror.refuse(name, args);
+}
 
 const tool = (record: unknown) => ({ role: "tool", content: JSON.stringify(record) });
 const user = {
@@ -94,42 +98,20 @@ describe("FormatMirror.refuse", () => {
   });
 });
 
-describe("FormatMirror, held by a session", () => {
-  test("a sibling call with the same mismatch is refused once, not twice", () => {
+describe("FormatMirror, beyond the history", () => {
+  test("a record too large for the history's capped copy is observed from the result", () => {
     const mirror = new FormatMirror();
-    const history = [tool(user)];
-    const args = { state: "New York" };
-    expect(mirror.refuse("modify_user_address", args, history)).toBeDefined();
-    // Same snapshot: the sibling never saw the first refusal in its history.
-    expect(mirror.refuse("modify_user_address", args, history)).toBeUndefined();
+    mirror.read([{ role: "tool", content: JSON.stringify(user).slice(0, 40) }]);
+    expect(mirror.refuse("x", { state: "New York" })).toBeUndefined();
+    mirror.observeResult(JSON.stringify(user));
+    expect(mirror.refuse("x", { state: "New York" })).toBeDefined();
   });
 
-  test("a record too large for the history's capped copy is still observed", () => {
+  test("a reset forgets the records and the refusals", () => {
     const mirror = new FormatMirror();
-    const whole = JSON.stringify({ ...user, orders: "x".repeat(20_000) });
-    // The history holds a truncated, unparseable copy.
-    const recorded = { role: "tool", content: whole.slice(0, 16_000) };
-    mirror.observeResult(whole, recorded);
-    const history = [recorded];
-    expect(mirror.refuse("modify_user_address", { state: "New York" }, history)).toBeDefined();
-  });
-
-  test("a history sharing no message with the last is a new conversation", () => {
-    const mirror = new FormatMirror();
-    expect(mirror.refuse("x", { state: "New York" }, [tool(user)])).toBeDefined();
-    // A reset: nothing observed before carries over, so nothing qualifies.
-    expect(mirror.refuse("x", { state: "Texas" }, [tool({ note: "hi" })])).toBeUndefined();
-  });
-
-  // Retention trims a long session from the front. That is the same
-  // conversation: its records and refusals still count.
-  test("a history trimmed from the front keeps what was observed", () => {
-    const mirror = new FormatMirror();
-    const record = tool(user);
-    const later = tool({ note: "hi" });
-    expect(mirror.refuse("x", { state: "New York" }, [record, later])).toBeDefined();
-    const trimmed = [later];
-    expect(mirror.refuse("x", { state: "New York" }, trimmed)).toBeUndefined();
-    expect(mirror.refuse("x", { state: "Texas" }, trimmed)).toBeDefined();
+    mirror.read([tool(user)]);
+    expect(mirror.refuse("x", { state: "New York" })).toBeDefined();
+    mirror.reset();
+    expect(mirror.refuse("x", { state: "Texas" })).toBeUndefined();
   });
 });

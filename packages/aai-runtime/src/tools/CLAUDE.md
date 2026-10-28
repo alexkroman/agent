@@ -59,6 +59,16 @@ re-implement a step in a caller.
   invent the value instead. An EMPTY required string is not refused (tau2's
   `address2: ""` is a real answer); a failed call that sent one is told so in
   its model copy.
+- **A conversation's call guards are ONE object**, `ToolCallGuards`
+  (`call-guards.ts`): one per pipeline and per S2S session, otherwise one per
+  tool set (`toVercelTools` makes it, without the failed-call memory). Both
+  guards answer BEFORE the hook and `executeTool` — so no tool speech, and in
+  host mode no relayed call — and see each settled result WHOLE, before
+  `toolResultMessage` caps it (a capped record is not JSON). It reads each
+  history message once and owns the reset rule: a snapshot sharing no message
+  with the last is a new conversation; one merely SHORTER is retention trimming
+  the front, and keeps everything. A new guard is a field there, never a new
+  `ToolCallContext` field.
 - **A string in a different shape from the records is refused once**
   (`format-mirror.ts`): when every value tool results have shown for a field
   shares one tight shape (2-3 capitals, fixed-length digits, `#W`+digits), an
@@ -66,19 +76,13 @@ re-implement a step in a caller.
   names match across tools — is answered with the records' form (`"New York"`
   where they say `"CO"`, never `"delivered"` where one says `"OK"`). The
   identical value re-sent after that refusal runs — the records are evidence,
-  not the schema. One `FormatMirror` per session (otherwise per tool set, which
-  `toVercelTools` makes) reads each history message once and observes each
-  settled result WHOLE, before `toolResultMessage` caps it (a capped record is
-  not JSON). A snapshot sharing no message with the last is a reset; one merely
-  SHORTER is retention trimming the front, and keeps everything.
-- **A call that already failed with the same arguments never runs again.** The
-  session's `FailedCallMemo` (`failed-call-memo.ts`, one per pipeline session
-  and one per S2S session) refuses it BEFORE the hook and `executeTool` — so no
-  tool speech, and in host mode no relayed call — with a
-  `reason: "repeated_failure"` result; a failure's MODEL copy lists every failed
-  call so far, carried as an instruction so `toModelOutput` keeps it. Any
-  success, or a history that shrank (a reset), forgets them all. This replaced
-  the budget's identical-repeat rule in `../_prepare-step.ts`.
+  not the schema.
+- **A call that already failed with the same arguments never runs again**
+  (`failed-call-memo.ts`, sessions only): a `reason: "repeated_failure"` result;
+  a failure's MODEL copy lists every failed call so far, carried as an
+  instruction so `toModelOutput` keeps it. Any success, or a new conversation,
+  forgets them all. This replaced the budget's identical-repeat rule in
+  `../_prepare-step.ts`.
 
 ### Tool discovery off the platform
 

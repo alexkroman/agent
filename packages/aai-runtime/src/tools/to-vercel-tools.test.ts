@@ -6,7 +6,7 @@ import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { withInstruction } from "@alexkroman1/aai/utils";
 import type { Tool, ToolExecutionOptions } from "ai";
 import { describe, expect, test, vi } from "vitest";
-import { FailedCallMemo } from "./failed-call-memo.ts";
+import { ToolCallGuards } from "./call-guards.ts";
 import { TOOL_INSTRUCTION_LABEL } from "./result-instruction.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
 
@@ -281,14 +281,14 @@ describe("toVercelTools — message snapshot isolation", () => {
   });
 });
 
-describe("toVercelTools with a FailedCallMemo", () => {
+describe("toVercelTools with a session's guards", () => {
   test("the model's copy of a failure keeps the tried-list; a repeat is refused unrun", async () => {
     const executeTool = vi.fn(async () => "Error: no forecast");
     const tools = toVercelTools(schemas, {
       executeTool,
       sessionId: "s1",
       messages: () => [],
-      failedCalls: new FailedCallMemo(),
+      guards: new ToolCallGuards({ rememberFailures: true }),
     });
     const first = await runTool(
       tools.get_weather,

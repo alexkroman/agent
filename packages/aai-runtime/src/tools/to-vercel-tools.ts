@@ -11,9 +11,8 @@ import type { ExecuteTool } from "@alexkroman1/aai/host-internal";
 import type { ToolSchema } from "@alexkroman1/aai/manifest";
 import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";
 import { compactRecordsForModel } from "../_compact-records.ts";
+import { ToolCallGuards } from "./call-guards.ts";
 import { type FatalToolError, isFatalToolError } from "./error-policy.ts";
-import type { FailedCallMemo } from "./failed-call-memo.ts";
-import { FormatMirror } from "./format-mirror.ts";
 import type { ToolSpeechController } from "./messages-runner.ts";
 import { runToolCall, type SettledToolCall, type ToolCallContext } from "./run-tool-call.ts";
 
@@ -61,16 +60,12 @@ interface ToVercelToolsContext {
    */
   toolSpeech?: ToolSpeechController;
   /**
-   * The session's failed calls (`failed-call-memo.ts`). Optional: a subagent
-   * run and `TextAgent.tools` are not a conversation.
+   * The conversation's guards on its calls (`call-guards.ts`). Absent, the
+   * tool set gets its own, without the failed-call memory — the right scope
+   * for a text-agent turn or a subagent run, whose tool set lives exactly as
+   * long as its conversation and which is not one a caller can repair.
    */
-  failedCalls?: FailedCallMemo;
-  /**
-   * The conversation's record formats (`format-mirror.ts`). Absent, the tool set
-   * gets its own — the right scope for a text-agent turn or a subagent run,
-   * whose tool set lives exactly as long as its conversation.
-   */
-  formatMirror?: FormatMirror;
+  guards?: ToolCallGuards;
   signal?: AbortSignal;
 }
 
@@ -96,8 +91,7 @@ export function toVercelTools(
     messages: ctx.messages,
     parameters: (name) => parameters.get(name),
     recordToolResult: ctx.recordToolResult,
-    failedCalls: ctx.failedCalls,
-    formatMirror: ctx.formatMirror ?? new FormatMirror(),
+    guards: ctx.guards ?? new ToolCallGuards({ rememberFailures: false }),
   };
   for (const schema of schemas) {
     out[schema.name] = tool({

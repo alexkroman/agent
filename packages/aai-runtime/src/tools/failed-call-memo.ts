@@ -33,9 +33,8 @@
  *   in the world may have changed, and a remembered failure must never refuse a
  *   call that would now succeed.
  *
- * Scoped to the conversation: a history that SHRANK (a reset empties it) is a
- * new conversation, and the memory is dropped. A trim that shrinks it for
- * another reason only forgets early — the safe direction.
+ * Scoped to the conversation: `call-guards.ts` decides when one ends and calls
+ * {@link FailedCallMemo.reset}.
  */
 
 import { serializeToolFailure } from "@alexkroman1/aai/host-internal";
@@ -57,22 +56,15 @@ export const REPEATED_FAILURE_REASON = "repeated_failure";
 type Failure = { name: string; args: string; error: string };
 
 /**
- * See this module's doc. One per session; not safe to share across sessions.
- *
- * @internal
+ * See this module's doc. Held by a `ToolCallGuards`, never shared across
+ * conversations.
  */
 export class FailedCallMemo {
   /** Insertion-ordered, so the oldest is evicted first and the list reads in order. */
   readonly #failures = new Map<string, Failure>();
-  /** The longest history seen — a shorter one means the conversation was reset. */
-  #historyLength = 0;
 
-  /**
-   * A refusal to answer the call with instead of running it, or `undefined`
-   * to run it. `historyLength` is the length of the call's history snapshot.
-   */
-  refuse(name: string, args: unknown, historyLength: number): string | undefined {
-    this.#observe(historyLength);
+  /** A refusal to answer the call with instead of running it, or `undefined` to run it. */
+  refuse(name: string, args: unknown): string | undefined {
     const prior = this.#failures.get(callKey(name, args));
     if (prior === undefined) return undefined;
     return serializeToolFailure(
@@ -87,8 +79,7 @@ export class FailedCallMemo {
    * Remember the settled call's outcome. Returns the note to append to the
    * MODEL's copy of a failure — every failed call so far — or `undefined`.
    */
-  settle(name: string, args: unknown, result: string, historyLength: number): string | undefined {
-    this.#observe(historyLength);
+  settle(name: string, args: unknown, result: string): string | undefined {
     if (!isFailedToolResult(result)) {
       this.#failures.clear();
       return undefined;
@@ -110,9 +101,9 @@ export class FailedCallMemo {
     return `Already tried, all failed: ${tried.join("; ")}`;
   }
 
-  #observe(historyLength: number): void {
-    if (historyLength < this.#historyLength) this.#failures.clear();
-    this.#historyLength = historyLength;
+  /** A new conversation: nothing remembered applies to it. */
+  reset(): void {
+    this.#failures.clear();
   }
 }
 

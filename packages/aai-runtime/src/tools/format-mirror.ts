@@ -41,15 +41,16 @@
  *
  * A model that re-sends the identical value after this refusal gets it through:
  * the records' form is evidence about the field, not the author's schema, and a
- * tool may well accept both. The refusal is remembered by the session's
- * {@link FormatMirror} (so a sibling call in the same step, or a later turn's
- * view that dropped it, is not refused twice) and recognized in the history too
- * (so a mirror built per turn still honours one an earlier turn made).
+ * tool may well accept both. The refusal is remembered by the mirror (so a
+ * sibling call in the same step, or a later view that dropped it, is not
+ * refused twice) and recognized in the history too (so a mirror built per tool
+ * set still honours one an earlier turn made).
  *
  * ## Observed incrementally, and from the WHOLE result
  *
- * A history message is parsed once per mirror, not on every call. And a result
- * the call core settles is observed in full, before `toolResultMessage` caps it
+ * A history message is parsed once, not on every call (`call-guards.ts` hands
+ * over only new ones). And a result the call core settles is observed in full,
+ * before `toolResultMessage` caps it
  * at `MAX_TOOL_RESULT_CHARS`: a capped record is no longer JSON, and the largest
  * records (a profile, an order list) are exactly the ones this exists for.
  */
@@ -117,32 +118,16 @@ function observe(value: unknown, seen: Seen): void {
 type HistoryMessage = { role: string; content?: unknown };
 
 /**
- * See this module's doc. One per conversation; not safe to share across
- * sessions. A snapshot sharing NO message with what was read before is a new
- * conversation (a reset), and everything observed is dropped. Not a shorter
- * one: retention trims a long session's history from the front, and treating
- * that as a reset re-parsed the whole window and forgot every refusal.
- *
- * @internal
+ * See this module's doc. Held by a `ToolCallGuards` (`call-guards.ts`), which
+ * hands it each history message once and decides when a conversation ends.
  */
 export class FormatMirror {
-  #seen: Seen = new Map();
+  readonly #seen: Seen = new Map();
   /** Refusals already answered — by this mirror, or found in the history. */
   readonly #refused = new Set<string>();
-  /** History messages already read, so each is parsed once — and a reset is recognized. */
-  #read = new WeakSet<object>();
-  #readAny = false;
 
-  /**
-   * The refusal for `args`, or `undefined` to let the call run. `history` is
-   * the call's history snapshot.
-   */
-  refuse(
-    name: string,
-    args: Readonly<Record<string, unknown>>,
-    history: readonly HistoryMessage[],
-  ): string | undefined {
-    this.#readHistory(history);
+  /** The refusal for `args`, or `undefined` to let the call run. */
+  refuse(name: string, args: Readonly<Record<string, unknown>>): string | undefined {
     for (const [key, value] of Object.entries(args)) {
       if (typeof value !== "string") continue;
       const field = this.#seen.get(key);
@@ -163,37 +148,24 @@ export class FormatMirror {
     return undefined;
   }
 
-  /**
-   * A settled call's own result, whole — before `recorded`, the history's
-   * copy, is capped. That copy is marked read, so it is not parsed again.
-   */
-  observeResult(result: string, recorded: object): void {
-    this.#markRead(recorded);
-    observe(safeJsonParse(result), this.#seen);
-  }
-
-  #markRead(message: object): void {
-    this.#read.add(message);
-    this.#readAny = true;
-  }
-
-  #readHistory(history: readonly HistoryMessage[]): void {
-    // Empty is not a reset: a subagent's and `TextAgent.tools`' views always
-    // are, and their own results (`observeResult`) are all they have.
-    const fresh = !history.some((message) => this.#read.has(message));
-    if (this.#readAny && history.length > 0 && fresh) {
-      this.#seen = new Map();
-      this.#refused.clear();
-      this.#read = new WeakSet();
-      this.#readAny = false;
-    }
-    for (const message of history) {
-      if (this.#read.has(message)) continue;
-      this.#markRead(message);
+  /** History messages not read before — each is read once. */
+  read(messages: readonly HistoryMessage[]): void {
+    for (const message of messages) {
       if (message.role !== "tool" || typeof message.content !== "string") continue;
       // Only refusals are kept — every result would hold the whole history.
       if (message.content.includes(FORMAT_MISMATCH_REASON)) this.#refused.add(message.content);
       observe(safeJsonParse(message.content), this.#seen);
     }
+  }
+
+  /** A settled call's own result, whole — before the history's copy is capped. */
+  observeResult(result: string): void {
+    observe(safeJsonParse(result), this.#seen);
+  }
+
+  /** A new conversation: nothing observed applies to it. */
+  reset(): void {
+    this.#seen.clear();
+    this.#refused.clear();
   }
 }

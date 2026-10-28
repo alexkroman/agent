@@ -11,8 +11,7 @@ import { omitUndefined } from "@alexkroman1/aai/utils";
 import {
   createFatalToolLatch,
   createToolSpeechController,
-  FailedCallMemo,
-  FormatMirror,
+  ToolCallGuards,
   toVercelTools,
   withConfirmationGate,
 } from "../../tools/index.ts";
@@ -336,10 +335,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // answered: the step's own messages only reach `llm` when the step ends,
     // and this view is the one `ctx.messages` reads.
     recordToolResult: (message) => history.pushToolResult(message),
-    // Session-scoped like the tool set: an identical failed call is refused
-    // before it runs, and a failure lists what was already tried.
-    failedCalls: new FailedCallMemo(),
-    formatMirror: new FormatMirror(),
+    // Session-scoped like the tool set: an argument shaped unlike the records,
+    // or an identical failed call, is refused before it runs — `call-guards.ts`.
+    guards: new ToolCallGuards({ rememberFailures: true }),
   });
 
   function runChainedTurn(
