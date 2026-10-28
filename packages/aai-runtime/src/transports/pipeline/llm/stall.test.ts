@@ -1,0 +1,106 @@
+// Copyright 2026 the AAI authors. MIT license.
+// The between-chunks clock, on the model's own stream. End-to-end behaviour (the
+// retry, a slow tool running to completion) is in stream-stall.test.ts.
+
+import { type LanguageModel, type LanguageModelMiddleware, wrapLanguageModel } from "ai";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { createFakeLanguageModel } from "../../../_pipeline-test-fakes.ts";
+import { withChunkWatchdog } from "./stall.ts";
+
+type Part = { type: "stream-start"; warnings: [] } | { type: "text-start"; id: string };
+
+/** A model whose one stream is driven by hand: `send` a part, `end` it. */
+function handDrivenModel(): {
+  model: LanguageModel;
+  send: (part: Part) => void;
+  end: () => void;
+} {
+  const fake = createFakeLanguageModel({ script: [] });
+  if (typeof fake === "string") throw new Error("expected a model object");
+  let controller: ReadableStreamDefaultController<Part> | undefined;
+  const stream = new ReadableStream<Part>({
+    start(c) {
+      controller = c;
+    },
+  });
+  const middleware: LanguageModelMiddleware = { wrapStream: async () => ({ stream }) };
+  return {
+    model: wrapLanguageModel({ model: fake, middleware }),
+    send: (part) => controller?.enqueue(part),
+    end: () => controller?.close(),
+  };
+}
+
+/** Open the watched model's stream and read it in the background. */
+async function open(model: LanguageModel, signal: AbortSignal): Promise<void> {
+  if (typeof model === "string") throw new Error("expected a model object");
+  const { stream } = await model.doStream({ prompt: [], abortSignal: signal });
+  const reader = stream.getReader();
+  const drain = async (): Promise<void> => {
+    while (!(await reader.read()).done) {
+      // Read and discard: the clock watches the source, not this reader.
+    }
+  };
+  void drain().catch(() => undefined);
+}
+
+describe("withChunkWatchdog", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("a gap between chunks aborts the request with a chunk TimeoutError", async () => {
+    const hand = handDrivenModel();
+    const watched = withChunkWatchdog(hand.model, 100, new AbortController().signal);
+    await open(watched.model, watched.signal);
+    hand.send({ type: "stream-start", warnings: [] });
+    await vi.advanceTimersByTimeAsync(99);
+    expect(watched.signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(watched.signal.aborted).toBe(true);
+    const reason: unknown = watched.signal.reason;
+    expect(reason).toBeInstanceOf(DOMException);
+    expect(String(reason)).toMatch(/TimeoutError: Chunk timeout of 100ms exceeded/);
+  });
+
+  test("each chunk re-arms the clock", async () => {
+    const hand = handDrivenModel();
+    const watched = withChunkWatchdog(hand.model, 100, new AbortController().signal);
+    await open(watched.model, watched.signal);
+    for (let i = 0; i < 5; i++) {
+      hand.send({ type: "text-start", id: String(i) });
+      await vi.advanceTimersByTimeAsync(90);
+    }
+    expect(watched.signal.aborted).toBe(false);
+  });
+
+  // The whole point: a step's tools run AFTER its model stream ends.
+  test("once the model's stream ends, no wait aborts the request", async () => {
+    const hand = handDrivenModel();
+    const watched = withChunkWatchdog(hand.model, 100, new AbortController().signal);
+    await open(watched.model, watched.signal);
+    hand.send({ type: "stream-start", warnings: [] });
+    hand.end();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(watched.signal.aborted).toBe(false);
+  });
+
+  test("the caller's own abort still reaches the request", () => {
+    const hand = handDrivenModel();
+    const turn = new AbortController();
+    const watched = withChunkWatchdog(hand.model, 100, turn.signal);
+    turn.abort();
+    expect(watched.signal.aborted).toBe(true);
+  });
+
+  test("a model given by id is passed through untouched", () => {
+    const signal = new AbortController().signal;
+    expect(withChunkWatchdog("openai/gpt-5", 100, signal)).toEqual({
+      model: "openai/gpt-5",
+      signal,
+    });
+  });
+});
