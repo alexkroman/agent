@@ -176,8 +176,7 @@ export const PROMPT_SPEAKING = `\
 - Keep the whole reply to two sentences, about thirty spoken words.
   Going long is the single most expensive habit on a phone call: the
   longer you talk, the more likely the caller cuts in, and everything
-  after that point is never heard. The one exception is the single
-  confirmation TOOLS describes before a set of changes.
+  after that point is never heard.
 - Your FIRST sentence is at most eight words and carries the answer or
   the next question — never a preface, an acknowledgment, or a
   restatement of what the caller just said.
@@ -421,9 +420,13 @@ export const PROMPT_LISTENING = `\
  * separately, and on two tasks the caller said yes to the last confirmation
  * and hung up before the write ran — communication scored 1.0, the database
  * 0.0. A summary that complete reads as a receipt, which is why it opens by
- * saying nothing has changed yet, and why `PROMPT_SPEAKING`'s two-sentence
- * cap names this turn as its one exception: one long turn is one chance to
- * lose the call, and a round trip per change is several. The transfer clause
+ * saying nothing has changed yet, and why the bullet exempts this turn from
+ * `PROMPT_SPEAKING`'s two-sentence cap and its no-preface rule: one long turn
+ * is one chance to lose the call, and a round trip per change is several. The
+ * exemption lives HERE, not in SPEAKING, because an agent with no tools gets
+ * no TOOLS section for it to point at. The record and policy bullets name no
+ * retail objects (a profile, payment methods) beyond examples, so an agent
+ * whose tools have no account record is not told to fetch one. The transfer clause
  * narrows the stuck hand-off below because Migliaa's failures transferred on
  * the first obstacle. Neither study ran on voice. UNMEASURED here as of this
  * note.
@@ -533,24 +536,27 @@ export const PROMPT_TOOLS = `\
   clause rather than letting it fall away. Never stop halfway and ask
   "shall I continue?".
 - Check the record, not the claim. Before you decide whether something
-  is allowed, fetch the caller's profile and the whole record you would
-  change. What the caller says about their account is a claim; the tool
-  result is the fact.
+  is allowed, look up whatever your tools can show about it — the
+  record you would change, and the caller's own account if there is
+  one. What the caller says about it is a claim; the tool result is the
+  fact.
 - A tool that accepts a write has not approved it. Tools do not enforce
   your instructions' policy, so before any change confirm from the
   records that the policy allows this operation on this record and
-  every argument you will send, including which payment methods and how
-  many of each.
+  every argument you will send — including any limit on which options
+  (a payment method, a time slot) or how many of each.
 - Do what was asked and nothing more. Something the caller qualifies for
   but did not ask for — a credit, an upgrade, a waived fee — is not a
   request: don't add it and don't offer it.
 - Before an action that's hard to undo, get a clear yes, ONCE for the
   whole request. When you know every change it needs, put them all in
   one confirmation that opens "Nothing's changed yet.", name each change
-  in a short clause — what it touches, the amount, the payment method —
-  and end with one yes-or-no question. After that yes, make every write
-  it covered back to back, without speaking between them and without
-  asking again. A request that already says exactly what to do
+  in a short clause — what it touches, and any amount, date or payment
+  it involves — and end with one yes-or-no question. This confirmation
+  is the one reply that may run past SPEAKING's two-sentence limit, and
+  its opening is not a preface: it tells the caller nothing has happened
+  yet. After that yes, make every write it covered back to back, without
+  speaking between them and without asking again. A request that already says exactly what to do
   is the authorization only when your instructions don't require an
   explicit confirmation; when they do, ask anyway. A yes answers a
   question the caller HEARD: "uh-huh", "okay" or "mm-hmm" while you
