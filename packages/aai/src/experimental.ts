@@ -77,6 +77,22 @@ export type {
   DeepResearchResult,
   DeepResearchSource,
 } from "./sdk/deep-research-types.ts";
+export {
+  DICTATION_ENDPOINT,
+  DICTATION_MAX_BYTES,
+  DICTATION_MAX_SECONDS,
+  DICTATION_MODEL,
+  DICTATION_SAMPLE_RATE,
+  DICTATION_TIMEOUT_MS,
+  type DictationFetch,
+  type TranscribeDictationOptions,
+  transcribeDictation,
+} from "./sdk/dictation.ts";
+export {
+  type DictationRequestOptions,
+  type DictationResponseBody,
+  handleDictationRequest,
+} from "./sdk/dictation-request.ts";
 export { type LocalSttOptions, localStt } from "./sdk/providers/stt/local.ts";
 export { DTMF_KEYS, MAX_DTMF_KEYS, sendDtmf } from "./sdk/session-dtmf.ts";
 export {

@@ -49,19 +49,21 @@
  * @module step-transcribe-sync
  */
 
+import { type TranscribeRequestOptions, transcribeKey } from "./_transcribe-shared.ts";
 import {
-  type TranscribeRequestOptions,
-  transcribeFailure,
-  transcribeKey,
-  transcribeSignal,
-} from "./_transcribe-shared.ts";
-import { multipartBody, stepFetch } from "./step-fetch.ts";
+  DICTATION_ENDPOINT,
+  DICTATION_MODEL,
+  DICTATION_TIMEOUT_MS,
+  transcribeDictation,
+} from "./dictation.ts";
+import { omitUndefined } from "./omit-undefined.ts";
+import { stepFetch } from "./step-fetch.ts";
 
 /** The synchronous endpoint. Global — it routes to the nearest region. */
-export const TRANSCRIBE_SYNC_ENDPOINT: string = "https://sync.assemblyai.com/transcribe";
+export const TRANSCRIBE_SYNC_ENDPOINT: string = DICTATION_ENDPOINT;
 
 /** Required on every sync request; the endpoint routes on it. */
-export const TRANSCRIBE_SYNC_MODEL: string = "universal-3-5-pro";
+export const TRANSCRIBE_SYNC_MODEL: string = DICTATION_MODEL;
 
 /**
  * The endpoint's own per-request deadline, plus room to upload.
@@ -70,7 +72,7 @@ export const TRANSCRIBE_SYNC_MODEL: string = "universal-3-5-pro";
  * share one request here: the far side is doing the work while this waits,
  * where a submit merely queues it.
  */
-export const TRANSCRIBE_SYNC_TIMEOUT_MS: number = 60_000;
+export const TRANSCRIBE_SYNC_TIMEOUT_MS: number = DICTATION_TIMEOUT_MS;
 
 /**
  * What {@link stepTranscribeSync} accepts.
@@ -176,36 +178,25 @@ export async function stepTranscribeSync(
   bytes: Uint8Array | readonly Uint8Array[],
   options: TranscribeSyncOptions = {},
 ): Promise<{ text: string }> {
-  const filename = options.filename ?? "audio.wav";
-  const part = multipartBody({
-    name: "audio",
-    filename,
-    type: options.type ?? "audio/wav",
-    bytes,
-  });
-
+  // The request is the dictation API's (`dictation.ts`), so the two cannot
+  // disagree about it; what a STEP adds is where the key and the transport
+  // come from.
+  //
   // `stepFetch`, not `fetch`, and here it is load-bearing rather than tidy:
   // `fetch` speaks HTTP/2 wherever the far side offers it, which puts a whole
   // batch of segments on ONE connection — and a capacity limit then arrives as
   // a stream reset carrying no HTTP status to classify. A fan-out is exactly
   // the shape that breaks on; `sdk/step-fetch.ts` holds the measurements.
-  const response = await stepFetch(TRANSCRIBE_SYNC_ENDPOINT, {
-    method: "POST",
-    headers: {
-      // The raw key — this endpoint takes it unprefixed, and a `Bearer ` in
-      // front of it is a 401 that reads like a wrong key.
-      Authorization: transcribeKey(options),
-      "X-AAI-Model": options.model ?? TRANSCRIBE_SYNC_MODEL,
-      ...part.headers,
-    },
-    body: part.body,
-    signal: transcribeSignal({
-      ...options,
-      timeoutMs: options.timeoutMs ?? TRANSCRIBE_SYNC_TIMEOUT_MS,
+  return transcribeDictation(bytes, {
+    apiKey: transcribeKey(options),
+    fetch: stepFetch,
+    timeoutMs: options.timeoutMs ?? TRANSCRIBE_SYNC_TIMEOUT_MS,
+    ...omitUndefined({
+      model: options.model,
+      filename: options.filename,
+      type: options.type,
+      label: options.label,
+      signal: options.signal,
     }),
   });
-  if (!response.ok) throw await transcribeFailure(response, options.label ?? filename);
-
-  const body = (await response.json()) as { text?: string };
-  return { text: (body.text ?? "").trim() };
 }

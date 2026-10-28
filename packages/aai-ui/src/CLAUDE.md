@@ -157,6 +157,13 @@ gate, recall and report coalescing).
 - **`usePushToTalk`** drives `session.userTurn` (`start`/`commit`/`clear`) for a
   `turnTaking: { detection: "manual" }` agent; its module doc lists the ways a
   hand-written button leaves a turn open.
+- **`useDictation`** is NOT a session: it records one clip
+  (`audio/dictation.ts`, the pre-connect capture at 16 kHz) and hands the WAV to
+  the page's `transcribe` callback, so the dictation API key stays on a server
+  (`transcribeDictation`, `@alexkroman1/aai/experimental`). Every way out
+  releases the mic; a late answer is dropped by a `createEpoch()` generation; it
+  stops itself at `DICTATION_MAX_SECONDS`. Specs drive `useDictationWith` (an
+  injected recorder), never the real audio chunk.
 - **`useTapToTalk`** is the toggle for an automatic-turn agent. Its decisions
   are a statechart (`_tap-to-talk-state.ts`: a `live` region and a `session`
   region whose `active` children own the hang-up clocks); the hook only feeds it

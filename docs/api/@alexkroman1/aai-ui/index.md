@@ -62,6 +62,44 @@ second client for one read.)
 
 ## Functions
 
+### appendDictation()
+
+```ts
+function appendDictation(draft: string, text: string): string;
+```
+
+`draft` with `text` added after it, joined by exactly one space: a draft
+ending in whitespace or a newline does not grow a double space, and an empty
+or blank draft is replaced rather than given a leading one.
+
+Never REPLACES what was typed — the words someone said are an addition to
+the box, which is what makes speaking into a half-written prompt safe.
+
+#### Parameters
+
+##### draft
+
+`string`
+
+##### text
+
+`string`
+
+#### Returns
+
+`string`
+
+#### Example
+
+```ts
+import { appendDictation } from "@alexkroman1/aai-ui";
+
+appendDictation("Build me an agent", "that books tables."); // "Build me an agent that books tables."
+appendDictation("", "Hello"); // "Hello"
+```
+
+***
+
 ### AudioResult()
 
 ```ts
@@ -863,6 +901,51 @@ function StartDigest() {
     </button>
   );
 }
+```
+
+***
+
+### dictationTranscriber()
+
+```ts
+function dictationTranscriber(url: string, options?: DictationTranscriberOptions): (audio: Blob, options: {
+  signal: AbortSignal;
+}) => Promise<string>;
+```
+
+A `transcribe` for `useDictation` that POSTs each clip to `url` and
+reads the `{ text } | { error }` reply `handleDictationRequest` answers with.
+
+Rejects with the server's own `error` sentence on a refusal, and with a
+status-naming message when the reply is not that shape (a proxy's HTML error
+page) — `useDictation` shows either as its `error`.
+
+#### Parameters
+
+##### url
+
+`string`
+
+The route, resolved like any `fetch` URL (relative to the page).
+
+##### options?
+
+[`DictationTranscriberOptions`](#dictationtranscriberoptions)
+
+#### Returns
+
+(`audio`: `Blob`, `options`: \{
+  `signal`: `AbortSignal`;
+\}) => `Promise`\<`string`\>
+
+#### Example
+
+```ts
+import { dictationTranscriber } from "@alexkroman1/aai-ui";
+
+export const transcribe = dictationTranscriber("/api/dictation", {
+  headers: () => ({ authorization: `Bearer ${localStorage.getItem("token") ?? ""}` }),
+});
 ```
 
 ***
@@ -2843,6 +2926,56 @@ function UrlList({ urls }: { urls: readonly string[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+```
+
+***
+
+### useDictation()
+
+```ts
+function useDictation(options: UseDictationOptions): UseDictationResult;
+```
+
+Record what the user says and hand it back as text — a microphone button
+for a text box.
+
+#### Parameters
+
+##### options
+
+[`UseDictationOptions`](#usedictationoptions)
+
+#### Returns
+
+[`UseDictationResult`](#usedictationresult)
+
+#### Example
+
+```tsx
+import { appendDictation, dictationTranscriber, useDictation } from "@alexkroman1/aai-ui";
+import { useState } from "react";
+
+// `POST /dictation` on your own server is `handleDictationRequest`
+// (`@alexkroman1/aai/experimental`), which holds the API key.
+const transcribe = dictationTranscriber("/dictation");
+
+export function SpokenNote() {
+  const [draft, setDraft] = useState("");
+  const dictation = useDictation({
+    transcribe,
+    onText: (text) => setDraft((d) => appendDictation(d, text)),
+  });
+  return (
+    <div>
+      <textarea value={draft} onChange={(e) => setDraft(e.target.value)} />
+      {dictation.supported && (
+        <button type="button" {...dictation.buttonProps}>
+          {dictation.phase === "recording" ? "Stop" : "Speak"}
+        </button>
+      )}
+    </div>
   );
 }
 ```
@@ -7083,6 +7216,41 @@ WebSocket constructor override, for tests. Default: the page's `WebSocket`.
 
 ***
 
+### DictationTranscriberOptions
+
+```ts
+type DictationTranscriberOptions = {
+  fetch?: typeof fetch;
+  headers?: Record<string, string> | (() => Record<string, string>);
+};
+```
+
+**`Input`**
+
+Options for [dictationTranscriber](#dictationtranscriber).
+
+#### Properties
+
+##### fetch?
+
+```ts
+optional fetch?: typeof fetch;
+```
+
+The transport. Defaults to the global `fetch`.
+
+##### headers?
+
+```ts
+optional headers?: Record<string, string> | (() => Record<string, string>);
+```
+
+Headers sent with each clip — an `authorization` for a route behind a
+bearer. A FUNCTION is read per request, so a token that rotates is never
+sent stale.
+
+***
+
 ### FactsProps
 
 ```ts
@@ -9843,6 +10011,239 @@ reads [UseCopyResult.didCopy](#didcopy) and writes its own.
 
 ***
 
+### UseDictationOptions
+
+```ts
+type UseDictationOptions = {
+  disabled?: boolean;
+  maxSeconds?: number;
+  onText: (text: string) => void;
+  transcribe: (audio: Blob, options: {
+     signal: AbortSignal;
+  }) => Promise<string>;
+};
+```
+
+**`Input`**
+
+Options for [useDictation](#usedictation).
+
+#### Properties
+
+##### disabled?
+
+```ts
+optional disabled?: boolean;
+```
+
+Refuse to START a recording — the text box is not accepting input right
+now. A recording already running can still be stopped and transcribed, so
+the words said before the box went dead are not lost. Default `false`.
+
+##### maxSeconds?
+
+```ts
+optional maxSeconds?: number;
+```
+
+The longest recording, in seconds: it stops and is transcribed by itself
+then. Defaults to the dictation API's own ceiling, 120.
+
+##### onText
+
+```ts
+onText: (text: string) => void;
+```
+
+The words, once a recording is transcribed. Not called for an empty
+transcript (the user said nothing) or for a recording that was cancelled.
+
+###### Parameters
+
+###### text
+
+`string`
+
+###### Returns
+
+`void`
+
+##### transcribe
+
+```ts
+transcribe: (audio: Blob, options: {
+  signal: AbortSignal;
+}) => Promise<string>;
+```
+
+Turn one clip — a mono 16-bit WAV — into text. Called once per recording,
+with a signal that aborts when the result would no longer be used. Usually
+a `POST` to the page's own server, which forwards the clip to the
+dictation API under its key. A rejection is shown as `error`.
+
+###### Parameters
+
+###### audio
+
+`Blob`
+
+###### options
+
+###### signal
+
+`AbortSignal`
+
+###### Returns
+
+`Promise`\<`string`\>
+
+***
+
+### UseDictationResult
+
+```ts
+type UseDictationResult = {
+  buttonProps: {
+     aria-pressed: boolean;
+     disabled: boolean;
+     onClick: () => void;
+  };
+  cancel: () => void;
+  error: string | null;
+  phase:   | "idle"
+     | "starting"
+     | "recording"
+     | "transcribing"
+     | string & {
+   };
+  start: () => void;
+  stop: () => void;
+  supported: boolean;
+  toggle: () => void;
+};
+```
+
+**`Sealed`**
+
+What [useDictation](#usedictation) returns.
+
+#### Properties
+
+##### buttonProps
+
+```ts
+buttonProps: {
+  aria-pressed: boolean;
+  disabled: boolean;
+  onClick: () => void;
+};
+```
+
+Spread onto a `<button>`: `toggle`, and the two rules a hand-written one
+gets wrong — a recording can ALWAYS be stopped (even with `disabled` set),
+and nothing can be pressed while the microphone opens or the clip is
+transcribing. Label and style it however you like.
+
+###### aria-pressed
+
+```ts
+aria-pressed: boolean;
+```
+
+###### disabled
+
+```ts
+disabled: boolean;
+```
+
+###### onClick
+
+```ts
+() => void
+```
+
+##### cancel
+
+```ts
+cancel: () => void;
+```
+
+Throw the recording (or the transcription in flight) away.
+
+###### Returns
+
+`void`
+
+##### error
+
+```ts
+error: string | null;
+```
+
+Why the last recording produced no text, or `null`. Cleared by `start`.
+
+##### phase
+
+```ts
+phase: 
+  | "idle"
+  | "starting"
+  | "recording"
+  | "transcribing"
+  | string & {
+};
+```
+
+Where the hook is: `"idle"`, `"starting"` (asking for the microphone),
+`"recording"` or `"transcribing"`.
+
+##### start
+
+```ts
+start: () => void;
+```
+
+Ask for the microphone and start recording. Ignored unless idle, and while `disabled`.
+
+###### Returns
+
+`void`
+
+##### stop
+
+```ts
+stop: () => void;
+```
+
+Stop recording and transcribe what was said. Ignored unless recording.
+
+###### Returns
+
+`void`
+
+##### supported
+
+```ts
+supported: boolean;
+```
+
+Whether this browser can record at all — a microphone API, an
+`AudioContext` and audio worklets. A button should not render without it.
+
+##### toggle
+
+```ts
+toggle: () => void;
+```
+
+`start` when idle, `stop` when recording — one button.
+
+###### Returns
+
+`void`
+
+***
+
 ### UseDownloadUrlOptions
 
 ```ts
@@ -12042,7 +12443,7 @@ startAndWait(
 
 Start a run and resolve the FINISHED one — the synchronous call.
 
-What a form or a shell script wants, and what [WorkflowApi.start](#start-5)
+What a form or a shell script wants, and what [WorkflowApi.start](#start-6)
 deliberately is not: one request in, one result out, with no watch to wire
 up. The agent holds the request open until the run settles or its own budget
 expires, so a run that is still going when the wait runs out resolves
@@ -12218,7 +12619,7 @@ End a run's `sleep()` early, resolving how many pending sleeps were
 interrupted.
 
 `0` is an answer, not a failure — the run finished, was never sleeping, or is
-gone. Same shape as [WorkflowApi.cancel](#cancel-4) answering false, and for the
+gone. Same shape as [WorkflowApi.cancel](#cancel-5) answering false, and for the
 same reason: two tabs pressing "send it now" is ordinary.
 
 [WakeUpOptions.correlationIds](../aai/workflow-api.md#correlationids) narrows it to the waits declared with

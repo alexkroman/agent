@@ -50,6 +50,14 @@ export const PREVIEW_WAKE_RATE_LIMIT = { limit: 60, windowMs: 5 * 60_000 } as co
  * retry loop is.
  */
 export const GITHUB_SYNC_RATE_LIMIT = { limit: 30, windowMs: 5 * 60_000 } as const;
+/**
+ * `POST /studio/dictation` — one request is one clip sent to AssemblyAI's
+ * dictation API on the caller's own key. Billed to them, so this guards the
+ * service and a runaway client rather than a platform bill: someone speaking
+ * prompts into the composer sends one every few seconds at most, a client
+ * stuck re-posting one sends hundreds.
+ */
+export const DICTATION_RATE_LIMIT = { limit: 120, windowMs: 5 * 60_000 } as const;
 
 /**
  * The same routes, metered by CLIENT IP instead of scope.
@@ -74,6 +82,10 @@ export const GITHUB_SYNC_IP_RATE_LIMIT = {
   limit: 60,
   windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
 } as const;
+export const DICTATION_IP_RATE_LIMIT = {
+  limit: 360,
+  windowMs: CLIENT_IP_RATE_LIMIT_WINDOW_MS,
+} as const;
 
 /**
  * The studio's limiters, injectable per app.
@@ -89,11 +101,13 @@ export type StudioRateLimiters = {
   projectCreate?: RateLimiter;
   previewWake?: RateLimiter;
   githubSync?: RateLimiter;
-  /** Per-IP companions to the four above. */
+  dictation?: RateLimiter;
+  /** Per-IP companions to the five above. */
   chatIp?: RateLimiter;
   projectCreateIp?: RateLimiter;
   previewWakeIp?: RateLimiter;
   githubSyncIp?: RateLimiter;
+  dictationIp?: RateLimiter;
 };
 
 export type { RateLimiter } from "aai-server/http";
@@ -125,6 +139,7 @@ export function createPgStudioRateLimiters(sql: SqlExec): Required<StudioRateLim
     projectCreate: limiter("studio-project-create", PROJECT_CREATE_RATE_LIMIT),
     previewWake: limiter("studio-preview-wake", PREVIEW_WAKE_RATE_LIMIT),
     githubSync: limiter("studio-github-sync", GITHUB_SYNC_RATE_LIMIT),
+    dictation: limiter("studio-dictation", DICTATION_RATE_LIMIT),
     // The per-IP companions. Postgres-backed for the same reason as the scoped
     // ones and more so: an abuse limit that multiplies by the replica count is
     // a limit of several times what it says.
@@ -132,5 +147,6 @@ export function createPgStudioRateLimiters(sql: SqlExec): Required<StudioRateLim
     projectCreateIp: limiter("studio-project-create-ip", PROJECT_CREATE_IP_RATE_LIMIT),
     previewWakeIp: limiter("studio-preview-wake-ip", PREVIEW_WAKE_IP_RATE_LIMIT),
     githubSyncIp: limiter("studio-github-sync-ip", GITHUB_SYNC_IP_RATE_LIMIT),
+    dictationIp: limiter("studio-dictation-ip", DICTATION_IP_RATE_LIMIT),
   };
 }
