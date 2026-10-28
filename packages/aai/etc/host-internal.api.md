@@ -66,9 +66,6 @@ const AgentConfigSchema: z.ZodObject<{
             prompt: z.ZodOptional<z.ZodString>;
         }, z.core.$strict>>;
     }, z.core.$strict>>;
-    writes: z.ZodOptional<z.ZodObject<{
-        verify: z.ZodOptional<z.ZodBoolean>;
-    }, z.core.$strict>>;
     errorPhrase: z.ZodOptional<z.ZodString>;
     startFailurePhrase: z.ZodOptional<z.ZodString>;
     stt: z.ZodOptional<z.ZodType<ProviderDescriptor<string, Record<string, unknown>>, unknown, z.core.$ZodTypeInternals<ProviderDescriptor<string, Record<string, unknown>>, unknown>>>;
@@ -84,7 +81,7 @@ const AgentConfigSchema: z.ZodObject<{
     requiredEnv: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
     mcpServers: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodObject<{
         url: z.ZodOptional<z.ZodURL>;
-        tokenEnv: z.ZodOptional<typeof EnvVarName>;
+        tokenEnv: z.ZodOptional<z.ZodString>;
         allowedTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
         pinnedTools: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
     }, z.core.$strict>>>;
@@ -814,9 +811,6 @@ export function eligibleToolMessages<T extends ToolMessageBase>(list: readonly T
 export const EMPTY_PARAMS: z.ZodObject<{}, z.core.$strip>;
 
 // @public
-const EnvVarName: z.ZodString;
-
-// @public
 export type EvalWorkerOptions = {
     timeoutMs: number;
     label: string;
@@ -1225,9 +1219,6 @@ interface PipelineTuning {
     interruption?: InterruptionTuning | "off";
     silence?: SilenceTuning;
     turnTaking?: TurnTakingTuning;
-    writes?: {
-        verify?: boolean;
-    };
 }
 
 // @public

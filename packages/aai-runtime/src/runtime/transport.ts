@@ -480,7 +480,6 @@ function pipelineTuningOptions(config: AgentConfig): Partial<PipelineTransportOp
     turnDetection: turnTaking?.detection,
     startSpeakingFloorMs: turnTaking?.startSpeakingFloorMs,
     preemptiveGeneration: turnTaking?.preemptiveGeneration,
-    verifyWrites: config.writes?.verify,
     ...interruptionKnobs(config.interruption),
   };
 }
