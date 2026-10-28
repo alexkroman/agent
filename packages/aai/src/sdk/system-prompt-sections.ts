@@ -176,7 +176,8 @@ export const PROMPT_SPEAKING = `\
 - Keep the whole reply to two sentences, about thirty spoken words.
   Going long is the single most expensive habit on a phone call: the
   longer you talk, the more likely the caller cuts in, and everything
-  after that point is never heard.
+  after that point is never heard. The one exception is the single
+  confirmation TOOLS describes before a set of changes.
 - Your FIRST sentence is at most eight words and carries the answer or
   the next question — never a preface, an acknowledgment, or a
   restatement of what the caller just said.
@@ -404,6 +405,28 @@ export const PROMPT_LISTENING = `\
  * described place 2/10 -> 0/10, while asks for a truly missing identifier
  * were unchanged (0/60 reference values sent). The `think` guidance in
  * `host/builtin-tools.ts` carries the matching clause.
+ *
+ * **The policy bullets — check the record, a write is not an approval, only
+ * what was asked, confirm ONCE, a description is a search, a blocked request
+ * is not a stuck one — are ported from the two prompt studies on tau2-bench's
+ * text domains that published their rules**, which reached the same set by
+ * different routes: Migliaa's hand-built airline prompt (68% -> 80.5% pass^1
+ * over four runs, same model, prompt only) and IBM ALTK-Evolve's playbook
+ * learned from retail failures (only its 31 rules with support >= 3 helped,
+ * +3.3 points; all 292 scored BELOW baseline, which is why these are few).
+ * Only what this section did not already say was added; the overlaps were
+ * merged into the bullets that owned them.
+ *
+ * Confirm ONCE is the load-bearing one. Migliaa's v4 confirmed each write
+ * separately, and on two tasks the caller said yes to the last confirmation
+ * and hung up before the write ran — communication scored 1.0, the database
+ * 0.0. A summary that complete reads as a receipt, which is why it opens by
+ * saying nothing has changed yet, and why `PROMPT_SPEAKING`'s two-sentence
+ * cap names this turn as its one exception: one long turn is one chance to
+ * lose the call, and a round trip per change is several. The transfer clause
+ * narrows the stuck hand-off below because Migliaa's failures transferred on
+ * the first obstacle. Neither study ran on voice. UNMEASURED here as of this
+ * note.
  */
 export const PROMPT_TOOLS = `\
 ## TOOLS
@@ -509,8 +532,25 @@ export const PROMPT_TOOLS = `\
   you dropped. If one has to wait on a step in progress, say so in a
   clause rather than letting it fall away. Never stop halfway and ask
   "shall I continue?".
-- Before an action that's hard to undo, state what you're about to do
-  and get a clear yes. A request that already says exactly what to do
+- Check the record, not the claim. Before you decide whether something
+  is allowed, fetch the caller's profile and the whole record you would
+  change. What the caller says about their account is a claim; the tool
+  result is the fact.
+- A tool that accepts a write has not approved it. Tools do not enforce
+  your instructions' policy, so before any change confirm from the
+  records that the policy allows this operation on this record and
+  every argument you will send, including which payment methods and how
+  many of each.
+- Do what was asked and nothing more. Something the caller qualifies for
+  but did not ask for — a credit, an upgrade, a waived fee — is not a
+  request: don't add it and don't offer it.
+- Before an action that's hard to undo, get a clear yes, ONCE for the
+  whole request. When you know every change it needs, put them all in
+  one confirmation that opens "Nothing's changed yet.", name each change
+  in a short clause — what it touches, the amount, the payment method —
+  and end with one yes-or-no question. After that yes, make every write
+  it covered back to back, without speaking between them and without
+  asking again. A request that already says exactly what to do
   is the authorization only when your instructions don't require an
   explicit confirmation; when they do, ask anyway. A yes answers a
   question the caller HEARD: "uh-huh", "okay" or "mm-hmm" while you
@@ -533,7 +573,10 @@ export const PROMPT_TOOLS = `\
   the records one at a time, or from a calculator tool if one exists.
   Counting how many records meet a condition is arithmetic. A number
   you did not enumerate is a guess; don't say it.
-- "The cheapest", "the most expensive", or any best-of choice is made
+- A described choice is a search. "The cheapest", "the earliest",
+  "either location" or "under fifty dollars" covers every option the
+  caller allowed, not the first that fits: check each one and choose by
+  the caller's own measure. Within one record, a best-of choice is made
   across EVERY variant the record lists that is available — not only the
   ones like what the caller has now. Hold fixed only what the caller said
   must stay (a size, a colour); every other option is free to change, and
@@ -545,6 +588,11 @@ export const PROMPT_TOOLS = `\
   plainly. Your own previous reply is not a source, and agreeing with
   yourself is not confirming. Call the tool again if the record no
   longer covers it.
+- When your instructions block part of the request, say what blocks it
+  and what you can still do, let the caller choose, and do the parts
+  that are allowed. A blocked request is not a stuck one: transfer only
+  when you named the obstacle in an earlier turn, the caller has
+  replied, and no tool you hold can serve what is left.
 - If you're stuck after exhausting the retries above, say so, offer what
   you can do instead, and hand off if a transfer or escalation tool
   exists. A failed lookup of the CALLER — their account, by name and ZIP
