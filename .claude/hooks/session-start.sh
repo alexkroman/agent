@@ -1,7 +1,7 @@
 #!/bin/bash
 # Provision the repo's Node major for Claude Code on the web sessions.
 #
-# The repo requires Node >=26 <27 (package.json engines) and pins its own
+# The repo requires Node >=24 <27 (package.json engines) and pins its own
 # major in .node-version, but the default sandbox image ships Node 22. Under
 # Node 22 the unit suite fails on newer globals — `AsyncDisposableStack` in
 # aai-studio-server's `studio-session-ensure.ts` (25 tests), `CloseEvent` in
@@ -45,6 +45,18 @@
 # Errors are checked explicitly here instead, and a failure to provision is
 # ANNOUNCED. That is the same rule the ratchets in AGENTS.md follow: a step that
 # reports success while doing nothing is worse than one that fails.
+#
+# ## This hook runs only when the repo's `.claude/settings.json` is loaded
+#
+# A cloud session whose working directory is a PARENT of several repositories
+# loads none of their settings, so this never runs there and the session stays
+# on the image's Node 22 (seen 2026-10: a two-repo session whose first
+# `pnpm check:local` spent thirteen minutes to fail on `AsyncDisposableStack`).
+# `scripts/check.mjs` now refuses an older Node up front and names this file;
+# the lasting fix for such a session is the environment's own setup script
+# (the cloud environment menu in the session's title bar, then Edit), with
+# `nvm install 24` after a `cd` into the repository, or a session started on
+# this repository alone.
 
 set -uo pipefail
 
@@ -59,7 +71,7 @@ report_stale_node() {
   warn "WARNING: running on Node $(node --version 2>/dev/null || echo unknown), but this repo needs v${NODE_MAJOR}."
   warn "  Reason: $1"
   warn "  Expect \`pnpm test\` at the repo root to be RED for reasons unrelated to your"
-  warn "  change — aai-studio-server (>=26) uses AsyncDisposableStack, which the"
+  warn "  change — aai-studio-server (>=24) uses AsyncDisposableStack, which the"
   warn "  image's Node 22 does not define (25 tests) — and the lefthook pre-push"
   warn "  \`pnpm check\` to fail with it."
   warn "  Verify per package instead (pnpm vitest run --project <name>), and say so when"
