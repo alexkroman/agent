@@ -60,6 +60,12 @@ export interface ConsumeLlmStreamParams {
   maxOutputTokens?: number | undefined;
   /** Provider-retry budget; omitted when unset, leaving the AI SDK's own default. */
   maxRetries?: number | undefined;
+  /**
+   * Longest silence a response stream may hold — before its first chunk and
+   * between chunks — before the request is abandoned. Unset is
+   * `LLM_STALL_TIMEOUT_MS` (`./stream.ts`); it exists so a spec can use milliseconds.
+   */
+  stallTimeoutMs?: number | undefined;
   /** Reset a demanding `toolChoice` after step 0 — see `../../../_prepare-step.ts`. */
   resetToolChoice?: boolean | undefined;
   /**
@@ -272,6 +278,7 @@ export type LlmRequest = Pick<
   | "contextBudget"
   | "maxOutputTokens"
   | "maxRetries"
+  | "stallTimeoutMs"
   | "resetToolChoice"
   | "onUsage"
   | "toolSpeech"
