@@ -23,6 +23,7 @@ import { errorMessage, omitUndefined, safeJsonParse } from "@alexkroman1/aai/uti
 import type { Logger } from "../logger.ts";
 import { consoleLogger } from "../logger.ts";
 import { type AttachedSession, type AttachSessionOptions, attachSession } from "./attach.ts";
+import { withHeldAudio } from "./paced-client-sink.ts";
 import { createClientSink } from "./ws-client-sink.ts";
 import type { SessionWebSocket } from "./ws-frames.ts";
 
@@ -83,7 +84,12 @@ function closeReason(reason: string): string {
 }
 
 /** Route one socket frame into the attached session: binary is audio, text is a command. */
-function dispatchFrame(data: unknown, attached: AttachedSession, log: Logger): void {
+function dispatchFrame(
+  data: unknown,
+  attached: AttachedSession,
+  log: Logger,
+  heldAudioMs: () => number,
+): void {
   if (data instanceof Uint8Array) {
     attached.sendAudio(data);
     return;
@@ -100,7 +106,9 @@ function dispatchFrame(data: unknown, attached: AttachedSession, log: Logger): v
     log.warn("ws: invalid JSON; dropping", { sid, data: data.slice(0, LOG_PREVIEW_CHARS) });
     return;
   }
-  attached.sendCommand(parsed);
+  // A playback report counts what the client RECEIVED; the audio this side
+  // still holds is added here, where both are known — see `withHeldAudio`.
+  attached.sendCommand(withHeldAudio(parsed, heldAudioMs()));
 }
 
 /**
@@ -140,6 +148,7 @@ export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOption
    *  Without it a paced send could fire against a closed socket, and the timer
    *  would outlive the session. */
   let stopPacingCurrent: (() => void) | null = null;
+  let heldAudioMsCurrent: () => number = () => 0;
   /** Keepalive ping timer, armed on open and cleared on close. */
   let keepalive: ReturnType<typeof setInterval> | null = null;
 
@@ -169,13 +178,14 @@ export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOption
 
   function onOpen(): void {
     announceOpen?.();
-    const { client, stopPacing, endAfterReply } = createClientSink(
+    const { client, stopPacing, endAfterReply, heldAudioMs } = createClientSink(
       ws,
       log,
       options.readyConfig.ttsSampleRate,
       audioLeadMs,
     );
     stopPacingCurrent = stopPacing;
+    heldAudioMsCurrent = heldAudioMs;
     attached = attachSession(client, {
       ...attachOptions,
       // Recorded before the session exists, so its first tool call sees them. A
@@ -220,7 +230,7 @@ export function wireSessionSocket(ws: SessionWebSocket, options: WsSessionOption
     // Before open there is no session to buffer for; the attached session
     // decides for itself whether a frame is buffered, dispatched or dropped.
     if (attached === null) return;
-    dispatchFrame(event.data, attached, log);
+    dispatchFrame(event.data, attached, log, heldAudioMsCurrent);
   });
 
   ws.addEventListener("close", (ev) => {

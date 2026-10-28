@@ -46,7 +46,7 @@ export {
   SESSION_EVENT_READ_LIMIT,
   stampSessionEvent,
 } from "./event-stream.ts";
-export { createPacedClientSink } from "./paced-client-sink.ts";
+export { createPacedClientSink, withHeldAudio } from "./paced-client-sink.ts";
 export type { ResumeFindings } from "./resume-found.ts";
 export { composeSessionGreeting, createResumeFindings } from "./resume-found.ts";
 export { setSessionIdMinter } from "./session-id.ts";
