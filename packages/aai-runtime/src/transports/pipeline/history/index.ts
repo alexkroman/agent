@@ -12,6 +12,8 @@ export type { PersistedReply } from "./heard-history.ts";
 export { createHeardHistory } from "./heard-history.ts";
 export type { PipelineHistory } from "./history.ts";
 export { createPipelineHistory, persistInterruptedTurn } from "./history.ts";
+export type { LedgerStep } from "./ledger.ts";
+export { createLedgerStep } from "./ledger.ts";
 export {
   createRetainedView,
   estimateConversationTokens,

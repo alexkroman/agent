@@ -27,7 +27,7 @@ import type { Message } from "@alexkroman1/aai";
 import { DEFAULT_IDLE_TIMEOUT_MS } from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import { consoleLogger } from "../logger.ts";
-import { type ClientToolAnswer, ToolCallGuards } from "../tools/index.ts";
+import { type ClientToolAnswer, ToolCallGuards, writeToolNames } from "../tools/index.ts";
 import {
   createRetainedView,
   estimateConversationTokens,
@@ -161,6 +161,7 @@ export function createSessionCore(opts: ServerSessionOptions): ServerSession {
         // The same guards the pipeline's tools run with — see
         // `../tools/call-guards.ts`.
         guards: new ToolCallGuards({ rememberFailures: true }),
+        writeTools: writeToolNames(opts.toolSchemas ?? []),
       },
       conversation: () => conversation,
       emit,

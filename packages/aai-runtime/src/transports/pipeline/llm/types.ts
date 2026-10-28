@@ -32,7 +32,7 @@ import type {
   SystemPromptOption,
   TransportCallbacks,
 } from "../../types.ts";
-import type { ContextBudgetPreparer } from "../history/index.ts";
+import type { ContextBudgetPreparer, LedgerStep } from "../history/index.ts";
 import type { StreamPart } from "../reply/index.ts";
 import type { LlmTiming } from "../turn/index.ts";
 
@@ -95,6 +95,12 @@ export interface ConsumeLlmStreamParams {
    * the right number for the next turn's first step.
    */
   contextBudget?: ContextBudgetPreparer | undefined;
+  /**
+   * Appends the records block after the newest turn — see
+   * `../history/ledger.ts`. Composed AFTER `contextBudget`, onto the list it
+   * trimmed. Optional so a spec can build a request without one.
+   */
+  ledgerStep?: ((step: LedgerStep) => { messages: ModelMessage[] } | undefined) | undefined;
   /**
    * Forwards text to the active TTS session (no-op if none). `record: false`
    * marks dead-air filler: audible, but never part of the record.
@@ -280,6 +286,7 @@ export type LlmRequest = Pick<
   | "repairToolCall"
   | "maxSteps"
   | "contextBudget"
+  | "ledgerStep"
   | "maxOutputTokens"
   | "maxRetries"
   | "stallTimeoutMs"

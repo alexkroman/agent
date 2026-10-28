@@ -156,10 +156,14 @@ export function emptyArgsNote(
   );
 }
 
-/** Worded like the executor's own schema refusal, so the model sees one shape. */
+/**
+ * Worded like the executor's own schema refusal, so the model sees one shape,
+ * and closing like every refusal does: whether the identical call would run.
+ */
 function refuse(name: string, detail: string): string {
   return serializeToolFailure(
-    `Invalid arguments for tool "${name}" (not sent): ${detail}`,
+    `Invalid arguments for tool "${name}" (not sent): ${detail} ` +
+      "The same arguments will be refused again.",
     INVALID_ARGUMENTS,
   );
 }

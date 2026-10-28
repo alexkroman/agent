@@ -69,8 +69,9 @@ export class FailedCallMemo {
     if (prior === undefined) return undefined;
     return serializeToolFailure(
       `Not sent: ${name} already failed with exactly these arguments ` +
-        `(${prior.error}), and would fail the same way again. Change an argument, ` +
-        "use a different identifier, or ask the user for the correct value.",
+        `(${prior.error}), and would fail the same way again, so the identical call is ` +
+        "refused every time. Change an argument, use a different identifier, or ask the " +
+        "user for the correct value.",
       REPEATED_FAILURE_REASON,
     );
   }

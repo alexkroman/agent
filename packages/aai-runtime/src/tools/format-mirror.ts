@@ -137,7 +137,8 @@ export class FormatMirror {
       const refusal = serializeToolFailure(
         `Not sent: ${name} had "${key}" as ${JSON.stringify(value)}, but every record so far ` +
           `writes "${key}" like ${JSON.stringify(field.example)} (${field.shape.describe}). ` +
-          "Send it in that form.",
+          "Send it in that form. If it is right as it is, send the identical call again and " +
+          "it will run.",
         FORMAT_MISMATCH_REASON,
       );
       // Refused once: the same refusal already answered an earlier call.

@@ -41,7 +41,10 @@
  *   `format-mirror.ts` — a string written in a different shape from every
  *   value the records have shown for that field (`"New York"` where they say
  *   `"CO"`), refused once — and, for a session, `failed-call-memo.ts` — the
- *   same tool already failed with the same arguments.
+ *   same tool already failed with the same arguments;
+ * - `arg-grounding.ts`: a WRITE naming an identifier no successful result has
+ *   shown, refused once. Stateless — the history is its memory — so it is not
+ *   one of the guards.
  *
  * And a FAILURE's model copy is annotated — a required string it sent empty,
  * then every failed call so far — carried as an instruction so the pipeline's
@@ -64,6 +67,7 @@ import type { JSONSchema7 } from "json-schema";
 import { compactRecordsForModel } from "../_compact-records.ts";
 import { isFailedToolResult } from "../_prepare-step.ts";
 import { coerceToolArgs } from "./arg-coercion.ts";
+import { groundingRefusal } from "./arg-grounding.ts";
 import { emptyArgsNote, precheckToolArgs } from "./arg-precheck.ts";
 import type { ToolCallGuards } from "./call-guards.ts";
 import { splitInstruction, withInstructionForModel } from "./result-instruction.ts";
@@ -100,7 +104,14 @@ export type ToolCallContext = {
    * session, or per tool set where the set is the conversation's scope.
    */
   guards: ToolCallGuards;
+  /**
+   * The tools declared writes (`annotations.readOnlyHint: false`) — the only
+   * calls `arg-grounding.ts` checks. Absent, none is.
+   */
+  writeTools?: ReadonlySet<string> | undefined;
 };
+
+const NO_WRITES: ReadonlySet<string> = new Set();
 
 /** A call that settled with a result the model reads. */
 export type SettledToolCall = {
@@ -153,7 +164,9 @@ export async function runToolCall(
   const history = ctx.messages().slice();
   const parameters = ctx.parameters?.(call.name);
   const refusal =
-    precheckToolArgs(call.name, input, parameters) ?? ctx.guards.refuse(call.name, input, history);
+    precheckToolArgs(call.name, input, parameters) ??
+    ctx.guards.refuse(call.name, input, history) ??
+    groundingRefusal(call.name, input, history, ctx.writeTools ?? NO_WRITES);
   if (refusal !== undefined) {
     // Recorded like any result: the call was made, and this is its answer.
     ctx.recordToolResult?.(
