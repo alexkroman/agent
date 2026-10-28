@@ -39,11 +39,20 @@ const myTool = tool({
 way in `aai dev` and deployed.
 
 **Mark every write `annotations: { readOnlyHint: false }`** — a tool that books,
-orders, cancels, sends, dispatches, deletes or changes an account. The voice
-pipeline then runs it only on a caller turn that did not start while the agent
-was talking: an "uh-huh" spoken over "Shall I cancel it?" is the caller
-listening, not agreeing, and the model is told to ask again instead. Lookups,
-calculations and cart or draft steps that a later tool confirms stay unmarked.
+orders, cancels, sends, dispatches, deletes, changes an account, or files a
+ticket or request someone else will act on. Lookups, calculations and cart or
+draft steps that a later tool confirms stay unmarked. In a voice pipeline a
+declared write turns on three things:
+
+- It runs only on a caller turn that did not start while the agent was talking:
+  an "uh-huh" spoken over "Shall I cancel it?" is the caller listening, not
+  agreeing, and the model is told to ask again instead.
+- The model gets a **ledger** before each step: the latest result of every
+  lookup this call, so the record it acts on is the one it fetched, even after
+  older turns are trimmed. An agent with no declared write gets none.
+- An identifier argument (`order_id`, `item_ids`, `flight_number`) that no
+  earlier result contains is refused once and the model told what the records
+  hold; sending the identical call again runs it.
 
 ### `ctx` (ToolContext)
 

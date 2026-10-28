@@ -12,6 +12,7 @@ import pair from "../workflows/pair.ts";
 // conversation's cap, and the slot window makes the count and the check one step.
 
 export default tool({
+  annotations: { readOnlyHint: false },
   description:
     "Link the owner's phone to this door. Use it when someone says they want to link or " +
     "pair their phone and reads out the six-digit code their phone shows.",
