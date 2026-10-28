@@ -68,7 +68,10 @@ describe("one rule, one section", () => {
     ["one confirmation per request", 'one confirmation that opens "Nothing\'s changed yet."'],
     ["every write the yes covered", "make every write it covered back to back"],
     ["a description is a search", "A described choice is a search."],
-    ["a blocked request is not a stuck one", "A blocked request is not a stuck one"],
+    [
+      "finishing the allowed part of a blocked request",
+      "Every allowed change comes BEFORE any transfer",
+    ],
   ])("the policy rule on %s lives in TOOLS only", (_label, marker) => {
     expect(sectionsContaining(marker)).toEqual(["PROMPT_TOOLS"]);
   });
