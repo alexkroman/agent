@@ -201,10 +201,12 @@ export function createLedgerStep(
 /**
  * A record can carry text someone else wrote (an order note, a web page, an
  * MCP server's reply), and the ledger is a SYSTEM message, so each record is
- * fenced as data: nothing inside can close its `<record>` early.
+ * fenced as data. EVERY `&`, `<` and `>` is entity-encoded, not one closing
+ * tag matched: a matcher misses `</RECORD>`, `</ record>` and whatever markup
+ * comes next, and with no `<` left nothing inside can open or close a tag.
  */
 function fence(text: string): string {
-  return text.replaceAll("</record", "<\\/record");
+  return text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 /**
