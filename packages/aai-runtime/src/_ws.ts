@@ -4,9 +4,7 @@
  * that authenticate via custom headers (AssemblyAI S2S, OpenAI Realtime).
  */
 
-import { EventEmitter } from "node:events";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { pEvent } from "p-event";
 import WsWebSocket from "ws";
 
 /** The slice of a `ws` client a header-authenticated provider transport drives. */
@@ -194,14 +192,13 @@ export type WsOpenRace = {
 };
 
 export function createWsOpenRace(): WsOpenRace {
-  // p-event owns the deferred: it resolves on the first "open" and rejects
-  // with the Error emitted as "error" (its default rejection event). The race
-  // listens on a private emitter rather than the socket itself because the
+  // A deferred rather than a listener on the socket itself, because the
   // consumers own the socket listeners — they construct the rejection Errors
   // and read `isOpening()` synchronously *during* the close/error dispatch,
-  // before any promise settlement could be observed.
-  const emitter = new EventEmitter();
-  const promise = pEvent(emitter, "open").then(() => undefined);
+  // before any promise settlement could be observed. `settled` is what makes
+  // the first settlement win; the resolvers themselves ignore a second call
+  // only silently, which is not a state the consumers can read.
+  const { promise, resolve, reject } = Promise.withResolvers<void>();
   let settled = false;
   // The connect rejection is always consumed by the caller's `await`, but if it
   // fails before that await is reached Node would report an unhandled rejection.
@@ -211,13 +208,13 @@ export function createWsOpenRace(): WsOpenRace {
     markOpen(): void {
       if (settled) return;
       settled = true;
-      emitter.emit("open");
+      resolve();
     },
     isOpening: () => !settled,
     fail(err: Error): void {
       if (settled) return;
       settled = true;
-      emitter.emit("error", err);
+      reject(err);
     },
   };
 }
