@@ -14923,7 +14923,7 @@ refused beside one.
 
 ###### Default Value
 
-`800` (`DEFAULT_MIN_TURN_SILENCE_MS`)
+`250` (`DEFAULT_MIN_TURN_SILENCE_MS`)
 
 ##### preemptiveGeneration?
 
