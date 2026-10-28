@@ -19,7 +19,7 @@ function service(status: number, body: unknown, headers: Record<string, string> 
   );
 }
 
-const post = (body: BodyInit | null, headers: Record<string, string> = {}) =>
+const post = (body: Uint8Array | null, headers: Record<string, string> = {}) =>
   new Request("http://x/dictation", {
     method: "POST",
     body,
