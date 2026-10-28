@@ -310,6 +310,18 @@ export interface PipelineTuning {
   interruption?: InterruptionTuning | "off";
   /** Dead air and the silence nudge — see {@link SilenceTuning}. */
   silence?: SilenceTuning;
+  /**
+   * Safeguards on tools declared as writes (`annotations: { readOnlyHint:
+   * false }`). `verify: true` checks each one before it runs with a separate
+   * model call: does it do exactly what the caller asked for and agreed to, on
+   * the records as fetched? A specific mismatch (quoting the caller or citing a
+   * tool result) is handed back to the model instead of running the write; the
+   * same call made again runs. Costs one model call per write, under a timeout
+   * that passes the write when exceeded. Off by default while it is measured.
+   *
+   * @defaultValue `{ verify: false }`
+   */
+  writes?: { verify?: boolean };
 }
 
 /**

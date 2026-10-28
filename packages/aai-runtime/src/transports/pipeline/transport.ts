@@ -13,7 +13,9 @@ import {
   createToolSpeechController,
   FailedCallMemo,
   toVercelTools,
+  verifyWrite,
   withConfirmationGate,
+  withWriteVerification,
 } from "../../tools/index.ts";
 import { createEmitError } from "../emit-error.ts";
 import { resolveSystemPrompt, type Transport } from "../types.ts";
@@ -318,9 +320,27 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     log,
     sid: opts.sid,
   });
+  // Opt-in (`writes: { verify }`): a separate model call checks each declared
+  // write against the conversation before it runs — `tools/write-verifier.ts`.
+  const checkedExecuteTool = resolved.verifyWrites
+    ? withWriteVerification(gatedExecuteTool, {
+        schemas: toolSchemas,
+        check: (tool, args) =>
+          verifyWrite({
+            model: opts.llm,
+            instructions: systemPrompt(),
+            messages: history.conversation,
+            tool,
+            args,
+            signal: sessionAbort.signal,
+          }),
+        log,
+        sid: opts.sid,
+      })
+    : gatedExecuteTool;
   const tools = toVercelTools(toolSchemas, {
     executeTool: async (name, args, sessionId, messages, options) => {
-      const result = await gatedExecuteTool(name, args, sessionId, messages, options);
+      const result = await checkedExecuteTool(name, args, sessionId, messages, options);
       keyterms.observe(result);
       return result;
     },

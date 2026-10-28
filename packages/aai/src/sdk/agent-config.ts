@@ -15,7 +15,12 @@
 import { z } from "zod";
 import { normalizeAgentParams } from "./_author-conveniences.ts";
 import { assertNoStrayFields } from "./_stray-fields.ts";
-import { InterruptionSchema, SilenceSchema, TurnTakingSchema } from "./_tuning-schema.ts";
+import {
+  InterruptionSchema,
+  SilenceSchema,
+  TurnTakingSchema,
+  WritesFieldSchema,
+} from "./_tuning-schema.ts";
 import { DEFAULT_GREETING } from "./agent-defaults.ts";
 import {
   type AgentPromptContext,
@@ -126,7 +131,15 @@ const EnvVarName = z.string().refine((name) => name.trim() !== "" && !/[\s=]/.te
  * the same claim `requiredEnv` makes, that the string is a variable NAME, and a
  * second copy is how the two come to disagree about what a name may hold.
  */
-const McpServerConfigSchema = z
+const McpServerConfigSchema: z.ZodObject<
+  {
+    url: z.ZodOptional<z.ZodURL>;
+    tokenEnv: z.ZodOptional<typeof EnvVarName>;
+    allowedTools: z.ZodOptional<z.ZodReadonly<z.ZodArray<z.ZodString>>>;
+    pinnedTools: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodString>>;
+  },
+  z.core.$strict
+> = z
   .object({
     // OPTIONAL on the wire, never in `agent.ts`: `McpServerConfig.url` is
     // required, and absent here means the author wrote a RESOLVER, which
@@ -232,6 +245,7 @@ export const AgentConfigSchema = z.object({
   turnTaking: TurnTakingSchema.optional(),
   interruption: InterruptionSchema.optional(),
   silence: SilenceSchema.optional(),
+  writes: WritesFieldSchema,
   errorPhrase: z.string().optional(),
   startFailurePhrase: z.string().optional(),
   stt: ProviderDescriptorSchema.optional(),
