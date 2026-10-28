@@ -59,6 +59,12 @@ re-implement a step in a caller.
   invent the value instead. An EMPTY required string is not refused (tau2's
   `address2: ""` is a real answer); a failed call that sent one is told so in
   its model copy.
+- **A string in a different shape from the records is refused once**
+  (`format-mirror.ts`): when every value tool results have shown for a field
+  shares one tight shape (2-3 capitals, fixed-length digits, `#W`+digits), an
+  argument for that field in another shape is answered with the records' form
+  (`"New York"` where they say `"CO"`). The identical value re-sent after that
+  refusal runs — the records are evidence, not the schema.
 - **A call that already failed with the same arguments never runs again.** The
   session's `FailedCallMemo` (`failed-call-memo.ts`, one per pipeline session
   and one per S2S session) refuses it BEFORE the hook and `executeTool` — so no
