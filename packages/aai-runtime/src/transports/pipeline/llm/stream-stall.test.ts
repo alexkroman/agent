@@ -6,7 +6,8 @@
 // its headers and then nothing, and the turn hung for 5 min until undici's body
 // timeout — see LLM_STALL_TIMEOUT_MS.
 
-import { tool } from "ai";
+import { sleep } from "@alexkroman1/aai/internal";
+import { type LanguageModel, type LanguageModelMiddleware, tool, wrapLanguageModel } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { silentLogger } from "../../../_logger-test-utils.ts";
@@ -15,36 +16,41 @@ import { consumeLlmStream } from "./stream.ts";
 
 type ConsumeArgs = Parameters<typeof consumeLlmStream>[0];
 type Model = ReturnType<typeof createFakeLanguageModel>;
-type DoStream = (opts: { abortSignal?: AbortSignal }) => Promise<unknown>;
 
 /**
- * Make the listed calls (0-based) of `llm.doStream` STALL: the response opens,
- * optionally says `prefix`, and then sends nothing until the request is
- * aborted — which errors the body, as a real fetch does. Every other call runs
- * the fake's own script.
+ * Make the listed calls (0-based) of the model's stream STALL: the response
+ * opens, optionally says `prefix` (or reports `error`), and then sends nothing
+ * until the request is aborted — which errors the body, as a real fetch does.
+ * Every other call runs the fake's own script.
  */
-function stallOn(llm: Model, stalled: readonly number[], prefix?: string): { calls: () => number } {
-  const target = llm as unknown as { doStream: DoStream };
-  const original = target.doStream.bind(llm);
+function stallOn(
+  fake: Model,
+  stalled: readonly number[],
+  prefix?: string,
+  error?: Error,
+): { llm: LanguageModel; calls: () => number } {
+  if (typeof fake === "string") throw new Error("stallOn needs a model object");
   let calls = 0;
-  target.doStream = async (opts) => {
-    const index = calls++;
-    if (!stalled.includes(index)) return original(opts);
-    const stream = new ReadableStream({
-      start(controller) {
-        controller.enqueue({ type: "stream-start", warnings: [] });
-        if (prefix !== undefined) {
-          controller.enqueue({ type: "text-start", id: "t" });
-          controller.enqueue({ type: "text-delta", id: "t", delta: prefix });
-        }
-        opts.abortSignal?.addEventListener("abort", () =>
-          controller.error(opts.abortSignal?.reason),
-        );
-      },
-    });
-    return { stream };
+  const middleware: LanguageModelMiddleware = {
+    wrapStream: async ({ doStream, params }) => {
+      const index = calls++;
+      if (!stalled.includes(index)) return doStream();
+      const signal = params.abortSignal;
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue({ type: "stream-start", warnings: [] });
+          if (prefix !== undefined) {
+            controller.enqueue({ type: "text-start", id: "t" });
+            controller.enqueue({ type: "text-delta", id: "t", delta: prefix });
+          }
+          if (error !== undefined) controller.enqueue({ type: "error", error });
+          signal?.addEventListener("abort", () => controller.error(signal.reason));
+        },
+      });
+      return { stream };
+    },
   };
-  return { calls: () => calls };
+  return { llm: wrapLanguageModel({ model: fake, middleware }), calls: () => calls };
 }
 
 function consume(
@@ -72,10 +78,10 @@ function consume(
 
 describe("consumeLlmStream — a stalled response", () => {
   test("a stall before any output is re-sent once, and the caller hears the answer", async () => {
-    const llm = createFakeLanguageModel({
+    const fake = createFakeLanguageModel({
       script: [{ type: "text", text: "Your order shipped." }],
     });
-    const { calls } = stallOn(llm, [0]);
+    const { calls, llm } = stallOn(fake, [0]);
     const emitError = vi.fn();
     let spoken = "";
     const result = await consume({
@@ -93,8 +99,8 @@ describe("consumeLlmStream — a stalled response", () => {
   });
 
   test("a second stall fails the turn instead of retrying forever", async () => {
-    const llm = createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] });
-    const { calls } = stallOn(llm, [0, 1]);
+    const fake = createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] });
+    const { calls, llm } = stallOn(fake, [0, 1]);
     const emitError = vi.fn();
     const result = await consume({ llm, emitError });
     expect(calls()).toBe(2);
@@ -105,8 +111,8 @@ describe("consumeLlmStream — a stalled response", () => {
   });
 
   test("a stall after the model spoke is not re-sent — the caller would hear it twice", async () => {
-    const llm = createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] });
-    const { calls } = stallOn(llm, [0], "Okay, ");
+    const fake = createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] });
+    const { calls, llm } = stallOn(fake, [0], "Okay, ");
     const result = await consume({ llm });
     expect(calls()).toBe(1);
     expect(result.failed).toBe(true);
@@ -114,13 +120,13 @@ describe("consumeLlmStream — a stalled response", () => {
 
   test("a stall after a tool ran is not re-sent — the tool would run twice", async () => {
     const execute = vi.fn(async () => "cancelled");
-    const llm = createFakeLanguageModel({
+    const fake = createFakeLanguageModel({
       steps: [
         [{ type: "tool-call", toolCallId: "c1", toolName: "cancel_order", input: "{}" }],
         [{ type: "text", text: "Done." }],
       ],
     });
-    const { calls } = stallOn(llm, [1]);
+    const { calls, llm } = stallOn(fake, [1]);
     const result = await consume({
       llm,
       maxSteps: 3,
@@ -132,12 +138,60 @@ describe("consumeLlmStream — a stalled response", () => {
   });
 
   test("a barge-in during a stall ends the turn quietly, with no retry", async () => {
-    const llm = createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] });
-    const { calls } = stallOn(llm, [0]);
+    const fake = createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] });
+    const { calls, llm } = stallOn(fake, [0]);
     const turn = new AbortController();
     setTimeout(() => turn.abort(), 10);
     const result = await consume({ llm, signal: turn.signal, stallTimeoutMs: 1000 });
     expect(calls()).toBe(1);
     expect(result.failed).toBe(false);
+  });
+
+  test("a tool slower than the deadline runs to completion — tool time is not a stall", async () => {
+    let toolSignal: AbortSignal | undefined;
+    const execute = vi.fn(async (_input: unknown, opts: { abortSignal?: AbortSignal }) => {
+      toolSignal = opts.abortSignal;
+      await sleep(150);
+      return "found";
+    });
+    const llm = createFakeLanguageModel({
+      steps: [
+        [{ type: "tool-call", toolCallId: "c1", toolName: "web_search", input: "{}" }],
+        [{ type: "text", text: "Here it is." }],
+      ],
+    });
+    let spoken = "";
+    const result = await consume({
+      llm,
+      maxSteps: 3,
+      tools: { web_search: tool({ inputSchema: z.object({}), execute }) },
+      onDelta: (d) => {
+        spoken += d;
+      },
+    });
+    expect(toolSignal?.aborted).toBe(false);
+    expect(result.failed).toBe(false);
+    expect(spoken).toBe("Here it is.");
+  });
+
+  test("a stall after an error part is not re-sent — the client was already told", async () => {
+    const fake = createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] });
+    const { calls, llm } = stallOn(fake, [0], undefined, new Error("upstream overloaded"));
+    const emitError = vi.fn();
+    const onLlmTiming = vi.fn();
+    const result = await consume({ llm, emitError, onLlmTiming });
+    expect(calls()).toBe(1);
+    expect(result.failed).toBe(true);
+    expect(emitError).toHaveBeenCalledTimes(1);
+    expect(onLlmTiming).toHaveBeenCalledTimes(1);
+  });
+
+  test("a stall retry reports one timing for the turn, not one per pass", async () => {
+    const fake = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
+    const { llm } = stallOn(fake, [0]);
+    const onLlmTiming = vi.fn();
+    const result = await consume({ llm, onLlmTiming });
+    expect(result.failed).toBe(false);
+    expect(onLlmTiming).toHaveBeenCalledTimes(1);
   });
 });
