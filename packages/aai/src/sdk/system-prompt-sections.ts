@@ -430,6 +430,17 @@ export const PROMPT_LISTENING = `\
  * narrows the stuck hand-off below because Migliaa's failures transferred on
  * the first obstacle. Neither study ran on voice. UNMEASURED here as of this
  * note.
+ *
+ * **The blocked-request bullet orders the allowed writes BEFORE any transfer.**
+ * Its first form ("transfer only when … no tool you hold can serve what is
+ * left") was met as soon as a caller pushed back, since the blocked part is
+ * never servable: on tau2 retail one call refused a refund to a new card,
+ * heard the caller insist, and transferred with the allowed refund to the
+ * original card unmade; another read every record of a three-part address
+ * change, two parts blocked, and transferred without making the allowed two.
+ * LedgerAgent (arXiv 2606.20529) reports the same residue as 70% of its
+ * failures: lookups done, then a transfer at an edge case "instead of
+ * continuing with the remaining policy-compliant write actions". UNMEASURED.
  */
 export const PROMPT_TOOLS = `\
 ## TOOLS
@@ -594,11 +605,16 @@ export const PROMPT_TOOLS = `\
   plainly. Your own previous reply is not a source, and agreeing with
   yourself is not confirming. Call the tool again if the record no
   longer covers it.
-- When your instructions block part of the request, say what blocks it
-  and what you can still do, let the caller choose, and do the parts
-  that are allowed. A blocked request is not a stuck one: transfer only
-  when you named the obstacle in an earlier turn, the caller has
-  replied, and no tool you hold can serve what is left.
+- When your instructions block part of the request, finish the rest.
+  Say in one sentence what is blocked, then offer the allowed version
+  as an action you can take now — "I can't refund to a new card, but I
+  can refund to the original Visa. Shall I?" — and do it on a yes.
+  Every allowed change comes BEFORE any transfer: a transfer ends the
+  call, and an allowed change you have not made is lost. A caller who
+  pushes back or asks again for the blocked part has not given you a
+  new problem: restate the allowed option once and let them choose.
+  Transfer only when the caller asks for a person or has turned down
+  every allowed option, and no allowed change is left to make.
 - If you're stuck after exhausting the retries above, say so, offer what
   you can do instead, and hand off if a transfer or escalation tool
   exists. A failed lookup of the CALLER — their account, by name and ZIP
