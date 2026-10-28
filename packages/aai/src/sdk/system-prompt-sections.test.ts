@@ -57,6 +57,37 @@ describe("one rule, one section", () => {
     expect(sectionsContaining("hyphenate it")).toEqual(["PROMPT_SPEAKING"]);
     expect(sectionsContaining("Copy values from prior tool results")).toEqual(["PROMPT_TOOLS"]);
   });
+
+  // The policy rules ported from the tau2-bench prompt studies (see the
+  // PROMPT_TOOLS doc). Each overlapped a rule already here, so each was merged
+  // into the bullet that owned it rather than stated again.
+  test.each([
+    ["checking the record over the claim", "Check the record, not the claim."],
+    ["a write is not an approval", "A tool that accepts a write has not approved it."],
+    ["only what was asked", "don't add it and don't offer it"],
+    ["one confirmation per request", 'one confirmation that opens "Nothing\'s changed yet."'],
+    ["every write the yes covered", "make every write\n  it covered back to back"],
+    ["a description is a search", "A described choice is a search."],
+    ["a blocked request is not a stuck one", "A blocked request is not a stuck one"],
+  ])("the policy rule on %s lives in TOOLS only", (_label, marker) => {
+    expect(sectionsContaining(marker)).toEqual(["PROMPT_TOOLS"]);
+  });
+
+  // The confirmation runs past SPEAKING's cap on purpose, and SPEAKING says so
+  // by REFERENCE rather than restating the confirmation.
+  test("the reply-length cap names the confirmation as its one exception", () => {
+    expect(PROMPT_SPEAKING).toContain(
+      "The one exception is the single\n  confirmation TOOLS describes",
+    );
+    expect(sectionsContaining("Nothing's changed yet")).toEqual(["PROMPT_TOOLS"]);
+  });
+
+  // Asked ONCE: a second confirmation before the writes is the round trip the
+  // rule exists to remove, so it must not come back as a separate bullet.
+  test("there is one confirmation bullet, not one per change", () => {
+    expect(PROMPT_TOOLS.split("Before an action that's hard to undo")).toHaveLength(2);
+    expect(PROMPT_TOOLS).toContain("Never ask for the same confirmation twice.");
+  });
 });
 
 describe("section shape", () => {
