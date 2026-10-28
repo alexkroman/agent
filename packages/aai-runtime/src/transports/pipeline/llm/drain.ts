@@ -33,6 +33,15 @@ export async function drainEntries(
     onStepPersisted?: (() => void) | undefined;
     /** Per-turn timing; sees every part, including the ones handled below. */
     trace?: Pick<TurnTrace, "onPart"> | undefined;
+    /**
+     * Set once the run has produced MODEL output — text, a tool call, or a
+     * completed step. Caller-owned rather than returned, because it has to
+     * survive the stream throwing: it is what tells a stalled run that can be
+     * re-sent from one that already spoke or acted (see `stream.ts`).
+     * `abort` is the reason of an `abort` part — the AI SDK's own timeouts end
+     * the stream that way, and after a completed step nothing throws.
+     */
+    progress?: { output: boolean; abort?: unknown } | undefined;
   },
 ): Promise<{ lateToolCall: boolean; spokeBeforeRestart: boolean }> {
   let lateToolCall = false;
@@ -45,6 +54,7 @@ export async function drainEntries(
       // transcript that step covers, and a replay that batched them at the end
       // would put the `[interrupted]` split in the wrong place.
       opts.collected.push(...entry.messages);
+      if (opts.progress) opts.progress.output = true;
       opts.onStepPersisted?.();
       continue;
     }
@@ -56,7 +66,16 @@ export async function drainEntries(
       break;
     }
     if (entry.part.type === "text-delta") spokeBeforeRestart = true;
+    if (opts.progress) noteProgress(opts.progress, entry.part);
     handler.handle(entry.part);
   }
   return { lateToolCall, spokeBeforeRestart };
+}
+
+/** Record what one part says about the run's output — see `progress` above. */
+function noteProgress(progress: { output: boolean; abort?: unknown }, part: StreamPart): void {
+  if (part.type === "text-delta" || part.type === "tool-call") progress.output = true;
+  // `reason` is on the AI SDK's abort part but not on the pipeline's narrower
+  // `StreamPart`, so it is read defensively.
+  if (part.type === "abort") progress.abort = (part as { reason?: unknown }).reason;
 }
