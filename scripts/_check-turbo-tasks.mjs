@@ -44,6 +44,10 @@ export const TURBO_TASKS = {
     // ~5s together; the PATH tools `check:polyglot` runs skip when absent.
     "check:prettier",
     "check:polyglot",
+    // ~1.5s. Prettier FORMATS markdown but does not lint it, so a bare URL or a
+    // skipped heading level passed every local hook and failed only CI's
+    // `check:markdown`.
+    "check:markdown",
     "test:coverage",
   ],
   full: [
