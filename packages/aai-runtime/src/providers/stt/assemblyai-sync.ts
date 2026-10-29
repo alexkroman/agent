@@ -31,7 +31,7 @@ import {
   ASSEMBLYAI_SYNC_DEFAULT_PROMPT,
   resolveAssemblyAISyncSttSettings,
 } from "@alexkroman1/aai/host-internal";
-import { errorMessage, isRecord } from "@alexkroman1/aai/utils";
+import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import { modelFetch } from "../../_egress-fetch.ts";
 import { closeOnAbort, createSttSessionShell, requireApiKey } from "../_utils.ts";
@@ -326,7 +326,7 @@ export function openAssemblyAISyncStt(
         return {
           spokenMs: Math.max(0, last.end - first.start),
           trailingSilenceMs: Math.max(0, ledger.sentMs() - (startMs + last.end)),
-          ...(peak === undefined ? {} : { inputPeakDbfs: peak }),
+          ...omitUndefined({ inputPeakDbfs: peak }),
         };
       };
 

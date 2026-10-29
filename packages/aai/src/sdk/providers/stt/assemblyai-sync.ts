@@ -16,23 +16,24 @@
 
 import { omitUndefined } from "../../omit-undefined.ts";
 import type { ProviderCredentialOptions, SttProvider } from "../../providers.ts";
-import { defineProvider, describeProvider } from "../define-provider.ts";
+import { defineProvider, describeProvider, type ProviderDefinition } from "../define-provider.ts";
 
 /** This vendor's registration (see `define-provider.ts`); the constants below derive from it. */
-export const ASSEMBLYAI_SYNC_STT_PROVIDER = defineProvider({
-  kind: "assemblyai-sync",
-  stage: "stt",
-  envVar: "ASSEMBLYAI_API_KEY_SANDBOX",
-  label: "AssemblyAI (sync)",
-  factory: "assemblyAISyncStt",
-  subpath: "experimental",
-});
+export const ASSEMBLYAI_SYNC_STT_PROVIDER: ProviderDefinition<"assemblyai-sync", "stt"> =
+  defineProvider({
+    kind: "assemblyai-sync",
+    stage: "stt",
+    envVar: "ASSEMBLYAI_API_KEY_SANDBOX",
+    label: "AssemblyAI (sync)",
+    factory: "assemblyAISyncStt",
+    subpath: "experimental",
+  });
 
 /** Kind tag recognised by the host-side resolver. */
-export const ASSEMBLYAI_SYNC_STT_KIND = ASSEMBLYAI_SYNC_STT_PROVIDER.kind;
+export const ASSEMBLYAI_SYNC_STT_KIND: "assemblyai-sync" = ASSEMBLYAI_SYNC_STT_PROVIDER.kind;
 
 /** Env var the host reads the key from when the descriptor names none. */
-export const ASSEMBLYAI_SYNC_API_KEY_ENV = ASSEMBLYAI_SYNC_STT_PROVIDER.envVar;
+export const ASSEMBLYAI_SYNC_API_KEY_ENV: string = ASSEMBLYAI_SYNC_STT_PROVIDER.envVar;
 
 /** The endpoint posted to when the descriptor names none. */
 export const ASSEMBLYAI_SYNC_DEFAULT_URL =
