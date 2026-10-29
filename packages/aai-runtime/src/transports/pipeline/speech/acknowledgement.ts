@@ -21,8 +21,11 @@
  * is a turn by the time a non-listed word arrives.
  *
  * The cost is the one `dropsBriefFinal` already accepts: a genuine "yes" spoken
- * over the agent's own question is not a turn. The agent finishes the question,
- * and the caller answers it again.
+ * over a question the agent is STILL asking is not a turn. The agent finishes
+ * the question, and the caller answers it again. A "yes" whose final lands once
+ * the agent has stopped — spoken over the question's last word, committed by
+ * endpointing after it — is the answer, and commits (`dropsAcknowledgementFinal`
+ * in `stt-handlers.ts`).
  */
 
 /** Lowercased tokens that, alone or together, are only acknowledgement. */

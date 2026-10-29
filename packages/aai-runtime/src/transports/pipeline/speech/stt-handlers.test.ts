@@ -334,6 +334,58 @@ describe("a brief final over agent speech is an acknowledgement, not a turn", ()
     expect(h.committed).toEqual([{ text: "Yes." }]);
   });
 
+  /**
+   * The hotel template's case: the agent spells an email back and asks "is
+   * that right?", the caller says "Yes." over the closing word, and the final
+   * lands once the reply has finished playing. The utterance OPENED over
+   * speech; the agent has no floor left by the time the final arrives.
+   */
+  function makeTailHandlers() {
+    const flags: (boolean | undefined)[] = [];
+    const log = makeLogger();
+    const made = makeHandlers({
+      utteranceOpenedOverSpeech: () => true,
+      utteranceOpenedOverAudio: () => true,
+      agentIsSpeaking: () => false,
+      audioOnLine: () => false,
+      minBargeInWords: () => 1,
+      interruptionMinDurationMs: () => GATE,
+      commitUserTurn: (text, _note, _meta, b) => {
+        made.committed.push({ text });
+        flags.push(b);
+      },
+      log,
+    });
+    return { ...made, flags, log };
+  }
+
+  test("a brief final that began over the agent but lands after it stopped is the answer", () => {
+    const h = makeTailHandlers();
+    h.handlers.onSttFinal("Yes.", { spokenMs: 250 });
+    expect(h.committed).toEqual([{ text: "Yes." }]);
+    expect(h.edges.ended).toBe(1);
+    expect(h.log.info.mock.calls.filter(([m]) => m === "Pipeline brief final dropped")).toEqual([]);
+    // Still a backchannel to the write gate: it opened over the agent and is brief.
+    expect(h.flags).toEqual([true]);
+  });
+
+  test("an acknowledgement is dropped only while the reply it acknowledges still plays", () => {
+    const playing = makeBriefHandlers();
+    playing.handlers.onSttFinal("Yes.");
+    expect(playing.committed).toEqual([]);
+    expect(
+      playing.log.info.mock.calls.filter(([m]) => m === "Pipeline acknowledgement dropped"),
+    ).toHaveLength(1);
+
+    const ended = makeTailHandlers();
+    ended.handlers.onSttFinal("Yes.");
+    expect(ended.committed).toEqual([{ text: "Yes." }]);
+    expect(
+      ended.log.info.mock.calls.filter(([m]) => m === "Pipeline acknowledgement dropped"),
+    ).toEqual([]);
+    expect(ended.flags).toEqual([true]);
+  });
+
   // "Stop." rather than an "uh-huh": a short final that is NOT an
   // acknowledgement, so these exercise the duration gate alone
   // (`dropsAcknowledgementFinal` would drop an "uh-huh" on its words).
@@ -647,6 +699,24 @@ describe("the turn tells the write gate whether it was a backchannel", () => {
     handlers.onSttFinal("Yeah, cancel that charger order.", { spokenMs: 1400 });
     onAir = false;
     handlers.onSttFinal("Yes.", { spokenMs: 250 });
+    expect(flags).toEqual([true, false, false]);
+  });
+
+  // `universal-3-5-pro` times a turn's first word from the turn window, so a
+  // one-beat "Yes." over the agent reports a span past the gate. Its words say
+  // what the span cannot.
+  test("over agent audio, acknowledgement-only words are a backchannel whatever their span", () => {
+    const flags: (boolean | undefined)[] = [];
+    let onAir = true;
+    const { handlers } = makeHandlers({
+      utteranceOpenedOverAudio: () => onAir,
+      interruptionMinDurationMs: () => 500,
+      commitUserTurn: (_text, _note, _meta, b) => void flags.push(b),
+    });
+    handlers.onSttFinal("Yes.", { spokenMs: 2400 });
+    handlers.onSttFinal("Yes, go ahead with it.", { spokenMs: 2400 });
+    onAir = false;
+    handlers.onSttFinal("Yes.", { spokenMs: 2400 });
     expect(flags).toEqual([true, false, false]);
   });
 });

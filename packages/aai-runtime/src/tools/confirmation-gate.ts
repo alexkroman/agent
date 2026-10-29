@@ -27,7 +27,10 @@
  * it is not: an acknowledgement is ~0.3s of speech. The cost accepted: a
  * longer non-answer over the question (task 18's "Yes. Uh-huh.", ~1s, with an
  * STT-inserted "Yes.") now passes, and only the prompt's heard-yes rule covers
- * it. Classified where the turn commits (`isBackchannel` in `stt-handlers.ts`).
+ * it. Classified where the turn commits (`isBackchannel` in `stt-handlers.ts`),
+ * which also counts a turn made only of acknowledgement words — the default
+ * STT inflates a one-beat "Yes." past the length gate. This module itself
+ * reads nothing of what was said.
  *
  * The refusal is worded as an ordinary result, not an `Error…`, so the failed
  * call memo does not refuse the identical call once the caller has confirmed.

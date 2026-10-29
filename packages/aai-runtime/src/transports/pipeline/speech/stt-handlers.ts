@@ -355,11 +355,23 @@ export function createSttEventHandlers(deps: {
    * fires a false-interruption resume should a partial barge-in have armed
    * one. Fails open on a provider that reports no word timings.
    *
-   * The cost: a genuine "yes" spoken over the agent's own question is dropped.
-   * The agent finishes the question, and the caller answers it again.
+   * Only while the agent still HAS the floor when the final LANDS
+   * (`agentIsSpeaking`, the predicate {@link dropsQuietFinal} reads). A caller
+   * who answers over the closing words of a question — "…is that right?" /
+   * "Yes." — produces a final that arrives after the reply has finished
+   * playing, once endpointing has waited out the silence behind the word.
+   * Dropping that one leaves the question answered and the agent waiting for
+   * an answer it already heard: with the hotel template's spelled-out
+   * read-backs it happened on the first confirmation a caller gave early, and
+   * the call went silent for good. Such a final commits instead, flagged a
+   * backchannel so a declared write still asks once more ({@link isBackchannel}).
+   *
+   * The cost that remains: a genuine "yes" spoken over a question the agent is
+   * still asking is dropped. The agent finishes the question, and the caller
+   * answers it again.
    */
   function dropsBriefFinal(text: string, meta?: SttTurnMeta): boolean {
-    if (!deps.utteranceOpenedOverSpeech()) return false;
+    if (!(deps.utteranceOpenedOverSpeech() && deps.agentIsSpeaking())) return false;
     const gate = deps.interruptionMinDurationMs();
     const spokenMs = meta?.spokenMs;
     if (!(gate > 0 && spokenMs !== undefined && spokenMs < gate)) return false;
@@ -381,9 +393,17 @@ export function createSttEventHandlers(deps: {
    * over is indistinguishable from an "uh-huh" (task 12, ~1.2s). Length is what
    * separates them — an acknowledgement is ~0.3s of speech, an answer longer.
    * Without word timings the old rule stands: overlap refuses.
+   *
+   * An utterance made only of acknowledgement words is one whatever span the
+   * STT reports for it: the default transcriber times a turn's first word from
+   * the turn window rather than from speech (`acknowledgement.ts` has the
+   * numbers), so a "Yes." over the agent reads as a second or more and passed
+   * as an answer. That is the final {@link dropsAcknowledgementFinal} lets
+   * through once the agent has stopped — it must still not confirm a write.
    */
-  function isBackchannel(openedOverAudio: boolean, meta?: SttTurnMeta): boolean {
+  function isBackchannel(text: string, openedOverAudio: boolean, meta?: SttTurnMeta): boolean {
     if (!openedOverAudio) return false;
+    if (isAcknowledgementOnly(text)) return true;
     const spokenMs = meta?.spokenMs;
     return spokenMs === undefined || spokenMs < deps.interruptionMinDurationMs();
   }
@@ -392,10 +412,14 @@ export function createSttEventHandlers(deps: {
    * A final that began over agent speech and says only "mm-hmm" / "yeah,
    * right": the caller listening, so no cut and no commit — the reply plays on.
    * The content counterpart of {@link dropsBriefFinal}, whose word-span signal
-   * the default STT inflates; `acknowledgement.ts` has the measurement.
+   * the default STT inflates; `acknowledgement.ts` has the measurement. And
+   * dropped on the same condition: only while the reply it acknowledges is
+   * still playing. Once the agent has stopped, "Yes." is the answer to what it
+   * just asked, and the turn commits (flagged a backchannel for the write gate).
    */
   function dropsAcknowledgementFinal(text: string): boolean {
-    if (!(deps.utteranceOpenedOverSpeech() && isAcknowledgementOnly(text))) return false;
+    if (!(deps.utteranceOpenedOverSpeech() && deps.agentIsSpeaking())) return false;
+    if (!isAcknowledgementOnly(text)) return false;
     log.info("Pipeline acknowledgement dropped", {
       sid: deps.sid,
       ...transcriptField("text", text),
@@ -403,7 +427,11 @@ export function createSttEventHandlers(deps: {
     return true;
   }
 
-  /** A final over the agent that is not the caller answering it: quiet, brief, or an acknowledgement. */
+  /**
+   * A final over the agent that is not the caller answering it: quiet, brief,
+   * or an acknowledgement. All three hold only while the agent still has the
+   * floor when the final lands; into a silent agent every final commits.
+   */
   function isNotATurn(text: string, level: CallerLevelReading, meta?: SttTurnMeta): boolean {
     return (
       dropsQuietFinal(text, level) || dropsBriefFinal(text, meta) || dropsAcknowledgementFinal(text)
@@ -564,7 +592,7 @@ export function createSttEventHandlers(deps: {
       // some STT providers) — make sure the speaking edge still fires.
       speechEdges.speechStarted();
       // Sampled before `speechEnded()` below clears it.
-      const backchannel = isBackchannel(deps.utteranceOpenedOverAudio(), meta);
+      const backchannel = isBackchannel(trimmed, deps.utteranceOpenedOverAudio(), meta);
       // The turn that follows re-arms the nudge on completion.
       nudger.onUserTurn();
       // Push-to-talk: the final is one piece of a turn the CLIENT ends, so it
