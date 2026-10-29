@@ -8452,6 +8452,14 @@ start over the agent's own audio: an "uh-huh" spoken over "Shall I cancel
 it?" is the caller listening, not agreeing, and the model is told to ask
 again instead.
 
+`"handoff"` declares a tool that ends the agent's part of the
+conversation — a transfer to a person, an escalation queue. In a voice
+pipeline it runs only when the caller asked for a person in one of their
+last two turns, or the model calls it again after a further caller turn;
+otherwise the model is told the transfer was NOT made and to keep helping.
+A transfer ends the call, so one the caller didn't ask for loses every
+change still left to make.
+
 `"read"` or no `effect` runs as an ordinary call. A cart or draft step that
 a later tool confirms is not a write; the confirming tool is. An MCP tool's
 effect comes from its server's `readOnlyHint` (see `mcp/adapt.ts`).
@@ -13016,6 +13024,14 @@ start over the agent's own audio: an "uh-huh" spoken over "Shall I cancel
 it?" is the caller listening, not agreeing, and the model is told to ask
 again instead.
 
+`"handoff"` declares a tool that ends the agent's part of the
+conversation — a transfer to a person, an escalation queue. In a voice
+pipeline it runs only when the caller asked for a person in one of their
+last two turns, or the model calls it again after a further caller turn;
+otherwise the model is told the transfer was NOT made and to keep helping.
+A transfer ends the call, so one the caller didn't ask for loses every
+change still left to make.
+
 `"read"` or no `effect` runs as an ordinary call. A cart or draft step that
 a later tool confirms is not a write; the confirming tool is. An MCP tool's
 effect comes from its server's `readOnlyHint` (see `mcp/adapt.ts`).
@@ -13400,6 +13416,14 @@ voice pipeline a declared write runs only on a caller turn that did not
 start over the agent's own audio: an "uh-huh" spoken over "Shall I cancel
 it?" is the caller listening, not agreeing, and the model is told to ask
 again instead.
+
+`"handoff"` declares a tool that ends the agent's part of the
+conversation — a transfer to a person, an escalation queue. In a voice
+pipeline it runs only when the caller asked for a person in one of their
+last two turns, or the model calls it again after a further caller turn;
+otherwise the model is told the transfer was NOT made and to keep helping.
+A transfer ends the call, so one the caller didn't ask for loses every
+change still left to make.
 
 `"read"` or no `effect` runs as an ordinary call. A cart or draft step that
 a later tool confirms is not a write; the confirming tool is. An MCP tool's
@@ -13820,6 +13844,14 @@ voice pipeline a declared write runs only on a caller turn that did not
 start over the agent's own audio: an "uh-huh" spoken over "Shall I cancel
 it?" is the caller listening, not agreeing, and the model is told to ask
 again instead.
+
+`"handoff"` declares a tool that ends the agent's part of the
+conversation — a transfer to a person, an escalation queue. In a voice
+pipeline it runs only when the caller asked for a person in one of their
+last two turns, or the model calls it again after a further caller turn;
+otherwise the model is told the transfer was NOT made and to keep helping.
+A transfer ends the call, so one the caller didn't ask for loses every
+change still left to make.
 
 `"read"` or no `effect` runs as an ordinary call. A cart or draft step that
 a later tool confirms is not a write; the confirming tool is. An MCP tool's
@@ -19666,6 +19698,14 @@ start over the agent's own audio: an "uh-huh" spoken over "Shall I cancel
 it?" is the caller listening, not agreeing, and the model is told to ask
 again instead.
 
+`"handoff"` declares a tool that ends the agent's part of the
+conversation — a transfer to a person, an escalation queue. In a voice
+pipeline it runs only when the caller asked for a person in one of their
+last two turns, or the model calls it again after a further caller turn;
+otherwise the model is told the transfer was NOT made and to keep helping.
+A transfer ends the call, so one the caller didn't ask for loses every
+change still left to make.
+
 `"read"` or no `effect` runs as an ordinary call. A cart or draft step that
 a later tool confirms is not a write; the confirming tool is. An MCP tool's
 effect comes from its server's `readOnlyHint` (see `mcp/adapt.ts`).
@@ -19874,7 +19914,7 @@ Conditions on the call's arguments — see [ToolMessageCondition](#toolmessageco
 ### ToolEffect
 
 ```ts
-type ToolEffect = "read" | "write";
+type ToolEffect = "read" | "write" | "handoff";
 ```
 
 What a tool does to the world — see `ToolDef.effect`. Carried on the wire as

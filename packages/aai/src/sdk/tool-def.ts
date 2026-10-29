@@ -70,7 +70,7 @@ export type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure |
  *
  * @public
  */
-export type ToolEffect = "read" | "write";
+export type ToolEffect = "read" | "write" | "handoff";
 
 /**
  * Definition of a custom tool that the agent can invoke.
@@ -256,6 +256,14 @@ export type ToolDef<
    * start over the agent's own audio: an "uh-huh" spoken over "Shall I cancel
    * it?" is the caller listening, not agreeing, and the model is told to ask
    * again instead.
+   *
+   * `"handoff"` declares a tool that ends the agent's part of the
+   * conversation — a transfer to a person, an escalation queue. In a voice
+   * pipeline it runs only when the caller asked for a person in one of their
+   * last two turns, or the model calls it again after a further caller turn;
+   * otherwise the model is told the transfer was NOT made and to keep helping.
+   * A transfer ends the call, so one the caller didn't ask for loses every
+   * change still left to make.
    *
    * `"read"` or no `effect` runs as an ordinary call. A cart or draft step that
    * a later tool confirms is not a write; the confirming tool is. An MCP tool's

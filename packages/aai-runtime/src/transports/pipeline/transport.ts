@@ -14,6 +14,7 @@ import {
   ToolCallGuards,
   toVercelTools,
   withConfirmationGate,
+  withHandoffGate,
 } from "../../tools/index.ts";
 import { createEmitError } from "../emit-error.ts";
 import { resolveSystemPrompt, type Transport } from "../types.ts";
@@ -307,17 +308,22 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // Session-scoped like the tool set; the turn binds its own speech channel.
   const toolSpeech = createToolSpeechController({ log, sid: opts.sid });
 
-  // Two wrappers around every model tool call. Before: a declared write runs
-  // only on a caller turn spoken into silence (`tools/confirmation-gate.ts`).
+  // Wrappers around every model tool call. Before: a declared handoff runs
+  // only on the caller's request or a second attempt (`tools/handoff-gate.ts`),
+  // and a declared write only on a caller turn spoken into silence
+  // (`tools/confirmation-gate.ts`).
   // After: the result's proper nouns bias the STT for the rest of the call
   // (`speech/keyterms.ts`), on providers that can take them mid-stream.
   const keyterms = createKeytermHarvester((terms) => providers.stt?.updateKeyterms?.(terms));
-  const gatedExecuteTool = withConfirmationGate(executeTool, {
-    schemas: toolSchemas,
-    turnWasBackchannel,
-    log,
-    sid: opts.sid,
-  });
+  const gatedExecuteTool = withHandoffGate(
+    withConfirmationGate(executeTool, {
+      schemas: toolSchemas,
+      turnWasBackchannel,
+      log,
+      sid: opts.sid,
+    }),
+    { schemas: toolSchemas, log, sid: opts.sid },
+  );
   const tools = toVercelTools(toolSchemas, {
     executeTool: async (name, args, sessionId, messages, options) => {
       const result = await gatedExecuteTool(name, args, sessionId, messages, options);

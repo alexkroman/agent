@@ -27,6 +27,7 @@ export type {
   ToolCallDefaults,
 } from "./executor.ts";
 export { createToolDispatcher, executeToolCall } from "./executor.ts";
+export { withHandoffGate } from "./handoff-gate.ts";
 export type { ToolSpeechController } from "./messages-runner.ts";
 export { awaitSpokenEstimate, createToolSpeechController } from "./messages-runner.ts";
 export { toolResultMessage } from "./result-message.ts";

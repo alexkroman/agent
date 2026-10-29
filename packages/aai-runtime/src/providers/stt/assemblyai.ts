@@ -10,7 +10,12 @@ import {
 import { DEFAULT_STT_PROMPT } from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_STT_EU_URL, type AssemblyAISttOptions } from "@alexkroman1/aai/stt";
 import { omitUndefined } from "@alexkroman1/aai/utils";
-import { AssemblyAI, type StreamingTranscriber, type StreamingTranscriberParams } from "assemblyai";
+import {
+  AssemblyAI,
+  type StreamingTranscriber,
+  type StreamingTranscriberParams,
+  type TurnEvent,
+} from "assemblyai";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import { createAudioSendGate } from "../../_audio-gate.ts";
 import { consoleLogger, transcriptField } from "../../logger.ts";
@@ -31,7 +36,8 @@ import {
   type SttSession,
 } from "../openers.ts";
 import { isCommittingTurn, turnWordSpanMs } from "./_assemblyai-turn.ts";
-import { createInputLevelLedger } from "./_input-level-ledger.ts";
+import { createInputLevelLedger, type InputLevelLedger } from "./_input-level-ledger.ts";
+import { createSttLivenessWatch } from "./_stt-liveness.ts";
 
 /**
  * The slice of the SDK's `StreamingTranscriber` this adapter drives.
@@ -59,7 +65,11 @@ const sdkTranscriber: CreateAssemblyAITranscriber = (apiKey, params) =>
   new AssemblyAI({ apiKey }).streaming.transcriber(params);
 
 export interface AssemblyAISession extends SttSession {
-  /** @internal Test-only: exposes the underlying SDK transcriber for fixture replay. */
+  /**
+   * @internal Test-only: the CURRENT underlying SDK transcriber, for fixture
+   * replay. A deaf socket is replaced (`_stt-liveness.ts`), so read it again
+   * after a reopen rather than holding the first one.
+   */
   readonly _transcriber: AssemblyAITranscriber;
 }
 
@@ -239,17 +249,22 @@ export function openAssemblyAI(
        * partial for the length of the call.
        */
       let currentMinTurnSilenceMs = settings.minTurnSilenceMs;
-      const transcriber = createTranscriber(
-        apiKey,
-        transcriberParams as StreamingTranscriberParams,
-      );
+      let transcriber = createTranscriber(apiKey, transcriberParams as StreamingTranscriberParams);
       suppressDiscardedSocketError(transcriber);
 
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
       // Levels of the audio this socket has SENT, on the service's own clock —
       // what `inputPeakDbfs` is read from. Per socket: a reconnect restarts
       // the service's clock, and a new session restarts this one with it.
-      const levels = createInputLevelLedger(openOpts.sampleRate);
+      let levels = createInputLevelLedger(openOpts.sampleRate);
+      // Reopens a socket that has gone deaf — see `_stt-liveness.ts`.
+      const liveness = createSttLivenessWatch(openOpts.sampleRate, {
+        maxTurnSilenceMs: settings.maxTurnSilenceMs,
+      });
+      /** Frames held while a reopened socket connects; `undefined` when none is connecting. */
+      let pending: Int16Array[] | undefined;
+      let lastKeyterms: readonly string[] | undefined;
+      let reopens = 0;
       const shell = createSttSessionShell({
         emitter,
         teardown: () => transcriber.close(),
@@ -271,8 +286,9 @@ export function openAssemblyAI(
         return typeof raw === "number" ? raw : undefined;
       };
 
-      transcriber.on("turn", (event) => {
+      const onTurn = (event: TurnEvent, socketLevels: InputLevelLedger): void => {
         if (shell.isClosed()) return;
+        liveness.heard(event.end_of_turn === true);
         const text = event.transcript ?? "";
         // Raw turn trace (AAI_DEBUG=1; `debug` is a no-op otherwise). Logged
         // before the empty-text early return and with the service's own flags,
@@ -294,16 +310,86 @@ export function openAssemblyAI(
         // The key is OMITTED rather than set to undefined: `exactOptionalPropertyTypes`
         // distinguishes the two, and "the provider said nothing" is the absent case.
         const span = turnWordSpanMs(event);
-        const inputPeakDbfs = span && levels.peakDbfs(span.startMs, span.endMs);
+        const inputPeakDbfs = span && socketLevels.peakDbfs(span.startMs, span.endMs);
         const spokenMs = span && span.endMs - span.startMs;
-        const trailingSilenceMs = span && Math.max(0, levels.sentMs() - span.endMs);
+        const trailingSilenceMs = span && Math.max(0, socketLevels.sentMs() - span.endMs);
         shell.emit(isCommittingTurn(event, awaitingFormatted) ? "final" : "partial", text, {
           ...omitUndefined({ endOfTurnConfidence, inputPeakDbfs, spokenMs, trailingSilenceMs }),
         });
-      });
+      };
 
-      transcriber.on("error", (err) => shell.onSocketError(err));
-      transcriber.on("close", (code) => shell.onSocketClose(code));
+      /** Replaced sockets still flushing their last turn — see `reopen`. */
+      const draining = new Set<AssemblyAITranscriber>();
+      // Every handler is bound to ITS socket and ledger. A replaced socket's
+      // turns still count while it drains (its flush is real speech, often the
+      // words that exposed it), but its close and errors no longer end the
+      // session.
+      const wire = (t: AssemblyAITranscriber, socketLevels: InputLevelLedger): void => {
+        t.on("turn", (event) => {
+          if (t === transcriber || draining.has(t)) onTurn(event, socketLevels);
+        });
+        t.on("error", (err) => {
+          if (t === transcriber) shell.onSocketError(err);
+        });
+        t.on("close", (code) => {
+          if (t === transcriber) shell.onSocketClose(code);
+        });
+      };
+      wire(transcriber, levels);
+
+      const sendFrame = (frame: Int16Array): void => {
+        levels.record(frame);
+        transcriber.sendAudio(
+          frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength),
+        );
+      };
+
+      /** A reopened socket is up: re-send the session's live settings, then the held audio. */
+      const adopt = (next: AssemblyAITranscriber): void => {
+        if (shell.isClosed() || next !== transcriber) return;
+        if (currentMinTurnSilenceMs !== settings.minTurnSilenceMs) {
+          next.updateConfiguration({ min_turn_silence: currentMinTurnSilenceMs });
+        }
+        if (lastKeyterms) next.updateConfiguration({ keyterms_prompt: [...lastKeyterms] });
+        const held = pending ?? [];
+        pending = undefined;
+        for (const frame of held) sendFrame(frame);
+      };
+
+      /**
+       * Replace a deaf socket. The old one is told to terminate — which flushes
+       * any turn it was holding, accepted while it drains — and audio goes to
+       * `pending`, seeded with the recent audio the old socket never answered,
+       * until the new one is up; then the session's live settings are re-sent.
+       * Measured on recorded calls: keeping the old socket's flush heard 54 of
+       * 58 utterances, dropping it at once 50, with a duplicate final on 2 of
+       * 96 reopens. A failed reopen is a stream error, exactly as the old
+       * socket dying would have been.
+       */
+      const reopen = (): void => {
+        const old = transcriber;
+        reopens += 1;
+        consoleLogger.info("AssemblyAI STT reopened: voiced audio got no turn event", {
+          reopens,
+        });
+        liveness.reopened();
+        pending = [...liveness.recent()];
+        transcriber = createTranscriber(apiKey, transcriberParams as StreamingTranscriberParams);
+        suppressDiscardedSocketError(transcriber);
+        levels = createInputLevelLedger(openOpts.sampleRate);
+        wire(transcriber, levels);
+        const next = transcriber;
+        draining.add(old);
+        void Promise.resolve(old.close())
+          .catch(() => undefined)
+          .finally(() => draining.delete(old));
+        Promise.resolve()
+          .then(() => next.connect())
+          .then(() => adopt(next))
+          .catch((err: unknown) => {
+            if (next === transcriber) shell.onSocketError(err as Error);
+          });
+      };
 
       await connectOrThrow(
         "AssemblyAI STT",
@@ -323,10 +409,16 @@ export function openAssemblyAI(
         minFlushMs: STT_FRAME_FLOOR_MS,
         // `slice` copies just the sent bytes; the accumulator is reused.
         send: (frame) => {
-          levels.record(frame);
-          transcriber.sendAudio(
-            frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength),
-          );
+          if (pending) {
+            pending.push(frame.slice());
+            liveness.observe(frame);
+            return;
+          }
+          if (liveness.observe(frame)) {
+            reopen();
+            return;
+          }
+          sendFrame(frame);
         },
       });
 
@@ -361,17 +453,22 @@ export function openAssemblyAI(
           );
           if (bounded === currentMinTurnSilenceMs) return;
           currentMinTurnSilenceMs = bounded;
+          // A reopening socket gets it once connected.
+          if (pending) return;
           // NOTE: snake_case — `updateConfiguration` takes the service's own
           // wire names, unlike the camelCase connect params.
           transcriber.updateConfiguration({ min_turn_silence: bounded });
         },
         updateKeyterms(terms) {
           if (shell.isClosed()) return;
+          lastKeyterms = terms;
+          if (pending) return;
           // Replaces the session's set — the caller sends all of it every time.
           transcriber.updateConfiguration({ keyterms_prompt: [...terms] });
         },
         forceEndOfTurn() {
-          if (shell.isClosed()) return;
+          // A socket still connecting has no turn to end.
+          if (shell.isClosed() || pending) return;
           // The service's `ForceEndpoint` frame: it ends the turn it is
           // building and emits that turn's final at once — the same `Turn`
           // message a silence window would have produced, so nothing
@@ -380,7 +477,9 @@ export function openAssemblyAI(
           // sends this once per utterance, never per partial.
           transcriber.forceEndpoint();
         },
-        _transcriber: transcriber,
+        get _transcriber() {
+          return transcriber;
+        },
       };
 
       return session;

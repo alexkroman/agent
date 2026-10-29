@@ -640,7 +640,7 @@ type ToolDelayedMessage = {
 };
 
 // @public
-type ToolEffect = "read" | "write";
+type ToolEffect = "read" | "write" | "handoff";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -1741,7 +1741,7 @@ type ToolDelayedMessage = {
 };
 
 // @public
-type ToolEffect = "read" | "write";
+type ToolEffect = "read" | "write" | "handoff";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -4127,7 +4127,7 @@ type ToolDelayedMessage = {
 };
 
 // @public
-type ToolEffect = "read" | "write";
+type ToolEffect = "read" | "write" | "handoff";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -6257,7 +6257,7 @@ export type ToolDelayedMessage = {
 };
 
 // @public
-export type ToolEffect = "read" | "write";
+export type ToolEffect = "read" | "write" | "handoff";
 
 // @public
 export type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -7470,7 +7470,7 @@ type ToolDelayedMessage = {
 };
 
 // @public
-type ToolEffect = "read" | "write";
+type ToolEffect = "read" | "write" | "handoff";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -8997,7 +8997,7 @@ export type ToolDelayedMessage = {
 };
 
 // @public
-type ToolEffect = "read" | "write";
+type ToolEffect = "read" | "write" | "handoff";
 
 // @public
 export function toolEntry(def: ToolDef): ToolsetEntry;
@@ -9155,6 +9155,7 @@ export const ToolSchemaSchema: z.ZodObject<{
     effect: z.ZodOptional<z.ZodEnum<{
         read: "read";
         write: "write";
+        handoff: "handoff";
     }>>;
 }, z.core.$strip>;
 
@@ -9571,6 +9572,7 @@ export const HostConfigMessageSchema: z.ZodObject<{
             effect: z.ZodOptional<z.ZodEnum<{
                 read: "read";
                 write: "write";
+                handoff: "handoff";
             }>>;
         }, z.core.$strip>>;
         sttPrompt: z.ZodOptional<z.ZodString>;
@@ -9669,6 +9671,7 @@ export const HostConfigSchema: z.ZodObject<{
         effect: z.ZodOptional<z.ZodEnum<{
             read: "read";
             write: "write";
+            handoff: "handoff";
         }>>;
     }, z.core.$strip>>;
     sttPrompt: z.ZodOptional<z.ZodString>;
@@ -10924,7 +10927,7 @@ type ToolDelayedMessage = {
 };
 
 // @public
-type ToolEffect = "read" | "write";
+type ToolEffect = "read" | "write" | "handoff";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -13178,7 +13181,7 @@ type ToolDelayedMessage = {
 };
 
 // @public
-type ToolEffect = "read" | "write";
+type ToolEffect = "read" | "write" | "handoff";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -14467,7 +14470,7 @@ type ToolDelayedMessage = {
 };
 
 // @public
-type ToolEffect = "read" | "write";
+type ToolEffect = "read" | "write" | "handoff";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;
@@ -15118,7 +15121,7 @@ type ToolDelayedMessage = {
 };
 
 // @public
-type ToolEffect = "read" | "write";
+type ToolEffect = "read" | "write" | "handoff";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;

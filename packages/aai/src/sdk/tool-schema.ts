@@ -202,7 +202,7 @@ export const ToolSchemaSchema: z.ZodObject<
       >
     >;
     ui: z.ZodOptional<z.ZodType<ToolUi>>;
-    effect: z.ZodOptional<z.ZodEnum<{ read: "read"; write: "write" }>>;
+    effect: z.ZodOptional<z.ZodEnum<{ read: "read"; write: "write"; handoff: "handoff" }>>;
   },
   z.core.$strip
 > = z.object({
@@ -212,7 +212,7 @@ export const ToolSchemaSchema: z.ZodObject<
   parameters: z.record(z.string(), z.unknown()),
   messages: ToolMessagesSchema.optional(),
   ui: ToolUiSchema.optional(),
-  effect: z.enum(["read", "write"]).optional(),
+  effect: z.enum(["read", "write", "handoff"]).optional(),
 });
 
 /**
