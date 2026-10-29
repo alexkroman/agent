@@ -136,6 +136,15 @@ export function asDispatcher(agent: Agent): FetchDispatcher;
 // @internal
 export function asFailureError(err: unknown): Error;
 
+// @public
+export const ASSEMBLYAI_EXPERIMENTAL_API_KEY_ENV: string;
+
+// @public
+export const ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT = "Audio transcription. Language: English. Wording: omit fillers and accidental repetitions; keep the remaining spoken wording unchanged. Formatting: punctuation and capitalization. Output: transcript only.";
+
+// @public
+export const ASSEMBLYAI_EXPERIMENTAL_STT_KIND: "assemblyai-experimental";
+
 // @public (undocumented)
 export const ASSEMBLYAI_GATEWAY_MODELS: {
     readonly "claude-haiku-4-5-20251001": {
@@ -430,15 +439,6 @@ export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
 export const ASSEMBLYAI_STT_KIND: "assemblyai";
 
 // @public
-export const ASSEMBLYAI_SYNC_API_KEY_ENV: string;
-
-// @public
-export const ASSEMBLYAI_SYNC_DEFAULT_PROMPT = "Audio transcription. Language: English. Wording: omit fillers and accidental repetitions; keep the remaining spoken wording unchanged. Formatting: punctuation and capitalization. Output: transcript only.";
-
-// @public
-export const ASSEMBLYAI_SYNC_STT_KIND: "assemblyai-sync";
-
-// @public
 export const ASSEMBLYAI_TTS_API_KEY_ENV: string;
 
 // @public
@@ -462,6 +462,16 @@ const ASSEMBLYAI_TTS_LANGUAGES: {
 
 // @public
 export const ASSEMBLYAI_TTS_MAX_GENERATE_CHARS = 2000;
+
+// @public
+interface AssemblyAIExperimentalSttOptions extends ProviderCredentialOptions {
+    minTurnSilenceMs?: number;
+    model?: string;
+    partialIntervalMs?: number;
+    prompt?: string;
+    speechThresholdDbfs?: number;
+    url?: string;
+}
 
 // @public
 type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-opus-5-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-6-luna" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
@@ -489,16 +499,6 @@ interface AssemblyAISttOptions extends ProviderCredentialOptions {
     vadThreshold?: number;
     voiceFocus?: "near-field" | "far-field" | "off" | (string & {});
     voiceFocusThreshold?: number;
-}
-
-// @public
-interface AssemblyAISyncSttOptions extends ProviderCredentialOptions {
-    minTurnSilenceMs?: number;
-    model?: string;
-    partialIntervalMs?: number;
-    prompt?: string;
-    speechThresholdDbfs?: number;
-    url?: string;
 }
 
 // @public
@@ -1427,6 +1427,16 @@ export function resolveAgentInstructions(agent: {
 export function resolveAllBuiltins(names: readonly string[], options?: BuiltinToolOptions): ResolvedBuiltins;
 
 // @public
+export function resolveAssemblyAIExperimentalSttSettings(options: AssemblyAIExperimentalSttOptions): {
+    url: string;
+    model: string;
+    minTurnSilenceMs: number;
+    speechThresholdDbfs: number;
+    partialIntervalMs: number;
+    prompt?: string;
+};
+
+// @public
 export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
     model: string;
     minTurnSilenceMs: number;
@@ -1440,16 +1450,6 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
     streamingUrl?: string;
     region?: "us" | "eu";
     formatTurns?: boolean;
-};
-
-// @public
-export function resolveAssemblyAISyncSttSettings(options: AssemblyAISyncSttOptions): {
-    url: string;
-    model: string;
-    minTurnSilenceMs: number;
-    speechThresholdDbfs: number;
-    partialIntervalMs: number;
-    prompt?: string;
 };
 
 // @public
@@ -1983,7 +1983,7 @@ export const STT_FRAME_MAX_MS = 1000;
 export const STT_FRAME_TARGET_MS = 100;
 
 // @public
-export const STT_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "stt">, ProviderDefinition<"deepgram", "stt">, ProviderDefinition<"elevenlabs", "stt">, ProviderDefinition<"soniox", "stt">, ProviderDefinition<"local", "stt">, ProviderDefinition<"assemblyai-sync", "stt">];
+export const STT_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "stt">, ProviderDefinition<"deepgram", "stt">, ProviderDefinition<"elevenlabs", "stt">, ProviderDefinition<"soniox", "stt">, ProviderDefinition<"local", "stt">, ProviderDefinition<"assemblyai-experimental", "stt">];
 
 // @public
 export type SttKind = (typeof STT_PROVIDERS)[number]["kind"];

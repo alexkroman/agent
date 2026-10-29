@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Host opener for `assemblyAISyncStt()` — a request/response transcription
+ * Host opener for `assemblyAIExperimentalStt()` — a request/response transcription
  * model (`POST /v1/transcribe`) run as a turn-taking STT stage.
  *
  * The endpoint takes one audio file and answers one transcript, so the
@@ -25,11 +25,11 @@
  * failed partial is skipped, since the final will be asked for anyway.
  */
 
-import type { AssemblyAISyncSttOptions } from "@alexkroman1/aai/experimental";
+import type { AssemblyAIExperimentalSttOptions } from "@alexkroman1/aai/experimental";
 import {
-  ASSEMBLYAI_SYNC_API_KEY_ENV,
-  ASSEMBLYAI_SYNC_DEFAULT_PROMPT,
-  resolveAssemblyAISyncSttSettings,
+  ASSEMBLYAI_EXPERIMENTAL_API_KEY_ENV,
+  ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT,
+  resolveAssemblyAIExperimentalSttSettings,
 } from "@alexkroman1/aai/host-internal";
 import { errorMessage, isRecord, omitUndefined } from "@alexkroman1/aai/utils";
 import { createNanoEvents, type Emitter } from "nanoevents";
@@ -57,13 +57,13 @@ export const MAX_TURN_MS = 60_000;
 /** Deadline on one transcribe request, in ms. */
 export const TRANSCRIBE_TIMEOUT_MS = 15_000;
 
-const LABEL = "AssemblyAI sync STT";
+const LABEL = "AssemblyAI experimental STT";
 
 /** One word of the endpoint's answer, times in ms into the posted audio. */
-type SyncWord = { start: number; end: number };
+type ExperimentalWord = { start: number; end: number };
 
 /** What a transcribe request answered, probed field by field. */
-export type SyncTranscript = { text: string; words: SyncWord[] };
+export type ExperimentalTranscript = { text: string; words: ExperimentalWord[] };
 
 /** The 44-byte RIFF header + PCM16 mono `pcm`, as the endpoint's `audio` part. */
 export function encodeWav(pcm: Int16Array, sampleRate: number): Uint8Array {
@@ -113,10 +113,10 @@ export function buildTranscribeBody(
 }
 
 /** Read the endpoint's JSON answer; anything malformed is no text and no words. */
-export function parseTranscript(body: unknown): SyncTranscript {
+export function parseTranscript(body: unknown): ExperimentalTranscript {
   if (!isRecord(body)) return { text: "", words: [] };
   const text = typeof body.text === "string" ? body.text : "";
-  const words: SyncWord[] = [];
+  const words: ExperimentalWord[] = [];
   if (Array.isArray(body.words)) {
     for (const w of body.words) {
       if (isRecord(w) && typeof w.start === "number" && typeof w.end === "number") {
@@ -128,7 +128,7 @@ export function parseTranscript(body: unknown): SyncTranscript {
 }
 
 /** The `fetch` the opener posts with — a seam so the unit tier needs no network. */
-export type SyncSttFetch = typeof globalThis.fetch;
+export type ExperimentalSttFetch = typeof globalThis.fetch;
 
 /**
  * A turn segmenter over per-block speech decisions — pure, so the unit tier
@@ -270,23 +270,23 @@ export function levelVoiced(block: Int16Array, thresholdDbfs: number): boolean {
   return rmsDbfs(sum, block.length) >= thresholdDbfs;
 }
 
-export function openAssemblyAISyncStt(
-  opts: AssemblyAISyncSttOptions = {},
-  fetchImpl: SyncSttFetch = modelFetch,
+export function openAssemblyAIExperimentalStt(
+  opts: AssemblyAIExperimentalSttOptions = {},
+  fetchImpl: ExperimentalSttFetch = modelFetch,
 ): SttOpener {
   return {
-    name: "assemblyai-sync",
+    name: "assemblyai-experimental",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
       const apiKey = requireApiKey(
         openOpts.apiKey,
-        opts.apiKeyEnv ?? ASSEMBLYAI_SYNC_API_KEY_ENV,
+        opts.apiKeyEnv ?? ASSEMBLYAI_EXPERIMENTAL_API_KEY_ENV,
         LABEL,
         (msg) => createSttError("stt_auth_failed", msg),
       );
-      const settings = resolveAssemblyAISyncSttSettings(opts);
+      const settings = resolveAssemblyAIExperimentalSttSettings(opts);
       // An empty `sttPrompt` is "none", as AssemblyAI's is: the default applies.
       const agentPrompt = openOpts.sttPrompt ? openOpts.sttPrompt : undefined;
-      const prompt = settings.prompt ?? agentPrompt ?? ASSEMBLYAI_SYNC_DEFAULT_PROMPT;
+      const prompt = settings.prompt ?? agentPrompt ?? ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT;
       const { sampleRate } = openOpts;
       const blockSamples = Math.max(1, Math.round((sampleRate * VAD_BLOCK_MS) / 1000));
       const inflight = new AbortController();
@@ -295,7 +295,7 @@ export function openAssemblyAISyncStt(
       closeOnAbort(openOpts.signal, shell.close);
       const ledger = createInputLevelLedger(sampleRate);
 
-      const transcribe = async (pcm: Int16Array): Promise<SyncTranscript> => {
+      const transcribe = async (pcm: Int16Array): Promise<ExperimentalTranscript> => {
         const boundary = `aai-${crypto.randomUUID()}`;
         const res = await fetchImpl(settings.url, {
           method: "POST",
@@ -318,7 +318,7 @@ export function openAssemblyAISyncStt(
       };
 
       /** Word timings → the turn meta, on the session's audio axis. */
-      const metaOf = (t: SyncTranscript, startMs: number): SttTurnMeta | undefined => {
+      const metaOf = (t: ExperimentalTranscript, startMs: number): SttTurnMeta | undefined => {
         const first = t.words[0];
         const last = t.words.at(-1);
         if (first === undefined || last === undefined) return undefined;

@@ -1,24 +1,24 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Unit test for the AssemblyAI sync-endpoint STT opener: the turn segmenter
+ * Unit test for the AssemblyAI experimental STT opener: the turn segmenter
  * (behind the level gate), the request encoding, and the session driven
  * through its `fetch` seam against a scripted endpoint.
  */
 
-import { ASSEMBLYAI_SYNC_DEFAULT_PROMPT } from "@alexkroman1/aai/host-internal";
+import { ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT } from "@alexkroman1/aai/host-internal";
 import { describe, expect, test, vi } from "vitest";
 import { tick } from "../../_timing-test-utils.ts";
 import {
   buildTranscribeBody,
   createBlocker,
   createTurnSegmenter,
+  type ExperimentalSttFetch,
   encodeWav,
   levelVoiced,
-  openAssemblyAISyncStt,
+  openAssemblyAIExperimentalStt,
   PREROLL_MS,
   parseTranscript,
-  type SyncSttFetch,
-} from "./assemblyai-sync.ts";
+} from "./assemblyai-experimental.ts";
 
 const RATE = 16_000;
 
@@ -162,7 +162,7 @@ type Call = { headers: Record<string, string>; body: string };
 /** A scripted endpoint: answers `texts` in order, recording each request. */
 function scriptedFetch(answer: (n: number) => Response | Promise<Response>) {
   const calls: Call[] = [];
-  const fetch: SyncSttFetch = async (_url, init) => {
+  const fetch: ExperimentalSttFetch = async (_url, init) => {
     calls.push({
       headers: init?.headers as Record<string, string>,
       body: new TextDecoder().decode(init?.body as Uint8Array),
@@ -184,8 +184,8 @@ function held() {
 const ok = (text: string, words = [{ start: 300, end: 900 }]) =>
   new Response(JSON.stringify({ text, words }), { status: 200 });
 
-async function open(fetch: SyncSttFetch, sttPrompt?: string) {
-  const session = await openAssemblyAISyncStt({ partialIntervalMs: 0 }, fetch).open({
+async function open(fetch: ExperimentalSttFetch, sttPrompt?: string) {
+  const session = await openAssemblyAIExperimentalStt({ partialIntervalMs: 0 }, fetch).open({
     sampleRate: RATE,
     apiKey: "sandbox-key",
     sttPrompt,
@@ -198,9 +198,9 @@ async function open(fetch: SyncSttFetch, sttPrompt?: string) {
   return { session, events };
 }
 
-describe("openAssemblyAISyncStt", () => {
+describe("openAssemblyAIExperimentalStt", () => {
   test("refuses an empty key", async () => {
-    const opener = openAssemblyAISyncStt({}, scriptedFetch(() => ok("")).fetch);
+    const opener = openAssemblyAIExperimentalStt({}, scriptedFetch(() => ok("")).fetch);
     await expect(
       opener.open({ sampleRate: RATE, apiKey: "", signal: new AbortController().signal }),
     ).rejects.toMatchObject({ code: "stt_auth_failed" });
@@ -217,7 +217,9 @@ describe("openAssemblyAISyncStt", () => {
       Authorization: "sandbox-key",
       "X-AAI-Model": "nemotron-3-5-transcribe",
     });
-    expect(calls[0]?.body).toContain(JSON.stringify({ prompt: ASSEMBLYAI_SYNC_DEFAULT_PROMPT }));
+    expect(calls[0]?.body).toContain(
+      JSON.stringify({ prompt: ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT }),
+    );
     expect(events.final).toHaveBeenCalledWith(
       "Hello there.",
       expect.objectContaining({ spokenMs: 600 }),
@@ -276,7 +278,7 @@ describe("openAssemblyAISyncStt", () => {
     const second = held();
     const answers = [ok("I would"), second.response];
     const { fetch } = scriptedFetch((n) => answers[n - 1] ?? ok("done"));
-    const session = await openAssemblyAISyncStt({ partialIntervalMs: 200 }, fetch).open({
+    const session = await openAssemblyAIExperimentalStt({ partialIntervalMs: 200 }, fetch).open({
       sampleRate: RATE,
       apiKey: "k",
       signal: new AbortController().signal,
@@ -295,7 +297,7 @@ describe("openAssemblyAISyncStt", () => {
 
   test("close aborts a request in flight and emits nothing after", async () => {
     let seen: AbortSignal | undefined;
-    const fetch: SyncSttFetch = (_url, init) => {
+    const fetch: ExperimentalSttFetch = (_url, init) => {
       seen = init?.signal ?? undefined;
       return new Promise<Response>((_, reject) =>
         init?.signal?.addEventListener("abort", () => reject(new Error("aborted"))),

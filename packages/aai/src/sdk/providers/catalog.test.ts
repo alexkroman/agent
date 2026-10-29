@@ -13,7 +13,7 @@ import { KNOWN_LLM_PROVIDERS, llm } from "./llm/llm.ts";
 import { assemblyAIS2s } from "./s2s/assemblyai.ts";
 import { openAIS2s } from "./s2s/openai.ts";
 import { assemblyAIStt } from "./stt/assemblyai.ts";
-import { assemblyAISyncStt } from "./stt/assemblyai-sync.ts";
+import { assemblyAIExperimentalStt } from "./stt/assemblyai-experimental.ts";
 import { deepgramStt } from "./stt/deepgram.ts";
 import { elevenLabsStt } from "./stt/elevenlabs.ts";
 import { localStt } from "./stt/local.ts";
@@ -61,7 +61,7 @@ describe("PROVIDER_CATALOG", () => {
       elevenLabsStt(),
       sonioxStt(),
       localStt(),
-      assemblyAISyncStt(),
+      assemblyAIExperimentalStt(),
       assemblyAITts(),
       cartesiaTts(),
       rimeTts(),
