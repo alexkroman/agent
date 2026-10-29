@@ -24,6 +24,7 @@ import type { KnownLlmProvider } from "./llm/llm.ts";
 import { ASSEMBLYAI_S2S_PROVIDER } from "./s2s/assemblyai.ts";
 import { OPENAI_S2S_PROVIDER } from "./s2s/openai.ts";
 import { ASSEMBLYAI_STT_PROVIDER } from "./stt/assemblyai.ts";
+import { ASSEMBLYAI_SYNC_STT_PROVIDER } from "./stt/assemblyai-sync.ts";
 import { DEEPGRAM_PROVIDER } from "./stt/deepgram.ts";
 import { ELEVENLABS_STT_PROVIDER } from "./stt/elevenlabs.ts";
 import { LOCAL_STT_PROVIDER } from "./stt/local.ts";
@@ -55,6 +56,7 @@ export const STT_PROVIDERS = [
   ELEVENLABS_STT_PROVIDER,
   SONIOX_PROVIDER,
   LOCAL_STT_PROVIDER,
+  ASSEMBLYAI_SYNC_STT_PROVIDER,
 ] as const;
 
 /** The TTS vendors, in the order the docs table lists them. */

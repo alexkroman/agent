@@ -41,6 +41,7 @@
     "createCodingTools"
   ],
   "@alexkroman1/aai/experimental": [
+    "AssemblyAISyncSttOptions",
     "COMPOSIO_API_KEY_ENV",
     "COMPOSIO_BASE_URL",
     "COMPOSIO_MCP_TOOLS",
@@ -86,6 +87,7 @@
     "StepMcpOptions",
     "StepMcpServer",
     "TranscribeDictationOptions",
+    "assemblyAISyncStt",
     "citedSources",
     "composio",
     "composioErrorMessage",
@@ -134,6 +136,9 @@
     "ASSEMBLYAI_STT_API_KEY_ENV",
     "ASSEMBLYAI_STT_DEFAULT_MODEL",
     "ASSEMBLYAI_STT_KIND",
+    "ASSEMBLYAI_SYNC_API_KEY_ENV",
+    "ASSEMBLYAI_SYNC_DEFAULT_PROMPT",
+    "ASSEMBLYAI_SYNC_STT_KIND",
     "ASSEMBLYAI_TTS_API_KEY_ENV",
     "ASSEMBLYAI_TTS_EU_HOST",
     "ASSEMBLYAI_TTS_HOST",
@@ -375,6 +380,7 @@
     "resolveAgentInstructions",
     "resolveAllBuiltins",
     "resolveAssemblyAISttSettings",
+    "resolveAssemblyAISyncSttSettings",
     "resolveAssemblyAITtsLanguage",
     "resolveAssemblyAITtsSettings",
     "resolveCartesiaTtsSettings",

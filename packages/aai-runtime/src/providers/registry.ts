@@ -23,9 +23,10 @@
  * table is `_llm-registry.ts`, keyed to `LLM_PROVIDERS` the same way.
  */
 
-import type { LocalSttOptions } from "@alexkroman1/aai/experimental";
+import type { AssemblyAISyncSttOptions, LocalSttOptions } from "@alexkroman1/aai/experimental";
 import {
   ASSEMBLYAI_STT_KIND,
+  ASSEMBLYAI_SYNC_STT_KIND,
   ASSEMBLYAI_TTS_KIND,
   CARTESIA_KIND,
   DEEPGRAM_KIND,
@@ -131,6 +132,10 @@ const STT_OPENERS: { readonly [K in SttKind]: AnyOpenerEntry<SttOpener>["open"] 
   [LOCAL_STT_KIND]: (d: { options: LocalSttOptions }) =>
     lazyOpener(LOCAL_STT_KIND, async () =>
       (await import("./stt/local.ts")).openLocalStt(d.options),
+    ),
+  [ASSEMBLYAI_SYNC_STT_KIND]: (d: { options: AssemblyAISyncSttOptions }) =>
+    lazyOpener(ASSEMBLYAI_SYNC_STT_KIND, async () =>
+      (await import("./stt/assemblyai-sync.ts")).openAssemblyAISyncStt(d.options),
     ),
 };
 

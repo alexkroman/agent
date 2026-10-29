@@ -93,6 +93,10 @@ export {
   type DictationResponseBody,
   handleDictationRequest,
 } from "./sdk/dictation-request.ts";
+export {
+  type AssemblyAISyncSttOptions,
+  assemblyAISyncStt,
+} from "./sdk/providers/stt/assemblyai-sync.ts";
 export { type LocalSttOptions, localStt } from "./sdk/providers/stt/local.ts";
 export { DTMF_KEYS, MAX_DTMF_KEYS, sendDtmf } from "./sdk/session-dtmf.ts";
 export {

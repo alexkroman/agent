@@ -292,6 +292,12 @@ export {
   resolveAssemblyAISttSettings,
 } from "./sdk/providers/stt/assemblyai.ts";
 export {
+  ASSEMBLYAI_SYNC_API_KEY_ENV,
+  ASSEMBLYAI_SYNC_DEFAULT_PROMPT,
+  ASSEMBLYAI_SYNC_STT_KIND,
+  resolveAssemblyAISyncSttSettings,
+} from "./sdk/providers/stt/assemblyai-sync.ts";
+export {
   DEEPGRAM_API_KEY_ENV,
   DEEPGRAM_KIND,
   resolveDeepgramSttSettings,

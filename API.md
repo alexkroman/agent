@@ -877,6 +877,19 @@ type AnyWorkflowDef<R = unknown> = {
 type AssemblyAIGatewayModel = "claude-haiku-4-5-20251001" | "claude-opus-4-5-20251101" | "claude-opus-4-6" | "claude-opus-4-7" | "claude-opus-4-8" | "claude-opus-5" | "claude-opus-5-5" | "claude-sonnet-4-5-20250929" | "claude-sonnet-4-6" | "claude-sonnet-5" | "gemini-2.5-flash" | "gemini-2.5-flash-lite" | "gemini-2.5-pro" | "gemini-3.1-flash-lite" | "gemini-3.5-flash" | "gemini-3.5-flash-lite" | "gemini-3.6-flash" | "gemini-3.7-flash" | "gemini-3.8-flash" | "gemma-4-31b" | "gpt-4.1" | "gpt-5" | "gpt-5-mini" | "gpt-5-nano" | "gpt-5.1" | "gpt-5.2" | "gpt-5.5" | "gpt-5.6-luna" | "gpt-5.6-sol" | "gpt-5.6-terra" | "gpt-6-astra" | "gpt-6-luna" | "gpt-oss-120b" | "gpt-oss-20b" | "qwen3-32B" | "qwen3-next-80b-a3b" | "qwen3.5-4b-32k-fast" | (string & {});
 
 // @public
+export function assemblyAISyncStt(options?: AssemblyAISyncSttOptions): SttProvider;
+
+// @public
+export interface AssemblyAISyncSttOptions extends ProviderCredentialOptions {
+    minTurnSilenceMs?: number;
+    model?: string;
+    partialIntervalMs?: number;
+    prompt?: string;
+    speechThresholdDbfs?: number;
+    url?: string;
+}
+
+// @public
 type BuiltinTool = "web_search" | "visit_webpage" | "get_page_design" | "fetch_json" | "run_code" | "think" | "remember" | "recall" | "calculate" | "open_meteo" | "brave_search" | "google_places" | "text_me" | "workflow_status" | "workflow_progress" | "workflow_cancel" | (string & {});
 
 // @public
@@ -2528,6 +2541,15 @@ export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
 export const ASSEMBLYAI_STT_KIND: "assemblyai";
 
 // @public
+export const ASSEMBLYAI_SYNC_API_KEY_ENV: string;
+
+// @public
+export const ASSEMBLYAI_SYNC_DEFAULT_PROMPT = "Audio transcription. Language: English. Wording: omit fillers and accidental repetitions; keep the remaining spoken wording unchanged. Formatting: punctuation and capitalization. Output: transcript only.";
+
+// @public
+export const ASSEMBLYAI_SYNC_STT_KIND: "assemblyai-sync";
+
+// @public
 export const ASSEMBLYAI_TTS_API_KEY_ENV: string;
 
 // @public
@@ -2578,6 +2600,16 @@ interface AssemblyAISttOptions extends ProviderCredentialOptions {
     vadThreshold?: number;
     voiceFocus?: "near-field" | "far-field" | "off" | (string & {});
     voiceFocusThreshold?: number;
+}
+
+// @public
+interface AssemblyAISyncSttOptions extends ProviderCredentialOptions {
+    minTurnSilenceMs?: number;
+    model?: string;
+    partialIntervalMs?: number;
+    prompt?: string;
+    speechThresholdDbfs?: number;
+    url?: string;
 }
 
 // @public
@@ -3522,6 +3554,16 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
 };
 
 // @public
+export function resolveAssemblyAISyncSttSettings(options: AssemblyAISyncSttOptions): {
+    url: string;
+    model: string;
+    minTurnSilenceMs: number;
+    speechThresholdDbfs: number;
+    partialIntervalMs: number;
+    prompt?: string;
+};
+
+// @public
 export function resolveAssemblyAITtsLanguage(code: string): string | undefined;
 
 // @public
@@ -4052,7 +4094,7 @@ export const STT_FRAME_MAX_MS = 1000;
 export const STT_FRAME_TARGET_MS = 100;
 
 // @public
-export const STT_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "stt">, ProviderDefinition<"deepgram", "stt">, ProviderDefinition<"elevenlabs", "stt">, ProviderDefinition<"soniox", "stt">, ProviderDefinition<"local", "stt">];
+export const STT_PROVIDERS: readonly [ProviderDefinition<"assemblyai", "stt">, ProviderDefinition<"deepgram", "stt">, ProviderDefinition<"elevenlabs", "stt">, ProviderDefinition<"soniox", "stt">, ProviderDefinition<"local", "stt">, ProviderDefinition<"assemblyai-sync", "stt">];
 
 // @public
 export type SttKind = (typeof STT_PROVIDERS)[number]["kind"];
