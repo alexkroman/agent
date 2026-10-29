@@ -5,6 +5,11 @@
 // The error-reporting cases that need a whole `consumeLlmStream` turn stay in
 // `../llm/stream.test.ts`.
 
+import {
+  DEAD_AIR_OPENING_PHRASE,
+  DEAD_AIR_TOOL_COVER_MS,
+  DEFAULT_DEAD_AIR_COVER_MS,
+} from "@alexkroman1/aai/host-internal";
 import { APICallError, RetryError } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import { makeLogger } from "../../../_logger-test-utils.ts";
@@ -85,6 +90,31 @@ describe("createStreamPartHandler", () => {
     h.speak("One moment.", { record: false, interruptible: true });
     expect(deltas).toEqual([]);
     expect(tts).toEqual([{ text: "One moment.", record: false }]);
+  });
+});
+
+describe("the opening filler after a tool call", () => {
+  // A timed caller stop anchors the opening window, and an anchored opening is
+  // a floor under the tool window; without one the tool window pulls it in.
+  async function fillerAt(callerStoppedAt: number | undefined): Promise<boolean> {
+    vi.useFakeTimers();
+    try {
+      const { h, tts } = handler({ deadAirCoverMs: DEFAULT_DEAD_AIR_COVER_MS, callerStoppedAt });
+      h.handle({ type: "tool-call", toolCallId: "c1", toolName: "lookup", input: {} });
+      await vi.advanceTimersByTimeAsync(DEAD_AIR_TOOL_COVER_MS);
+      h.dispose();
+      return tts.some((t) => t.text.includes(DEAD_AIR_OPENING_PHRASE));
+    } finally {
+      vi.useRealTimers();
+    }
+  }
+
+  test("an anchored opening is not pulled in by the tool window", async () => {
+    expect(await fillerAt(Date.now())).toBe(false);
+  });
+
+  test("an unanchored opening is", async () => {
+    expect(await fillerAt(undefined)).toBe(true);
   });
 });
 
