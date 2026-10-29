@@ -1,5 +1,79 @@
 # aai-studio-server
 
+## 0.13.0
+
+### Minor Changes
+
+- e7cc510: Voice input for the studio composer via AssemblyAI's dictation API, with every
+  piece available to framework users. The SDK adds `transcribeDictation()`,
+  `handleDictationRequest()` (a web-standard `Request → Response` dictation route:
+  body cap, call, `{ text } | { error }` reply) and the `DICTATION_*` limits on
+  `@alexkroman1/aai/experimental`; `stepTranscribeSync` now builds on
+  `transcribeDictation`. aai-ui adds `useDictation` (record one clip, hand it to
+  your `transcribe` callback, get the words back; `buttonProps` and `disabled` for
+  the mic button), `dictationTranscriber` (the matching `transcribe`) and
+  `appendDictation`. The studio gains `POST /studio/dictation` on the caller's own
+  key and a mic button in the chat composer.
+
+### Patch Changes
+
+- 21ec93b: Studio: rotating the account API key releases the old key's owner mapping, so
+  its holder's CLI no longer lands in the rotating account's scope; DELETE …/file
+  deletes an empty file and 404s a name only the file map's prototype holds
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [ac38a37]
+- Updated dependencies [1f6553d]
+- Updated dependencies [f1a994b]
+- Updated dependencies [1f6553d]
+- Updated dependencies [f1a994b]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [5a7e065]
+- Updated dependencies [1f6553d]
+- Updated dependencies [21ec93b]
+- Updated dependencies [f40ff5e]
+- Updated dependencies [1f6553d]
+- Updated dependencies [6a967bc]
+- Updated dependencies [5a7e065]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [e7cc510]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [f40ff5e]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1d6304d]
+- Updated dependencies [90f9990]
+- Updated dependencies [1f6553d]
+- Updated dependencies [fccf609]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [af9fb16]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+  - @alexkroman1/aai-runtime@0.18.0
+  - @alexkroman1/aai@0.18.0
+  - @alexkroman1/aai-ui@0.18.0
+  - aai-server@0.2.9
+  - aai-studio-client@0.7.19
+
 ## 0.12.1
 
 ### Patch Changes
