@@ -19,6 +19,7 @@ import {
   DEAD_AIR_COVER_MAX_MS,
   DEAD_AIR_OPENING_PHRASE,
   DEAD_AIR_OPENING_TARGET_MS,
+  DEAD_AIR_TOOL_COVER_MS,
   DEFAULT_DEAD_AIR_COVER_MS,
 } from "@alexkroman1/aai/host-internal";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -208,5 +209,74 @@ describe("openingCoverMs — the opening window, anchored on the caller's last w
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("a tool call and the anchored opening window", () => {
+  beforeEach(() => void vi.useFakeTimers());
+  afterEach(() => void vi.useRealTimers());
+
+  const OPENING_MS = 3000;
+
+  function toolHarness(openingMs: number | undefined) {
+    const spoken: string[] = [];
+    let spokeText = false;
+    const cover = createDeadAirCover({
+      coverMs: DEFAULT_DEAD_AIR_COVER_MS,
+      openingMs,
+      callerSpeaking: () => false,
+      toolCovering: () => false,
+      spokeText: () => spokeText,
+      speak: (phrase) => void spoken.push(phrase),
+      log: makeLogger(),
+      sid: "s-1",
+    });
+    const speakText = (): void => {
+      spokeText = true;
+    };
+    return { cover, spoken, speakText };
+  }
+
+  it("does not pull the opening filler in front of the anchored target", async () => {
+    // The early filler this guards against: the tool window would fire it
+    // while the answer is due, and the answer then waits out its audio.
+    const h = toolHarness(OPENING_MS);
+    await vi.advanceTimersByTimeAsync(100);
+    h.cover.onToolCall();
+    await vi.advanceTimersByTimeAsync(100 + DEAD_AIR_TOOL_COVER_MS);
+    expect(h.spoken).toEqual([]);
+    await vi.advanceTimersByTimeAsync(OPENING_MS - 200 - DEAD_AIR_TOOL_COVER_MS);
+    expect(h.spoken).toEqual([DEAD_AIR_OPENING_PHRASE]);
+  });
+
+  it("after the opening filler, the chain keeps the tool window's cadence", async () => {
+    const h = toolHarness(OPENING_MS);
+    h.cover.onToolCall();
+    await vi.advanceTimersByTimeAsync(OPENING_MS);
+    expect(h.spoken).toHaveLength(1);
+    // The backoff doubles from the tool window, not from coverMs.
+    await vi.advanceTimersByTimeAsync(DEAD_AIR_TOOL_COVER_MS * 2);
+    expect(h.spoken).toHaveLength(2);
+  });
+
+  it("still pulls a gap AFTER the model spoke in to the tool window", async () => {
+    const h = toolHarness(OPENING_MS);
+    h.speakText();
+    h.cover.clear(); // what a `text-delta` does
+    h.cover.onToolCall();
+    await vi.advanceTimersByTimeAsync(DEAD_AIR_TOOL_COVER_MS);
+    expect(h.spoken).toHaveLength(1);
+    expect(h.spoken[0]).not.toBe(DEAD_AIR_OPENING_PHRASE);
+  });
+
+  it("without an anchor the tool window still pulls the opening in", async () => {
+    // No word timings (another STT, a typed turn): the fallback is a fixed
+    // window from the commit, which is no estimate of the caller's wait.
+    const h = toolHarness(undefined);
+    h.cover.onToolCall();
+    await vi.advanceTimersByTimeAsync(DEAD_AIR_TOOL_COVER_MS - 1);
+    expect(h.spoken).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(h.spoken).toEqual([DEAD_AIR_OPENING_PHRASE]);
   });
 });

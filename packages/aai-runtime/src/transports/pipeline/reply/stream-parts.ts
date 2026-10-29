@@ -317,7 +317,12 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
   // two log lines that say what it did.
   const cover = createDeadAirCover({
     coverMs,
-    openingMs: openingCoverMs(coverMs, deps.callerStoppedAt, Date.now()),
+    // Only when anchored: an anchored opening is also a floor under the tool
+    // window, and the fixed fallback must not become one.
+    openingMs:
+      deps.callerStoppedAt === undefined
+        ? undefined
+        : openingCoverMs(coverMs, deps.callerStoppedAt, Date.now()),
     signal,
     callerSpeaking,
     toolCovering,

@@ -34,8 +34,10 @@ export type DeadAirCoverDeps = {
   /** The author's window; `0` disables the cover outright. */
   coverMs: number;
   /**
-   * The turn's FIRST window, when it differs from `coverMs` — see
-   * {@link openingCoverMs}. Later windows back off from `coverMs` as before.
+   * The turn's FIRST window, anchored on the caller's last word — see
+   * {@link openingCoverMs}. Set only when the STT timed that word; a tool call
+   * may not pull the opening filler earlier than it (`onToolCall`). Later
+   * windows back off from `coverMs` as before.
    */
   openingMs?: number | undefined;
   /** The turn's signal — the cover dies with the turn, not at `dispose()`. */
@@ -269,8 +271,22 @@ export function createDeadAirCover(deps: DeadAirCoverDeps): DeadAirCover {
       // the timer (the caller heard something, so the clock restarts from
       // there), which leaves `pending()` false and lets the next tool call
       // re-open the window.
+      //
+      // Except over an ANCHORED opening gap: nothing has been said yet and the
+      // pending window already lands at the latest point the caller can wait
+      // (DEAD_AIR_OPENING_TARGET_MS). Pulling it in only moves the filler in
+      // front of an answer about to arrive, and the answer then plays after
+      // the filler's ~1.7s of audio. Measured on tau2-bench retail
+      // (aai-fixes-50): 184 of 242 turns' first filler came from this window,
+      // at a median 2.0s after the commit; the answer's first text followed a
+      // median 0.97s later, and 39 of the 60 that arrived in the same reply
+      // waited a mean 1.10s behind it. Replayed with this floor, opening
+      // fillers after a tool call fell from 156 to ~110 and delayed answers
+      // from 40 to 17, with no more fillers landing past the target.
       const toolBase = Math.min(DEAD_AIR_TOOL_COVER_MS, coverMs);
       base = toolBase;
+      const anchoredOpening = deps.openingMs !== undefined && coverCount === 0 && !deps.spokeText();
+      if (anchoredOpening && deadAir.pending()) return;
       if (!deadAir.pending() || Date.now() + toolBase < dueAt) arm(toolBase);
     },
     dispose(): void {
