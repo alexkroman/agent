@@ -94,7 +94,11 @@ export function encodeWav(pcm: Int16Array, sampleRate: number): Uint8Array {
  * The `multipart/form-data` body, built as bytes: a `FormData` through the
  * pinned egress fetch is silently stringified (`host/_undici.ts`).
  */
-export function buildTranscribeBody(wav: Uint8Array, prompt: string, boundary: string): Uint8Array {
+export function buildTranscribeBody(
+  wav: Uint8Array,
+  prompt: string,
+  boundary: string,
+): Uint8Array<ArrayBuffer> {
   const enc = new TextEncoder();
   const head = enc.encode(
     `--${boundary}\r\nContent-Disposition: form-data; name="config"\r\n\r\n${JSON.stringify({ prompt })}\r\n` +
