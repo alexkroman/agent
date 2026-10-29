@@ -1561,7 +1561,7 @@ type ToolDelayedMessage = {
 };
 
 // @public
-type ToolEffect = "read" | "write";
+type ToolEffect = "read" | "write" | "handoff";
 
 // @public
 type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;

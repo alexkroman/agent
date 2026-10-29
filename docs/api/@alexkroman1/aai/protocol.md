@@ -403,6 +403,7 @@ const HostConfigMessageSchema: z.ZodObject<{
      tools: z.ZodArray<z.ZodObject<{
         description: z.ZodString;
         effect: z.ZodOptional<z.ZodEnum<{
+           handoff: "handoff";
            read: "read";
            write: "write";
         }>>;
@@ -447,6 +448,7 @@ const HostConfigSchema: z.ZodObject<{
   tools: z.ZodArray<z.ZodObject<{
      description: z.ZodString;
      effect: z.ZodOptional<z.ZodEnum<{
+        handoff: "handoff";
         read: "read";
         write: "write";
      }>>;

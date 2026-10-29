@@ -1750,7 +1750,7 @@ export type ToolDelayedMessage = {
 };
 
 // @public
-export type ToolEffect = "read" | "write";
+export type ToolEffect = "read" | "write" | "handoff";
 
 // @public
 export type ToolErrorHandler = (err: unknown, ctx: ToolContext) => ToolFailure | string;

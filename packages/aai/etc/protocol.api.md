@@ -145,6 +145,7 @@ export const HostConfigMessageSchema: z.ZodObject<{
             effect: z.ZodOptional<z.ZodEnum<{
                 read: "read";
                 write: "write";
+                handoff: "handoff";
             }>>;
         }, z.core.$strip>>;
         sttPrompt: z.ZodOptional<z.ZodString>;
@@ -243,6 +244,7 @@ export const HostConfigSchema: z.ZodObject<{
         effect: z.ZodOptional<z.ZodEnum<{
             read: "read";
             write: "write";
+            handoff: "handoff";
         }>>;
     }, z.core.$strip>>;
     sttPrompt: z.ZodOptional<z.ZodString>;

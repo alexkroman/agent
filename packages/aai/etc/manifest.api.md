@@ -1159,7 +1159,7 @@ export type ToolDelayedMessage = {
 };
 
 // @public
-type ToolEffect = "read" | "write";
+type ToolEffect = "read" | "write" | "handoff";
 
 // @public
 export function toolEntry(def: ToolDef): ToolsetEntry;
@@ -1317,6 +1317,7 @@ export const ToolSchemaSchema: z.ZodObject<{
     effect: z.ZodOptional<z.ZodEnum<{
         read: "read";
         write: "write";
+        handoff: "handoff";
     }>>;
 }, z.core.$strip>;
 
