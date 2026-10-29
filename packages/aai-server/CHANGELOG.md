@@ -1,5 +1,14 @@
 # aai-server
 
+## 0.2.10
+
+### Patch Changes
+
+- Updated dependencies [dea550d]
+  - @alexkroman1/aai-runtime@0.18.1
+  - aai-guest@0.6.24
+  - @alexkroman1/aai@0.18.1
+
 ## 0.2.9
 
 ### Patch Changes

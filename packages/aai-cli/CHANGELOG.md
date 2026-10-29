@@ -1,5 +1,14 @@
 # @alexkroman1/aai-cli
 
+## 0.18.1
+
+### Patch Changes
+
+- Updated dependencies [dea550d]
+  - @alexkroman1/aai-runtime@0.18.1
+  - @alexkroman1/aai@0.18.1
+  - @alexkroman1/aai-ui@0.18.1
+
 ## 0.18.0
 
 ### Minor Changes
