@@ -1,5 +1,195 @@
 # @alexkroman1/aai-cli
 
+## 0.18.0
+
+### Minor Changes
+
+- c6ae3fd: Harden the `aai` CLI against hostile servers, cloned repos and odd argv, after
+  an adversarial test pass.
+  
+  - `aai publish` now syncs only the values written in the project's dotenv files.
+    It no longer fills declared keys from your shell, and it refuses a symlinked
+    `.env` that points outside the project.
+  - `aai pull` no longer writes `.git/`, `.aai/`, `.env`, lockfiles or
+    `node_modules/`. It never writes through a symlink and checks the whole file
+    map before writing anything.
+  - API requests no longer follow redirects. They also have a timeout and a
+    response size cap.
+  - Text from the server or agent can no longer send terminal escape sequences.
+  - `aai delete` asks for confirmation at a terminal and needs `--yes` otherwise.
+  - Bare `aai` with piped stdout no longer publishes.
+  - `--server` must be a non-empty http(s) URL.
+  - `-v` after a subcommand prints the version instead of running the command.
+  - Extra positional arguments and non-decimal numbers are now refused.
+  - In JSON mode, `aai dev`, `aai test`, `aai eval` and `aai build` keep their
+    logs off stdout.
+  - A broken pipe no longer turns a failure into exit code 0.
+- af9fb16: aai start --workers N serves one build from N processes: client-affinity routing
+  (no database required; DATABASE_URL adds crash survival), primary-owned
+  lifecycle with drain (--drain-timeout), SIGHUP rolling restart and per-worker
+  admission (--max-calls-per-worker). Runtime: per-frame hot paths memoized,
+  provider frames sent in one TLS write per tick, model-provider connections kept
+  alive 30 s across turns, pooled event-id randomness and a TTS audio fast path.
+
+### Patch Changes
+
+- f1a994b: Simplify the agent authoring surface, and move every template onto it.
+  
+  Slots and dialogs: `slot.tool`/`slot.updateTool` take the dialog gate (`dialog`,
+  `when`, `send`, `sendFrom`, `reset`) plus `require`, `prepare` and `report`;
+  `slot.transact`; `after` runs on every store; `sessionSlot` accepts a plain
+  default and `sync: true`, `empty`; `SlotValueOf`/`SlotDraftOf`; `when` is
+  optional on `dialog.tool`; `sendFrom` has a field form and a second-argument
+  form; `DialogStateSpec.onEnter`; `inputSchema` may be omitted or `undefined`.
+  
+  Agent definition: `listing` (the registry line; `description` is a deprecated
+  alias), `promptContext` appended under `system-prompt.md`, `tool({ ui })`,
+  `withInstruction`/`instructionOf`, `ctx.turn`/`ctx.now()`,
+  `AgentSessionContext.turn`, `SessionEndContext.transcript`/`slots`,
+  `apiKeyRoute`, call briefs on `stepPlaceCall` (`readCallBrief`), `agent()` and
+  `workflowApp()` generic over their `workflows` map.
+  
+  Workflows: `workflows/<name>.ts` is discovered;
+  `ctx.poll({ first, slowAfterMs })`, `ctx.report`, `ctx.key`,
+  `ctx.waitForSignal`/`signalToken`, `workflows.signalRun`/`latest`/`live`, held
+  signals, the `workflow_status`/ `workflow_progress`/`workflow_cancel` builtins
+  with `describeRun`/`cancelNote`, `WorkflowInputOf<typeof schema>` and the
+  two-phase `workflow({...}).body()`, `StepOptions.maxWaits`, run
+  `startedAt`/`settledAt`, `transcribeUploadDurably`, `transcodeUpload`,
+  `stepSpeakToUpload`, `fatalOn`/`orFatal`, `stepWebhookUrl({ optional })`,
+  `UploadInfo.label`, `workflowApp()` defaulting `requiredEnv`.
+  
+  Client: `theme: { primary, mode }`, `mountClient({ css })`, tool icons from the
+  def, `SessionStateDot` from the theme, hooks typed by the app def
+  (`useWorkflowSubmit<typeof agentDef>("name")`), `submission.timing`/`scope`,
+  `<WorkflowFields>` rendering `string[]` and `{ name, text }`, `routeFetch`
+  headers, `useRoute` polling.
+  
+  Testing: typed `run(toolDef)`, `toolResultIn(calls, toolDef)`,
+  `lastStateIn(events, slot.projected)`, `expectSlotContract`, `describeAgent`,
+  `sessionEvent`/`fireEvent`, `installStubWorld`, `installStubGateway` seeding the
+  key, `describeEval({ steps })`, `evalRunOf`, `runWorkflow(agentDef, name, …)`,
+  `createRouteContext`.
+  
+  Breaks while on 0.x: `ToolRunner` is an overloaded interface, `ToolDef`'s schema
+  parameter admits `undefined`, `WorkflowInputOf` reads a schema or a declaration,
+  `stepTranscribeUpload` resolves `{ audioUrl, source, size }`,
+  `eventsOf`/`isEvent` moved to the `testing-events` capability and the
+  `WorkflowInputOf` family to `workflow-readings`,
+  `RouteContext.sessionTranscript` is required, `installStubWorld` returns `files`
+  and takes `uploads` as one object.
+  
+  Hardening from an adversarial pass over the new surface: a returned
+  `ToolFailure` from an `updateTool` body, `report` or `transact` stores nothing;
+  `reset: true` runs after `require`/`prepare` and its `send` is honoured;
+  function-form `sendFrom` narrows on slot tools and `sendFrom: "field"` naming a
+  non-event field is a compile error; nested `$instruction` keys are lifted;
+  plain-value slot defaults are checked at declaration; `workflowApp()` takes no
+  `workflows`, a def with none refuses every typed hook name, `isWorkflowDef`
+  requires a `workflow()`-made def, nested `workflows/**` defs are refused and a
+  def declared under a name is not re-registered under its file; `sync: true`
+  projections are claimed by every agent form; signal holds need a live run,
+  `maxWaits` counts only a NAMED delay, the builtins see live runs first, the text
+  agent scopes `ctx.workflows` by session; `TranscribeDurablyOptions`/
+  `PollOptions.maxWaits`; a missing upload or key is fatal; call briefs survive
+  TwiML whitespace and surrogate pairs, `readCallBrief` refuses a multi-line id
+  and trims the secret, `x-api-key` reaches a deployed route; `onSessionEnd` fires
+  once; `useRoute` resets on a path change and refuses a negative `pollMs`;
+  `routeFetch` headers are case-folded; an empty run `key` is refused on both
+  ends; `<WorkflowFields>` reads nullable enums, literal unions and numeric
+  selects; the theme forms are exclusive; `installStubGateway({ apiKey: false })`
+  clears the env; `fireEvent` refuses an empty `events` map.
+  
+  The old forms each of these replaced are REMOVED, not deprecated: `agent()`
+  takes no `description` (write `listing`), no `systemPrompt` (write
+  `system-prompt.md` beside `agent.ts`, plus `promptContext` for computed text; a
+  host sets a prompt on the lowered def with `withSystemPrompt`) and no
+  `syncState` (declare the slot `sync: true`); `mountClient` takes no `name` or
+  `tools` (both come from the agent's own client config); `runWorkflow`'s options
+  carry no `name` (the agent form names the run); and every testing helper reaches
+  a tool by its DEF, never a name string — `run`, `runTool`,
+  `toolResultIn`/`lastToolResultIn`/`toolResultsIn`/`toolArgsIn`,
+  `parseToolInput`/`toolInputIssues` (no agent argument either), `turnCalling`,
+  `expectCalled`, and the claimed `expectToolOk<T>`/`expectDialogOk<T>` overloads.
+  A roster tool is reached through its speaker's `tools` map, a builtin through
+  `builtinTool("workflow_cancel")` on `@alexkroman1/aai/tools`. Epochs:
+  `aai:agent` 2, `aai:testing` 2, `aai-runtime:testing` 2,
+  `aai-runtime:eval-assert` 2, `aai-ui:client` 2, each with the previous epoch
+  dropped.
+- afc85c6: Templates: a new `front-door-agent` template — a smart door and the owner's
+  phone on one page. A phone links by a spoken code (`mintDigitCode`, `hashCode`,
+  `createLinkedClient`, `useRouteMutation`), visitors' messages and a signed
+  hardware ring (`webhookRoute`) reach it through `stepNotifyClient`, it watches
+  the door live with `useInbox` + `inboxEventToItem`, and a daily digest reads the
+  door's log with `stepClientTranscript`.
+- afc85c6: Templates: a new `kitchen-coach-agent` template (client tools the page answers
+  with `useClientTool`, a kitchen form of `aai-ui` fields remembered with
+  `useStoredValue`, `StartScreen` + `SidebarLayout` + `ChatView`, and a history
+  route over `ctx.clientTranscript`); `home-assistant-agent` gains a "Coming up"
+  panel over `clientRunsRoutes` + `useClientRuns`; `outbound-call-agent`'s page
+  uses `TextField`, `TextAreaField`, `useStoredValue` and `phoneE164`.
+- ac38a37: A deployed worker carries only the speech SDKs its agent declares. The worker is
+  one file, so every vendor STT/TTS opener the runtime loads lazily was inlined
+  regardless: the quickstart's worker was 9.8 MB, 42% of it the ElevenLabs SDK,
+  for an agent on the default AssemblyAI pipeline. aai build and aai deploy now
+  read the agent's own config and leave out the vendors it cannot reach; a stub
+  throws, naming what was left out, only if a runtime is handed such a provider
+  anyway.
+- 1f6553d: The starter templates now mark their 34 write tools — bookings, orders,
+  cancellations, dispatches, sent messages, incident and ticket records — with
+  `effect: "write"`, so a caller's "uh-huh" spoken over the agent's confirmation
+  question cannot trigger one. Lookups, cart and draft steps that a later tool
+  commits, and internal notes stay unmarked.
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [ac38a37]
+- Updated dependencies [1f6553d]
+- Updated dependencies [f1a994b]
+- Updated dependencies [1f6553d]
+- Updated dependencies [f1a994b]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [5a7e065]
+- Updated dependencies [1f6553d]
+- Updated dependencies [f40ff5e]
+- Updated dependencies [1f6553d]
+- Updated dependencies [6a967bc]
+- Updated dependencies [5a7e065]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [e7cc510]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1d6304d]
+- Updated dependencies [90f9990]
+- Updated dependencies [1f6553d]
+- Updated dependencies [fccf609]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [af9fb16]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+  - @alexkroman1/aai-runtime@0.18.0
+  - @alexkroman1/aai@0.18.0
+  - @alexkroman1/aai-ui@0.18.0
+
 ## 0.17.0
 
 ### Patch Changes

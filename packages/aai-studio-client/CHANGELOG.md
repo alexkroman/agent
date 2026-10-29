@@ -1,5 +1,38 @@
 # aai-studio-client
 
+## 0.7.19
+
+### Patch Changes
+
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [ac38a37]
+- Updated dependencies [f1a994b]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [f40ff5e]
+- Updated dependencies [6a967bc]
+- Updated dependencies [5a7e065]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [e7cc510]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1d6304d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [fccf609]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+  - @alexkroman1/aai@0.18.0
+  - @alexkroman1/aai-ui@0.18.0
+
 ## 0.7.18
 
 ### Patch Changes

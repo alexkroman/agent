@@ -1,5 +1,67 @@
 # aai-guest
 
+## 0.6.23
+
+### Patch Changes
+
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [ac38a37]
+- Updated dependencies [1f6553d]
+- Updated dependencies [f1a994b]
+- Updated dependencies [1f6553d]
+- Updated dependencies [f1a994b]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [5a7e065]
+- Updated dependencies [1f6553d]
+- Updated dependencies [f40ff5e]
+- Updated dependencies [1f6553d]
+- Updated dependencies [afc85c6]
+- Updated dependencies [6a967bc]
+- Updated dependencies [5a7e065]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [afc85c6]
+- Updated dependencies [ac38a37]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [e7cc510]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1d6304d]
+- Updated dependencies [90f9990]
+- Updated dependencies [1f6553d]
+- Updated dependencies [fccf609]
+- Updated dependencies [1f6553d]
+- Updated dependencies [c6ae3fd]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [af9fb16]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+- Updated dependencies [1f6553d]
+  - @alexkroman1/aai-runtime@0.18.0
+  - @alexkroman1/aai@0.18.0
+  - @alexkroman1/aai-ui@0.18.0
+  - @alexkroman1/aai-cli@0.18.0
+  - aai-guest-core@0.6.22
+  - aai-guest-studio@0.6.23
+
 ## 0.6.22
 
 ### Patch Changes
