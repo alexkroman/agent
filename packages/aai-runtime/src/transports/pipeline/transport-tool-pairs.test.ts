@@ -27,6 +27,7 @@ import {
   noopToolSchema,
   useVirtualTime,
 } from "../_pipeline-transport-harness.ts";
+import { INTERRUPTED_TOOL_CALL_RESULT } from "./history/index.ts";
 import type { PipelineTransportOptions } from "./options.ts";
 import { createPipelineTransport } from "./transport.ts";
 
@@ -188,6 +189,83 @@ describe("the other candidate paths already leave a paired history", () => {
     expect(aborted).toHaveBeenCalled();
     expect(unansweredCalls(second)).toEqual([]);
     expect(log.warn).not.toHaveBeenCalledWith("Orphaned tool call repaired", expect.anything());
+  });
+});
+
+describe("a barge-in after a tool EXECUTED keeps the call in the model's history", () => {
+  // The production failure (tau2 retail, AAI_DEBUG): `LLM turn {"steps":0,
+  // "aborted":true,"toolCalls":["return_delivered_order_items"]}` — the write
+  // ran, no step completed, and the next turn re-sent the identical write,
+  // which then failed ("Non-delivered order cannot be returned").
+  const RETURN: ScriptedPart = { ...CALL, toolCallId: "call_ret" };
+  const SLOW: ScriptedPart = { ...CALL, toolCallId: "call_slow" };
+
+  /** A tool that answers `call_ret` at once and holds every other call until aborted. */
+  function oneFastOneHanging(): PipelineTransportOptions["executeTool"] {
+    return (_n, _a, _s, _m, options) =>
+      options?.toolCallId === "call_ret"
+        ? Promise.resolve("Return processed for order #W123.")
+        : new Promise<string>((_resolve, reject) => {
+            options?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+          });
+  }
+
+  test("a call that SETTLED before the cut reaches the next request with its real result", async () => {
+    const { second, log } = await twoTurns(
+      [[RETURN, SLOW]],
+      { executeTool: oneFastOneHanging() },
+      async (t) => {
+        await vi.advanceTimersByTimeAsync(100);
+        t.cancelReply();
+      },
+    );
+    expect(idsOf(second, "tool-call")).toContain("call_ret");
+    expect(resultFor(second, "call_ret")).toEqual({
+      type: "text",
+      value: "Return processed for order #W123.",
+    });
+    expect(unansweredCalls(second)).toEqual([]);
+    expect(log.warn).not.toHaveBeenCalledWith("Orphaned tool call repaired", expect.anything());
+  });
+
+  test("a call still RUNNING at the cut is recorded as interrupted, outcome unknown", async () => {
+    const { second } = await twoTurns(
+      [[RETURN, SLOW]],
+      { executeTool: oneFastOneHanging() },
+      async (t) => {
+        await vi.advanceTimersByTimeAsync(100);
+        t.cancelReply();
+      },
+    );
+    expect(idsOf(second, "tool-call")).toEqual(["call_ret", "call_slow"]);
+    expect(resultFor(second, "call_slow")).toEqual({
+      type: "text",
+      value: INTERRUPTED_TOOL_CALL_RESULT,
+    });
+    // One assistant message carries both calls and one tool message answers
+    // both, directly after it — the shape the SDK's own step would have had.
+    const at = second.findIndex((m) => idsOf([m], "tool-call").length > 0);
+    expect(second[at + 1]?.role).toBe("tool");
+    expect(idsOf([second[at + 1] as PromptMessage], "tool-result")).toEqual([
+      "call_ret",
+      "call_slow",
+    ]);
+  });
+
+  test("a call the cut landed BEFORE never reaches history", async () => {
+    // The model is still streaming when the caller cuts in, so the call is
+    // never handed to `execute` at all.
+    const executeTool = vi.fn(async () => "result");
+    const { second } = await twoTurns(
+      [[{ type: "text", text: "Let me check that for you. " }, CALL]],
+      { executeTool, llm: createFakeLanguageModel({ steps: [[CALL], NEXT_REPLY], delayMs: 500 }) },
+      async (t) => {
+        await vi.advanceTimersByTimeAsync(10);
+        t.cancelReply();
+      },
+    );
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(idsOf(second, "tool-call")).toEqual([]);
   });
 });
 

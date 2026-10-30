@@ -35,6 +35,21 @@ interface ToVercelToolsContext {
    */
   recordToolResult?: (message: Message) => void;
   /**
+   * Told when a call STARTS, when it is about to reach `executeTool` (`ran`),
+   * and the model's copy of its result when it SETTLES.
+   *
+   * For the same reason as {@link recordToolResult}: the step's messages only
+   * exist once the step finishes, and a pipeline barge-in can land after a
+   * call ran and before that — the voice pipeline's record of what such a turn
+   * really did (`transports/pipeline/history/executed-calls.ts`). Optional, and
+   * answering `undefined` is "not tracked"; nothing here depends on it.
+   */
+  trackCall?: (call: {
+    toolCallId: string;
+    toolName: string;
+    input: unknown;
+  }) => { ran(): void; settled(forModel: string): void } | undefined;
+  /**
    * A tool declared its own failure UNRECOVERABLE — see {@link FatalToolLatch}.
    *
    * The rejection still propagates (the AI SDK needs it to stop treating the
@@ -112,6 +127,11 @@ export function toVercelTools(
         // one core the S2S tool step runs too. What stays here is what only a
         // pipeline turn has: the tool's own voice and the fatal latch.
         const signal = options.abortSignal ?? ctx.signal;
+        const tracked = ctx.trackCall?.({
+          toolCallId: options.toolCallId,
+          toolName: schema.name,
+          input: args,
+        });
         let speech: ReturnType<ToolSpeechController["begin"]> | undefined;
         let settled: SettledToolCall;
         try {
@@ -129,6 +149,9 @@ export function toVercelTools(
             async (input) => {
               speech = ctx.toolSpeech?.begin(schema.messages, schema.name, input, signal);
               await speech?.start();
+              // After a `blocking` start line: a cut during it means the call
+              // never ran (`executeTool` refuses an aborted signal first).
+              tracked?.ran();
             },
           );
         } catch (err: unknown) {
@@ -160,6 +183,7 @@ export function toVercelTools(
         if ((hint !== "" && shaped !== result) || settled.instruction !== undefined) {
           hinted.keep(options.toolCallId, forModel);
         }
+        tracked?.settled(forModel);
         return result + hint;
       },
     });

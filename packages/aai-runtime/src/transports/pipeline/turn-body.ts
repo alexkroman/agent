@@ -13,7 +13,7 @@ import type { FatalToolLatch } from "../../tools/index.ts";
 import type { UsageMeter } from "../../usage-meter.ts";
 import type { EmitError, SendTtsText } from "../types.ts";
 import type { HeardTracker } from "./heard/index.ts";
-import type { PersistedReply, PipelineHistory } from "./history/index.ts";
+import type { ExecutedCallLedger, PersistedReply, PipelineHistory } from "./history/index.ts";
 import type { TurnLlmRunner } from "./llm/index.ts";
 import type { SpeechGate, TurnGuardrails } from "./output/index.ts";
 import type { SpeculationController } from "./speech/index.ts";
@@ -66,6 +66,11 @@ export function createTurnBody(deps: {
    * playing takes back what the caller never heard — `createHeardHistory`.
    */
   trackPersisted: (reply: PersistedReply, historyEpoch: number) => void;
+  /**
+   * What the session's tools report each call into, so a barge-in can keep the
+   * calls its unfinished step already RAN — `history/executed-calls.ts`.
+   */
+  executedCalls: ExecutedCallLedger;
 }): TurnBody {
   const {
     gate,
@@ -82,6 +87,7 @@ export function createTurnBody(deps: {
     sendTtsText,
     emitError,
     trackPersisted,
+    executedCalls,
   } = deps;
 
   /**
@@ -221,6 +227,8 @@ export function createTurnBody(deps: {
         const onDelta = (delta: string): void => {
           accumulated += delta;
         };
+        // Opened before the request, so every call this turn starts is its own.
+        const calls = executedCalls.beginTurn(signal);
         const { messages: responseMessages, failed } = await consumeLlmStream(
           signal,
           onDelta,
@@ -244,6 +252,9 @@ export function createTurnBody(deps: {
             heard.startReply();
           },
         );
+        // The request is over, so no later call is this turn's; what it
+        // recorded stays readable below.
+        calls.end();
 
         if (signal.aborted) {
           // Nothing held may be spoken into a turn the caller talked over.
@@ -254,6 +265,9 @@ export function createTurnBody(deps: {
             heardChars: heard.heard().recordableChars,
             persistedLen,
             stepMessages: responseMessages,
+            // Read NOW, at the cut: a call still running is recorded as
+            // interrupted rather than awaited (see `executed-calls.ts`).
+            executedCalls: calls.unanswered(responseMessages),
             syntheticPrompt,
           });
           return false;

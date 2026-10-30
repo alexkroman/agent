@@ -12,7 +12,7 @@ import { describe, expect, test, vi } from "vitest";
 import { createFatalToolLatch } from "../../tools/index.ts";
 import type { UsageMeter } from "../../usage-meter.ts";
 import { createHeardTracker } from "./heard/index.ts";
-import { createPipelineHistory } from "./history/index.ts";
+import { createExecutedCallLedger, createPipelineHistory } from "./history/index.ts";
 import type { TurnLlmRunner } from "./llm/index.ts";
 import { NO_GUARDRAILS, type SpeechGate, type TurnGuardrails } from "./output/index.ts";
 import type { SpeculationController } from "./speech/index.ts";
@@ -78,6 +78,7 @@ function setup(
     sendTtsText: (text) => sent.push(text),
     emitError,
     trackPersisted,
+    executedCalls: createExecutedCallLedger(),
   });
   return {
     body,
@@ -172,6 +173,8 @@ describe("createTurnBody", () => {
       expect.objectContaining({
         accumulated: "It ships",
         stepMessages: [TOOL_STEP],
+        // No tool ran outside a completed step in this fake.
+        executedCalls: [],
         syntheticPrompt: "where is my order",
       }),
     );

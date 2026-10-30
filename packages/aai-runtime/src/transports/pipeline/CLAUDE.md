@@ -54,6 +54,12 @@ records **no text** (its completed tool steps still count). TTS runs behind the
 text, so recording everything told the model it had delivered what the caller
 never got.
 
+- **A call the cut step already RAN counts too** (`history/executed-calls.ts`):
+  the tools report each call to a session ledger, and `persistInterruptedTurn`
+  rebuilds the unfinished step as one pair, heard text first. A call still
+  running at the cut gets `INTERRUPTED_TOOL_CALL_RESULT` ("outcome unknown"),
+  never the executor's `cancelled`, which made the model re-send writes.
+
 - **One cursor, one owner: `heard/tracker.ts` (`createHeardTracker`).** History
   truncation and the resume anchor (`buildTailResumePrompt`) both READ it, and
   it owns the playback clock the barge-in gate reads.
