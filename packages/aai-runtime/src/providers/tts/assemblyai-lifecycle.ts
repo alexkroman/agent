@@ -26,6 +26,7 @@
  * cancelling  ── the last CANCELLED ───▶ open
  * cancelling  ── after ACK_TIMEOUT ────▶ reconnecting
  * open | cancelling | failed ── CANCEL, socket shut ──▶ reconnecting
+ * open | cancelling | failed ── RECOVER ──────────────▶ reconnecting
  * reconnecting ── opened ──▶ open        reconnecting ── rejected ──▶ failed
  * (any)       ── CLOSE ────────────────▶ closed
  * ```
@@ -93,6 +94,15 @@
  * before this module existed. The next barge-in finds that socket shut and
  * tries a replacement again, so `failed` answers `CANCEL` the way `open` does.
  *
+ * ## `RECOVER` is the pacing close, and it reuses the reconnect
+ *
+ * The service closes a session that outruns its pacing limits with `3010`
+ * (https://www.assemblyai.com/docs/tts/limits). Nothing was wrong with the
+ * request and the docs say to reconnect, so the adapter answers that close with
+ * `RECOVER`: the same replacement a cancel's fallback builds, frames queued for
+ * it meanwhile, rather than a fatal stream error. What the dropped socket still
+ * owed is the adapter's to settle (`replaceSocket`).
+ *
  * A server-side close is NOT an event here: the adapter releases the turn and
  * reports it, and the socket simply stops being open — which is what the next
  * `CANCEL`'s guard reads.
@@ -139,6 +149,8 @@ export type AssemblyAITtsLifecycleEvent =
   | { type: "CANCEL" }
   /** The service acknowledged one `Cancel`. */
   | { type: "CANCELLED" }
+  /** The service closed the socket for pacing (`3010`): replace it. */
+  | { type: "RECOVER" }
   /** The session closed. */
   | { type: "CLOSE" };
 
@@ -200,7 +212,7 @@ const assemblyAITtsLifecycleMachine = setup({
   on: { CLOSE: { target: ".closed" } },
   states: {
     /** The socket carries frames and every frame it delivers is heard. */
-    open: { on: { CANCEL: cancelFrom("firstCancel") } },
+    open: { on: { CANCEL: cancelFrom("firstCancel"), RECOVER: { target: "reconnecting" } } },
     /**
      * `Cancel` went out and is unanswered: the abandoned turn's trailing frames
      * are still arriving, and none of them may reach the session.
@@ -210,6 +222,9 @@ const assemblyAITtsLifecycleMachine = setup({
       on: {
         CANCEL: cancelFrom("anotherCancel"),
         CANCELLED: [{ guard: "lastCancel", target: "open" }, { actions: "cancelAnswered" }],
+        // The socket the window was filtering is the one being dropped, so the
+        // abandoned turn's frames die with it.
+        RECOVER: { target: "reconnecting" },
       },
     },
     /**
@@ -236,7 +251,7 @@ const assemblyAITtsLifecycleMachine = setup({
       },
     },
     /** The replacement never opened. See the module doc: not terminal. */
-    failed: { on: { CANCEL: cancelFrom("firstCancel") } },
+    failed: { on: { CANCEL: cancelFrom("firstCancel"), RECOVER: { target: "reconnecting" } } },
     /**
      * The session is over. Deliberately not `type: "final"` — a trailing
      * `CANCELLED` from a socket's buffered frames would make xstate warn about

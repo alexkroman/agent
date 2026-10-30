@@ -392,7 +392,7 @@ describe("AssemblyAI TTS: cancel racing the socket", () => {
         async (s, actions, behavior) => {
           cov.runs++;
           FakeWebSocket.reset();
-          vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+          vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
           try {
             const violations = await runOne(s, actions, behavior);
             expect(violations, `${violations.join("\n")}\n${String(s)}`).toEqual([]);
@@ -426,7 +426,7 @@ describe("AssemblyAI TTS: cancel racing the socket", () => {
   // socket it was owed on, and the turn's `done` never fired — the pipeline's
   // flush-wait hung on it.
   test("a turn begun under an unanswered Cancel still ends when the deadline drops the socket", async () => {
-    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
     try {
       FakeWebSocket.reset();
       const opener = openAssemblyAITts({}, createFakeWebSocket);

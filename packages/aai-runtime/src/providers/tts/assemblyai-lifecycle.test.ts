@@ -222,8 +222,41 @@ describe("the reconnect fallback", () => {
     lifecycle.send({ type: "CLOSE" });
     lifecycle.send({ type: "CANCEL" });
     lifecycle.send({ type: "CANCELLED" });
+    lifecycle.send({ type: "RECOVER" });
     expect(spies.sendCancel).not.toHaveBeenCalled();
     expect(spies.replaceSocket).not.toHaveBeenCalled();
     expect(lifecycle.phase()).toBe("closed");
+  });
+});
+
+describe("RECOVER (the pacing close)", () => {
+  test("replaces the socket from open, and the replacement is adopted", async () => {
+    const { lifecycle, spies, opens } = makeLifecycle();
+    lifecycle.send({ type: "RECOVER" });
+    expect(lifecycle.phase()).toBe("reconnecting");
+    expect(lifecycle.queueing()).toBe(true);
+    expect(spies.replaceSocket).toHaveBeenCalledTimes(1);
+    opens[0]?.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(lifecycle.phase()).toBe("open");
+    expect(spies.adoptSocket).toHaveBeenCalledTimes(1);
+  });
+
+  test("from the cancel window, it drops the socket that window was filtering", () => {
+    const { lifecycle, spies } = makeLifecycle();
+    lifecycle.send({ type: "CANCEL" });
+    lifecycle.send({ type: "RECOVER" });
+    expect(lifecycle.phase()).toBe("reconnecting");
+    expect(lifecycle.abandoned()).toBe(false);
+    // The ack deadline left with the window.
+    vi.advanceTimersByTime(TTS_CANCEL_ACK_TIMEOUT_MS * 2);
+    expect(spies.replaceSocket).toHaveBeenCalledTimes(1);
+  });
+
+  test("while already reconnecting, it starts no second replacement", () => {
+    const { lifecycle, spies } = makeLifecycle();
+    lifecycle.send({ type: "RECOVER" });
+    lifecycle.send({ type: "RECOVER" });
+    expect(spies.replaceSocket).toHaveBeenCalledTimes(1);
   });
 });
