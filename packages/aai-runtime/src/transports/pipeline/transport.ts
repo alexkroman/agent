@@ -41,6 +41,7 @@ import {
   createUserActivity,
 } from "./speech/index.ts";
 import {
+  createCallerTurnQueue,
   createTurnChain,
   createTurnGate,
   createTurnMachine,
@@ -167,7 +168,21 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // argument is in pipeline-context-budget.ts.
   const contextBudget = createContextBudget({ llm: opts.llm, log, sid: opts.sid });
   // Turn serializer + its queued-turn epoch check — see createTurnChain.
-  const turnChain = createTurnChain({ gate, isTerminated });
+  const chainOfTurns = createTurnChain({ gate, isTerminated });
+  // Caller turns waiting behind a slow reply are answered once — see
+  // createCallerTurnQueue. Every OTHER turn (greeting, line, nudge, resume)
+  // seals it, so a later utterance cannot jump ahead of that turn.
+  const callerTurns = createCallerTurnQueue({
+    queueEpoch: gate.queueEpoch,
+    queueCurrent: gate.queueCurrent,
+  });
+  const turnChain: typeof chainOfTurns = {
+    chain(start, onStranded) {
+      callerTurns.seal();
+      chainOfTurns.chain(start, onStranded);
+    },
+    settled: chainOfTurns.settled,
+  };
   // What the caller has actually HEARD of the current reply: the barge-in
   // gate, the cut point history is truncated to, and the resume anchor, all
   // from one cursor — see createHeardTracker.
@@ -368,16 +383,36 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     crashLabel: string,
     kind?: { isResume?: boolean; synthetic?: boolean; note?: string },
   ): void {
-    turnChain.chain(async () => {
-      turns.setResumeScope(kind?.isResume === true);
-      try {
-        await runTurn(text, {
-          synthetic: kind?.synthetic === true,
-          ...omitUndefined({ note: kind?.note }),
-        }).catch(logTurnCrash(crashLabel));
-      } finally {
-        turns.setResumeScope(false);
-      }
+    if (kind?.synthetic === true || kind?.isResume === true) {
+      turnChain.chain(async () => {
+        turns.setResumeScope(kind?.isResume === true);
+        try {
+          await runTurn(text, {
+            synthetic: kind?.synthetic === true,
+            ...omitUndefined({ note: kind?.note }),
+          }).catch(logTurnCrash(crashLabel));
+        } finally {
+          turns.setResumeScope(false);
+        }
+      });
+      return;
+    }
+    // Something the CALLER said: it joins a caller turn still waiting to start,
+    // or becomes one — see createCallerTurnQueue.
+    const waiting = callerTurns.commit(text, kind?.note);
+    if (waiting === undefined) {
+      log.info("Pipeline caller turn joined a queued turn", { sid: opts.sid });
+      return;
+    }
+    // The raw chain: a caller turn must not seal the queue it just opened.
+    chainOfTurns.chain(async () => {
+      const { text: userText, utterances, note } = waiting.take();
+      const count = utterances.length;
+      if (count > 1)
+        log.info("Pipeline answering queued caller turns once", { sid: opts.sid, count });
+      await runTurn(userText, { claims: utterances, ...omitUndefined({ note }) }).catch(
+        logTurnCrash(crashLabel),
+      );
     });
   }
 

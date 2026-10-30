@@ -14,9 +14,10 @@
  * This clock runs inside the provider stream itself: armed by each chunk the
  * model sends, cleared when that stream ends — which is before any of its tool
  * calls execute. It aborts the request with a `TimeoutError` and REPORTS that
- * it fired (`stalled()`), so nothing has to recognize its wording. The FIRST-chunk clock
- * stays the SDK's: it is cleared by the first output chunk, so it is never armed
- * while a tool runs.
+ * it fired (`stalled()`), so nothing has to recognize its wording. It is also
+ * armed while the request is being OPENED (retries included), which no SDK
+ * clock covers. The FIRST-chunk clock after that stays the SDK's: it is cleared
+ * by the first output chunk, so it is never armed while a tool runs.
  *
  * A model given by ID cannot be wrapped (`wrapLanguageModel` takes an object;
  * the SDK resolves an id itself), so it keeps the SDK's `chunkMs`: tool time
@@ -42,13 +43,27 @@ export function withChunkWatchdog(
   const stall = new AbortController();
   const middleware: LanguageModelMiddleware = {
     wrapStream: async ({ doStream }) => {
-      const { stream, ...rest } = await doStream();
       // Re-armed on every chunk: the coalescing timer keeps ONE pending timeout.
       const clock = createCoalescingTimer(() =>
         stall.abort(
           new DOMException(`Stream timeout: no model output for ${ms}ms`, "TimeoutError"),
         ),
       );
+      // Armed BEFORE the call, not on its first chunk: opening the response
+      // is where retries wait (`./retry.ts`) and where a provider that queues
+      // requests holds them, and the SDK's first-chunk clock only starts once
+      // `doStream` has resolved. Without this a request could sit unanswered
+      // for undici's 300 s header timeout, the wait the stall deadline exists
+      // to cut. A call that fails disarms it — the failure is the answer.
+      clock.arm(ms);
+      let opened: Awaited<ReturnType<typeof doStream>>;
+      try {
+        opened = await doStream();
+      } catch (err: unknown) {
+        clock.clear();
+        throw err;
+      }
+      const { stream, ...rest } = opened;
       return {
         ...rest,
         stream: stream.pipeThrough(clockedPassThrough(clock, ms)),

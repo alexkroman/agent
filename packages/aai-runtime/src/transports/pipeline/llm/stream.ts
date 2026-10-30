@@ -33,6 +33,7 @@ import {
   type StreamPartHandler,
 } from "../reply/index.ts";
 import { drainEntries, partsAsEntries, type RunProgress } from "./drain.ts";
+import { withBoundedRetries } from "./retry.ts";
 import { smoothTextStream } from "./smooth.ts";
 import { withChunkWatchdog } from "./stall.ts";
 import { bindToolSpeech, stepMessages } from "./tool-speech.ts";
@@ -99,8 +100,15 @@ export type {
  */
 export function startLlmStream(req: LlmRequest): StartedLlmStream {
   const stallMs = req.stallTimeoutMs ?? LLM_STALL_TIMEOUT_MS;
+  // Retries of a FAILED call, bounded in total wait — see `./retry.ts`. Inside
+  // the watchdog, so the stall clock covers the retries' waits too.
+  const retrying = withBoundedRetries(req.llm, {
+    maxRetries: req.maxRetries,
+    log: req.log,
+    sid: req.sid,
+  });
   // The between-chunks clock, on the model's own stream — see `./stall.ts`.
-  const watched = withChunkWatchdog(req.llm, stallMs, req.signal);
+  const watched = withChunkWatchdog(retrying.model, stallMs, req.signal);
   const result = streamText({
     model: watched.model,
     // Resolved HERE, at request-assembly time, so the request carries the phase
@@ -128,7 +136,9 @@ export function startLlmStream(req: LlmRequest): StartedLlmStream {
     ...omitUndefined({
       temperature: req.temperature,
       maxOutputTokens: req.maxOutputTokens,
-      maxRetries: req.maxRetries,
+      // 0 when `./retry.ts` owns the retries; the SDK's would wait out a
+      // 60 s `retry-after` before the stall clock could see it.
+      maxRetries: retrying.wrapped ? 0 : req.maxRetries,
     }),
     // Word-coalesce text for TTS, keeping thinking signatures (see pipeline-smooth.ts).
     experimental_transform: smoothTextStream(),
@@ -313,6 +323,9 @@ function reportLlmFailure(
   if (!ctx.reported) ctx.emitError("llm", msg, { fatal: false });
 }
 
+/** Why a turn the dead-air cover gave up on failed — the client's `error.reported`. */
+const COVER_GAVE_UP_MESSAGE = "The LLM produced nothing for too long; the turn was abandoned.";
+
 /** {@link settleOrRetry}'s answer for "re-send this pass". */
 const RETRY = Symbol("retry");
 
@@ -338,6 +351,45 @@ async function settleOrRetry(
 }
 
 /**
+ * Report a turn ended by one of this module's own latches on the request
+ * signal — the dead-air cover giving up, or a fatal tool error — and answer
+ * whether one fired, in which case the turn FAILED. Either way the caller
+ * hears `errorPhrase`; `flush` first, so speech matches the transcript
+ * already accumulated.
+ *
+ * Reported as an `llm` error for the cover (the model produced nothing) and a
+ * `tool` error for the tool (the model did nothing wrong), NON-fatally both —
+ * a failing turn is not a failing session.
+ */
+function reportLatchedFailure(
+  ctx: {
+    gaveUp: AbortSignal;
+    fatalTool?: ConsumeLlmStreamParams["fatalTool"];
+    emitError: ConsumeLlmStreamParams["emitError"];
+    log: ConsumeLlmStreamParams["log"];
+    sid: string;
+  },
+  flush?: () => void,
+): boolean {
+  if (ctx.gaveUp.aborted) {
+    flush?.();
+    ctx.log.error("LLM turn abandoned after dead-air cover gave up", { sid: ctx.sid });
+    ctx.emitError("llm", COVER_GAVE_UP_MESSAGE, { fatal: false });
+    return true;
+  }
+  const fatalErr = ctx.fatalTool?.error();
+  if (fatalErr === undefined) return false;
+  flush?.();
+  ctx.log.error("Tool failed fatally; turn stopped", {
+    tool: fatalErr.toolName,
+    error: fatalErr.message,
+    sid: ctx.sid,
+  });
+  ctx.emitError("tool", fatalErr.message, { fatal: false });
+  return true;
+}
+
+/**
  * A stall AFTER a completed step: the stream ends with an `abort` part and
  * `steps` resolves — nothing throws, and the turn would end in silence right
  * after a tool ran. Reported as a failed turn (the caller hears the recovery
@@ -348,6 +400,8 @@ function failedOrStalled(
   abortReason: unknown,
   ctx: {
     signal: AbortSignal;
+    /** The dead-air cover's give-up latch — see {@link reportLatchedFailure}. */
+    gaveUp: AbortSignal;
     handler: StreamPartHandler;
     isStall: (reason: unknown) => boolean;
     emitError: ConsumeLlmStreamParams["emitError"];
@@ -355,6 +409,7 @@ function failedOrStalled(
     sid: string;
   },
 ): boolean {
+  if (!ctx.signal.aborted && reportLatchedFailure(ctx)) return true;
   if (ctx.signal.aborted || !ctx.isStall(abortReason)) return ctx.handler.errored();
   const msg = llmErrorSentence(abortReason);
   ctx.log.error("LLM stream stalled after output; turn failed", { error: msg, sid: ctx.sid });
@@ -437,7 +492,12 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
   // is a FAILED turn — the caller hears `errorPhrase` and the session lives.
   // `AbortSignal.any` holds its sources weakly, so a settled turn leaves no
   // listener behind on either.
-  const requestSignal = withFatalSignal(signal, fatalTool);
+  //
+  // The dead-air cover's give-up is a third source, for the same reason as the
+  // fatal tool: it must end the turn as FAILED (the caller hears
+  // `errorPhrase`), not as a barge-in. See `DEAD_AIR_COVER_MAX_FILLERS`.
+  const coverGaveUp = new AbortController();
+  const requestSignal = AbortSignal.any([withFatalSignal(signal, fatalTool), coverGaveUp.signal]);
   // Batch word-granularity deltas into fewer TTS provider sends; the
   // transcript path (onDelta) keeps full delta granularity.
   let ttsText = createTtsTextCoalescer(sendTtsText);
@@ -495,6 +555,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
         // is already covering the gap, so the generic cover stands down rather
         // than speaking a second sentence about one silence.
         toolCovering,
+        onDeadAirGiveUp: () => coverGaveUp.abort(new Error(COVER_GAVE_UP_MESSAGE)),
         // `../reply/stream-parts.ts` keeps its own two parameters: it is transport
         // INTERNALS, where an `on*` argument is ordinary function decomposition
         // rather than an observability surface. This is the seam where the two
@@ -590,7 +651,16 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
         // A stream can end without throwing having emitted nothing but an `error`
         // part, which is still a turn the caller never heard a reply to.
         // So can a stall after a completed step — see failedOrStalled.
-        failed: failedOrStalled(progress.abort, { signal, handler, isStall, emitError, log, sid }),
+        // So can a dead-air cover that gave up — see reportLatchedFailure.
+        failed: failedOrStalled(progress.abort, {
+          signal,
+          gaveUp: coverGaveUp.signal,
+          handler,
+          isStall,
+          emitError,
+          log,
+          sid,
+        }),
       };
     }
   } catch (err: unknown) {
@@ -610,17 +680,8 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     // first, so speech matches the transcript already accumulated; it reads
     // `ttsText` HERE rather than through a captured reference, because the
     // coalescer is REPLACED on a poisoned-adoption restart.
-    const fatalErr = fatalTool?.error();
-    if (fatalErr !== undefined) {
-      ttsText.flush();
-      log.error("Tool failed fatally; turn stopped", {
-        tool: fatalErr.toolName,
-        error: fatalErr.message,
-        sid,
-      });
-      emitError("tool", fatalErr.message, { fatal: false });
-      return { messages: collected, failed: true };
-    }
+    const latched = { gaveUp: coverGaveUp.signal, fatalTool, emitError, log, sid };
+    if (reportLatchedFailure(latched, ttsText.flush)) return { messages: collected, failed: true };
     // Flush buffered TTS text so speech matches the transcript already
     // accumulated via onDelta for the pre-error portion of the turn.
     ttsText.flush();

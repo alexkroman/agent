@@ -85,6 +85,11 @@ type StreamPartHandlerDeps = {
    */
   callerSpeaking?: (() => boolean) | undefined;
   /**
+   * The dead-air cover gave up on this turn — see `DeadAirCoverDeps.giveUp`.
+   * The stream's owner ends the turn as failed.
+   */
+  onDeadAirGiveUp?: (() => void) | undefined;
+  /**
    * Is a tool call speaking for itself right now? (`ToolDef.messages`, see
    * `../../../tools/messages-runner.ts`.)
    *
@@ -330,6 +335,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
     // A filler is audible and never recorded: `speak` below, with the flags
     // `lines.ts`'s table gives it.
     speak: (phrase) => speak(phrase, FILLER),
+    giveUp: deps.onDeadAirGiveUp,
     log,
     sid,
   });
@@ -407,9 +413,12 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         return;
       }
       case "tool-result":
+        cover.onToolResult();
         emitToolResult(part);
         return;
       case "tool-error":
+        // A failed call is over too — the cover's in-flight count needs it.
+        cover.onToolResult();
         // What an INVALID call (unknown tool, unparseable input) and a thrown
         // `execute` both become. The model gets it as an error result in the
         // step's messages; this line is the only place an operator sees WHY.
