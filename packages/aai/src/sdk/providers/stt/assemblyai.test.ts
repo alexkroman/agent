@@ -13,6 +13,7 @@ import {
 } from "../../pipeline-tuning-constants.ts";
 import {
   ASSEMBLYAI_STT_API_KEY_ENV,
+  ASSEMBLYAI_STT_DEFAULT_LANGUAGES,
   ASSEMBLYAI_STT_DEFAULT_MODEL,
   ASSEMBLYAI_STT_KIND,
   assemblyAIStt,
@@ -30,9 +31,10 @@ describe("assemblyAIStt", () => {
 });
 
 describe("resolveAssemblyAISttSettings", () => {
-  test("fills every unset knob with its measured default, and adds no optional key", () => {
+  test("fills every unset knob with its default, and adds no other optional key", () => {
     expect(resolveAssemblyAISttSettings({})).toEqual({
       model: ASSEMBLYAI_STT_DEFAULT_MODEL,
+      languages: ASSEMBLYAI_STT_DEFAULT_LANGUAGES,
       minTurnSilenceMs: DEFAULT_MIN_TURN_SILENCE_MS,
       maxTurnSilenceMs: DEFAULT_MAX_TURN_SILENCE_MS,
       voiceFocus: DEFAULT_VOICE_FOCUS,
@@ -52,7 +54,34 @@ describe("resolveAssemblyAISttSettings", () => {
     expect(resolveAssemblyAISttSettings({ voiceFocus: "off" }).voiceFocus).toBe("");
   });
 
-  test("drops an empty language list and an empty streaming URL rather than sending them", () => {
+  test("defaults languages to English only on the Universal-3.5 Pro family", () => {
+    expect(ASSEMBLYAI_STT_DEFAULT_LANGUAGES).toEqual(["en"]);
+    expect(Object.isFrozen(ASSEMBLYAI_STT_DEFAULT_LANGUAGES)).toBe(true);
+    expect(resolveAssemblyAISttSettings({}).languages).toEqual(["en"]);
+    expect(resolveAssemblyAISttSettings({ model: "u3-rt-pro" }).languages).toEqual(["en"]);
+  });
+
+  test("adds no language default on a model outside the Universal-3.5 Pro family", () => {
+    // `language_codes` was never sent to these models; a default here would
+    // pin a multilingual model to English, or be refused as a connect param.
+    for (const model of ["universal-streaming-multilingual", "universal-streaming-english"]) {
+      expect("languages" in resolveAssemblyAISttSettings({ model })).toBe(false);
+    }
+  });
+
+  test("passes an explicit language list through exactly as given, on any model", () => {
+    const several = ["en", "es"] as const;
+    expect(resolveAssemblyAISttSettings({ languages: several }).languages).toBe(several);
+    expect(resolveAssemblyAISttSettings({ languages: ["fr"] }).languages).toEqual(["fr"]);
+    expect(
+      resolveAssemblyAISttSettings({
+        model: "universal-streaming-multilingual",
+        languages: several,
+      }).languages,
+    ).toBe(several);
+  });
+
+  test("an empty language list opts out of the default: nothing is sent, so the model code-switches", () => {
     const settings = resolveAssemblyAISttSettings({ languages: [], streamingUrl: "" });
     expect("languages" in settings).toBe(false);
     expect("streamingUrl" in settings).toBe(false);

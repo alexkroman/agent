@@ -36,19 +36,21 @@ case for repointing a stage is `apiKeyEnv` on the AssemblyAI descriptor.
 The field is spelled `language` for a single code and `languages` for a
 list, which is the only difference between the four — but their DEFAULTS do
 not line up, and that is the one cross-provider fact you cannot assemble
-from the per-symbol docs. The row that surprises people is Deepgram's:
+from the per-symbol docs:
 
 | factory | field | unset means |
 | --- | --- | --- |
-| [assemblyAIStt](#assemblyaistt) | `languages` | detect per turn (code-switches across 18) |
+| [assemblyAIStt](#assemblyaistt) | `languages` | **English** on Universal-3.5 Pro (the default model) — `["en"]` is sent for you; `[]` code-switches across 18 |
 | [deepgramStt](#deepgramstt) | `language` | **English** — `"en"` is sent for you |
 | [elevenLabsStt](#elevenlabsstt) | `language` | auto-detect (the field is omitted) |
 | [sonioxStt](#sonioxstt) | `languages` | auto-detect (the field is omitted) |
 
-So moving an agent from [assemblyAIStt](#assemblyaistt) to [deepgramStt](#deepgramstt) silently
-drops multilingual transcription, and moving the other way silently gains
-code-switching — read [AssemblyAISttOptions.languages](#languages) before you do,
-because that default has a measured failure mode with no obvious symptom.
+So moving an agent from [elevenLabsStt](#elevenlabsstt) or [sonioxStt](#sonioxstt) to
+[assemblyAIStt](#assemblyaistt) or [deepgramStt](#deepgramstt) silently drops multilingual
+transcription, and moving the other way silently gains auto-detection —
+read [AssemblyAISttOptions.languages](#languages) before you do, because
+code-switching on a monolingual line has a measured failure mode with no
+obvious symptom.
 
 Each vendor's own wire spelling (`language_codes`, `languageCode`,
 `language_hints`) is applied by the host opener, not written here.
@@ -109,9 +111,10 @@ export default agent({
 });
 ```
 
-Pinning `languages` to one code turns code-switching OFF. Unset means
-"detect per turn", which is not "English" — see
-[AssemblyAISttOptions.languages](#languages).
+Unset `languages` means English only on Universal-3.5 Pro (code-switching
+OFF; other models get no default); pass `[]` to
+code-switch across every supported language, or several codes to bias
+toward a subset — see [AssemblyAISttOptions.languages](#languages).
 
 ***
 
@@ -149,8 +152,8 @@ export default agent({
 });
 ```
 
-Deepgram is the one STT vendor here whose unset `language` is not
-auto-detect: `"en"` is sent for you. Name the code you mean.
+Deepgram's unset `language` is not auto-detect: `"en"` is sent for you.
+Name the code you mean.
 
 ***
 
@@ -480,21 +483,29 @@ optional languages?: readonly string[];
 Languages to bias the model toward, sent as the `language_codes` connection
 parameter (e.g. `["en"]`, `["en", "es"]`).
 
-**Unset means DETECT PER TURN, not English** — the same default
-`elevenlabs` and `sonioxStt` have, and the opposite of `deepgramStt`, whose
-unset `language` is `"en"`.
+**Unset means ENGLISH on Universal-3.5 Pro** (the default model;
+`ASSEMBLYAI_STT_DEFAULT_LANGUAGES`, `["en"]`) — the same default
+`deepgramStt` has, and the opposite of `elevenLabsStt` and `sonioxStt`,
+which auto-detect when unset. On any other [model](#model) unset sends no
+`language_codes` and the model's own language behaviour applies.
 
-Universal-3.5 Pro **code-switches across 18 languages by default**, so an
-unset value costs accuracy on a monolingual line in a way that is easy to
-misread as an audio problem: measured against tau2-bench, English
-utterances came back
-transliterated into Devanagari and Hebrew script
-(`Hello? Any update?` → `हेलो एनी अपडेट`), including an authentication turn,
-so the tool call built from it was garbage. Nothing in the transcript says
-"wrong language" — it reads as a mis-hearing.
+- **unset** — Universal-3.5 Pro: `["en"]`, English only, code-switching
+  off. Other models: nothing sent.
+- **one code** (`["es"]`) — pins that language, code-switching off.
+- **several codes** (`["en", "es"]`) — biases toward that subset and keeps
+  code-switching between them. Sent exactly as given.
+- **`[]`** — sends no `language_codes` at all, so Universal-3.5 Pro
+  code-switches across all 18 languages it supports. This is the opt-in
+  for a genuinely multilingual line.
 
-A single-element list pins one language and keeps code-switching off; omit
-for a genuinely multilingual line.
+Code-switching is not the default because it costs accuracy on a
+monolingual line in a way that is easy to misread as an audio problem:
+measured against tau2-bench, English utterances came back transliterated
+into Devanagari and Hebrew script (`Hello? Any update?` → `हेलो एनी अपडेट`),
+and caller backchannels (`mm-hm`) came back as `نن.` (21x) and `और`
+(16x) — non-English text the pipeline took as real caller turns, cutting
+the agent off mid-reply. Nothing in the transcript says "wrong language" —
+it reads as a mis-hearing.
 
 ##### maxConnectRetries?
 
@@ -693,14 +704,13 @@ optional language?: string;
 BCP-47 language code for transcription. Examples: `"en"`, `"es"`, `"fr"`,
 `"de"`.
 
-**Unset means ENGLISH, not auto-detect.** Deepgram is the one STT provider
-here that behaves that way: `DEEPGRAM_DEFAULT_LANGUAGE` (`"en"`) is
-filled in and sent on every connection, where `assemblyAIStt` detects per
-turn and `elevenlabs`/`sonioxStt` omit the field entirely so the vendor
-auto-detects. So an agent moved from any of those three to `deepgramStt()`
-silently loses non-English transcription — and the symptom is a caller
-whose speech comes back as plausible English words, which reads as a
-mis-hearing rather than as a language setting.
+**Unset means ENGLISH, not auto-detect.** `DEEPGRAM_DEFAULT_LANGUAGE`
+(`"en"`) is filled in and sent on every connection — the same default
+`assemblyAIStt` has — where `elevenLabsStt`/`sonioxStt` omit the field
+entirely so the vendor auto-detects. So an agent moved from either of
+those two to `deepgramStt()` silently loses non-English transcription —
+and the symptom is a caller whose speech comes back as plausible English
+words, which reads as a mis-hearing rather than as a language setting.
 
 Name the code you mean. There is no value for "detect": Deepgram's
 multilingual support is selected by naming a multilingual `model`.
@@ -756,8 +766,8 @@ utterances.
 
 **Unset means AUTO-DETECT, not English.** The field is omitted from the
 request entirely, so ElevenLabs decides — which is the same default
-`assemblyAIStt` and `sonioxStt` have, and the opposite of `deepgramStt`, whose
-unset `language` is `"en"`. Pass a code for a line you know is
+`sonioxStt` has, and the opposite of `deepgramStt` and `assemblyAIStt`,
+whose unset value is English. Pass a code for a line you know is
 monolingual.
 
 ##### model?
@@ -808,8 +818,8 @@ languages, sent as Soniox's `language_hints`. Example: `["en", "es"]`.
 
 **Unset means AUTO-DETECT, not English.** The field is omitted from the
 request entirely, so Soniox decides — which is the same default
-`assemblyAIStt` and `elevenlabs` have, and the opposite of `deepgramStt`,
-whose unset `language` is `"en"`. Pass the codes for a line you know is
+`elevenLabsStt` has, and the opposite of `deepgramStt` and
+`assemblyAIStt`, whose unset value is English. Pass the codes for a line you know is
 monolingual, or the handful you expect on one that is not.
 
 ##### model?

@@ -44,8 +44,8 @@ export interface ElevenLabsSttOptions extends ProviderCredentialOptions {
    *
    * **Unset means AUTO-DETECT, not English.** The field is omitted from the
    * request entirely, so ElevenLabs decides — which is the same default
-   * `assemblyAIStt` and `sonioxStt` have, and the opposite of `deepgramStt`, whose
-   * unset `language` is `"en"`. Pass a code for a line you know is
+   * `sonioxStt` has, and the opposite of `deepgramStt` and `assemblyAIStt`,
+   * whose unset value is English. Pass a code for a line you know is
    * monolingual.
    */
   language?: string;

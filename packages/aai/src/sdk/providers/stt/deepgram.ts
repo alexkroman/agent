@@ -41,14 +41,13 @@ export interface DeepgramSttOptions extends ProviderCredentialOptions {
    * BCP-47 language code for transcription. Examples: `"en"`, `"es"`, `"fr"`,
    * `"de"`.
    *
-   * **Unset means ENGLISH, not auto-detect.** Deepgram is the one STT provider
-   * here that behaves that way: `DEEPGRAM_DEFAULT_LANGUAGE` (`"en"`) is
-   * filled in and sent on every connection, where `assemblyAIStt` detects per
-   * turn and `elevenlabs`/`sonioxStt` omit the field entirely so the vendor
-   * auto-detects. So an agent moved from any of those three to `deepgramStt()`
-   * silently loses non-English transcription — and the symptom is a caller
-   * whose speech comes back as plausible English words, which reads as a
-   * mis-hearing rather than as a language setting.
+   * **Unset means ENGLISH, not auto-detect.** `DEEPGRAM_DEFAULT_LANGUAGE`
+   * (`"en"`) is filled in and sent on every connection — the same default
+   * `assemblyAIStt` has — where `elevenLabsStt`/`sonioxStt` omit the field
+   * entirely so the vendor auto-detects. So an agent moved from either of
+   * those two to `deepgramStt()` silently loses non-English transcription —
+   * and the symptom is a caller whose speech comes back as plausible English
+   * words, which reads as a mis-hearing rather than as a language setting.
    *
    * Name the code you mean. There is no value for "detect": Deepgram's
    * multilingual support is selected by naming a multilingual `model`.
@@ -104,8 +103,8 @@ export const DEEPGRAM_DEFAULT_ENDPOINTING_MS: number = 1500;
  * });
  * ```
  *
- * Deepgram is the one STT vendor here whose unset `language` is not
- * auto-detect: `"en"` is sent for you. Name the code you mean.
+ * Deepgram's unset `language` is not auto-detect: `"en"` is sent for you.
+ * Name the code you mean.
  */
 export function deepgramStt(options: DeepgramSttOptions = {}): SttProvider {
   return describeProvider(DEEPGRAM_PROVIDER, options);

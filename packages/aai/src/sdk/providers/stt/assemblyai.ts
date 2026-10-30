@@ -48,6 +48,23 @@ export const ASSEMBLYAI_STT_KIND = ASSEMBLYAI_STT_PROVIDER.kind;
 /** Streaming model used when the descriptor names none. */
 export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
 
+/**
+ * Languages sent as `language_codes` when the descriptor names none on a
+ * Universal-3.5 Pro model (the default): English only, which turns its
+ * code-switching OFF. Any other streaming model gets no default — it was never
+ * sent `language_codes`, and an `["en"]` there would pin a multilingual model
+ * to English or be refused as a connect parameter.
+ *
+ * Unset used to mean "code-switch across 18 languages", and on an English line
+ * that turned caller backchannels into non-English text the pipeline then took
+ * as real turns — in one tau2-bench run `mm-hm` came back as `نن.` (21x) and
+ * `और` (16x), cutting the agent off mid-reply and once being read as consent
+ * for a write. Opt back into code-switching with `languages: []`, or bias
+ * toward a known subset with several codes (see
+ * {@link AssemblyAISttOptions.languages}).
+ */
+export const ASSEMBLYAI_STT_DEFAULT_LANGUAGES: readonly string[] = Object.freeze(["en"]);
+
 /** Agent-env variable holding the AssemblyAI API key. */
 export const ASSEMBLYAI_STT_API_KEY_ENV: string = ASSEMBLYAI_STT_PROVIDER.envVar;
 
@@ -89,21 +106,29 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
    * Languages to bias the model toward, sent as the `language_codes` connection
    * parameter (e.g. `["en"]`, `["en", "es"]`).
    *
-   * **Unset means DETECT PER TURN, not English** — the same default
-   * `elevenlabs` and `sonioxStt` have, and the opposite of `deepgramStt`, whose
-   * unset `language` is `"en"`.
+   * **Unset means ENGLISH on Universal-3.5 Pro** (the default model;
+   * `ASSEMBLYAI_STT_DEFAULT_LANGUAGES`, `["en"]`) — the same default
+   * `deepgramStt` has, and the opposite of `elevenLabsStt` and `sonioxStt`,
+   * which auto-detect when unset. On any other {@link model} unset sends no
+   * `language_codes` and the model's own language behaviour applies.
    *
-   * Universal-3.5 Pro **code-switches across 18 languages by default**, so an
-   * unset value costs accuracy on a monolingual line in a way that is easy to
-   * misread as an audio problem: measured against tau2-bench, English
-   * utterances came back
-   * transliterated into Devanagari and Hebrew script
-   * (`Hello? Any update?` → `हेलो एनी अपडेट`), including an authentication turn,
-   * so the tool call built from it was garbage. Nothing in the transcript says
-   * "wrong language" — it reads as a mis-hearing.
+   * - **unset** — Universal-3.5 Pro: `["en"]`, English only, code-switching
+   *   off. Other models: nothing sent.
+   * - **one code** (`["es"]`) — pins that language, code-switching off.
+   * - **several codes** (`["en", "es"]`) — biases toward that subset and keeps
+   *   code-switching between them. Sent exactly as given.
+   * - **`[]`** — sends no `language_codes` at all, so Universal-3.5 Pro
+   *   code-switches across all 18 languages it supports. This is the opt-in
+   *   for a genuinely multilingual line.
    *
-   * A single-element list pins one language and keeps code-switching off; omit
-   * for a genuinely multilingual line.
+   * Code-switching is not the default because it costs accuracy on a
+   * monolingual line in a way that is easy to misread as an audio problem:
+   * measured against tau2-bench, English utterances came back transliterated
+   * into Devanagari and Hebrew script (`Hello? Any update?` → `हेलो एनी अपडेट`),
+   * and caller backchannels (`mm-hm`) came back as `نن.` (21x) and `और`
+   * (16x) — non-English text the pipeline took as real caller turns, cutting
+   * the agent off mid-reply. Nothing in the transcript says "wrong language" —
+   * it reads as a mis-hearing.
    */
   languages?: readonly string[];
   /**
@@ -241,9 +266,10 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
  * });
  * ```
  *
- * Pinning `languages` to one code turns code-switching OFF. Unset means
- * "detect per turn", which is not "English" — see
- * {@link AssemblyAISttOptions.languages}.
+ * Unset `languages` means English only on Universal-3.5 Pro (code-switching
+ * OFF; other models get no default); pass `[]` to
+ * code-switch across every supported language, or several codes to bias
+ * toward a subset — see {@link AssemblyAISttOptions.languages}.
  */
 export function assemblyAIStt(options: AssemblyAISttOptions = {}): SttProvider {
   return describeProvider(ASSEMBLYAI_STT_PROVIDER, options);
@@ -277,19 +303,21 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
   // "off" is spelled as the empty string on the wire; normalize here so the
   // log and the connection parameter agree on what "disabled" looks like.
   const requestedVoiceFocus = options.voiceFocus ?? DEFAULT_VOICE_FOCUS;
+  const model = options.model ?? ASSEMBLYAI_STT_DEFAULT_MODEL;
   return {
-    model: options.model ?? ASSEMBLYAI_STT_DEFAULT_MODEL,
+    model,
     minTurnSilenceMs: options.minTurnSilenceMs ?? DEFAULT_MIN_TURN_SILENCE_MS,
     maxTurnSilenceMs: options.maxTurnSilenceMs ?? DEFAULT_MAX_TURN_SILENCE_MS,
     voiceFocus: requestedVoiceFocus === "off" ? "" : requestedVoiceFocus,
     voiceFocusThreshold: options.voiceFocusThreshold ?? DEFAULT_VOICE_FOCUS_THRESHOLD,
     connectTimeoutMs: options.connectTimeoutMs ?? STT_CONNECT_TIMEOUT_MS,
     maxConnectRetries: options.maxConnectRetries ?? STT_CONNECT_MAX_RETRIES,
-    // Absent means "detect per turn" — a defaulted ["en"] here would silently
-    // disable multilingual transcription for every agent, so it stays unset.
-    ...(options.languages !== undefined && options.languages.length > 0
-      ? { languages: options.languages }
-      : {}),
+    // Absent means English (ASSEMBLYAI_STT_DEFAULT_LANGUAGES) on the
+    // Universal-3.5 Pro family only — no other model was ever sent
+    // `language_codes`, and a default there would pin a multilingual model to
+    // English or be refused. An explicit empty list is the opt-out: nothing is
+    // sent, so the model code-switches across every language it supports.
+    ...resolveLanguages(options.languages, model),
     // An empty `streamingUrl` means "use the default endpoint", same as absent.
     ...(options.streamingUrl !== undefined && options.streamingUrl !== ""
       ? { streamingUrl: options.streamingUrl }
@@ -298,6 +326,16 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
     ...omitUndefined({ formatTurns: options.formatTurns }),
     vadThreshold: options.vadThreshold ?? DEFAULT_VAD_THRESHOLD,
   };
+}
+
+function resolveLanguages(
+  languages: readonly string[] | undefined,
+  model: string,
+): { languages?: readonly string[] } {
+  if (languages === undefined) {
+    return isUniversal35Pro(model) ? { languages: ASSEMBLYAI_STT_DEFAULT_LANGUAGES } : {};
+  }
+  return languages.length > 0 ? { languages } : {};
 }
 
 /**

@@ -22,7 +22,7 @@ of it — and want the import.
 - [Browser client](#browser-client) — 212 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
-- [Framework internals](#framework-internals) — 529 names
+- [Framework internals](#framework-internals) — 530 names
 
 ## Agent authoring
 
@@ -1317,6 +1317,7 @@ trace or a type error can be traced back to something.
 | `ASSEMBLYAI_S2S_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
 | `ASSEMBLYAI_S2S_SAMPLE_RATE` | const · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `ASSEMBLYAI_STT_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the AssemblyAI API key. |
+| `ASSEMBLYAI_STT_DEFAULT_LANGUAGES` | const | `@alexkroman1/aai/host-internal` |  | Languages sent as `language_codes` when the descriptor names none on a Universal-3.5 Pro model (the default): English only, which turns its code-switching OFF. |
 | `ASSEMBLYAI_STT_DEFAULT_MODEL` | const | `@alexkroman1/aai/host-internal` |  | Streaming model used when the descriptor names none. |
 | `ASSEMBLYAI_STT_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
 | `ASSEMBLYAI_TTS_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the AssemblyAI API key (same key as STT/LLM). |

@@ -44,8 +44,8 @@ export interface SonioxSttOptions extends ProviderCredentialOptions {
    *
    * **Unset means AUTO-DETECT, not English.** The field is omitted from the
    * request entirely, so Soniox decides — which is the same default
-   * `assemblyAIStt` and `elevenlabs` have, and the opposite of `deepgramStt`,
-   * whose unset `language` is `"en"`. Pass the codes for a line you know is
+   * `elevenLabsStt` has, and the opposite of `deepgramStt` and
+   * `assemblyAIStt`, whose unset value is English. Pass the codes for a line you know is
    * monolingual, or the handful you expect on one that is not.
    */
   languages?: readonly string[];
