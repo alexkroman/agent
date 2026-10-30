@@ -15,6 +15,7 @@ import { FakeWebSocket } from "./_fake-ws-test-utils.ts";
 import { TTS_PACING_RECOVERY_WINDOW_MS } from "./assemblyai.ts";
 
 const DOCUMENTED_SUSTAINED_PER_SECOND = 20;
+const DOCUMENTED_MAX_UNSPOKEN_CHARS = 8000;
 const CONTROL_TYPES = new Set(["Flush", "KeepAlive", "Cancel"]);
 
 const PACING_ERROR = {
@@ -48,6 +49,41 @@ function recordControlFrames(ws: FakeWebSocket): number[] {
     send(data);
   };
   return at;
+}
+
+/**
+ * Record what `ws` is sent, as the service would account for it: control
+ * frames by virtual time, and characters sent but not yet acknowledged.
+ */
+function recordWire(ws: FakeWebSocket) {
+  const wire = {
+    controlAt: [] as number[],
+    outstanding: [] as number[],
+    pending: 0,
+    unspoken: 0,
+    maxUnspoken: 0,
+    ack() {
+      wire.unspoken -= wire.outstanding.shift() ?? 0;
+    },
+  };
+  const send = ws.send.bind(ws);
+  ws.send = (data: string | Uint8Array) => {
+    if (typeof data === "string") {
+      const frame = JSON.parse(data) as { type: string; text?: string };
+      if (CONTROL_TYPES.has(frame.type)) wire.controlAt.push(Date.now());
+      if (frame.type === "Generate") {
+        wire.pending += frame.text?.length ?? 0;
+        wire.unspoken += frame.text?.length ?? 0;
+        wire.maxUnspoken = Math.max(wire.maxUnspoken, wire.unspoken);
+      }
+      if (frame.type === "Flush") {
+        wire.outstanding.push(wire.pending);
+        wire.pending = 0;
+      }
+    }
+    send(data);
+  };
+  return wire;
 }
 
 /** The most control frames in any one-second sliding window. */
@@ -195,6 +231,42 @@ describe("AssemblyAI TTS pacing close (3010)", () => {
     // The session carries on.
     session.sendText("A later reply. ");
     expect(next._frames().at(-1)).toEqual({ type: "Flush" });
+  });
+
+  test("a recovery with a large backlog paces it onto the new socket", async () => {
+    // The docs: 3010 also fires past 8000 characters sent but not yet
+    // synthesized, and a recovery must not resend the same burst. So the
+    // owed text goes through the same budgets as any other.
+    const { session, ws } = await openSession();
+    const errors: TtsError[] = [];
+    session.on("error", (e) => errors.push(e));
+    const text = Array.from({ length: 120 }, (_, i) => `Line ${i} ${"word ".repeat(18)}end. `);
+    for (const s of text) {
+      session.sendText(s);
+      await vi.advanceTimersByTimeAsync(50);
+    }
+    await vi.advanceTimersByTimeAsync(10_000);
+    ws._msg(PACING_ERROR);
+    const next = FakeWebSocket.latest();
+    expect(next).not.toBe(ws);
+    const wire = recordWire(next);
+
+    // The service synthesizes and acknowledges at its own pace.
+    for (let i = 0; i < 600; i++) {
+      await vi.advanceTimersByTimeAsync(100);
+      if (i % 3 === 0 && wire.outstanding.length > 0) {
+        wire.ack();
+        next._msg({ type: "FlushDone" });
+      }
+    }
+
+    expect(errors).toEqual([]);
+    expect(wire.maxUnspoken).toBeLessThanOrEqual(DOCUMENTED_MAX_UNSPOKEN_CHARS);
+    expect(maxPerSecond(wire.controlAt)).toBeLessThanOrEqual(DOCUMENTED_SUSTAINED_PER_SECOND);
+    // Everything owed arrived, in order (at most the first line was dropped).
+    const all = text.join("");
+    expect(all.endsWith(generated(next))).toBe(true);
+    expect(generated(next).length).toBeGreaterThanOrEqual(all.length - (text[0]?.length ?? 0));
   });
 
   test("a closed turn whose only flush was mid-synthesis ends on recovery", async () => {

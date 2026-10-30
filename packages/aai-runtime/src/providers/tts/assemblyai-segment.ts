@@ -164,6 +164,17 @@ export interface Segment {
  */
 const SEGMENT_BOUNDARY_RE = /[.!?…]["'’”)\]]*(?:\s|$)/g;
 
+/** {@link SEGMENT_BOUNDARY_RE}, anchored at the end of the text. */
+const ENDS_AT_BOUNDARY_RE = /[.!?…]["'’”)\]]*\s*$/;
+
+/**
+ * Does `segment` end at a sentence boundary, rather than at the character
+ * budget? The outbox asks, to cut a held backlog only where a sentence ends.
+ */
+export function endsAtSentence(segment: string): boolean {
+  return ENDS_AT_BOUNDARY_RE.test(segment);
+}
+
 /**
  * Words a segment needs before sentence-terminal punctuation flushes it — see
  * the module doc. Single-token segments are abbreviations far more often than

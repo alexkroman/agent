@@ -45,13 +45,17 @@ export interface TurnTracker {
    * The socket carrying this turn's flushes was replaced: their
    * acknowledgements will never arrive. Forget them, keeping the turn open —
    * an already-closed turn ends here, an open one when it closes.
-   *
-   * `resent` is how many flushes the adapter has re-queued for the
-   * replacement socket in their place (a pacing recovery re-sends what the
-   * dropped socket still owed); those are the ones now outstanding, and the
-   * turn ends when they are acknowledged.
    */
-  abandonFlushes(resent?: number): void;
+  abandonFlushes(): void;
+  /**
+   * The socket carrying this turn's flushes was replaced, and the adapter
+   * will RE-SEND what they owed: forget them like {@link abandonFlushes}, but
+   * reopen a closed turn instead of ending it, since the re-sent text has not
+   * been spoken yet. Returns whether the turn had been closed, so the adapter
+   * closes it again once the re-sent text is out. A turn not in flight is left
+   * alone.
+   */
+  reopenForResend(): boolean;
   /** Unexpected server-side close: release the turn unconditionally. */
   forceDone(): void;
   /**
@@ -130,9 +134,17 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
       return true;
     },
 
-    abandonFlushes(resent = 0): void {
-      outstandingFlushes = resent;
-      if (outstandingFlushes === 0 && turnClosed) emitDoneOnce();
+    abandonFlushes(): void {
+      outstandingFlushes = 0;
+      if (turnClosed) emitDoneOnce();
+    },
+
+    reopenForResend(): boolean {
+      if (doneEmitted) return false;
+      outstandingFlushes = 0;
+      const wasClosed = turnClosed;
+      turnClosed = false;
+      return wasClosed;
     },
 
     forceDone: emitDoneOnce,

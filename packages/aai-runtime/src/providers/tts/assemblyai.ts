@@ -93,11 +93,13 @@
  * LLM emitting many short sentences used to send one `Flush` per sentence
  * straight into it; `assemblyai-control-budget.ts` holds the budget and why,
  * and when a `Flush` would overspend it the adapter keeps buffering and merges
- * what accumulated into the next one. A reply's FIRST flush may spend the
- * reserve, so the budget never delays first audio. A `3010` that happens anyway
- * is RECOVERED, not fatal: the socket is replaced (`RECOVER` in
- * `assemblyai-lifecycle.ts`) and the flushes it still owed are re-sent, minus
- * the one that was mid-synthesis — see `recoverPacing`.
+ * what accumulated into the next one. The characters sent but not yet
+ * synthesized are capped the same way, the service's other `3010` trigger. Both
+ * rules are `assemblyai-outbox.ts`. A reply's FIRST flush may spend the
+ * control budget's reserve, so neither delays first audio. A `3010` that
+ * happens anyway is RECOVERED, not fatal: the socket is replaced (`RECOVER` in
+ * `assemblyai-lifecycle.ts`) and the text it still owed goes back through the
+ * outbox, paced like any other — see `recoverPacing`.
  */
 
 import {
@@ -133,7 +135,7 @@ import {
   type TtsOpenOptions,
   type TtsSession,
 } from "../openers.ts";
-import { CONTROL_FRAME_RESERVE, createControlBudget } from "./assemblyai-control-budget.ts";
+import { createControlBudget } from "./assemblyai-control-budget.ts";
 import {
   type AssemblyAITtsMessage,
   type CancelWindow,
@@ -141,7 +143,7 @@ import {
   TTS_PACING_CLOSE_CODE,
 } from "./assemblyai-frames.ts";
 import { createAssemblyAITtsLifecycle } from "./assemblyai-lifecycle.ts";
-import { splitSegment } from "./assemblyai-segment.ts";
+import { createTtsOutbox } from "./assemblyai-outbox.ts";
 import { createTurnTracker } from "./assemblyai-turn.ts";
 import { assemblyAITtsUrl, generateFrames } from "./assemblyai-wire.ts";
 import { createWordTimeline, readWordBoundaries } from "./assemblyai-words.ts";
@@ -153,17 +155,6 @@ import { createWordTimeline, readWordBoundaries } from "./assemblyai-words.ts";
  * (3009).
  */
 export const TTS_PACING_RECOVERY_WINDOW_MS = 10_000;
-
-/** Every complete segment at the front of `buffered`, merged, and what is left. */
-function mergeSegments(buffered: string): { head: string; tail: string } {
-  let head = "";
-  let tail = buffered;
-  for (let split = splitSegment(tail); split; split = splitSegment(tail)) {
-    head += split.head;
-    tail = split.tail;
-  }
-  return { head, tail };
-}
 
 export interface AssemblyAITtsSession extends TtsSession {
   /** @internal Test-only: exposes the underlying raw WebSocket. */
@@ -218,9 +209,6 @@ export function openAssemblyAITts(
       // Frames for a post-cancel replacement socket that is still connecting
       // (the lifecycle's `queueing()`), flushed to it on open in order.
       const queued: Record<string, unknown>[] = [];
-      // Accepted text not yet sent: `Generate` goes out only paired with a
-      // `Flush`, so the server never holds unsynthesized text.
-      let buffered = "";
       // When this session last put a frame on the wire, and the timer that
       // sends a `KeepAlive` once it has been quiet too long — see `send`.
       let lastSentAt = Date.now();
@@ -228,29 +216,15 @@ export function openAssemblyAITts(
       // Control frames (`Flush`, `Cancel`, `KeepAlive`) against the service's
       // rate limit — see `assemblyai-control-budget.ts`.
       const budget = createControlBudget();
-      // Set while a segment is waiting on the budget: the timer that sends
-      // the accumulated backlog as one merged flush (`pump`).
-      let pumpTimer: ReturnType<typeof setTimeout> | undefined;
-      // `flush()` ran while that backlog was waiting, so the pump also sends
-      // the remainder and closes the turn.
-      let closePending = false;
-      // The reply has not flushed yet: its first flush may spend the reserve,
-      // so the budget never delays first audio.
-      let firstFlushOfTurn = false;
-      // Text of each flush sent and not yet acknowledged, oldest first — what
-      // a pacing recovery re-sends (`recoverPacing`).
-      let unacked: string[] = [];
       // When a pacing close was last recovered; a second inside the window is fatal.
       let lastRecoveryAt: number | undefined;
-      // Set by `recoverPacing` for the `replaceSocket` it triggers.
-      let resendOnReplace: string | undefined;
-
-      /** Forget everything waiting on the budget. */
-      const clearBacklog = (): void => {
-        clearTimeout(pumpTimer);
-        pumpTimer = undefined;
-        closePending = false;
-      };
+      // Set by `recoverPacing` for the `replaceSocket` it triggers: what to
+      // re-send, given the text of every flush the dropped socket owed.
+      let resendOnReplace: ((owed: string[]) => string) | undefined;
+      // False from a socket replacement until the replacement is adopted. Not
+      // `lifecycle.queueing()`: that reads the statechart's snapshot, which
+      // still says `reconnecting` inside the `adoptSocket` action itself.
+      let socketAdopted = true;
 
       /** Detach + politely close a socket without emitting anything for it. */
       const dropSocket = (socket: ProviderSocket): void =>
@@ -263,7 +237,7 @@ export function openAssemblyAITts(
         // Closing the lifecycle first stops the ack deadline and any reconnect.
         teardown: () => {
           clearInterval(keepAlive);
-          clearBacklog();
+          outbox.clear();
           lifecycle.send({ type: "CLOSE" });
           dropSocket(ws);
         },
@@ -275,15 +249,15 @@ export function openAssemblyAITts(
       const turn = createTurnTracker(() => {
         // The turn is over, so text still held here belongs to nothing. Keeping
         // it would splice it into the next turn's first segment.
-        buffered = "";
-        unacked = [];
-        clearBacklog();
+        outbox.clear();
         shell.emit("done");
       });
 
       const onSynthesisComplete = (): void => {
-        unacked.shift();
         turn.onAck();
+        // After the turn's own bookkeeping: freeing characters may send the
+        // next held flush, which the turn must already count past this ack.
+        outbox.onAck();
       };
 
       // Word timings, rebased onto the turn's own audio timeline.
@@ -375,7 +349,10 @@ export function openAssemblyAITts(
           // to filter or to send.
           dropSocket(ws);
           queued.length = 0;
-          const resend = resendOnReplace;
+          socketAdopted = false;
+          // Their acknowledgements die with the socket.
+          const owed = outbox.takeOwed();
+          const resend = resendOnReplace?.(owed);
           resendOnReplace = undefined;
           let opened: Promise<void>;
           try {
@@ -397,21 +374,21 @@ export function openAssemblyAITts(
           // already forgotten them and this changes nothing.
           //
           // A pacing recovery instead re-sends what the dropped socket owed,
-          // as ONE flush queued ahead of anything else for the replacement.
-          if (resend === undefined || resend.length === 0) {
-            unacked = [];
+          // ahead of the rest of the backlog and through the same budgets
+          // (`assemblyai-outbox.ts`), so the replacement gets it at a rate the
+          // service accepts rather than as the burst that tripped the limit.
+          if (!resend) {
             turn.abandonFlushes();
           } else {
-            budget.take();
-            queued.push(...generateFrames(resend), { type: "Flush" });
-            unacked = [resend];
-            turn.abandonFlushes(1);
+            outbox.requeue(resend, turn.reopenForResend());
           }
           return opened;
         },
         adoptSocket: () => {
           attach(ws);
           for (const frame of queued.splice(0)) ws.send(JSON.stringify(frame));
+          socketAdopted = true;
+          outbox.socketReady();
         },
         dropQueue: () => {
           queued.length = 0;
@@ -420,6 +397,12 @@ export function openAssemblyAITts(
           // Release the failed socket now — on timeout it may still open later
           // and would otherwise linger connected until session close.
           dropSocket(ws);
+          // Nothing more is queued for it: a send now meets a closed socket
+          // and is refused, as it was before replacements were tracked here.
+          // What the outbox held for the replacement is released the same way,
+          // so a closed turn still ends rather than hanging the flush-wait.
+          socketAdopted = true;
+          outbox.socketReady();
           shell.streamError(
             `AssemblyAI TTS: reconnect after cancel failed: ${errorMessage(cause)}`,
           );
@@ -428,7 +411,7 @@ export function openAssemblyAITts(
 
       // No closed check: every caller is a session method that makes its own.
       const send = (payload: Record<string, unknown>): boolean => {
-        if (lifecycle.queueing()) {
+        if (!socketAdopted) {
           queued.push(payload);
           return true;
         }
@@ -473,77 +456,32 @@ export function openAssemblyAITts(
           return false;
         }
         lastRecoveryAt = now;
-        resendOnReplace = turn.inFlight() ? unacked.slice(1).join("") : "";
+        resendOnReplace = (owed) => (turn.inFlight() ? owed.slice(1).join("") : "");
         lifecycle.send({ type: "RECOVER" });
         return true;
       }
 
-      /** Send `text` as one `Generate`+`Flush`; `false` when the socket refused it. */
-      const sendFlush = (text: string): boolean => {
-        // A segment can outgrow one `Generate` (a long run with no boundary,
-        // or a merged backlog), so it is framed under the per-frame cap.
-        if (!(generateFrames(text).every((frame) => send(frame)) && send({ type: "Flush" }))) {
-          return false;
-        }
-        firstFlushOfTurn = false;
-        unacked.push(text);
-        turn.onFlushSent();
-        return true;
-      };
-
-      /** The floor a `Flush` may spend the budget down to — see `firstFlushOfTurn`. */
-      const flushFloor = (): number => (firstFlushOfTurn ? 0 : CONTROL_FRAME_RESERVE);
-
-      /** Wake when the budget can pay for the next flush. */
-      const schedulePump = (): void => {
-        if (pumpTimer !== undefined) return;
-        pumpTimer = setTimeout(pump, Math.max(1, budget.msUntil(flushFloor())));
-        pumpTimer.unref?.();
-      };
-
-      /**
-       * Send the backlog that waited on the budget as ONE flush: every complete
-       * segment buffered meanwhile, merged, plus the remainder when the turn
-       * was closed while it waited. This merge is what bounds the `Flush` rate.
-       */
-      function pump(): void {
-        // No closed check: teardown clears the timer (`clearBacklog`).
-        pumpTimer = undefined;
-        if (!budget.tryTake(flushFloor())) {
-          schedulePump();
-          return;
-        }
-        const closing = closePending;
-        closePending = false;
-        // Closing: the turn has no more text, so the remainder goes too.
-        const backlog = closing ? { head: buffered, tail: "" } : mergeSegments(buffered);
-        buffered = backlog.tail;
-        if (backlog.head.length > 0) sendFlush(backlog.head);
-        // Even when the socket refused it, as `flush()` does: the pipeline has
-        // no more text, and a turn left open would hang its flush-wait.
-        if (closing) turn.closeTurn();
-      }
-
-      /**
-       * Synthesize each segment as it lands rather than waiting for the end of
-       * the turn — see the module doc. Loops because one delta can carry more
-       * than one segment's worth: the budget split takes ~40 chars at a time,
-       * so a burst (a whole buffered sentence, a cover phrase arriving alongside
-       * the reply's opening) would otherwise dribble out one segment per later
-       * delta and stall completely if no delta followed.
-       */
-      const flushSegments = (): void => {
-        for (let split = splitSegment(buffered); split; split = splitSegment(buffered)) {
-          // Over budget: keep buffering. What lands before the pump fires is
-          // merged into one flush with this segment.
-          if (!budget.tryTake(flushFloor())) {
-            schedulePump();
-            return;
+      // Accepted text not yet sent, and when the next flush may go out — see
+      // `assemblyai-outbox.ts`. `Generate` goes out only paired with a
+      // `Flush`, so the server never holds unsynthesized text.
+      const outbox = createTtsOutbox({
+        budget,
+        canSend: () => socketAdopted,
+        sendFlush: (text) => {
+          // A segment can outgrow one `Generate` (a long run with no boundary,
+          // or a merged backlog), so it is framed under the per-frame cap.
+          if (!(generateFrames(text).every((frame) => send(frame)) && send({ type: "Flush" }))) {
+            return false;
           }
-          buffered = split.tail;
-          if (!sendFlush(split.head)) return;
-        }
-      };
+          turn.onFlushSent();
+          return true;
+        },
+        // Nothing left to synthesize past this point. Every segment already
+        // acknowledged means the turn's audio is complete; otherwise the last
+        // outstanding acknowledgement ends it. Either way, no empty Flush is
+        // sent — see the module doc.
+        closeTurn: () => turn.closeTurn(),
+      });
 
       closeOnAbort(openOpts.signal, shell.close);
 
@@ -556,37 +494,17 @@ export function openAssemblyAITts(
           // a frame arriving from here on is rebased onto THIS turn.
           if (turn.onTurnText()) {
             timeline.reset();
-            firstFlushOfTurn = true;
+            outbox.beginTurn();
           }
-          buffered += text;
-          // A backlog is already waiting on the budget: this text joins it and
-          // goes out merged with it (`pump`), never ahead of it.
-          if (pumpTimer === undefined) flushSegments();
+          // Synthesize each segment as it lands rather than waiting for the end
+          // of the turn — see the module doc. The outbox sends every segment
+          // the budgets allow, and merges what they hold back.
+          outbox.push(text);
         },
 
         flush() {
           if (shell.isClosed()) return;
-          // A backlog waiting on the budget sends the remainder with it and
-          // closes the turn then — closing now would end it with text unsent.
-          if (pumpTimer !== undefined) {
-            closePending = true;
-            return;
-          }
-          if (buffered.length > 0) {
-            if (!budget.tryTake(flushFloor())) {
-              closePending = true;
-              schedulePump();
-              return;
-            }
-            const text = buffered;
-            buffered = "";
-            sendFlush(text);
-          }
-          // Nothing left to synthesize past this point. Every segment already
-          // acknowledged means the turn's audio is complete; otherwise the last
-          // outstanding acknowledgement ends it. Either way, do NOT send an
-          // empty Flush — see the module doc.
-          turn.closeTurn();
+          outbox.close();
         },
 
         cancel() {
@@ -596,9 +514,7 @@ export function openAssemblyAITts(
           // frames, or unobservable on a dropped socket. `done` is emitted
           // synchronously — the orchestrator's state machine advances on it,
           // and barge-in must not be microtask-deferred.
-          buffered = "";
-          unacked = [];
-          clearBacklog();
+          outbox.clear();
           timeline.reset();
           // Also closes the word window: the abandoned turn's timings must not
           // reach the session (see `TurnTracker.cancel`).

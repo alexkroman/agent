@@ -113,3 +113,29 @@ describe("createTurnTracker", () => {
     expect(turn.wordsOpen()).toBe(false);
   });
 });
+
+describe("reopenForResend", () => {
+  test("reopens a closed turn instead of ending it, and reports that it was closed", () => {
+    const { turn, doneCount } = tracker();
+    turn.onTurnText();
+    turn.onFlushSent();
+    turn.closeTurn();
+    expect(turn.reopenForResend()).toBe(true);
+    expect(doneCount()).toBe(0);
+    // The re-sent flush, then the close the adapter re-issues.
+    turn.onFlushSent();
+    turn.closeTurn();
+    turn.onAck();
+    expect(doneCount()).toBe(1);
+  });
+
+  test("an open turn stays open; no turn in flight is left alone", () => {
+    const { turn, doneCount } = tracker();
+    expect(turn.reopenForResend()).toBe(false);
+    turn.onTurnText();
+    turn.onFlushSent();
+    expect(turn.reopenForResend()).toBe(false);
+    turn.closeTurn(); // the dropped flush no longer counts
+    expect(doneCount()).toBe(1);
+  });
+});
