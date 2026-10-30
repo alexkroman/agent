@@ -275,13 +275,13 @@ describe("assemblyAIStt STT adapter — updateEndpointing", () => {
     session.updateEndpointing?.(DEFAULT_MIN_TURN_SILENCE_MS);
     expect(fake.updateConfiguration).not.toHaveBeenCalled();
 
-    session.updateEndpointing?.(2600);
-    session.updateEndpointing?.(2600);
-    expect(fake.updateConfiguration.mock.calls).toEqual([[{ min_turn_silence: 2600 }]]);
+    session.updateEndpointing?.(1200);
+    session.updateEndpointing?.(1200);
+    expect(fake.updateConfiguration.mock.calls).toEqual([[{ min_turn_silence: 1200 }]]);
 
     session.updateEndpointing?.(DEFAULT_MIN_TURN_SILENCE_MS);
     expect(fake.updateConfiguration.mock.calls).toEqual([
-      [{ min_turn_silence: 2600 }],
+      [{ min_turn_silence: 1200 }],
       [{ min_turn_silence: DEFAULT_MIN_TURN_SILENCE_MS }],
     ]);
 

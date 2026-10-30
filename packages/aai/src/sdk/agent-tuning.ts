@@ -120,7 +120,7 @@ export interface TurnTakingTuning {
    * force-ends a turn regardless of content, so raising it is paid for by
    * hesitant speech alone. Refused beside an explicit `stt` descriptor.
    *
-   * @defaultValue `3500` (`DEFAULT_MAX_TURN_SILENCE_MS`)
+   * @defaultValue `1500` (`DEFAULT_MAX_TURN_SILENCE_MS`)
    */
   maxSilenceMs?: number;
   /**

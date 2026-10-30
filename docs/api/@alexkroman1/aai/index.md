@@ -14829,7 +14829,7 @@ hesitant speech alone. Refused beside an explicit `stt` descriptor.
 
 ###### Default Value
 
-`3500` (`DEFAULT_MAX_TURN_SILENCE_MS`)
+`1500` (`DEFAULT_MAX_TURN_SILENCE_MS`)
 
 ##### minSilenceMs?
 

@@ -80,7 +80,7 @@ export default agent({
     minSilenceMs?: number;                   // pause (ms) that ENDS a turn once the text reads
                                              // complete (default 250) — lowered onto the default
     maxSilenceMs?: number;                   // assemblyAIStt(); pause that ends it REGARDLESS of
-                                             // content (default 3500). Invalid beside an explicit `stt`.
+                                             // content (default 1500). Invalid beside an explicit `stt`.
     detection?: "auto" | "manual";           // "manual" is push-to-talk: the CLIENT ends each turn
     userTurnLimit?: { maxWords?: number; maxDurationMs?: number }; // cap ONE user turn. Default: none.
     preemptiveGeneration?: boolean;          // start the reply from a confident interim (default false)

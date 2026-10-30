@@ -208,8 +208,8 @@ agent({ name: "My Agent", turnTaking: { minSilenceMs: 1600, maxSilenceMs: 3500 }
 
 The default pipeline lowers the pair onto its STT stage; beside an explicit
 `stt` the shorthand is refused — set
-`assemblyAIStt({ minTurnSilenceMs, maxTurnSilenceMs })` instead. Defaults 800 /
-3500 ms (800 needs continuation; 1600 without). **`maxSilenceMs` is the
+`assemblyAIStt({ minTurnSilenceMs, maxTurnSilenceMs })` instead. Defaults 250 /
+1500 ms (250 needs continuation; 1600 without). **`maxSilenceMs` is the
 pause-tolerance knob** (raise it for hesitant or dictating callers; only turns
 that never read as complete pay it); `minSilenceMs` taxes every finished turn —
 the doc comments on `DEFAULT_MIN_TURN_SILENCE_MS`/`DEFAULT_MAX_TURN_SILENCE_MS`
