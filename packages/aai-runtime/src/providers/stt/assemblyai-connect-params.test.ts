@@ -13,6 +13,7 @@
  */
 
 import {
+  ASSEMBLYAI_STT_DEFAULT_LANGUAGES,
   ASSEMBLYAI_STT_DEFAULT_MODEL,
   DEFAULT_SESSION_START_TIMEOUT_MS,
   DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
@@ -282,16 +283,17 @@ describe("assemblyAIStt STT adapter — region (EU data residency)", () => {
     await us.close();
   });
 
-  test("languages sets language_codes, and is absent unless asked for", async () => {
-    // Universal-3.5 Pro code-switches across 18 languages when this is unset,
-    // so the absent case must stay absent — sending a default would silently
-    // disable multilingual transcription for every agent.
+  test("languages defaults language_codes to English, and passes an explicit list through", async () => {
+    // Universal-3.5 Pro code-switches across 18 languages when language_codes
+    // is absent, which on an English line turned backchannels into non-English
+    // "turns" — so unset now sends the English default.
     const unset = await openSession({ model: "universal-3-5-pro" });
-    expect("languageCodes" in fakeOf(unset).params).toBe(false);
+    expect(fakeOf(unset).params.languageCodes).toEqual(["en"]);
+    expect(fakeOf(unset).params.languageCodes).toEqual(ASSEMBLYAI_STT_DEFAULT_LANGUAGES);
     await unset.close();
 
-    const pinned = await openSession({ model: "universal-3-5-pro", languages: ["en"] });
-    expect(fakeOf(pinned).params.languageCodes).toEqual(["en"]);
+    const pinned = await openSession({ model: "universal-3-5-pro", languages: ["es"] });
+    expect(fakeOf(pinned).params.languageCodes).toEqual(["es"]);
     await pinned.close();
 
     const several = await openSession({
@@ -301,7 +303,7 @@ describe("assemblyAIStt STT adapter — region (EU data residency)", () => {
     expect(fakeOf(several).params.languageCodes).toEqual(["en", "es"]);
     await several.close();
 
-    // An empty list is a no-op, not "pin zero languages".
+    // An empty list is the opt-out: no language_codes, so the model code-switches.
     const empty = await openSession({ model: "universal-3-5-pro", languages: [] });
     expect("languageCodes" in fakeOf(empty).params).toBe(false);
     await empty.close();

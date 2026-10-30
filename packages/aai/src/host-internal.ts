@@ -286,6 +286,7 @@ export {
 export { OPENAI_S2S_API_KEY_ENV, OPENAI_S2S_KIND } from "./sdk/providers/s2s/openai.ts";
 export {
   ASSEMBLYAI_STT_API_KEY_ENV,
+  ASSEMBLYAI_STT_DEFAULT_LANGUAGES,
   ASSEMBLYAI_STT_DEFAULT_MODEL,
   ASSEMBLYAI_STT_KIND,
   isUniversal35Pro,

@@ -433,6 +433,9 @@ export const ASSEMBLYAI_S2S_SAMPLE_RATE = 24000;
 export const ASSEMBLYAI_STT_API_KEY_ENV: string;
 
 // @public
+export const ASSEMBLYAI_STT_DEFAULT_LANGUAGES: readonly string[];
+
+// @public
 export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
 
 // @public
