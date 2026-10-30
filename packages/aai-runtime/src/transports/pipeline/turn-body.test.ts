@@ -12,7 +12,12 @@ import { describe, expect, test, vi } from "vitest";
 import { createFatalToolLatch } from "../../tools/index.ts";
 import type { UsageMeter } from "../../usage-meter.ts";
 import { createHeardTracker } from "./heard/index.ts";
-import { createPipelineHistory } from "./history/index.ts";
+import {
+  createExecutedCallLedger,
+  createPipelineHistory,
+  type ExecutedCallLedger,
+  INTERRUPTED_TOOL_CALL_RESULT,
+} from "./history/index.ts";
 import type { TurnLlmRunner } from "./llm/index.ts";
 import { NO_GUARDRAILS, type SpeechGate, type TurnGuardrails } from "./output/index.ts";
 import type { SpeculationController } from "./speech/index.ts";
@@ -29,14 +34,20 @@ function setup(
     guardrails?: TurnGuardrails;
     usage?: UsageMeter;
     abort?: boolean;
+    /** Runs inside the request, where the session's tools report into the ledger. */
+    during?: (ledger: ExecutedCallLedger) => void;
+    throws?: boolean;
   } = {},
 ) {
   const history = createPipelineHistory();
+  const executedCalls = createExecutedCallLedger();
   const ctl = new AbortController();
   const spoke: boolean[] = [];
   const sent: string[] = [];
   const consume = vi.fn<TurnLlmRunner>(async (_signal, onDelta) => {
     if (opts.reply) onDelta(opts.reply);
+    opts.during?.(executedCalls);
+    if (opts.throws) throw new Error("runner crashed");
     if (opts.abort) ctl.abort();
     return { messages: opts.reply ? [TOOL_STEP] : [], failed: opts.failed ?? false };
   });
@@ -78,8 +89,10 @@ function setup(
     sendTtsText: (text) => sent.push(text),
     emitError,
     trackPersisted,
+    executedCalls,
   });
   return {
+    executedCalls,
     body,
     history,
     consume,
@@ -172,11 +185,70 @@ describe("createTurnBody", () => {
       expect.objectContaining({
         accumulated: "It ships",
         stepMessages: [TOOL_STEP],
+        // No tool ran outside a completed step in this fake.
+        executedCalls: [],
         syntheticPrompt: "where is my order",
       }),
     );
     expect(t.outcome.finishSpokenTurn).not.toHaveBeenCalled();
     expect(t.spoke).toEqual([false]);
+  });
+
+  test("a FAILED turn keeps the calls its unfinished step ran, as one pair", async () => {
+    // The fatal-latch shape: a write settled, its sibling was still running
+    // when the REQUEST was cut — the turn signal never aborted.
+    const cut = new AbortController();
+    const t = setup({
+      failed: true,
+      during: (ledger) => {
+        const write = ledger.track({
+          toolCallId: "w",
+          toolName: "refund",
+          input: {},
+          signal: cut.signal,
+        });
+        write?.ran();
+        write?.settled("Refunded.");
+        ledger.track({ toolCallId: "s", toolName: "lookup", input: {}, signal: cut.signal })?.ran();
+        cut.abort();
+      },
+    });
+    await t.body("refund it");
+    expect(t.history.llm.slice(1)).toEqual([
+      {
+        role: "assistant",
+        content: [
+          { type: "tool-call", toolCallId: "w", toolName: "refund", input: {} },
+          { type: "tool-call", toolCallId: "s", toolName: "lookup", input: {} },
+        ],
+      },
+      {
+        role: "tool",
+        content: [
+          {
+            type: "tool-result",
+            toolCallId: "w",
+            toolName: "refund",
+            output: { type: "text", value: "Refunded." },
+          },
+          {
+            type: "tool-result",
+            toolCallId: "s",
+            toolName: "lookup",
+            output: { type: "text", value: INTERRUPTED_TOOL_CALL_RESULT },
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("a runner that THROWS still closes the turn's ledger record", async () => {
+    const t = setup({ throws: true });
+    await expect(t.body("hi")).rejects.toThrow("runner crashed");
+    // A call starting now belongs to no turn, rather than the crashed one.
+    expect(
+      t.executedCalls.track({ toolCallId: "x", toolName: "lookup", input: {} }),
+    ).toBeUndefined();
   });
 
   test("a failed turn speaks the recovery phrase instead of finishing a reply", async () => {

@@ -20,7 +20,12 @@ import { createEmitError } from "../emit-error.ts";
 import { resolveSystemPrompt, type Transport } from "../types.ts";
 import { createPipelineCommands } from "./commands.ts";
 import { createHeardTracker } from "./heard/index.ts";
-import { createContextBudget, createHeardHistory, createPipelineHistory } from "./history/index.ts";
+import {
+  createContextBudget,
+  createExecutedCallLedger,
+  createHeardHistory,
+  createPipelineHistory,
+} from "./history/index.ts";
 import { createDialogKnobs, createPersonaStep } from "./knobs/index.ts";
 import { createPipelineLifecycle } from "./lifecycle.ts";
 import { createTurnLlmRunner, type SharedLlmRequest } from "./llm/index.ts";
@@ -307,6 +312,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // Speaks whatever `messages` a tool declares — see `../../tools/messages-runner.ts`.
   // Session-scoped like the tool set; the turn binds its own speech channel.
   const toolSpeech = createToolSpeechController({ log, sid: opts.sid });
+  // Session-scoped like the tool set that reports into it; each turn opens its
+  // own record (`turn-body.ts`).
+  const executedCalls = createExecutedCallLedger();
 
   // Wrappers around every model tool call. Before: a declared handoff runs
   // only on the caller's request or a second attempt (`tools/handoff-gate.ts`),
@@ -340,7 +348,16 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // What makes a tool able to read what an earlier tool in the SAME turn
     // answered: the step's own messages only reach `llm` when the step ends,
     // and this view is the one `ctx.messages` reads.
-    recordToolResult: (message) => history.pushToolResult(message),
+    // Through the ledger, so `ctx.messages` gets the verdict the model's view
+    // does: a call cut mid-run reads as "outcome unknown", never the
+    // executor's cancellation, and one that never ran records nothing.
+    recordToolResult: (message) => {
+      const recorded = executedCalls.conversationResult(message);
+      if (recorded !== null) history.pushToolResult(recorded);
+    },
+    // What a barge-in reads to keep the calls its unfinished step already ran
+    // — the step's own messages never materialize (`history/executed-calls.ts`).
+    trackCall: (call) => executedCalls.track(call),
     // Session-scoped like the tool set: an argument shaped unlike the records,
     // or an identical failed call, is refused before it runs — `call-guards.ts`.
     guards: new ToolCallGuards({ rememberFailures: true }),
@@ -447,6 +464,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     emitError,
     metrics,
     trackPersisted: createHeardHistory({ history, heard, gate, log, sid: opts.sid }),
+    executedCalls,
   });
 
   // Session lifecycle: open/greet/teardown — see

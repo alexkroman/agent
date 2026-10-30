@@ -174,7 +174,8 @@ export interface LlmStreamResult {
    * interruption (tool calls with their results) — never `undefined` — so
    * barge-in does not erase work already done: the next turn's LLM still sees
    * which tools ran and what they returned. An in-flight step is dropped whole
-   * (no dangling tool call without its result).
+   * (no dangling tool call without its result); the calls it already EXECUTED
+   * are recovered by the turn from `history/executed-calls.ts`, not here.
    */
   messages: ModelMessage[];
   /**

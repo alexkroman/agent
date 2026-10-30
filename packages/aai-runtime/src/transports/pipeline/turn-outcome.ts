@@ -66,7 +66,7 @@
 import type { Message } from "@alexkroman1/aai";
 import type { ModelMessage } from "ai";
 import type { SendTtsText, TransportCallbacks } from "../types.ts";
-import type { PipelineHistory } from "./history/index.ts";
+import type { ExecutedToolCall, PipelineHistory } from "./history/index.ts";
 import { persistInterruptedTurn } from "./history/index.ts";
 import type { PipelineProviderSessions } from "./providers.ts";
 import { speakFixedLine } from "./reply/index.ts";
@@ -117,6 +117,8 @@ export interface TurnOutcome {
     heardChars: number;
     persistedLen: number;
     stepMessages: ModelMessage[];
+    /** Calls the cut step ran that no completed step carries — see `persistInterruptedTurn`. */
+    executedCalls?: readonly ExecutedToolCall[] | undefined;
     syntheticPrompt?: string | undefined;
   }): void;
   /**
@@ -184,12 +186,18 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
       // anything…") standing unanswered directly ahead of the next real user
       // turn — the two-contradictory-user-messages failure `dropTrailingUser`
       // exists for.
-      const leftNoTrace = args.stepMessages.length === 0 && heard.trim().length === 0;
+      // A call the cut step RAN is a trace too: its pair is about to answer the
+      // prompt, so the prompt must stay.
+      const leftNoTrace =
+        args.stepMessages.length === 0 &&
+        (args.executedCalls?.length ?? 0) === 0 &&
+        heard.trim().length === 0;
       persistInterruptedTurn({
         history,
         heard,
         persistedLen: args.persistedLen,
         stepMessages: args.stepMessages,
+        executedCalls: args.executedCalls,
       });
       if (args.syntheticPrompt !== undefined && leftNoTrace) {
         history.dropTrailingUser(args.syntheticPrompt);

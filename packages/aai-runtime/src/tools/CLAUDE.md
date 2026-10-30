@@ -84,7 +84,9 @@ re-implement a step in a caller.
   a failure's MODEL copy lists every failed call so far, carried as an
   instruction so `toModelOutput` keeps it. Any success, or a new conversation,
   forgets them all. This replaced the budget's identical-repeat rule in
-  `../_prepare-step.ts`.
+  `../_prepare-step.ts`. A call whose signal was CUT is not settled into the
+  guards (`run-tool-call.ts`): its result describes the cut, and the body may
+  have finished, so refusing the re-check would be wrong.
 
 ### Tool discovery off the platform
 

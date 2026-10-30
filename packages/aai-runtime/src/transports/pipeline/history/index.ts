@@ -8,6 +8,12 @@
 
 export type { ContextBudgetPreparer } from "./context-budget.ts";
 export { createContextBudget, estimateMessageTokens } from "./context-budget.ts";
+export type { ExecutedCallLedger, ExecutedToolCall } from "./executed-calls.ts";
+export {
+  createExecutedCallLedger,
+  INTERRUPTED_TOOL_CALL_RESULT,
+  interruptedStepMessages,
+} from "./executed-calls.ts";
 export type { PersistedReply } from "./heard-history.ts";
 export { createHeardHistory } from "./heard-history.ts";
 export type { PipelineHistory } from "./history.ts";

@@ -13,7 +13,13 @@ import type { FatalToolLatch } from "../../tools/index.ts";
 import type { UsageMeter } from "../../usage-meter.ts";
 import type { EmitError, SendTtsText } from "../types.ts";
 import type { HeardTracker } from "./heard/index.ts";
-import type { PersistedReply, PipelineHistory } from "./history/index.ts";
+import {
+  type ExecutedCallLedger,
+  type ExecutedToolCall,
+  interruptedStepMessages,
+  type PersistedReply,
+  type PipelineHistory,
+} from "./history/index.ts";
 import type { TurnLlmRunner } from "./llm/index.ts";
 import type { SpeechGate, TurnGuardrails } from "./output/index.ts";
 import type { SpeculationController } from "./speech/index.ts";
@@ -66,6 +72,11 @@ export function createTurnBody(deps: {
    * playing takes back what the caller never heard — `createHeardHistory`.
    */
   trackPersisted: (reply: PersistedReply, historyEpoch: number) => void;
+  /**
+   * What the session's tools report each call into, so a barge-in can keep the
+   * calls its unfinished step already RAN — `history/executed-calls.ts`.
+   */
+  executedCalls: ExecutedCallLedger;
 }): TurnBody {
   const {
     gate,
@@ -82,6 +93,7 @@ export function createTurnBody(deps: {
     sendTtsText,
     emitError,
     trackPersisted,
+    executedCalls,
   } = deps;
 
   /**
@@ -154,6 +166,8 @@ export function createTurnBody(deps: {
     accumulated: string,
     responseMessages: readonly ModelMessage[],
     failed: boolean,
+    /** A FAILED turn's calls no completed step carries — see `history/executed-calls.ts`. */
+    executed: readonly ExecutedToolCall[],
   ): Promise<boolean> {
     const blocked =
       accumulated.length === 0 ? undefined : await guardrails.checkOutput(accumulated);
@@ -170,7 +184,11 @@ export function createTurnBody(deps: {
     speech.release();
     // Persist the assistant tool-call message(s) and their `tool` results so
     // the next turn retains tool context, not just the spoken transcript.
-    const llm = responseMessages.length > 0 ? history.pushLlm(...responseMessages) : [];
+    // A failed turn can end mid-step exactly as a barge-in does (a fatal
+    // sibling call, a stream error, a stall), and the calls that step already
+    // ran are kept by the same rules — as one pair, after the completed steps.
+    const persisted = [...responseMessages, ...interruptedStepMessages(executed, undefined)];
+    const llm = persisted.length > 0 ? history.pushLlm(...persisted) : [];
     if (outcome.speakRecovery(failed)) return true;
     if (accumulated.length === 0) return false;
     // Committed WHOLE, while most of it is still to be synthesized and played:
@@ -221,6 +239,8 @@ export function createTurnBody(deps: {
         const onDelta = (delta: string): void => {
           accumulated += delta;
         };
+        // Opened before the request, so every call this turn starts is its own.
+        const calls = executedCalls.beginTurn();
         const { messages: responseMessages, failed } = await consumeLlmStream(
           signal,
           onDelta,
@@ -243,7 +263,9 @@ export function createTurnBody(deps: {
             persistedLen = 0;
             heard.startReply();
           },
-        );
+          // The request is over — on EVERY exit, a throw included — so no later
+          // call is this turn's; what it recorded stays readable below.
+        ).finally(() => calls.end());
 
         if (signal.aborted) {
           // Nothing held may be spoken into a turn the caller talked over.
@@ -254,12 +276,23 @@ export function createTurnBody(deps: {
             heardChars: heard.heard().recordableChars,
             persistedLen,
             stepMessages: responseMessages,
+            // Read NOW, at the cut: a call still running is recorded as
+            // interrupted rather than awaited (see `executed-calls.ts`).
+            executedCalls: calls.unanswered(responseMessages),
             syntheticPrompt,
           });
           return false;
         }
 
-        return await afterModel(signal, historyEpoch, accumulated, responseMessages, failed);
+        return await afterModel(
+          signal,
+          historyEpoch,
+          accumulated,
+          responseMessages,
+          failed,
+          // Read only for a failure: a turn that finished has every step.
+          failed ? calls.unanswered(responseMessages) : [],
+        );
       });
     });
   };

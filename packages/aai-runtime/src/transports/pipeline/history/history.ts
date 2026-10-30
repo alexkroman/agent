@@ -43,6 +43,7 @@ import type { Logger } from "../../../logger.ts";
 import { pairToolCallsInPlace } from "../../../tools/index.ts";
 import { toModelMessage } from "../output/index.ts";
 import { estimateMessageTokens } from "./context-budget.ts";
+import { type ExecutedToolCall, interruptedStepMessages } from "./executed-calls.ts";
 import {
   createRetainedView,
   estimateConversationTokens,
@@ -258,6 +259,12 @@ function withoutReasoning(m: ModelMessage): ModelMessage | null {
  * model knows it was cut off. The LLM view only receives the text tail that is
  * not already inside a persisted step message.
  *
+ * **The step the cut landed in counts too, when its tools already ran.** Its
+ * messages never materialize (the SDK builds them at `onStepFinish`), so the
+ * calls it executed arrive separately as `executedCalls` and are rebuilt into
+ * that step's pair — see `executed-calls.ts` for the measured re-sent writes
+ * this closes, and for what a call still RUNNING at the cut is recorded as.
+ *
  * **`heard` is a prefix of what the model generated, and the difference is
  * deliberate.** This function used to record the whole of `accumulated`, on the
  * reasoning that "the model needs to know what it had committed to saying".
@@ -304,8 +311,14 @@ export function persistInterruptedTurn(args: {
   persistedLen: number;
   /** Response messages of the turn's completed steps. */
   stepMessages: readonly ModelMessage[];
+  /**
+   * Calls the cut step EXECUTED that no completed step carries
+   * (`executed-calls.ts`): settled ones with their real result, ones still
+   * running with the honest "outcome unknown" one.
+   */
+  executedCalls?: readonly ExecutedToolCall[] | undefined;
 }): void {
-  const { history, heard, stepMessages } = args;
+  const { history, heard, stepMessages, executedCalls = [] } = args;
   // Pushed unconditionally, BEFORE the empty-heard return: a turn whose tools
   // ran left a real trace even if the caller heard nothing, and dropping the
   // steps would make the next turn re-call tools it already ran.
@@ -315,15 +328,23 @@ export function persistInterruptedTurn(args: {
   // also covers a turn that got no further than its dead-air filler: filler is
   // audible but never recordable (see emitText's `record` flag).
   const spoken = heard.trim();
-  if (spoken.length === 0) return;
-  history.pushConversation({ role: "assistant", content: markInterrupted(spoken) });
+  if (spoken.length > 0) {
+    history.pushConversation({ role: "assistant", content: markInterrupted(spoken) });
+  }
   // Clamped: the persisted-step snapshot indexes the GENERATED text, which the
   // heard prefix is shorter than, so an unclamped slice would run past the end
   // (a negative-length tail) rather than yielding nothing.
   const tail = heard.slice(Math.min(args.persistedLen, heard.length)).trim();
-  if (tail.length > 0) {
-    history.pushLlm({ role: "assistant", content: markInterrupted(tail) });
-  }
+  const tailText = tail.length > 0 ? markInterrupted(tail) : undefined;
+  // The unfinished step's calls go out WITH the tail, as one assistant message
+  // whose text comes first: the tail is that step's own text, which the model
+  // produced before its calls. Pushed after them instead, it would read as
+  // something said AFTER the result ("Let me process that return") — an
+  // invitation to do it again. Like the steps above, pushed whether or not
+  // anything was heard: the calls ran either way.
+  const unfinished = interruptedStepMessages(executedCalls, tailText);
+  if (unfinished.length > 0) history.pushLlm(...unfinished);
+  else if (tailText !== undefined) history.pushLlm({ role: "assistant", content: tailText });
 }
 
 /**
