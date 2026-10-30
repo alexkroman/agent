@@ -117,6 +117,36 @@ function liftAudioPayload(raw: Buffer): AssemblyAITtsMessage | undefined {
   return { ...rest, audio: raw.toString("latin1", start, end) } as AssemblyAITtsMessage;
 }
 
+/** What {@link handleMessage} routes each frame to. */
+export interface FrameHandlers {
+  /** A `FlushDone`: one flush was synthesized. */
+  onSynthesisComplete(): void;
+  /** A `WordBoundaries` frame — never an acknowledgement. */
+  onWords(msg: AssemblyAITtsMessage): void;
+  /** The cancel window, which filters an abandoned turn's frames. */
+  cancels: CancelWindow;
+  /**
+   * Offered every pacing `Error` (`3010`) first; returning `true` means the
+   * adapter recovered and the frame is not a stream error.
+   */
+  recoverPacing?(msg: AssemblyAITtsMessage): boolean;
+  /** An `Audio` frame's sample count, just before it is emitted. */
+  onAudio?(samples: number): void;
+}
+
+/**
+ * Is this `Error` frame the service's PACING close (`3010`)? Both of its
+ * triggers — control frames over budget, or text far ahead of synthesis — mean
+ * the client went too fast, not that the request was wrong, and the docs'
+ * answer is to reconnect (https://www.assemblyai.com/docs/tts/error-handling).
+ */
+export function isPacingError(msg: AssemblyAITtsMessage): boolean {
+  return msg.type === "Error" && Number(msg.error_code) === TTS_PACING_CLOSE_CODE;
+}
+
+/** The close (and `error_code`) the service uses for every pacing limit. */
+export const TTS_PACING_CLOSE_CODE = 3010;
+
 /**
  * Handle one server frame. Extracted to keep `open()` under the cognitive
  * complexity limit; turn state is threaded through the callbacks.
@@ -129,10 +159,9 @@ function liftAudioPayload(raw: Buffer): AssemblyAITtsMessage | undefined {
 export function handleMessage(
   raw: WebSocket.Data,
   shell: SessionShell<TtsEvents>,
-  onSynthesisComplete: () => void,
-  onWords: (msg: AssemblyAITtsMessage) => void,
-  cancels: CancelWindow,
+  handlers: FrameHandlers,
 ): void {
+  const { onSynthesisComplete, onWords, cancels, recoverPacing, onAudio } = handlers;
   const msg = parseServerFrame(raw);
   if (msg === undefined) return;
 
@@ -150,7 +179,10 @@ export function handleMessage(
     case "Audio": {
       if (typeof msg.audio === "string") {
         const pcm = bytesToPcm16(base64ToUint8(msg.audio));
-        if (pcm.length > 0) shell.emit("audio", pcm);
+        if (pcm.length > 0) {
+          onAudio?.(pcm.length);
+          shell.emit("audio", pcm);
+        }
       }
       return;
     }
@@ -162,6 +194,7 @@ export function handleMessage(
       onWords(msg);
       return;
     case "Error":
+      if (isPacingError(msg) && recoverPacing?.(msg)) return;
       shell.streamError(`AssemblyAI TTS ${formatErrorFrame(msg)}`);
       return;
     default:

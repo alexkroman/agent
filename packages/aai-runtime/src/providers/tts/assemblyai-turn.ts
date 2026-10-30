@@ -47,6 +47,15 @@ export interface TurnTracker {
    * an already-closed turn ends here, an open one when it closes.
    */
   abandonFlushes(): void;
+  /**
+   * The socket carrying this turn's flushes was replaced, and the adapter
+   * will RE-SEND what they owed: forget them like {@link abandonFlushes}, but
+   * reopen a closed turn instead of ending it, since the re-sent text has not
+   * been spoken yet. Returns whether the turn had been closed, so the adapter
+   * closes it again once the re-sent text is out. A turn not in flight is left
+   * alone.
+   */
+  reopenForResend(): boolean;
   /** Unexpected server-side close: release the turn unconditionally. */
   forceDone(): void;
   /**
@@ -128,6 +137,14 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
     abandonFlushes(): void {
       outstandingFlushes = 0;
       if (turnClosed) emitDoneOnce();
+    },
+
+    reopenForResend(): boolean {
+      if (doneEmitted) return false;
+      outstandingFlushes = 0;
+      const wasClosed = turnClosed;
+      turnClosed = false;
+      return wasClosed;
     },
 
     forceDone: emitDoneOnce,
