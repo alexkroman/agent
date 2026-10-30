@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import {
+  FAILURE_STREAK_ESCALATION,
   FailedCallMemo,
   MAX_REMEMBERED_FAILURES,
   REPEATED_FAILURE_REASON,
@@ -64,5 +65,44 @@ describe("FailedCallMemo", () => {
     }
     expect(memo.refuse("find_user", { n: 0 })).toBeUndefined();
     expect(memo.refuse("find_user", { n: MAX_REMEMBERED_FAILURES })).toBeDefined();
+  });
+
+  describe("escalation after a streak of failures on one tool", () => {
+    const failN = (memo: FailedCallMemo, name: string, n: number, from = 0): string | undefined => {
+      let note: string | undefined;
+      for (let i = from; i < from + n; i++) note = memo.settle(name, { email: `v${i}` }, NOT_FOUND);
+      return note;
+    };
+
+    test("the note escalates on the streak's threshold failure, not before", () => {
+      const memo = new FailedCallMemo();
+      expect(failN(memo, "find_user", FAILURE_STREAK_ESCALATION - 1)).not.toContain("stop varying");
+      const note = failN(memo, "find_user", 1, FAILURE_STREAK_ESCALATION);
+      expect(note).toContain("Already tried, all failed:");
+      expect(note).toContain(`find_user has now failed ${FAILURE_STREAK_ESCALATION} times`);
+      expect(note).toContain("different identifier");
+    });
+
+    test("the count keeps rising past the remembered-failure cap", () => {
+      const memo = new FailedCallMemo();
+      const note = failN(memo, "find_user", MAX_REMEMBERED_FAILURES + 2);
+      expect(note).toContain(`has now failed ${MAX_REMEMBERED_FAILURES + 2} times`);
+    });
+
+    test("each tool counts its own failures", () => {
+      const memo = new FailedCallMemo();
+      failN(memo, "find_user_by_email", FAILURE_STREAK_ESCALATION);
+      expect(failN(memo, "find_user_by_name", 1)).not.toContain("stop varying");
+    });
+
+    test("a success, or a reset, starts the streak over", () => {
+      const memo = new FailedCallMemo();
+      failN(memo, "find_user", FAILURE_STREAK_ESCALATION - 1);
+      memo.settle("get_order", { id: "W1" }, '{"id":"W1"}');
+      expect(failN(memo, "find_user", 1, 100)).not.toContain("stop varying");
+      failN(memo, "find_user", FAILURE_STREAK_ESCALATION, 200);
+      memo.reset();
+      expect(failN(memo, "find_user", 1, 300)).not.toContain("stop varying");
+    });
   });
 });
