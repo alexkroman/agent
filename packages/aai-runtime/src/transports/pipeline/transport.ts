@@ -389,10 +389,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     }
     // The raw chain: a caller turn must not seal the queue it just opened.
     chainOfTurns.chain(async () => {
-      const { text: userText, last, count, note } = waiting.take();
+      const { text: userText, utterances, note } = waiting.take();
+      const count = utterances.length;
       if (count > 1)
         log.info("Pipeline answering queued caller turns once", { sid: opts.sid, count });
-      await runTurn(userText, { claim: last, ...omitUndefined({ note }) }).catch(
+      await runTurn(userText, { claims: utterances, ...omitUndefined({ note }) }).catch(
         logTurnCrash(crashLabel),
       );
     });

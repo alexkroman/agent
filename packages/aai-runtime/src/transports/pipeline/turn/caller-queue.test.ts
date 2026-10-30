@@ -17,8 +17,7 @@ describe("createCallerTurnQueue", () => {
     expect(callers.commit("it is order 1234", undefined)).toBeUndefined();
     expect(waiting?.take()).toEqual({
       text: "hello? are you there? it is order 1234",
-      last: "it is order 1234",
-      count: 3,
+      utterances: ["hello?", "are you there?", "it is order 1234"],
       note: undefined,
     });
   });
@@ -27,7 +26,7 @@ describe("createCallerTurnQueue", () => {
     const { callers } = queue();
     callers.commit("first", undefined)?.take();
     const next = callers.commit("second", undefined);
-    expect(next?.take()).toMatchObject({ text: "second", count: 1 });
+    expect(next?.take()).toMatchObject({ text: "second", utterances: ["second"] });
   });
 
   test("a non-caller turn queued in between seals the waiting turn", () => {
@@ -36,7 +35,7 @@ describe("createCallerTurnQueue", () => {
     callers.seal();
     const second = callers.commit("second", undefined);
     expect(second).toBeDefined();
-    expect(first?.take()).toMatchObject({ text: "first", count: 1 });
+    expect(first?.take()).toMatchObject({ text: "first", utterances: ["first"] });
   });
 
   test("a moved queue epoch stops a stranded turn from gathering", () => {
@@ -44,8 +43,8 @@ describe("createCallerTurnQueue", () => {
     const stranded = callers.commit("hello?", undefined);
     gate.invalidateQueued();
     const next = callers.commit("never mind", undefined);
-    expect(next?.take()).toMatchObject({ text: "never mind", count: 1 });
-    expect(stranded?.take()).toMatchObject({ text: "hello?", count: 1 });
+    expect(next?.take()).toMatchObject({ text: "never mind", utterances: ["never mind"] });
+    expect(stranded?.take()).toMatchObject({ text: "hello?", utterances: ["hello?"] });
   });
 
   test("model-only notes are carried and joined", () => {

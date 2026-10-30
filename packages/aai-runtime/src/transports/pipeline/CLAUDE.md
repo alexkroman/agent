@@ -128,7 +128,9 @@ written as HEARD once playback ends. It resolves `"played"`, `"interrupted"` or
   call opens, so it covers that wait too.
 - **The dead-air cover gives up** after `DEAD_AIR_COVER_MAX_FILLERS` fillers
   with no text, tool call or tool result between them, and fails the turn so the
-  caller hears `errorPhrase` (`reply/dead-air.ts`).
+  caller hears `errorPhrase` (`reply/dead-air.ts`). Fillers spoken while a tool
+  call is in flight do not count: that wait is the tool's, and giving up would
+  abort the tool with the request.
 - **Caller turns queued behind a turn that has not started are answered once**
   (`turn/caller-queue.ts`), as one user message; any other chained turn seals
   the queue, and a moved queue epoch stops a stranded turn from gathering.

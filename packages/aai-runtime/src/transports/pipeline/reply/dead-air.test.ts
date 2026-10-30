@@ -346,6 +346,25 @@ describe("the cover gives up instead of looping", () => {
     expect(h.giveUp).not.toHaveBeenCalled();
   });
 
+  it("fillers spoken while a tool runs do not count — tool time is not a stall", async () => {
+    // A healthy 60 s tool emits no parts at all. Giving up there would abort
+    // the request, and with it the tool, whose signal is the request's.
+    const h = giveUpHarness();
+    h.cover.onToolCall();
+    h.cover.onToolCall(); // a sibling call in the same step
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.spoken.length).toBeGreaterThan(DEAD_AIR_COVER_MAX_FILLERS);
+    expect(h.giveUp).not.toHaveBeenCalled();
+    // One sibling back: still a tool in flight, still not counting.
+    h.cover.onToolResult();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(h.giveUp).not.toHaveBeenCalled();
+    // Both back: the model is being waited on again, and the count resumes.
+    h.cover.onToolResult();
+    await vi.advanceTimersByTimeAsync(DEAD_AIR_COVER_MAX_MS * (DEAD_AIR_COVER_MAX_FILLERS + 1));
+    expect(h.giveUp).toHaveBeenCalledOnce();
+  });
+
   it("model text starts the count over too", async () => {
     const h = giveUpHarness();
     await windows(0, DEAD_AIR_COVER_MAX_FILLERS);

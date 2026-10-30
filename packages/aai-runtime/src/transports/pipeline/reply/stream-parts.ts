@@ -417,6 +417,8 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         emitToolResult(part);
         return;
       case "tool-error":
+        // A failed call is over too — the cover's in-flight count needs it.
+        cover.onToolResult();
         // What an INVALID call (unknown tool, unparseable input) and a thrown
         // `execute` both become. The model gets it as an error result in the
         // step's messages; this line is the only place an operator sees WHY.

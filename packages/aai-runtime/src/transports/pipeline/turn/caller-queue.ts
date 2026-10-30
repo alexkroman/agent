@@ -30,11 +30,17 @@
 export type WaitingCallerTurn = {
   /**
    * Claim the gathered utterances as the turn starts, ending the gathering.
-   * Answers the user message to send, the last utterance (what its STT marks
-   * were queued under — `TurnMetrics.claimTurn`), how many were joined, and
-   * the model-only note, if any utterance carried one.
+   * Answers the user message to send, every joined utterance in commit order,
+   * and the model-only note, if any utterance carried one.
+   *
+   * `utterances` is what the turn's STT marks are claimed by
+   * (`TurnMetrics.claimTurn`), EACH of them in order, so the last claim — the
+   * newest utterance — is the one reported. Claiming only the last TEXT is
+   * wrong for repeats ("hello?", "hello?"): `claimTurn` takes the OLDEST
+   * pending mark with that text, reporting the first utterance's timing and
+   * leaving the second's for a later "hello?" turn to take.
    */
-  take(): { text: string; last: string; count: number; note: string | undefined };
+  take(): { text: string; utterances: readonly string[]; note: string | undefined };
 };
 
 /** See the module doc. */
@@ -72,8 +78,7 @@ export function createCallerTurnQueue(deps: {
           if (waiting === entry) waiting = undefined;
           return {
             text: entry.texts.join(" "),
-            last: entry.texts.at(-1) ?? text,
-            count: entry.texts.length,
+            utterances: entry.texts,
             note: entry.notes.length === 0 ? undefined : entry.notes.join("\n\n"),
           };
         },

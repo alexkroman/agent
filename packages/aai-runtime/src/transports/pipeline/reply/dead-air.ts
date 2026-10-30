@@ -43,6 +43,10 @@ import type { Logger } from "../../../logger.ts";
  * {@link DeadAirCoverDeps.giveUp} does through the failed-turn path
  * (`errorPhrase`).
  *
+ * Fillers spoken while a tool call is in flight are not counted at all: that
+ * wait is the tool's, bounded by its own deadline, and giving up would abort
+ * the tool along with the request. Only a wait on the MODEL is given up on.
+ *
  * "In a row" is what makes this safe for a long tool chain: any sign the turn
  * is alive — model text, a tool call, a tool result — starts the count over, so
  * only a turn that has produced NOTHING across all four fillers is given up
@@ -91,7 +95,10 @@ export type DeadAirCover = {
   clear: () => void;
   /** A `tool-call` part arrived — the turn is the silent kind. */
   onToolCall: () => void;
-  /** A `tool-result` part arrived — the turn is alive, see {@link DEAD_AIR_COVER_MAX_FILLERS}. */
+  /**
+   * A `tool-result` or `tool-error` part arrived: one tool call is over, and
+   * the turn is alive — see {@link DEAD_AIR_COVER_MAX_FILLERS}.
+   */
   onToolResult: () => void;
   /** Drop the abort listener and the pending cover. */
   dispose: () => void;
@@ -149,6 +156,17 @@ export function createDeadAirCover(deps: DeadAirCoverDeps): DeadAirCover {
    * `coverCount`, which drives the backoff and never goes back down.
    */
   let unanswered = 0;
+  /**
+   * Tool calls announced (`onToolCall`) and not yet answered (`onToolResult`).
+   * While any is in flight the give-up count is SUSPENDED: the time is the
+   * tool's, bounded by its own deadline (`TOOL_EXECUTION_TIMEOUT_MS`, the relay
+   * timeout), and giving up would abort the request — whose signal the tool
+   * holds — mid-execution. The stall watchdog never counts tool time for the
+   * same reason (`../llm/stall.ts`). A count, not a flag: a step may call
+   * several tools at once, and the model is waited on again only when the
+   * last of them returns.
+   */
+  let toolsInFlight = 0;
   /** The window armed for the cover currently pending — see `arm`. */
   let armedCoverMs = 0;
   /**
@@ -177,6 +195,30 @@ export function createDeadAirCover(deps: DeadAirCoverDeps): DeadAirCover {
    * long base after the first filler.
    */
   let base = coverMs;
+
+  /** A filler was spoken: one more unanswered, unless a tool owns the wait. */
+  function countUnanswered(): void {
+    if (toolsInFlight === 0) unanswered += 1;
+  }
+
+  /**
+   * Give up instead of speaking, if the run of unanswered fillers is spent and
+   * no tool is in flight — see {@link DEAD_AIR_COVER_MAX_FILLERS}. Not
+   * re-armed: the turn is being ended, or (with no `giveUp`) the cover has
+   * nothing left to say that the caller has not heard.
+   */
+  function gaveUp(): boolean {
+    if (toolsInFlight > 0 || unanswered < DEAD_AIR_COVER_MAX_FILLERS) return false;
+    log.warn("Pipeline dead-air cover gave up", {
+      sid,
+      coverCount,
+      unanswered,
+      waitedMs: armedCoverMs,
+    });
+    dueAt = 0;
+    deps.giveUp?.();
+    return true;
+  }
 
   const deadAir = createRestartableTimer((): void => {
     // Fire-time re-check, matching the transport's other timers: the abort
@@ -209,19 +251,7 @@ export function createDeadAirCover(deps: DeadAirCoverDeps): DeadAirCover {
       arm();
       return;
     }
-    if (unanswered >= DEAD_AIR_COVER_MAX_FILLERS) {
-      // Not re-armed: the turn is being ended, or (with no `giveUp`) the
-      // cover has nothing left to say that the caller has not heard.
-      log.warn("Pipeline dead-air cover gave up", {
-        sid,
-        coverCount,
-        unanswered,
-        waitedMs: armedCoverMs,
-      });
-      dueAt = 0;
-      deps.giveUp?.();
-      return;
-    }
+    if (gaveUp()) return;
     // Nothing has reached the caller yet, so this is the turn's OPENING gap
     // rather than a gap between things the model said, and it needs its own
     // phrase — the cycle opens with "I'm still checking on this.", which
@@ -240,7 +270,7 @@ export function createDeadAirCover(deps: DeadAirCoverDeps): DeadAirCover {
     // own ~1.3s of audio, under a second of silence between two fillers, which
     // reads as chatter at the very start of the wait.
     coverCount += 1;
-    unanswered += 1;
+    countUnanswered();
     // LOGGED, because until it was, nothing anywhere could confirm a filler
     // played. The phrases are emitted `record: false`, so they never reach
     // `onDelta`, never enter history, and never appear in a client's committed
@@ -338,6 +368,7 @@ export function createDeadAirCover(deps: DeadAirCoverDeps): DeadAirCover {
       // fillers after a tool call fell from 156 to ~110 and delayed answers
       // from 40 to 17, with no more fillers landing past the target.
       unanswered = 0;
+      toolsInFlight += 1;
       const toolBase = Math.min(DEAD_AIR_TOOL_COVER_MS, coverMs);
       base = toolBase;
       const anchoredOpening = deps.openingMs !== undefined && coverCount === 0 && !deps.spokeText();
@@ -346,6 +377,7 @@ export function createDeadAirCover(deps: DeadAirCoverDeps): DeadAirCover {
     },
     onToolResult(): void {
       unanswered = 0;
+      toolsInFlight = Math.max(0, toolsInFlight - 1);
     },
     dispose(): void {
       signal?.removeEventListener("abort", onAbort);
