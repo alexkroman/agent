@@ -196,25 +196,25 @@ export function modelContextTokens(llm: LanguageModel): number | undefined {
 /**
  * The context window an LLM descriptor DECLARES, in tokens, or `undefined`.
  *
- * A member that declares none falls back to the catalog by its model id, so a
- * descriptor is "known" when every model it can dial is. A `fallback([...])`
- * answers the SMALLEST of its members' windows — whichever member serves a
- * turn, the request has to fit it — and `undefined` if any member is unknown,
- * which leaves the whole stage to {@link UNKNOWN_MODEL_CONTEXT_TOKENS}.
+ * A descriptor that declares none falls back to the catalog by its model id.
+ *
+ * A `fallback([...])` ALWAYS answers a number: the SMALLEST of its members'
+ * windows, a member nothing is known about counting as
+ * {@link UNKNOWN_MODEL_CONTEXT_TOKENS}. Whichever member serves a turn, the
+ * request has to fit it — and answering `undefined` would hand the budget to
+ * {@link modelContextTokens}, which reads the failover wrapper's `modelId`:
+ * the PRIMARY's, so a large primary would budget a request its small backup
+ * then rejects.
  */
 export function declaredContextTokens(descriptor: unknown): number | undefined {
-  let members: { options: Record<string, unknown> }[] = [];
-  if (isFallbackDescriptor(descriptor)) members = fallbackMembers(descriptor);
-  else if (isRecord(descriptor) && isRecord(descriptor.options)) {
-    members = [{ options: descriptor.options }];
+  if (isFallbackDescriptor(descriptor)) {
+    const windows = fallbackMembers(descriptor).map(
+      ({ options }) => memberContextTokens(options) ?? UNKNOWN_MODEL_CONTEXT_TOKENS,
+    );
+    return windows.length > 0 ? Math.min(...windows) : UNKNOWN_MODEL_CONTEXT_TOKENS;
   }
-  let smallest: number | undefined;
-  for (const { options } of members) {
-    const window = memberContextTokens(options);
-    if (window === undefined) return undefined;
-    smallest = smallest === undefined ? window : Math.min(smallest, window);
-  }
-  return smallest;
+  if (!(isRecord(descriptor) && isRecord(descriptor.options))) return undefined;
+  return memberContextTokens(descriptor.options);
 }
 
 /** One descriptor's window: as declared, else the catalog's for its model id. */

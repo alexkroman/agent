@@ -157,9 +157,11 @@ describe("declaredContextTokens", () => {
     expect(declaredContextTokens(d)).toBe(65_536);
   });
 
-  test("a fallback with ANY unknown member is unknown as a whole", () => {
-    const d = fallback(one({ model: "a", contextWindow: 131_072 }), one({ model: "unknown-x" }));
-    expect(declaredContextTokens(d)).toBeUndefined();
+  test("a fallback's unknown member counts as the unknown-model window", () => {
+    // Not `undefined`: that would budget by the failover wrapper's modelId,
+    // which is the PRIMARY's — a large primary would overflow a small backup.
+    const d = fallback(one({ model: KNOWN_MODEL }), one({ model: "unknown-x" }));
+    expect(declaredContextTokens(d)).toBe(UNKNOWN_MODEL_CONTEXT_TOKENS);
   });
 
   test("ignores a malformed descriptor or window", () => {
