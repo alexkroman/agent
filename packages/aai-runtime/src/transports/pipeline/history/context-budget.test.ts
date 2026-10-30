@@ -13,6 +13,7 @@ import {
   type ContextBudgetStep,
   contextTokenBudget,
   createContextBudget,
+  declaredContextTokens,
   estimateMessageTokens,
   LARGEST_CONTEXT_TOKEN_BUDGET,
   MESSAGE_TOKEN_OVERHEAD,
@@ -106,12 +107,66 @@ describe("contextTokenBudget", () => {
     expect(Math.max(...budgets)).toBe(LARGEST_CONTEXT_TOKEN_BUDGET);
   });
 
+  test("a DECLARED window wins over the unknown-model fallback", () => {
+    // The point of `llm({ contextWindow })`: a model off the gateway catalog
+    // (a Cerebras model, say) is otherwise budgeted as the smallest window.
+    expect(contextTokenBudget("some-self-hosted-model", 131_072)).toBe(
+      Math.floor(131_072 * (1 - CONTEXT_WINDOW_RESERVE)),
+    );
+  });
+
+  test("a declared window wins over the catalog's, and is capped at the largest", () => {
+    expect(contextTokenBudget(KNOWN_MODEL, 64_000)).toBe(
+      Math.floor(64_000 * (1 - CONTEXT_WINDOW_RESERVE)),
+    );
+    // Above the largest catalog window would reach past history retention.
+    expect(contextTokenBudget("some-self-hosted-model", 10_000_000)).toBe(
+      LARGEST_CONTEXT_TOKEN_BUDGET,
+    );
+  });
+
   test("every advertised gateway model resolves to a positive budget", () => {
     // The catalog is GENERATED, so a regeneration that dropped or zeroed a
     // `context` would otherwise move those models silently onto the fallback.
     for (const id of Object.keys(ASSEMBLYAI_GATEWAY_MODELS)) {
       expect.soft(contextTokenBudget(id), id).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("declaredContextTokens", () => {
+  const one = (options: Record<string, unknown>) => ({ kind: "cerebras", options });
+  const fallback = (...providers: unknown[]) => ({ kind: "fallback", options: { providers } });
+
+  test("reads a lone descriptor's declared window", () => {
+    expect(declaredContextTokens(one({ model: "m", contextWindow: 131_072 }))).toBe(131_072);
+  });
+
+  test("falls back to the catalog by model id, and is undefined for an unknown model", () => {
+    expect(declaredContextTokens(one({ model: KNOWN_MODEL }))).toBe(KNOWN_CONTEXT);
+    expect(declaredContextTokens(one({ model: "some-self-hosted-model" }))).toBeUndefined();
+  });
+
+  test("a fallback answers its SMALLEST member's window", () => {
+    // Whichever member serves the turn, the request has to fit it.
+    const d = fallback(
+      one({ model: "a", contextWindow: 131_072 }),
+      one({ model: KNOWN_MODEL }),
+      one({ model: "b", contextWindow: 65_536 }),
+    );
+    expect(declaredContextTokens(d)).toBe(65_536);
+  });
+
+  test("a fallback's unknown member counts as the unknown-model window", () => {
+    // Not `undefined`: that would budget by the failover wrapper's modelId,
+    // which is the PRIMARY's — a large primary would overflow a small backup.
+    const d = fallback(one({ model: KNOWN_MODEL }), one({ model: "unknown-x" }));
+    expect(declaredContextTokens(d)).toBe(UNKNOWN_MODEL_CONTEXT_TOKENS);
+  });
+
+  test("ignores a malformed descriptor or window", () => {
+    expect(declaredContextTokens(undefined)).toBeUndefined();
+    expect(declaredContextTokens(one({ model: "x", contextWindow: -1 }))).toBeUndefined();
   });
 });
 
@@ -225,6 +280,21 @@ describe("createContextBudget", () => {
     const result = prepare(step({ messages }));
     expect(result?.messages.length).toBeLessThan(messages.length);
     expect(cost(result?.messages ?? [])).toBeLessThanOrEqual(limit);
+  });
+
+  test("a declared window replaces the unknown-model budget", () => {
+    // Overflows the unknown-model budget by a wide margin, but fits a declared
+    // 131k window: nothing is trimmed.
+    const unknownLimit = Math.floor(UNKNOWN_MODEL_CONTEXT_TOKENS * (1 - CONTEXT_WINDOW_RESERVE));
+    const messages: ModelMessage[] = [];
+    while (cost(messages) <= unknownLimit * 2) messages.push(bulky(messages.length));
+    const prepare = createContextBudget({
+      llm: modelWithId("some-self-hosted-model"),
+      contextWindow: 131_072,
+      log: silentLogger,
+      sid: "sid-1",
+    });
+    expect(prepare(step({ messages }))).toBeUndefined();
   });
 
   test("a list that fits produces no override at all", () => {

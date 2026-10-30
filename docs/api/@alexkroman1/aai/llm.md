@@ -160,6 +160,21 @@ On a provider the runtime has no built-in entry for, this is what makes
 the descriptor resolvable at all: it is dialled as an OpenAI-compatible
 chat-completions API, keyed by `apiKeyEnv`.
 
+##### contextWindow?
+
+```ts
+readonly optional contextWindow?: number;
+```
+
+The model's context window, in tokens — what a pipeline session budgets
+each request against, trimming the oldest history to fit.
+
+Only needed for a model the SDK's catalog does not carry, which is every
+model off the AssemblyAI gateway. Without it an unknown model is budgeted
+as the SMALLEST window the catalog knows (32,768 tokens today), so a long
+call on a large-context model drops history it had room for. Declared, it
+is used as given, up to the largest window the catalog carries.
+
 ##### model
 
 ```ts
@@ -265,6 +280,7 @@ rather than refused at compile time, and a rejected one is the gateway's 400.
 type LlmDescriptorOptions = {
   apiKeyEnv?: string;
   baseUrl?: string;
+  contextWindow?: number;
   model: string;
   providerOptions?: Readonly<Record<string, unknown>>;
 };
@@ -300,6 +316,14 @@ readonly optional baseUrl?: string;
 ```
 
 Replaces the provider's endpoint; must include the version path.
+
+##### contextWindow?
+
+```ts
+readonly optional contextWindow?: number;
+```
+
+The model's context window in tokens, when the author declared one.
 
 ##### model
 

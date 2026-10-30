@@ -166,7 +166,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // SESSION, and it bounds the REQUEST and never `history`. It is the ONLY
   // bound on a request — an unknown context window is budgeted too. The
   // argument is in pipeline-context-budget.ts.
-  const contextBudget = createContextBudget({ llm: opts.llm, log, sid: opts.sid });
+  const contextBudget = createContextBudget({
+    llm: opts.llm,
+    contextWindow: opts.contextWindow,
+    log,
+    sid: opts.sid,
+  });
   // Turn serializer + its queued-turn epoch check — see createTurnChain.
   const chainOfTurns = createTurnChain({ gate, isTerminated });
   // Caller turns waiting behind a slow reply are answered once — see

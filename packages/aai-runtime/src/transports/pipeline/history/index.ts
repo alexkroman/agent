@@ -7,7 +7,11 @@
  */
 
 export type { ContextBudgetPreparer } from "./context-budget.ts";
-export { createContextBudget, estimateMessageTokens } from "./context-budget.ts";
+export {
+  createContextBudget,
+  declaredContextTokens,
+  estimateMessageTokens,
+} from "./context-budget.ts";
 export type { ExecutedCallLedger, ExecutedToolCall } from "./executed-calls.ts";
 export {
   createExecutedCallLedger,

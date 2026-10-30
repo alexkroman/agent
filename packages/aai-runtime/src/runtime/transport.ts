@@ -210,6 +210,8 @@ export type BuildTransportArgs = {
 export type ResolvedPipelineProviders = {
   stt: ResolvedOpener<SttOpener>;
   llm: LanguageModel;
+  /** The window the LLM descriptor declares (`declaredContextTokens`), if any. */
+  llmContextWindow?: number | undefined;
   tts: ResolvedOpener<TtsOpener>;
 };
 
@@ -271,6 +273,7 @@ export function createTransportFactory(
       sid: sessionOpts.id,
       stt: withOpenerFailoverListener(providers.stt.opener, onFailover),
       llm: withFailoverListener(providers.llm, onFailover),
+      contextWindow: providers.llmContextWindow,
       tts: withOpenerFailoverListener(providers.tts.opener, onFailover),
       callbacks,
       // The LINE, not the opening: `reset()` re-greets through `greeting`, and the

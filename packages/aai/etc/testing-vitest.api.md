@@ -293,6 +293,7 @@ type LlmDescriptorOptions = {
     readonly baseUrl?: string;
     readonly apiKeyEnv?: string;
     readonly providerOptions?: Readonly<Record<string, unknown>>;
+    readonly contextWindow?: number;
 };
 
 // @public

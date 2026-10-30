@@ -31,6 +31,23 @@ describe("llm()", () => {
     expect(d.options).toEqual({ model: "m", apiKeyEnv: "MY_KEY" });
   });
 
+  it("carries a declared contextWindow, and only when given", () => {
+    expect(llm({ provider: "cerebras", model: "m", contextWindow: 131_072 }).options).toEqual({
+      model: "m",
+      contextWindow: 131_072,
+    });
+    expect(llm({ provider: "cerebras", model: "m" }).options).not.toHaveProperty("contextWindow");
+  });
+
+  it.each([0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
+    "refuses contextWindow %s",
+    (contextWindow) => {
+      expect(() => llm({ provider: "cerebras", model: "m", contextWindow })).toThrow(
+        /contextWindow must be a positive whole number/,
+      );
+    },
+  );
+
   it("carries baseUrl and providerOptions as data, COPIED rather than captured", () => {
     const providerOptions = { temperature: 0.2 };
     const d = llm({
