@@ -5,6 +5,7 @@
  * audio the old one never answered; the old one drains, its last turn still
  * counts, and its close does not end the session.
  */
+import { DEFAULT_MAX_TURN_SILENCE_MS } from "@alexkroman1/aai/internal";
 import type { StreamingTranscriberParams, TurnEvent } from "assemblyai";
 import { describe, expect, test } from "vitest";
 import { tick } from "../../_timing-test-utils.ts";
@@ -117,7 +118,10 @@ describe("AssemblyAI STT: reopening a deaf socket", () => {
     session.updateKeyterms?.(["Lucas", "Santos"]);
     speakUnheard(session, STT_DEAF_VOICED_MS);
     await tick();
-    expect(sockets[1]?.updateConfiguration).toHaveBeenCalledWith({ min_turn_silence: 1200 });
+    expect(sockets[1]?.updateConfiguration).toHaveBeenCalledWith({
+      min_turn_silence: 1200,
+      max_turn_silence: DEFAULT_MAX_TURN_SILENCE_MS,
+    });
     expect(sockets[1]?.updateConfiguration).toHaveBeenCalledWith({
       keyterms_prompt: ["Lucas", "Santos"],
     });

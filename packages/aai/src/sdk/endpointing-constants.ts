@@ -245,10 +245,22 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 250;
  * Reach it per agent with `agent({ maxTurnSilenceMs })` on the default pipeline,
  * or on the descriptor directly with `assemblyAIStt({ maxTurnSilenceMs })`.
  *
- * @defaultValue `3500` — the value both measured tau2-bench retail runs scored
- * reward 0.68 at, paired with a 1600 minimum.
+ * @defaultValue `1500`
  *
  * @remarks
+ * **1500, from 3500 (2026-10-29).** A 114-task tau2-bench retail comparison of
+ * this stage against a request/response STT behind a fixed 700 ms host-side
+ * silence rule found the semantic endpointer often not committing in noise:
+ * callers re-prompted ("are you still there?") 162 times against 24, and the
+ * caller-stop-to-agent-audio gap was p50 2.0 s / p90 4.8 s against 1.6 / 4.0.
+ * A ceiling that force-ends sooner is the forced commit that comparison asked
+ * for. It is NOT yet measured at 1500 on its own, and two things say watch it:
+ * the history below (3000 split hesitant utterances), and that the same
+ * comparison's Universal arm hit ~6x more LLM rate-limit stalls, which also
+ * produce re-prompts. Revert condition: splits on hesitant, non-spelling
+ * utterances, or on spelled identifiers, rising against a rerun of that
+ * comparison — the asymmetry the 3000 revert below names.
+ *
  * **3000 was tried and reverted.** It was a 500 ms trim off the measured pair,
  * deliberate but never measured on its own, carrying an explicit revert
  * condition: *splits reappearing on hesitant, non-spelling utterances while
@@ -273,7 +285,9 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 250;
  * minimum — raising that one would tax every finished utterance for a fault
  * that only hesitant ones have. The record is not that 3500 is optimal; it is
  * that a split does not merely delay a turn, it makes the agent answer half a
- * request and then treat the other half as a new one.
+ * request and then treat the other half as a new one. (Continuation,
+ * `interruption.continuationWindowMs`, now re-joins many such splits, which is
+ * part of why a lower ceiling is worth trying again.)
  *
  * **Two orderings this value has to keep.** It stays BELOW
  * `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` (4000, internal) less final-emission
@@ -281,11 +295,10 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 250;
  * before the speaking edge goes idle — and the idle edge is what fires a
  * false-interruption resume (`host/transports/pipeline/heard/recovery.ts`), so
  * crossing that line does not merely delay a turn, it lets the agent resume a
- * reply the caller really did interrupt. 500 ms of margin is thin, which is why
- * raising this to 3500 took `DEFAULT_SPEECH_IDLE_TIMEOUT_MS` to 4000 with it.
- * And it stays clear of the service's own 1536 default, so the ceiling is ours
- * rather than silently the service's — the state this constant was introduced
- * to escape.
+ * reply the caller really did interrupt. (When this was 3500 that margin was a
+ * thin 500 ms, which is why the idle timeout went to 4000; at 1500 it is
+ * wide.) And it stays above `DEFAULT_MIN_TURN_SILENCE_MS`, which
+ * `config-rules.ts` enforces.
  *
  * What the ceiling costs is pause tolerance for hesitant speech, paid ONLY by
  * utterances that never read as complete — which is equally the reason trimming
@@ -297,7 +310,7 @@ export const DEFAULT_MIN_TURN_SILENCE_MS = 250;
  * @see `DEFAULT_DEEPGRAM_ENDPOINTING_MS` on `@alexkroman1/aai/stt` — Deepgram has
  * no counterpart to this ceiling; it endpoints on a single silence threshold.
  */
-export const DEFAULT_MAX_TURN_SILENCE_MS = 3500;
+export const DEFAULT_MAX_TURN_SILENCE_MS = 1500;
 
 /*
  * CONFIDENCE-TRIGGERED ENDPOINTING WAS BUILT, MEASURED, AND REMOVED — do not

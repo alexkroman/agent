@@ -12,14 +12,18 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_MIN_TURN_SILENCE_MS } from "@alexkroman1/aai/internal";
+import { DEFAULT_SPEECH_IDLE_TIMEOUT_MS } from "@alexkroman1/aai/host-internal";
+import {
+  DEFAULT_MAX_TURN_SILENCE_MS,
+  DEFAULT_MIN_TURN_SILENCE_MS,
+} from "@alexkroman1/aai/internal";
 import { omitUndefined } from "@alexkroman1/aai/utils";
 import type { TurnEvent } from "assemblyai";
 import { describe, expect, test, vi } from "vitest";
 import { flush } from "../../_timing-test-utils.ts";
 import type { SttTurnMeta } from "../openers.ts";
 import { fakeOf, fakeTranscriber, openSessionWith } from "./_assemblyai-test-utils.ts";
-import { type AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";
+import { type AssemblyAISession, openAssemblyAI, RAISED_CEILING_CAP_MS } from "./assemblyai.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -265,6 +269,44 @@ describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
 });
 
 describe("assemblyAIStt STT adapter — updateEndpointing", () => {
+  test("a floor raised past the ceiling carries the ceiling up, and back down", async () => {
+    // Clamping the floor at the 1500 ms default ceiling made every raise past
+    // it a silent no-op; it now moves the ceiling with it instead.
+    const session = await openSession({});
+    const fake = fakeOf(session);
+    session.updateEndpointing?.(2600);
+    expect(fake.updateConfiguration.mock.calls.at(-1)).toEqual([
+      { min_turn_silence: 2600, max_turn_silence: 2600 },
+    ]);
+    session.updateEndpointing?.(DEFAULT_MIN_TURN_SILENCE_MS);
+    expect(fake.updateConfiguration.mock.calls.at(-1)).toEqual([
+      {
+        min_turn_silence: DEFAULT_MIN_TURN_SILENCE_MS,
+        max_turn_silence: DEFAULT_MAX_TURN_SILENCE_MS,
+      },
+    ]);
+    await session.close();
+  });
+
+  test("a raise is capped below the speech-idle watchdog", async () => {
+    const session = await openSession({});
+    const fake = fakeOf(session);
+    session.updateEndpointing?.(60_000);
+    expect(fake.updateConfiguration.mock.calls.at(-1)).toEqual([
+      { min_turn_silence: RAISED_CEILING_CAP_MS, max_turn_silence: RAISED_CEILING_CAP_MS },
+    ]);
+    expect(RAISED_CEILING_CAP_MS).toBeLessThan(DEFAULT_SPEECH_IDLE_TIMEOUT_MS);
+    await session.close();
+  });
+
+  test("an author's higher ceiling is the cap, and is never lowered", async () => {
+    const session = await openSession({ maxTurnSilenceMs: 6000 });
+    const fake = fakeOf(session);
+    session.updateEndpointing?.(5000);
+    expect(fake.updateConfiguration.mock.calls.at(-1)).toEqual([{ min_turn_silence: 5000 }]);
+    await session.close();
+  });
+
   test("pushes min_turn_silence mid-stream, and only on a CHANGE", async () => {
     const session = await openSession({});
     const fake = fakeOf(session);
@@ -275,28 +317,30 @@ describe("assemblyAIStt STT adapter — updateEndpointing", () => {
     session.updateEndpointing?.(DEFAULT_MIN_TURN_SILENCE_MS);
     expect(fake.updateConfiguration).not.toHaveBeenCalled();
 
-    session.updateEndpointing?.(2600);
-    session.updateEndpointing?.(2600);
-    expect(fake.updateConfiguration.mock.calls).toEqual([[{ min_turn_silence: 2600 }]]);
+    session.updateEndpointing?.(1200);
+    session.updateEndpointing?.(1200);
+    expect(fake.updateConfiguration.mock.calls).toEqual([[{ min_turn_silence: 1200 }]]);
 
     session.updateEndpointing?.(DEFAULT_MIN_TURN_SILENCE_MS);
     expect(fake.updateConfiguration.mock.calls).toEqual([
-      [{ min_turn_silence: 2600 }],
+      [{ min_turn_silence: 1200 }],
       [{ min_turn_silence: DEFAULT_MIN_TURN_SILENCE_MS }],
     ]);
 
     await session.close();
   });
 
-  test("is clamped to the CEILING this session dialled, never inverting the pair", async () => {
+  test("never inverts the pair: a floor past the ceiling moves the ceiling too", async () => {
     // A floor above the ceiling is the measured regression on
     // DEFAULT_MIN_TURN_SILENCE_MS: the completeness check can never fire, so
     // every turn ends on the content-blind fallback that splits utterances.
     const session = await openSession({ maxTurnSilenceMs: 2000 });
     const fake = fakeOf(session);
 
-    session.updateEndpointing?.(5000);
-    expect(fake.updateConfiguration.mock.calls).toEqual([[{ min_turn_silence: 2000 }]]);
+    session.updateEndpointing?.(3000);
+    expect(fake.updateConfiguration.mock.calls).toEqual([
+      [{ min_turn_silence: 3000, max_turn_silence: 3000 }],
+    ]);
 
     await session.close();
   });

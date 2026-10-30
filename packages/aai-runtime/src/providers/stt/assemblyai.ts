@@ -2,6 +2,7 @@
 
 import {
   ASSEMBLYAI_STT_API_KEY_ENV,
+  DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
   isUniversal35Pro,
   resolveAssemblyAISttSettings,
   STT_CONNECT_RETRY_DELAY_MS,
@@ -221,6 +222,14 @@ function buildTranscriberParams(
   return { params, awaitingFormatted, settings };
 }
 
+/**
+ * The highest a mid-call `updateEndpointing` raise may carry the turn-silence
+ * ceiling: the speech-idle watchdog less 500 ms of final-emission latency, the
+ * ordering `DEFAULT_MAX_TURN_SILENCE_MS` documents (a ceiling past it lets a
+ * false-interruption resume fire on a caller who is still mid-turn).
+ */
+export const RAISED_CEILING_CAP_MS: number = DEFAULT_SPEECH_IDLE_TIMEOUT_MS - 500;
+
 export function openAssemblyAI(
   opts: AssemblyAISttOptions = {},
   createTranscriber: CreateAssemblyAITranscriber = sdkTranscriber,
@@ -250,6 +259,8 @@ export function openAssemblyAI(
        * partial for the length of the call.
        */
       let currentMinTurnSilenceMs = settings.minTurnSilenceMs;
+      /** The ceiling in force: the dialled one, unless a raised floor carried it up. */
+      let currentMaxTurnSilenceMs = settings.maxTurnSilenceMs;
       let transcriber = createTranscriber(apiKey, transcriberParams as StreamingTranscriberParams);
       suppressDiscardedSocketError(transcriber);
 
@@ -348,8 +359,14 @@ export function openAssemblyAI(
       /** A reopened socket is up: re-send the session's live settings, then the held audio. */
       const adopt = (next: AssemblyAITranscriber): void => {
         if (shell.isClosed() || next !== transcriber) return;
-        if (currentMinTurnSilenceMs !== settings.minTurnSilenceMs) {
-          next.updateConfiguration({ min_turn_silence: currentMinTurnSilenceMs });
+        if (
+          currentMinTurnSilenceMs !== settings.minTurnSilenceMs ||
+          currentMaxTurnSilenceMs !== settings.maxTurnSilenceMs
+        ) {
+          next.updateConfiguration({
+            min_turn_silence: currentMinTurnSilenceMs,
+            max_turn_silence: currentMaxTurnSilenceMs,
+          });
         }
         if (lastKeyterms) next.updateConfiguration({ keyterms_prompt: [...lastKeyterms] });
         const held = pending ?? [];
@@ -440,25 +457,36 @@ export function openAssemblyAI(
         close: closeAfterFlush(shell, frames),
         updateEndpointing(minTurnSilenceMs: number) {
           if (shell.isClosed()) return;
-          // CLAMPED to the ceiling this session dialled, not to the shipped
-          // default: an agent may raise `maxTurnSilenceMs`, and the invariant
-          // is that the floor never passes the ceiling — sending a minimum
-          // above the maximum is the measured inversion in
-          // `DEFAULT_MIN_TURN_SILENCE_MS`, after which every turn ends on the
-          // content-blind fallback that splits utterances. Sub-millisecond
-          // values are refused rather than rounded to 0, because 0 on the wire
-          // means "use the service default" and would silently hand the window
-          // back to the `mode` preset.
-          const bounded = Math.round(
-            Math.max(1, Math.min(minTurnSilenceMs, settings.maxTurnSilenceMs)),
-          );
-          if (bounded === currentMinTurnSilenceMs) return;
-          currentMinTurnSilenceMs = bounded;
-          // A reopening socket gets it once connected.
+          // The floor never passes the ceiling — a minimum above the maximum
+          // is the measured inversion in `DEFAULT_MIN_TURN_SILENCE_MS`, after
+          // which every turn ends on the content-blind fallback that splits
+          // utterances. So a floor raised PAST the ceiling carries the ceiling
+          // up with it, and the dialled ceiling comes back when the floor does.
+          // (Clamping the floor instead made a raise a silent no-op past the
+          // ceiling, which at the 1500 ms default is most raises worth making.)
+          //
+          // The raise itself is capped at RAISED_CEILING_CAP_MS — or the
+          // dialled ceiling, if an author set one higher — because a ceiling
+          // past the speech-idle watchdog fires false-interruption resumes; see
+          // `DEFAULT_MAX_TURN_SILENCE_MS`. Sub-millisecond values are refused
+          // rather than rounded to 0, because 0 on the wire means "use the
+          // service default" and would silently hand the window back to the
+          // `mode` preset.
+          const cap = Math.max(settings.maxTurnSilenceMs, RAISED_CEILING_CAP_MS);
+          const floor = Math.round(Math.max(1, Math.min(minTurnSilenceMs, cap)));
+          const ceiling = Math.max(settings.maxTurnSilenceMs, floor);
+          if (floor === currentMinTurnSilenceMs && ceiling === currentMaxTurnSilenceMs) return;
+          const ceilingMoved = ceiling !== currentMaxTurnSilenceMs;
+          currentMinTurnSilenceMs = floor;
+          currentMaxTurnSilenceMs = ceiling;
+          // A reopening socket gets both once connected.
           if (pending) return;
           // NOTE: snake_case — `updateConfiguration` takes the service's own
           // wire names, unlike the camelCase connect params.
-          transcriber.updateConfiguration({ min_turn_silence: bounded });
+          transcriber.updateConfiguration({
+            min_turn_silence: floor,
+            ...omitUndefined({ max_turn_silence: ceilingMoved ? ceiling : undefined }),
+          });
         },
         updateKeyterms(terms) {
           if (shell.isClosed()) return;

@@ -204,11 +204,10 @@ describe("assemblyAIStt STT adapter — endpointing (min/max_turn_silence)", () 
     // DEFAULT_MIN_TURN_SILENCE_MS.
     expect(fake.params.minTurnSilence).toBe(250);
     expect(fake.params.maxTurnSilence).toBe(DEFAULT_MAX_TURN_SILENCE_MS);
-    // 3500 is the measured half of the pair (tau2-bench retail reward 0.68,
-    // twice); the 3000 trim was reverted when the asymmetry its own doc named
-    // as the revert condition showed up — splits on hesitant, non-spelling
-    // utterances while spelled identifiers stayed whole.
-    expect(fake.params.maxTurnSilence).toBe(3500);
+    // 1500 since 2026-10-29: the forced commit a tau2-bench comparison asked
+    // for (162 caller re-prompts under the old 3500), with a revert condition
+    // on its doc — see DEFAULT_MAX_TURN_SILENCE_MS.
+    expect(fake.params.maxTurnSilence).toBe(1500);
     await session.close();
   });
 

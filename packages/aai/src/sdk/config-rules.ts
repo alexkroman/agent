@@ -213,7 +213,7 @@ export function assertGuardrailScope(
  * **Resolved values, not declared ones**, which is the half a check on the pair
  * as written would miss: each side falls back to its own default, so
  * `agent({ minTurnSilenceMs: 5000 })` alone is already inverted against the
- * 3500 ms ceiling nobody typed. Reading the defaults here is the same
+ * 1500 ms ceiling nobody typed. Reading the defaults here is the same
  * `?? DEFAULT_…` chain `resolveAssemblyAISttSettings` runs, and the constants
  * are shared so the two cannot drift.
  *
