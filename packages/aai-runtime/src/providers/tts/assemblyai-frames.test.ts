@@ -38,7 +38,11 @@ function setup() {
   };
   const shut = (): void => lifecycle.send({ type: "CANCEL" });
   const deliver = (frame: unknown): void =>
-    handleMessage(JSON.stringify(frame), shell, onComplete, onWords, cancels);
+    handleMessage(JSON.stringify(frame), shell, {
+      onSynthesisComplete: onComplete,
+      onWords,
+      cancels,
+    });
   return { shell, audio, errors, onComplete, onWords, cancels, shut, deliver };
 }
 
@@ -81,21 +85,10 @@ describe("handleMessage", () => {
 
   test("unparseable, Begin and Warning frames are ignored", () => {
     const { audio, errors, shell, onComplete, onWords, cancels } = setup();
-    handleMessage("{not json", shell, onComplete, onWords, cancels);
-    handleMessage(
-      Buffer.from(JSON.stringify({ type: "Begin" })),
-      shell,
-      onComplete,
-      onWords,
-      cancels,
-    );
-    handleMessage(
-      JSON.stringify({ type: "Warning", warning: "x" }),
-      shell,
-      onComplete,
-      onWords,
-      cancels,
-    );
+    const handlers = { onSynthesisComplete: onComplete, onWords, cancels };
+    handleMessage("{not json", shell, handlers);
+    handleMessage(Buffer.from(JSON.stringify({ type: "Begin" })), shell, handlers);
+    handleMessage(JSON.stringify({ type: "Warning", warning: "x" }), shell, handlers);
     expect([audio, errors, onComplete.mock.calls, onWords.mock.calls]).toEqual([[], [], [], []]);
   });
 
@@ -152,7 +145,11 @@ describe("parseServerFrame", () => {
 
   test("a lifted Audio frame still decodes to the same PCM", () => {
     const { audio, shell, onComplete, onWords, cancels } = setup();
-    handleMessage(Buffer.from(cases["audio key first"] ?? ""), shell, onComplete, onWords, cancels);
+    handleMessage(Buffer.from(cases["audio key first"] ?? ""), shell, {
+      onSynthesisComplete: onComplete,
+      onWords,
+      cancels,
+    });
     expect(audio).toEqual([[1, -2, 3, 32_767, -32_768]]);
   });
 });

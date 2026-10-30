@@ -11,8 +11,11 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { TtsError } from "../openers.ts";
 import { openSession } from "./_assemblyai-session-test-utils.ts";
-import { FakeWebSocket } from "./_fake-ws-test-utils.ts";
+import { FakeWebSocket, pcmBase64 } from "./_fake-ws-test-utils.ts";
 import { TTS_PACING_RECOVERY_WINDOW_MS } from "./assemblyai.ts";
+
+/** `ms` of audio at the 16 kHz `openSession` opens with, base64 PCM16. */
+const audioMs = (ms: number) => pcmBase64(new Array<number>((ms * 16_000) / 1000).fill(1));
 
 const DOCUMENTED_SUSTAINED_PER_SECOND = 20;
 const DOCUMENTED_MAX_UNSPOKEN_CHARS = 8000;
@@ -207,6 +210,7 @@ describe("AssemblyAI TTS pacing close (3010)", () => {
     session.sendText("Second sentence here. ");
     session.sendText("Third sentence here. ");
     expect(flushes(ws)).toBe(3);
+    ws._msg({ type: "Audio", audio: audioMs(200) }); // the first is audible
     ws._msg(PACING_ERROR);
     ws.close(3010);
 
@@ -263,10 +267,9 @@ describe("AssemblyAI TTS pacing close (3010)", () => {
     expect(errors).toEqual([]);
     expect(wire.maxUnspoken).toBeLessThanOrEqual(DOCUMENTED_MAX_UNSPOKEN_CHARS);
     expect(maxPerSecond(wire.controlAt)).toBeLessThanOrEqual(DOCUMENTED_SUSTAINED_PER_SECOND);
-    // Everything owed arrived, in order (at most the first line was dropped).
-    const all = text.join("");
-    expect(all.endsWith(generated(next))).toBe(true);
-    expect(generated(next).length).toBeGreaterThanOrEqual(all.length - (text[0]?.length ?? 0));
+    // Nothing was heard yet (no audio arrived), so everything goes out again,
+    // in order.
+    expect(generated(next)).toBe(text.join(""));
   });
 
   test("a closed turn whose only flush was mid-synthesis ends on recovery", async () => {
@@ -275,10 +278,61 @@ describe("AssemblyAI TTS pacing close (3010)", () => {
     session.on("done", done);
     session.sendText("Only sentence. ");
     session.flush();
+    ws._msg({ type: "Audio", audio: audioMs(200) });
     ws._msg(PACING_ERROR);
     expect(done).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(0);
     expect(FakeWebSocket.latest()._frames()).toEqual([]);
+  });
+
+  test("an oldest flush that produced no audio yet is re-sent whole", async () => {
+    // A burst can trip 3010 before the first segment made a sound; dropping
+    // it would silently lose a whole sentence (a confirmation number).
+    const { session, ws } = await openSession();
+    const done = vi.fn();
+    session.on("done", done);
+    session.sendText("Your confirmation number is 742. ");
+    session.sendText("Thanks for waiting. ");
+    session.flush();
+    ws._msg(PACING_ERROR);
+    expect(done).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(0);
+    const next = FakeWebSocket.latest();
+    expect(generated(next)).toBe("Your confirmation number is 742. Thanks for waiting. ");
+    next._msg({ type: "FlushDone" });
+    expect(done).toHaveBeenCalledTimes(1);
+  });
+
+  test("a partly heard oldest flush resumes after the last word its audio covered", async () => {
+    const { session, ws } = await openSession();
+    session.sendText("Your confirmation number is 742. ");
+    session.sendText("Thanks for waiting. ");
+    // 500 ms of the first flush's audio arrived; its word timings reach past it.
+    ws._msg({ type: "Audio", audio: audioMs(500) });
+    ws._msg({
+      type: "WordBoundaries",
+      words: [
+        { text: "Your", audio_start_ms: 0, audio_end_ms: 150 },
+        { text: "confirmation", audio_start_ms: 150, audio_end_ms: 480 },
+        { text: "number", audio_start_ms: 480, audio_end_ms: 700 },
+        { text: "is", audio_start_ms: 700, audio_end_ms: 800 },
+      ],
+    });
+    ws._msg(PACING_ERROR);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(generated(FakeWebSocket.latest())).toBe("number is 742. Thanks for waiting. ");
+  });
+
+  test("a partly heard oldest flush with no word timings is dropped", async () => {
+    // Audio arrived but nothing says how far it got: repeating the start of a
+    // sentence the caller just heard is worse than losing its tail.
+    const { session, ws } = await openSession();
+    session.sendText("Your confirmation number is 742. ");
+    session.sendText("Thanks for waiting. ");
+    ws._msg({ type: "Audio", audio: audioMs(500) });
+    ws._msg(PACING_ERROR);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(generated(FakeWebSocket.latest())).toBe("Thanks for waiting. ");
   });
 
   test("a bare 3010 close, with no Error frame, is recovered the same way", async () => {

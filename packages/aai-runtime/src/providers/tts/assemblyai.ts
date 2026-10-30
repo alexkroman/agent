@@ -134,6 +134,7 @@ import {
   type TtsOpener,
   type TtsOpenOptions,
   type TtsSession,
+  type TtsWordTiming,
 } from "../openers.ts";
 import { createControlBudget } from "./assemblyai-control-budget.ts";
 import {
@@ -144,6 +145,7 @@ import {
 } from "./assemblyai-frames.ts";
 import { createAssemblyAITtsLifecycle } from "./assemblyai-lifecycle.ts";
 import { createTtsOutbox } from "./assemblyai-outbox.ts";
+import { unheardText } from "./assemblyai-resume.ts";
 import { createTurnTracker } from "./assemblyai-turn.ts";
 import { assemblyAITtsUrl, generateFrames } from "./assemblyai-wire.ts";
 import { createWordTimeline, readWordBoundaries } from "./assemblyai-words.ts";
@@ -225,6 +227,15 @@ export function openAssemblyAITts(
       // `lifecycle.queueing()`: that reads the statechart's snapshot, which
       // still says `reconnecting` inside the `adoptSocket` action itself.
       let socketAdopted = true;
+      // What arrived for the OLDEST unacknowledged flush: the evidence a pacing
+      // recovery reads to decide how much of it the caller already has
+      // (`assemblyai-resume.ts`). Reset by each `FlushDone`, which retires it.
+      let headAudioSamples = 0;
+      let headWords: TtsWordTiming[] = [];
+      const resetHeadEvidence = (): void => {
+        headAudioSamples = 0;
+        headWords = [];
+      };
 
       /** Detach + politely close a socket without emitting anything for it. */
       const dropSocket = (socket: ProviderSocket): void =>
@@ -250,10 +261,12 @@ export function openAssemblyAITts(
         // The turn is over, so text still held here belongs to nothing. Keeping
         // it would splice it into the next turn's first segment.
         outbox.clear();
+        resetHeadEvidence();
         shell.emit("done");
       });
 
       const onSynthesisComplete = (): void => {
+        resetHeadEvidence();
         turn.onAck();
         // After the turn's own bookkeeping: freeing characters may send the
         // next held flush, which the turn must already count past this ack.
@@ -292,8 +305,11 @@ export function openAssemblyAITts(
       // Closed while no turn owns the word timeline: before the first turn, and
       // from a cancel until the next turn's first text (`turn.wordsOpen()`).
       const onWords = (msg: AssemblyAITtsMessage): void => {
+        const raw = readWordBoundaries(msg);
+        // Kept whether or not the word window is open: a recovery may need them.
+        headWords.push(...raw);
         if (!turn.wordsOpen()) return;
-        const words = timeline.rebase(readWordBoundaries(msg));
+        const words = timeline.rebase(raw);
         if (words.length > 0) shell.emit("words", words);
       };
 
@@ -309,7 +325,15 @@ export function openAssemblyAITts(
       // inert once the session has closed.
       const attach = (socket: ProviderSocket): void => {
         socket.on("message", (raw: WebSocket.Data) => {
-          handleMessage(raw, shell, onSynthesisComplete, onWords, cancels, recoverPacing);
+          handleMessage(raw, shell, {
+            onSynthesisComplete,
+            onWords,
+            cancels,
+            recoverPacing,
+            onAudio: (samples) => {
+              headAudioSamples += samples;
+            },
+          });
         });
         socket.on("error", (err: Error) => shell.onSocketError(err));
         socket.on("close", (code: number) => {
@@ -354,6 +378,8 @@ export function openAssemblyAITts(
           const owed = outbox.takeOwed();
           const resend = resendOnReplace?.(owed);
           resendOnReplace = undefined;
+          // The replacement starts with no flush of its own in synthesis.
+          resetHeadEvidence();
           let opened: Promise<void>;
           try {
             ws = connect();
@@ -441,10 +467,11 @@ export function openAssemblyAITts(
        * re-send what it still owed, instead of ending the session.
        *
        * The OLDEST unacknowledged flush is the one being synthesized when the
-       * close landed, and its audio has partly reached the caller already;
-       * re-sending it would repeat the start of a sentence they just heard, so
-       * it is dropped and the reply resumes at the next one. Everything after
-       * it produced no audio yet and is re-sent as one merged flush. Returns
+       * close landed. What the caller already has of it is decided from what
+       * arrived — re-sent whole with no audio, from the last delivered word
+       * with word timings, dropped otherwise (`assemblyai-resume.ts`).
+       * Everything after it produced no audio yet and is re-sent in full,
+       * paced by the outbox like any other text. Returns
        * `false` — leaving the error fatal — when the session is closed or a
        * pacing close was already recovered within
        * {@link TTS_PACING_RECOVERY_WINDOW_MS}.
@@ -456,7 +483,12 @@ export function openAssemblyAITts(
           return false;
         }
         lastRecoveryAt = now;
-        resendOnReplace = (owed) => (turn.inFlight() ? owed.slice(1).join("") : "");
+        // Read now: by the time the socket is replaced, nothing else arrives.
+        const evidence = { audioMs: (headAudioSamples * 1000) / sampleRate, words: headWords };
+        resendOnReplace = ([head, ...rest]) => {
+          if (!turn.inFlight() || head === undefined) return "";
+          return unheardText(head, evidence) + rest.join("");
+        };
         lifecycle.send({ type: "RECOVER" });
         return true;
       }
