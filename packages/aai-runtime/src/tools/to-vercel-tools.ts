@@ -35,20 +35,22 @@ interface ToVercelToolsContext {
    */
   recordToolResult?: (message: Message) => void;
   /**
-   * Told when a call STARTS, when it is about to reach `executeTool` (`ran`),
-   * and the model's copy of its result when it SETTLES.
+   * Told when a call STARTS (with the signal it runs under), when it is about
+   * to reach `executeTool` (`ran`), and the model's copy of its result when it
+   * SETTLES — or that it THREW a fatal error, which the model is never given.
    *
    * For the same reason as {@link recordToolResult}: the step's messages only
-   * exist once the step finishes, and a pipeline barge-in can land after a
-   * call ran and before that — the voice pipeline's record of what such a turn
-   * really did (`transports/pipeline/history/executed-calls.ts`). Optional, and
-   * answering `undefined` is "not tracked"; nothing here depends on it.
+   * exist once the step finishes, and a pipeline turn can be cut (a barge-in,
+   * a failure) after a call ran and before that — the voice pipeline's record
+   * of what such a turn really did (`transports/pipeline/history/executed-calls.ts`).
+   * Optional, and answering `undefined` is "not tracked"; nothing here depends on it.
    */
   trackCall?: (call: {
     toolCallId: string;
     toolName: string;
     input: unknown;
-  }) => { ran(): void; settled(forModel: string): void } | undefined;
+    signal: AbortSignal | undefined;
+  }) => { ran(): void; settled(forModel: string): void; threw(): void } | undefined;
   /**
    * A tool declared its own failure UNRECOVERABLE — see {@link FatalToolLatch}.
    *
@@ -131,6 +133,7 @@ export function toVercelTools(
           toolCallId: options.toolCallId,
           toolName: schema.name,
           input: args,
+          signal,
         });
         let speech: ReturnType<ToolSpeechController["begin"]> | undefined;
         let settled: SettledToolCall;
@@ -161,7 +164,10 @@ export function toVercelTools(
           // because the throw itself goes nowhere useful — the AI SDK catches
           // it, emits a `tool-error` part and keeps stepping. Nothing was
           // recorded: what reaches here is a result the model is not given.
-          if (isFatalToolError(err)) ctx.onFatalToolError?.(err);
+          if (isFatalToolError(err)) {
+            tracked?.threw();
+            ctx.onFatalToolError?.(err);
+          }
           throw err;
         }
         // Stops the ladder and speaks the outcome. A `role: "system"` completion

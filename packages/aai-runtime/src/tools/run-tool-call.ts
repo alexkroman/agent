@@ -178,7 +178,15 @@ export async function runToolCall(
   // The guards see the result WHOLE, before `recorded` caps it. Their note
   // rides as an instruction: model copy only, and kept by the pipeline's
   // `toModelOutput`, which recomputes any copy that carries none.
-  const memoNote = ctx.guards.settle(call.name, input, result, recorded);
+  // NOT when the call's signal was cut: the result then describes the cut (the
+  // executor's cancellation, while the body may have finished), not these
+  // arguments, and memoizing it refused the identical re-check an interrupted
+  // call's own result tells the model to make ("already failed … would fail
+  // the same way again").
+  const memoNote =
+    call.signal?.aborted === true
+      ? undefined
+      : ctx.guards.settle(call.name, input, result, recorded);
   // Only a failure is explained: an empty required string can be a real answer.
   const emptyNote = isFailedToolResult(result) ? emptyArgsNote(input, parameters) : undefined;
   const notes = [split.instruction, emptyNote, memoNote].filter((part) => part !== undefined);

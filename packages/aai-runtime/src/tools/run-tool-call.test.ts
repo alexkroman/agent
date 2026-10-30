@@ -135,6 +135,25 @@ describe("runToolCall with a session's guards", () => {
     expect(recorded[0]?.content).toBe("Error: User not found");
   });
 
+  test("a call CUT by its signal is not remembered as failed, so its re-check runs", async () => {
+    // What the executor answers once a barge-in aborts a call whose body may
+    // have finished the write. It says nothing about these arguments, and the
+    // interrupted result tells the model to check — which must not be refused.
+    const executeTool = vi.fn<ExecuteTool>(async () => '{"error":"This operation was aborted"}');
+    const { ctx } = context(executeTool);
+    ctx.guards = new ToolCallGuards({ rememberFailures: true });
+    const cut = new AbortController();
+    cut.abort();
+    const args = { order_id: "#W123" };
+    const first = await runToolCall(
+      { name: "return_items", args, toolCallId: "c1", signal: cut.signal },
+      ctx,
+    );
+    expect(first.instruction).toBeUndefined();
+    await runToolCall({ name: "return_items", args, toolCallId: "c2" }, ctx);
+    expect(executeTool).toHaveBeenCalledTimes(2);
+  });
+
   test("a tool's own instruction comes first, the memo's note after it", async () => {
     const raw = JSON.stringify(withInstruction({ error: "nope" }, "Ask for the email."));
     const { ctx } = context(vi.fn<ExecuteTool>(async () => raw));

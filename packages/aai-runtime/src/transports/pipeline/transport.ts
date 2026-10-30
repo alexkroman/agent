@@ -348,7 +348,13 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // What makes a tool able to read what an earlier tool in the SAME turn
     // answered: the step's own messages only reach `llm` when the step ends,
     // and this view is the one `ctx.messages` reads.
-    recordToolResult: (message) => history.pushToolResult(message),
+    // Through the ledger, so `ctx.messages` gets the verdict the model's view
+    // does: a call cut mid-run reads as "outcome unknown", never the
+    // executor's cancellation, and one that never ran records nothing.
+    recordToolResult: (message) => {
+      const recorded = executedCalls.conversationResult(message);
+      if (recorded !== null) history.pushToolResult(recorded);
+    },
     // What a barge-in reads to keep the calls its unfinished step already ran
     // — the step's own messages never materialize (`history/executed-calls.ts`).
     trackCall: (call) => executedCalls.track(call),

@@ -54,11 +54,14 @@ records **no text** (its completed tool steps still count). TTS runs behind the
 text, so recording everything told the model it had delivered what the caller
 never got.
 
-- **A call the cut step already RAN counts too** (`history/executed-calls.ts`):
-  the tools report each call to a session ledger, and `persistInterruptedTurn`
-  rebuilds the unfinished step as one pair, heard text first. A call still
-  running at the cut gets `INTERRUPTED_TOOL_CALL_RESULT` ("outcome unknown"),
-  never the executor's `cancelled`, which made the model re-send writes.
+- **A call the cut step already RAN counts too** (`history/executed-calls.ts`),
+  on a barge-in AND a failed turn: the tools report each call to a session
+  ledger, and the unfinished step is rebuilt as one pair
+  (`persistInterruptedTurn` puts the heard text first; `turn-body.ts`'s failure
+  path adds no text). A call still running at the cut gets
+  `INTERRUPTED_TOOL_CALL_RESULT` ("outcome unknown"), never the executor's
+  cancellation, which made the model re-send writes. `ctx.messages` reads the
+  same verdict (`conversationResult`).
 
 - **One cursor, one owner: `heard/tracker.ts` (`createHeardTracker`).** History
   truncation and the resume anchor (`buildTailResumePrompt`) both READ it, and
