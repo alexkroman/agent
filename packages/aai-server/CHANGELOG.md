@@ -1,5 +1,45 @@
 # aai-server
 
+## 0.3.0
+
+### Minor Changes
+
+- cad7bf8: The AssemblyAI STT's default maxTurnSilenceMs (the ceiling that force-ends a
+  turn regardless of content) drops from 3500 to 1500 ms. A tau2-bench retail
+  comparison found the semantic endpointer often not committing in noise: callers
+  re-prompted 162 times, against 24 for a stack with a forced commit. Agents that
+  relied on the longer pause tolerance for hesitant callers can restore it with
+  turnTaking: { maxSilenceMs: 3500 }.
+- 5ec6afc: AssemblyAI STT now defaults to English on Universal-3.5 Pro (the default model):
+  an unset `assemblyAIStt({ languages })` on that family sends
+  `language_codes=["en"]` (`ASSEMBLYAI_STT_DEFAULT_LANGUAGES`), turning its
+  code-switching off. Unset used to mean code-switching across 18 languages, which
+  on English calls turned backchannels ("mm-hm") into non-English text the
+  pipeline treated as caller turns. Other streaming models are unchanged: unset
+  still sends no `language_codes`. An explicit list is still sent exactly as
+  given, on any model; pass `languages: []` to opt back into full code-switching,
+  or several codes (`["en", "es"]`) to code-switch within a set.
+  `assemblyAIS2s({ languages })` is unchanged.
+- de5f82a: llm() takes an optional contextWindow (tokens). A pipeline session budgets each
+  request against it, so a model off the AssemblyAI gateway catalog (a Cerebras
+  model, say) is no longer trimmed as if it had the smallest known window (32,768
+  tokens). A fallback([...]) is budgeted against its smallest member; a declared
+  window is capped at the largest the catalog carries.
+
+### Patch Changes
+
+- Updated dependencies [efaadfb]
+- Updated dependencies [ac622a2]
+- Updated dependencies [c849604]
+- Updated dependencies [cad7bf8]
+- Updated dependencies [5ec6afc]
+- Updated dependencies [2dbf3c0]
+- Updated dependencies [fa16f3d]
+- Updated dependencies [de5f82a]
+  - @alexkroman1/aai-runtime@0.19.0
+  - @alexkroman1/aai@0.19.0
+  - aai-guest@0.6.26
+
 ## 0.2.11
 
 ### Patch Changes
