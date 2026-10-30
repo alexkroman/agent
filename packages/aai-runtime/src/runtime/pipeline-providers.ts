@@ -18,7 +18,7 @@ import type { SessionMode } from "@alexkroman1/aai/manifest";
 import type { SttProvider } from "@alexkroman1/aai/stt";
 import type { TtsProvider } from "@alexkroman1/aai/tts";
 import { resolveLlm, resolveStt, resolveTts } from "../providers/resolve.ts";
-import { declaredContextTokens } from "../transports/pipeline/history/context-budget.ts";
+import { declaredContextTokens } from "../transports/pipeline/index.ts";
 import type { ResolvedPipelineProviders } from "./transport.ts";
 
 /** The effective providers a runtime resolved for itself, plus its mode. */
