@@ -18,11 +18,11 @@ of it — and want the import.
 
 ## Contents
 
-- [Agent authoring](#agent-authoring) — 632 names
+- [Agent authoring](#agent-authoring) — 634 names
 - [Browser client](#browser-client) — 212 names
 - [Testing and evals](#testing-and-evals) — 269 names
 - [Hosting and tooling](#hosting-and-tooling) — 249 names
-- [Framework internals](#framework-internals) — 525 names
+- [Framework internals](#framework-internals) — 529 names
 
 ## Agent authoring
 
@@ -419,6 +419,7 @@ What an `agent.ts`, its tools, its steps and its workflows import.
 | `agent` | function | `@alexkroman1/aai` |  | Define an agent: its system prompt, its providers, and its configuration. |
 | `allowedSmsRecipient` | function | `@alexkroman1/aai/channels` | `aai:channels` | The number an SMS may go to: `claimed` (normally `sessionClientPhone(ctx)`) when its E.164 form equals `SMS_TO_PHONE` or one of the comma-separated … |
 | `apiKeyRoute`, `ApiKeyRouteOptions` | function | `@alexkroman1/aai` |  | A route handler that runs `handler` only for a request carrying the key in `env[options.env]`. |
+| `assemblyAIExperimentalStt`, `AssemblyAIExperimentalSttOptions` | function | `@alexkroman1/aai/experimental` |  | Build an AssemblyAI experimental STT descriptor. |
 | `assemblyAIPipeline`, `AssemblyAIPipelineOptions` | function | `@alexkroman1/aai` |  | All three pipeline stages on AssemblyAI, ready to spread into `agent()`. |
 | `assemblyAIS2s`, `AssemblyAIS2sOptions` | function | `@alexkroman1/aai/s2s` (also `@alexkroman1/aai`) | `aai:s2s` | Select AssemblyAI's speech-to-speech (Voice Agent API) session mode. |
 | `assemblyAIStt`, `AssemblyAISttOptions` | function | `@alexkroman1/aai/stt` | `aai:stt` | Build an AssemblyAI STT descriptor. |
@@ -1304,6 +1305,9 @@ trace or a type error can be traced back to something.
 | Name | Kind | Import from | Capability | Summary |
 | --- | --- | --- | --- | --- |
 | `AGENT_CSP` | const · `@internal` | `@alexkroman1/aai/internal` (also `@alexkroman1/aai/host-internal`) |  |  |
+| `ASSEMBLYAI_EXPERIMENTAL_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Env var the host reads the key from when the descriptor names none. |
+| `ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT` | const | `@alexkroman1/aai/host-internal` |  | The instruction sent as `config.prompt` when neither the descriptor nor the agent's `sttPrompt` names one. |
+| `ASSEMBLYAI_EXPERIMENTAL_STT_KIND` | const | `@alexkroman1/aai/host-internal` |  | Kind tag recognised by the host-side resolver. |
 | `ASSEMBLYAI_GATEWAY_MODELS` | const | `@alexkroman1/aai/host-internal` |  |  |
 | `ASSEMBLYAI_LLM_API_KEY_ENV` | const | `@alexkroman1/aai/host-internal` |  | Agent-env variable holding the AssemblyAI API key (same key as AssemblyAI STT). |
 | `ASSEMBLYAI_LLM_GATEWAY_EU_URL` | const | `@alexkroman1/aai/host-internal` |  | EU LLM Gateway endpoint — keeps data within the European Union. |
@@ -1777,6 +1781,7 @@ trace or a type error can be traced back to something.
 | `requiredProviderEnvVars` | function | `@alexkroman1/aai-runtime/internal` |  | The provider credentials an agent actually needs, derived from the same registries that resolve them. |
 | `resolveAgentInstructions` | function · `@internal` | `@alexkroman1/aai/host-internal` |  |  |
 | `resolveAllBuiltins` | function | `@alexkroman1/aai-runtime/internal` (also `@alexkroman1/aai/host-internal`) |  | Resolve all builtin tools in one pass, returning defs, schemas, and guidance. |
+| `resolveAssemblyAIExperimentalSttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
 | `resolveAssemblyAISttSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |
 | `resolveAssemblyAITtsLanguage` | function | `@alexkroman1/aai/host-internal` |  | Translate an ISO 639-1 code to the service's `language` value. |
 | `resolveAssemblyAITtsSettings` | function | `@alexkroman1/aai/host-internal` |  | The settings this stage will actually run with — the descriptor's own options with every host-side default filled in. |

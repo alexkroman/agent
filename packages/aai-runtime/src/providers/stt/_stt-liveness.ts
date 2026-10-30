@@ -51,7 +51,8 @@ export const STT_REPLAY_MS = 3000;
 /** How fast the noise floor rises toward a louder line, in dB per second. It falls at once. @internal */
 const FLOOR_RISE_DB_PER_S = 1;
 
-function levelOf(pcm: Int16Array): number {
+/** RMS level of `pcm`, in dBFS. */
+export function levelOf(pcm: Int16Array): number {
   let sum = 0;
   for (const s of pcm) sum += s * s;
   return rmsDbfs(sum, pcm.length);

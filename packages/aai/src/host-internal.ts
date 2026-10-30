@@ -292,6 +292,12 @@ export {
   resolveAssemblyAISttSettings,
 } from "./sdk/providers/stt/assemblyai.ts";
 export {
+  ASSEMBLYAI_EXPERIMENTAL_API_KEY_ENV,
+  ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT,
+  ASSEMBLYAI_EXPERIMENTAL_STT_KIND,
+  resolveAssemblyAIExperimentalSttSettings,
+} from "./sdk/providers/stt/assemblyai-experimental.ts";
+export {
   DEEPGRAM_API_KEY_ENV,
   DEEPGRAM_KIND,
   resolveDeepgramSttSettings,

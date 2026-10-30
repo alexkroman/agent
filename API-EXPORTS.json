@@ -41,6 +41,7 @@
     "createCodingTools"
   ],
   "@alexkroman1/aai/experimental": [
+    "AssemblyAIExperimentalSttOptions",
     "COMPOSIO_API_KEY_ENV",
     "COMPOSIO_BASE_URL",
     "COMPOSIO_MCP_TOOLS",
@@ -86,6 +87,7 @@
     "StepMcpOptions",
     "StepMcpServer",
     "TranscribeDictationOptions",
+    "assemblyAIExperimentalStt",
     "citedSources",
     "composio",
     "composioErrorMessage",
@@ -123,6 +125,9 @@
   ],
   "@alexkroman1/aai/host-internal": [
     "AGENT_CSP",
+    "ASSEMBLYAI_EXPERIMENTAL_API_KEY_ENV",
+    "ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT",
+    "ASSEMBLYAI_EXPERIMENTAL_STT_KIND",
     "ASSEMBLYAI_GATEWAY_MODELS",
     "ASSEMBLYAI_LLM_API_KEY_ENV",
     "ASSEMBLYAI_LLM_GATEWAY_EU_URL",
@@ -374,6 +379,7 @@
     "reportWorkflow",
     "resolveAgentInstructions",
     "resolveAllBuiltins",
+    "resolveAssemblyAIExperimentalSttSettings",
     "resolveAssemblyAISttSettings",
     "resolveAssemblyAITtsLanguage",
     "resolveAssemblyAITtsSettings",

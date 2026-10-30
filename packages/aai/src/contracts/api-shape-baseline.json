@@ -179,7 +179,7 @@
     "packages/aai/src/sdk/protocol-events.ts": 60,
     "packages/aai/src/sdk/protocol-inbox.ts": 17,
     "packages/aai/src/sdk/protocol.ts": 17,
-    "packages/aai/src/sdk/providers/catalog.ts": 21,
+    "packages/aai/src/sdk/providers/catalog.ts": 22,
     "packages/aai/src/sdk/providers/llm/assemblyai.ts": 2,
     "packages/aai/src/sdk/providers/llm/llm.ts": 1,
     "packages/aai/src/sdk/providers/llm/shared/gateway-models.ts": 1,

@@ -23,8 +23,12 @@
  * table is `_llm-registry.ts`, keyed to `LLM_PROVIDERS` the same way.
  */
 
-import type { LocalSttOptions } from "@alexkroman1/aai/experimental";
+import type {
+  AssemblyAIExperimentalSttOptions,
+  LocalSttOptions,
+} from "@alexkroman1/aai/experimental";
 import {
+  ASSEMBLYAI_EXPERIMENTAL_STT_KIND,
   ASSEMBLYAI_STT_KIND,
   ASSEMBLYAI_TTS_KIND,
   CARTESIA_KIND,
@@ -131,6 +135,10 @@ const STT_OPENERS: { readonly [K in SttKind]: AnyOpenerEntry<SttOpener>["open"] 
   [LOCAL_STT_KIND]: (d: { options: LocalSttOptions }) =>
     lazyOpener(LOCAL_STT_KIND, async () =>
       (await import("./stt/local.ts")).openLocalStt(d.options),
+    ),
+  [ASSEMBLYAI_EXPERIMENTAL_STT_KIND]: (d: { options: AssemblyAIExperimentalSttOptions }) =>
+    lazyOpener(ASSEMBLYAI_EXPERIMENTAL_STT_KIND, async () =>
+      (await import("./stt/assemblyai-experimental.ts")).openAssemblyAIExperimentalStt(d.options),
     ),
 };
 

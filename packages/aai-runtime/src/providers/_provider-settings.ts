@@ -20,8 +20,12 @@
  * to defer.
  */
 
-import type { LocalSttOptions } from "@alexkroman1/aai/experimental";
+import type {
+  AssemblyAIExperimentalSttOptions,
+  LocalSttOptions,
+} from "@alexkroman1/aai/experimental";
 import {
+  ASSEMBLYAI_EXPERIMENTAL_STT_KIND,
   ASSEMBLYAI_LLM_KIND,
   ASSEMBLYAI_STT_KIND,
   ASSEMBLYAI_TTS_KIND,
@@ -32,6 +36,7 @@ import {
   isFallbackDescriptor,
   LOCAL_STT_KIND,
   RIME_KIND,
+  resolveAssemblyAIExperimentalSttSettings,
   resolveAssemblyAISttSettings,
   resolveAssemblyAITtsSettings,
   resolveCartesiaTtsSettings,
@@ -79,6 +84,8 @@ const STT_SETTINGS: Record<string, SettingsFor> = {
   [ELEVENLABS_KIND]: (o) => resolveElevenLabsSttSettings(o as ElevenLabsSttOptions),
   [SONIOX_KIND]: (o) => resolveSonioxSttSettings(o as SonioxSttOptions),
   [LOCAL_STT_KIND]: (o) => resolveLocalSttSettings(o as LocalSttOptions),
+  [ASSEMBLYAI_EXPERIMENTAL_STT_KIND]: (o) =>
+    resolveAssemblyAIExperimentalSttSettings(o as AssemblyAIExperimentalSttOptions),
 };
 
 const TTS_SETTINGS: Record<string, SettingsFor> = {
