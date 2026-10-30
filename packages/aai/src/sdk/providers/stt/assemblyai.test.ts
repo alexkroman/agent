@@ -54,16 +54,31 @@ describe("resolveAssemblyAISttSettings", () => {
     expect(resolveAssemblyAISttSettings({ voiceFocus: "off" }).voiceFocus).toBe("");
   });
 
-  test("defaults languages to English only", () => {
+  test("defaults languages to English only on the Universal-3.5 Pro family", () => {
     expect(ASSEMBLYAI_STT_DEFAULT_LANGUAGES).toEqual(["en"]);
     expect(Object.isFrozen(ASSEMBLYAI_STT_DEFAULT_LANGUAGES)).toBe(true);
     expect(resolveAssemblyAISttSettings({}).languages).toEqual(["en"]);
+    expect(resolveAssemblyAISttSettings({ model: "u3-rt-pro" }).languages).toEqual(["en"]);
   });
 
-  test("passes an explicit language list through exactly as given", () => {
+  test("adds no language default on a model outside the Universal-3.5 Pro family", () => {
+    // `language_codes` was never sent to these models; a default here would
+    // pin a multilingual model to English, or be refused as a connect param.
+    for (const model of ["universal-streaming-multilingual", "universal-streaming-english"]) {
+      expect("languages" in resolveAssemblyAISttSettings({ model })).toBe(false);
+    }
+  });
+
+  test("passes an explicit language list through exactly as given, on any model", () => {
     const several = ["en", "es"] as const;
     expect(resolveAssemblyAISttSettings({ languages: several }).languages).toBe(several);
     expect(resolveAssemblyAISttSettings({ languages: ["fr"] }).languages).toEqual(["fr"]);
+    expect(
+      resolveAssemblyAISttSettings({
+        model: "universal-streaming-multilingual",
+        languages: several,
+      }).languages,
+    ).toBe(several);
   });
 
   test("an empty language list opts out of the default: nothing is sent, so the model code-switches", () => {

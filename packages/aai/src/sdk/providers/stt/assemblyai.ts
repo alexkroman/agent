@@ -49,8 +49,11 @@ export const ASSEMBLYAI_STT_KIND = ASSEMBLYAI_STT_PROVIDER.kind;
 export const ASSEMBLYAI_STT_DEFAULT_MODEL = "universal-3-5-pro";
 
 /**
- * Languages sent as `language_codes` when the descriptor names none: English
- * only, which turns Universal-3.5 Pro's code-switching OFF.
+ * Languages sent as `language_codes` when the descriptor names none on a
+ * Universal-3.5 Pro model (the default): English only, which turns its
+ * code-switching OFF. Any other streaming model gets no default — it was never
+ * sent `language_codes`, and an `["en"]` there would pin a multilingual model
+ * to English or be refused as a connect parameter.
  *
  * Unset used to mean "code-switch across 18 languages", and on an English line
  * that turned caller backchannels into non-English text the pipeline then took
@@ -103,11 +106,14 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
    * Languages to bias the model toward, sent as the `language_codes` connection
    * parameter (e.g. `["en"]`, `["en", "es"]`).
    *
-   * **Unset means ENGLISH** (`ASSEMBLYAI_STT_DEFAULT_LANGUAGES`, `["en"]`),
-   * the same default `deepgramStt` has, and the opposite of `elevenLabsStt`
-   * and `sonioxStt`, which auto-detect when unset.
+   * **Unset means ENGLISH on Universal-3.5 Pro** (the default model;
+   * `ASSEMBLYAI_STT_DEFAULT_LANGUAGES`, `["en"]`) — the same default
+   * `deepgramStt` has, and the opposite of `elevenLabsStt` and `sonioxStt`,
+   * which auto-detect when unset. On any other {@link model} unset sends no
+   * `language_codes` and the model's own language behaviour applies.
    *
-   * - **unset** — `["en"]`: English only, code-switching off.
+   * - **unset** — Universal-3.5 Pro: `["en"]`, English only, code-switching
+   *   off. Other models: nothing sent.
    * - **one code** (`["es"]`) — pins that language, code-switching off.
    * - **several codes** (`["en", "es"]`) — biases toward that subset and keeps
    *   code-switching between them. Sent exactly as given.
@@ -260,7 +266,8 @@ export interface AssemblyAISttOptions extends ProviderCredentialOptions {
  * });
  * ```
  *
- * Unset `languages` means English only (code-switching OFF); pass `[]` to
+ * Unset `languages` means English only on Universal-3.5 Pro (code-switching
+ * OFF; other models get no default); pass `[]` to
  * code-switch across every supported language, or several codes to bias
  * toward a subset — see {@link AssemblyAISttOptions.languages}.
  */
@@ -296,18 +303,21 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
   // "off" is spelled as the empty string on the wire; normalize here so the
   // log and the connection parameter agree on what "disabled" looks like.
   const requestedVoiceFocus = options.voiceFocus ?? DEFAULT_VOICE_FOCUS;
+  const model = options.model ?? ASSEMBLYAI_STT_DEFAULT_MODEL;
   return {
-    model: options.model ?? ASSEMBLYAI_STT_DEFAULT_MODEL,
+    model,
     minTurnSilenceMs: options.minTurnSilenceMs ?? DEFAULT_MIN_TURN_SILENCE_MS,
     maxTurnSilenceMs: options.maxTurnSilenceMs ?? DEFAULT_MAX_TURN_SILENCE_MS,
     voiceFocus: requestedVoiceFocus === "off" ? "" : requestedVoiceFocus,
     voiceFocusThreshold: options.voiceFocusThreshold ?? DEFAULT_VOICE_FOCUS_THRESHOLD,
     connectTimeoutMs: options.connectTimeoutMs ?? STT_CONNECT_TIMEOUT_MS,
     maxConnectRetries: options.maxConnectRetries ?? STT_CONNECT_MAX_RETRIES,
-    // Absent means English (ASSEMBLYAI_STT_DEFAULT_LANGUAGES). An explicit
-    // empty list is the opt-out: no `language_codes` is sent, so the model
-    // code-switches across every language it supports.
-    ...resolveLanguages(options.languages),
+    // Absent means English (ASSEMBLYAI_STT_DEFAULT_LANGUAGES) on the
+    // Universal-3.5 Pro family only — no other model was ever sent
+    // `language_codes`, and a default there would pin a multilingual model to
+    // English or be refused. An explicit empty list is the opt-out: nothing is
+    // sent, so the model code-switches across every language it supports.
+    ...resolveLanguages(options.languages, model),
     // An empty `streamingUrl` means "use the default endpoint", same as absent.
     ...(options.streamingUrl !== undefined && options.streamingUrl !== ""
       ? { streamingUrl: options.streamingUrl }
@@ -318,10 +328,13 @@ export function resolveAssemblyAISttSettings(options: AssemblyAISttOptions): {
   };
 }
 
-function resolveLanguages(languages: readonly string[] | undefined): {
-  languages?: readonly string[];
-} {
-  if (languages === undefined) return { languages: ASSEMBLYAI_STT_DEFAULT_LANGUAGES };
+function resolveLanguages(
+  languages: readonly string[] | undefined,
+  model: string,
+): { languages?: readonly string[] } {
+  if (languages === undefined) {
+    return isUniversal35Pro(model) ? { languages: ASSEMBLYAI_STT_DEFAULT_LANGUAGES } : {};
+  }
   return languages.length > 0 ? { languages } : {};
 }
 

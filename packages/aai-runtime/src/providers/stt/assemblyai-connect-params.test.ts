@@ -309,6 +309,21 @@ describe("assemblyAIStt STT adapter — region (EU data residency)", () => {
     await empty.close();
   });
 
+  test("the English default is Universal-3.5 Pro only: another model sends no language_codes unless asked", async () => {
+    // language_codes was never sent to these models; defaulting it would pin
+    // a multilingual model to English or be refused as a connect param.
+    const unset = await openSession({ model: "universal-streaming-multilingual" });
+    expect("languageCodes" in fakeOf(unset).params).toBe(false);
+    await unset.close();
+
+    const explicit = await openSession({
+      model: "universal-streaming-multilingual",
+      languages: ["en", "es"],
+    });
+    expect(fakeOf(explicit).params.languageCodes).toEqual(["en", "es"]);
+    await explicit.close();
+  });
+
   test("streamingUrl overrides the endpoint, and wins over region", async () => {
     const sandbox = "wss://streaming.sandbox000.assemblyai-labs.com/v3/ws";
 

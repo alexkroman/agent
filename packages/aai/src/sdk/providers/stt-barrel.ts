@@ -37,7 +37,7 @@
  *
  * | factory | field | unset means |
  * | --- | --- | --- |
- * | {@link assemblyAIStt} | `languages` | **English** — `["en"]` is sent for you; `[]` code-switches across 18 |
+ * | {@link assemblyAIStt} | `languages` | **English** on Universal-3.5 Pro (the default model) — `["en"]` is sent for you; `[]` code-switches across 18 |
  * | {@link deepgramStt} | `language` | **English** — `"en"` is sent for you |
  * | {@link elevenLabsStt} | `language` | auto-detect (the field is omitted) |
  * | {@link sonioxStt} | `languages` | auto-detect (the field is omitted) |

@@ -40,7 +40,7 @@ from the per-symbol docs:
 
 | factory | field | unset means |
 | --- | --- | --- |
-| [assemblyAIStt](#assemblyaistt) | `languages` | **English** — `["en"]` is sent for you; `[]` code-switches across 18 |
+| [assemblyAIStt](#assemblyaistt) | `languages` | **English** on Universal-3.5 Pro (the default model) — `["en"]` is sent for you; `[]` code-switches across 18 |
 | [deepgramStt](#deepgramstt) | `language` | **English** — `"en"` is sent for you |
 | [elevenLabsStt](#elevenlabsstt) | `language` | auto-detect (the field is omitted) |
 | [sonioxStt](#sonioxstt) | `languages` | auto-detect (the field is omitted) |
@@ -111,7 +111,8 @@ export default agent({
 });
 ```
 
-Unset `languages` means English only (code-switching OFF); pass `[]` to
+Unset `languages` means English only on Universal-3.5 Pro (code-switching
+OFF; other models get no default); pass `[]` to
 code-switch across every supported language, or several codes to bias
 toward a subset — see [AssemblyAISttOptions.languages](#languages).
 
@@ -482,11 +483,14 @@ optional languages?: readonly string[];
 Languages to bias the model toward, sent as the `language_codes` connection
 parameter (e.g. `["en"]`, `["en", "es"]`).
 
-**Unset means ENGLISH** (`ASSEMBLYAI_STT_DEFAULT_LANGUAGES`, `["en"]`),
-the same default `deepgramStt` has, and the opposite of `elevenLabsStt`
-and `sonioxStt`, which auto-detect when unset.
+**Unset means ENGLISH on Universal-3.5 Pro** (the default model;
+`ASSEMBLYAI_STT_DEFAULT_LANGUAGES`, `["en"]`) — the same default
+`deepgramStt` has, and the opposite of `elevenLabsStt` and `sonioxStt`,
+which auto-detect when unset. On any other [model](#model) unset sends no
+`language_codes` and the model's own language behaviour applies.
 
-- **unset** — `["en"]`: English only, code-switching off.
+- **unset** — Universal-3.5 Pro: `["en"]`, English only, code-switching
+  off. Other models: nothing sent.
 - **one code** (`["es"]`) — pins that language, code-switching off.
 - **several codes** (`["en", "es"]`) — biases toward that subset and keeps
   code-switching between them. Sent exactly as given.

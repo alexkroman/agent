@@ -181,10 +181,11 @@ function buildTranscriberParams(
   };
   const streamingUrl = resolveStreamingUrl(opts);
   if (streamingUrl) params.websocketBaseUrl = streamingUrl;
-  // Language biasing. The resolver fills ["en"] when the agent named none
-  // (ASSEMBLYAI_STT_DEFAULT_LANGUAGES); only an explicit `languages: []`
-  // leaves it absent, and an absent `language_codes` is the model's native
-  // code-switching across every language it supports (see the option's doc).
+  // Language biasing. The resolver fills ["en"] when the agent named none on a
+  // Universal-3.5 Pro model (ASSEMBLYAI_STT_DEFAULT_LANGUAGES). It is absent
+  // for an explicit `languages: []` (the code-switching opt-in) and for any
+  // other model left unset, which was never sent `language_codes` (see the
+  // option's doc).
   if (settings.languages) {
     params.languageCodes = settings.languages;
   }
