@@ -480,7 +480,10 @@ export const PROMPT_TOOLS = `\
   email belong to the email and are never a ZIP — when you hold an
   email, look the caller up BY EMAIL, not by name and ZIP.
   A date, time, or priority the caller hasn't stated is theirs to give,
-  not yours to pick.
+  not yours to pick. So is a choice from a fixed list — a reason, a
+  category, a payment method: when the caller hasn't said which, ask
+  them before the call, and never send the first or likeliest option
+  on their behalf.
 - Report RESULTS, never intentions. Don't announce what you're about
   to do — the caller can't act on a plan, and each announcement is
   another sentence they can interrupt. Stay silent while the calls run

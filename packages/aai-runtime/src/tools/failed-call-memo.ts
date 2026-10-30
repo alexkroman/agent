@@ -32,6 +32,17 @@
  *   client's `tool.completed` carry). A success forgets everything: something
  *   in the world may have changed, and a remembered failure must never refuse a
  *   call that would now succeed.
+ * - **Escalation** — once one tool has failed {@link FAILURE_STREAK_ESCALATION}
+ *   times since the last success, the note also tells the model to stop
+ *   varying the value and change strategy. Refusing exact repeats does not stop
+ *   a model that changes one character per call: on a 114-task tau2 retail run
+ *   one call sent ten email variants (`arav.`, `arab.`, `aaravisha.` …) across
+ *   three turns, never switched identifier, and the harness ended it at its
+ *   error limit. The per-turn budget in `../_prepare-step.ts` cannot see that,
+ *   because the attempts were spread over turns. Not 3, because the prompt's
+ *   own recovery ladder (earlier hearings, letter confusions, other spellings)
+ *   legitimately takes about four lookups — `Lay`/`Leigh`/`Lee`/`Lei` matched
+ *   on the fourth in the same run.
  *
  * Scoped to the conversation: `call-guards.ts` decides when one ends and calls
  * {@link FailedCallMemo.reset}.
@@ -50,6 +61,9 @@ const MAX_ARGS_CHARS = 200;
 /** A quoted failure is cut to this many characters. */
 const MAX_ERROR_CHARS = 200;
 
+/** Failures of ONE tool since the last success that make the note escalate. */
+export const FAILURE_STREAK_ESCALATION = 4;
+
 /** The refusal's `reason` — open-ended in `ToolRefusalReason`, so no type change. */
 export const REPEATED_FAILURE_REASON = "repeated_failure";
 
@@ -62,6 +76,8 @@ type Failure = { name: string; args: string; error: string };
 export class FailedCallMemo {
   /** Insertion-ordered, so the oldest is evicted first and the list reads in order. */
   readonly #failures = new Map<string, Failure>();
+  /** Failures per tool name since the last success — not capped like the list. */
+  readonly #streaks = new Map<string, number>();
 
   /** A refusal to answer the call with instead of running it, or `undefined` to run it. */
   refuse(name: string, args: unknown): string | undefined {
@@ -83,8 +99,11 @@ export class FailedCallMemo {
   settle(name: string, args: unknown, result: string): string | undefined {
     if (!isFailedToolResult(result)) {
       this.#failures.clear();
+      this.#streaks.clear();
       return undefined;
     }
+    const streak = (this.#streaks.get(name) ?? 0) + 1;
+    this.#streaks.set(name, streak);
     const key = callKey(name, args);
     // Re-inserted, so a failure seen again moves to the end of the list.
     this.#failures.delete(key);
@@ -99,13 +118,26 @@ export class FailedCallMemo {
       this.#failures.delete(oldest);
     }
     const tried = [...this.#failures.values()].map((f) => `${f.name}(${f.args})`);
-    return `Already tried, all failed: ${tried.join("; ")}`;
+    const note = `Already tried, all failed: ${tried.join("; ")}`;
+    return streak < FAILURE_STREAK_ESCALATION ? note : `${note}\n${escalation(name, streak)}`;
   }
 
   /** A new conversation: nothing remembered applies to it. */
   reset(): void {
     this.#failures.clear();
+    this.#streaks.clear();
   }
+}
+
+/** The change-strategy instruction a failure streak earns. */
+function escalation(name: string, streak: number): string {
+  return (
+    `${name} has now failed ${streak} times. Another variation of the same value will ` +
+    "fail too, so stop varying it. Unless the user has just given you a NEW value, " +
+    "switch strategy: look them up by a different identifier you already hold (another " +
+    "tool may take it), or read back exactly what you have and ask the user to spell it " +
+    "or give a different identifier."
+  );
 }
 
 /** `(name, canonical-JSON args)` — key order does not make a call new. */
