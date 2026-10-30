@@ -15,6 +15,7 @@ import {
   type ExperimentalSttFetch,
   encodeWav,
   levelVoiced,
+  MAX_CONSECUTIVE_FINAL_FAILURES,
   openAssemblyAIExperimentalStt,
   PREROLL_MS,
   parseTranscript,
@@ -260,18 +261,105 @@ describe("openAssemblyAIExperimentalStt", () => {
     expect(events.error).not.toHaveBeenCalled();
   });
 
-  test("a refused key is an auth error; a server error is a stream error", async () => {
-    for (const [status, code] of [
-      [401, "stt_auth_failed"],
-      [503, "stt_stream_error"],
-    ] as const) {
-      const { fetch } = scriptedFetch(() => new Response("nope", { status }));
-      const { session, events } = await open(fetch);
+  test("a refused key ends the session at once, as an auth error", async () => {
+    const { fetch, calls } = scriptedFetch(() => new Response("nope", { status: 401 }));
+    const { session, events } = await open(fetch);
+    session.sendAudio(speech(300));
+    session.forceEndOfTurn?.();
+    await tick();
+    expect(events.error.mock.calls[0]?.[0]).toMatchObject({ code: "stt_auth_failed" });
+    // Not retried: a refused key will be refused again.
+    expect(calls).toHaveLength(1);
+  });
+
+  test("a transient server error on a final is retried once, and the turn is answered", async () => {
+    const answers = [new Response("bad gateway", { status: 502 }), ok("Hello there.")];
+    const { fetch, calls } = scriptedFetch((n) => answers[n - 1] ?? ok(""));
+    const { session, events } = await open(fetch);
+    session.sendAudio(speech(300));
+    session.forceEndOfTurn?.();
+    await tick();
+    expect(calls).toHaveLength(2);
+    expect(events.final).toHaveBeenCalledWith("Hello there.", expect.anything());
+    expect(events.error).not.toHaveBeenCalled();
+  });
+
+  test("a final that timed out is retried too", async () => {
+    // A timeout is a DOMException, whose `code` is a number: it must not be
+    // read as an SttError's refusal.
+    let n = 0;
+    const fetch: ExperimentalSttFetch = async () => {
+      n++;
+      if (n === 1) throw new DOMException("The operation timed out.", "TimeoutError");
+      return ok("After the timeout.");
+    };
+    const { session, events } = await open(fetch);
+    session.sendAudio(speech(300));
+    session.forceEndOfTurn?.();
+    await tick();
+    expect(events.final).toHaveBeenCalledWith("After the timeout.", expect.anything());
+    expect(events.error).not.toHaveBeenCalled();
+  });
+
+  test("a turn whose final fails twice is skipped, and the session goes on", async () => {
+    const answers = [
+      new Response("down", { status: 503 }),
+      new Response("down", { status: 503 }),
+      ok("Second turn."),
+    ];
+    const { fetch } = scriptedFetch((n) => answers[n - 1] ?? ok(""));
+    const { session, events } = await open(fetch);
+    session.sendAudio(speech(300));
+    session.forceEndOfTurn?.();
+    await tick();
+    expect(events.error).not.toHaveBeenCalled();
+    session.sendAudio(speech(300));
+    session.forceEndOfTurn?.();
+    await tick();
+    expect(events.final).toHaveBeenCalledWith("Second turn.", expect.anything());
+    expect(events.error).not.toHaveBeenCalled();
+  });
+
+  test(`${MAX_CONSECUTIVE_FINAL_FAILURES} failed finals in a row end the session`, async () => {
+    const { fetch } = scriptedFetch(() => new Response("down", { status: 503 }));
+    const { session, events } = await open(fetch);
+    for (let turn = 1; turn <= MAX_CONSECUTIVE_FINAL_FAILURES; turn++) {
+      expect(events.error, `before turn ${turn}`).not.toHaveBeenCalled();
       session.sendAudio(speech(300));
       session.forceEndOfTurn?.();
       await tick();
-      expect.soft(events.error.mock.calls[0]?.[0], String(status)).toMatchObject({ code });
     }
+    expect(events.error.mock.calls[0]?.[0]).toMatchObject({ code: "stt_stream_error" });
+  });
+
+  test("a partial left over from the last turn does not hold back the next turn's", async () => {
+    // Turn 1's partial never answers; turn 2 must still get partials (they
+    // are what drive barge-in), and the stale request is aborted.
+    const stale = held();
+    let staleSignal: AbortSignal | undefined;
+    let n = 0;
+    const fetch: ExperimentalSttFetch = async (_url, init) => {
+      n++;
+      if (n === 1) {
+        staleSignal = init?.signal ?? undefined;
+        return stale.response;
+      }
+      return n === 2 ? ok("Turn one.") : ok("Second");
+    };
+    const session = await openAssemblyAIExperimentalStt({ partialIntervalMs: 200 }, fetch).open({
+      sampleRate: RATE,
+      apiKey: "k",
+      signal: new AbortController().signal,
+    });
+    const partial = vi.fn();
+    session.on("partial", partial);
+    session.sendAudio(speech(220));
+    session.forceEndOfTurn?.();
+    await tick();
+    session.sendAudio(speech(220));
+    await tick();
+    expect(partial).toHaveBeenCalledWith("Second", expect.anything());
+    expect(staleSignal?.aborted).toBe(true);
   });
 
   test("emits a partial while the turn is open, and drops one that lands after it", async () => {

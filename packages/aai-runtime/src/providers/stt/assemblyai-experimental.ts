@@ -44,7 +44,8 @@ import {
   type SttSession,
   type SttTurnMeta,
 } from "../openers.ts";
-import { createInputLevelLedger, rmsDbfs } from "./_input-level-ledger.ts";
+import { createInputLevelLedger } from "./_input-level-ledger.ts";
+import { levelOf } from "./_stt-liveness.ts";
 
 /** Width of one level decision, in ms. */
 export const VAD_BLOCK_MS = 20;
@@ -56,6 +57,13 @@ export const PREROLL_MS = 300;
 export const MAX_TURN_MS = 60_000;
 /** Deadline on one transcribe request, in ms. */
 export const TRANSCRIBE_TIMEOUT_MS = 15_000;
+/**
+ * Failed finals in a row that end the session. One failure is a blip — the
+ * turn is retried once, then skipped — but this many in a row means the
+ * endpoint is down, and a session that silently drops every turn is worse
+ * than one that ends.
+ */
+export const MAX_CONSECUTIVE_FINAL_FAILURES = 3;
 
 const LABEL = "AssemblyAI experimental STT";
 
@@ -265,9 +273,20 @@ export function createBlocker(
 
 /** Is `block` louder than `thresholdDbfs` (RMS)? The level gate. */
 export function levelVoiced(block: Int16Array, thresholdDbfs: number): boolean {
-  let sum = 0;
-  for (const s of block) sum += s * s;
-  return rmsDbfs(sum, block.length) >= thresholdDbfs;
+  return levelOf(block) >= thresholdDbfs;
+}
+
+/**
+ * Whether a failed request is worth sending again: a 5xx, a 429, or a request
+ * that never got an answer (timeout, network). A refused key or a malformed
+ * request is not — it will fail the same way.
+ */
+function isRetryable(err: unknown): boolean {
+  const status = (err as { status?: unknown }).status;
+  if (typeof status === "number") return status >= 500 || status === 429;
+  // No answer at all. Only an `SttError` carries a STRING code; a timeout's
+  // DOMException has a numeric one, a network failure none.
+  return typeof (err as { code?: unknown }).code !== "string";
 }
 
 export function openAssemblyAIExperimentalStt(
@@ -295,7 +314,10 @@ export function openAssemblyAIExperimentalStt(
       closeOnAbort(openOpts.signal, shell.close);
       const ledger = createInputLevelLedger(sampleRate);
 
-      const transcribe = async (pcm: Int16Array): Promise<ExperimentalTranscript> => {
+      const transcribe = async (
+        pcm: Int16Array,
+        signal?: AbortSignal,
+      ): Promise<ExperimentalTranscript> => {
         const boundary = `aai-${crypto.randomUUID()}`;
         const res = await fetchImpl(settings.url, {
           method: "POST",
@@ -305,13 +327,20 @@ export function openAssemblyAIExperimentalStt(
             "Content-Type": `multipart/form-data; boundary=${boundary}`,
           },
           body: buildTranscribeBody(encodeWav(pcm, sampleRate), prompt, boundary),
-          signal: AbortSignal.any([inflight.signal, AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS)]),
+          signal: AbortSignal.any([
+            inflight.signal,
+            AbortSignal.timeout(TRANSCRIBE_TIMEOUT_MS),
+            ...(signal ? [signal] : []),
+          ]),
         });
         if (!res.ok) {
           const detail = (await res.text().catch(() => "")).slice(0, 200);
-          throw createSttError(
-            res.status === 401 || res.status === 403 ? "stt_auth_failed" : "stt_stream_error",
-            `${LABEL}: HTTP ${res.status}${detail ? ` ${detail}` : ""}`,
+          throw Object.assign(
+            createSttError(
+              res.status === 401 || res.status === 403 ? "stt_auth_failed" : "stt_stream_error",
+              `${LABEL}: HTTP ${res.status}${detail ? ` ${detail}` : ""}`,
+            ),
+            { status: res.status },
           );
         }
         return parseTranscript(await res.json());
@@ -330,7 +359,19 @@ export function openAssemblyAIExperimentalStt(
         };
       };
 
-      /** A failed final ends the session; a refused key says so by its code. */
+      /** A final's request, sent once more if the first failure was transient. */
+      const transcribeFinal = (pcm: Int16Array): Promise<ExperimentalTranscript> =>
+        transcribe(pcm).catch((err: unknown) => {
+          if (shell.isClosed() || !isRetryable(err)) throw err;
+          return transcribe(pcm);
+        });
+
+      let failedFinals = 0;
+      /**
+       * A refused key ends the session at once, by its code. Anything else
+       * skips this one turn — a single 502 must not end a healthy call — until
+       * {@link MAX_CONSECUTIVE_FINAL_FAILURES} in a row say the endpoint is down.
+       */
       const failFinal = (err: unknown): void => {
         if (shell.isClosed()) return;
         if ((err as { code?: unknown }).code === "stt_auth_failed") {
@@ -338,11 +379,22 @@ export function openAssemblyAIExperimentalStt(
           void shell.close();
           return;
         }
-        shell.streamError(`${LABEL}: ${errorMessage(err)}`);
+        failedFinals++;
+        if (failedFinals >= MAX_CONSECUTIVE_FINAL_FAILURES) {
+          shell.streamError(
+            `${LABEL}: ${failedFinals} turns failed in a row: ${errorMessage(err)}`,
+          );
+        }
       };
 
       let finals: Promise<void> = Promise.resolve();
-      let partialInFlight = false;
+      /**
+       * The partial request in flight, by the turn it is for. One per turn, so
+       * a slow partial cannot pile requests up — but a NEW turn aborts the last
+       * turn's leftover rather than waiting on it: partials drive barge-in, and
+       * a stale one could otherwise hold them back for a whole request timeout.
+       */
+      let partial: { turnId: number; abort: AbortController } | undefined;
 
       const segmenter = createTurnSegmenter({
         sampleRate,
@@ -353,20 +405,23 @@ export function openAssemblyAIExperimentalStt(
           // Settled at once, so a rejection waiting behind an earlier final
           // is never unhandled; chained, so finals reach the transport in
           // turn order whichever request answers first.
-          const pending = transcribe(pcm).then(
+          const pending = transcribeFinal(pcm).then(
             (t) => ({ t }),
             (err: unknown) => ({ err }),
           );
           finals = finals.then(async () => {
             const r = await pending;
             if ("err" in r) return failFinal(r.err);
+            failedFinals = 0;
             if (r.t.text.trim().length > 0) shell.emit("final", r.t.text, metaOf(r.t, startMs));
           });
         },
         onPartialDue(pcm, startMs, turnId) {
-          if (partialInFlight) return;
-          partialInFlight = true;
-          transcribe(pcm)
+          if (partial?.turnId === turnId) return;
+          partial?.abort.abort();
+          const mine = { turnId, abort: new AbortController() };
+          partial = mine;
+          transcribe(pcm, mine.abort.signal)
             .then((t) => {
               const live = segmenter.inTurn() && segmenter.turnId() === turnId;
               if (live && t.text.trim().length > 0) {
@@ -375,7 +430,7 @@ export function openAssemblyAIExperimentalStt(
             })
             .catch(() => undefined)
             .finally(() => {
-              partialInFlight = false;
+              if (partial === mine) partial = undefined;
             });
         },
       });
