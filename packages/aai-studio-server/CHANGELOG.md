@@ -1,5 +1,23 @@
 # aai-studio-server
 
+## 0.13.3
+
+### Patch Changes
+
+- Updated dependencies [efaadfb]
+- Updated dependencies [ac622a2]
+- Updated dependencies [c849604]
+- Updated dependencies [cad7bf8]
+- Updated dependencies [5ec6afc]
+- Updated dependencies [2dbf3c0]
+- Updated dependencies [fa16f3d]
+- Updated dependencies [de5f82a]
+  - @alexkroman1/aai-runtime@0.19.0
+  - @alexkroman1/aai@0.19.0
+  - aai-server@0.3.0
+  - aai-studio-client@0.7.22
+  - @alexkroman1/aai-ui@0.19.0
+
 ## 0.13.2
 
 ### Patch Changes

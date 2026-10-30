@@ -1,5 +1,57 @@
 # @alexkroman1/aai-runtime
 
+## 0.19.0
+
+### Patch Changes
+
+- efaadfb: AssemblyAI TTS: keep Flush/Cancel/KeepAlive frames under the service's
+  control-frame rate limit by merging sentence segments when a fast LLM bursts
+  them, and recover from a 3010 pacing close by reconnecting instead of ending the
+  session.
+- c849604: A barge-in or a failed turn no longer erases a tool call that already ran. When
+  a turn ended after a tool had executed but before its LLM step finished, the
+  pipeline kept only COMPLETED steps, so the call and its result vanished from the
+  model's history and the next turn re-sent it — including writes, which then
+  failed because the first one had succeeded (tau2 retail: 22 aborted turns had
+  already run a write, and 3 re-sent it). The pipeline now records every call the
+  unfinished step ran and persists it as a well-formed call/result pair: a call
+  that finished keeps its real result, a call still running at the cut is recorded
+  as interrupted with an "outcome unknown, check before repeating" result, and a
+  call that never ran is not recorded. This covers a barge-in and a turn that
+  fails mid-step (a fatal sibling tool, a stream error, a stall). `ctx.messages`
+  now reads the same verdict, so a tool never sees a cancellation for a write that
+  may have happened, and a call cut mid-run is no longer remembered as a failed
+  call that refuses its own re-check.
+- 2dbf3c0: A tool that keeps failing now tells the model to change strategy. The
+  failed-call note already listed every failed attempt and refused an exact
+  repeat, but a model that changed one character per call never tripped it: on a
+  tau2-bench retail run one call sent ten email variants across three turns and
+  never switched identifier. Once one tool has failed four times since the last
+  success, the note now also says to stop varying the value and either look the
+  caller up by a different identifier or read back what it has and ask them to
+  spell it. Four, not three, because the prompt's own spelling-recovery ladder
+  legitimately takes about four lookups. In an offline replay of that call,
+  guessing another variant after the fourth failure fell from 7 of 20 samples to 1
+  of 20.
+  
+  The default system prompt's TOOLS section also says that a choice from a fixed
+  list (a reason, a category, a payment method) is the caller's to give: ask for
+  it rather than sending the first or likeliest option. The same run's agent
+  recorded every cancellation as "no longer needed" without asking.
+- fa16f3d: Pipeline: bound a stalled or rate-limited LLM. Retries of a failed call now wait
+  at most 4 s in total (a 429 asking for 60 s fails the turn at once instead of
+  waiting it out, and a fallback primary still moves on immediately); the stall
+  clock also covers opening the request; the dead-air cover gives up after four
+  unanswered fillers and the turn speaks errorPhrase instead of looping; and
+  caller turns queued behind a turn that has not started are answered once, as one
+  message.
+- Updated dependencies [ac622a2]
+- Updated dependencies [cad7bf8]
+- Updated dependencies [5ec6afc]
+- Updated dependencies [2dbf3c0]
+- Updated dependencies [de5f82a]
+  - @alexkroman1/aai@0.19.0
+
 ## 0.18.2
 
 ### Patch Changes

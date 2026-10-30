@@ -1,5 +1,55 @@
 # @alexkroman1/aai
 
+## 0.19.0
+
+### Minor Changes
+
+- cad7bf8: The AssemblyAI STT's default maxTurnSilenceMs (the ceiling that force-ends a
+  turn regardless of content) drops from 3500 to 1500 ms. A tau2-bench retail
+  comparison found the semantic endpointer often not committing in noise: callers
+  re-prompted 162 times, against 24 for a stack with a forced commit. Agents that
+  relied on the longer pause tolerance for hesitant callers can restore it with
+  turnTaking: { maxSilenceMs: 3500 }.
+- 5ec6afc: AssemblyAI STT now defaults to English on Universal-3.5 Pro (the default model):
+  an unset `assemblyAIStt({ languages })` on that family sends
+  `language_codes=["en"]` (`ASSEMBLYAI_STT_DEFAULT_LANGUAGES`), turning its
+  code-switching off. Unset used to mean code-switching across 18 languages, which
+  on English calls turned backchannels ("mm-hm") into non-English text the
+  pipeline treated as caller turns. Other streaming models are unchanged: unset
+  still sends no `language_codes`. An explicit list is still sent exactly as
+  given, on any model; pass `languages: []` to opt back into full code-switching,
+  or several codes (`["en", "es"]`) to code-switch within a set.
+  `assemblyAIS2s({ languages })` is unchanged.
+- de5f82a: llm() takes an optional contextWindow (tokens). A pipeline session budgets each
+  request against it, so a model off the AssemblyAI gateway catalog (a Cerebras
+  model, say) is no longer trimmed as if it had the smallest known window (32,768
+  tokens). A fallback([...]) is budgeted against its smallest member; a declared
+  window is capped at the largest the catalog carries.
+
+### Patch Changes
+
+- ac622a2: Add experimental `assemblyAIExperimentalStt()` (on
+  `@alexkroman1/aai/experimental`): runs a request/response transcription model on
+  AssemblyAI's transcribe endpoint (`POST /v1/transcribe`, default
+  `nemotron-3-5-transcribe`) as a pipeline STT stage, with host-side turn
+  segmentation on a level gate.
+- 2dbf3c0: A tool that keeps failing now tells the model to change strategy. The
+  failed-call note already listed every failed attempt and refused an exact
+  repeat, but a model that changed one character per call never tripped it: on a
+  tau2-bench retail run one call sent ten email variants across three turns and
+  never switched identifier. Once one tool has failed four times since the last
+  success, the note now also says to stop varying the value and either look the
+  caller up by a different identifier or read back what it has and ask them to
+  spell it. Four, not three, because the prompt's own spelling-recovery ladder
+  legitimately takes about four lookups. In an offline replay of that call,
+  guessing another variant after the fourth failure fell from 7 of 20 samples to 1
+  of 20.
+  
+  The default system prompt's TOOLS section also says that a choice from a fixed
+  list (a reason, a category, a payment method) is the caller's to give: ask for
+  it rather than sending the first or likeliest option. The same run's agent
+  recorded every cancellation as "no longer needed" without asking.
+
 ## 0.18.2
 
 No changes in this release.
