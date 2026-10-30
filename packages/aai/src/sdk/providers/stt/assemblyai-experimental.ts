@@ -51,12 +51,30 @@ export const ASSEMBLYAI_EXPERIMENTAL_DEFAULT_MODEL = "nemotron-3-5-transcribe";
 /**
  * The instruction sent as `config.prompt` when neither the descriptor nor the
  * agent's `sttPrompt` names one.
+ *
+ * It asks for repeats and spellings VERBATIM. An earlier wording that said
+ * "omit … accidental repetitions" deleted real ones: on a tau2-bench run a
+ * caller spelling "A, A, R, A, V" came back as "AARAB" and "a r a v", and
+ * "S-I-L-V-A" as "Silver" — two calls that never found the account. Digit
+ * strings are asked for as digits for the same reason ("8321" had come back
+ * as "Eight Thousand Three Hundred Twenty One").
  */
 export const ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT =
-  "Audio transcription. Language: English. Wording: omit fillers and accidental repetitions; keep the remaining spoken wording unchanged. Formatting: punctuation and capitalization. Output: transcript only.";
+  "Audio transcription. Language: English. Wording: keep every spoken word, including repeated words; omit only fillers such as um and uh. Spelling: when the speaker spells letters or reads out digits, write each one as spoken, separated by spaces, keeping repeated letters and digits (A A R A V; 3 2 2 5 5). Formatting: punctuation and capitalization. Output: transcript only.";
 
-/** Trailing silence that ends a turn, when the descriptor names none. */
-export const ASSEMBLYAI_EXPERIMENTAL_DEFAULT_MIN_TURN_SILENCE_MS = 700;
+/**
+ * Trailing silence that ends a turn, when the descriptor names none.
+ *
+ * 1000 ms, not the 700 it shipped with: replaying this opener's level gate
+ * (-30 dBFS) offline over a tau2-bench run's 114 caller channels, 700 ms
+ * split 78% of utterances of 1.5 s or longer into several finals (the
+ * streaming Universal-3.5 Pro stage split 27%), and 1000 ms split 53% — while
+ * also opening fewer turns on noise (220 against 312). Each split turn is a
+ * fragment the agent starts answering and is then talked over. The cost is
+ * 300 ms on every reply, which the endpoint's ~0.8 s median from end of
+ * speech to final has room for.
+ */
+export const ASSEMBLYAI_EXPERIMENTAL_DEFAULT_MIN_TURN_SILENCE_MS = 1000;
 
 /**
  * Level above which a 20 ms block counts as speech, when the descriptor names

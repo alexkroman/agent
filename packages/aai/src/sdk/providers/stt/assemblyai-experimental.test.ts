@@ -7,6 +7,7 @@ import {
   ASSEMBLYAI_EXPERIMENTAL_DEFAULT_MIN_TURN_SILENCE_MS,
   ASSEMBLYAI_EXPERIMENTAL_DEFAULT_MODEL,
   ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PARTIAL_INTERVAL_MS,
+  ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT,
   ASSEMBLYAI_EXPERIMENTAL_DEFAULT_SPEECH_THRESHOLD_DBFS,
   ASSEMBLYAI_EXPERIMENTAL_DEFAULT_URL,
   ASSEMBLYAI_EXPERIMENTAL_STT_KIND,
@@ -28,6 +29,16 @@ describe("assemblyAIExperimentalStt", () => {
 
   test("reads the sandbox key by default", () => {
     expect(ASSEMBLYAI_EXPERIMENTAL_API_KEY_ENV).toBe("ASSEMBLYAI_API_KEY_SANDBOX");
+  });
+});
+
+describe("ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT", () => {
+  test("asks for repeats and spellings verbatim, and never to drop repetitions", () => {
+    // "omit … accidental repetitions" deleted real repeated letters ("A, A, R,
+    // A, V" -> "AARAB"); see the constant's doc.
+    expect(ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT).not.toMatch(/omit[^.]*repetition/i);
+    expect(ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT).toMatch(/including repeated words/);
+    expect(ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT).toMatch(/Language: English/);
   });
 });
 

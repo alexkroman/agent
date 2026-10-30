@@ -2251,7 +2251,7 @@ export function asFailureError(err: unknown): Error;
 export const ASSEMBLYAI_EXPERIMENTAL_API_KEY_ENV: string;
 
 // @public
-export const ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT = "Audio transcription. Language: English. Wording: omit fillers and accidental repetitions; keep the remaining spoken wording unchanged. Formatting: punctuation and capitalization. Output: transcript only.";
+export const ASSEMBLYAI_EXPERIMENTAL_DEFAULT_PROMPT = "Audio transcription. Language: English. Wording: keep every spoken word, including repeated words; omit only fillers such as um and uh. Spelling: when the speaker spells letters or reads out digits, write each one as spoken, separated by spaces, keeping repeated letters and digits (A A R A V; 3 2 2 5 5). Formatting: punctuation and capitalization. Output: transcript only.";
 
 // @public
 export const ASSEMBLYAI_EXPERIMENTAL_STT_KIND: "assemblyai-experimental";

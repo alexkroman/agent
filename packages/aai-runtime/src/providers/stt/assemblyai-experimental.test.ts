@@ -211,7 +211,11 @@ describe("openAssemblyAIExperimentalStt", () => {
     const { fetch, calls } = scriptedFetch(() => ok("Hello there."));
     const { session, events } = await open(fetch);
     session.sendAudio(speech(800));
+    // The default window is 1000 ms: a 800 ms pause is mid-sentence, not a turn end.
     session.sendAudio(silence(800));
+    await tick();
+    expect(calls).toHaveLength(0);
+    session.sendAudio(silence(400));
     await tick();
     expect(calls).toHaveLength(1);
     expect(calls[0]?.headers).toMatchObject({
