@@ -36,6 +36,22 @@ describe("createPipelineProviderResolver", () => {
     expect(resolve()).toBe(first);
   });
 
+  test("carries the LLM descriptor's declared context window to the transport", () => {
+    // What makes `llm({ contextWindow })` reach the context budget: without
+    // this, a declared window is an inert knob.
+    const registered = fakes();
+    const llm = {
+      ...registered.llm,
+      options: { ...registered.llm.options, contextWindow: 131_072 },
+    };
+    const resolve = createPipelineProviderResolver({
+      agent: {},
+      effectiveProviders: { mode: "pipeline", ...registered, llm },
+      providerEnv: registered.env,
+    });
+    expect(resolve()?.llmContextWindow).toBe(131_072);
+  });
+
   test("a voice agent with a missing key fails at creation, not at first use", () => {
     const registered = fakes();
     expect(() =>

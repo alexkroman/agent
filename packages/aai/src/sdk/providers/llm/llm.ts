@@ -162,6 +162,17 @@ export interface LlmOptions<P extends LlmProviderName = LlmProviderName>
   readonly providerOptions?: P extends "assemblyai"
     ? AssemblyAILlmProviderOptions
     : Readonly<Record<string, unknown>>;
+  /**
+   * The model's context window, in tokens — what a pipeline session budgets
+   * each request against, trimming the oldest history to fit.
+   *
+   * Only needed for a model the SDK's catalog does not carry, which is every
+   * model off the AssemblyAI gateway. Without it an unknown model is budgeted
+   * as the SMALLEST window the catalog knows (32,768 tokens today), so a long
+   * call on a large-context model drops history it had room for. Declared, it
+   * is used as given, up to the largest window the catalog carries.
+   */
+  readonly contextWindow?: number;
 }
 
 /**
@@ -189,7 +200,12 @@ export interface LlmOptions<P extends LlmProviderName = LlmProviderName>
  * `llm: "creator/model"` is `provider: "gateway"`.
  */
 export function llm<const P extends LlmProviderName>(options: LlmOptions<P>): LlmProvider {
-  const { provider, model, baseUrl, apiKeyEnv } = options;
+  const { provider, model, baseUrl, apiKeyEnv, contextWindow } = options;
+  if (contextWindow !== undefined && !(Number.isSafeInteger(contextWindow) && contextWindow > 0)) {
+    throw new Error(
+      `llm(): contextWindow must be a positive whole number of tokens, got ${String(contextWindow)}`,
+    );
+  }
   let providerOptions: Readonly<Record<string, unknown>> | undefined = options.providerOptions;
   if (provider === ASSEMBLYAI_LLM_KIND) {
     // See TOOLS_REQUIRE_NO_REASONING: for these models, leaving reasoning on
@@ -210,6 +226,7 @@ export function llm<const P extends LlmProviderName>(options: LlmOptions<P>): Ll
         baseUrl,
         apiKeyEnv,
         providerOptions: providerOptions === undefined ? undefined : { ...providerOptions },
+        contextWindow,
       }),
     },
   };

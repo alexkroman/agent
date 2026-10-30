@@ -50,6 +50,11 @@ export interface PipelineTransportOptions {
   stt: SttOpener;
   /** LLM provider (Vercel AI SDK LanguageModel). */
   llm: LanguageModel;
+  /**
+   * The LLM's context window in tokens, as its descriptor declared it — wins
+   * over the catalog's when budgeting each request (`history/context-budget.ts`).
+   */
+  contextWindow?: number | undefined;
   /** TTS opener (resolved from a TtsProvider descriptor). */
   tts: TtsOpener;
   /** Transport-level callbacks into ServerSession. */

@@ -18,6 +18,7 @@ import type { SessionMode } from "@alexkroman1/aai/manifest";
 import type { SttProvider } from "@alexkroman1/aai/stt";
 import type { TtsProvider } from "@alexkroman1/aai/tts";
 import { resolveLlm, resolveStt, resolveTts } from "../providers/resolve.ts";
+import { declaredContextTokens } from "../transports/pipeline/history/context-budget.ts";
 import type { ResolvedPipelineProviders } from "./transport.ts";
 
 /** The effective providers a runtime resolved for itself, plus its mode. */
@@ -42,6 +43,7 @@ function resolvePipelineProviders(
   return {
     stt: resolveStt(p.stt, env),
     llm: resolveLlm(p.llm, env),
+    llmContextWindow: declaredContextTokens(p.llm),
     tts: resolveTts(p.tts, env),
   };
 }

@@ -369,6 +369,7 @@ type LlmDescriptorOptions = {
     readonly baseUrl?: string;
     readonly apiKeyEnv?: string;
     readonly providerOptions?: Readonly<Record<string, unknown>>;
+    readonly contextWindow?: number;
 };
 
 // @public
@@ -1343,6 +1344,7 @@ type LlmDescriptorOptions = {
     readonly baseUrl?: string;
     readonly apiKeyEnv?: string;
     readonly providerOptions?: Readonly<Record<string, unknown>>;
+    readonly contextWindow?: number;
 };
 
 // @public
@@ -3150,6 +3152,7 @@ type LlmDescriptorOptions = {
     readonly baseUrl?: string;
     readonly apiKeyEnv?: string;
     readonly providerOptions?: Readonly<Record<string, unknown>>;
+    readonly contextWindow?: number;
 };
 
 // @public
@@ -5254,6 +5257,7 @@ type LlmDescriptorOptions = {
     readonly baseUrl?: string;
     readonly apiKeyEnv?: string;
     readonly providerOptions?: Readonly<Record<string, unknown>>;
+    readonly contextWindow?: number;
 };
 
 // @public
@@ -7079,6 +7083,7 @@ type LlmDescriptorOptions = {
     readonly baseUrl?: string;
     readonly apiKeyEnv?: string;
     readonly providerOptions?: Readonly<Record<string, unknown>>;
+    readonly contextWindow?: number;
 };
 
 // @public
@@ -7836,11 +7841,13 @@ export type LlmDescriptorOptions = {
     readonly baseUrl?: string;
     readonly apiKeyEnv?: string;
     readonly providerOptions?: Readonly<Record<string, unknown>>;
+    readonly contextWindow?: number;
 };
 
 // @public @input
 export interface LlmOptions<P extends LlmProviderName = LlmProviderName> extends ProviderCredentialOptions {
     readonly baseUrl?: string;
+    readonly contextWindow?: number;
     readonly model: P extends "assemblyai" ? AssemblyAIGatewayModel : string;
     readonly provider: P;
     readonly providerOptions?: P extends "assemblyai" ? AssemblyAILlmProviderOptions : Readonly<Record<string, unknown>>;
@@ -8381,6 +8388,7 @@ type LlmDescriptorOptions = {
     readonly baseUrl?: string;
     readonly apiKeyEnv?: string;
     readonly providerOptions?: Readonly<Record<string, unknown>>;
+    readonly contextWindow?: number;
 };
 
 // @public
@@ -10317,6 +10325,7 @@ type LlmDescriptorOptions = {
     readonly baseUrl?: string;
     readonly apiKeyEnv?: string;
     readonly providerOptions?: Readonly<Record<string, unknown>>;
+    readonly contextWindow?: number;
 };
 
 // @public
@@ -11623,6 +11632,7 @@ type LlmDescriptorOptions = {
     readonly baseUrl?: string;
     readonly apiKeyEnv?: string;
     readonly providerOptions?: Readonly<Record<string, unknown>>;
+    readonly contextWindow?: number;
 };
 
 // @public
@@ -12121,6 +12131,7 @@ type LlmDescriptorOptions = {
     readonly baseUrl?: string;
     readonly apiKeyEnv?: string;
     readonly providerOptions?: Readonly<Record<string, unknown>>;
+    readonly contextWindow?: number;
 };
 
 // @public
@@ -13821,6 +13832,7 @@ type LlmDescriptorOptions = {
     readonly baseUrl?: string;
     readonly apiKeyEnv?: string;
     readonly providerOptions?: Readonly<Record<string, unknown>>;
+    readonly contextWindow?: number;
 };
 
 // @public
@@ -14892,6 +14904,7 @@ type LlmDescriptorOptions = {
     readonly baseUrl?: string;
     readonly apiKeyEnv?: string;
     readonly providerOptions?: Readonly<Record<string, unknown>>;
+    readonly contextWindow?: number;
 };
 
 // @public
@@ -15459,6 +15472,7 @@ type LlmDescriptorOptions = {
     readonly baseUrl?: string;
     readonly apiKeyEnv?: string;
     readonly providerOptions?: Readonly<Record<string, unknown>>;
+    readonly contextWindow?: number;
 };
 
 // @public

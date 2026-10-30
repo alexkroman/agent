@@ -35,12 +35,14 @@
  * system prompt and the tool schemas are the same on the next turn.
  *
  * **The window comes from the model, and an unknown one is budgeted as the
- * SMALLEST window the catalog carries.** {@link ASSEMBLYAI_GATEWAY_MODELS} is
- * the only per-model context window this repo carries; an author-supplied
- * provider, a custom `registerLlmKind`, or an id the gateway does not advertise
- * resolves to `undefined` in {@link modelContextTokens}, and
- * {@link contextTokenBudget} then budgets against
- * {@link UNKNOWN_MODEL_CONTEXT_TOKENS}. That is a guess, and the direction is
+ * SMALLEST window the catalog carries.** An author can DECLARE a model's window
+ * on its descriptor (`llm({ contextWindow })`, read by
+ * {@link declaredContextTokens}), which wins; otherwise
+ * {@link ASSEMBLYAI_GATEWAY_MODELS} is the only per-model window this repo
+ * carries, so an author-supplied provider, a custom `registerLlmKind`, or an
+ * id the gateway does not advertise resolves to `undefined` in
+ * {@link modelContextTokens}, and {@link contextTokenBudget} then budgets
+ * against {@link UNKNOWN_MODEL_CONTEXT_TOKENS}. That is a guess, and the direction is
  * chosen: there is no other bound on a request any more (the 200-message cap
  * that used to be the fallback is gone), so declining to guess would send an
  * unknown model the whole conversation. Too large fails at the provider, which
@@ -53,7 +55,12 @@
  * gateway's `"gpt-5.1"` are the same model and take the same number.
  */
 
-import { ASSEMBLYAI_GATEWAY_MODELS } from "@alexkroman1/aai/host-internal";
+import {
+  ASSEMBLYAI_GATEWAY_MODELS,
+  fallbackMembers,
+  isFallbackDescriptor,
+} from "@alexkroman1/aai/host-internal";
+import { isRecord } from "@alexkroman1/aai/utils";
 import type { LanguageModel, ModelMessage } from "ai";
 import { estimateTokenCount } from "tokenx";
 import type { Logger } from "../../../logger.ts";
@@ -163,6 +170,9 @@ const CONTEXT_WINDOWS: ReadonlyMap<string, number> = new Map(
  */
 export const UNKNOWN_MODEL_CONTEXT_TOKENS = Math.min(...CONTEXT_WINDOWS.values());
 
+/** The largest window the catalog carries — the cap on a declared one. */
+const LARGEST_CONTEXT_TOKENS = Math.max(...CONTEXT_WINDOWS.values());
+
 /** The message budget a window of `context` tokens leaves after the reserve. */
 const budgetOf = (context: number): number => Math.floor(context * (1 - CONTEXT_WINDOW_RESERVE));
 
@@ -171,7 +181,7 @@ const budgetOf = (context: number): number => Math.floor(context * (1 - CONTEXT_
  * memory retention is sized against (`./retention.ts`), so that
  * retention can never reach into a request this module would send.
  */
-export const LARGEST_CONTEXT_TOKEN_BUDGET = budgetOf(Math.max(...CONTEXT_WINDOWS.values()));
+export const LARGEST_CONTEXT_TOKEN_BUDGET = budgetOf(LARGEST_CONTEXT_TOKENS);
 
 /**
  * The model's advertised context window in tokens, or `undefined` when the
@@ -184,12 +194,47 @@ export function modelContextTokens(llm: LanguageModel): number | undefined {
 }
 
 /**
- * Tokens one step's message list may occupy for this model — against its own
- * window when the catalog knows it, against {@link UNKNOWN_MODEL_CONTEXT_TOKENS}
- * when it does not. Never more than {@link LARGEST_CONTEXT_TOKEN_BUDGET}.
+ * The context window an LLM descriptor DECLARES, in tokens, or `undefined`.
+ *
+ * A member that declares none falls back to the catalog by its model id, so a
+ * descriptor is "known" when every model it can dial is. A `fallback([...])`
+ * answers the SMALLEST of its members' windows — whichever member serves a
+ * turn, the request has to fit it — and `undefined` if any member is unknown,
+ * which leaves the whole stage to {@link UNKNOWN_MODEL_CONTEXT_TOKENS}.
  */
-export function contextTokenBudget(llm: LanguageModel): number {
-  return budgetOf(modelContextTokens(llm) ?? UNKNOWN_MODEL_CONTEXT_TOKENS);
+export function declaredContextTokens(descriptor: unknown): number | undefined {
+  let members: { options: Record<string, unknown> }[] = [];
+  if (isFallbackDescriptor(descriptor)) members = fallbackMembers(descriptor);
+  else if (isRecord(descriptor) && isRecord(descriptor.options)) {
+    members = [{ options: descriptor.options }];
+  }
+  let smallest: number | undefined;
+  for (const { options } of members) {
+    const window = memberContextTokens(options);
+    if (window === undefined) return undefined;
+    smallest = smallest === undefined ? window : Math.min(smallest, window);
+  }
+  return smallest;
+}
+
+/** One descriptor's window: as declared, else the catalog's for its model id. */
+function memberContextTokens(options: Record<string, unknown>): number | undefined {
+  const { contextWindow, model } = options;
+  if (typeof contextWindow === "number" && contextWindow > 0) return contextWindow;
+  return typeof model === "string" ? CONTEXT_WINDOWS.get(model) : undefined;
+}
+
+/**
+ * Tokens one step's message list may occupy for this model: against the
+ * window the descriptor declared when there is one, else its own catalog
+ * window, else {@link UNKNOWN_MODEL_CONTEXT_TOKENS}. A declared window is
+ * capped at the largest the catalog carries, so the result is never more than
+ * {@link LARGEST_CONTEXT_TOKEN_BUDGET} — the bound history retention is sized
+ * against.
+ */
+export function contextTokenBudget(llm: LanguageModel, declared?: number): number {
+  const window = declared ?? modelContextTokens(llm) ?? UNKNOWN_MODEL_CONTEXT_TOKENS;
+  return budgetOf(Math.min(window, LARGEST_CONTEXT_TOKENS));
 }
 
 /**
@@ -239,6 +284,11 @@ export function trimToTokenBudget(
 export interface ContextBudgetOptions {
   /** The turn's model — its advertised window is the budget. */
   llm: LanguageModel;
+  /**
+   * The window the agent's LLM descriptor declared ({@link declaredContextTokens}),
+   * which wins over the catalog's.
+   */
+  contextWindow?: number | undefined;
   log: Logger;
   sid: string;
 }
@@ -285,7 +335,7 @@ export type ContextBudgetPreparer = (
  */
 export function createContextBudget(options: ContextBudgetOptions): ContextBudgetPreparer {
   // Always a number — an unknown window is budgeted too, see the module doc.
-  const limit = contextTokenBudget(options.llm);
+  const limit = contextTokenBudget(options.llm, options.contextWindow);
   const { log, sid } = options;
   /**
    * Measured fixed cost of a request beyond its messages, or `undefined` until

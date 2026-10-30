@@ -112,6 +112,8 @@ export type LlmDescriptorOptions = {
   readonly apiKeyEnv?: string;
   /** Provider-specific settings, forwarded per the provider's entry. */
   readonly providerOptions?: Readonly<Record<string, unknown>>;
+  /** The model's context window in tokens, when the author declared one. */
+  readonly contextWindow?: number;
 };
 
 /**
