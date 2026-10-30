@@ -231,9 +231,11 @@ describe("PipelineTransport — STT → LLM turn", () => {
 
   test("covers a silent tool-first turn before the model's reply lands", async () => {
     const { opts, stt, tts } = makeOpts({
-      // A 1ms window so the cover fires inside the 20ms the fake LLM spends
-      // before its first part; the shipped 5000 would outlast the whole spec.
-      deadAirCoverMs: 1,
+      // A 5ms window so the cover fires inside the 20ms the fake LLM spends
+      // before its first part; the shipped 2400 would outlast the whole spec.
+      // Not 1ms: four fillers at 1, 2, 4 and 8ms would reach the cover's
+      // give-up (`DEAD_AIR_COVER_MAX_FILLERS`) before the tool call lands.
+      deadAirCoverMs: 5,
       llm: createFakeLanguageModel({
         steps: [
           [{ type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" }],

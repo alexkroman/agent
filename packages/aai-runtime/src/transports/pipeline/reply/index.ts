@@ -6,6 +6,7 @@
  * `history/` and `turn/`.
  */
 
+export { DEAD_AIR_COVER_MAX_FILLERS } from "./dead-air.ts";
 export type { InReplyLineFlags, LineReplyDeps } from "./lines.ts";
 export { createLineReply, speakFixedLine } from "./lines.ts";
 export type { StreamPart, StreamPartHandler } from "./stream-parts.ts";

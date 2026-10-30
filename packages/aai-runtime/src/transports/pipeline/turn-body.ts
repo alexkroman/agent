@@ -31,6 +31,12 @@ export type TurnBody = (
      * turn whose utterance cut a reply (`buildCutNote` in `heard/recovery.ts`).
      */
     note?: string;
+    /**
+     * The committed text whose STT marks this turn claims, when it is not
+     * `userText` — a turn answering several queued utterances at once claims
+     * the last (`../turn/caller-queue.ts`).
+     */
+    claim?: string;
   },
 ) => Promise<void>;
 
@@ -192,7 +198,7 @@ export function createTurnBody(deps: {
     // this one and cannot be adopted.
     const claimed = kind?.note === undefined ? speculation.take(userText) : null;
     return runReply("pipeline", async (signal) => {
-      deps.metrics?.claimTurn(userText);
+      deps.metrics?.claimTurn(kind?.claim ?? userText);
       // A fresh signal for this turn's tools to abort, and no error carried
       // over from the last one.
       fatalTool.reset();

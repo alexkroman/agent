@@ -24,7 +24,12 @@ import {
 } from "@alexkroman1/aai/host-internal";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { makeLogger, type TestLogger } from "../../../_logger-test-utils.ts";
-import { createDeadAirCover, type DeadAirCover, openingCoverMs } from "./dead-air.ts";
+import {
+  createDeadAirCover,
+  DEAD_AIR_COVER_MAX_FILLERS,
+  type DeadAirCover,
+  openingCoverMs,
+} from "./dead-air.ts";
 
 const COVER_MS = 1000;
 
@@ -278,5 +283,76 @@ describe("a tool call and the anchored opening window", () => {
     expect(h.spoken).toEqual([]);
     await vi.advanceTimersByTimeAsync(1);
     expect(h.spoken).toEqual([DEAD_AIR_OPENING_PHRASE]);
+  });
+});
+
+describe("the cover gives up instead of looping", () => {
+  // Measured on a tau2-bench voice run with a rate-limited LLM: up to nine
+  // fillers on one turn, the same two phrases ten times over minutes, until the
+  // caller hung up. See DEAD_AIR_COVER_MAX_FILLERS.
+  beforeEach(() => void vi.useFakeTimers());
+  afterEach(() => void vi.useRealTimers());
+
+  function giveUpHarness() {
+    const spoken: string[] = [];
+    const giveUp = vi.fn();
+    const log = makeLogger();
+    const cover = createDeadAirCover({
+      coverMs: COVER_MS,
+      callerSpeaking: () => false,
+      toolCovering: () => false,
+      spokeText: () => false,
+      speak: (phrase) => void spoken.push(phrase),
+      giveUp,
+      log,
+      sid: "s-1",
+    });
+    return { cover, spoken, giveUp, log };
+  }
+
+  /** Advance through the next `n` cover windows, the first being window `from`. */
+  async function windows(from: number, n: number): Promise<void> {
+    for (let i = from; i < from + n; i += 1) await vi.advanceTimersByTimeAsync(windowFor(i));
+  }
+
+  it("speaks each phrase once, then gives up rather than repeat itself", async () => {
+    const h = giveUpHarness();
+    await windows(0, DEAD_AIR_COVER_MAX_FILLERS);
+    expect(h.spoken).toHaveLength(DEAD_AIR_COVER_MAX_FILLERS);
+    expect(new Set(h.spoken).size).toBe(DEAD_AIR_COVER_MAX_FILLERS);
+    expect(h.giveUp).not.toHaveBeenCalled();
+    await windows(DEAD_AIR_COVER_MAX_FILLERS, 1);
+    expect(h.giveUp).toHaveBeenCalledOnce();
+    expect(h.log.warn).toHaveBeenCalledWith(
+      "Pipeline dead-air cover gave up",
+      expect.objectContaining({ sid: "s-1", unanswered: DEAD_AIR_COVER_MAX_FILLERS }),
+    );
+    // And stays quiet: no fifth filler, no second give-up.
+    await vi.advanceTimersByTimeAsync(DEAD_AIR_COVER_MAX_MS * 10);
+    expect(h.spoken).toHaveLength(DEAD_AIR_COVER_MAX_FILLERS);
+    expect(h.giveUp).toHaveBeenCalledOnce();
+  });
+
+  it("a turn that shows signs of life is never given up on", async () => {
+    // A long tool chain: each call and result is progress, so the run of
+    // unanswered fillers starts over and the chain keeps its heartbeat.
+    const h = giveUpHarness();
+    for (let round = 0; round < 12; round += 1) {
+      await vi.advanceTimersByTimeAsync(DEAD_AIR_COVER_MAX_MS);
+      if (round % 2 === 0) h.cover.onToolResult();
+      else h.cover.onToolCall();
+    }
+    expect(h.spoken.length).toBeGreaterThan(DEAD_AIR_COVER_MAX_FILLERS);
+    expect(h.giveUp).not.toHaveBeenCalled();
+  });
+
+  it("model text starts the count over too", async () => {
+    const h = giveUpHarness();
+    await windows(0, DEAD_AIR_COVER_MAX_FILLERS);
+    h.cover.clear(); // what a `text-delta` does
+    h.cover.arm();
+    await vi.advanceTimersByTimeAsync(DEAD_AIR_COVER_MAX_MS);
+    expect(h.spoken).toHaveLength(DEAD_AIR_COVER_MAX_FILLERS + 1);
+    expect(h.giveUp).not.toHaveBeenCalled();
   });
 });
